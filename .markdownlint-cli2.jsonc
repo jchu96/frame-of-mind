@@ -1,0 +1,21 @@
+{
+  "config": {
+    "MD013": false,
+    "MD060": false
+  },
+  "ignores": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.nuxt/**",
+    "**/.output/**",
+    ".agents/skills/airtable-automation/**",
+    ".agents/skills/bun/**",
+    ".agents/skills/clickup-automation/**",
+    ".agents/skills/discover-brand/**",
+    ".agents/skills/granola/**",
+    ".agents/skills/notion-cli/**",
+    ".agents/skills/slack-messaging/**",
+    ".claude/**",
+    "dossiers/**"
+  ]
+}

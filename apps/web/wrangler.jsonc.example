@@ -1,0 +1,33 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "frame-of-mind",
+  "main": ".output/server/index.mjs",
+  "compatibility_date": "2026-07-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".output/public",
+    "binding": "ASSETS"
+  },
+  "routes": [
+    {
+      "pattern": "frame-of-mind.example.com",
+      "custom_domain": true
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "frame-of-mind",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "db/migrations"
+    }
+  ],
+  "vars": {
+    "NUXT_AUTH_MODE": "cloudflare-access",
+    "NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://REPLACE_WITH_TEAM.cloudflareaccess.com",
+    "NUXT_CLOUDFLARE_ACCESS_AUD": "REPLACE_WITH_APPLICATION_AUD"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
