@@ -1,0 +1,30 @@
+node_modules/
+dist/
+coverage/
+.nuxt/
+.output/
+.data/
+bun-error.log
+.env
+.env.*
+!.env.example
+.dev.vars
+.DS_Store
+
+# Runtime-installed skills and lockfiles; keep only the repo-owned skill
+.agents/skills/*
+!.agents/skills/frame-of-mind/
+!.agents/skills/frame-of-mind/**
+skills-lock.json
+.claude/skills/
+apps/web/wrangler.jsonc
+
+# Local credentials, downloads, and generated analyses
+.frame-of-mind/
+.meeting-dossier/
+dossiers/
+*.webm
+*.mp4
+*.m4v
+*.mov
+*.mp3
