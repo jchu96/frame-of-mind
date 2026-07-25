@@ -130,6 +130,11 @@ bun run web:import -- "/path/to/runs/<meeting-id>/<run-id>"
 The command reads only `analysis.json` and `manifest.json`. Re-importing the
 same run ID refreshes the projection and its normalized items.
 
+The import response's `created` flag is a user-interface hint, not a concurrency
+primitive. D1 checks for an existing row immediately before its atomic batch;
+two simultaneous first imports of the same run can both report `created: true`
+while still converging on one correct primary-keyed projection.
+
 ## Local authentication behavior
 
 `NUXT_AUTH_MODE=off` is the local default. It is not equivalent to public
