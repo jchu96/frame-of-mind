@@ -1,0 +1,65 @@
+{
+  "name": "frameofmind",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Video in. Understanding out. Run recipe-driven analysis over Bluedot, Granola, or local meeting recordings with Gemini.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jchu96/frame-of-mind.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jchu96/frame-of-mind/issues"
+  },
+  "homepage": "https://github.com/jchu96/frame-of-mind#readme",
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "workspaces": [
+    "apps/web"
+  ],
+  "overrides": {
+    "brace-expansion": "5.0.8"
+  },
+  "bin": {
+    "frameofmind": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    ".agents/skills/frame-of-mind"
+  ],
+  "scripts": {
+    "build": "bun run build:cli",
+    "build:cli": "tsc -p tsconfig.json",
+    "build:web": "bun run --cwd apps/web build",
+    "build:web:cloudflare": "bun run --cwd apps/web build:cloudflare",
+    "check": "bun run typecheck && bun run test && bun run test:web && bun run build:cli && bun run build:web && bun run build:web:cloudflare",
+    "dev": "bun src/cli.ts",
+    "install:skill": "node scripts/install-skill.mjs",
+    "start": "bun dist/cli.js",
+    "test": "vitest run",
+    "test:web": "bun test apps/web/test",
+    "test:watch": "vitest",
+    "typecheck": "bun run typecheck:cli && bun run typecheck:web",
+    "typecheck:cli": "tsc -p tsconfig.json --noEmit",
+    "typecheck:web": "bun run --cwd apps/web typecheck",
+    "web": "bun run --cwd apps/web dev",
+    "web:import": "bun run --cwd apps/web import"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@google/genai": "2.13.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "commander": "15.0.0",
+    "dotenv": "17.4.2",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "@types/node": "^24.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}
