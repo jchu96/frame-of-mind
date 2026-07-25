@@ -12,7 +12,10 @@ export async function getRunStore(event: H3Event): Promise<RunStore> {
       statusMessage: "D1 binding DB is required for hosted mode.",
     });
   }
+  return createD1RunStore(database);
+}
 
+export function createD1RunStore(database: D1Database): RunStore {
   return {
     async listRuns() {
       const result = await database.prepare(

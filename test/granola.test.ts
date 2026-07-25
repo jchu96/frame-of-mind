@@ -34,4 +34,21 @@ describe("Granola MCP contract helpers", () => {
       "[00:01:05] speaker: Later.",
     ].join("\n"));
   });
+
+  it("keeps official untimestamped transcript entries without inventing timing", () => {
+    expect(extractGranolaTranscript({
+      transcript: [{
+        speaker: { source: "microphone", diarization_label: "Speaker A" },
+        text: "Untimed context.",
+      }],
+    })).toBe("Speaker A: Untimed context.");
+  });
+
+  it("does not reinterpret unrelated provider metadata as transcript", () => {
+    expect(extractGranolaTranscript({
+      participant_email: "private@example.com",
+      internal_url: "https://internal.example",
+      status: "ready",
+    })).toBe("");
+  });
 });

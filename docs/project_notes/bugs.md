@@ -31,3 +31,13 @@
 - Symptom: a key copied with surrounding shell quotes failed authentication.
 - Cause: ad hoc shell parsing treated dotenv syntax as the secret value.
 - Prevention: use a dotenv-aware loader or export the value through the shell; never document `grep | cut` credential extraction.
+
+## 2026-07-25 — Clean CI could not resolve Tailwind
+
+- Symptom: local builds passed while a fresh Linux CI build failed resolving
+  `@import "tailwindcss"` from the application stylesheet.
+- Cause: the warm local dependency tree masked that the isolated web workspace
+  did not directly declare the CSS package.
+- Fix: pin `tailwindcss` in `apps/web/package.json`.
+- Prevention: run at least one fresh `bun install --frozen-lockfile` build
+  before release.

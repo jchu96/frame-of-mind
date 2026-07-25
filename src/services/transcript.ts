@@ -16,7 +16,7 @@ export function nearbyTranscript(
   const timed = lines
     .map((line) => ({ line, match: line.match(LINE_TIME) }))
     .filter((entry) => entry.match);
-  if (!timed.length) return transcript;
+  if (!timed.length) return "";
   return timed
     .filter(({ match }) => {
       const seconds = timestampToSeconds(match?.[1]);

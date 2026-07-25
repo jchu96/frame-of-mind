@@ -108,6 +108,9 @@ program
     }
     if (!/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
     const maxIncidents = Number(flags.maxMoments);
+    if (!Number.isSafeInteger(maxIncidents) || maxIncidents > 1_000) {
+      throw new Error("--max-moments must be between 1 and 1000.");
+    }
     if (flags.video) await access(resolve(flags.video));
     const result = await analyzeMeeting({
       meetingId,

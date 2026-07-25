@@ -469,6 +469,12 @@ Retention questions:
 Delete stale runs through a file manager or exact verified path. Never run a
 broad recursive delete against home, application-data root, or repository root.
 
+Hosted D1 projections need an explicit owner and retention period because they
+can contain meeting quotes and visible UI text. Version 0.1.0 does not automate
+hosted expiry. Use the ID-validated preview, delete, and verification procedure
+in [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md#hosted-retention-and-exact-run-purge);
+never delete by a partial title or meeting-name search.
+
 ## 6. Troubleshooting
 
 ### 6.1 `frameofmind: Set GEMINI_API_KEY before analysis`

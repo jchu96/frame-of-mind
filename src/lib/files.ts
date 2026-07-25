@@ -5,7 +5,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { dirname, extname } from "node:path";
 
-const MAX_RECORDING_BYTES = 4_000_000_000;
+export const MAX_RECORDING_BYTES = 2_000_000_000;
 const DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1_000;
 const MAX_REDIRECTS = 5;
 const ALLOWED_MEDIA_HOSTS = new Set(["files.app.bluedothq.com"]);
@@ -49,12 +49,12 @@ export async function downloadFile(url: string, destination: string): Promise<{ 
     throw new Error(`Recording host returned unexpected content type '${mimeType}'.`);
   }
   const declaredBytes = Number(response.headers.get("content-length") || "0");
-  if (declaredBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the 4 GB download limit.");
+  if (declaredBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
   let receivedBytes = 0;
   const limiter = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       receivedBytes += chunk.length;
-      if (receivedBytes > MAX_RECORDING_BYTES) callback(new Error("Recording exceeds the 4 GB download limit."));
+      if (receivedBytes > MAX_RECORDING_BYTES) callback(new Error("Recording exceeds the Gemini Files API 2 GB per-file limit."));
       else callback(null, chunk);
     },
   });
@@ -91,10 +91,20 @@ export function mimeForPath(path: string, header?: string): string {
   if (ext === ".webm") return "video/webm";
   if (ext === ".mp4" || ext === ".m4v") return "video/mp4";
   if (ext === ".mov") return "video/quicktime";
-  if (ext === ".mp3") return "audio/mpeg";
-  return "video/webm";
+  throw new Error(
+    `Unsupported recording extension '${ext || "(none)"}'. Use MP4, M4V, MOV, or WebM video.`,
+  );
 }
 
 export function createRunId(): string {
   return `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
+}
+
+export function safePathSegment(value: string): string {
+  const sanitized = value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  const windowsReserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+  if (!sanitized || sanitized === "." || sanitized === ".." || windowsReserved.test(sanitized)) {
+    return `meeting-${sha256Text(value).slice(0, 12)}`;
+  }
+  return sanitized;
 }

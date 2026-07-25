@@ -16,3 +16,9 @@
   Cloudflare D1, build-time adapter selection, and Access JWT enforcement.
 - Documented the deferred read-only local/Cloudflare MCP design using the NEC
   Knowledge Base's shared-core and dual-front-door pattern.
+- Ran independent adversarial security, provider, and contract reviews; closed
+  findings across OAuth recovery, MCP error handling, transcript isolation,
+  path safety, media limits, import streaming, contract parity, and D1
+  retention.
+- Reproduced and fixed a clean Linux CI failure caused by an undeclared
+  Tailwind workspace dependency, then validated a fresh frozen Bun install.

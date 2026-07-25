@@ -263,6 +263,57 @@ bunx wrangler d1 export frame-of-mind \
 Treat the export as sensitive meeting-derived data. Store it outside the
 repository.
 
+### Hosted retention and exact-run purge
+
+D1 stores the complete validated `analysis.json` projection, including accepted
+and rejected summaries, UI excerpts, and meeting quotes. It does not store the
+recording, transcript, screenshots, provider payload, or credentials.
+
+Before deploying, the workspace owner must choose and document a retention
+period. Thirty days is the recommended starting point for a review workspace
+unless policy or an active work item requires less or more. Version 0.1.0 does
+not automate expiry.
+
+To purge one reviewed run, first copy its exact route-safe run ID from the UI.
+Validate and preview it before deletion:
+
+```bash
+RUN_ID="2026-07-25T12-00-00-000Z-example"
+case "$RUN_ID" in
+  ""|*[!a-zA-Z0-9._:-]*)
+    echo "Refusing an empty or unsafe run ID" >&2
+    exit 1
+    ;;
+esac
+
+bunx wrangler d1 execute frame-of-mind \
+  --remote \
+  --config apps/web/wrangler.jsonc \
+  --command "SELECT run_id, meeting_id, completed_at FROM analysis_runs WHERE run_id = '$RUN_ID';"
+```
+
+Stop if the preview does not identify exactly the intended run. Export a backup
+when policy requires recovery, then delete the child projection and run row:
+
+```bash
+bunx wrangler d1 execute frame-of-mind \
+  --remote \
+  --config apps/web/wrangler.jsonc \
+  --command "DELETE FROM analysis_items WHERE run_id = '$RUN_ID'; DELETE FROM analysis_runs WHERE run_id = '$RUN_ID';"
+```
+
+Verify that both counts are zero:
+
+```bash
+bunx wrangler d1 execute frame-of-mind \
+  --remote \
+  --config apps/web/wrangler.jsonc \
+  --command "SELECT (SELECT COUNT(*) FROM analysis_runs WHERE run_id = '$RUN_ID') AS runs, (SELECT COUNT(*) FROM analysis_items WHERE run_id = '$RUN_ID') AS items;"
+```
+
+Do not interpolate meeting titles, email addresses, or arbitrary strings into
+these commands. D1 Time Travel or a reviewed export is the recovery path.
+
 ### Dependency updates
 
 Before upgrading Nuxt, Nuxt UI, Wrangler, `jose`, Bun, or Workers types:

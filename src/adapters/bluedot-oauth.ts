@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
@@ -33,6 +34,7 @@ export class FileOAuthProvider implements OAuthClientProvider {
     redirectUrl: string,
     private readonly tokenPath: string,
     private readonly onRedirect: (url: URL) => void,
+    private readonly oauthState = randomUUID(),
   ) {
     this.redirectUrl = redirectUrl;
     this.clientMetadata = {
@@ -47,6 +49,10 @@ export class FileOAuthProvider implements OAuthClientProvider {
     } catch {
       this.stored = {};
     }
+  }
+
+  state(): string {
+    return this.oauthState;
   }
 
   clientInformation(): OAuthClientInformationMixed | undefined {
@@ -81,9 +87,28 @@ export class FileOAuthProvider implements OAuthClientProvider {
     return this.stored.codeVerifier;
   }
 
+  invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
+    if (scope === "all") {
+      this.stored = {};
+    } else if (scope === "client") {
+      delete this.stored.clientInformation;
+    } else if (scope === "tokens") {
+      delete this.stored.tokens;
+    } else if (scope === "verifier") {
+      delete this.stored.codeVerifier;
+    }
+    this.persist();
+  }
+
   private persist(): void {
     mkdirSync(dirname(this.tokenPath), { recursive: true, mode: 0o700 });
-    writeFileSync(this.tokenPath, `${JSON.stringify(this.stored, null, 2)}\n`, { mode: 0o600 });
+    const temporaryPath = `${this.tokenPath}.${process.pid}.${randomUUID()}.tmp`;
+    writeFileSync(temporaryPath, `${JSON.stringify(this.stored, null, 2)}\n`, {
+      mode: 0o600,
+      flag: "wx",
+    });
+    renameSync(temporaryPath, this.tokenPath);
+    chmodSync(this.tokenPath, 0o600);
   }
 }
 
@@ -92,6 +117,7 @@ export class OAuthCallback {
   private resolveCode?: (code: string) => void;
   private rejectCode?: (error: Error) => void;
   readonly code: Promise<string>;
+  readonly state = randomUUID();
 
   constructor(
     private readonly port: number,
@@ -108,7 +134,7 @@ export class OAuthCallback {
       const url = new URL(request.url || "/", `http://127.0.0.1:${this.port}`);
       const code = url.searchParams.get("code");
       const error = url.searchParams.get("error");
-      if (code) {
+      if (code && url.searchParams.get("state") === this.state) {
         response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         response.end(
           `<h1>${escapeHtml(this.providerName)} connected</h1>` +
@@ -118,7 +144,9 @@ export class OAuthCallback {
       } else {
         response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
         response.end(`${this.providerName} authorization failed.`);
-        this.rejectCode?.(new Error(error || "OAuth callback did not include a code."));
+        this.rejectCode?.(new Error(
+          error || (code ? "OAuth callback state did not match." : "OAuth callback did not include a code."),
+        ));
       }
     });
     await new Promise<void>((resolve, reject) => {

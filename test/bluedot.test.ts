@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
-import { argumentForIdentifier, extractTranscript } from "../src/adapters/bluedot-mcp.js";
+import {
+  argumentForIdentifier,
+  assertToolSucceeded,
+  extractTranscript,
+} from "../src/adapters/bluedot-mcp.js";
 
 describe("Bluedot MCP contract helpers", () => {
   it("uses the verified videoId argument", () => {
@@ -13,6 +17,14 @@ describe("Bluedot MCP contract helpers", () => {
       },
     } as Tool;
     expect(argumentForIdentifier(tool, "video-1")).toEqual({ videoId: "video-1" });
+  });
+
+  it("rejects MCP tool errors before constructing meeting evidence", () => {
+    expect(() => assertToolSucceeded(
+      { isError: true },
+      "Bluedot",
+      "get_meeting",
+    )).toThrow("Bluedot MCP tool 'get_meeting' failed");
   });
 
   it("preserves timestamps and speakers from verified transcription segments", () => {

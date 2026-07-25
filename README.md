@@ -89,7 +89,8 @@ sensitive because screenshots are embedded.
 - local MP4/MOV/M4V/WebM screen recording
 
 The current pipeline uses the official `@google/genai` Files API and defaults
-to `gemini-3.6-flash`.
+to `gemini-3.6-flash`. Recordings must use a supported video extension and stay
+within the Files API's 2 GB per-file limit.
 
 ## Install
 

@@ -10,7 +10,7 @@ import {
   secureTokenDirectory,
 } from "./bluedot-oauth.js";
 import type { MeetingEvidence } from "../domain/types.js";
-import { collectStrings, firstStringForKeys } from "../lib/object.js";
+import { firstStringForKeys } from "../lib/object.js";
 import { normalizeToolResult } from "./bluedot-mcp.js";
 
 export const DEFAULT_GRANOLA_MCP_URL = "https://mcp.granola.ai/mcp";
@@ -35,7 +35,7 @@ export class GranolaClient {
     const provider = new FileOAuthProvider(CALLBACK_URL, this.tokenPath, (url) => {
       process.stderr.write(`Authorize Granola in your browser:\n${url.toString()}\n`);
       void openBrowser(url);
-    });
+    }, callback.state);
     try {
       await this.attemptConnection(provider);
     } catch (error) {
@@ -84,7 +84,9 @@ export class GranolaClient {
       CallToolResultSchema,
     );
     if (result.isError) {
-      throw new Error(`Granola MCP tool '${name}' failed: ${toolErrorText(result)}`);
+      throw new Error(
+        `Granola MCP tool '${name}' failed. Verify authorization, workspace policy, plan access, and the meeting ID.`,
+      );
     }
     return normalizeToolResult(result);
   }
@@ -131,8 +133,7 @@ export function extractGranolaTranscript(raw: unknown): string {
   }
   const direct = firstStringForKeys(raw, /^(transcript|raw_?transcript)$/i);
   if (direct) return direct;
-  const strings = collectStrings(raw).filter((value) => value.trim().length > 0);
-  return strings.join("\n");
+  return "";
 }
 
 interface GranolaTranscriptEntry {
@@ -180,14 +181,4 @@ function formatSeconds(value: number): string {
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainder = seconds % 60;
   return [hours, minutes, remainder].map((part) => String(part).padStart(2, "0")).join(":");
-}
-
-function toolErrorText(result: { content?: unknown }): string {
-  if (!Array.isArray(result.content)) return "unknown MCP error";
-  return result.content
-    .flatMap((item) => item && typeof item === "object" && typeof (item as { text?: unknown }).text === "string"
-      ? [(item as { text: string }).text]
-      : [])
-    .join(" ")
-    .slice(0, 500) || "unknown MCP error";
 }

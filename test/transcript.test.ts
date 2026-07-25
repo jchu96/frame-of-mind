@@ -23,4 +23,9 @@ describe("nearbyTranscript", () => {
     expect(slice).toContain("scroll back left");
     expect(slice).not.toContain("meeting introduction");
   });
+
+  it("does not attach a full untimestamped meeting to every bounded clip", () => {
+    expect(nearbyTranscript("Speaker A: distant untimed context", "00:10", "00:20"))
+      .toBe("");
+  });
 });

@@ -2,6 +2,10 @@ import { z } from "zod";
 
 const contextProviderSchema = z.enum(["bluedot", "granola", "file"]);
 const importanceSchema = z.enum(["high", "medium", "low"]);
+export const runIdSchema = z.string()
+  .min(1)
+  .max(240)
+  .regex(/^[a-zA-Z0-9._:-]+$/, "run ID contains characters that are unsafe in routes");
 
 const indexedMomentSchema = z.object({
   start: z.string().min(1).max(32),
@@ -64,7 +68,7 @@ export const runManifestSchema = z.object({
   schemaVersion: z.literal(1),
   toolVersion: z.string().min(1).max(120),
   promptRevision: z.string().min(1).max(120),
-  runId: z.string().min(1).max(240),
+  runId: runIdSchema,
   startedAt: z.string().min(1).max(120),
   completedAt: z.string().min(1).max(120),
   meetingId: z.string().min(1).max(500),
@@ -119,11 +123,38 @@ export const runImportSchema = z.object({
       path: ["manifest", "recipe", "id"],
     });
   }
+  if (analysis.recipe.label !== manifest.recipe.label) {
+    context.addIssue({
+      code: "custom",
+      message: "analysis recipe label does not match manifest recipe label",
+      path: ["manifest", "recipe", "label"],
+    });
+  }
   if (analysis.model !== manifest.model) {
     context.addIssue({
       code: "custom",
       message: "analysis model does not match manifest model",
       path: ["manifest", "model"],
+    });
+  }
+  if (analysis.meeting.provider !== manifest.contextProvider) {
+    context.addIssue({
+      code: "custom",
+      message: "analysis provider does not match manifest context provider",
+      path: ["manifest", "contextProvider"],
+    });
+  }
+  const invalidTransport =
+    (manifest.contextProvider === "file" && manifest.contextTransport !== "file")
+    || (manifest.contextProvider === "bluedot" && manifest.contextTransport !== "mcp")
+    || (manifest.contextProvider === "granola"
+      && manifest.contextTransport !== "mcp"
+      && manifest.contextTransport !== "api");
+  if (invalidTransport) {
+    context.addIssue({
+      code: "custom",
+      message: "manifest provider and transport combination is invalid",
+      path: ["manifest", "contextTransport"],
     });
   }
 });

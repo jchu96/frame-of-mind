@@ -1,4 +1,4 @@
-import { mkdtemp, rename, rm } from "node:fs/promises";
+import { mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import type { File as GeminiFile } from "@google/genai";
@@ -11,6 +11,7 @@ import type {
   MeetingEvidence,
   RunManifest,
 } from "../domain/types.js";
+import { runImportSchema } from "../domain/schemas.js";
 import { BluedotClient } from "../adapters/bluedot-mcp.js";
 import { GranolaClient } from "../adapters/granola-mcp.js";
 import { GranolaApiClient } from "../adapters/granola-api.js";
@@ -20,7 +21,9 @@ import {
   createRunId,
   downloadFile,
   ensureDirectory,
+  MAX_RECORDING_BYTES,
   mimeForPath,
+  safePathSegment,
   sha256File,
   sha256Text,
 } from "../lib/files.js";
@@ -89,8 +92,11 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
         "Audio-only calls have no visual UI evidence to interrogate.",
       );
     }
+    if ((await stat(localVideo)).size > MAX_RECORDING_BYTES) {
+      throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
+    }
     const recordingSha256 = await sha256File(localVideo);
-    const meetingDirectory = join(resolve(options.outputRoot), safeName(meeting.id));
+    const meetingDirectory = join(resolve(options.outputRoot), safePathSegment(meeting.id));
     const outputDirectory = join(meetingDirectory, runId);
     stagingDirectory = join(meetingDirectory, `.${runId}.staging`);
     await ensureDirectory(meetingDirectory);
@@ -212,7 +218,8 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
           ...items.flatMap((item) => item.screenshot ? [item.screenshot] : []),
         ],
       };
-      await writeArtifacts(stagingDirectory, analysis, manifest);
+      const validated = runImportSchema.parse({ analysis, manifest });
+      await writeArtifacts(stagingDirectory, validated.analysis, validated.manifest);
       await rename(stagingDirectory, outputDirectory);
       stagingDirectory = undefined;
       if (!options.keepUpload && !remoteDeleted) {
@@ -239,10 +246,6 @@ function createContextSource(options: AnalyzeOptions): MeetingContextSource {
   }
   if (!options.contextFile) throw new Error("--context-file is required when --source file is selected.");
   return new FileContextSource(options.contextFile);
-}
-
-function safeName(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "meeting";
 }
 
 function safeTimestamp(value: string): string {

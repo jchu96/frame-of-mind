@@ -20,6 +20,6 @@
 
 ## Verification
 
-- Run `npm run typecheck`.
+- Run `bun run typecheck`.
 - Add focused Vitest coverage for deterministic behavior.
-- Run `npm run check` before committing.
+- Run `bun run check` before committing.

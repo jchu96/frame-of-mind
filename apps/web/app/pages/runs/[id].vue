@@ -23,7 +23,16 @@ function importanceColor(value?: "high" | "medium" | "low") {
 <template>
   <div>
     <AppHeader />
-    <main v-if="run" class="fom-shell py-10 sm:py-14">
+    <main v-if="error" class="fom-shell py-10 sm:py-14">
+      <UAlert
+        color="error"
+        variant="soft"
+        title="Could not load this run"
+        description="The review database or authentication boundary returned an error. Check the server logs and try again."
+      />
+      <UButton to="/" color="neutral" variant="ghost" class="mt-4">Return to all runs</UButton>
+    </main>
+    <main v-else-if="run" class="fom-shell py-10 sm:py-14">
       <NuxtLink to="/" class="text-sm font-bold text-emerald-700 hover:underline">← All runs</NuxtLink>
 
       <section class="mt-6 grid gap-8 lg:grid-cols-[1fr_20rem]">

@@ -35,7 +35,7 @@ export class BluedotClient {
     const provider = new FileOAuthProvider(CALLBACK_URL, this.tokenPath, (url) => {
       process.stderr.write(`Authorize Bluedot in your browser:\n${url.toString()}\n`);
       void openBrowser(url);
-    });
+    }, callback.state);
     try {
       await this.attemptConnection(provider);
     } catch (error) {
@@ -63,6 +63,7 @@ export class BluedotClient {
       { method: "tools/call", params: { name: tool.name, arguments: args } },
       CallToolResultSchema,
     );
+    assertToolSucceeded(result, "Bluedot", tool.name);
     const raw = normalizeToolResult(result);
     const transcript = extractTranscript(raw);
     return {
@@ -100,6 +101,18 @@ export class BluedotClient {
     const tool = this.tools.find((candidate) => candidate.name === name);
     if (!tool) throw new Error(`Bluedot MCP does not expose required tool '${name}'.`);
     return tool;
+  }
+}
+
+export function assertToolSucceeded(
+  result: { isError?: boolean },
+  provider: string,
+  toolName: string,
+): void {
+  if (result.isError) {
+    throw new Error(
+      `${provider} MCP tool '${toolName}' failed. Verify authorization, workspace access, and the meeting ID.`,
+    );
   }
 }
 

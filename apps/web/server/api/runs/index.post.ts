@@ -1,4 +1,5 @@
 import { runImportSchema } from "../../../../../src/domain/schemas";
+import { readLimitedText, RequestBodyTooLargeError } from "../../utils/request-body";
 import { getRunStore } from "../../utils/store";
 
 const maximumImportBytes = 2 * 1024 * 1024;
@@ -9,9 +10,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 413, statusMessage: "Run import exceeds 2 MiB." });
   }
 
-  const body = await readBody(event);
-  if (JSON.stringify(body).length > maximumImportBytes) {
-    throw createError({ statusCode: 413, statusMessage: "Run import exceeds 2 MiB." });
+  let body: unknown;
+  try {
+    const rawBody = await readLimitedText(getRequestWebStream(event), maximumImportBytes);
+    body = JSON.parse(rawBody);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      throw createError({ statusCode: 413, statusMessage: "Run import exceeds 2 MiB." });
+    }
+    throw createError({ statusCode: 400, statusMessage: "Run import must be valid UTF-8 JSON." });
   }
   const parsed = runImportSchema.safeParse(body);
   if (!parsed.success) {

@@ -11,6 +11,6 @@
 
 | Task | Command |
 |------|---------|
-| One file | `npx vitest run test/object.test.ts` |
-| All tests | `npm test` |
-| Watch | `npm run test:watch` |
+| One file | `bunx vitest run test/object.test.ts` |
+| All tests | `bun run test` |
+| Watch | `bun run test:watch` |

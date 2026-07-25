@@ -15,3 +15,12 @@
   to exclude the SQLite adapter from the Worker bundle.
 - Cloudflare Access in front of a Worker is not sufficient by itself. Validate
   the Access JWT issuer, audience, and signature in the application.
+- An untimestamped transcript is useful for whole-recording indexing but cannot
+  be safely attached to a bounded clip. Clip interrogation receives no nearby
+  transcript unless timed lines can be aligned.
+- With Bun's isolated workspace linker, a CSS-level `@import "tailwindcss"`
+  needs `tailwindcss` declared in the web workspace even when Nuxt UI also
+  depends on it. Always verify from a fresh frozen install.
+- Validate the final analysis/manifest pair before publication. TypeScript
+  shapes alone do not enforce durable string, count, route, or provenance
+  constraints.
