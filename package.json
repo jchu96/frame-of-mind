@@ -25,7 +25,8 @@
   },
   "files": [
     "dist",
-    ".agents/skills/frame-of-mind"
+    ".agents/skills/frame-of-mind",
+    "scripts/install-skill.mjs"
   ],
   "scripts": {
     "build": "bun run build:cli",
