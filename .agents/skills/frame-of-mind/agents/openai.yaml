@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frame of Mind"
+  short_description: "Turn meeting video into structured, recipe-driven work"
+  default_prompt: "Use $frame-of-mind to analyze an authorized meeting recording with the recipe that best matches the requested output."

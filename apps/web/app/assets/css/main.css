@@ -1,0 +1,47 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+:root {
+  --fom-ink: #17221d;
+  --fom-paper: #f6f4ed;
+  --fom-mint: #b8f2d0;
+  --fom-line: #d9ddd5;
+}
+
+html {
+  background: var(--fom-paper);
+  color: var(--fom-ink);
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--fom-paper);
+  background-image:
+    linear-gradient(rgba(23, 34, 29, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 34, 29, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+::selection {
+  background: var(--fom-mint);
+  color: var(--fom-ink);
+}
+
+.fom-shell {
+  width: min(1180px, calc(100% - 2rem));
+  margin-inline: auto;
+}
+
+.fom-kicker {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.fom-panel {
+  border: 1px solid var(--fom-line);
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 18px 50px rgba(23, 34, 29, 0.07);
+  backdrop-filter: blur(14px);
+}
