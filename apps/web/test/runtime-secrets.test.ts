@@ -47,6 +47,17 @@ describe("Studio runtime secret resolution", () => {
     expect((await resolver.status("granola-api-key")).source).toBe("environment");
   });
 
+  test("redacts overlapping secrets longest-first", async () => {
+    const resolver = new ProcessRuntimeSecretResolver({
+      GEMINI_API_KEY: "shared-secret",
+    });
+    await resolver.setSession("granola-api-key", "shared-secret-suffix");
+
+    expect(resolver.redact(
+      "short=shared-secret long=shared-secret-suffix",
+    )).toBe("short=[REDACTED] long=[REDACTED]");
+  });
+
   test("rejects empty, tiny, whitespace, control-bearing, and oversized secret input", async () => {
     const resolver = new ProcessRuntimeSecretResolver({});
     await expect(

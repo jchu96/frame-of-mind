@@ -193,15 +193,17 @@ count safely below the Worker invocation query limit; regressions cover both
 `NUXT_AUTH_MODE=off` is the local default. It is not equivalent to public
 anonymous access.
 
-When auth is off, server middleware requires both a loopback peer address and
-one of these Host values:
+When auth is off, server middleware requires one of these Host values:
 
 - `localhost`;
 - `127.0.0.1`;
 - `::1`.
 
-Starting Nuxt on `0.0.0.0` does not bypass the guard. A remote Host receives
-403 unless `NUXT_ALLOW_UNAUTHENTICATED_REMOTE=true` is explicitly set.
+It also requires a loopback peer address. If Bun's Node compatibility layer
+does not expose that address, the middleware requires the server's explicit
+`NITRO_HOST`/`HOST` listener binding to be loopback. Starting Nuxt on
+`0.0.0.0` does not bypass the guard. A remote Host receives 403 unless
+`NUXT_ALLOW_UNAUTHENTICATED_REMOTE=true` is explicitly set.
 
 That override is intentionally awkward. Do not use it for a public deployment.
 Use Cloudflare Access.

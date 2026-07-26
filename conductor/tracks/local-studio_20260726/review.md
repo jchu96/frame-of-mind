@@ -5,6 +5,10 @@
 **Initial PR head:** `e94ad8c`
 **GitHub review:** [pullrequestreview-4782548342](https://github.com/jchu96/frame-of-mind/pull/5#pullrequestreview-4782548342)
 
+> Historical checkpoint: this review gated the original plan. The user later
+> approved implementation, Phase 1 merged in PR #6, and Phase 2 was completed
+> in PR #7. The current status is recorded in `metadata.json` and `index.md`.
+
 ## Executive Summary
 
 The Phase A local-first direction is viable and better aligned with the product
@@ -140,9 +144,12 @@ No question requires private context or a fact that exists only in this review.
 
 ## Review Verdict
 
-**Revised verdict: ready for human specification review, not yet approved for
-implementation.**
+**Historical verdict at review time: ready for human specification review, not
+yet approved for implementation.**
 
 The plan is technically coherent after the documented corrections. Approval
 should authorize Phase 1 only; later phases remain gated by their verification
 and explicit Conductor approval.
+
+Implementation was subsequently authorized. Phase 1 and Phase 2 passed their
+stop/go gates; Phase 3 remains the next unimplemented phase.

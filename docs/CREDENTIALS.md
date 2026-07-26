@@ -128,9 +128,14 @@ The local Studio uses the same file:
 bun run studio
 ```
 
-Open the one-time URL and visit **Connections**. An environment value always
-takes precedence over a temporary value entered in the page. To replace an
-environment value, edit `.env`, stop Bun, and launch Studio again.
+Studio opens a one-time URL and visits **Connections**. An environment value
+always takes precedence over a temporary value entered in the page. To replace
+an environment value, edit `.env`, stop Bun, and launch Studio again.
+
+If automatic browser opening fails, stop Studio and rerun with
+`FRAME_OF_MIND_STUDIO_PRINT_URL=1`. This explicitly prints the sensitive
+one-time bearer URL; keep it out of shared terminals, recordings, issues, and
+logs.
 
 ### Temporary Studio input
 
@@ -152,6 +157,11 @@ credential vault.
 buttons use the existing private OAuth token files. Those tokens survive a Bun
 restart and remain bound to the exact configured MCP resource URL. A custom
 endpoint cannot inherit the canonical provider credential.
+
+When Studio already shows OAuth as configured, **Verify OAuth** checks the
+stored credential; it does not switch accounts. To change accounts, close the
+CLI/Studio, remove only that provider's token file using the runbook, and
+connect again.
 
 ### macOS or Linux: current terminal only
 

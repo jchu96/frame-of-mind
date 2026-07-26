@@ -136,10 +136,20 @@ cp .env.example .env
 bun run studio
 ```
 
-Open the one-time URL printed by the command. The bootstrap capability stays in
-the URL fragment, is removed before the browser makes the exchange request, and
-becomes an HttpOnly, SameSite=Strict session cookie. Restarting Bun invalidates
-the browser session and prints a new URL.
+Studio opens its one-time URL in the default browser. The bootstrap capability
+stays in the URL fragment, is removed before the browser makes the exchange
+request, and becomes an HttpOnly, SameSite=Strict session cookie. Restarting
+Bun invalidates the browser session and creates a new capability.
+
+If the browser cannot be opened, stop Studio and explicitly opt into terminal
+output for that launch:
+
+```bash
+FRAME_OF_MIND_STUDIO_PRINT_URL=1 bun run studio
+```
+
+That URL is a temporary local bearer credential. Do not paste it into chat,
+issues, recordings, or shared logs.
 
 The Connections page shows only credential presence, source, lifetime, and
 sanitized provider status:

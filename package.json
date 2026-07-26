@@ -18,7 +18,7 @@
     "apps/web"
   ],
   "overrides": {
-    "@hono/node-server": "2.0.10",
+    "@hono/node-server": "2.0.12",
     "brace-expansion": "5.0.8",
     "esbuild": "0.28.1"
   },
@@ -35,13 +35,14 @@
     "build:cli": "tsc -p tsconfig.json",
     "build:web": "bun run --cwd apps/web build",
     "build:web:cloudflare": "FRAME_OF_MIND_STUDIO=1 bun run --cwd apps/web build:cloudflare && bun scripts/check-cloudflare-boundary.ts",
-    "check": "bun run typecheck && bun run test && bun run test:web && bun run build:cli && bun run build:web && bun run build:web:cloudflare && bun run spike:studio-streaming",
+    "check": "bun run typecheck && bun run test && bun run test:web && bun run build:cli && bun run build:web && bun run test:studio-http && bun run build:web:cloudflare && bun run spike:studio-streaming",
     "dev": "bun src/cli.ts",
     "install:skill": "node scripts/install-skill.mjs",
     "spike:studio-streaming": "bun scripts/run-studio-streaming-spike.ts",
     "start": "bun dist/cli.js",
     "studio": "bun scripts/run-studio.ts",
     "test": "vitest run",
+    "test:studio-http": "bun scripts/test-local-studio-http.ts",
     "test:web": "bun test apps/web/test",
     "test:watch": "vitest",
     "typecheck": "bun run typecheck:cli && bun run typecheck:web",

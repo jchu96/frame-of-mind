@@ -1,8 +1,7 @@
 import { getHeader, getRequestIP } from "h3";
 import { verifyCloudflareAccessJwt } from "../utils/access";
 import {
-  isLoopbackAddress,
-  isLoopbackHost,
+  isTrustedLoopbackRequest,
   normalizeTeamDomain,
   parseAuthMode,
 } from "../utils/auth-policy";
@@ -20,8 +19,11 @@ export default defineEventHandler(async (event) => {
   if (mode === "off") {
     const remoteAllowed = config.allowUnauthenticatedRemote === true
       || config.allowUnauthenticatedRemote === "true";
-    const loopbackRequest = isLoopbackHost(getHeader(event, "host"))
-      && isLoopbackAddress(getRequestIP(event, { xForwardedFor: false }));
+    const loopbackRequest = isTrustedLoopbackRequest(
+      getHeader(event, "host"),
+      getRequestIP(event, { xForwardedFor: false }),
+      process.env.NITRO_HOST || process.env.HOST,
+    );
     if (!remoteAllowed && !loopbackRequest) {
       throw createError({
         statusCode: 403,

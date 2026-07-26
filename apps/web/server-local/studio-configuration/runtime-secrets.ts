@@ -59,9 +59,12 @@ export class ProcessRuntimeSecretResolver implements RuntimeSecretResolver {
       ...Object.values(environmentName)
         .map((name) => this.#environment[name]),
       ...this.#session.values(),
-    ];
+    ]
+      .filter((secret): secret is string => Boolean(secret))
+      .filter((secret, index, values) => values.indexOf(secret) === index)
+      .sort((left, right) => right.length - left.length);
     for (const secret of knownValues) {
-      if (secret) redacted = redacted.replaceAll(secret, "[REDACTED]");
+      redacted = redacted.replaceAll(secret, "[REDACTED]");
     }
     return redacted;
   }

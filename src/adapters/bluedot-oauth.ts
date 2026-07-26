@@ -209,18 +209,15 @@ export class OAuthCallback {
   }
 }
 
-export async function openBrowser(url: URL): Promise<void> {
+export async function openBrowser(url: URL): Promise<boolean> {
   const command =
     process.platform === "darwin" ? ["open", url.toString()] :
     process.platform === "win32" ? ["cmd", "/c", "start", "", url.toString()] :
     ["xdg-open", url.toString()];
-  await new Promise<void>((resolve) => {
-    const child = spawn(command[0]!, command.slice(1), { detached: true, stdio: "ignore" });
-    child.once("error", () => resolve());
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
-    });
+  return new Promise<boolean>((resolve) => {
+    const child = spawn(command[0]!, command.slice(1), { stdio: "ignore" });
+    child.once("error", () => resolve(false));
+    child.once("exit", (code) => resolve(code === 0));
   });
 }
 
