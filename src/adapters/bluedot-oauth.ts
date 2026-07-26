@@ -1,9 +1,9 @@
 import { createServer, type Server } from "node:http";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { spawn } from "node:child_process";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
@@ -13,17 +13,46 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 
 interface StoredOAuth {
+  resource?: string;
   clientInformation?: OAuthClientInformationMixed;
   tokens?: OAuthTokens;
   codeVerifier?: string;
 }
 
 export function configRoot(): string {
-  return process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
+  const configured = process.env.XDG_CONFIG_HOME;
+  return configured && isAbsolute(configured) ? configured : join(homedir(), ".config");
 }
 
 export const DEFAULT_TOKEN_PATH = join(configRoot(), "frame-of-mind", "bluedot-oauth.json");
 export const DEFAULT_GRANOLA_TOKEN_PATH = join(configRoot(), "frame-of-mind", "granola-oauth.json");
+
+export interface McpEndpoint {
+  url: URL;
+  tokenPath: string;
+  canonical: boolean;
+}
+
+export function resolveMcpEndpoint(
+  provider: "bluedot" | "granola",
+  configuredUrl: string | undefined,
+  defaultUrl: string,
+  defaultTokenPath: string,
+): McpEndpoint {
+  const url = new URL(configuredUrl || defaultUrl);
+  if (url.protocol !== "https:" || url.username || url.password) {
+    throw new Error(`${provider} MCP endpoint must be an HTTPS URL without embedded credentials.`);
+  }
+  const canonical = url.toString() === new URL(defaultUrl).toString();
+  const suffix = createHash("sha256").update(url.toString()).digest("hex").slice(0, 16);
+  return {
+    url,
+    tokenPath: canonical
+      ? defaultTokenPath
+      : join(dirname(defaultTokenPath), `${provider}-oauth-${suffix}.json`),
+    canonical,
+  };
+}
 
 export class FileOAuthProvider implements OAuthClientProvider {
   readonly clientMetadata: OAuthClientMetadata;
@@ -35,6 +64,8 @@ export class FileOAuthProvider implements OAuthClientProvider {
     private readonly tokenPath: string,
     private readonly onRedirect: (url: URL) => void,
     private readonly oauthState = randomUUID(),
+    private readonly resource?: string,
+    private readonly allowLegacyUnscoped = false,
   ) {
     this.redirectUrl = redirectUrl;
     this.clientMetadata = {
@@ -45,9 +76,12 @@ export class FileOAuthProvider implements OAuthClientProvider {
       token_endpoint_auth_method: "client_secret_post",
     };
     try {
-      this.stored = JSON.parse(readFileSync(tokenPath, "utf8")) as StoredOAuth;
+      const stored = JSON.parse(readFileSync(tokenPath, "utf8")) as StoredOAuth;
+      this.stored = stored.resource === resource || (!stored.resource && allowLegacyUnscoped)
+        ? { ...stored, ...(resource ? { resource } : {}) }
+        : { ...(resource ? { resource } : {}) };
     } catch {
-      this.stored = {};
+      this.stored = { ...(resource ? { resource } : {}) };
     }
   }
 
@@ -89,7 +123,7 @@ export class FileOAuthProvider implements OAuthClientProvider {
 
   invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
     if (scope === "all") {
-      this.stored = {};
+      this.stored = { ...(this.resource ? { resource: this.resource } : {}) };
     } else if (scope === "client") {
       delete this.stored.clientInformation;
     } else if (scope === "tokens") {
@@ -118,6 +152,7 @@ export class OAuthCallback {
   private rejectCode?: (error: Error) => void;
   readonly code: Promise<string>;
   readonly state = randomUUID();
+  private timeout?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly port: number,
@@ -134,28 +169,42 @@ export class OAuthCallback {
       const url = new URL(request.url || "/", `http://127.0.0.1:${this.port}`);
       const code = url.searchParams.get("code");
       const error = url.searchParams.get("error");
+      if (url.pathname !== "/callback") {
+        response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+        response.end("Not found.");
+        return;
+      }
       if (code && url.searchParams.get("state") === this.state) {
         response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
         response.end(
           `<h1>${escapeHtml(this.providerName)} connected</h1>` +
           "<p>You can close this tab and return to the terminal.</p>",
         );
+        if (this.timeout) clearTimeout(this.timeout);
         this.resolveCode?.(code);
+      } else if (error && url.searchParams.get("state") === this.state) {
+        response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+        response.end(`${this.providerName} authorization failed.`);
+        if (this.timeout) clearTimeout(this.timeout);
+        this.rejectCode?.(new Error("OAuth provider rejected authorization."));
       } else {
         response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
         response.end(`${this.providerName} authorization failed.`);
-        this.rejectCode?.(new Error(
-          error || (code ? "OAuth callback state did not match." : "OAuth callback did not include a code."),
-        ));
       }
     });
     await new Promise<void>((resolve, reject) => {
       this.server?.once("error", reject);
       this.server?.listen(this.port, "127.0.0.1", resolve);
     });
+    this.timeout = setTimeout(() => {
+      this.rejectCode?.(new Error("OAuth authorization timed out."));
+      this.close();
+    }, 5 * 60_000);
+    this.timeout.unref();
   }
 
   close(): void {
+    if (this.timeout) clearTimeout(this.timeout);
     this.server?.close();
   }
 }

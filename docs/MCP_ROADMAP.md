@@ -2,7 +2,7 @@
 
 ## Status
 
-Design target for the next iteration. No MCP server is shipped in v0.1.0.
+Design target for the next iteration. No MCP server is shipped in v0.2.0.
 
 This is deliberate. The CLI, durable contracts, review workspace, database
 projection, and authentication boundary need real usage before agent access is
@@ -312,5 +312,5 @@ Before enabling MCP:
 8. Add hosted deployment runbook.
 9. Consider semantic search only after query usage is understood.
 
-This sequence keeps v0.1.0 useful without pretending an untested MCP auth
+This sequence keeps v0.2.0 useful without pretending an untested MCP auth
 surface is production-ready.

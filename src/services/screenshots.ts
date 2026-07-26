@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { access, chmod, rm } from "node:fs/promises";
 import { timestampToSeconds } from "../lib/time.js";
 
-export async function extractScreenshot(video: string, timestamp: string | undefined, destination: string): Promise<boolean> {
+export async function extractScreenshot(video: string, timestamp: string, destination: string): Promise<boolean> {
   const seconds = Math.max(0, timestampToSeconds(timestamp));
   const code = await new Promise<number | null>((resolve) => {
     const child = spawn("ffmpeg", [

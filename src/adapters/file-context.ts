@@ -16,7 +16,12 @@ export class FileContextSource implements MeetingContextSource {
   async meeting(meetingId: string): Promise<MeetingEvidence> {
     const path = resolve(this.path);
     const content = await readFile(path, "utf8");
-    const raw = extname(path).toLowerCase() === ".json" ? JSON.parse(content) as unknown : { transcript: content };
+    const extension = extname(path).toLowerCase();
+    const transcript = extension === ".srt" || extension === ".vtt"
+      ? parseCaptionTranscript(content)
+      : content;
+    const raw = extension === ".json" ? JSON.parse(content) as unknown : { transcript };
+    const extractedTranscript = extractTranscript(raw);
     return {
       id: meetingId,
       provider: this.provider,
@@ -24,8 +29,31 @@ export class FileContextSource implements MeetingContextSource {
       title: firstStringForKeys(raw, /^(title|name)$/i) || basename(path),
       createdAt: firstStringForKeys(raw, /^(created_?at|date|start_?time)$/i),
       summary: firstStringForKeys(raw, /^(summary|notes)$/i),
-      transcript: extractTranscript(raw) || content,
+      transcript: extractedTranscript || (extension === ".json" ? "" : transcript),
       raw,
     };
   }
+}
+
+export function parseCaptionTranscript(content: string): string {
+  const lines = content.replace(/^\uFEFF/, "").split(/\r?\n/);
+  const output: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index]?.match(
+      /^(?:(\d{2,}):)?([0-5]\d):([0-5]\d)[,.]\d{3}\s+-->\s+/,
+    );
+    if (!match) continue;
+    const timestamp = [
+      match[1] || "00",
+      match[2],
+      match[3],
+    ].map((part) => String(part).padStart(2, "0")).join(":");
+    const text: string[] = [];
+    for (index += 1; index < lines.length && lines[index]?.trim(); index += 1) {
+      text.push(lines[index]!.replace(/<[^>]+>/g, "").trim());
+    }
+    const cue = text.filter(Boolean).join(" ");
+    if (cue) output.push(`[${timestamp}] ${cue}`);
+  }
+  return output.join("\n");
 }

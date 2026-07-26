@@ -14,3 +14,9 @@
   it does not store recording or screenshot bytes.
 - The Cloudflare target uses Nitro's `cloudflare` preset, Workers Assets, a D1
   binding named `DB`, and Cloudflare Access JWT validation.
+- Schema v2 binds `analysis.json` to `manifest.json` with a shared run ID and
+  canonical analysis SHA-256; import and hydration fail closed on divergence.
+- MCP OAuth credentials are bound to the exact HTTPS resource URL, and custom
+  endpoints use isolated origin-hashed token files.
+- D1 item import uses transactional `json_each` expansion; list APIs use
+  bounded keyset pagination and summary-only selects.

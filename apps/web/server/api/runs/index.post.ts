@@ -1,10 +1,14 @@
 import { runImportSchema } from "../../../../../src/domain/schemas";
+import { analysisDigest } from "../../../../../src/domain/integrity";
 import { readLimitedText, RequestBodyTooLargeError } from "../../utils/request-body";
+import { assertTrustedJsonMutation } from "../../utils/request-security";
 import { getRunStore } from "../../utils/store";
+import { D1ProjectionLimitError } from "../../data/sql";
 
 const maximumImportBytes = 2 * 1024 * 1024;
 
 export default defineEventHandler(async (event) => {
+  assertTrustedJsonMutation(event);
   const contentLength = Number(getHeader(event, "content-length") || 0);
   if (contentLength > maximumImportBytes) {
     throw createError({ statusCode: 413, statusMessage: "Run import exceeds 2 MiB." });
@@ -31,9 +35,23 @@ export default defineEventHandler(async (event) => {
       })),
     });
   }
+  if (await analysisDigest(parsed.data.analysis) !== parsed.data.manifest.analysisSha256) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: "Run bundle integrity check failed.",
+    });
+  }
 
   const store = await getRunStore(event);
-  const result = await store.importRun(parsed.data, event.context.frameOfMindUser?.email);
+  let result: { runId: string; created: boolean };
+  try {
+    result = await store.importRun(parsed.data, event.context.frameOfMindUser?.email);
+  } catch (error) {
+    if (error instanceof D1ProjectionLimitError) {
+      throw createError({ statusCode: 422, statusMessage: error.message });
+    }
+    throw error;
+  }
   setResponseStatus(event, result.created ? 201 : 200);
   return result;
 });
