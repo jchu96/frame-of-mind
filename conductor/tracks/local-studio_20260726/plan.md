@@ -2,7 +2,7 @@
 
 **Track ID:** `local-studio_20260726`
 **Spec:** [spec.md](./spec.md)
-**Status:** [ ] Not Started
+**Status:** [~] In Progress
 
 ## Overview
 
@@ -41,26 +41,26 @@ separate proposed track.
 
 ### Tasks
 
-- [ ] Task 1.1: Add failing domain tests for legal job stages, terminal states,
+- [x] Task 1.1: Add failing domain tests for legal job stages, terminal states,
       progress events, attempts, idempotency, and forbidden transitions.
-- [ ] Task 1.2: Define strict shared Zod schemas and TypeScript types for job,
+- [x] Task 1.2: Define strict shared Zod schemas and TypeScript types for job,
       job-event, media-session, configuration-status, and composer payloads.
-- [ ] Task 1.3: Define `MediaStagingAdapter`, `AnalysisJobExecutor`,
+- [x] Task 1.3: Define `MediaStagingAdapter`, `AnalysisJobExecutor`,
       `JobRepository`, runtime secret resolver, optional
       `MeetingCatalogSource`, context-file staging, and progress-reporter
       interfaces without Nuxt, SQLite, or provider shapes leaking into domain
       contracts.
-- [ ] Task 1.4: Ratify ADRs 0006-0008 and write a threat model covering local
+- [x] Task 1.4: Ratify ADRs 0006-0008 and write a threat model covering local
       session bootstrap, DNS rebinding, local-process access, disk exhaustion,
       deletion, and hosted bundle exclusion.
-- [ ] Task 1.5: Spike Nitro/H3 request streaming under Bun, bounded `FileSink`
+- [x] Task 1.5: Spike Nitro/H3 request streaming under Bun, bounded `FileSink`
       writes, atomic seal/rename, byte-range playback, and build-time exclusion
       from the Cloudflare artifact; document the verified state machines and
       operator actions before freezing API contracts.
 
 ### Verification
 
-- [ ] Domain transition tests pass, ADRs agree with `docs/ARCHITECTURE.md`,
+- [x] Domain transition tests pass, ADRs agree with `docs/ARCHITECTURE.md`,
       streaming/runtime spikes have recorded outcomes, the Cloudflare artifact
       excludes local-only modules/routes, and no existing v2 contract changes.
 
