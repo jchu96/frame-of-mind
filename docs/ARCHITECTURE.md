@@ -600,6 +600,15 @@ Three lifecycle boundaries are independent:
 - analysis jobs own queued/running/cancellation/interruption state;
 - a successful atomic run pair owns completed analysis.
 
+Shared contracts make those boundaries executable rather than documentary:
+media adapters receive only an opaque-ID, state-validated transition receipt;
+job repositories expose atomic create-or-replay and linked-retry operations
+instead of a check-then-create pair; and immutable job input is canonicalized
+and SHA-256 bound before repository creation. `analysisJobSchema` remains a
+synchronous structural parser, while the clearly named
+`validateAnalysisJob()` performs asynchronous digest integrity verification
+when a persisted job crosses a trust boundary.
+
 SQLite jobs/events are operational authority while work is active. They are not
 rebuildable from a run that does not exist yet. After success,
 `analysis.json`/`manifest.json` become authoritative and their run/item

@@ -1,6 +1,7 @@
 # Local Studio Streaming Spike
 
-Date: 2026-07-26  
+Date: 2026-07-26
+
 Status: Passed on macOS; cross-platform staging verification remains in Phase 3
 
 ## Purpose
@@ -28,7 +29,7 @@ provider response, meeting identifier, credential, or durable run.
 | Nitro | 2.13.4 |
 | H3 used by Nitro | 1.15.11 |
 | Local preset | `node-server`, executed by Bun |
-| Hosted preset | `cloudflare` |
+| Hosted preset | `cloudflare-worker` |
 
 Current H3 2 documentation exposes a Web `Request` body. This repository's
 Nitro version still resolves H3 1.15.11, where the measured local handler
@@ -58,8 +59,8 @@ The first command:
 - removes the temporary directory and stops the process.
 
 The second command builds the Worker with the spike flag deliberately present,
-then scans the final server artifact for local route, path, environment, and
-`bun:` markers.
+then scans the complete deploy artifact (`server` and `public`) for local
+route, path, environment, and `bun:` markers.
 
 ## Recorded Result
 
@@ -113,9 +114,13 @@ The Phase 3 implementation may now freeze these boundaries:
 - single byte ranges support bounded, open-ended, and suffix forms; multiple
   ranges are rejected;
 - local control-plane handlers live outside Nuxt's scanned `server/` tree and
-  are registered only for the local preset;
-- the Cloudflare build runs an artifact-marker gate every time, not only in
-  this spike.
+  are registered only for the exact `node-server` preset;
+- retained-media requests carry a server-resolved TTL between one hour and
+  seven days; clients cannot supply an arbitrary expiry timestamp;
+- the Cloudflare build scans the complete deploy artifact for any `bun:`
+  import and local-only marker every time, not only in this spike;
+- the repository's `check` and CI path rerun the measured streaming harness so
+  a Bun, Nitro, or H3 upgrade cannot silently invalidate this result.
 
 These handlers remain synthetic and disabled unless
 `FRAME_OF_MIND_STUDIO_SPIKE=1`. They are not the Phase 3 upload API and do not

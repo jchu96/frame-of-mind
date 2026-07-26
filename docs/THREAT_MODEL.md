@@ -1,6 +1,7 @@
 # Local Studio Threat Model
 
-Status: Phase 1 implementation baseline  
+Status: Phase 1 implementation baseline
+
 Last reviewed: 2026-07-26
 
 This model covers the local Bun-controlled Studio defined by ADRs
@@ -174,6 +175,8 @@ Controls:
 
 - default staged copies to ephemeral;
 - make retention explicit, time-bounded, visible, and manually revocable;
+- resolve retained-media expiry on the server from a one-hour-to-seven-day TTL
+  instead of accepting a client-authored timestamp;
 - transition through `deleting` and persist success or a sanitized failure
   receipt;
 - retry cleanup without changing an already-published manifest;

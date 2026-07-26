@@ -4,11 +4,12 @@ import type {
   ComposerPayload,
   ConfigurationStatus,
   MediaSession,
+  VerifiedImmutableJobInput,
 } from "./studio-schemas.js";
 import type {
   AnalysisJobStage,
-  MediaSessionState,
 } from "./studio-types.js";
+import type { ValidatedMediaTransition } from "./studio-state.js";
 
 export type BinaryChunkSource = AsyncIterable<Uint8Array>;
 
@@ -48,9 +49,7 @@ export interface MediaStagingAdapter {
     options?: { signal?: AbortSignal },
   ): Promise<MediaSealReceipt>;
   transition(
-    id: string,
-    expected: MediaSessionState,
-    next: MediaSessionState,
+    transition: ValidatedMediaTransition,
   ): Promise<MediaSession>;
   abort(id: string): Promise<MediaSession>;
   delete(id: string): Promise<void>;
@@ -100,10 +99,30 @@ export interface JobTransitionInput {
   message?: string;
 }
 
+export interface InitialJobCreateInput {
+  idempotencyKey: string;
+  verifiedInput: VerifiedImmutableJobInput;
+  createdAt: string;
+}
+
+export interface LinkedRetryCreateInput {
+  parentJobId: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export type JobCreateResult =
+  | { kind: "created"; job: AnalysisJob }
+  | { kind: "replayed"; job: AnalysisJob };
+
 export interface JobRepository {
-  create(job: AnalysisJob): Promise<AnalysisJob>;
+  /**
+   * Atomically creates an initial attempt or replays the existing job for the
+   * same idempotency key and verified immutable input. Reusing a key for
+   * different input must fail as an idempotency conflict.
+   */
+  createOrReplay(input: InitialJobCreateInput): Promise<JobCreateResult>;
   get(id: string): Promise<AnalysisJob | undefined>;
-  findByIdempotencyKey(key: string): Promise<AnalysisJob | undefined>;
   list(query: JobListQuery): Promise<JobListPage>;
   events(jobId: string, afterSequence?: number): Promise<AnalysisJobEvent[]>;
   appendEvent(
@@ -111,19 +130,18 @@ export interface JobRepository {
   ): Promise<AnalysisJobEvent>;
   transition(input: JobTransitionInput): Promise<AnalysisJob>;
   requestCancellation(jobId: string, requestedAt: string): Promise<AnalysisJob>;
-  createRetry(job: AnalysisJob): Promise<AnalysisJob>;
+  /**
+   * Atomically loads the parent and derives retryOfJobId, rootJobId, attempt,
+   * and immutable input. Callers cannot submit a fabricated retry job.
+   */
+  createLinkedRetry(input: LinkedRetryCreateInput): Promise<JobCreateResult>;
 }
 
-export interface ProgressEventInput {
-  jobId: string;
-  attempt: number;
-  kind: AnalysisJobEvent["kind"];
-  stage: AnalysisJobStage;
-  previousStage?: AnalysisJobStage;
-  occurredAt: string;
-  message?: string;
-  progress?: AnalysisJobEvent["progress"];
-}
+export type ProgressEventInput = AnalysisJobEvent extends infer Event
+  ? Event extends AnalysisJobEvent
+    ? Omit<Event, "sequence">
+    : never
+  : never;
 
 export interface ProgressReporter {
   report(event: ProgressEventInput): Promise<void>;
