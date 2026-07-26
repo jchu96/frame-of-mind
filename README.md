@@ -17,6 +17,19 @@ frameofmind analyze "MEETING_ID" \
 > Early public release: `v0.2.0`. Review generated work before using or
 > publishing it.
 
+## Product roadmap
+
+Frame of Mind is evolving from a CLI plus review workspace into **Frame of
+Mind Studio**: a local-first Nuxt application for configuring providers,
+dropping in a recording, running an analysis through a local Bun process, and
+reviewing timestamp-linked results. Hosted execution is a later roadmap phase,
+not a requirement for the local product.
+
+The public product context, specification, and implementation plan live in
+[conductor/](conductor/). Conductor artifacts are intentionally versioned.
+Credentials, OAuth state, recordings, transcripts, generated runs, upload
+staging, and local databases remain ignored.
+
 ## Why Frame of Mind
 
 Transcripts capture words. Recordings also capture the interface, the user's
