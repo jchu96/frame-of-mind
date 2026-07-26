@@ -567,15 +567,21 @@ Local unauthenticated mode is loopback-only. Hosted mode combines a
 Cloudflare Access policy over the complete hostname with in-Worker validation
 of the Access JWT signature, issuer, audience, and algorithm.
 
-### Planned local Studio
+### Local Studio
 
-The accepted Phase A direction evolves the local viewer into a Studio without
-changing the current v0.2 behavior yet:
+Phase A evolves the local viewer into a Studio in independently shippable
+slices. The per-launch session and connection-health slice is implemented;
+media staging, execution, and durable jobs remain subsequent phases:
 
 ```mermaid
 flowchart LR
     Browser[Nuxt Studio]
+    Fragment[One-use fragment capability]
     Session[Per-launch local session]
+    Connections[Connections control plane]
+    Environment[Ignored .env or environment]
+    Memory[Process-memory keys]
+    OAuth[Exact-resource OAuth files]
     Bun[Bun and Nitro]
     Media[Private media session]
     Jobs[(Operational SQLite jobs)]
@@ -584,7 +590,11 @@ flowchart LR
     Pair[analysis.json and manifest.json]
     Runs[(Rebuildable run projection)]
 
-    Browser --> Session --> Bun
+    Browser --> Fragment --> Session --> Bun
+    Session --> Connections
+    Environment --> Connections
+    Memory --> Connections
+    OAuth --> Connections
     Bun --> Media
     Bun --> Jobs
     Jobs --> Core
@@ -620,6 +630,13 @@ work interrupted and requires an explicit linked retry. API secrets come from
 the environment or process-memory session input. Mutating local routes require
 a per-launch capability/session in addition to loopback, Host, and same-origin
 checks.
+
+`bun run studio` generates a capability and places it only in a URL fragment.
+The client removes the fragment before exchanging the capability once for an
+HttpOnly, SameSite=Strict, path-scoped session cookie. The Connections API
+returns credential metadata, never credential values. Environment input wins
+over process-memory input; SQLite is not a credential store. OAuth state keeps
+the CLI's existing exact-resource private-file boundary.
 
 Ephemeral recording staging is deleted after terminal cleanup by default.
 Timestamp-linked playback requires explicit time-bounded retention or

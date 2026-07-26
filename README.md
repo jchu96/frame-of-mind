@@ -125,6 +125,45 @@ frameofmind recipes
 frameofmind doctor
 ```
 
+## Launch the local Studio preview
+
+The local Connections workspace is available behind a per-launch browser
+session:
+
+```bash
+cp .env.example .env
+# Add GEMINI_API_KEY and, optionally, GRANOLA_API_KEY.
+bun run studio
+```
+
+Studio opens its one-time URL in the default browser. The bootstrap capability
+stays in the URL fragment, is removed before the browser makes the exchange
+request, and becomes an HttpOnly, SameSite=Strict session cookie. Restarting
+Bun invalidates the browser session and creates a new capability.
+
+If the browser cannot be opened, stop Studio and explicitly opt into terminal
+output for that launch:
+
+```bash
+FRAME_OF_MIND_STUDIO_PRINT_URL=1 bun run studio
+```
+
+That URL is a temporary local bearer credential. Do not paste it into chat,
+issues, recordings, or shared logs.
+
+The Connections page shows only credential presence, source, lifetime, and
+sanitized provider status:
+
+- `.env` or exported environment values are recommended for repeat use;
+- keys pasted into Studio live only in the current Bun process;
+- Bluedot and Granola OAuth use the CLI's existing private, exact-resource
+  token files;
+- no key is stored in SQLite or returned to the browser after submission.
+
+This preview configures connections only. Drag-and-drop media staging, the
+analysis composer, and job activity arrive in the next implementation phases.
+The existing CLI remains the supported execution path today.
+
 ## Get a Gemini API key
 
 1. Open [Google AI Studio API Keys](https://aistudio.google.com/apikey).

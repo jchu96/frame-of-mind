@@ -13,11 +13,32 @@ run directory. The invariant is:
 `analysis.json` and `manifest.json` remain authoritative. SQLite and D1 are
 rebuildable projections.
 
-## Local Studio roadmap
+## Local Studio preview
 
-The current v0.2 workspace remains import-only. The accepted next direction is
-a local Studio that can stage a recording and run analysis through Bun; this
-planning documentation does not make those routes available in v0.2.
+The completed-run workspace remains the stable v0.2 surface. A build-time
+isolated local Studio preview now provides per-launch authentication and a
+Connections page:
+
+```bash
+cp .env.example .env
+bun run studio
+```
+
+The command binds to loopback and prints a one-time launch URL. Its capability
+is carried in the URL fragment, removed before the exchange request, and
+exchanged once for an HttpOnly, SameSite=Strict session cookie. Sensitive
+`/api/studio/*` routes require that session in addition to Host/peer validation.
+
+The Connections page supports:
+
+- Gemini and Granola environment-key status;
+- temporary process-memory Gemini and Granola keys;
+- Bluedot and Granola OAuth status and browser initiation;
+- source, lifetime, last verification, and sanitized failure display;
+- `.env` guidance without writing the file or echoing a secret.
+
+It does not yet stage recordings or run analysis. Those capabilities remain the
+next phases of the accepted local Studio track.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
@@ -39,7 +60,8 @@ and [ADR log](adr/README.md).
 
 | Mode | Runtime | Database | Authentication | Intended use |
 |---|---|---|---|---|
-| Local | Bun + Nuxt SSR | Bun SQLite | loopback-only guard | one colleague on one machine |
+| Local review | Bun + Nuxt SSR | Bun SQLite | loopback Host/peer guard | browse completed runs |
+| Local Studio | Bun + Nuxt SSR | Bun SQLite | Host/peer guard plus per-launch session | configure now; media/jobs are phased |
 | Hosted | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | a controlled team workspace |
 
 The UI and API are shared. Only the `RunStore` adapter and Nitro preset change
@@ -171,15 +193,17 @@ count safely below the Worker invocation query limit; regressions cover both
 `NUXT_AUTH_MODE=off` is the local default. It is not equivalent to public
 anonymous access.
 
-When auth is off, server middleware requires both a loopback peer address and
-one of these Host values:
+When auth is off, server middleware requires one of these Host values:
 
 - `localhost`;
 - `127.0.0.1`;
 - `::1`.
 
-Starting Nuxt on `0.0.0.0` does not bypass the guard. A remote Host receives
-403 unless `NUXT_ALLOW_UNAUTHENTICATED_REMOTE=true` is explicitly set.
+It also requires a loopback peer address. If Bun's Node compatibility layer
+does not expose that address, the middleware requires the server's explicit
+`NITRO_HOST`/`HOST` listener binding to be loopback. Starting Nuxt on
+`0.0.0.0` does not bypass the guard. A remote Host receives 403 unless
+`NUXT_ALLOW_UNAUTHENTICATED_REMOTE=true` is explicitly set.
 
 That override is intentionally awkward. Do not use it for a public deployment.
 Use Cloudflare Access.

@@ -10,6 +10,15 @@ const forbidden = [
   "/api/__studio-spike/",
   "stream-upload.partial",
   "stream-upload.sealed",
+  "server-local/studio-session",
+  "FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN",
+  "frame_of_mind_studio",
+  "/__studio/bootstrap",
+  "/api/studio/",
+  "server-local/studio-configuration",
+  "ProcessRuntimeSecretResolver",
+  "server-local/studio-ui",
+  "Connections, without a credential vault",
 ];
 
 async function files(directory: string): Promise<string[]> {

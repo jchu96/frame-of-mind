@@ -33,11 +33,16 @@ Phase A is a single-user local Studio:
    alive.
 4. Process termination marks active work interrupted. Indeterminate Gemini
    operations never auto-resume; the user creates an explicit linked retry.
-5. Every local Studio route requires Host and peer loopback validation.
+5. Every local Studio route requires a loopback Host and peer validation.
+   When Bun does not expose the socket peer, the fallback additionally
+   requires an explicitly loopback-bound listener; wildcard binding fails
+   closed.
 6. Mutating and sensitive routes also require a high-entropy per-launch
    capability exchanged once for an HttpOnly, SameSite=Strict session cookie.
-7. Bootstrap input is immediately redirected to a clean URL and must not enter
-   logs, diagnostics, or durable configuration.
+7. The launch capability travels in a URL fragment, which is not sent in the
+   initial HTTP request. A client bootstrap removes it with `replaceState`
+   before a bounded same-origin exchange, then redirects to a clean URL. It
+   must not enter logs, diagnostics, referrers, or durable configuration.
 8. Browser mutations require same-origin semantics, bounded bodies, and
    non-simple content types or explicit anti-CSRF headers.
 9. Cloudflare review builds exclude the local session bootstrap, secret,
