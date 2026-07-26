@@ -1,9 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-const outputRoot = resolve("apps/web/.output/server");
+const outputRoot = resolve("apps/web/.output");
 const forbidden = [
-  "bun:sqlite",
+  "bun:",
   "server-local/studio-spike",
   "FRAME_OF_MIND_STUDIO_SPIKE",
   "FRAME_OF_MIND_STUDIO_SPIKE_DIR",

@@ -5,13 +5,10 @@ import {
   MEDIA_SESSION_STATES,
 } from "./studio-types.js";
 import { canTransitionAnalysisJob } from "./studio-state.js";
+import { opaqueIdSchema } from "./studio-identifiers.js";
 
 const MAX_MEDIA_BYTES = 2 * 1_024 * 1_024 * 1_024;
-
-const opaqueIdSchema = z.string()
-  .min(16)
-  .max(128)
-  .regex(/^[a-zA-Z0-9_-]+$/, "identifier must be opaque and route-safe");
+export const MAX_RETAINED_MEDIA_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const utcDateTimeSchema = z.string().datetime({ offset: false });
@@ -41,6 +38,14 @@ const retainedMediaSchema = z.object({
 export const mediaRetentionSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("ephemeral") }).strict(),
   retainedMediaSchema,
+]);
+
+export const mediaRetentionRequestSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("ephemeral") }).strict(),
+  z.object({
+    mode: z.literal("retained"),
+    ttlSeconds: z.number().int().min(60 * 60).max(MAX_RETAINED_MEDIA_TTL_SECONDS),
+  }).strict(),
 ]);
 
 const providerContextSchema = z.discriminatedUnion("provider", [
@@ -93,6 +98,54 @@ const immutableJobInputSchema = z.object({
   focus: z.string().max(10_000).optional(),
   retention: mediaRetentionSchema,
 }).strict();
+
+export type ImmutableJobInput = z.infer<typeof immutableJobInputSchema>;
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object)
+    .filter((key) => object[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`)
+    .join(",")}}`;
+}
+
+export async function digestImmutableJobInput(
+  input: ImmutableJobInput,
+): Promise<string> {
+  const bytes = new TextEncoder().encode(canonicalJson(input));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+const verifiedImmutableJobInputBrand: unique symbol = Symbol(
+  "verifiedImmutableJobInput",
+);
+
+export interface VerifiedImmutableJobInput {
+  input: ImmutableJobInput;
+  inputDigest: string;
+  readonly [verifiedImmutableJobInputBrand]: true;
+}
+
+export async function verifyImmutableJobInput(
+  input: unknown,
+): Promise<VerifiedImmutableJobInput> {
+  const parsed = immutableJobInputSchema.parse(input);
+  return {
+    input: parsed,
+    inputDigest: await digestImmutableJobInput(parsed),
+    [verifiedImmutableJobInputBrand]: true,
+  };
+}
 
 export const analysisJobSchema = z.object({
   id: opaqueIdSchema,
@@ -171,6 +224,28 @@ export const analysisJobSchema = z.object({
       message: "a succeeded job must identify its published run",
     });
   }
+  if (
+    job.runId
+    && job.stage !== "cleaning_up"
+    && job.stage !== "succeeded"
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["runId"],
+      message: "only a publishing or succeeded job may identify a durable run",
+    });
+  }
+  if (
+    job.projectionWarning
+    && job.stage !== "cleaning_up"
+    && job.stage !== "succeeded"
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["projectionWarning"],
+      message: "only a published run may carry a projection warning",
+    });
+  }
   if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) {
     context.addIssue({
       code: "custom",
@@ -178,55 +253,86 @@ export const analysisJobSchema = z.object({
       message: "updatedAt must not precede createdAt",
     });
   }
-});
-
-export const analysisJobEventSchema = z.object({
-  jobId: opaqueIdSchema,
-  attempt: z.number().int().min(1).max(1_000),
-  sequence: z.number().int().min(1),
-  kind: z.enum([
-    "transition",
-    "progress",
-    "cancellation_requested",
-    "warning",
-    "cleanup",
-  ]),
-  stage: analysisJobStageSchema,
-  previousStage: analysisJobStageSchema.optional(),
-  occurredAt: utcDateTimeSchema,
-  message: safeMessageSchema.optional(),
-  progress: z.object({
-    completed: z.number().finite().nonnegative(),
-    total: z.number().finite().positive(),
-    unit: z.enum(["bytes", "items", "steps"]),
-  }).strict().optional(),
-}).strict().superRefine((event, context) => {
-  if (event.kind === "progress" && !event.progress) {
+  if (
+    job.terminal
+    && (
+      Date.parse(job.terminal.at) < Date.parse(job.createdAt)
+      || Date.parse(job.terminal.at) > Date.parse(job.updatedAt)
+    )
+  ) {
     context.addIssue({
       code: "custom",
-      path: ["progress"],
-      message: "a progress event must include bounded progress metadata",
-    });
-  }
-  if (event.progress && event.progress.completed > event.progress.total) {
-    context.addIssue({
-      code: "custom",
-      path: ["progress", "completed"],
-      message: "completed progress must not exceed total",
-    });
-  }
-  if (event.kind === "transition" && !event.previousStage) {
-    context.addIssue({
-      code: "custom",
-      path: ["previousStage"],
-      message: "a transition event must identify its previous stage",
+      path: ["terminal", "at"],
+      message: "terminal time must fall within the job lifetime",
     });
   }
   if (
-    event.kind === "transition"
-    && event.previousStage
-    && !canTransitionAnalysisJob(event.previousStage, event.stage)
+    job.cancellationRequestedAt
+    && (
+      Date.parse(job.cancellationRequestedAt) < Date.parse(job.createdAt)
+      || Date.parse(job.cancellationRequestedAt) > Date.parse(job.updatedAt)
+    )
   ) {
+    context.addIssue({
+      code: "custom",
+      path: ["cancellationRequestedAt"],
+      message: "cancellation request time must fall within the job lifetime",
+    });
+  }
+  if (
+    job.input.retention.mode === "retained"
+    && (
+      Date.parse(job.input.retention.expiresAt) <= Date.parse(job.createdAt)
+      || Date.parse(job.input.retention.expiresAt)
+        > Date.parse(job.createdAt) + MAX_RETAINED_MEDIA_TTL_SECONDS * 1_000
+    )
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["input", "retention", "expiresAt"],
+      message: "retained job input must use the bounded server-owned lifetime",
+    });
+  }
+});
+
+export async function validateAnalysisJob(input: unknown) {
+  const job = analysisJobSchema.parse(input);
+  if (job.inputDigest !== await digestImmutableJobInput(job.input)) {
+    throw new Error(
+      "inputDigest must be the canonical SHA-256 of immutable input.",
+    );
+  }
+  return job;
+}
+
+const analysisJobEventBaseSchema = z.object({
+  jobId: opaqueIdSchema,
+  attempt: z.number().int().min(1).max(1_000),
+  sequence: z.number().int().min(1),
+  stage: analysisJobStageSchema,
+  occurredAt: utcDateTimeSchema,
+});
+
+const progressMetadataSchema = z.object({
+  completed: z.number().finite().nonnegative(),
+  total: z.number().finite().positive(),
+  unit: z.enum(["bytes", "items", "steps"]),
+}).strict().superRefine((progress, context) => {
+  if (progress.completed > progress.total) {
+    context.addIssue({
+      code: "custom",
+      path: ["completed"],
+      message: "completed progress must not exceed total",
+    });
+  }
+});
+
+const transitionEventSchema = analysisJobEventBaseSchema.extend({
+  kind: z.literal("transition"),
+  previousStage: analysisJobStageSchema,
+  message: safeMessageSchema,
+}).strict().superRefine((event, context) => {
+  if (!canTransitionAnalysisJob(event.previousStage, event.stage)) {
     context.addIssue({
       code: "custom",
       path: ["stage"],
@@ -234,6 +340,27 @@ export const analysisJobEventSchema = z.object({
     });
   }
 });
+
+export const analysisJobEventSchema = z.discriminatedUnion("kind", [
+  transitionEventSchema,
+  analysisJobEventBaseSchema.extend({
+    kind: z.literal("progress"),
+    progress: progressMetadataSchema,
+    message: safeMessageSchema.optional(),
+  }).strict(),
+  analysisJobEventBaseSchema.extend({
+    kind: z.literal("cancellation_requested"),
+    message: safeMessageSchema,
+  }).strict(),
+  analysisJobEventBaseSchema.extend({
+    kind: z.literal("warning"),
+    message: safeMessageSchema,
+  }).strict(),
+  analysisJobEventBaseSchema.extend({
+    kind: z.literal("cleanup"),
+    message: safeMessageSchema,
+  }).strict(),
+]);
 
 export const mediaSessionSchema = z.object({
   id: opaqueIdSchema,
@@ -270,13 +397,47 @@ export const mediaSessionSchema = z.object({
   }
   if (
     media.retention.mode === "retained"
-    && media.expiresAt
     && media.expiresAt !== media.retention.expiresAt
   ) {
     context.addIssue({
       code: "custom",
       path: ["expiresAt"],
       message: "media expiry must agree with its retention receipt",
+    });
+  }
+  if (media.status === "retained" && media.retention.mode !== "retained") {
+    context.addIssue({
+      code: "custom",
+      path: ["retention", "mode"],
+      message: "retained media requires an explicit retained receipt",
+    });
+  }
+  if (
+    media.retention.mode === "retained"
+    && (
+      Date.parse(media.retention.expiresAt) <= Date.parse(media.createdAt)
+      || Date.parse(media.retention.expiresAt)
+        > Date.parse(media.createdAt) + MAX_RETAINED_MEDIA_TTL_SECONDS * 1_000
+    )
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["retention", "expiresAt"],
+      message: "retained media must use the bounded server-owned lifetime",
+    });
+  }
+  if (media.retention.mode === "ephemeral" && media.expiresAt) {
+    context.addIssue({
+      code: "custom",
+      path: ["expiresAt"],
+      message: "ephemeral media cannot claim a retained expiry",
+    });
+  }
+  if (media.cleanupFailureCode && media.status !== "failed") {
+    context.addIssue({
+      code: "custom",
+      path: ["cleanupFailureCode"],
+      message: "only failed media may carry a cleanup failure code",
     });
   }
   if (Date.parse(media.updatedAt) < Date.parse(media.createdAt)) {
@@ -288,10 +449,29 @@ export const mediaSessionSchema = z.object({
   }
 });
 
-export const configurationStatusSchema = z.object({
-  studioEnabled: z.boolean(),
-  providers: z.array(z.object({
-    provider: z.enum(["gemini", "bluedot", "granola"]),
+const configurationProviderStatusSchema = z.discriminatedUnion("provider", [
+  z.object({
+    provider: z.literal("gemini"),
+    connected: z.boolean(),
+    source: z.enum(["environment", "session", "none"]),
+    lifetime: z.enum(["process", "none"]),
+    lastVerifiedAt: utcDateTimeSchema.optional(),
+    failureCode: z.string().min(1).max(120)
+      .regex(/^[a-z0-9_:-]+$/)
+      .optional(),
+  }).strict(),
+  z.object({
+    provider: z.literal("bluedot"),
+    connected: z.boolean(),
+    source: z.enum(["oauth", "none"]),
+    lifetime: z.enum(["persistent-oauth", "none"]),
+    lastVerifiedAt: utcDateTimeSchema.optional(),
+    failureCode: z.string().min(1).max(120)
+      .regex(/^[a-z0-9_:-]+$/)
+      .optional(),
+  }).strict(),
+  z.object({
+    provider: z.literal("granola"),
     connected: z.boolean(),
     source: z.enum(["environment", "session", "oauth", "none"]),
     lifetime: z.enum(["process", "persistent-oauth", "none"]),
@@ -299,7 +479,12 @@ export const configurationStatusSchema = z.object({
     failureCode: z.string().min(1).max(120)
       .regex(/^[a-z0-9_:-]+$/)
       .optional(),
-  }).strict()).max(3),
+  }).strict(),
+]);
+
+export const configurationStatusSchema = z.object({
+  studioEnabled: z.boolean(),
+  providers: z.array(configurationProviderStatusSchema).max(3),
 }).strict().superRefine((status, context) => {
   const seen = new Set<string>();
   status.providers.forEach((provider, index) => {
@@ -340,7 +525,7 @@ export const composerPayloadSchema = z.object({
   recipe: composerRecipeSchema,
   model: z.string().min(1).max(240),
   focus: z.string().max(10_000).optional(),
-  retention: mediaRetentionSchema,
+  retention: mediaRetentionRequestSchema,
 }).strict();
 
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;

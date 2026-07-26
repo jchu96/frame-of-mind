@@ -18,13 +18,6 @@ async function runChecked(command: string[], env: Record<string, string>) {
   if (code !== 0) throw new Error(`${command.join(" ")} exited with ${code}.`);
 }
 
-const reservation = Bun.serve({
-  port: 0,
-  fetch: () => new Response("reserved"),
-});
-const port = reservation.port;
-await reservation.stop(true);
-
 const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-studio-spike-"));
 const spikeEnv = {
   FRAME_OF_MIND_DB_DRIVER: "sqlite",
@@ -33,22 +26,34 @@ const spikeEnv = {
   NITRO_PRESET: "node-server",
 };
 
-await runChecked(["bun", "run", "--cwd", "apps/web", "build"], spikeEnv);
-
-const server = Bun.spawn(["bun", "apps/web/.output/server/index.mjs"], {
-  cwd: resolve("."),
-  env: {
-    ...globalThis.process.env,
-    ...spikeEnv,
-    HOST: "127.0.0.1",
-    PORT: String(port),
-  },
-  stdout: "pipe",
-  stderr: "pipe",
-});
-
-const baseUrl = `http://127.0.0.1:${port}`;
+let stopServer: (() => Promise<void>) | undefined;
 try {
+  await runChecked(["bun", "run", "--cwd", "apps/web", "build"], spikeEnv);
+
+  const reservation = Bun.serve({
+    port: 0,
+    fetch: () => new Response("reserved"),
+  });
+  const port = reservation.port;
+  await reservation.stop(true);
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  const server = Bun.spawn(["bun", "apps/web/.output/server/index.mjs"], {
+    cwd: resolve("."),
+    env: {
+      ...globalThis.process.env,
+      ...spikeEnv,
+      HOST: "127.0.0.1",
+      PORT: String(port),
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  stopServer = async () => {
+    server.kill();
+    await server.exited;
+  };
+
   let ready = false;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (server.exitCode !== null) {
@@ -135,7 +140,11 @@ try {
     await stat(partial);
     throw new Error("Partial file remained after atomic seal.");
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Partial file remained")) throw error;
+    if (
+      !(error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+    ) {
+      throw error;
+    }
   }
 
   const range = await fetch(`${baseUrl}/api/__studio-spike/media`, {
@@ -171,7 +180,6 @@ try {
     byteRange: true,
   }, null, 2));
 } finally {
-  server.kill();
-  await server.exited;
+  await stopServer?.();
   await rm(directory, { recursive: true, force: true });
 }

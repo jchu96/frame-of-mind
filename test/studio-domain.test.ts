@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_RETAINED_MEDIA_TTL_SECONDS,
   analysisJobEventSchema,
   analysisJobSchema,
   composerPayloadSchema,
   configurationStatusSchema,
+  digestImmutableJobInput,
   mediaSessionSchema,
+  validateAnalysisJob,
+  verifyImmutableJobInput,
 } from "../src/domain/studio-schemas.js";
 import {
   ANALYSIS_JOB_STAGES,
   ANALYSIS_JOB_TERMINAL_STAGES,
   assertAnalysisJobTransition,
+  assertMediaSessionTransition,
   resolveIdempotencyReplay,
+  validateMediaSessionTransition,
 } from "../src/domain/studio-state.js";
 
 const now = "2026-07-26T21:00:00.000Z";
@@ -18,6 +24,23 @@ const later = "2026-07-26T21:01:00.000Z";
 const sha256 = "a".repeat(64);
 const jobId = "job_01K123456789ABC";
 const mediaSessionId = "media_01K123456789";
+const immutableInput = {
+  mediaSessionId,
+  mediaSha256: sha256,
+  context: {
+    provider: "bluedot" as const,
+    transport: "mcp" as const,
+    meetingId: "synthetic-meeting",
+  },
+  recipe: {
+    id: "issue-review",
+    revision: "builtin-v1",
+    sha256,
+  },
+  model: "gemini-3.6-flash",
+  retention: { mode: "ephemeral" as const },
+};
+const canonicalInputDigest = await digestImmutableJobInput(immutableInput);
 
 function job(overrides: Record<string, unknown> = {}) {
   return {
@@ -25,24 +48,9 @@ function job(overrides: Record<string, unknown> = {}) {
     rootJobId: jobId,
     attempt: 1,
     idempotencyKey: "studio-request-0001",
-    inputDigest: sha256,
+    inputDigest: canonicalInputDigest,
     stage: "queued",
-    input: {
-      mediaSessionId,
-      mediaSha256: sha256,
-      context: {
-        provider: "bluedot",
-        transport: "mcp",
-        meetingId: "synthetic-meeting",
-      },
-      recipe: {
-        id: "issue-review",
-        revision: "builtin-v1",
-        sha256,
-      },
-      model: "gemini-3.6-flash",
-      retention: { mode: "ephemeral" },
-    },
+    input: immutableInput,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -121,8 +129,61 @@ describe("Studio analysis-job state machine", () => {
   });
 });
 
+describe("Studio media-session state machine", () => {
+  it("accepts the complete ADR media lifecycle and rejects resurrection", () => {
+    const legalTransitions = [
+      ["created", "uploading"],
+      ["uploading", "sealed"],
+      ["sealed", "in_use"],
+      ["in_use", "retained"],
+      ["retained", "in_use"],
+      ["created", "aborted"],
+      ["retained", "expired"],
+      ["expired", "deleting"],
+      ["deleting", "deleted"],
+      ["uploading", "failed"],
+    ] as const;
+    for (const [from, to] of legalTransitions) {
+      expect(() => assertMediaSessionTransition(from, to)).not.toThrow();
+    }
+
+    for (const [from, to] of [
+      ["deleted", "uploading"],
+      ["failed", "deleting"],
+      ["created", "retained"],
+      ["sealed", "uploading"],
+    ] as const) {
+      expect(() => assertMediaSessionTransition(from, to)).toThrow(
+        `Forbidden media-session transition: ${from} -> ${to}`,
+      );
+    }
+  });
+
+  it("creates a validated transition receipt for adapters", () => {
+    expect(validateMediaSessionTransition({
+      id: mediaSessionId,
+      expected: "sealed",
+      next: "in_use",
+    })).toMatchObject({
+      id: mediaSessionId,
+      expected: "sealed",
+      next: "in_use",
+    });
+    expect(() => validateMediaSessionTransition({
+      id: mediaSessionId,
+      expected: "deleted",
+      next: "uploading",
+    })).toThrow(/forbidden media-session transition/i);
+    expect(() => validateMediaSessionTransition({
+      id: "../../private/file",
+      expected: "sealed",
+      next: "in_use",
+    })).toThrow(/opaque and route-safe/);
+  });
+});
+
 describe("Studio analysis-job contracts", () => {
-  it("accepts an initial attempt and a linked retry", () => {
+  it("accepts an initial attempt and a linked retry synchronously", () => {
     expect(analysisJobSchema.parse(job())).toMatchObject({
       attempt: 1,
       rootJobId: jobId,
@@ -162,15 +223,37 @@ describe("Studio analysis-job contracts", () => {
     }))).toThrow();
   });
 
+  it("rejects durable run metadata on failed, canceled, or interrupted jobs", () => {
+    for (const stage of ["failed", "canceled", "interrupted"] as const) {
+      expect(() => analysisJobSchema.parse(job({
+        stage,
+        runId: "run_01K123456789ABC",
+        terminal: {
+          outcome: stage,
+          at: later,
+        },
+        updatedAt: later,
+      }))).toThrow(/durable run/);
+    }
+  });
+
+  it("binds the stored input digest to canonical immutable input", async () => {
+    const verified = await verifyImmutableJobInput(immutableInput);
+    expect(verified.inputDigest).toBe(canonicalInputDigest);
+    await expect(validateAnalysisJob(job({
+      inputDigest: "b".repeat(64),
+    }))).rejects.toThrow(/canonical SHA-256/);
+  });
+
   it("replays the same immutable request and rejects key reuse for different input", () => {
     const existing = {
       jobId,
       idempotencyKey: "studio-request-0001",
-      inputDigest: sha256,
+      inputDigest: canonicalInputDigest,
     };
     expect(resolveIdempotencyReplay(existing, {
       idempotencyKey: "studio-request-0001",
-      inputDigest: sha256,
+      inputDigest: canonicalInputDigest,
     })).toEqual({ kind: "replay", jobId });
     expect(() => resolveIdempotencyReplay(existing, {
       idempotencyKey: "studio-request-0001",
@@ -178,7 +261,7 @@ describe("Studio analysis-job contracts", () => {
     })).toThrow(/different immutable input/);
     expect(resolveIdempotencyReplay(undefined, {
       idempotencyKey: "studio-request-0001",
-      inputDigest: sha256,
+      inputDigest: canonicalInputDigest,
     })).toEqual({ kind: "create" });
   });
 
@@ -228,7 +311,30 @@ describe("Studio analysis-job contracts", () => {
       previousStage: "queued",
       stage: "indexing",
       occurredAt: now,
+      message: "Skipped required work",
     })).toThrow(/forbidden/i);
+  });
+
+  it("keeps event-kind metadata mutually exclusive and structured", () => {
+    expect(() => analysisJobEventSchema.parse({
+      jobId,
+      attempt: 1,
+      sequence: 5,
+      kind: "warning",
+      stage: "indexing",
+      occurredAt: now,
+      message: "Provider response was incomplete",
+      progress: { completed: 1, total: 2, unit: "items" },
+    })).toThrow();
+    expect(() => analysisJobEventSchema.parse({
+      jobId,
+      attempt: 1,
+      sequence: 6,
+      kind: "transition",
+      previousStage: "queued",
+      stage: "fetching_context",
+      occurredAt: now,
+    })).toThrow();
   });
 });
 
@@ -257,6 +363,17 @@ describe("Studio boundary schemas", () => {
       createdAt: now,
       updatedAt: later,
     })).toThrow();
+    expect(() => mediaSessionSchema.parse({
+      id: mediaSessionId,
+      status: "retained",
+      expectedBytes: 1_024,
+      receivedBytes: 1_024,
+      mimeType: "video/mp4",
+      sha256,
+      retention: { mode: "ephemeral" },
+      createdAt: now,
+      updatedAt: later,
+    })).toThrow(/retained receipt/);
   });
 
   it("returns configuration provenance without accepting secret values", () => {
@@ -291,6 +408,15 @@ describe("Studio boundary schemas", () => {
         lifetime: "persistent-oauth",
       }],
     })).toThrow();
+    expect(() => configurationStatusSchema.parse({
+      studioEnabled: false,
+      providers: [{
+        provider: "gemini",
+        connected: true,
+        source: "oauth",
+        lifetime: "persistent-oauth",
+      }],
+    })).toThrow();
   });
 
   it("accepts only opaque composer references, not local paths", () => {
@@ -310,6 +436,13 @@ describe("Studio boundary schemas", () => {
     expect(() => composerPayloadSchema.parse({
       ...payload,
       recordingPath: "/Users/example/recording.mp4",
+    })).toThrow();
+    expect(() => composerPayloadSchema.parse({
+      ...payload,
+      retention: {
+        mode: "retained",
+        ttlSeconds: MAX_RETAINED_MEDIA_TTL_SECONDS + 1,
+      },
     })).toThrow();
   });
 });

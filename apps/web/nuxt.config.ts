@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
 const nitroPreset = process.env.NITRO_PRESET || "node-server";
 const studioSpikeEnabled = databaseDriver === "sqlite"
-  && nitroPreset !== "cloudflare"
+  && nitroPreset === "node-server"
   && process.env.FRAME_OF_MIND_STUDIO_SPIKE === "1";
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const storeImplementation = fileURLToPath(

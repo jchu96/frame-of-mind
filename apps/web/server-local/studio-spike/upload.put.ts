@@ -3,6 +3,19 @@ import { mkdir, rename, rm } from "node:fs/promises";
 import { createError, defineEventHandler, getHeader } from "h3";
 import { MAX_SPIKE_BYTES, spikePaths } from "./config.js";
 
+function sanitizedErrorCode(error: unknown): string {
+  if (
+    error
+    && typeof error === "object"
+    && "code" in error
+    && typeof error.code === "string"
+    && /^[A-Z0-9_]+$/.test(error.code)
+  ) {
+    return error.code;
+  }
+  return "UNKNOWN";
+}
+
 export default defineEventHandler(async (event) => {
   const declaredLength = Number(getHeader(event, "content-length"));
   if (
@@ -79,7 +92,13 @@ export default defineEventHandler(async (event) => {
         // Preserve the original bounded/sanitized request failure.
       }
     }
-    await rm(paths.partial, { force: true });
+    try {
+      await rm(paths.partial, { force: true });
+    } catch (cleanupError) {
+      console.error("Studio spike partial cleanup failed.", {
+        code: sanitizedErrorCode(cleanupError),
+      });
+    }
     throw error;
   }
 });
