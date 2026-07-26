@@ -2,6 +2,7 @@ import {
   createError,
   defineEventHandler,
   getCookie,
+  getRequestURL,
   setResponseHeader,
 } from "h3";
 import {
@@ -11,7 +12,7 @@ import {
 } from "./session.js";
 
 export default defineEventHandler((event) => {
-  if (!requiresLocalStudioSession(event.path)) return;
+  if (!requiresLocalStudioSession(getRequestURL(event).pathname)) return;
 
   let authorized = false;
   try {

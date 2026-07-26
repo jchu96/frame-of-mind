@@ -8,14 +8,20 @@ export default defineNuxtPlugin(() => {
   const hash = window.location.hash;
   if (!hash.startsWith(LOCAL_STUDIO_BOOTSTRAP_FRAGMENT)) return;
 
-  const token = decodeURIComponent(
-    hash.slice(LOCAL_STUDIO_BOOTSTRAP_FRAGMENT.length),
-  );
   window.history.replaceState(
     {},
     "",
     `${window.location.pathname}${window.location.search}`,
   );
+  let token: string;
+  try {
+    token = decodeURIComponent(
+      hash.slice(LOCAL_STUDIO_BOOTSTRAP_FRAGMENT.length),
+    );
+  } catch {
+    window.location.replace("/");
+    return;
+  }
 
   void $fetch<{ redirect: string }>(LOCAL_STUDIO_BOOTSTRAP_PATH, {
     method: "POST",

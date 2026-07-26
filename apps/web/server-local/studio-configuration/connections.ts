@@ -47,8 +47,8 @@ function storedOAuthPresent(provider: OAuthProviderName): boolean {
 
 async function connectOAuth(provider: OAuthProviderName): Promise<void> {
   const client = provider === "bluedot"
-    ? new BluedotClient(process.env.BLUEDOT_MCP_URL, false)
-    : new GranolaClient(process.env.GRANOLA_MCP_URL, false);
+    ? new BluedotClient(process.env.BLUEDOT_MCP_URL)
+    : new GranolaClient(process.env.GRANOLA_MCP_URL);
   try {
     await client.connect();
   } finally {
@@ -69,7 +69,11 @@ export class StudioConnectionService {
 
   #oauthStatus(provider: OAuthProviderName): boolean {
     try {
-      return this.oauthPresence(provider);
+      const present = this.oauthPresence(provider);
+      if (this.#failureCode.get(provider) === "oauth_status_failed") {
+        this.#failureCode.delete(provider);
+      }
+      return present;
     } catch {
       this.#failureCode.set(provider, "oauth_status_failed");
       return false;
@@ -83,6 +87,7 @@ export class StudioConnectionService {
     const granolaOAuth = granolaKey.present
       ? false
       : this.#oauthStatus("granola");
+    const granolaUsesOAuth = !granolaKey.present && granolaOAuth;
 
     return configurationStatusSchema.parse({
       studioEnabled: true,
@@ -110,14 +115,14 @@ export class StudioConnectionService {
           connected: granolaKey.present || granolaOAuth,
           source: granolaKey.present
             ? granolaKey.source
-            : granolaOAuth ? "oauth" : "none",
+            : granolaUsesOAuth ? "oauth" : "none",
           lifetime: granolaKey.present
             ? "process"
-            : granolaOAuth ? "persistent-oauth" : "none",
-          ...(this.#lastVerified.has("granola")
+            : granolaUsesOAuth ? "persistent-oauth" : "none",
+          ...(granolaUsesOAuth && this.#lastVerified.has("granola")
             ? { lastVerifiedAt: this.#lastVerified.get("granola") }
             : {}),
-          ...(this.#failureCode.has("granola")
+          ...(!granolaKey.present && this.#failureCode.has("granola")
             ? { failureCode: this.#failureCode.get("granola") }
             : {}),
         },
@@ -146,6 +151,7 @@ export class StudioConnectionService {
     this.#failureCode.delete(provider);
     void this.oauthConnector(provider).then(() => {
       this.#lastVerified.set(provider, new Date().toISOString());
+      this.#failureCode.delete(provider);
     }).catch(() => {
       this.#failureCode.set(provider, "oauth_connection_failed");
     }).finally(() => {

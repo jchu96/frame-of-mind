@@ -979,7 +979,7 @@ bun run studio
 
 Operational expectations:
 
-- open only the one-time loopback URL printed for this launch;
+- Studio opens the one-time loopback URL in the default browser;
 - do not paste or share that URL while its fragment is present;
 - restarting Bun invalidates the session and all temporary keys;
 - environment values take precedence over keys entered in the page;
@@ -989,10 +989,16 @@ Operational expectations:
 - the Studio preview does not yet accept media or start analysis.
 
 If the bootstrap link fails, stop the process and run `bun run studio` again.
-Do not reuse an old link: bootstrap capabilities are one-use. If a provider
-status fails, verify that its custom MCP URL is a valid HTTPS URL and use the
-provider's reconnect action. Public diagnostics may include the sanitized
-failure code, never the endpoint query, authorization URL, token, or key.
+If automatic browser opening fails, stop Studio and rerun with
+`FRAME_OF_MIND_STUDIO_PRINT_URL=1`. This opt-in fallback prints a sensitive
+one-time bearer URL; do not record or share it. Do not reuse an old link:
+bootstrap capabilities are one-use.
+
+If a provider status fails, verify that its custom MCP URL is a valid HTTPS URL
+and use the provider's connect or verify action. **Verify OAuth** checks an
+existing token; it does not switch accounts. Follow section 6.9 to change the
+provider identity. Public diagnostics may include the sanitized failure code,
+never the endpoint query, authorization URL, token, or key.
 
 `bun run web` remains the unauthenticated loopback completed-run viewer.
 `frameofmind analyze` remains the execution path until the later Studio phases

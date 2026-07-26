@@ -92,4 +92,55 @@ describe("Studio connection status", () => {
     ]);
     expect(JSON.stringify(status)).not.toContain("sensitive endpoint failure");
   });
+
+  test("does not attach Granola OAuth metadata to an active API-key transport", async () => {
+    const secrets = new ProcessRuntimeSecretResolver({});
+    const service = new StudioConnectionService(
+      secrets,
+      () => true,
+      async () => {},
+    );
+
+    expect(service.startOAuth("granola")).toBe(true);
+    await Bun.sleep(0);
+    await secrets.setSession("granola-api-key", "session-granola-secret");
+
+    const granola = (await service.status()).providers.find(
+      (provider) => provider.provider === "granola",
+    );
+    expect(granola).toEqual({
+      provider: "granola",
+      connected: true,
+      source: "session",
+      lifetime: "process",
+    });
+  });
+
+  test("clears a transient OAuth status failure after a successful read", async () => {
+    let shouldFail = true;
+    const service = new StudioConnectionService(
+      new ProcessRuntimeSecretResolver({}),
+      () => {
+        if (shouldFail) throw new Error("temporary status failure");
+        return true;
+      },
+    );
+
+    expect(
+      (await service.status()).providers.find(
+        (provider) => provider.provider === "bluedot",
+      )?.failureCode,
+    ).toBe("oauth_status_failed");
+    shouldFail = false;
+    expect(
+      (await service.status()).providers.find(
+        (provider) => provider.provider === "bluedot",
+      ),
+    ).toEqual({
+      provider: "bluedot",
+      connected: true,
+      source: "oauth",
+      lifetime: "persistent-oauth",
+    });
+  });
 });

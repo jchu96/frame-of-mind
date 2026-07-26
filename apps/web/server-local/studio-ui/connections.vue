@@ -252,7 +252,6 @@ async function connectOAuth(name: "bluedot" | "granola") {
                 size="sm"
                 :loading="busy[name]"
                 :disabled="!secretInput[name] || provider(name)?.source === 'environment'"
-                @click="saveSecret(name)"
               >
                 Use for this launch
               </UButton>
@@ -279,8 +278,15 @@ async function connectOAuth(name: "bluedot" | "granola") {
               :loading="busy[name]"
               @click="connectOAuth(name)"
             >
-              {{ provider(name)?.source === 'oauth' ? 'Reconnect OAuth' : 'Connect with OAuth' }}
+              {{ provider(name)?.source === 'oauth' ? 'Verify OAuth' : 'Connect with OAuth' }}
             </UButton>
+            <p
+              v-if="provider(name)?.source === 'oauth'"
+              class="mt-2 text-xs leading-5 text-zinc-500"
+            >
+              To switch accounts, remove only this provider's token file using
+              the credentials runbook, then connect again.
+            </p>
           </div>
         </UCard>
       </section>

@@ -60,8 +60,12 @@ describe("local Studio per-launch session", () => {
 
   test("protects the Connections page and every Studio API route", () => {
     expect(requiresLocalStudioSession("/connections")).toBe(true);
+    expect(requiresLocalStudioSession("/connections/")).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/session")).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/configuration")).toBe(true);
+    expect(requiresLocalStudioSession(
+      new URL("http://127.0.0.1/connections?probe=1").pathname,
+    )).toBe(true);
     expect(requiresLocalStudioSession("/")).toBe(false);
     expect(requiresLocalStudioSession("/api/session")).toBe(false);
     expect(requiresLocalStudioSession("/connections-help")).toBe(false);

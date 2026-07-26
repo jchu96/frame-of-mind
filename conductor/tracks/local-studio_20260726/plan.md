@@ -85,8 +85,10 @@ separate proposed track.
 
 ### Verification
 
-- [x] Hostile Host, missing/invalid local session, cross-site, oversized, and
-      secret-reflection tests fail closed; the Cloudflare build has no local
+- [x] A built-Nitro loopback contract probe verifies hostile Host,
+      missing/invalid local session, query-bearing protected pages,
+      bootstrap replay, cross-site mutation, oversized bodies, and no secret
+      reflection. The Cloudflare artifact gate verifies no local
       bootstrap/config mutation route or runtime secret implementation.
 
 ## Phase 3: Resumable Local Media Staging

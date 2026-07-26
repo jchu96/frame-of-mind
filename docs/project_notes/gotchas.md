@@ -52,6 +52,18 @@
 - Nitro's production node-server defaults to an all-interface listener unless
   configured. The Studio launcher must override both `HOST` and `NITRO_HOST`
   to `127.0.0.1` before it exposes a launch capability.
+- Bun's Node compatibility layer can omit H3's socket peer address. The local
+  auth guard may fall back only when both the request Host and the explicit
+  `NITRO_HOST`/`HOST` listener binding are loopback; a wildcard bind still
+  fails closed.
+- Nitro prefers `NITRO_UNIX_SOCKET`, then `NITRO_PORT`, then `PORT`. The Studio
+  launcher clears the socket and sets both port variables so inherited shell
+  configuration cannot split the listener from its readiness probe.
 - Do not server-fetch authenticated configuration during the bootstrap
   redirect. Protect `/connections` with the session cookie, then fetch
   `/api/studio/configuration` in the browser after the one-use exchange.
+- MCP SDK 1.29 still declares `@hono/node-server` 1.x, whose last release is
+  affected by a Windows static-file advisory. The root override pins patched
+  2.0.12. Current code uses only MCP client transports and the full adapter
+  suite must stay green; revisit the override before adding the planned MCP
+  server or when the SDK declares Hono 2.x support.

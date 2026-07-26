@@ -103,6 +103,8 @@ Controls:
 
 - listen on an explicit loopback address, never a wildcard;
 - validate the connected peer address and an allowlist of literal local Hosts;
+- if Bun omits the peer address, require both an allowlisted Host and an
+  explicitly loopback-bound listener; never apply this fallback to a wildcard;
 - require the Studio session for every local Studio route;
 - require same-origin mutation semantics and JSON or an explicit non-simple
   request header;

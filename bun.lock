@@ -41,7 +41,7 @@
     },
   },
   "overrides": {
-    "@hono/node-server": "2.0.10",
+    "@hono/node-server": "2.0.12",
     "brace-expansion": "5.0.8",
     "esbuild": "0.28.1",
   },
@@ -208,7 +208,7 @@
 
     "@google/genai": ["@google/genai@2.13.0", "", { "dependencies": { "google-auth-library": "^10.3.0", "p-retry": "^4.6.2", "protobufjs": "^7.5.4", "ws": "^8.18.0" }, "peerDependencies": { "@modelcontextprotocol/sdk": "^1.25.2" }, "optionalPeers": ["@modelcontextprotocol/sdk"] }, "sha512-GM7C8Kaomvjz05x5JEO6+l3d/pciL9LxAG9dUjJLD7nTPZ9X0Cfsf2Z7eET6UjgWyUmxXCHtYnQoQ77F9+ZIOQ=="],
 
-    "@hono/node-server": ["@hono/node-server@2.0.10", "", { "peerDependencies": { "hono": "^4" } }, "sha512-ZcnNVhKTmyDJeg0UlnZjvM73JBsTAuhrH/J4fjwGOw59PwOW51r4J+p6CsKZWXdKSme4MFqU62CZMOsdDrU4CA=="],
+    "@hono/node-server": ["@hono/node-server@2.0.12", "", { "peerDependencies": { "hono": "^4" } }, "sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg=="],
 
     "@iconify-json/lucide": ["@iconify-json/lucide@1.2.120", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-4ECF24fxag1n5tZlPGrbWuCGqhkwD0rvAzfCXretqQb4KEC8Y6ja3khF8qmvpR1Mk0NQDhBTRK3Fr/YoV8QyJw=="],
 

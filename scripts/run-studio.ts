@@ -1,5 +1,6 @@
 import { generateStudioCapability } from "../apps/web/server-local/studio-session/session.js";
 import { LOCAL_STUDIO_BOOTSTRAP_FRAGMENT } from "../apps/web/server-local/studio-session/contract.js";
+import { openBrowser } from "../src/adapters/bluedot-oauth.js";
 
 const configuredPort = Number(process.env.PORT || 3_000);
 if (
@@ -21,7 +22,9 @@ const studioEnvironment = {
   HOST: "127.0.0.1",
   NITRO_HOST: "127.0.0.1",
   PORT: String(configuredPort),
+  NITRO_PORT: String(configuredPort),
 };
+delete studioEnvironment.NITRO_UNIX_SOCKET;
 let activeChild: Bun.Subprocess | undefined;
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
@@ -72,8 +75,18 @@ if (!ready) {
 }
 
 console.log("Frame of Mind Studio is ready on loopback.");
-console.log(`Open this one-time launch URL:\n${launchUrl}`);
-console.log("The URL fragment is removed before the capability is exchanged.");
+const browserOpened = await openBrowser(new URL(launchUrl));
+if (browserOpened) {
+  console.log("Opened the one-time launch URL in your browser.");
+} else if (process.env.FRAME_OF_MIND_STUDIO_PRINT_URL === "1") {
+  console.log(`Browser opening failed. Use this one-time launch URL:\n${launchUrl}`);
+} else {
+  console.warn(
+    "Browser opening failed. Stop Studio and rerun with "
+    + "FRAME_OF_MIND_STUDIO_PRINT_URL=1 to print the sensitive one-time URL.",
+  );
+}
+console.log("The launch fragment is removed before the capability is exchanged.");
 
 const exitCode = await activeChild.exited;
 process.exit(exitCode);
