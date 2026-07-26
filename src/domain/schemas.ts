@@ -1,4 +1,18 @@
 import { z } from "zod";
+import { isCanonicalTimestamp, timestampToSeconds } from "../lib/time.js";
+
+function isSafeEvidenceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && !url.username
+      && !url.password
+      && !url.search
+      && !url.hash;
+  } catch {
+    return false;
+  }
+}
 
 const contextProviderSchema = z.enum(["bluedot", "granola", "file"]);
 const importanceSchema = z.enum(["high", "medium", "low"]);
@@ -7,17 +21,31 @@ export const runIdSchema = z.string()
   .max(240)
   .regex(/^[a-zA-Z0-9._:-]+$/, "run ID contains characters that are unsafe in routes");
 
-const indexedMomentSchema = z.object({
-  start: z.string().min(1).max(32),
-  end: z.string().min(1).max(32),
+export const timestampSchema = z.string().max(32).refine(
+  isCanonicalTimestamp,
+  "timestamp must use HH:MM:SS with valid minute and second fields",
+);
+
+export const indexedMomentSchema = z.object({
+  start: timestampSchema,
+  end: timestampSchema,
   speaker: z.string().max(240).optional(),
   surface: z.string().max(500).optional(),
   summary: z.string().min(1).max(10_000),
   kind: z.string().min(1).max(120),
   importance: importanceSchema,
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (!isCanonicalTimestamp(value.start) || !isCanonicalTimestamp(value.end)) return;
+  if (timestampToSeconds(value.end) <= timestampToSeconds(value.start)) {
+    context.addIssue({
+      code: "custom",
+      message: "end timestamp must be after start timestamp",
+      path: ["end"],
+    });
+  }
+});
 
-const analysisDetailSchema = z.object({
+export const analysisDetailSchema = z.object({
   accepted: z.boolean(),
   kind: z.string().min(1).max(120),
   title: z.string().min(1).max(500),
@@ -27,12 +55,15 @@ const analysisDetailSchema = z.object({
     value: z.string().max(20_000),
   }).strict()).max(100).optional(),
   where: z.object({
-    appUrl: z.string().max(2_048).optional(),
+    appUrl: z.string().url().max(2_048).refine(
+      isSafeEvidenceUrl,
+      "app URL must use HTTPS without credentials, query parameters, or fragments",
+    ).optional(),
     step: z.string().max(2_000).optional(),
     surface: z.string().max(2_000).optional(),
   }).strict().optional(),
   evidence: z.object({
-    timestamp: z.string().max(32).optional(),
+    timestamp: timestampSchema.optional(),
     verbatimUiText: z.string().max(20_000).optional(),
     reporterQuote: z.string().max(20_000).optional(),
     speaker: z.string().max(240).optional(),
@@ -42,8 +73,29 @@ const analysisDetailSchema = z.object({
   confidenceNotes: z.string().max(10_000).optional(),
 }).strict();
 
+const analysisItemSchema = z.object({
+  candidate: indexedMomentSchema,
+  result: analysisDetailSchema,
+  screenshot: z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255).optional(),
+}).strict().superRefine(({ candidate, result }, context) => {
+  const evidence = result.evidence?.timestamp;
+  if (!evidence
+    || !isCanonicalTimestamp(candidate.start)
+    || !isCanonicalTimestamp(candidate.end)
+    || !isCanonicalTimestamp(evidence)) return;
+  const seconds = timestampToSeconds(evidence);
+  if (seconds < timestampToSeconds(candidate.start) || seconds > timestampToSeconds(candidate.end)) {
+    context.addIssue({
+      code: "custom",
+      message: "evidence timestamp must fall inside the candidate range",
+      path: ["result", "evidence", "timestamp"],
+    });
+  }
+});
+
 export const analysisRunSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
+  runId: runIdSchema,
   recipe: z.object({
     id: z.string().min(1).max(120),
     label: z.string().min(1).max(240),
@@ -57,30 +109,34 @@ export const analysisRunSchema = z.object({
   }).strict(),
   model: z.string().min(1).max(240),
   matchNotes: z.string().max(20_000),
-  items: z.array(z.object({
-    candidate: indexedMomentSchema,
-    result: analysisDetailSchema,
-    screenshot: z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255).optional(),
-  }).strict()).max(1_000),
+  items: z.array(analysisItemSchema).max(1_000),
 }).strict();
 
+const utcDateTimeSchema = z.string().datetime({ offset: false });
+
 export const runManifestSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   toolVersion: z.string().min(1).max(120),
   promptRevision: z.string().min(1).max(120),
   runId: runIdSchema,
-  startedAt: z.string().min(1).max(120),
-  completedAt: z.string().min(1).max(120),
+  startedAt: utcDateTimeSchema,
+  completedAt: utcDateTimeSchema,
   meetingId: z.string().min(1).max(500),
   recipe: z.object({
     id: z.string().min(1).max(120),
     label: z.string().min(1).max(240),
     custom: z.boolean(),
+    revision: z.string().min(1).max(120),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict(),
   model: z.string().min(1).max(240),
   recordingSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
   transcriptSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
-  recordingMimeType: z.string().min(1).max(240),
+  analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  recordingMimeType: z.string().min(1).max(240).refine(
+    (value) => value.startsWith("video/"),
+    "recording MIME type must be video",
+  ),
   contextProvider: contextProviderSchema,
   contextTransport: z.enum(["mcp", "api", "file"]),
   mediaSource: z.enum(["bluedot-mcp", "signed-url", "local-file"]),
@@ -103,12 +159,27 @@ export const runManifestSchema = z.object({
     interrogationResolution: z.literal("medium"),
   }).strict(),
   artifacts: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255)).max(1_100),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
+    context.addIssue({
+      code: "custom",
+      message: "completedAt must not be before startedAt",
+      path: ["completedAt"],
+    });
+  }
+});
 
 export const runImportSchema = z.object({
   analysis: analysisRunSchema,
   manifest: runManifestSchema,
 }).strict().superRefine(({ analysis, manifest }, context) => {
+  if (analysis.runId !== manifest.runId) {
+    context.addIssue({
+      code: "custom",
+      message: "analysis run ID does not match manifest run ID",
+      path: ["manifest", "runId"],
+    });
+  }
   if (analysis.meeting.id !== manifest.meetingId) {
     context.addIssue({
       code: "custom",
@@ -155,6 +226,13 @@ export const runImportSchema = z.object({
       code: "custom",
       message: "manifest provider and transport combination is invalid",
       path: ["manifest", "contextTransport"],
+    });
+  }
+  if (manifest.mediaSource !== "local-file" && manifest.contextProvider !== "bluedot") {
+    context.addIssue({
+      code: "custom",
+      message: "remote Bluedot media sources require Bluedot context",
+      path: ["manifest", "mediaSource"],
     });
   }
 });

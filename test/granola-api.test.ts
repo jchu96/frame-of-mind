@@ -42,4 +42,17 @@ describe("Granola API adapter", () => {
     const request = fetchMock.mock.calls[0];
     expect(String(request[0])).not.toContain("test-key");
   });
+
+  it("accepts documented nullable note fields", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      id: "not_1d3tmYTlCICgjy",
+      title: null,
+      summary_text: null,
+      summary_markdown: null,
+      transcript: null,
+    }), { status: 200 })));
+    const meeting = await new GranolaApiClient("test-key").meeting("not_1d3tmYTlCICgjy");
+    expect(meeting.transcript).toBe("");
+    expect(meeting.title).toBeUndefined();
+  });
 });

@@ -27,6 +27,7 @@ export interface AnalysisRecipe {
   description: string;
   indexInstruction: string;
   interrogationInstruction: string;
+  revision?: string;
 }
 
 export interface MeetingContextSource {
@@ -84,7 +85,8 @@ export interface AnalysisItem {
 }
 
 export interface AnalysisRun {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  runId: string;
   recipe: {
     id: string;
     label: string;
@@ -102,7 +104,7 @@ export interface AnalysisRun {
 }
 
 export interface RunManifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   toolVersion: string;
   promptRevision: string;
   runId: string;
@@ -113,10 +115,13 @@ export interface RunManifest {
     id: string;
     label: string;
     custom: boolean;
+    revision: string;
+    sha256: string;
   };
   model: string;
   recordingSha256: string;
   transcriptSha256: string;
+  analysisSha256: string;
   recordingMimeType: string;
   contextProvider: ContextProvider;
   contextTransport: "mcp" | "api" | "file";

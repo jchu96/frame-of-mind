@@ -1,17 +1,36 @@
 <script setup lang="ts">
-import type { RunSummary } from "../../shared/types";
+import type { RunPage } from "../../shared/types";
 
 useSeoMeta({
   title: "Runs · Frame of Mind",
   description: "Browse locally indexed Frame of Mind video-understanding runs.",
 });
 
-const { data: runs, error, refresh, status } = await useFetch<RunSummary[]>("/api/runs", {
-  default: () => [],
+const { data: page, error, refresh, status } = await useFetch<RunPage>("/api/runs", {
+  query: { limit: 50 },
+  default: () => ({ runs: [] }),
 });
+const runs = computed(() => page.value.runs);
+const loadingMore = ref(false);
 
 const accepted = computed(() => runs.value.reduce((sum, run) => sum + run.acceptedCount, 0));
 const meetings = computed(() => new Set(runs.value.map((run) => run.meetingId)).size);
+
+async function loadMore() {
+  if (!page.value.nextCursor || loadingMore.value) return;
+  loadingMore.value = true;
+  try {
+    const next = await $fetch<RunPage>("/api/runs", {
+      query: { limit: 50, cursor: page.value.nextCursor },
+    });
+    page.value = {
+      runs: [...page.value.runs, ...next.runs],
+      ...(next.nextCursor ? { nextCursor: next.nextCursor } : {}),
+    };
+  } finally {
+    loadingMore.value = false;
+  }
+}
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -118,6 +137,11 @@ function formatDate(value: string) {
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="page.nextCursor" class="mt-5 flex justify-center">
+          <UButton color="neutral" variant="outline" :loading="loadingMore" @click="loadMore">
+            Load more
+          </UButton>
         </div>
       </section>
     </main>

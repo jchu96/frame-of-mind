@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
 import type { AnalysisRecipe, BuiltInRecipeId } from "../domain/types.js";
+import { sha256Utf8 } from "../domain/integrity.js";
 
 const recipeSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/),
@@ -9,7 +10,8 @@ const recipeSchema = z.object({
   description: z.string().min(1).max(500),
   indexInstruction: z.string().min(1).max(8_000),
   interrogationInstruction: z.string().min(1).max(8_000),
-});
+  revision: z.string().min(1).max(120).optional(),
+}).strict();
 
 const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
   "issue-review": {
@@ -74,9 +76,17 @@ export function listBuiltInRecipes(): AnalysisRecipe[] {
 export async function loadRecipe(id: string, recipeFile?: string): Promise<{
   recipe: AnalysisRecipe;
   custom: boolean;
+  sha256: string;
+  revision: string;
 }> {
-  if (!recipeFile) return { recipe: builtInRecipe(id), custom: false };
-  const content = await readFile(resolve(recipeFile), "utf8");
-  const recipe = recipeSchema.parse(JSON.parse(content));
-  return { recipe, custom: true };
+  const recipe = recipeFile
+    ? recipeSchema.parse(JSON.parse(await readFile(resolve(recipeFile), "utf8")))
+    : builtInRecipe(id);
+  const canonical = JSON.stringify(recipe, Object.keys(recipe).sort());
+  return {
+    recipe,
+    custom: Boolean(recipeFile),
+    sha256: await sha256Utf8(canonical),
+    revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-07-26.1"),
+  };
 }

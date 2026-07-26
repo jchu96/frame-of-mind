@@ -13,6 +13,21 @@ assumed to supply downloadable video.
 | Granola | REST API | bearer API key | eligible notes/scopes | no |
 | Local file | filesystem | local access | supplied file | separate local video |
 
+## MCP endpoint and credential binding
+
+Overrides are accepted only as HTTPS URLs without embedded credentials. OAuth
+tokens, PKCE verifier state, and dynamic client registrations are scoped to the
+exact resource URL:
+
+- canonical endpoint: the stable provider token file;
+- noncanonical endpoint: a provider-specific file whose name includes a
+  truncated SHA-256 of the complete endpoint URL;
+- stored resource mismatch: credentials are ignored and authorization restarts.
+
+This prevents an environment-variable mistake from sending a cached
+Bluedot/Granola bearer token to another origin. Never work around the isolation
+by copying token files.
+
 ## Bluedot MCP
 
 Endpoint:
@@ -245,8 +260,11 @@ frameofmind analyze "stable-local-id" \
 ```
 
 For JSON, recognizable fields include title/name, created/date/start, summary,
-and transcript/transcription/segments. Plain text/Markdown/SRT/VTT content is
-treated as transcript context.
+and exact transcript/transcription/segments. Plain text and Markdown are
+treated as transcript context. SRT/VTT files are parsed as cue blocks,
+multiline text is joined, and cue starts become canonical `[HH:MM:SS]` lines.
+Transcript-adjacent metadata strings are never recursively reinterpreted as
+speech.
 
 Protect the file and delete it under the source retention policy after use.
 

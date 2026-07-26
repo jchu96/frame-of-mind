@@ -234,7 +234,7 @@ Use the browser import page after authentication. Import only reviewed bundles
 that are approved for the hosted workspace.
 
 Do not bulk-upload a local runs directory. The absence of automatic sync is a
-privacy feature in v0.1.0.
+privacy feature in v0.2.0.
 
 ## 10. Operations
 
@@ -269,9 +269,17 @@ D1 stores the complete validated `analysis.json` projection, including accepted
 and rejected summaries, UI excerpts, and meeting quotes. It does not store the
 recording, transcript, screenshots, provider payload, or credentials.
 
+Imports enforce the v2 analysis/manifest digest and same-origin JSON mutation
+policy before touching D1. Item rows use one or more byte-bounded
+`json_each(?)` parameters, so the atomic batch uses a bounded number of
+statements rather than one query per finding. The projected run row is capped
+at 1.8 MB and each expansion parameter at 900 KB. Run browsing selects summary
+columns and uses a maximum page size of 100 with a stable keyset cursor; it
+never scans every JSON blob into Worker memory.
+
 Before deploying, the workspace owner must choose and document a retention
 period. Thirty days is the recommended starting point for a review workspace
-unless policy or an active work item requires less or more. Version 0.1.0 does
+unless policy or an active work item requires less or more. Version 0.2.0 does
 not automate expiry.
 
 To purge one reviewed run, first copy its exact route-safe run ID from the UI.

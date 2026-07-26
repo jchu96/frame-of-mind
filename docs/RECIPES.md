@@ -191,6 +191,7 @@ that work.
   "id": "customer-objections",
   "label": "Customer objections",
   "description": "Extract explicit objections, context, responses, and unresolved risk.",
+  "revision": "2026-07-26.1",
   "indexInstruction": "Find moments where a participant expresses concern, blocks adoption, questions value, or names a risk. Reject neutral questions.",
   "interrogationInstruction": "Accept only a clearly stated objection. Preserve the exact quote, context, response, whether it was resolved, and any follow-up."
 }
@@ -214,8 +215,14 @@ frameofmind analyze "<meeting-id>" \
 | `description` | purpose, 1–500 characters |
 | `indexInstruction` | candidate inclusion/rejection, maximum 8,000 characters |
 | `interrogationInstruction` | close-review acceptance/rejection, maximum 8,000 characters |
+| `revision` | optional operator revision, 1–120 characters |
 
 Unknown/missing fields fail validation.
+
+The manifest stores both the resolved revision and a SHA-256 of the validated
+recipe object. Built-ins use a release-controlled revision. Custom recipes
+without `revision` use `content-addressed`; their hash is still exact. This
+lets a reviewer distinguish two files that reused the same recipe ID.
 
 ## Recipe-writing method
 

@@ -3,7 +3,8 @@ import type { RunImport } from "../../../src/domain/schemas";
 export function runFixture(): RunImport {
   return {
     analysis: {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      runId: "20260725T120000Z-test",
       recipe: { id: "decisions", label: "Decisions" },
       meeting: {
         id: "meeting-public-test",
@@ -14,8 +15,8 @@ export function runFixture(): RunImport {
       matchNotes: "The recording and context match.",
       items: [{
         candidate: {
-          start: "00:10",
-          end: "00:20",
+          start: "00:00:10",
+          end: "00:00:20",
           summary: "A decision was made.",
           kind: "decision",
           importance: "high",
@@ -30,17 +31,24 @@ export function runFixture(): RunImport {
       }],
     },
     manifest: {
-      schemaVersion: 1,
-      toolVersion: "0.1.0",
+      schemaVersion: 2,
+      toolVersion: "0.2.0",
       promptRevision: "test",
       runId: "20260725T120000Z-test",
       startedAt: "2026-07-25T12:00:00.000Z",
       completedAt: "2026-07-25T12:01:00.000Z",
       meetingId: "meeting-public-test",
-      recipe: { id: "decisions", label: "Decisions", custom: false },
+      recipe: {
+        id: "decisions",
+        label: "Decisions",
+        custom: false,
+        revision: "test",
+        sha256: "c".repeat(64),
+      },
       model: "gemini-test",
       recordingSha256: "a".repeat(64),
       transcriptSha256: "b".repeat(64),
+      analysisSha256: "b76101b1b32eb17f78a2bf0ecd280608151b36e0bf9e440634ddd7f26d799195",
       recordingMimeType: "video/mp4",
       contextProvider: "file",
       contextTransport: "file",

@@ -1,6 +1,6 @@
 import { timestampToSeconds } from "../lib/time.js";
 
-const LINE_TIME = /(?:^|\s)\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?/;
+const LINE_TIME = /^\[(\d{2,}:[0-5]\d:[0-5]\d)\]\s/;
 
 export function nearbyTranscript(
   transcript: string,
@@ -19,7 +19,7 @@ export function nearbyTranscript(
   if (!timed.length) return "";
   return timed
     .filter(({ match }) => {
-      const seconds = timestampToSeconds(match?.[1]);
+      const seconds = timestampToSeconds(match![1]!);
       return seconds >= from && seconds <= to;
     })
     .map(({ line }) => line)

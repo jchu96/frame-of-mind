@@ -38,4 +38,13 @@ describe("Bluedot MCP contract helpers", () => {
       "[01:02:03] Speaker B: Later phrase.",
     ].join("\n"));
   });
+
+  it("does not reinterpret transcript-adjacent metadata as spoken evidence", () => {
+    expect(extractTranscript({
+      transcript_status: "ready",
+      transcript_export_url: "https://example.test/private",
+      segment_count: 42,
+      debug_events: [{ start: 1, text: "not speech" }],
+    })).toBe("");
+  });
 });

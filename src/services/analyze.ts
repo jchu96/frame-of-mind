@@ -12,6 +12,7 @@ import type {
   RunManifest,
 } from "../domain/types.js";
 import { runImportSchema } from "../domain/schemas.js";
+import { analysisDigest } from "../domain/integrity.js";
 import { BluedotClient } from "../adapters/bluedot-mcp.js";
 import { GranolaClient } from "../adapters/granola-mcp.js";
 import { GranolaApiClient } from "../adapters/granola-api.js";
@@ -30,11 +31,14 @@ import {
 import { nearbyTranscript } from "./transcript.js";
 import { extractScreenshot } from "./screenshots.js";
 import { writeArtifacts } from "./artifacts.js";
+import { timestampToSeconds } from "../lib/time.js";
 
 export interface AnalyzeOptions {
   meetingId: string;
   recipe: AnalysisRecipe;
   customRecipe: boolean;
+  recipeSha256: string;
+  recipeRevision: string;
   contextProvider: ContextProvider;
   granolaTransport: "mcp" | "api";
   contextFile?: string;
@@ -52,8 +56,8 @@ export interface AnalyzeOptions {
 export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directory: string; analysis: AnalysisRun }> {
   const runId = createRunId();
   const startedAt = new Date().toISOString();
-  const temp = await mkdtemp(join(tmpdir(), "frame-of-mind-"));
   const context = createContextSource(options);
+  const temp = await mkdtemp(join(tmpdir(), "frame-of-mind-"));
   let meeting: MeetingEvidence = {
     id: options.meetingId,
     provider: options.contextProvider,
@@ -111,7 +115,9 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
       process.stderr.write("Pass 1/2: indexing the whole recording…\n");
       const index = await analyzer.index(remote, meeting, options.recipe, options.focus);
       if (!index.isRelevantCall) {
-        throw new Error(`Recording/transcript mismatch: ${singleLine(index.matchNotes)}`);
+        throw new Error(
+          "Recording/transcript mismatch. Verify that the provider meeting ID and local recording refer to the same call.",
+        );
       }
       const alignment = options.transcriptOffsetSeconds === undefined
         ? {
@@ -130,7 +136,7 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
       const candidates = index.moments.slice(0, options.maxIncidents);
       for (const [indexNumber, candidate] of candidates.entries()) {
         process.stderr.write(
-          `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${safeTimestamp(candidate.start)}\n`,
+          `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${candidate.start}\n`,
         );
         const result = await analyzer.interrogate(
           remote,
@@ -145,6 +151,7 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
           options.recipe,
           options.focus,
         );
+        assertEvidenceWithinCandidate(result.evidence?.timestamp, candidate.start, candidate.end);
         const item: AnalysisItem = { candidate, result };
         if (options.screenshots && result.accepted) {
           const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
@@ -157,7 +164,8 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
       }
 
       const analysis: AnalysisRun = {
-        schemaVersion: 1,
+        schemaVersion: 2,
+        runId,
         recipe: {
           id: options.recipe.id,
           label: options.recipe.label,
@@ -175,12 +183,13 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
       };
       if (!options.keepUpload) {
         remoteDeleted = await deleteWithRetry(analyzer, remote);
-        cleanupFinalized = true;
+        cleanupFinalized = remoteDeleted;
       }
+      const analysisSha256 = await analysisDigest(analysis);
       const manifest: RunManifest = {
-        schemaVersion: 1,
-        toolVersion: "0.1.0",
-        promptRevision: "2026-07-25.1",
+        schemaVersion: 2,
+        toolVersion: "0.2.0",
+        promptRevision: "2026-07-26.1",
         runId,
         startedAt,
         completedAt: new Date().toISOString(),
@@ -189,10 +198,13 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
           id: options.recipe.id,
           label: options.recipe.label,
           custom: options.customRecipe,
+          revision: options.recipeRevision,
+          sha256: options.recipeSha256,
         },
         model: analyzer.model,
         recordingSha256,
         transcriptSha256: sha256Text(meeting.transcript),
+        analysisSha256,
         recordingMimeType: mimeType,
         contextProvider: meeting.provider,
         contextTransport: meeting.transport,
@@ -222,6 +234,10 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
       await writeArtifacts(stagingDirectory, validated.analysis, validated.manifest);
       await rename(stagingDirectory, outputDirectory);
       stagingDirectory = undefined;
+      // Once the bundle is published its cleanup state must remain immutable.
+      // Failed cleanup may be retried in `finally` only while publication has
+      // not completed and no durable manifest exists.
+      cleanupFinalized = true;
       if (!options.keepUpload && !remoteDeleted) {
         process.stderr.write("Warning: Gemini file cleanup failed; manifest records deleted=false.\n");
       }
@@ -248,22 +264,26 @@ function createContextSource(options: AnalyzeOptions): MeetingContextSource {
   return new FileContextSource(options.contextFile);
 }
 
-function safeTimestamp(value: string): string {
-  return value.replace(/[^\d:.-]/g, "").slice(0, 16) || "unknown time";
-}
-
-function singleLine(value: string): string {
-  return value.replace(/[\u0000-\u001F\u007F-\u009F]/g, " ").slice(0, 500);
-}
-
 async function deleteWithRetry(analyzer: GeminiVideoAnalyzer, remote: GeminiFile): Promise<boolean> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await analyzer.delete(remote);
       return true;
     } catch {
-      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 500));
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
     }
   }
   return false;
+}
+
+export function assertEvidenceWithinCandidate(
+  evidenceTimestamp: string | undefined,
+  candidateStart: string,
+  candidateEnd: string,
+): void {
+  if (!evidenceTimestamp) return;
+  const evidence = timestampToSeconds(evidenceTimestamp);
+  if (evidence < timestampToSeconds(candidateStart) || evidence > timestampToSeconds(candidateEnd)) {
+    throw new Error("Gemini returned an evidence timestamp outside the indexed candidate window.");
+  }
 }

@@ -18,6 +18,43 @@
 - Symptom: an 8:54 clip from the middle of a longer meeting was paired with transcript lines from meeting time zero.
 - Cause: candidate video timestamps were used directly against a full-meeting transcript.
 - Fix: model and manifest a transcript offset, support `--transcript-offset`, and apply it before slicing nearby transcript evidence.
+
+## 2026-07-26 — Custom MCP endpoint could inherit a canonical bearer token
+
+- Symptom: an overridden MCP URL shared the default provider token file.
+- Cause: OAuth credentials were stored by provider name, not resource URL.
+- Fix: require HTTPS, bind stored OAuth state to the exact resource, and derive
+  a separate hashed token path for every noncanonical endpoint.
+- Prevention: offline origin-isolation tests; never add a raw bearer-token
+  override.
+
+## 2026-07-26 — Invalid model timestamps fell back to video zero
+
+- Symptom: malformed timestamps could survive the durable schema and be parsed
+  as zero for clips/screenshots.
+- Cause: permissive strings plus fail-open time parsing.
+- Fix: canonical timestamp schemas, throwing time conversion, ordered ranges,
+  and candidate-bound evidence validation.
+- Prevention: malformed, reversed, and out-of-window regression tests.
+
+## 2026-07-26 — Valid hosted import could exceed a D1 bound-value/row limit
+
+- Symptom: a request below the API's 2 MiB cap expanded above D1's 2,000,000
+  byte string/row limit.
+- Cause: the projection parameter duplicated summary/candidate/result fields
+  and no exact projected-row budget was enforced.
+- Fix: derive normalized columns from original item JSON, split expansion
+  parameters at 900 KB, and reject projected run rows above 1.8 MB.
+- Prevention: 1,000-item and large multi-batch D1 regressions.
+
+## 2026-07-26 — Cleanup retry could outlive its published manifest
+
+- Symptom: a manifest recorded `deleted: false`, then a `finally` retry deleted
+  the remote file after publication.
+- Cause: cleanup retry state was not frozen at the atomic publication boundary.
+- Fix: permit final retry only while no durable bundle exists, then freeze
+  cleanup state immediately after the successful rename.
+- Prevention: treat a published manifest as immutable provenance.
 - Prevention: test non-zero clip alignment and retain alignment method, confidence, and rationale in `manifest.json`.
 
 ## 2026-07-25 — Gemini returned 429 before analysis
