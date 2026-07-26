@@ -53,14 +53,14 @@ separate proposed track.
 - [x] Task 1.4: Ratify ADRs 0006-0008 and write a threat model covering local
       session bootstrap, DNS rebinding, local-process access, disk exhaustion,
       deletion, and hosted bundle exclusion.
-- [~] Task 1.5: Spike Nitro/H3 request streaming under Bun, bounded `FileSink`
+- [x] Task 1.5: Spike Nitro/H3 request streaming under Bun, bounded `FileSink`
       writes, atomic seal/rename, byte-range playback, and build-time exclusion
       from the Cloudflare artifact; document the verified state machines and
       operator actions before freezing API contracts.
 
 ### Verification
 
-- [ ] Domain transition tests pass, ADRs agree with `docs/ARCHITECTURE.md`,
+- [x] Domain transition tests pass, ADRs agree with `docs/ARCHITECTURE.md`,
       streaming/runtime spikes have recorded outcomes, the Cloudflare artifact
       excludes local-only modules/routes, and no existing v2 contract changes.
 
