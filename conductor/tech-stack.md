@@ -21,7 +21,8 @@
 ### Phase A
 
 - Nuxt Nitro server running through Bun on loopback
-- Bun process execution for the local analysis runner
+- Per-launch local Studio session capability
+- Concurrency-one analysis queue in the Bun application process
 - Existing provider adapters and Gemini analysis services
 - Private OS application-data directories for configuration, staging, and runs
 
@@ -36,9 +37,11 @@
 
 ## Data And Infrastructure
 
-- `analysis.json` plus `manifest.json` are the durable source of truth
-- Bun SQLite stores local job state and rebuildable run projections
-- Cloudflare D1 stores hosted job metadata and rebuildable projections
+- `analysis.json` plus `manifest.json` are the durable completed-run authority
+- Bun SQLite is operational authority for active jobs and stores rebuildable
+  completed-run projections
+- Phase B may use D1 as operational hosted job state plus rebuildable completed
+  run projections
 - Local filesystem staging stores Phase A recording bytes temporarily
 - Private Cloudflare R2 is the proposed Phase B staging adapter
 - GitHub Actions runs public continuous integration
@@ -72,7 +75,17 @@ interface AnalysisJobExecutor {
   retry(jobId: string): Promise<AnalysisJob>;
   status(jobId: string): Promise<AnalysisJob>;
 }
+
+interface MeetingCatalogSource {
+  list(input: MeetingCatalogQuery): Promise<MeetingCatalogPage>;
+}
 ```
 
-Phase A implements these with Bun and local files. Phase B may implement them
-with R2 and hosted orchestration without changing browser contracts.
+`MeetingCatalogSource` is optional; providers without it retain exact meeting-ID
+entry. Phase A implements staging and execution with Bun and local files. Phase
+B may implement them with R2 and hosted orchestration without changing browser
+contracts.
+
+Local-only implementations must be excluded from the Cloudflare artifact.
+Hosted review routes cannot import `bun:sqlite`, secret-session storage, local
+staging, the executor, or the media byte-range server.

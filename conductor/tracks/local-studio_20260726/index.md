@@ -7,6 +7,7 @@
 
 - [Specification](./spec.md)
 - [Implementation Plan](./plan.md)
+- [Adversarial Plan Review](./review.md)
 
 ## Progress
 

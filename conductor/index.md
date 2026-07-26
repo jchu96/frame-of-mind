@@ -9,6 +9,7 @@ Navigation hub for the public product context and implementation tracks.
 - [Tech Stack](./tech-stack.md)
 - [Workflow](./workflow.md)
 - [Tracks](./tracks.md)
+- [Architecture decisions](../docs/adr/README.md)
 
 ## Active Tracks
 

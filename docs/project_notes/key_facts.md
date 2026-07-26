@@ -20,3 +20,9 @@
   endpoints use isolated origin-hashed token files.
 - D1 item import uses transactional `json_each` expansion; list APIs use
   bounded keyset pagination and summary-only selects.
+- The accepted Studio Phase A direction uses an authenticated local Bun process
+  with concurrency one; hosted execution is a separate Phase B track.
+- Studio media sessions, analysis jobs, and durable runs have separate
+  lifecycles and authority boundaries.
+- New Studio API keys are environment- or process-session-scoped; Phase A adds
+  no plaintext API-key store.

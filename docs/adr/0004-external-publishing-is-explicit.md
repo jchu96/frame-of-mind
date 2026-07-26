@@ -1,6 +1,7 @@
 # ADR 0004: Keep external publishing explicit
 
-Status: accepted
+- Status: Accepted
+- Date: 2026-07-25
 
 ## Invariant
 

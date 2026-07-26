@@ -26,7 +26,8 @@ reviewing timestamp-linked results. Hosted execution is a later roadmap phase,
 not a requirement for the local product.
 
 The public product context, specification, and implementation plan live in
-[conductor/](conductor/). Conductor artifacts are intentionally versioned.
+[conductor/](conductor/). Canonical architecture decisions live in the
+[ADR log](docs/adr/README.md). Both are intentionally versioned.
 Credentials, OAuth state, recordings, transcripts, generated runs, upload
 staging, and local databases remain ignored.
 
