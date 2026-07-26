@@ -1,0 +1,156 @@
+import {
+  DEFAULT_GRANOLA_TOKEN_PATH,
+  DEFAULT_TOKEN_PATH,
+  FileOAuthProvider,
+  resolveMcpEndpoint,
+} from "../../../../src/adapters/bluedot-oauth.js";
+import {
+  BluedotClient,
+  DEFAULT_BLUEDOT_MCP_URL,
+} from "../../../../src/adapters/bluedot-mcp.js";
+import {
+  DEFAULT_GRANOLA_MCP_URL,
+  GranolaClient,
+} from "../../../../src/adapters/granola-mcp.js";
+import {
+  configurationStatusSchema,
+  type ConfigurationStatus,
+} from "../../../../src/domain/studio-schemas.js";
+import type {
+  RuntimeSecretName,
+  RuntimeSecretResolver,
+} from "../../../../src/domain/studio-ports.js";
+import { getRuntimeSecretResolver } from "./runtime-secrets.js";
+
+export type OAuthProviderName = "bluedot" | "granola";
+type OAuthPresence = (provider: OAuthProviderName) => boolean;
+type OAuthConnector = (provider: OAuthProviderName) => Promise<void>;
+
+function storedOAuthPresent(provider: OAuthProviderName): boolean {
+  const isBluedot = provider === "bluedot";
+  const endpoint = resolveMcpEndpoint(
+    provider,
+    process.env[isBluedot ? "BLUEDOT_MCP_URL" : "GRANOLA_MCP_URL"],
+    isBluedot ? DEFAULT_BLUEDOT_MCP_URL : DEFAULT_GRANOLA_MCP_URL,
+    isBluedot ? DEFAULT_TOKEN_PATH : DEFAULT_GRANOLA_TOKEN_PATH,
+  );
+  const state = new FileOAuthProvider(
+    "http://127.0.0.1/unused",
+    endpoint.tokenPath,
+    () => {},
+    "status-only",
+    endpoint.url.toString(),
+    endpoint.canonical,
+  );
+  return state.tokens() !== undefined;
+}
+
+async function connectOAuth(provider: OAuthProviderName): Promise<void> {
+  const client = provider === "bluedot"
+    ? new BluedotClient(process.env.BLUEDOT_MCP_URL, false)
+    : new GranolaClient(process.env.GRANOLA_MCP_URL, false);
+  try {
+    await client.connect();
+  } finally {
+    await client.close();
+  }
+}
+
+export class StudioConnectionService {
+  readonly #lastVerified = new Map<OAuthProviderName, string>();
+  readonly #failureCode = new Map<OAuthProviderName, string>();
+  readonly #inFlight = new Set<OAuthProviderName>();
+
+  constructor(
+    private readonly secrets: RuntimeSecretResolver,
+    private readonly oauthPresence: OAuthPresence = storedOAuthPresent,
+    private readonly oauthConnector: OAuthConnector = connectOAuth,
+  ) {}
+
+  async status(): Promise<ConfigurationStatus> {
+    const gemini = await this.secrets.status("gemini-api-key");
+    const granolaKey = await this.secrets.status("granola-api-key");
+    const bluedotOAuth = this.oauthPresence("bluedot");
+    const granolaOAuth = granolaKey.present
+      ? false
+      : this.oauthPresence("granola");
+
+    return configurationStatusSchema.parse({
+      studioEnabled: true,
+      providers: [
+        {
+          provider: "gemini",
+          connected: gemini.present,
+          source: gemini.source,
+          lifetime: gemini.present ? "process" : "none",
+        },
+        {
+          provider: "bluedot",
+          connected: bluedotOAuth,
+          source: bluedotOAuth ? "oauth" : "none",
+          lifetime: bluedotOAuth ? "persistent-oauth" : "none",
+          ...(this.#lastVerified.has("bluedot")
+            ? { lastVerifiedAt: this.#lastVerified.get("bluedot") }
+            : {}),
+          ...(this.#failureCode.has("bluedot")
+            ? { failureCode: this.#failureCode.get("bluedot") }
+            : {}),
+        },
+        {
+          provider: "granola",
+          connected: granolaKey.present || granolaOAuth,
+          source: granolaKey.present
+            ? granolaKey.source
+            : granolaOAuth ? "oauth" : "none",
+          lifetime: granolaKey.present
+            ? "process"
+            : granolaOAuth ? "persistent-oauth" : "none",
+          ...(this.#lastVerified.has("granola")
+            ? { lastVerifiedAt: this.#lastVerified.get("granola") }
+            : {}),
+          ...(this.#failureCode.has("granola")
+            ? { failureCode: this.#failureCode.get("granola") }
+            : {}),
+        },
+      ],
+    });
+  }
+
+  async setSessionSecret(
+    name: RuntimeSecretName,
+    value: string,
+  ): Promise<ConfigurationStatus> {
+    await this.secrets.setSession(name, value);
+    return this.status();
+  }
+
+  async clearSessionSecret(
+    name: RuntimeSecretName,
+  ): Promise<ConfigurationStatus> {
+    await this.secrets.clearSession(name);
+    return this.status();
+  }
+
+  startOAuth(provider: OAuthProviderName): boolean {
+    if (this.#inFlight.has(provider)) return false;
+    this.#inFlight.add(provider);
+    this.#failureCode.delete(provider);
+    void this.oauthConnector(provider).then(() => {
+      this.#lastVerified.set(provider, new Date().toISOString());
+    }).catch(() => {
+      this.#failureCode.set(provider, "oauth_connection_failed");
+    }).finally(() => {
+      this.#inFlight.delete(provider);
+    });
+    return true;
+  }
+}
+
+let configuredConnections: StudioConnectionService | undefined;
+
+export function getStudioConnectionService(): StudioConnectionService {
+  configuredConnections ??= new StudioConnectionService(
+    getRuntimeSecretResolver(),
+  );
+  return configuredConnections;
+}

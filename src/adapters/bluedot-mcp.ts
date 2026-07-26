@@ -26,7 +26,10 @@ export class BluedotClient {
 
   private readonly endpoint;
 
-  constructor(serverUrl = process.env.BLUEDOT_MCP_URL) {
+  constructor(
+    serverUrl = process.env.BLUEDOT_MCP_URL,
+    private readonly announceAuthorization = true,
+  ) {
     this.endpoint = resolveMcpEndpoint(
       "bluedot",
       serverUrl,
@@ -53,7 +56,9 @@ export class BluedotClient {
       if (!(error instanceof UnauthorizedError)) throw error;
       if (!authorizationUrl) throw new Error("Bluedot did not provide an OAuth authorization URL.");
       await callback.listen();
-      process.stderr.write(`Authorize Bluedot in your browser:\n${authorizationUrl.toString()}\n`);
+      if (this.announceAuthorization) {
+        process.stderr.write(`Authorize Bluedot in your browser:\n${authorizationUrl.toString()}\n`);
+      }
       await openBrowser(authorizationUrl);
       const code = await callback.code;
       await this.transport?.finishAuth(code);
