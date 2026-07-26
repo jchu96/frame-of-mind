@@ -1,5 +1,8 @@
 # Frame of Mind Architecture
 
+The local Studio trust boundaries and abuse cases are maintained in the
+[Local Studio threat model](THREAT_MODEL.md).
+
 ## 1. Purpose
 
 Frame of Mind is a local-first video-understanding workbench. It combines:
