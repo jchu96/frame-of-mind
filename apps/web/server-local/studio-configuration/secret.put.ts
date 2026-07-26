@@ -15,7 +15,7 @@ import { getStudioConnectionService } from "./connections.js";
 
 const secretNameSchema = z.enum(["gemini-api-key", "granola-api-key"]);
 const secretBodySchema = z.object({
-  value: z.string().min(1).max(8_192),
+  value: z.string().min(8).max(8_192),
 }).strict();
 const maximumSecretRequestBytes = 10 * 1_024;
 

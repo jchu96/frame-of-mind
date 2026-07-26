@@ -92,6 +92,10 @@ export function shouldRegisterLocalStudioRoutes(
   return nitroPreset === "node-server" && enabled;
 }
 
+export function requiresLocalStudioSession(path: string): boolean {
+  return path === "/connections" || path.startsWith("/api/studio/");
+}
+
 export function redactStudioBootstrap(
   value: string,
   sensitiveValues: readonly string[] = [],

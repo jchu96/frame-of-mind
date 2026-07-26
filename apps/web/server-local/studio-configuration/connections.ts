@@ -67,13 +67,22 @@ export class StudioConnectionService {
     private readonly oauthConnector: OAuthConnector = connectOAuth,
   ) {}
 
+  #oauthStatus(provider: OAuthProviderName): boolean {
+    try {
+      return this.oauthPresence(provider);
+    } catch {
+      this.#failureCode.set(provider, "oauth_status_failed");
+      return false;
+    }
+  }
+
   async status(): Promise<ConfigurationStatus> {
     const gemini = await this.secrets.status("gemini-api-key");
     const granolaKey = await this.secrets.status("granola-api-key");
-    const bluedotOAuth = this.oauthPresence("bluedot");
+    const bluedotOAuth = this.#oauthStatus("bluedot");
     const granolaOAuth = granolaKey.present
       ? false
-      : this.oauthPresence("granola");
+      : this.#oauthStatus("granola");
 
     return configurationStatusSchema.parse({
       studioEnabled: true,

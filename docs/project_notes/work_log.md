@@ -42,3 +42,8 @@
   removed before a bounded same-origin POST creates an HttpOnly, SameSite
   Strict process-session cookie; Cloudflare builds exclude the complete route,
   plugin, and session implementation.
+- Completed local Studio connection health: `.env`-first and process-memory
+  API keys, exact-resource Bluedot/Granola OAuth status/initiation, a
+  session-protected Nuxt Connections page, and a production Bun launcher bound
+  explicitly to `127.0.0.1`. Browser validation caught and closed Node-dev,
+  all-interface binding, and first-load cookie-race failures.

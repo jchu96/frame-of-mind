@@ -47,10 +47,16 @@ describe("Studio runtime secret resolution", () => {
     expect((await resolver.status("granola-api-key")).source).toBe("environment");
   });
 
-  test("rejects empty, control-bearing, and oversized secret input", async () => {
+  test("rejects empty, tiny, whitespace, control-bearing, and oversized secret input", async () => {
     const resolver = new ProcessRuntimeSecretResolver({});
     await expect(
       resolver.setSession("gemini-api-key", ""),
+    ).rejects.toThrow(/invalid/i);
+    await expect(
+      resolver.setSession("gemini-api-key", "tiny"),
+    ).rejects.toThrow(/invalid/i);
+    await expect(
+      resolver.setSession("gemini-api-key", "        "),
     ).rejects.toThrow(/invalid/i);
     await expect(
       resolver.setSession("gemini-api-key", "line-one\nline-two"),

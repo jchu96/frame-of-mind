@@ -17,6 +17,8 @@ const forbidden = [
   "/api/studio/",
   "server-local/studio-configuration",
   "ProcessRuntimeSecretResolver",
+  "server-local/studio-ui",
+  "Connections, without a credential vault",
 ];
 
 async function files(directory: string): Promise<string[]> {
