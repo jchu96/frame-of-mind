@@ -8,11 +8,12 @@ const environmentName: Record<RuntimeSecretName, string> = {
   "gemini-api-key": "GEMINI_API_KEY",
   "granola-api-key": "GRANOLA_API_KEY",
 };
+const minimumSecretLength = 8;
 const maximumSecretLength = 8_192;
 let configuredResolver: ProcessRuntimeSecretResolver | undefined;
 
 function validSecret(value: string): boolean {
-  return value.length > 0
+  return value.trim().length >= minimumSecretLength
     && value.length <= maximumSecretLength
     && !/[\u0000-\u001f\u007f]/.test(value);
 }

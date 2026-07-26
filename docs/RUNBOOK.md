@@ -967,15 +967,36 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
-### Planned Studio is not a v0.2 command
+### Local Studio Connections preview
 
-The public roadmap includes a drag-and-drop local Studio backed by Bun. Until
-that track ships:
+Launch the authenticated local configuration surface:
 
-- `bun run web` remains a completed-run viewer;
-- it does not accept recording uploads or start analysis;
-- `frameofmind analyze` remains the execution path;
-- no local Studio credential, staging, job, or media route should be assumed.
+```bash
+cp .env.example .env
+# Populate GEMINI_API_KEY and optionally GRANOLA_API_KEY.
+bun run studio
+```
+
+Operational expectations:
+
+- open only the one-time loopback URL printed for this launch;
+- do not paste or share that URL while its fragment is present;
+- restarting Bun invalidates the session and all temporary keys;
+- environment values take precedence over keys entered in the page;
+- temporary keys are process-memory only;
+- OAuth tokens remain in the CLI's private exact-resource files;
+- the Connections API never returns secret values;
+- the Studio preview does not yet accept media or start analysis.
+
+If the bootstrap link fails, stop the process and run `bun run studio` again.
+Do not reuse an old link: bootstrap capabilities are one-use. If a provider
+status fails, verify that its custom MCP URL is a valid HTTPS URL and use the
+provider's reconnect action. Public diagnostics may include the sanitized
+failure code, never the endpoint query, authorization URL, token, or key.
+
+`bun run web` remains the unauthenticated loopback completed-run viewer.
+`frameofmind analyze` remains the execution path until the later Studio phases
+ship.
 
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and

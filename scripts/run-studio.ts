@@ -14,27 +14,66 @@ const bootstrapToken = generateStudioCapability();
 const launchUrl =
   `http://127.0.0.1:${configuredPort}/${LOCAL_STUDIO_BOOTSTRAP_FRAGMENT}`
   + encodeURIComponent(bootstrapToken);
+const studioEnvironment = {
+  ...process.env,
+  FRAME_OF_MIND_STUDIO: "1",
+  FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: bootstrapToken,
+  HOST: "127.0.0.1",
+  NITRO_HOST: "127.0.0.1",
+  PORT: String(configuredPort),
+};
+let activeChild: Bun.Subprocess | undefined;
 
-console.log("Frame of Mind Studio is starting on loopback.");
-console.log(`Open this one-time launch URL:\n${launchUrl}`);
-console.log("The URL fragment is removed before the capability is exchanged.");
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => activeChild?.kill(signal));
+}
 
-const child = Bun.spawn(["bun", "run", "--cwd", "apps/web", "dev"], {
+console.log("Building Frame of Mind Studio for the local Bun runtime...");
+activeChild = Bun.spawn(["bun", "run", "--cwd", "apps/web", "build"], {
   cwd: process.cwd(),
-  env: {
-    ...process.env,
-    FRAME_OF_MIND_STUDIO: "1",
-    FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: bootstrapToken,
-    PORT: String(configuredPort),
-  },
+  env: studioEnvironment,
+  stdin: "inherit",
+  stdout: "inherit",
+  stderr: "inherit",
+});
+const buildExitCode = await activeChild.exited;
+if (buildExitCode !== 0) process.exit(buildExitCode);
+
+activeChild = Bun.spawn(["bun", "run", "--cwd", "apps/web", "preview"], {
+  cwd: process.cwd(),
+  env: studioEnvironment,
   stdin: "inherit",
   stdout: "inherit",
   stderr: "inherit",
 });
 
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => child.kill(signal));
+let ready = false;
+for (let attempt = 0; attempt < 150; attempt += 1) {
+  if (activeChild.exitCode !== null) break;
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${configuredPort}/api/studio/session`,
+      { signal: AbortSignal.timeout(500) },
+    );
+    if (response.status === 401) {
+      ready = true;
+      break;
+    }
+  } catch {
+    // The listener is not ready yet.
+  }
+  await Bun.sleep(200);
 }
 
-const exitCode = await child.exited;
+if (!ready) {
+  activeChild.kill("SIGTERM");
+  await activeChild.exited;
+  throw new Error("Local Studio did not become ready on the loopback listener.");
+}
+
+console.log("Frame of Mind Studio is ready on loopback.");
+console.log(`Open this one-time launch URL:\n${launchUrl}`);
+console.log("The URL fragment is removed before the capability is exchanged.");
+
+const exitCode = await activeChild.exited;
 process.exit(exitCode);

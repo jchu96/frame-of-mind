@@ -32,6 +32,9 @@ const studioSessionStatusHandler = fileURLToPath(
 const studioBootstrapPlugin = fileURLToPath(
   new URL("./server-local/studio-session/bootstrap.client.ts", import.meta.url),
 );
+const studioConnectionsPage = fileURLToPath(
+  new URL("./server-local/studio-ui/connections.vue", import.meta.url),
+);
 const studioConfigurationStatusHandler = fileURLToPath(
   new URL("./server-local/studio-configuration/status.get.ts", import.meta.url),
 );
@@ -106,6 +109,17 @@ export default defineNuxtConfig({
   modules: ["@nuxt/ui"],
   css: ["~/assets/css/main.css"],
   plugins: localStudioEnabled ? [studioBootstrapPlugin] : [],
+  hooks: {
+    "pages:extend"(pages) {
+      if (localStudioEnabled) {
+        pages.push({
+          name: "connections",
+          path: "/connections",
+          file: studioConnectionsPage,
+        });
+      }
+    },
+  },
   alias: {
     "#frame-contracts": `${projectRoot}/src/domain/schemas.ts`,
     "#frame-store": storeImplementation,
@@ -123,6 +137,7 @@ export default defineNuxtConfig({
     public: {
       appName: "Frame of Mind",
       appVersion: "0.2.0",
+      studioEnabled: localStudioEnabled,
     },
   },
   typescript: {

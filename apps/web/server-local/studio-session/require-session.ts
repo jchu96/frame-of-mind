@@ -7,10 +7,11 @@ import {
 import {
   LOCAL_STUDIO_COOKIE_NAME,
   getConfiguredLocalStudioSession,
+  requiresLocalStudioSession,
 } from "./session.js";
 
 export default defineEventHandler((event) => {
-  if (!event.path.startsWith("/api/studio/")) return;
+  if (!requiresLocalStudioSession(event.path)) return;
 
   let authorized = false;
   try {

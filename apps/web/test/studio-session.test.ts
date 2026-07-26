@@ -4,6 +4,7 @@ import {
   LocalStudioSession,
   localStudioCookieOptions,
   redactStudioBootstrap,
+  requiresLocalStudioSession,
   shouldRegisterLocalStudioRoutes,
 } from "../server-local/studio-session/session";
 
@@ -55,5 +56,14 @@ describe("local Studio per-launch session", () => {
     expect(shouldRegisterLocalStudioRoutes("cloudflare", true)).toBe(false);
     expect(shouldRegisterLocalStudioRoutes("cloudflare-worker", true)).toBe(false);
     expect(shouldRegisterLocalStudioRoutes("node-server", false)).toBe(false);
+  });
+
+  test("protects the Connections page and every Studio API route", () => {
+    expect(requiresLocalStudioSession("/connections")).toBe(true);
+    expect(requiresLocalStudioSession("/api/studio/session")).toBe(true);
+    expect(requiresLocalStudioSession("/api/studio/configuration")).toBe(true);
+    expect(requiresLocalStudioSession("/")).toBe(false);
+    expect(requiresLocalStudioSession("/api/session")).toBe(false);
+    expect(requiresLocalStudioSession("/connections-help")).toBe(false);
   });
 });

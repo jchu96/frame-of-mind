@@ -36,8 +36,10 @@ Phase A is a single-user local Studio:
 5. Every local Studio route requires Host and peer loopback validation.
 6. Mutating and sensitive routes also require a high-entropy per-launch
    capability exchanged once for an HttpOnly, SameSite=Strict session cookie.
-7. Bootstrap input is immediately redirected to a clean URL and must not enter
-   logs, diagnostics, or durable configuration.
+7. The launch capability travels in a URL fragment, which is not sent in the
+   initial HTTP request. A client bootstrap removes it with `replaceState`
+   before a bounded same-origin exchange, then redirects to a clean URL. It
+   must not enter logs, diagnostics, referrers, or durable configuration.
 8. Browser mutations require same-origin semantics, bounded bodies, and
    non-simple content types or explicit anti-CSRF headers.
 9. Cloudflare review builds exclude the local session bootstrap, secret,

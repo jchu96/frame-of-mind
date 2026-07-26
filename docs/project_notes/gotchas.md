@@ -46,3 +46,12 @@
 - Keep the local Studio bootstrap capability in the URL fragment, not a query
   string or path. The client removes the fragment before exchanging it, so
   ordinary HTTP access logs never receive the capability.
+- Do not run the SQLite Studio through Node-backed `nuxi dev`; SSR imports
+  `bun:sqlite`. `bun run studio` builds the node-server preset and launches the
+  generated entrypoint with Bun.
+- Nitro's production node-server defaults to an all-interface listener unless
+  configured. The Studio launcher must override both `HOST` and `NITRO_HOST`
+  to `127.0.0.1` before it exposes a launch capability.
+- Do not server-fetch authenticated configuration during the bootstrap
+  redirect. Protect `/connections` with the session cookie, then fetch
+  `/api/studio/configuration` in the browser after the one-use exchange.

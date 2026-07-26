@@ -122,6 +122,37 @@ cp .env.example .env
 Populate `GEMINI_API_KEY` locally. `.env` is ignored by git, but that is not
 encryption. Use a secret manager for stronger controls and never share the file.
 
+The local Studio uses the same file:
+
+```bash
+bun run studio
+```
+
+Open the one-time URL and visit **Connections**. An environment value always
+takes precedence over a temporary value entered in the page. To replace an
+environment value, edit `.env`, stop Bun, and launch Studio again.
+
+### Temporary Studio input
+
+The Connections page can accept Gemini or Granola keys for the current launch.
+These values:
+
+- exist only in Bun process memory;
+- disappear when Bun stops;
+- are never returned by the status API;
+- are not written to `.env`, SQLite, logs, or a settings file.
+
+Use this for a quick test, not as durable secret storage. The page intentionally
+does not edit `.env` on your behalf because an ignored plaintext file is not a
+credential vault.
+
+### Provider OAuth files
+
+`frameofmind auth bluedot`, `frameofmind auth granola`, and the matching Studio
+buttons use the existing private OAuth token files. Those tokens survive a Bun
+restart and remain bound to the exact configured MCP resource URL. A custom
+endpoint cannot inherit the canonical provider credential.
+
 ### macOS or Linux: current terminal only
 
 ```bash

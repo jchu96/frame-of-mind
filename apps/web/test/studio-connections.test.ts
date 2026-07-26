@@ -58,4 +58,38 @@ describe("Studio connection status", () => {
     await Bun.sleep(0);
     expect(service.startOAuth("bluedot")).toBe(true);
   });
+
+  test("reports a sanitized provider failure when stored OAuth status cannot be read", async () => {
+    const service = new StudioConnectionService(
+      new ProcessRuntimeSecretResolver({}),
+      () => {
+        throw new Error("sensitive endpoint failure");
+      },
+    );
+
+    const status = await service.status();
+    expect(status.providers).toEqual([
+      {
+        provider: "gemini",
+        connected: false,
+        source: "none",
+        lifetime: "none",
+      },
+      {
+        provider: "bluedot",
+        connected: false,
+        source: "none",
+        lifetime: "none",
+        failureCode: "oauth_status_failed",
+      },
+      {
+        provider: "granola",
+        connected: false,
+        source: "none",
+        lifetime: "none",
+        failureCode: "oauth_status_failed",
+      },
+    ]);
+    expect(JSON.stringify(status)).not.toContain("sensitive endpoint failure");
+  });
 });

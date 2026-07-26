@@ -79,13 +79,13 @@ separate proposed track.
 - [x] Task 2.4: Add authenticated bounded configuration status/session-secret,
       Bluedot/Granola OAuth status/initiation, and optional paginated provider
       catalog routes without changing exact-resource isolation.
-- [~] Task 2.5: Build the Nuxt UI Connections settings page with status,
+- [x] Task 2.5: Build the Nuxt UI Connections settings page with status,
       source/lifetime, last verification, session set/clear, OAuth reconnect,
       and persistent-environment guidance but no secret echo.
 
 ### Verification
 
-- [ ] Hostile Host, missing/invalid local session, cross-site, oversized, and
+- [x] Hostile Host, missing/invalid local session, cross-site, oversized, and
       secret-reflection tests fail closed; the Cloudflare build has no local
       bootstrap/config mutation route or runtime secret implementation.
 
