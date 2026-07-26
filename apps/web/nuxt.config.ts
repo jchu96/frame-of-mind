@@ -32,6 +32,18 @@ const studioSessionStatusHandler = fileURLToPath(
 const studioBootstrapPlugin = fileURLToPath(
   new URL("./server-local/studio-session/bootstrap.client.ts", import.meta.url),
 );
+const studioConfigurationStatusHandler = fileURLToPath(
+  new URL("./server-local/studio-configuration/status.get.ts", import.meta.url),
+);
+const studioSecretPutHandler = fileURLToPath(
+  new URL("./server-local/studio-configuration/secret.put.ts", import.meta.url),
+);
+const studioSecretDeleteHandler = fileURLToPath(
+  new URL("./server-local/studio-configuration/secret.delete.ts", import.meta.url),
+);
+const studioOAuthHandler = fileURLToPath(
+  new URL("./server-local/studio-configuration/oauth.post.ts", import.meta.url),
+);
 
 const localHandlers = [
   ...(localStudioEnabled
@@ -49,6 +61,26 @@ const localHandlers = [
           route: "/api/studio/session",
           method: "get",
           handler: studioSessionStatusHandler,
+        },
+        {
+          route: "/api/studio/configuration",
+          method: "get",
+          handler: studioConfigurationStatusHandler,
+        },
+        {
+          route: "/api/studio/configuration/secrets/:name",
+          method: "put",
+          handler: studioSecretPutHandler,
+        },
+        {
+          route: "/api/studio/configuration/secrets/:name",
+          method: "delete",
+          handler: studioSecretDeleteHandler,
+        },
+        {
+          route: "/api/studio/connections/:provider/oauth",
+          method: "post",
+          handler: studioOAuthHandler,
         },
       ]
     : []),
