@@ -162,6 +162,7 @@ This variable is for installer testing, not normal installation.
 The repository includes scoped `AGENTS.md` files for:
 
 - root architecture and security;
+- Conductor track synchronization;
 - adapters;
 - services;
 - recipes;
@@ -169,6 +170,8 @@ The repository includes scoped `AGENTS.md` files for:
 - docs;
 - CI;
 - scripts;
+- shared web contracts;
+- local Studio, API, storage, middleware, UI, and web tests;
 - the skill itself.
 
 Each scoped directory has:
