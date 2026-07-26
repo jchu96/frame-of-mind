@@ -23,6 +23,9 @@ apps/web/wrangler.jsonc
 .frame-of-mind/
 .meeting-dossier/
 dossiers/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.webm
 *.mp4
 *.m4v

@@ -1,0 +1,30 @@
+{
+  "status": "complete",
+  "project_type": "brownfield",
+  "current_section": "complete",
+  "current_question": 0,
+  "completed_sections": [
+    "product",
+    "guidelines",
+    "tech_stack",
+    "workflow"
+  ],
+  "answers": {
+    "product": "Frame of Mind, a local-first video-understanding workbench",
+    "phase_a": "Nuxt Studio with local Bun execution, filesystem staging, and SQLite",
+    "phase_b": "Hosted Cloudflare execution through compatible adapters",
+    "frontend": "Nuxt 4, Vue 3, and Nuxt UI 4",
+    "workflow": "Moderate TDD with per-phase verification and adversarial trust-boundary review",
+    "repository_policy": "Track public Conductor artifacts; ignore all runtime and sensitive data"
+  },
+  "files_created": [
+    "conductor/index.md",
+    "conductor/product.md",
+    "conductor/product-guidelines.md",
+    "conductor/tech-stack.md",
+    "conductor/workflow.md",
+    "conductor/tracks.md"
+  ],
+  "started_at": "2026-07-26T20:28:26Z",
+  "last_updated": "2026-07-26T20:28:26Z"
+}
