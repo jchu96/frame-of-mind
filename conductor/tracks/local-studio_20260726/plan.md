@@ -112,6 +112,38 @@ separate proposed track.
       text, Markdown, SRT, and VTT; normalize through the existing adapter and
       delete private context staging after use.
 
+### Nuxt UI Delivery Approach
+
+- Use Nuxt UI's
+  [`UFileUpload`](https://ui.nuxt.com/docs/components/file-upload) as the
+  accessible single-recording picker and drop zone. Keep `multiple` disabled
+  and present a separate, tightly bounded picker for optional context files.
+- Treat the browser `accept` filter as guidance only. Validate extension,
+  declared MIME, byte limit, and detected media type again at the local server
+  boundary before a session can seal.
+- Keep the selected `File` in a component-local `shallowRef`; never serialize a
+  `File`, recording name, or path through SSR state, SQLite, or a JSON DTO.
+- Put upload behavior in a `useMediaStaging` composable. `UFileUpload` owns
+  selection and removal only; the composable owns create/status/part/complete/
+  abort calls, `AbortController`, retry policy, and server reconciliation.
+- Upload server-advertised fixed-size parts from `Blob.slice()`. Count only
+  server-confirmed bytes as progress and render them with `UProgress` plus a
+  visible text equivalent.
+- Represent `paused` and `reselect-required` as client presentation states, not
+  new durable media-session states. The server's media receipt remains
+  authoritative after refresh or reconnect.
+- Persist only the opaque media-session receipt needed to rediscover an
+  unfinished upload. After refresh, require the user to reselect the recording
+  and verify completed-part receipts before sending missing parts; mismatches
+  offer restart, never silent continuation.
+- Compose status with `UBadge`, actionable failures with `UAlert`, and explicit
+  `UButton` actions for choose, pause, resume, retry, replace, and abort. Keep
+  errors associated through `UFormField`, announce state changes with text, and
+  never rely on color or animation alone.
+- Show retention, local staging location class, expiry, and the later Gemini
+  transfer before staging begins. Dropping a file must not imply an immediate
+  third-party upload.
+
 ### Verification
 
 - [ ] Stream a synthetic large fixture without full-body buffering; interrupt,

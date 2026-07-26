@@ -47,3 +47,7 @@
   session-protected Nuxt Connections page, and a production Bun launcher bound
   explicitly to `127.0.0.1`. Browser validation caught and closed Node-dev,
   all-interface binding, and first-load cookie-race failures.
+- Added scoped Conductor and shared-web contract guidance, then fixed the Phase
+  3 Nuxt UI boundary: `UFileUpload` owns accessible selection while a separate
+  composable and the server media-session contract own resumable staging,
+  reconciliation, progress, cancellation, and cleanup.
