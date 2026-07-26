@@ -15,6 +15,8 @@ const forbidden = [
   "frame_of_mind_studio",
   "/__studio/bootstrap",
   "/api/studio/",
+  "server-local/studio-configuration",
+  "ProcessRuntimeSecretResolver",
 ];
 
 async function files(directory: string): Promise<string[]> {

@@ -74,9 +74,9 @@ separate proposed track.
 - [x] Task 2.2: Implement the local Studio session bootstrap and middleware on
       top of peer/Host validation, including immediate clean-URL redirect and
       log redaction.
-- [~] Task 2.3: Implement the environment-first, process-memory-second runtime
+- [x] Task 2.3: Implement the environment-first, process-memory-second runtime
       secret resolver with no new plaintext filesystem or SQLite persistence.
-- [ ] Task 2.4: Add authenticated bounded configuration status/session-secret,
+- [~] Task 2.4: Add authenticated bounded configuration status/session-secret,
       Bluedot/Granola OAuth status/initiation, and optional paginated provider
       catalog routes without changing exact-resource isolation.
 - [ ] Task 2.5: Build the Nuxt UI Connections settings page with status,
