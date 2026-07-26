@@ -31,6 +31,9 @@ describe("Studio runtime secret resolution", () => {
       source: "session",
     });
     expect(JSON.stringify(status)).not.toContain(secret);
+    expect(resolver.redact(`provider rejected ${secret}`)).toBe(
+      "provider rejected [REDACTED]",
+    );
   });
 
   test("disconnect clears only the session value", async () => {
