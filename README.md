@@ -482,6 +482,7 @@ structured output, video metadata, OAuth, and cleanup contracts.
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Local Studio threat model](docs/THREAT_MODEL.md)
+- [Local Studio streaming spike](docs/spikes/local-studio-streaming-20260726.md)
 - [Gemini credentials](docs/CREDENTIALS.md)
 - [Recipes](docs/RECIPES.md)
 - [Provider contracts](docs/PROVIDERS.md)

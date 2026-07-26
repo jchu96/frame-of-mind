@@ -39,3 +39,7 @@
 - Browser drag-and-drop does not preserve an arbitrary source path after
   refresh. Timestamp playback requires retained private media or
   digest-verified reattachment.
+- Nuxt 4.5.0 and Nitro 2.13.4 currently execute application handlers through
+  H3 1.15.11, not the separately installed H3 2 release candidate. Local media
+  streaming therefore uses the measured `event.node.req` async iterable until
+  a dependency upgrade reruns the Phase 1 streaming spike.

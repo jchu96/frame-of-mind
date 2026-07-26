@@ -243,3 +243,6 @@ Before API contracts freeze, Phase 1 must record:
 
 No real recording, transcript, meeting identifier, provider payload, or
 credential may be used as threat-model evidence.
+
+The first measured result is recorded in
+[Local Studio Streaming Spike](spikes/local-studio-streaming-20260726.md).

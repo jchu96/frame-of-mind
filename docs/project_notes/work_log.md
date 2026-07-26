@@ -35,3 +35,6 @@
   capabilities, Worker isolation, delivery slices, rollback, and risk gates.
 - Added the canonical ADR index and ADRs 0006-0008 for local Studio execution,
   lifecycle separation, and environment/session-only API secrets.
+- Implemented the first four local Studio foundation tasks and measured a
+  synthetic 32 MiB Bun/Nitro stream through bounded `FileSink` writes, atomic
+  seal, byte ranges, and Cloudflare build-time exclusion.

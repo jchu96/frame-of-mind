@@ -1,9 +1,19 @@
 import { fileURLToPath } from "node:url";
 
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
+const nitroPreset = process.env.NITRO_PRESET || "node-server";
+const studioSpikeEnabled = databaseDriver === "sqlite"
+  && nitroPreset !== "cloudflare"
+  && process.env.FRAME_OF_MIND_STUDIO_SPIKE === "1";
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const storeImplementation = fileURLToPath(
   new URL(`./server/data/${databaseDriver}.ts`, import.meta.url),
+);
+const spikeUploadHandler = fileURLToPath(
+  new URL("./server-local/studio-spike/upload.put.ts", import.meta.url),
+);
+const spikeMediaHandler = fileURLToPath(
+  new URL("./server-local/studio-spike/media.get.ts", import.meta.url),
 );
 
 export default defineNuxtConfig({
@@ -16,7 +26,21 @@ export default defineNuxtConfig({
     "#frame-store": storeImplementation,
   },
   nitro: {
-    preset: process.env.NITRO_PRESET || "node-server",
+    preset: nitroPreset,
+    handlers: studioSpikeEnabled
+      ? [
+          {
+            route: "/api/__studio-spike/upload",
+            method: "put",
+            handler: spikeUploadHandler,
+          },
+          {
+            route: "/api/__studio-spike/media",
+            method: "get",
+            handler: spikeMediaHandler,
+          },
+        ]
+      : [],
   },
   runtimeConfig: {
     authMode: "off",
