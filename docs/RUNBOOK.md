@@ -967,7 +967,21 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
-## 12. Escalation payload
+### Planned Studio is not a v0.2 command
+
+The public roadmap includes a drag-and-drop local Studio backed by Bun. Until
+that track ships:
+
+- `bun run web` remains a completed-run viewer;
+- it does not accept recording uploads or start analysis;
+- `frameofmind analyze` remains the execution path;
+- no local Studio credential, staging, job, or media route should be assumed.
+
+The accepted boundaries and phased plan are in the
+[ADR log](adr/README.md) and
+[Conductor track](../conductor/tracks/local-studio_20260726/).
+
+## 13. Escalation payload
 
 Provide only sanitized facts:
 

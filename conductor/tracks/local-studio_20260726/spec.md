@@ -46,7 +46,9 @@ Implications:
 - job state is persisted before execution begins;
 - media staging has explicit ownership and cleanup;
 - the resulting run bundle remains authoritative;
-- SQLite job records and Studio views remain rebuildable projections;
+- SQLite job/event records are operational authority until terminal
+  publication;
+- completed-run SQLite rows and Studio views remain rebuildable projections;
 - Phase B replaces adapters, not product contracts.
 
 ## User Story
@@ -70,8 +72,8 @@ constructing CLI commands or exposing the recording to an unplanned service.
 1. **Recording**
    - drag and drop or file picker;
    - supported-type and size validation;
-   - name, size, duration, and local-staging disclosure;
-   - optional bounded analysis range.
+   - name, size, advisory browser-derived duration, and local-staging
+     disclosure.
 2. **Context**
    - Bluedot, Granola MCP/API, local file, or intentionally minimal local
      context;
@@ -104,15 +106,17 @@ constructing CLI commands or exposing the recording to an unplanned service.
 - Transcript excerpt aligned to the selected moment
 - Evidence, inference, recommendation, and uncertainty sections
 - Accepted/rejected filters
-- Local reviewer notes as projection data
 - Copy/download actions that do not publish externally
 
 ## Functional Requirements
 
 ### FR-01 - Local Runtime
 
-The production local Studio must start through Bun, bind to loopback, and use
-the existing hostile-Host guard. No Cloudflare account is required.
+The production local Studio must start through Bun, bind to loopback, validate
+the peer and Host, and require a high-entropy per-launch Studio session. The
+local Bun application runs one analysis at a time. Closing the browser does not
+stop a job while the Bun process remains alive. No Cloudflare account is
+required.
 
 ### FR-02 - Configuration
 
@@ -124,10 +128,12 @@ The Studio must configure:
 - default recipe;
 - default output and retention behavior.
 
-Secret values are accepted only by a loopback server route, stored with
-user-only permissions through an explicit secret store, redacted from logs,
-and never returned after submission. Environment-provided secrets remain
-supported and take precedence according to a documented rule.
+API secret values are accepted only by a local-session-authenticated route,
+kept in Bun process memory, redacted from logs, and never returned after
+submission. Environment-provided secrets take precedence and remain the
+persistent setup path. Session-provided values disappear on process restart.
+Existing provider OAuth state continues through exact-resource private token
+files. Phase A adds no plaintext API-key store.
 
 ### FR-03 - Media Staging
 
@@ -136,17 +142,26 @@ directory outside the repository:
 
 - supported media type and 2 GB maximum are enforced;
 - the server does not buffer the complete file in memory;
-- chunk order, byte count, and final digest are validated;
+- per-session/part concurrency, chunk order, byte count, disk reservation, and
+  final streamed digest are validated;
 - interrupted uploads can resume or abort;
 - abandoned staging entries expire;
 - user-owned source files are never deleted;
-- staged copies are deleted according to an explicit cleanup receipt.
+- ephemeral staged copies are deleted after terminal job cleanup;
+- retained-for-review copies require an explicit time-bounded choice;
+- deleted media can be reattached only after its streamed SHA-256 matches the
+  run manifest.
 
 ### FR-04 - Context Selection
 
 The Studio exposes the same provider/transport boundaries as the CLI. It must
 not silently fall back between OAuth identities, API credentials, providers, or
 meeting IDs. Provider payload and error content are private untrusted input.
+Providers may optionally implement a bounded, paginated `MeetingCatalogSource`.
+When unavailable, the UI requests an exact meeting ID. Local context files use
+a distinct bounded private upload (JSON, text, Markdown, SRT, or VTT), are
+normalized through the existing adapter, and are deleted after context
+normalization/job cleanup.
 
 ### FR-05 - Recipe Selection
 
@@ -157,12 +172,11 @@ instructions.
 
 ### FR-06 - Durable Job State
 
-Creating a run first persists a job with a stable ID and immutable input
-receipt. Allowed stages are explicit:
+Media sessions and analysis jobs have separate state machines. A job can be
+created only from sealed media plus a validated immutable input receipt.
+Allowed job stages are:
 
 ```text
-draft
-staging
 queued
 fetching_context
 uploading_to_gemini
@@ -173,17 +187,20 @@ cleaning_up
 succeeded
 failed
 canceled
+interrupted
 ```
 
 Every transition records UTC time, progress metadata, and a sanitized message.
 Invalid transitions fail closed. Starting the same idempotency key cannot
-create duplicate analysis jobs.
+create duplicate analysis jobs. Cancellation intent is stored separately before
+the executor is signaled. `created`, `uploading`, `sealed`, `in_use`, `aborted`,
+`expired`, `deleting`, and `deleted` belong to the media lifecycle, not the job.
 
 ### FR-07 - Process Execution
 
-The local `AnalysisJobExecutor` runs one analysis per job, captures structured
-progress events, supports `AbortSignal`, and limits concurrency to a documented
-default. It must reuse domain services rather than scrape CLI output.
+The local `AnalysisJobExecutor` captures structured progress events, supports
+`AbortSignal`, and runs with concurrency one. It must reuse domain services
+rather than scrape CLI output.
 
 ### FR-08 - Cancellation And Retry
 
@@ -209,10 +226,12 @@ Projection failure cannot destroy a valid run bundle.
 
 ### FR-10 - Review
 
-The Studio can seek an authorized local video to an accepted or rejected
-finding's canonical timestamp. Local media delivery must:
+The Studio can seek an accepted or rejected finding's canonical timestamp when
+the private recording is still retained. For ephemeral or expired media, it
+offers reattachment and verifies the recording SHA-256 against the manifest
+before playback. Local media delivery must:
 
-- require loopback access;
+- require the local Studio session in addition to loopback/Host validation;
 - use an opaque job/run-scoped identifier rather than an arbitrary path;
 - support byte-range requests;
 - set a restrictive content type and content-disposition policy;
@@ -241,8 +260,10 @@ Provisional local endpoints:
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/api/config/status` | Return non-secret connection and storage status |
-| `PUT` | `/api/config/:provider` | Validate and store or disconnect local credentials |
+| `PUT` | `/api/config/:provider/session` | Validate/set or clear a process-memory API secret |
 | `GET` | `/api/providers/:provider/meetings` | Search authorized recent meetings |
+| `POST` | `/api/context-files` | Ingest one bounded private local context file |
+| `DELETE` | `/api/context-files/:id` | Delete staged local context |
 | `POST` | `/api/media` | Create an upload session |
 | `PUT` | `/api/media/:id/parts/:part` | Stream one validated local part |
 | `POST` | `/api/media/:id/complete` | Verify and seal staged media |
@@ -253,13 +274,15 @@ Provisional local endpoints:
 | `POST` | `/api/jobs/:id/cancel` | Request durable cancellation |
 | `POST` | `/api/jobs/:id/retry` | Create a linked retry attempt |
 | `GET` | `/api/runs/:id/media` | Stream authorized retained local media by opaque ID |
+| `POST` | `/api/runs/:id/media/reattach` | Bind matching reattached media by manifest digest |
 
 Exact schemas are part of Phase 1 and may refine route names. No endpoint accepts
-an arbitrary filesystem path.
+an arbitrary filesystem path. Local control-plane routes do not exist in the
+Cloudflare review build.
 
 ## Data Model
 
-New local projection concepts:
+New local runtime concepts:
 
 - `analysis_jobs`
   - ID, attempt, idempotency key, stage, terminal outcome;
@@ -274,11 +297,12 @@ New local projection concepts:
 - `staged_media`
   - opaque ID, expected/received bytes, digest, MIME type;
   - lifecycle status, private server-side path, expiry, cleanup receipt.
-- `review_notes`
-  - run and item identity, local note text, review disposition, timestamps.
 
 Private paths never cross the API boundary. Recording and transcript bytes do
-not enter SQLite.
+not enter SQLite. Jobs/events are operational state while work is active;
+completed `analysis_runs` and `analysis_items` remain rebuildable projections.
+Reviewer notes and dispositions are deferred until they have a separately
+versioned durable annotation contract.
 
 ## Failure And Recovery Requirements
 
@@ -288,6 +312,7 @@ not enter SQLite.
 | Browser closes during upload | Session remains resumable until expiry |
 | Local server restarts during upload | Sealed parts and receipt are recovered |
 | Local server restarts during analysis | Job becomes interrupted, not silently failed or duplicated |
+| Ephemeral media was deleted | Require digest-verified recording reattachment for playback or retry |
 | Provider authorization expires | Job fails with reconnect action; no transport fallback |
 | Gemini quota/billing failure | Surface distinct nonretryable guidance |
 | Gemini request timeout | Preserve cleanup and offer a linked retry |
@@ -301,16 +326,21 @@ explicit retry.
 
 ## Security And Privacy
 
-- Keep all local routes behind loopback and Host validation.
+- Keep all local routes behind loopback, Host, and per-launch Studio-session
+  validation.
 - Require JSON content type, same-origin browser semantics, and bounded bodies.
 - Use opaque IDs and server-owned path resolution.
-- Store configuration and staging outside the checkout.
+- Store non-secret configuration and staging outside the checkout. Keep new API
+  keys in environment input or process memory only.
 - Create private files and directories with user-only permissions where POSIX
   supports them.
 - Redact query strings, fragments, credentials, tokens, signed URLs, transcript
   text, and provider/model bodies from diagnostics.
-- Delete staged copies after success/failure/cancellation by default.
-- Allow retention only through an explicit user choice with visible location.
+- Delete ephemeral staged copies after success/failure/cancellation by default.
+- Allow only explicit, time-bounded review retention with visible location,
+  expiry, and manual deletion.
+- Exclude local credential, staging, executor, and media-serving code from the
+  Cloudflare artifact; hosted requests to local-only routes return 404.
 - Use synthetic fixtures in tests and documentation.
 
 ## Public Repository Policy
@@ -346,9 +376,9 @@ possible:
 |---|---|
 | Local filesystem `MediaStagingAdapter` | Private R2 multipart adapter |
 | Bun `AnalysisJobExecutor` | Durable hosted executor |
-| SQLite job projection | D1 job projection |
-| Loopback guard | Cloudflare Access plus in-app JWT |
-| OS secret store/config | Worker secrets or approved secret manager |
+| Operational SQLite job store | Durable hosted job store |
+| Loopback plus local session | Cloudflare Access plus in-app JWT |
+| Environment/session-only API secrets | Worker secrets or approved secret manager |
 | Local media byte-range route | Authenticated R2 retrieval or signed bounded media route |
 
 Workers will authorize and coordinate multipart uploads; recording bytes must
@@ -361,7 +391,8 @@ model, retention ADR, cost model, and operational runbook.
 - [ ] A user can drop a supported video, observe bounded resumable staging, and
       see an exact privacy/retention disclosure.
 - [ ] A user can configure Gemini and provider authorization without a secret
-      ever being returned to browser state or logs.
+      ever being persisted in Studio storage, returned to browser state, or
+      written to logs.
 - [ ] A user can select context and a recipe, start a durable job, navigate
       away, return, and observe the same job.
 - [ ] The UI reports structured analysis stages, cancellation, retry, cleanup,
@@ -369,15 +400,16 @@ model, retention ADR, cost model, and operational runbook.
 - [ ] Completing a job publishes a valid v2 run bundle and imports its
       rebuildable SQLite projection.
 - [ ] Selecting a finding seeks retained local video to its canonical evidence
-      timestamp.
-- [ ] The local app remains inaccessible through hostile Host or nonloopback
-      requests.
+      timestamp; deleted media requires digest-verified reattachment.
+- [ ] The local app remains inaccessible through hostile Host, nonloopback, or
+      missing/invalid local-session requests.
 - [ ] Upload interruption, server restart, cancellation, projection failure,
       and cleanup failure have regression coverage.
 - [ ] The full existing CLI behavior remains supported and shares the same
       orchestration services.
-- [ ] The Cloudflare review-only build remains green; hosted execution is not
-      accidentally enabled.
+- [ ] The Cloudflare review-only build contains no local secret, staging,
+      execution, media-serving, or `bun:` implementation and exposes no
+      local-only routes.
 - [ ] No credential, recording, transcript, generated analysis, or database is
       tracked by Git.
 - [ ] Architecture, setup, privacy, troubleshooting, and Phase B roadmap docs
@@ -390,7 +422,8 @@ model, retention ADR, cost model, and operational runbook.
 - Existing provider and Gemini adapters
 - Bun runtime and SQLite support
 - Browser support for streamed or chunked file upload and video playback
-- `ffprobe` or a tested browser/server metadata alternative for duration
+- Browser video metadata for advisory display; server validation never trusts
+  duration reported by the browser
 
 ## Out Of Scope
 
@@ -399,11 +432,13 @@ model, retention ADR, cost model, and operational runbook.
 - Multi-user roles or collaborative editing
 - Automatic external issue/task publication
 - Mobile-native recording capture
+- In-browser trimming or bounded-range extraction
 - Audio-only analysis
 - Local model execution
 - Automatic restart of an indeterminate remote Gemini operation
 - Persisting complete transcripts or provider payloads
 - Treating SQLite as the only copy of completed analysis
+- Reviewer notes or dispositions without a durable annotation contract
 
 ## Technical Notes
 
@@ -416,5 +451,8 @@ model, retention ADR, cost model, and operational runbook.
   cannot be expressed cleanly through route data, `useState`, and composables.
 - Evaluate a dedicated resumable upload library during Phase 3, but keep its
   protocol behind `MediaStagingAdapter`.
-- Add ADRs for secret storage, media staging/retention, and the local-to-hosted
-  executor boundary.
+- The accepted Studio boundaries are recorded in
+  [`docs/adr/0006`](../../../docs/adr/0006-local-studio-execution-and-session-boundary.md),
+  [`docs/adr/0007`](../../../docs/adr/0007-separate-media-job-and-run-lifecycles.md),
+  and
+  [`docs/adr/0008`](../../../docs/adr/0008-local-secret-resolution.md).

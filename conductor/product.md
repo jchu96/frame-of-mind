@@ -49,7 +49,8 @@ is a later deployment mode.
   execution environment changes.
 - A browser tab is not the durable job boundary.
 - The normal local workflow must not require Cloudflare, R2, D1, or hosted auth.
-- Secrets must never be returned to the browser after being configured.
+- New API secrets must never be returned to the browser or persisted in
+  plaintext Studio storage.
 - Recording bytes must not enter Git, SQLite, D1, logs, or analytics.
 - Generated analyses remain sensitive even when the source repository is public.
 - The first release requires a supported video recording and Gemini Developer
@@ -60,9 +61,10 @@ is a later deployment mode.
 
 ### Phase A - Local Studio
 
-Nuxt UI in the browser, a loopback-only Bun server, local filesystem staging,
-SQLite job projection, OS-scoped configuration, and the existing Gemini
-analysis pipeline.
+Nuxt UI in the browser, an authenticated loopback Bun process, local filesystem
+staging, operational SQLite job state, rebuildable run projections,
+environment- or session-scoped API secrets, and the existing Gemini analysis
+pipeline.
 
 ### Phase B - Hosted Studio
 

@@ -11,6 +11,32 @@ preserves CLI compatibility and leaves the Cloudflare review-only target green.
 Hosted execution is represented only through contracts and roadmap
 documentation.
 
+This track is an umbrella delivery program, not one pull request. Each phase is
+an independently reviewable PR/issue with an approval gate. The existing CLI
+and import-only workspace remain usable until the Studio beta gate passes.
+
+## Delivery Slices
+
+### Slice 1 - Safe Foundation
+
+Phases 1-5 establish contracts, local session security, staging, shared
+orchestration, and durable jobs. Studio creation routes remain disabled by
+default. Exit only when restart, cancellation, cleanup, and Cloudflare bundle
+isolation are proven.
+
+### Slice 2 - Local Studio Beta
+
+Phases 6-7 expose the composer and activity surfaces to local-session users.
+The existing run detail page remains the completion surface. Exit only when a
+fresh clone can complete one synthetic end-to-end run and recover from the
+documented failures.
+
+### Slice 3 - Studio v1
+
+Phases 8-9 add retained/reattached video review, public documentation, platform
+installation evidence, and release hardening. Hosted execution remains a
+separate proposed track.
+
 ## Phase 1: Contracts And Architecture
 
 ### Tasks
@@ -20,61 +46,76 @@ documentation.
 - [ ] Task 1.2: Define strict shared Zod schemas and TypeScript types for job,
       job-event, media-session, configuration-status, and composer payloads.
 - [ ] Task 1.3: Define `MediaStagingAdapter`, `AnalysisJobExecutor`,
-      `JobRepository`, `SecretStore`, and progress-reporter interfaces without
-      Nuxt, SQLite, or provider types leaking into domain contracts.
-- [ ] Task 1.4: Write ADRs for local secret storage, media ownership/retention,
-      durable jobs, and the Phase A-to-B adapter boundary.
-- [ ] Task 1.5: Document the final state machine and map every terminal and
-      interrupted condition to an operator action.
+      `JobRepository`, runtime secret resolver, optional
+      `MeetingCatalogSource`, context-file staging, and progress-reporter
+      interfaces without Nuxt, SQLite, or provider shapes leaking into domain
+      contracts.
+- [ ] Task 1.4: Ratify ADRs 0006-0008 and write a threat model covering local
+      session bootstrap, DNS rebinding, local-process access, disk exhaustion,
+      deletion, and hosted bundle exclusion.
+- [ ] Task 1.5: Spike Nitro/H3 request streaming under Bun, bounded `FileSink`
+      writes, atomic seal/rename, byte-range playback, and build-time exclusion
+      from the Cloudflare artifact; document the verified state machines and
+      operator actions before freezing API contracts.
 
 ### Verification
 
-- [ ] Domain transition tests pass, ADRs agree with `docs/ARCHITECTURE.md`, and
-      no existing v2 contract changes.
+- [ ] Domain transition tests pass, ADRs agree with `docs/ARCHITECTURE.md`,
+      streaming/runtime spikes have recorded outcomes, the Cloudflare artifact
+      excludes local-only modules/routes, and no existing v2 contract changes.
 
 ## Phase 2: Local Configuration And Connection Health
 
 ### Tasks
 
-- [ ] Task 2.1: Add failing tests for environment precedence, private
-      filesystem permissions, redaction, disconnect, and secret-nonreturn.
-- [ ] Task 2.2: Implement an OS-scoped local configuration and secret store;
-      keep environment variables supported and document precedence.
-- [ ] Task 2.3: Add loopback-only validated configuration status, connect,
-      verify, and disconnect routes with bounded bodies and same-origin checks.
-- [ ] Task 2.4: Expose Bluedot and Granola OAuth initiation/status through
-      Studio without changing exact-resource token isolation.
+- [ ] Task 2.1: Add failing tests for per-launch bootstrap exchange, cookie
+      scope, environment/session precedence, redaction, disconnect,
+      secret-nonreturn, and hosted-route absence.
+- [ ] Task 2.2: Implement the local Studio session bootstrap and middleware on
+      top of peer/Host validation, including immediate clean-URL redirect and
+      log redaction.
+- [ ] Task 2.3: Implement the environment-first, process-memory-second runtime
+      secret resolver with no new plaintext filesystem or SQLite persistence.
+- [ ] Task 2.4: Add authenticated bounded configuration status/session-secret,
+      Bluedot/Granola OAuth status/initiation, and optional paginated provider
+      catalog routes without changing exact-resource isolation.
 - [ ] Task 2.5: Build the Nuxt UI Connections settings page with status,
-      last-verified time, source, rotate, and disconnect actions but no secret
-      echo.
+      source/lifetime, last verification, session set/clear, OAuth reconnect,
+      and persistent-environment guidance but no secret echo.
 
 ### Verification
 
-- [ ] A fresh private config directory passes permission checks; hostile Host,
-      cross-site, oversized, and secret-reflection tests fail closed.
+- [ ] Hostile Host, missing/invalid local session, cross-site, oversized, and
+      secret-reflection tests fail closed; the Cloudflare build has no local
+      bootstrap/config mutation route or runtime secret implementation.
 
 ## Phase 3: Resumable Local Media Staging
 
 ### Tasks
 
 - [ ] Task 3.1: Add failing adapter tests for create, ordered/out-of-order
-      parts, resume, complete, digest mismatch, abort, expiry, and idempotency.
+      parts, concurrent writers, resume, disk exhaustion, complete, digest
+      mismatch, retention, reattachment, abort, expiry, and idempotency.
 - [ ] Task 3.2: Implement private local staging outside the checkout with
-      opaque IDs, streamed part writes, byte limits, MIME validation, and
-      atomic sealing.
+      opaque IDs, streamed part writes, byte/part limits, free-space
+      reservation, MIME validation, streamed final SHA-256, and atomic sealing.
 - [ ] Task 3.3: Add bounded create, upload-part, status, complete, and abort
       routes; never accept or return arbitrary filesystem paths.
 - [ ] Task 3.4: Implement expiry and startup reconciliation for abandoned,
-      partially written, sealed, and cleanup-failed sessions.
+      partially written, sealed, retained, and cleanup-failed sessions.
 - [ ] Task 3.5: Build the accessible Nuxt drop zone with resumable progress,
-      validation, abort, retry, and explicit storage/remote-transfer disclosure.
-- [ ] Task 3.6: Evaluate native chunking versus a resumable upload library and
-      record the protocol decision without exposing it above the adapter.
+      validation, abort, retry, ephemeral/retained selection, and explicit
+      storage/remote-transfer disclosure.
+- [ ] Task 3.6: Add a distinct bounded context-file ingestion path for JSON,
+      text, Markdown, SRT, and VTT; normalize through the existing adapter and
+      delete private context staging after use.
 
 ### Verification
 
 - [ ] Stream a synthetic large fixture without full-body buffering; interrupt,
-      restart, resume, seal, and clean it while preserving source ownership.
+      restart, resume, reject a concurrent writer, handle disk exhaustion,
+      seal, retain/expire, reattach by digest, and clean it while preserving
+      source ownership.
 
 ## Phase 4: Reusable Analysis Orchestration
 
@@ -100,11 +141,12 @@ documentation.
 
 ### Tasks
 
-- [ ] Task 5.1: Add SQLite migrations and parity tests for jobs, events, staged
-      media receipts, and review notes without storing media or transcripts.
+- [ ] Task 5.1: Add SQLite migrations and parity tests for operational jobs,
+      events, and staged-media receipts without storing media, transcripts, or
+      reviewer-authored state.
 - [ ] Task 5.2: Implement the SQLite `JobRepository` with atomic transitions,
       idempotent creation, bounded listing, and event ordering.
-- [ ] Task 5.3: Implement the local Bun executor with documented concurrency,
+- [ ] Task 5.3: Implement the local Bun executor with concurrency one,
       startup reconciliation, structured progress persistence, and no CLI log
       scraping.
 - [ ] Task 5.4: Implement durable cancellation and linked retry attempts,
@@ -117,7 +159,8 @@ documentation.
 ### Verification
 
 - [ ] Restart the server during queued, running, cancellation, and terminal
-      states; prove no duplicate execution and correct recovery actions.
+      states; prove no duplicate execution, correct interruption/retry actions,
+      and a Cloudflare artifact free of the executor and `bun:` imports.
 
 ## Phase 6: Studio Shell And Analysis Composer
 
@@ -129,7 +172,8 @@ documentation.
       health, empty state, and one primary New Analysis action.
 - [ ] Task 6.3: Build the Recording step over the Phase 3 staging composable.
 - [ ] Task 6.4: Build the Context step with explicit provider/transport
-      selection, meeting search/preview, local context, and advanced alignment.
+      selection, optional paginated meeting catalog or exact-ID fallback,
+      bounded local context upload, preview, and advanced alignment.
 - [ ] Task 6.5: Build the Intent step with recipe cards, focus, strict custom
       recipe validation, and advanced model details.
 - [ ] Task 6.6: Build the Run receipt with privacy, retention, Gemini transfer,
@@ -165,14 +209,14 @@ documentation.
 
 ### Tasks
 
-- [ ] Task 8.1: Add a secure opaque-ID byte-range media route with traversal,
-      expiry, content-type, and hostile-request tests.
+- [ ] Task 8.1: Add a local-session-protected opaque-ID byte-range media route
+      with traversal, expiry, content-type, and hostile-request tests.
 - [ ] Task 8.2: Build the responsive finding/video/detail workspace with
       accepted/rejected filters and candidate markers.
 - [ ] Task 8.3: Seek the player from canonical evidence timestamps and display
       aligned transcript excerpts without rendering untrusted HTML.
-- [ ] Task 8.4: Add local reviewer notes and dispositions as rebuildable
-      projection data.
+- [ ] Task 8.4: Add the expired-media reattachment flow and require a streamed
+      digest match against `manifest.json` before playback or retry.
 - [ ] Task 8.5: Add copy Markdown and download bundle actions; keep GitHub,
       Asana, and other external publishing out of scope.
 
@@ -185,8 +229,9 @@ documentation.
 
 ### Tasks
 
-- [ ] Task 9.1: Update README, architecture, credentials, privacy, Studio,
-      troubleshooting, backup, and operations runbooks.
+- [ ] Task 9.1: Reconcile README, ADR log, architecture, credentials, privacy,
+      Studio, troubleshooting, backup, and operations runbooks against shipped
+      behavior.
 - [ ] Task 9.2: Add a public data-classification table and verify `.gitignore`,
       fixtures, screenshots, logs, examples, and repository history contain no
       sensitive runtime data.
@@ -210,14 +255,39 @@ Each phase can become a public GitHub issue after the specification is approved:
 | Issue | Title | Depends On |
 |---|---|---|
 | 1 | Define Studio job, staging, and execution contracts | None |
-| 2 | Add private local configuration and connection health | 1 |
+| 2 | Add local session, runtime secrets, and connection health | 1 |
 | 3 | Add resumable local recording staging | 1 |
 | 4 | Extract reusable analysis orchestration from the CLI | 1 |
 | 5 | Implement the durable Bun job executor | 2, 3, 4 |
 | 6 | Build the Studio shell and analysis composer | 2, 3, 5 |
 | 7 | Build activity, cancellation, retry, and recovery UX | 5, 6 |
-| 8 | Build timestamp-linked video review | 5, 6 |
+| 8 | Build timestamp-linked video review | 3, 5, 6 |
 | 9 | Harden, document, and define the hosted roadmap | 1-8 |
+
+## Risk Register
+
+| Risk | Early evidence or mitigation | Stop condition |
+|---|---|---|
+| Nitro/H3 buffers upload parts | Phase 1 streaming spike with measured memory | No Phase 3 API until streaming is proven |
+| Local credential routes rely only on localhost | Per-launch capability and hostile-request tests | No settings mutation without session gate |
+| Upload exhausts disk or races writers | Reservation, one-writer transition, bounded parts | Abort and clean without sealing |
+| Process exits during Gemini work | Persist stage/events and mark interrupted | Never auto-resume indeterminate remote state |
+| Playback contradicts deletion policy | Explicit ephemeral/retained modes and digest reattachment | No player claim without accessible matching media |
+| Job DB is mistaken for a run projection | ADR 0007 authority boundary and schema tests | No active job reconstruction from run rows |
+| Local Bun code leaks into Worker | Per-phase artifact inspection and route-absence tests | Cloudflare build fails |
+| Track scope hides an unusable middle | Three delivery slices with stop/go gates | Do not expose beta before synthetic end-to-end run |
+
+## Rollback And Compatibility
+
+- Keep existing CLI commands and the import-only workspace operational through
+  all phases.
+- Add SQLite migrations rather than rewriting prior migrations; back up local
+  projections before upgrade testing.
+- Keep Studio creation/control routes disabled by default through Slice 1.
+- A failed beta can disable Studio routes without invalidating published v2 run
+  bundles or the existing viewer.
+- Revert implementation by phase through Conductor commit history; never alter
+  existing run bundles to roll back the UI.
 
 ## Final Verification
 
