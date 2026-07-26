@@ -481,6 +481,7 @@ structured output, video metadata, OAuth, and cleanup contracts.
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Local Studio threat model](docs/THREAT_MODEL.md)
 - [Gemini credentials](docs/CREDENTIALS.md)
 - [Recipes](docs/RECIPES.md)
 - [Provider contracts](docs/PROVIDERS.md)
