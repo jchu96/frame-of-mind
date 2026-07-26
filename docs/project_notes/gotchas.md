@@ -32,3 +32,10 @@
   its candidate window.
 - v1 analysis/manifest files are not import-compatible with v0.2. Renaming the
   schema number does not create the missing digest or revalidate old evidence.
+- A loopback/Host guard is not sufficient once Studio accepts credentials or
+  destructive mutations. Require the per-launch local session from ADR 0006.
+- Do not call active job/event rows a rebuildable projection. They are
+  operational authority until a successful v2 run pair publishes.
+- Browser drag-and-drop does not preserve an arbitrary source path after
+  refresh. Timestamp playback requires retained private media or
+  digest-verified reattachment.

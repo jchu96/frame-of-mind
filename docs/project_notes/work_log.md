@@ -29,3 +29,9 @@
   isolation, v2 run/digest/recipe provenance, strict evidence timestamps,
   caption normalization, bounded Granola streaming, cleanup retries, CSRF
   controls, keyset pagination, and D1 bulk item expansion.
+- Added and adversarially reviewed the public local Studio Conductor track.
+  Grounded five architecture blockers and two plan gaps, then revised job/media
+  authority, local session security, retention/reattachment, provider
+  capabilities, Worker isolation, delivery slices, rollback, and risk gates.
+- Added the canonical ADR index and ADRs 0006-0008 for local Studio execution,
+  lifecycle separation, and environment/session-only API secrets.

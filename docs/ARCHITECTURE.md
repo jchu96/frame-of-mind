@@ -564,6 +564,64 @@ Local unauthenticated mode is loopback-only. Hosted mode combines a
 Cloudflare Access policy over the complete hostname with in-Worker validation
 of the Access JWT signature, issuer, audience, and algorithm.
 
+### Planned local Studio
+
+The accepted Phase A direction evolves the local viewer into a Studio without
+changing the current v0.2 behavior yet:
+
+```mermaid
+flowchart LR
+    Browser[Nuxt Studio]
+    Session[Per-launch local session]
+    Bun[Bun and Nitro]
+    Media[Private media session]
+    Jobs[(Operational SQLite jobs)]
+    Core[Shared analysis orchestration]
+    Gemini[Gemini Files API]
+    Pair[analysis.json and manifest.json]
+    Runs[(Rebuildable run projection)]
+
+    Browser --> Session --> Bun
+    Bun --> Media
+    Bun --> Jobs
+    Jobs --> Core
+    Media --> Core
+    Core --> Gemini
+    Core --> Pair
+    Pair --> Runs
+```
+
+Three lifecycle boundaries are independent:
+
+- media sessions own upload, sealing, retention, reattachment, and deletion;
+- analysis jobs own queued/running/cancellation/interruption state;
+- a successful atomic run pair owns completed analysis.
+
+SQLite jobs/events are operational authority while work is active. They are not
+rebuildable from a run that does not exist yet. After success,
+`analysis.json`/`manifest.json` become authoritative and their run/item
+projection remains disposable.
+
+The first Studio runs one job at a time in the Bun application process.
+Closing the browser does not cancel it; restarting the process marks active
+work interrupted and requires an explicit linked retry. API secrets come from
+the environment or process-memory session input. Mutating local routes require
+a per-launch capability/session in addition to loopback, Host, and same-origin
+checks.
+
+Ephemeral recording staging is deleted after terminal cleanup by default.
+Timestamp-linked playback requires explicit time-bounded retention or
+reattachment of a file whose streamed SHA-256 matches the manifest. Recording
+bytes do not enter SQLite, D1, the run bundle, or logs.
+
+The Cloudflare review artifact excludes the local session bootstrap, secret
+resolver, media staging/server, executor, and `bun:` implementations. Hosted
+execution remains a separate Phase B track. See
+[ADR 0006](adr/0006-local-studio-execution-and-session-boundary.md),
+[ADR 0007](adr/0007-separate-media-job-and-run-lifecycles.md),
+[ADR 0008](adr/0008-local-secret-resolution.md), and the
+[Conductor track](../conductor/tracks/local-studio_20260726/).
+
 ### Future MCP surface
 
 The future MCP server reuses a read-only query core above `RunStore`:

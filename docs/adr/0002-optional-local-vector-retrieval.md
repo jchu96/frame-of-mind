@@ -1,6 +1,7 @@
 # ADR 0002: Make vector retrieval optional and local
 
-Status: Proposed
+- Status: Proposed
+- Date: 2026-07-25
 
 ## Invariant
 
