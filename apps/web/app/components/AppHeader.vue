@@ -2,6 +2,7 @@
 import type { SessionInfo } from "../../shared/types";
 
 const { data: session } = await useFetch<SessionInfo>("/api/session");
+const config = useRuntimeConfig();
 </script>
 
 <template>
@@ -21,6 +22,15 @@ const { data: session } = await useFetch<SessionInfo>("/api/session");
 
       <nav class="flex items-center gap-2" aria-label="Primary navigation">
         <UButton to="/" color="neutral" variant="ghost" size="sm">Runs</UButton>
+        <UButton
+          v-if="config.public.studioEnabled"
+          to="/connections"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+        >
+          Connections
+        </UButton>
         <UButton to="/import" color="primary" variant="soft" size="sm">Import run</UButton>
         <UBadge
           color="neutral"

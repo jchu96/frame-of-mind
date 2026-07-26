@@ -26,7 +26,10 @@ export class GranolaClient {
 
   private readonly endpoint;
 
-  constructor(serverUrl = process.env.GRANOLA_MCP_URL) {
+  constructor(
+    serverUrl = process.env.GRANOLA_MCP_URL,
+    private readonly announceAuthorization = true,
+  ) {
     this.endpoint = resolveMcpEndpoint(
       "granola",
       serverUrl,
@@ -53,7 +56,9 @@ export class GranolaClient {
       if (!(error instanceof UnauthorizedError)) throw error;
       if (!authorizationUrl) throw new Error("Granola did not provide an OAuth authorization URL.");
       await callback.listen();
-      process.stderr.write(`Authorize Granola in your browser:\n${authorizationUrl.toString()}\n`);
+      if (this.announceAuthorization) {
+        process.stderr.write(`Authorize Granola in your browser:\n${authorizationUrl.toString()}\n`);
+      }
       await openBrowser(authorizationUrl);
       const code = await callback.code;
       await this.transport?.finishAuth(code);

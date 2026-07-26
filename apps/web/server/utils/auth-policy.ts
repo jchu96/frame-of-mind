@@ -21,6 +21,16 @@ export function isLoopbackAddress(address: string | undefined): boolean {
   return normalized === "127.0.0.1" || normalized === "::1";
 }
 
+export function isTrustedLoopbackRequest(
+  hostHeader: string | undefined,
+  peerAddress: string | undefined,
+  listenerHost: string | undefined,
+): boolean {
+  if (!isLoopbackHost(hostHeader)) return false;
+  if (peerAddress) return isLoopbackAddress(peerAddress);
+  return isLoopbackHost(listenerHost);
+}
+
 export function normalizeTeamDomain(value: unknown): string {
   const raw = String(value || "").replace(/\/+$/, "");
   const url = new URL(raw);

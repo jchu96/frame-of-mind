@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  isLoopbackHost,
   isLoopbackAddress,
+  isLoopbackHost,
+  isTrustedLoopbackRequest,
   normalizeTeamDomain,
   parseAuthMode,
 } from "../server/utils/auth-policy";
@@ -15,6 +16,24 @@ describe("authentication policy", () => {
     expect(isLoopbackAddress("127.0.0.1")).toBe(true);
     expect(isLoopbackAddress("::ffff:127.0.0.1")).toBe(true);
     expect(isLoopbackAddress("192.0.2.4")).toBe(false);
+  });
+
+  test("falls back to an explicit loopback listener when Bun omits the peer address", () => {
+    expect(isTrustedLoopbackRequest(
+      "127.0.0.1:3000",
+      undefined,
+      "127.0.0.1",
+    )).toBe(true);
+    expect(isTrustedLoopbackRequest(
+      "127.0.0.1:3000",
+      undefined,
+      "0.0.0.0",
+    )).toBe(false);
+    expect(isTrustedLoopbackRequest(
+      "attacker.example",
+      undefined,
+      "127.0.0.1",
+    )).toBe(false);
   });
 
   test("accepts only explicit auth modes", () => {
