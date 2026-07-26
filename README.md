@@ -14,7 +14,7 @@ frameofmind analyze "MEETING_ID" \
   --recipe requirements
 ```
 
-> Early public release: `v0.1.0`. Review generated work before using or
+> Early public release: `v0.2.0`. Review generated work before using or
 > publishing it.
 
 ## Why Frame of Mind
@@ -57,7 +57,7 @@ flowchart LR
     A --> M
     R --> M
     M --> J
-    M --> P
+    J -->|runId plus SHA-256| P
     J --> H
 ```
 
@@ -88,7 +88,7 @@ sensitive because screenshots are embedded.
 - Bluedot, Granola, or local context
 - local MP4/MOV/M4V/WebM screen recording
 
-The current pipeline uses the official `@google/genai` Files API and defaults
+The current pipeline uses the official `@google/genai` `2.13.0` Files API and defaults
 to `gemini-3.6-flash`. Recordings must use a supported video extension and stay
 within the Files API's 2 GB per-file limit.
 
@@ -159,8 +159,11 @@ Granola:
 frameofmind auth granola
 ```
 
-Both use browser OAuth with separate local token files. Granola transcript
-availability can depend on plan and workspace policy.
+Both use browser OAuth with separate local token files. Credentials are bound
+to the exact HTTPS MCP resource URL. A noncanonical `BLUEDOT_MCP_URL` or
+`GRANOLA_MCP_URL` receives a separate origin-hashed credential file and can
+never inherit the canonical provider token. Granola transcript availability
+can depend on plan and workspace policy.
 
 If you have an official Granola API key, you may use the explicit REST
 transport instead of OAuth:
@@ -225,6 +228,10 @@ frameofmind analyze "MEETING_ID" \
 Without the flag, Gemini estimates alignment. Inspect `manifest.json` before
 trusting transcript-correlated output.
 
+Offsets are signed transcript-time minus video-time. For example,
+`--transcript-offset "-00:30"` means the transcript begins 30 seconds after
+the video.
+
 ### Bounded trial
 
 ```bash
@@ -243,6 +250,7 @@ frameofmind analyze "MEETING_ID" \
   "id": "customer-objections",
   "label": "Customer objections",
   "description": "Extract explicit objections, responses, and unresolved risk.",
+  "revision": "2026-07-26.1",
   "indexInstruction": "Find explicit concerns that may block adoption. Reject neutral questions.",
   "interrogationInstruction": "Preserve the exact objection, context, response, resolution status, and follow-up."
 }
@@ -344,6 +352,12 @@ Only the two JSON contracts are stored. Recordings, screenshots, full
 transcripts, provider payloads, and API credentials are not copied into
 SQLite or D1.
 
+Version 2 bundles are cryptographically paired: `analysis.json` carries the
+run ID and `manifest.json` carries the SHA-256 of the exact canonical analysis
+JSON. Imports reject mismatched IDs, modified analyses, malformed timestamps,
+and contradictory normalized provenance. Version 1 bundles are intentionally
+not accepted by the v0.2 workspace; rerun the source analysis to migrate.
+
 Hosted mode builds for Cloudflare Workers, uses D1, and fails closed behind
 Cloudflare Access JWT validation:
 
@@ -381,12 +395,19 @@ import boundary, backups, and troubleshooting.
 ## Privacy and security
 
 - Meeting content is untrusted data, never instructions.
+- The immutable content-safety guard is a Gemini system instruction; recipes
+  and transcript text remain untrusted user content.
 - Gemini receives the selected video and normalized transcript.
 - Gemini uploads are deleted on success and failure by default.
 - Raw MCP payloads and full transcripts are not persisted in a normal run.
 - Signed URLs are treated as bearer secrets and never written to artifacts.
+- Evidence app URLs retain only credential-free HTTPS origin/path values;
+  query strings, fragments, and userinfo are rejected.
 - Downloads enforce host, TLS, redirect, time, size, and media-type controls.
 - Outputs use user-only POSIX modes and publish atomically.
+- Browser imports require JSON and reject cross-site/foreign-origin mutations.
+- Run lists use bounded keyset pagination; D1 item writes use transactional
+  JSON expansion rather than one query per finding.
 - The tool never creates tickets or messages without separate authorization.
 - Generated output requires human review.
 
@@ -469,8 +490,8 @@ structured output, video metadata, OAuth, and cleanup contracts.
 - Automatic transcript alignment is model-derived.
 - No built-in external publishing yet.
 - No centralized/encrypted evidence vault.
-- No cross-run vector index in `v0.1.0`.
-- Review-workspace imports are manual in `v0.1.0`.
+- No cross-run vector index in `v0.2.0`.
+- Review-workspace imports are manual in `v0.2.0`.
 - The local/Cloudflare MCP server is designed but intentionally deferred to the
   next iteration.
 

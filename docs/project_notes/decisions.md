@@ -31,6 +31,19 @@ reviewed `analysis.json` and `manifest.json` into local SQLite or Cloudflare D1.
 Hosted imports are explicit and protected by Cloudflare Access plus in-app JWT
 validation.
 
+## 2026-07-26 — Run bundles are cryptographically paired
+
+Schema v2 places the run ID in both contracts and the canonical
+`analysis.json` SHA-256 in `manifest.json`. Import and hydration revalidate the
+pair; normalized database columns are only a projection and must match it.
+Schema v1 imports fail closed and must be regenerated.
+
+## 2026-07-26 — MCP OAuth credentials are exact-resource scoped
+
+Canonical provider endpoints retain stable token paths for usability. Every
+custom HTTPS endpoint gets an origin-hashed token path, and stored credentials
+include the exact MCP resource URL. No provider token may cross that boundary.
+
 ## 2026-07-25 — MCP follows the read-only retrieval pattern
 
 The first Frame of Mind MCP surface is deferred to the next iteration. Local

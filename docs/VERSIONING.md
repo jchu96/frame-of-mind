@@ -7,10 +7,10 @@ versions for durable schemas and prompts.
 
 | Surface | Current | Change rule |
 |---|---:|---|
-| CLI/package | `0.1.0` | Semantic Versioning |
-| `analysis.json` schema | `1` | increment for breaking shape/meaning |
-| `manifest.json` schema | `1` | increment for breaking provenance changes |
-| prompt revision | date-based | increment for material instruction changes |
+| CLI/package | `0.2.0` | Semantic Versioning |
+| `analysis.json` schema | `2` | increment for breaking shape/meaning |
+| `manifest.json` schema | `2` | increment for breaking provenance changes |
+| prompt revision | `2026-07-26.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
 ## Before 1.0
@@ -63,6 +63,12 @@ Provider SDK updates require OAuth, tool discovery, schema, and cleanup tests.
 Renderers must reject unsupported future major schema versions instead of
 guessing. Compatible optional fields may be added without incrementing schema
 version only when old consumers safely ignore them.
+
+Schema 2 is intentionally incompatible with schema 1 imports. It adds a shared
+run ID, an analysis digest in the manifest, strict canonical timestamps, and
+recipe revision/content provenance. Re-run the original source analysis to
+migrate; do not hand-edit a v1 bundle into v2 because its evidence was not
+validated under the v2 timestamp and pairing rules.
 
 ## Prompt revision
 

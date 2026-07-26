@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { AnalysisRun, RunManifest } from "../domain/types.js";
 import { ensureDirectory } from "../lib/files.js";
+import { canonicalAnalysisJson } from "../domain/integrity.js";
 
 export async function writeArtifacts(directory: string, analysis: AnalysisRun, manifest: RunManifest): Promise<string[]> {
   await ensureDirectory(directory);
@@ -9,7 +10,7 @@ export async function writeArtifacts(directory: string, analysis: AnalysisRun, m
   const analysisMarkdown = join(directory, "analysis.md");
   const reportHtml = join(directory, "report.html");
   const manifestJson = join(directory, "manifest.json");
-  await writeFile(analysisJson, `${JSON.stringify(analysis, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(analysisJson, canonicalAnalysisJson(analysis), { mode: 0o600 });
   await writeFile(analysisMarkdown, renderAnalysis(analysis), { mode: 0o600 });
   await writeFile(reportHtml, await renderHtmlArtifact(directory, analysis, manifest), { mode: 0o600 });
   await writeFile(manifestJson, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });

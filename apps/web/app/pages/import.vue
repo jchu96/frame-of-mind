@@ -44,7 +44,7 @@ async function importRun() {
         <h1 class="mt-4 text-4xl font-black tracking-[-0.04em] sm:text-5xl">Import a reviewed run.</h1>
         <p class="mt-4 max-w-2xl leading-7 text-zinc-600">
           Select the matching files from one Frame of Mind run directory. The server validates
-          both contracts and their shared meeting, recipe, and model identity before writing.
+          both contracts, their shared identity, and the canonical analysis SHA-256 before writing.
         </p>
 
         <div class="fom-panel mt-8 p-6 sm:p-8">

@@ -73,11 +73,34 @@ ON CONFLICT(run_id) DO UPDATE SET
   imported_by = excluded.imported_by
 `;
 
-export const insertItemSql = `
+export const insertItemsFromJsonSql = `
 INSERT INTO analysis_items (
   run_id, item_index, accepted, kind, title, summary, importance,
   start_time, end_time, screenshot, candidate_json, result_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+)
+SELECT
+  json_extract(value, '$.runId'),
+  json_extract(value, '$.itemIndex'),
+  json_extract(value, '$.result.accepted'),
+  json_extract(value, '$.result.kind'),
+  json_extract(value, '$.result.title'),
+  json_extract(value, '$.result.summary'),
+  coalesce(
+    json_extract(value, '$.result.importance'),
+    json_extract(value, '$.candidate.importance')
+  ),
+  json_extract(value, '$.candidate.start'),
+  json_extract(value, '$.candidate.end'),
+  json_extract(value, '$.screenshot'),
+  json(json_extract(value, '$.candidate')),
+  json(json_extract(value, '$.result'))
+FROM json_each(?)
+`;
+
+export const runSummaryColumns = `
+  run_id, meeting_id, meeting_title, provider, transport, recipe_id,
+  recipe_label, model, started_at, completed_at, accepted_count,
+  rejected_count, imported_at, imported_by
 `;
 
 export function importValues(input: {
@@ -117,37 +140,72 @@ export function importValues(input: {
   ] as const;
 }
 
-export function itemValues(
+interface ProjectionItem {
+  candidate: {
+    start: string;
+    end: string;
+    importance: "high" | "medium" | "low";
+  };
+  result: {
+    accepted: boolean;
+    kind: string;
+    title: string;
+    summary: string;
+    importance?: "high" | "medium" | "low";
+  };
+  screenshot?: string;
+}
+
+export const MAX_D1_JSON_PARAMETER_BYTES = 900_000;
+export const MAX_D1_RUN_ROW_BYTES = 1_800_000;
+
+export class D1ProjectionLimitError extends Error {}
+
+export function assertD1RunRowSize(
+  input: Parameters<typeof importValues>[0],
+  actor?: string,
+): void {
+  const encoder = new TextEncoder();
+  const bytes = importValues(input, actor).reduce(
+    (total, value) => total + (
+      typeof value === "string" ? encoder.encode(value).byteLength : 8
+    ),
+    0,
+  );
+  if (bytes > MAX_D1_RUN_ROW_BYTES) {
+    throw new D1ProjectionLimitError("Run bundle exceeds the D1 projection row limit.");
+  }
+}
+
+export function itemJsonBatches(
   runId: string,
-  item: {
-    candidate: {
-      start: string;
-      end: string;
-      importance: "high" | "medium" | "low";
-    };
-    result: {
-      accepted: boolean;
-      kind: string;
-      title: string;
-      summary: string;
-      importance?: "high" | "medium" | "low";
-    };
-    screenshot?: string;
-  },
-  index: number,
-) {
-  return [
+  items: ProjectionItem[],
+): string[] {
+  const rows = items.map((item, index) => JSON.stringify({
     runId,
-    index,
-    item.result.accepted ? 1 : 0,
-    item.result.kind,
-    item.result.title,
-    item.result.summary,
-    item.result.importance ?? item.candidate.importance,
-    item.candidate.start,
-    item.candidate.end,
-    item.screenshot ?? null,
-    JSON.stringify(item.candidate),
-    JSON.stringify(item.result),
-  ] as const;
+    itemIndex: index,
+    screenshot: item.screenshot ?? null,
+    candidate: item.candidate,
+    result: item.result,
+  }));
+  const encoder = new TextEncoder();
+  const batches: string[] = [];
+  let current: string[] = [];
+  let currentBytes = 2;
+  for (const row of rows) {
+    const rowBytes = encoder.encode(row).byteLength;
+    if (rowBytes + 2 > MAX_D1_JSON_PARAMETER_BYTES) {
+      throw new D1ProjectionLimitError("One analysis item exceeds the D1 projection parameter limit.");
+    }
+    const separatorBytes = current.length ? 1 : 0;
+    if (current.length && currentBytes + separatorBytes + rowBytes > MAX_D1_JSON_PARAMETER_BYTES) {
+      batches.push(`[${current.join(",")}]`);
+      current = [];
+      currentBytes = 2;
+    }
+    current.push(row);
+    currentBytes += (current.length > 1 ? 1 : 0) + rowBytes;
+  }
+  if (current.length) batches.push(`[${current.join(",")}]`);
+  return batches;
 }

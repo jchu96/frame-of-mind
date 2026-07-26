@@ -1,17 +1,18 @@
 import { z } from "zod";
 import type { MeetingContextSource, MeetingEvidence } from "../domain/types.js";
 import { extractGranolaTranscript } from "./granola-mcp.js";
+import { readResponseTextLimited, ResponseTooLargeError } from "../lib/http.js";
 
 const GRANOLA_API_ORIGIN = "https://public-api.granola.ai";
 const MAX_RESPONSE_BYTES = 20 * 1024 * 1024;
 
 const granolaNoteSchema = z.object({
   id: z.string(),
-  title: z.string().optional(),
+  title: z.string().nullish(),
   created_at: z.string().optional(),
   web_url: z.string().url().optional(),
-  summary_text: z.string().optional(),
-  summary_markdown: z.string().optional(),
+  summary_text: z.string().nullish(),
+  summary_markdown: z.string().nullish(),
   transcript: z.array(z.object({
     speaker: z.object({
       source: z.string().optional(),
@@ -20,7 +21,7 @@ const granolaNoteSchema = z.object({
     text: z.string(),
     start_time: z.string().optional(),
     end_time: z.string().optional(),
-  }).passthrough()).optional(),
+  }).passthrough()).nullish(),
 }).passthrough();
 
 export class GranolaApiClient implements MeetingContextSource {
@@ -51,7 +52,7 @@ export class GranolaApiClient implements MeetingContextSource {
       headers: {
         authorization: `Bearer ${this.apiKey}`,
         accept: "application/json",
-        "user-agent": "frameofmind/0.1.0",
+        "user-agent": "frameofmind/0.2.0",
       },
       redirect: "error",
       signal: AbortSignal.timeout(30_000),
@@ -61,13 +62,20 @@ export class GranolaApiClient implements MeetingContextSource {
     }
     const contentLength = Number(response.headers.get("content-length") || "0");
     if (contentLength > MAX_RESPONSE_BYTES) {
+      await response.body?.cancel("Response exceeds safety limit.").catch(() => undefined);
       throw new Error("Granola API response exceeds the 20 MB safety limit.");
     }
-    const text = await response.text();
-    if (Buffer.byteLength(text) > MAX_RESPONSE_BYTES) {
-      throw new Error("Granola API response exceeds the 20 MB safety limit.");
+    let text: string;
+    try {
+      text = await readResponseTextLimited(response, MAX_RESPONSE_BYTES);
+    } catch (error) {
+      if (error instanceof ResponseTooLargeError) {
+        throw new Error("Granola API response exceeds the 20 MB safety limit.");
+      }
+      throw error;
     }
     const raw = granolaNoteSchema.parse(JSON.parse(text));
+    const summary = raw.summary_markdown ?? raw.summary_text;
     return {
       id: raw.id,
       provider: this.provider,
@@ -75,10 +83,8 @@ export class GranolaApiClient implements MeetingContextSource {
       ...(raw.title ? { title: raw.title } : {}),
       ...(raw.created_at ? { createdAt: raw.created_at } : {}),
       ...(raw.web_url ? { sourceUrl: raw.web_url } : {}),
-      ...(raw.summary_markdown || raw.summary_text
-        ? { summary: raw.summary_markdown || raw.summary_text }
-        : {}),
-      transcript: extractGranolaTranscript(raw.transcript || []),
+      ...(summary ? { summary } : {}),
+      transcript: extractGranolaTranscript(raw.transcript ?? []),
       raw,
     };
   }

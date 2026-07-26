@@ -11,7 +11,7 @@ removal.
 | Repository | `jchu96/frame-of-mind` |
 | CLI | `frameofmind` |
 | Skill | `/frame-of-mind` |
-| Initial version | `0.1.0` |
+| Current version | `0.2.0` |
 | Default model | `gemini-3.6-flash` |
 | Gemini backend | Developer API Files API |
 | Context providers | Bluedot MCP, Granola MCP/API, local file |
@@ -138,7 +138,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.1.0
+0.2.0
 ```
 
 ### 1.5 Configure Gemini
@@ -415,6 +415,8 @@ Verify:
 - context provider;
 - media source;
 - recording/transcript hashes;
+- analysis SHA-256 and shared run ID;
+- recipe revision and SHA-256;
 - transcript alignment;
 - remote deletion state;
 - artifact inventory.
@@ -434,6 +436,7 @@ Open:
 - Does the recipe match the desired output?
 - Is the transcript offset plausible?
 - Is the timestamp supported by video?
+- Is every timestamp canonical `HH:MM:SS` and inside the indexed candidate?
 - Is the quote exact?
 - Is a URL actually visible?
 - Are owner/date/decision status explicit?
@@ -470,7 +473,7 @@ Delete stale runs through a file manager or exact verified path. Never run a
 broad recursive delete against home, application-data root, or repository root.
 
 Hosted D1 projections need an explicit owner and retention period because they
-can contain meeting quotes and visible UI text. Version 0.1.0 does not automate
+can contain meeting quotes and visible UI text. Version 0.2.0 does not automate
 hosted expiry. Use the ID-validated preview, delete, and verification procedure
 in [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md#hosted-retention-and-exact-run-purge);
 never delete by a partial title or meeting-name search.
@@ -523,6 +526,11 @@ Actions:
 ### 6.4 Gemini file remains `PROCESSING`
 
 The CLI polls for up to 30 minutes.
+
+The SDK also has finite request deadlines: 20 minutes for the initial upload,
+10 minutes for each model generation, and 30 seconds for file status/delete.
+The processing loop uses one monotonic 30-minute wall-clock budget rather than
+counting polls with unbounded network waits.
 
 Check:
 
@@ -589,6 +597,10 @@ Do not bind OAuth callbacks to non-loopback addresses.
 4. re-run `frameofmind auth <provider>`.
 
 Do not delete the whole config directory if the other provider must remain.
+
+Custom MCP endpoints never reuse canonical credentials. They must use HTTPS
+and receive an origin-hashed token file. If an endpoint changes, expect a new
+authorization flow. Do not copy the canonical token JSON to make it work.
 
 ### 6.10 Bluedot meeting is unavailable
 
@@ -698,6 +710,9 @@ Actions:
 4. rerun;
 5. treat prior transcript-correlated records as invalid.
 
+Offsets are signed transcript-time minus video-time. Use `-MM:SS` or
+`-HH:MM:SS` when the transcript begins after the video.
+
 ### 6.19 No accepted records
 
 This can be correct.
@@ -761,6 +776,21 @@ cleanup.
 3. restart the agent session;
 4. ensure an unmanaged directory did not block installation;
 5. on Windows, distinguish copied skill files from repository symlinks.
+
+### 6.24 A v1 workspace run disappeared after upgrading to v0.2
+
+This is fail-closed compatibility behavior. v0.2 list/detail queries hide v1
+and malformed projection rows rather than attempting to render them as v2.
+
+1. preserve the original v1 run bundle;
+2. rerun the authorized source analysis with v0.2;
+3. import the resulting v2 pair, which replaces the same run ID when retained;
+4. verify the v2 detail page and digest;
+5. back up, then purge any obsolete exact-ID projection row only when policy
+   requires removal.
+
+Never change only `schemaVersion`; that does not create the missing digest,
+recipe provenance, or timestamp validation.
 
 ## 7. Security and incident response
 

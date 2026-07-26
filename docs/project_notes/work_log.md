@@ -22,3 +22,10 @@
   retention.
 - Reproduced and fixed a clean Linux CI failure caused by an undeclared
   Tailwind workspace dependency, then validated a fresh frozen Bun install.
+
+## 2026-07-26
+
+- Completed the v0.2 adversarial hardening pass: exact-resource OAuth
+  isolation, v2 run/digest/recipe provenance, strict evidence timestamps,
+  caption normalization, bounded Granola streaming, cleanup retries, CSRF
+  controls, keyset pagination, and D1 bulk item expansion.
