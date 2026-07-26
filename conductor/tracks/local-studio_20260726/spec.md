@@ -194,7 +194,8 @@ Every transition records UTC time, progress metadata, and a sanitized message.
 Invalid transitions fail closed. Starting the same idempotency key cannot
 create duplicate analysis jobs. Cancellation intent is stored separately before
 the executor is signaled. `created`, `uploading`, `sealed`, `in_use`, `aborted`,
-`expired`, `deleting`, and `deleted` belong to the media lifecycle, not the job.
+`retained`, `expired`, `deleting`, and `deleted` belong to the media lifecycle,
+not the job.
 
 ### FR-07 - Process Execution
 
@@ -297,6 +298,9 @@ New local runtime concepts:
 - `staged_media`
   - opaque ID, expected/received bytes, digest, MIME type;
   - lifecycle status, private server-side path, expiry, cleanup receipt.
+- `staged_context`
+  - opaque ID, bounded byte count, declared/validated format, private path;
+  - expiry and deletion receipt, but no transcript body in SQLite.
 
 Private paths never cross the API boundary. Recording and transcript bytes do
 not enter SQLite. Jobs/events are operational state while work is active;
@@ -410,6 +414,8 @@ model, retention ADR, cost model, and operational runbook.
 - [ ] The Cloudflare review-only build contains no local secret, staging,
       execution, media-serving, or `bun:` implementation and exposes no
       local-only routes.
+- [ ] Operational job/context/media tables are local-only and do not alter the
+      existing D1 run-projection schema.
 - [ ] No credential, recording, transcript, generated analysis, or database is
       tracked by Git.
 - [ ] Architecture, setup, privacy, troubleshooting, and Phase B roadmap docs
