@@ -8,7 +8,8 @@ import { analyzeMeeting } from "./services/analyze.js";
 import { BluedotClient, DEFAULT_BLUEDOT_MCP_URL } from "./adapters/bluedot-mcp.js";
 import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.js";
 import type { ContextProvider } from "./domain/types.js";
-import { timestampToSeconds } from "./lib/time.js";
+import { parseTranscriptOffset } from "./lib/time.js";
+import { redactUrlForDisplay } from "./lib/http.js";
 import { listBuiltInRecipes, loadRecipe } from "./recipes/index.js";
 
 loadDotenv({ quiet: true });
@@ -16,7 +17,7 @@ loadDotenv({ quiet: true });
 const program = new Command()
   .name("frameofmind")
   .description("Video in. Understanding out. Run structured analysis recipes over meeting recordings.")
-  .version("0.1.0");
+  .version("0.2.0");
 
 program
   .command("auth")
@@ -41,8 +42,12 @@ program
       ["ffmpeg (optional screenshots)", await executableExists("ffmpeg")],
     ] as const;
     for (const [name, ready] of checks) process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
-    process.stdout.write(`Bluedot MCP: ${process.env.BLUEDOT_MCP_URL || DEFAULT_BLUEDOT_MCP_URL}\n`);
-    process.stdout.write(`Granola MCP: ${process.env.GRANOLA_MCP_URL || DEFAULT_GRANOLA_MCP_URL}\n`);
+    process.stdout.write(`Bluedot MCP: ${redactUrlForDisplay(
+      process.env.BLUEDOT_MCP_URL || DEFAULT_BLUEDOT_MCP_URL,
+    )}\n`);
+    process.stdout.write(`Granola MCP: ${redactUrlForDisplay(
+      process.env.GRANOLA_MCP_URL || DEFAULT_GRANOLA_MCP_URL,
+    )}\n`);
     process.stdout.write(`Artifact root: ${defaultOutputRoot()}\n`);
     if (!checks[0][1] || !checks[1][1]) process.exitCode = 1;
   });
@@ -116,6 +121,8 @@ program
       meetingId,
       recipe: recipeResult.recipe,
       customRecipe: recipeResult.custom,
+      recipeSha256: recipeResult.sha256,
+      recipeRevision: recipeResult.revision,
       contextProvider,
       granolaTransport,
       ...(flags.contextFile ? { contextFile: flags.contextFile } : {}),
@@ -160,13 +167,6 @@ function parseProvider(value: string, allowFile: boolean): ContextProvider {
     throw new Error(`Unknown provider '${value}'. Expected ${providers.join(", ")}.`);
   }
   return value as ContextProvider;
-}
-
-function parseTranscriptOffset(value: string): number {
-  if (!/^(?:\d{1,3}:)?\d{1,2}:\d{2}$/.test(value)) {
-    throw new Error("--transcript-offset must be MM:SS or HH:MM:SS.");
-  }
-  return timestampToSeconds(value);
 }
 
 function parseGranolaTransport(value: string): "mcp" | "api" {

@@ -117,9 +117,12 @@ The local database is created with user-only permissions on POSIX systems.
 4. Select **Validate and import**.
 5. Review the run detail page.
 
-The request is limited to 2 MiB. Both files are parsed against the version 1
-contract. The importer rejects mismatched meeting IDs, recipe IDs, and model
-identities.
+The request is limited to 2 MiB and must use `application/json`. Browser
+requests with cross-site Fetch Metadata or a foreign `Origin` are rejected.
+Both files are parsed against the version 2 contract. The importer recomputes
+the canonical analysis SHA-256 and rejects mismatched run/meeting/recipe/model
+identity, invalid timestamps, contradictory provider transport, and modified
+content.
 
 ### Terminal
 
@@ -134,6 +137,12 @@ The import response's `created` flag is a user-interface hint, not a concurrency
 primitive. D1 checks for an existing row immediately before its atomic batch;
 two simultaneous first imports of the same run can both report `created: true`
 while still converging on one correct primary-keyed projection.
+
+The D1 batch has bounded query shape: run upsert, item delete, and one or more
+byte-bounded `json_each` item expansions. It does not issue one statement per
+analysis item. The request cap plus 900 KB expansion cap keeps the statement
+count safely below the Worker invocation query limit; regressions cover both
+1,000 small items and a sub-2 MiB multi-batch payload.
 
 ## Local authentication behavior
 
@@ -199,7 +208,7 @@ For a new migration:
 |---|---|---|
 | `GET` | `/api/health` | authenticated liveness |
 | `GET` | `/api/session` | current auth mode and verified email |
-| `GET` | `/api/runs` | list projected runs |
+| `GET` | `/api/runs?limit=50&cursor=...` | keyset-paginate projected run summaries |
 | `POST` | `/api/runs` | validate and import a run |
 | `GET` | `/api/runs/:id` | fetch one projected run |
 
@@ -225,8 +234,16 @@ Do not run `.output/server/index.mjs` with Node.
 
 ### Import returns 422
 
-Confirm both files came from the same run directory and use schema version 1.
-Do not hand-edit model, recipe, or meeting identity.
+Confirm both files came from the same run directory and use schema version 2.
+Do not hand-edit either file: the manifest binds the exact canonical
+`analysis.json` bytes. For a v1 run, rerun the original source analysis under
+v0.2 rather than relabeling the schema.
+
+Existing v1 projection rows are hidden from list/detail queries, including
+malformed legacy JSON. Re-running and importing the source analysis with v0.2
+replaces the same run ID in place. If regeneration is impossible, retain the
+authoritative v1 bundle outside the workspace and purge the obsolete projection
+only through the exact-ID backup/purge procedure.
 
 ### Cloud build references SQLite
 

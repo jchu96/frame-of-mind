@@ -24,3 +24,11 @@
 - Validate the final analysis/manifest pair before publication. TypeScript
   shapes alone do not enforce durable string, count, route, or provenance
   constraints.
+- Never point `BLUEDOT_MCP_URL` or `GRANOLA_MCP_URL` at HTTP or copy a
+  canonical OAuth token file to a custom endpoint. v0.2 deliberately starts an
+  isolated OAuth flow for every exact custom HTTPS resource URL.
+- Model timestamps are untrusted coordinates. Only canonical `HH:MM:SS` values
+  with ordered ranges are durable, and interrogation evidence must fall inside
+  its candidate window.
+- v1 analysis/manifest files are not import-compatible with v0.2. Renaming the
+  schema number does not create the missing digest or revalidate old evidence.

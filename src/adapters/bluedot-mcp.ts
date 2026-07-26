@@ -7,10 +7,11 @@ import {
   FileOAuthProvider,
   OAuthCallback,
   openBrowser,
+  resolveMcpEndpoint,
   secureTokenDirectory,
 } from "./bluedot-oauth.js";
 import type { MeetingEvidence, MediaSource } from "../domain/types.js";
-import { collectStrings, findMediaUrl, firstStringForKeys } from "../lib/object.js";
+import { findMediaUrl, firstStringForKeys } from "../lib/object.js";
 import { validateBluedotMediaUrl } from "../lib/files.js";
 
 export const DEFAULT_BLUEDOT_MCP_URL = "https://app.bluedothq.com/api/v1/mcp";
@@ -23,23 +24,37 @@ export class BluedotClient {
   private transport?: StreamableHTTPClientTransport;
   private tools: Tool[] = [];
 
-  constructor(
-    private readonly serverUrl = process.env.BLUEDOT_MCP_URL || DEFAULT_BLUEDOT_MCP_URL,
-    private readonly tokenPath = DEFAULT_TOKEN_PATH,
-  ) {}
+  private readonly endpoint;
+
+  constructor(serverUrl = process.env.BLUEDOT_MCP_URL) {
+    this.endpoint = resolveMcpEndpoint(
+      "bluedot",
+      serverUrl,
+      DEFAULT_BLUEDOT_MCP_URL,
+      DEFAULT_TOKEN_PATH,
+    );
+  }
 
   async connect(): Promise<void> {
-    await secureTokenDirectory(this.tokenPath);
+    await secureTokenDirectory(this.endpoint.tokenPath);
     const callback = new OAuthCallback(CALLBACK_PORT, "Bluedot");
-    await callback.listen();
-    const provider = new FileOAuthProvider(CALLBACK_URL, this.tokenPath, (url) => {
-      process.stderr.write(`Authorize Bluedot in your browser:\n${url.toString()}\n`);
-      void openBrowser(url);
-    }, callback.state);
+    let authorizationUrl: URL | undefined;
+    const provider = new FileOAuthProvider(
+      CALLBACK_URL,
+      this.endpoint.tokenPath,
+      (url) => { authorizationUrl = url; },
+      callback.state,
+      this.endpoint.url.toString(),
+      this.endpoint.canonical,
+    );
     try {
       await this.attemptConnection(provider);
     } catch (error) {
       if (!(error instanceof UnauthorizedError)) throw error;
+      if (!authorizationUrl) throw new Error("Bluedot did not provide an OAuth authorization URL.");
+      await callback.listen();
+      process.stderr.write(`Authorize Bluedot in your browser:\n${authorizationUrl.toString()}\n`);
+      await openBrowser(authorizationUrl);
       const code = await callback.code;
       await this.transport?.finishAuth(code);
       await this.attemptConnection(provider);
@@ -92,8 +107,8 @@ export class BluedotClient {
   }
 
   private async attemptConnection(provider: FileOAuthProvider): Promise<void> {
-    this.client = new Client({ name: "frame-of-mind", version: "0.1.0" }, { capabilities: {} });
-    this.transport = new StreamableHTTPClientTransport(new URL(this.serverUrl), { authProvider: provider });
+    this.client = new Client({ name: "frame-of-mind", version: "0.2.0" }, { capabilities: {} });
+    this.transport = new StreamableHTTPClientTransport(this.endpoint.url, { authProvider: provider });
     await this.client.connect(this.transport);
   }
 
@@ -155,12 +170,6 @@ export function extractTranscript(raw: unknown): string {
   }
   const direct = firstStringForKeys(raw, /^(transcript|transcription|full_?transcript)$/i);
   if (direct) return direct;
-  if (raw && typeof raw === "object") {
-    const entries = Object.entries(raw as Record<string, unknown>)
-      .filter(([key]) => /transcript|utterance|segment/i.test(key))
-      .flatMap(([, value]) => collectStrings(value));
-    if (entries.length) return entries.join("\n");
-  }
   return "";
 }
 
@@ -183,10 +192,12 @@ function findTranscriptSegments(value: unknown): TranscriptSegment[] {
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
       if (/^(transcript|transcription|segments|utterances)$/i.test(key) && Array.isArray(child)) {
         const segments = child.filter(isTranscriptSegment);
-        if (segments.length) return segments;
+        if (segments.length === child.length && segments.length) return segments;
       }
-      const found = findTranscriptSegments(child);
-      if (found.length) return found;
+      if (child && typeof child === "object" && !Array.isArray(child)) {
+        const found = findTranscriptSegments(child);
+        if (found.length) return found;
+      }
     }
   }
   return [];

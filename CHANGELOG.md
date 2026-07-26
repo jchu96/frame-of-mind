@@ -13,6 +13,40 @@ Semantic Versioning.
 - Optional local search/index over prior analyses
 - Read-only local stdio and Cloudflare Streamable HTTP MCP servers
 
+## [0.2.0] - 2026-07-26
+
+### Security
+
+- Bound cached OAuth client registrations and bearer tokens to the exact HTTPS
+  MCP resource URL; custom Bluedot/Granola endpoints use isolated hashed files.
+- Moved the immutable prompt-injection guard into Gemini system instructions.
+- Added JSON content-type, Fetch Metadata, and same-origin checks to browser
+  imports.
+- Sanitized video/context mismatch errors so model output cannot enter logs.
+- Added bounded streaming reads for Granola API responses and stronger remote
+  Gemini cleanup reporting/retries.
+- Added per-operation Gemini HTTP deadlines and a monotonic 30-minute file
+  processing budget.
+
+### Changed
+
+- Introduced v2 run contracts: shared run ID, canonical analysis SHA-256,
+  recipe content hash/revision, strict `HH:MM:SS` coordinates, and bound
+  analysis/manifest validation.
+- Added signed transcript offsets and SRT/VTT cue normalization.
+- Required evidence timestamps to remain inside their indexed candidate.
+- Changed run listing to bounded keyset pagination.
+- Changed D1 item projection to byte-bounded transactional JSON expansion
+  instead of one statement per item, with explicit row/parameter limits.
+- Made Granola's nullable note fields compatible with its public API.
+- Released with `@google/genai` 2.13.0 and refreshed Cloudflare development
+  types.
+
+### Migration
+
+- The v0.2 review workspace rejects v1 bundles. Re-run the source analysis to
+  create a v2 cryptographically paired bundle.
+
 ## [0.1.0] - 2026-07-25
 
 ### Added
