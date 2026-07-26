@@ -1,0 +1,350 @@
+import { z } from "zod";
+import {
+  ANALYSIS_JOB_STAGES,
+  ANALYSIS_JOB_TERMINAL_STAGES,
+  MEDIA_SESSION_STATES,
+} from "./studio-types.js";
+import { canTransitionAnalysisJob } from "./studio-state.js";
+
+const MAX_MEDIA_BYTES = 2 * 1_024 * 1_024 * 1_024;
+
+const opaqueIdSchema = z.string()
+  .min(16)
+  .max(128)
+  .regex(/^[a-zA-Z0-9_-]+$/, "identifier must be opaque and route-safe");
+
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+const utcDateTimeSchema = z.string().datetime({ offset: false });
+const idempotencyKeySchema = z.string()
+  .min(8)
+  .max(200)
+  .regex(/^[a-zA-Z0-9._:-]+$/, "idempotency key contains unsafe characters");
+const safeMessageSchema = z.string()
+  .min(1)
+  .max(2_000)
+  .refine(
+    (value) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value),
+    "message contains control characters",
+  );
+
+export const analysisJobStageSchema = z.enum(ANALYSIS_JOB_STAGES);
+export const analysisJobTerminalStageSchema = z.enum(
+  ANALYSIS_JOB_TERMINAL_STAGES,
+);
+export const mediaSessionStateSchema = z.enum(MEDIA_SESSION_STATES);
+
+const retainedMediaSchema = z.object({
+  mode: z.literal("retained"),
+  expiresAt: utcDateTimeSchema,
+}).strict();
+
+export const mediaRetentionSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("ephemeral") }).strict(),
+  retainedMediaSchema,
+]);
+
+const providerContextSchema = z.discriminatedUnion("provider", [
+  z.object({
+    provider: z.literal("bluedot"),
+    transport: z.literal("mcp"),
+    meetingId: z.string().min(1).max(500),
+  }).strict(),
+  z.object({
+    provider: z.literal("granola"),
+    transport: z.enum(["mcp", "api"]),
+    meetingId: z.string().min(1).max(500),
+  }).strict(),
+  z.object({
+    provider: z.literal("file"),
+    transport: z.literal("file"),
+    contextFileId: opaqueIdSchema,
+  }).strict(),
+]);
+
+const recipeIdSchema = z.string()
+  .min(2)
+  .max(64)
+  .regex(/^[a-z0-9][a-z0-9-]+$/);
+
+const customRecipeSchema = z.object({
+  id: recipeIdSchema,
+  label: z.string().min(1).max(100),
+  description: z.string().min(1).max(500),
+  indexInstruction: z.string().min(1).max(8_000),
+  interrogationInstruction: z.string().min(1).max(8_000),
+  revision: z.string().min(1).max(120).optional(),
+}).strict();
+
+const composerRecipeSchema = z.union([
+  z.object({ id: recipeIdSchema }).strict(),
+  z.object({ custom: customRecipeSchema }).strict(),
+]);
+
+const immutableJobInputSchema = z.object({
+  mediaSessionId: opaqueIdSchema,
+  mediaSha256: sha256Schema,
+  context: providerContextSchema,
+  recipe: z.object({
+    id: recipeIdSchema,
+    revision: z.string().min(1).max(120),
+    sha256: sha256Schema,
+  }).strict(),
+  model: z.string().min(1).max(240),
+  focus: z.string().max(10_000).optional(),
+  retention: mediaRetentionSchema,
+}).strict();
+
+export const analysisJobSchema = z.object({
+  id: opaqueIdSchema,
+  rootJobId: opaqueIdSchema,
+  retryOfJobId: opaqueIdSchema.optional(),
+  attempt: z.number().int().min(1).max(1_000),
+  idempotencyKey: idempotencyKeySchema,
+  inputDigest: sha256Schema,
+  stage: analysisJobStageSchema,
+  cancellationRequestedAt: utcDateTimeSchema.optional(),
+  input: immutableJobInputSchema,
+  terminal: z.object({
+    outcome: analysisJobTerminalStageSchema,
+    at: utcDateTimeSchema,
+    code: z.string().min(1).max(120).regex(/^[a-z0-9_:-]+$/).optional(),
+    message: safeMessageSchema.optional(),
+  }).strict().optional(),
+  runId: z.string().min(1).max(240)
+    .regex(/^[a-zA-Z0-9._:-]+$/)
+    .optional(),
+  projectionWarning: safeMessageSchema.optional(),
+  createdAt: utcDateTimeSchema,
+  updatedAt: utcDateTimeSchema,
+}).strict().superRefine((job, context) => {
+  if (job.attempt === 1) {
+    if (job.retryOfJobId) {
+      context.addIssue({
+        code: "custom",
+        path: ["retryOfJobId"],
+        message: "an initial attempt cannot identify a retry parent",
+      });
+    }
+    if (job.rootJobId !== job.id) {
+      context.addIssue({
+        code: "custom",
+        path: ["rootJobId"],
+        message: "an initial attempt must be its own root job",
+      });
+    }
+  } else {
+    if (!job.retryOfJobId) {
+      context.addIssue({
+        code: "custom",
+        path: ["retryOfJobId"],
+        message: "a retry attempt must identify its parent job",
+      });
+    }
+    if (job.rootJobId === job.id || job.retryOfJobId === job.id) {
+      context.addIssue({
+        code: "custom",
+        path: ["rootJobId"],
+        message: "a retry attempt cannot be its own root or parent",
+      });
+    }
+  }
+
+  const terminal = ANALYSIS_JOB_TERMINAL_STAGES.includes(job.stage as never);
+  if (terminal && job.terminal?.outcome !== job.stage) {
+    context.addIssue({
+      code: "custom",
+      path: ["terminal", "outcome"],
+      message: "terminal metadata must match the job stage",
+    });
+  }
+  if (!terminal && job.terminal) {
+    context.addIssue({
+      code: "custom",
+      path: ["terminal"],
+      message: "a nonterminal job cannot have terminal metadata",
+    });
+  }
+  if (job.stage === "succeeded" && !job.runId) {
+    context.addIssue({
+      code: "custom",
+      path: ["runId"],
+      message: "a succeeded job must identify its published run",
+    });
+  }
+  if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) {
+    context.addIssue({
+      code: "custom",
+      path: ["updatedAt"],
+      message: "updatedAt must not precede createdAt",
+    });
+  }
+});
+
+export const analysisJobEventSchema = z.object({
+  jobId: opaqueIdSchema,
+  attempt: z.number().int().min(1).max(1_000),
+  sequence: z.number().int().min(1),
+  kind: z.enum([
+    "transition",
+    "progress",
+    "cancellation_requested",
+    "warning",
+    "cleanup",
+  ]),
+  stage: analysisJobStageSchema,
+  previousStage: analysisJobStageSchema.optional(),
+  occurredAt: utcDateTimeSchema,
+  message: safeMessageSchema.optional(),
+  progress: z.object({
+    completed: z.number().finite().nonnegative(),
+    total: z.number().finite().positive(),
+    unit: z.enum(["bytes", "items", "steps"]),
+  }).strict().optional(),
+}).strict().superRefine((event, context) => {
+  if (event.kind === "progress" && !event.progress) {
+    context.addIssue({
+      code: "custom",
+      path: ["progress"],
+      message: "a progress event must include bounded progress metadata",
+    });
+  }
+  if (event.progress && event.progress.completed > event.progress.total) {
+    context.addIssue({
+      code: "custom",
+      path: ["progress", "completed"],
+      message: "completed progress must not exceed total",
+    });
+  }
+  if (event.kind === "transition" && !event.previousStage) {
+    context.addIssue({
+      code: "custom",
+      path: ["previousStage"],
+      message: "a transition event must identify its previous stage",
+    });
+  }
+  if (
+    event.kind === "transition"
+    && event.previousStage
+    && !canTransitionAnalysisJob(event.previousStage, event.stage)
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["stage"],
+      message: `forbidden analysis-job transition: ${event.previousStage} -> ${event.stage}`,
+    });
+  }
+});
+
+export const mediaSessionSchema = z.object({
+  id: opaqueIdSchema,
+  status: mediaSessionStateSchema,
+  expectedBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
+  receivedBytes: z.number().int().nonnegative().max(MAX_MEDIA_BYTES),
+  mimeType: z.string().min(1).max(240)
+    .refine((value) => value.startsWith("video/"), "media must be video"),
+  sha256: sha256Schema.optional(),
+  retention: mediaRetentionSchema,
+  expiresAt: utcDateTimeSchema.optional(),
+  cleanupFailureCode: z.string().min(1).max(120)
+    .regex(/^[a-z0-9_:-]+$/)
+    .optional(),
+  createdAt: utcDateTimeSchema,
+  updatedAt: utcDateTimeSchema,
+}).strict().superRefine((media, context) => {
+  if (media.receivedBytes > media.expectedBytes) {
+    context.addIssue({
+      code: "custom",
+      path: ["receivedBytes"],
+      message: "received bytes must not exceed expected bytes",
+    });
+  }
+  if (
+    ["sealed", "in_use", "retained"].includes(media.status)
+    && (!media.sha256 || media.receivedBytes !== media.expectedBytes)
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["sha256"],
+      message: "sealed media requires complete bytes and a digest",
+    });
+  }
+  if (
+    media.retention.mode === "retained"
+    && media.expiresAt
+    && media.expiresAt !== media.retention.expiresAt
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["expiresAt"],
+      message: "media expiry must agree with its retention receipt",
+    });
+  }
+  if (Date.parse(media.updatedAt) < Date.parse(media.createdAt)) {
+    context.addIssue({
+      code: "custom",
+      path: ["updatedAt"],
+      message: "updatedAt must not precede createdAt",
+    });
+  }
+});
+
+export const configurationStatusSchema = z.object({
+  studioEnabled: z.boolean(),
+  providers: z.array(z.object({
+    provider: z.enum(["gemini", "bluedot", "granola"]),
+    connected: z.boolean(),
+    source: z.enum(["environment", "session", "oauth", "none"]),
+    lifetime: z.enum(["process", "persistent-oauth", "none"]),
+    lastVerifiedAt: utcDateTimeSchema.optional(),
+    failureCode: z.string().min(1).max(120)
+      .regex(/^[a-z0-9_:-]+$/)
+      .optional(),
+  }).strict()).max(3),
+}).strict().superRefine((status, context) => {
+  const seen = new Set<string>();
+  status.providers.forEach((provider, index) => {
+    if (seen.has(provider.provider)) {
+      context.addIssue({
+        code: "custom",
+        path: ["providers", index, "provider"],
+        message: "provider status entries must be unique",
+      });
+    }
+    seen.add(provider.provider);
+    const expectedLifetime = provider.source === "oauth"
+      ? "persistent-oauth"
+      : provider.source === "none"
+        ? "none"
+        : "process";
+    if (provider.lifetime !== expectedLifetime) {
+      context.addIssue({
+        code: "custom",
+        path: ["providers", index, "lifetime"],
+        message: "credential lifetime must agree with its source",
+      });
+    }
+    if (provider.connected && provider.source === "none") {
+      context.addIssue({
+        code: "custom",
+        path: ["providers", index, "connected"],
+        message: "a connected provider must identify a credential source",
+      });
+    }
+  });
+});
+
+export const composerPayloadSchema = z.object({
+  idempotencyKey: idempotencyKeySchema,
+  mediaSessionId: opaqueIdSchema,
+  context: providerContextSchema,
+  recipe: composerRecipeSchema,
+  model: z.string().min(1).max(240),
+  focus: z.string().max(10_000).optional(),
+  retention: mediaRetentionSchema,
+}).strict();
+
+export type AnalysisJob = z.infer<typeof analysisJobSchema>;
+export type AnalysisJobEvent = z.infer<typeof analysisJobEventSchema>;
+export type MediaSession = z.infer<typeof mediaSessionSchema>;
+export type ConfigurationStatus = z.infer<typeof configurationStatusSchema>;
+export type ComposerPayload = z.infer<typeof composerPayloadSchema>;
