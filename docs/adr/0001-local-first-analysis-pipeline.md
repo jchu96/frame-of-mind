@@ -1,6 +1,7 @@
 # ADR 0001: Keep the analysis pipeline local-first
 
-Status: Accepted
+- Status: Accepted
+- Date: 2026-07-25
 
 ## Invariant
 

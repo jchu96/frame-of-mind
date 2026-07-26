@@ -1,6 +1,7 @@
 # ADR 0003: Separate meeting context, media, and renderers
 
-Status: accepted
+- Status: Accepted
+- Date: 2026-07-25
 
 ## Invariant
 

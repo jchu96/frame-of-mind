@@ -1,4 +1,26 @@
-# Decisions
+# Decision Notes
+
+Canonical, status-bearing architecture decisions live in
+[`docs/adr/`](../adr/README.md). This file keeps concise chronological context
+for agent recall and must not become a duplicate ADR authority.
+
+## 2026-07-26 — Local Studio runs through Bun before hosted execution
+
+Phase A is a Nuxt Studio controlled through a per-launch authenticated local
+Bun process with concurrency one. Phase B hosted execution remains a separate
+track behind compatible job/media contracts. See ADR 0006.
+
+## 2026-07-26 — Media, jobs, and runs have separate authority
+
+Media upload/retention, analysis execution, and published v2 runs use separate
+lifecycles. Active SQLite jobs are operational authority, while completed
+SQLite/D1 run rows remain rebuildable projections. See ADR 0007.
+
+## 2026-07-26 — Studio does not create a plaintext API-key vault
+
+New API keys resolve from the environment or Bun process memory. Existing
+provider OAuth state keeps its exact-resource private token storage. See ADR
+0008.
 
 ## 2026-07-25 — Providers supply context, media is a separate input
 

@@ -13,6 +13,28 @@ run directory. The invariant is:
 `analysis.json` and `manifest.json` remain authoritative. SQLite and D1 are
 rebuildable projections.
 
+## Local Studio roadmap
+
+The current v0.2 workspace remains import-only. The accepted next direction is
+a local Studio that can stage a recording and run analysis through Bun; this
+planning documentation does not make those routes available in v0.2.
+
+The planned Studio distinguishes operational job data from the existing run
+projection:
+
+- active job/events in SQLite are operational authority until completion;
+- a successful v2 run pair becomes completed-analysis authority;
+- run/item rows remain rebuildable;
+- recording and context bytes never enter SQLite;
+- reviewer-authored notes remain out of scope until they have a durable
+  sidecar contract.
+
+Sensitive local Studio routes require a per-launch session, not only the
+current loopback guard. The Cloudflare build remains review-only and must
+exclude every local secret, staging, executor, and media-serving
+implementation. See the [Conductor specification](../conductor/tracks/local-studio_20260726/spec.md)
+and [ADR log](adr/README.md).
+
 ## Deployment modes
 
 | Mode | Runtime | Database | Authentication | Intended use |
