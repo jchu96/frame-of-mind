@@ -40,9 +40,9 @@ describe("local Studio per-launch session", () => {
 
   test("redacts bootstrap material from URLs and arbitrary log text", () => {
     const dirtyUrl =
-      `http://127.0.0.1:3000/__studio/bootstrap?token=${bootstrapToken}`;
+      `http://127.0.0.1:3000/#studio-bootstrap=${bootstrapToken}`;
     expect(redactStudioBootstrap(dirtyUrl, [bootstrapToken])).toBe(
-      "http://127.0.0.1:3000/__studio/bootstrap?token=%5BREDACTED%5D",
+      "http://127.0.0.1:3000/#studio-bootstrap=%5BREDACTED%5D",
     );
     expect(redactStudioBootstrap(
       `bootstrap failed for ${bootstrapToken}`,

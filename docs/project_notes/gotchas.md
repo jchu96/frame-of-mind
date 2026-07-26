@@ -43,3 +43,6 @@
   H3 1.15.11, not the separately installed H3 2 release candidate. Local media
   streaming therefore uses the measured `event.node.req` async iterable until
   a dependency upgrade reruns the Phase 1 streaming spike.
+- Keep the local Studio bootstrap capability in the URL fragment, not a query
+  string or path. The client removes the fragment before exchanging it, so
+  ordinary HTTP access logs never receive the capability.
