@@ -29,9 +29,11 @@ Use three separate lifecycles.
 
 ```text
 created -> uploading -> sealed -> in_use
+in_use -> retained
+retained -> in_use
 created|uploading -> aborted
-created|uploading|sealed -> expired
-sealed|in_use|expired|aborted -> deleting -> deleted
+created|uploading|sealed|retained -> expired
+sealed|in_use|retained|expired|aborted -> deleting -> deleted
 any nonterminal state -> failed
 ```
 

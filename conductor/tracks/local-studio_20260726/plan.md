@@ -141,14 +141,15 @@ separate proposed track.
 
 ### Tasks
 
-- [ ] Task 5.1: Add SQLite migrations and parity tests for operational jobs,
-      events, and staged-media receipts without storing media, transcripts, or
-      reviewer-authored state.
+- [ ] Task 5.1: Add local-only SQLite migrations and migration tests for
+      operational jobs, events, and staged-media/context receipts without
+      storing media, transcripts, or reviewer-authored state; keep the existing
+      SQLite/D1 parity contract limited to completed-run projection tables.
 - [ ] Task 5.2: Implement the SQLite `JobRepository` with atomic transitions,
       idempotent creation, bounded listing, and event ordering.
 - [ ] Task 5.3: Implement the local Bun executor with concurrency one,
-      startup reconciliation, structured progress persistence, and no CLI log
-      scraping.
+      startup/shutdown reconciliation, signal-aware interruption, structured
+      progress persistence, and no CLI log scraping.
 - [ ] Task 5.4: Implement durable cancellation and linked retry attempts,
       including safe staged-media reuse checks.
 - [ ] Task 5.5: Add job list/detail/create/cancel/retry routes with strict
@@ -167,7 +168,8 @@ separate proposed track.
 ### Tasks
 
 - [ ] Task 6.1: Convert the authenticated application routes to the Nuxt UI
-      dashboard shell while preserving public/SSR route behavior.
+      dashboard shell behind an explicit local-only Studio enablement flag
+      while preserving public/SSR and hosted review behavior.
 - [ ] Task 6.2: Add Studio Home with recent runs, active jobs, connection
       health, empty state, and one primary New Analysis action.
 - [ ] Task 6.3: Build the Recording step over the Phase 3 staging composable.
@@ -275,6 +277,7 @@ Each phase can become a public GitHub issue after the specification is approved:
 | Playback contradicts deletion policy | Explicit ephemeral/retained modes and digest reattachment | No player claim without accessible matching media |
 | Job DB is mistaken for a run projection | ADR 0007 authority boundary and schema tests | No active job reconstruction from run rows |
 | Local Bun code leaks into Worker | Per-phase artifact inspection and route-absence tests | Cloudflare build fails |
+| Local operational tables leak into D1 | Separate local migrations; parity stays scoped to completed-run projections | D1 migration diff fails |
 | Track scope hides an unusable middle | Three delivery slices with stop/go gates | Do not expose beta before synthetic end-to-end run |
 
 ## Rollback And Compatibility

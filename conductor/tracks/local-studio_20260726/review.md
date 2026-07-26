@@ -32,6 +32,18 @@ silently skip its stop/go verification.
 | Should fix | Architecture decisions were deferred until implementation | Added canonical ADR index plus ADRs 0006-0008 |
 | Should fix | Forty-eight tasks lacked a usable cut line | Added Foundation, Beta, and v1 delivery slices with stop/go gates and rollback |
 
+## Second-Pass Refinements
+
+A second hostile read after the blocker fixes closed four interpretation gaps:
+
+- added an explicit `retained` media state and transitions back to `in_use`;
+- added owned `staged_context` metadata without placing transcript bodies in
+  SQLite;
+- separated local operational migrations from the existing SQLite/D1
+  completed-run parity contract;
+- assigned the local-only Studio enablement flag and signal-aware executor
+  shutdown to implementation tasks.
+
 ## Plan Viability By Slice
 
 ### Slice 1 - Safe Foundation
