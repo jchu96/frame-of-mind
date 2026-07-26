@@ -68,10 +68,10 @@ separate proposed track.
 
 ### Tasks
 
-- [ ] Task 2.1: Add failing tests for per-launch bootstrap exchange, cookie
+- [x] Task 2.1: Add failing tests for per-launch bootstrap exchange, cookie
       scope, environment/session precedence, redaction, disconnect,
       secret-nonreturn, and hosted-route absence.
-- [ ] Task 2.2: Implement the local Studio session bootstrap and middleware on
+- [~] Task 2.2: Implement the local Studio session bootstrap and middleware on
       top of peer/Host validation, including immediate clean-URL redirect and
       log redaction.
 - [ ] Task 2.3: Implement the environment-first, process-memory-second runtime

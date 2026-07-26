@@ -12,7 +12,7 @@
 ## Progress
 
 - Phases: 1/9 complete
-- Tasks: 5/48 complete
+- Tasks: 6/48 complete
 
 ## Decision
 
