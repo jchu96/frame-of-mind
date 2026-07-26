@@ -71,10 +71,10 @@ separate proposed track.
 - [x] Task 2.1: Add failing tests for per-launch bootstrap exchange, cookie
       scope, environment/session precedence, redaction, disconnect,
       secret-nonreturn, and hosted-route absence.
-- [~] Task 2.2: Implement the local Studio session bootstrap and middleware on
+- [x] Task 2.2: Implement the local Studio session bootstrap and middleware on
       top of peer/Host validation, including immediate clean-URL redirect and
       log redaction.
-- [ ] Task 2.3: Implement the environment-first, process-memory-second runtime
+- [~] Task 2.3: Implement the environment-first, process-memory-second runtime
       secret resolver with no new plaintext filesystem or SQLite persistence.
 - [ ] Task 2.4: Add authenticated bounded configuration status/session-secret,
       Bluedot/Granola OAuth status/initiation, and optional paginated provider
