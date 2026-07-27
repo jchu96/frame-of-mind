@@ -58,6 +58,10 @@ export const analysisDetailSchema = z.object({
     appUrl: z.string().url().max(2_048).refine(
       isSafeEvidenceUrl,
       "app URL must use HTTPS without credentials, query parameters, or fragments",
+    ).describe(
+      "Optional exact HTTPS URL visibly readable in the browser address bar. " +
+        "It must not contain credentials, query parameters, or fragments. " +
+        "Omit this property unless the complete compliant URL is visible.",
     ).optional(),
     step: z.string().max(2_000).optional(),
     surface: z.string().max(2_000).optional(),

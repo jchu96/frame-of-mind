@@ -21,6 +21,7 @@ import {
   type GeminiFileUploader,
 } from "./gemini-files.js";
 import {
+  GeminiResponseValidationError,
   parseGeminiJson,
   toGeminiProviderSchema,
 } from "./gemini-schema.js";
@@ -136,7 +137,7 @@ export class GeminiVideoAnalyzer {
     };
     moments: IndexedMoment[];
   }> {
-    const response = await this.generate({
+    return this.generateStructured({
       model: this.model,
       contents: [{
         role: "user",
@@ -171,8 +172,7 @@ export class GeminiVideoAnalyzer {
         responseMimeType: "application/json",
         responseJsonSchema: toGeminiProviderSchema(indexSchema),
       },
-    }, "index");
-    return parseGeminiJson(response.text, indexSchema, "Gemini index response");
+    }, "index", indexSchema, "Gemini index response");
   }
 
   async interrogate(
@@ -183,7 +183,7 @@ export class GeminiVideoAnalyzer {
     focus?: string,
   ): Promise<AnalysisDetail> {
     const window = clipWindow(candidate.start, candidate.end);
-    const response = await this.generate({
+    return this.generateStructured({
       model: this.model,
       contents: [{
         role: "user",
@@ -220,9 +220,7 @@ export class GeminiVideoAnalyzer {
         responseMimeType: "application/json",
         responseJsonSchema: toGeminiProviderSchema(analysisDetailSchema),
       },
-    }, "detail");
-    return parseGeminiJson(
-      response.text,
+    }, "detail",
       analysisDetailSchema,
       "Gemini analysis response",
     );
@@ -251,6 +249,25 @@ export class GeminiVideoAnalyzer {
     }
   }
 
+  private async generateStructured<T>(
+    parameters: GenerateContentParameters,
+    phase: "index" | "detail",
+    schema: z.ZodType<T>,
+    label: string,
+  ): Promise<T> {
+    const response = await this.generate(parameters, phase);
+    try {
+      return parseGeminiJson(response.text, schema, label);
+    } catch (error) {
+      if (!(error instanceof GeminiResponseValidationError)) throw error;
+      const repaired = await this.generate(
+        withValidationRepairInstruction(parameters, error),
+        phase,
+      );
+      return parseGeminiJson(repaired.text, schema, label);
+    }
+  }
+
   private async deleteByNameWithRetry(name: string): Promise<boolean> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
@@ -267,6 +284,31 @@ export class GeminiVideoAnalyzer {
     }
     return false;
   }
+}
+
+function withValidationRepairInstruction(
+  parameters: GenerateContentParameters,
+  error: GeminiResponseValidationError,
+): GenerateContentParameters {
+  const systemInstruction = parameters.config?.systemInstruction;
+  if (typeof systemInstruction !== "string") {
+    throw new Error("Gemini structured request is missing its text system instruction.");
+  }
+  const issues = error.issues.join(", ");
+  return {
+    ...parameters,
+    config: {
+      ...parameters.config,
+      systemInstruction: [
+        systemInstruction,
+        "The previous response was discarded because strict local validation rejected " +
+          `these schema locations: ${issues}.`,
+        "Regenerate the complete JSON object from the recording. Preserve evidence fidelity. " +
+          "If an optional value cannot satisfy its schema exactly, omit that optional property. " +
+          "Do not invent, repair, truncate, or coerce evidence to make it pass.",
+      ].join("\n\n"),
+    },
+  };
 }
 
 export interface GeminiAnalyzerDependencies {
