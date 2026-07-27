@@ -8,6 +8,7 @@
 - `docs/RECIPES.md`: built-in/custom analysis intent.
 - `docs/PROVIDERS.md`: Bluedot, Granola MCP/API, and local context contracts.
 - `docs/WEB_WORKSPACE.md`: local Nuxt/SQLite projection and import runbook.
+- `docs/TESTING.md`: test-layer ownership, browser isolation, and E2E roadmap.
 - `docs/CLOUDFLARE_DEPLOYMENT.md`: Workers, D1, Access, verification, rollback.
 - `docs/MCP_ROADMAP.md`: deferred local/hosted read-only MCP boundary.
 - `docs/RUNBOOK.md`: installation, operations, incident response, and troubleshooting.

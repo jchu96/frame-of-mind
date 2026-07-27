@@ -151,6 +151,21 @@ NUXT_SQLITE_PATH="/private/path/frame-of-mind.sqlite" bun run web
 `.data/` is ignored by Git.
 The local database is created with user-only permissions on POSIX systems.
 
+## Browser smoke tests
+
+The Playwright suite builds the local Studio, launches it with Bun on an
+isolated loopback port, and uses only a temporary database, empty dotenv file,
+temporary OAuth configuration root, and synthetic fixtures:
+
+```bash
+bunx playwright install chromium
+bun run test:e2e:smoke
+```
+
+Run the complete browser matrix with `bun run test:e2e`. No provider or Gemini
+network call is allowed. See [Testing Strategy](TESTING.md) for project
+isolation, current journeys, CI behavior, and the Phase 3 drag-and-drop plan.
+
 ## Import a run
 
 ### Browser
