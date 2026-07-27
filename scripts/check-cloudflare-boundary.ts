@@ -23,6 +23,7 @@ const forbidden = [
   "FRAME_OF_MIND_MEDIA_ROOT",
   "FRAME_OF_MIND_CHECKOUT_ROOT",
   "LocalMediaStagingAdapter",
+  "createMediaExpiryJanitor",
   "/api/studio/media",
   "media.partial",
   "media.sealed",

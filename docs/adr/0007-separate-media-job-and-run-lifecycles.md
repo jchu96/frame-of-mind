@@ -3,7 +3,8 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Amended: 2026-07-27 — cleanup failure is recoverable; every media mode has
-  a server-owned expiry; browser upload sessions bind the complete file
+  a continuously enforced server-owned expiry; browser upload sessions bind
+  the complete file
 
 ## Invariant
 
@@ -55,6 +56,10 @@ any nonterminal state -> failed
   receipt survives.
 - Retained-for-review mode is explicit and time-bounded, with visible expiry
   and manual deletion.
+- Expiry is enforced during restart reconciliation and by a lifecycle-owned,
+  non-overlapping periodic sweep while the local server remains open. Busy
+  sessions are skipped until the next sweep, and retryable cleanup failures
+  remain durable while later sweeps retry them.
 - A browser-created session records a SHA-256 binding over the ordered upload
   part digests. Resume re-hashes the complete reselected file in bounded parts,
   so matching size, MIME, or a confirmed prefix cannot splice two recordings.

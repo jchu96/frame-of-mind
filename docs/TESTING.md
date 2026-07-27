@@ -161,6 +161,10 @@ never enters Nuxt SSR state.
 - synthetic bytes only, outside the checkout.
 
 `apps/web/test/studio-media-staging.test.ts` owns the adapter matrix.
+`apps/web/test/studio-media-expiry-janitor.test.ts` owns the long-lived server
+cleanup contract: periodic scheduling, non-overlap, sanitized failure
+reporting, cleanup retry, active-writer exclusion, continued operation, and
+shutdown draining.
 `bun run test:studio-http` builds the real local Nitro target and verifies
 session denial, same-origin enforcement, raw streamed upload, exact-offset
 resume/replay, sealing, status, and cleanup. The Cloudflare boundary build

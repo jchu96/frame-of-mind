@@ -1053,7 +1053,9 @@ Browser procedure:
 The browser stores only the opaque resumable media ID in per-tab session
 storage. It does not store the recording name, path, bytes, or `File` object.
 Closing the tab loses the browser receipt, but the private server session
-remains subject to its server-owned expiry and startup reconciliation.
+remains subject to its server-owned expiry. Studio enforces that expiry during
+startup reconciliation and once per minute while the local server remains
+open.
 Ephemeral media uses the upload lifetime as a sealed-media cleanup backstop;
 retained media uses the explicit one-hour, one-day, or seven-day choice.
 Session-storage denial does not fail a live upload, but the page warns that
@@ -1064,6 +1066,14 @@ file. Extra bytes from an interrupted part are truncated to the last receipt;
 an interrupted atomic seal is completed; expired/aborted entries are cleaned;
 and retryable permission failures remain `cleanup_failed` instead of being
 reported as deleted. Never edit `session.json` manually.
+
+After startup, a lifecycle-owned janitor performs non-overlapping expiry
+sweeps. A slow sweep is never stacked with another, a sanitized error code is
+logged without a path or recording name, and later sweeps continue. Nitro
+shutdown cancels the interval and waits for any active sweep to finish. An
+expiry deletion that cannot prove byte removal remains `cleanup_failed`,
+emits only a sanitized failure count/code, and is retried by the next sweep;
+repeated failures require operator intervention.
 
 | Symptom | Meaning | Operator action |
 |---|---|---|
@@ -1081,6 +1091,7 @@ Maintainers validate the production-built boundary with:
 
 ```bash
 bun test apps/web/test/studio-media-staging.test.ts
+bun test apps/web/test/studio-media-expiry-janitor.test.ts
 bun test apps/web/test/studio-media-upload.test.ts
 bun test apps/web/test/studio-media-controller.test.ts
 bun run test:studio-http

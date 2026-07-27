@@ -85,3 +85,6 @@
   verifies a complete bounded-part fingerprint, the server owns every expiry,
   and focused state-machine plus production-browser tests cover the repaired
   seams.
+- Closed the follow-up retention seam by adding a non-overlapping,
+  lifecycle-owned media expiry sweep with shared writer ownership, cleanup
+  retry, sanitized failure reporting, and deterministic shutdown tests.

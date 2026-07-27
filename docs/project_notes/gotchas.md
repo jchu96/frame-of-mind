@@ -79,6 +79,10 @@
 - Per-tab session storage is a resume convenience, never retention authority.
   Every staged copy needs a server-owned expiry that survives tab closure and
   storage denial.
+- Server-owned expiry is incomplete if it runs only at startup. A long-lived
+  local server needs a non-overlapping periodic sweep owned and stopped by the
+  Nitro lifecycle. That sweep must acquire the same per-session ownership as
+  writers before changing state and must revisit `cleanup_failed` receipts.
 - Matching filename, size, MIME, or confirmed-prefix hashes does not prove a
   reselected recording is identical. Bind and verify the complete file using
   bounded part digests before refresh-resume.
