@@ -201,3 +201,10 @@
   local-only plugin graph. Added a dedicated server-local TypeScript project
   to the normal web typecheck and fixed the latent discriminated-union,
   OAuth-state, and numeric-reduction errors it surfaced.
+- Added a real two-process SQLite restart drill. A first Bun process now
+  commits queued, active, cancellation-in-flight, and terminal fixtures before
+  an abrupt exit; a second proves state-based interruption, exactly-once queue
+  claims, terminal preservation, and explicit linked-retry execution.
+- Adversarial review made fixture creation sequential so deterministic IDs
+  cannot race, and bounded every child process so a recovery regression fails
+  the test instead of hanging the suite.
