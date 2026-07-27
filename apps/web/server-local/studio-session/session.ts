@@ -8,6 +8,7 @@ export {
   LOCAL_STUDIO_BOOTSTRAP_PATH,
   LOCAL_STUDIO_CLEAN_PATH,
   LOCAL_STUDIO_COOKIE_NAME,
+  LOCAL_STUDIO_LAUNCH_PATH,
 } from "./contract.js";
 
 const MIN_CAPABILITY_LENGTH = 32;
@@ -93,10 +94,19 @@ export function shouldRegisterLocalStudioRoutes(
 }
 
 export function requiresLocalStudioSession(pathname: string): boolean {
-  return pathname === "/connections"
+  return pathname === "/"
+    || pathname === "/connections"
     || pathname === "/connections/"
     || pathname === "/recording"
     || pathname === "/recording/"
+    || pathname === "/import"
+    || pathname === "/import/"
+    || pathname === "/runs"
+    || pathname === "/runs/"
+    || pathname.startsWith("/runs/")
+    || pathname === "/api/session"
+    || pathname === "/api/runs"
+    || pathname.startsWith("/api/runs/")
     || pathname.startsWith("/api/studio/");
 }
 

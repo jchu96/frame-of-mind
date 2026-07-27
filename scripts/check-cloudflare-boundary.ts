@@ -23,6 +23,8 @@ const forbidden = [
   "Private local process",
   "Studio navigation",
   "Your local analysis desk",
+  "Launch link expired",
+  "/__studio/launch",
   "server-local/studio-media",
   "FRAME_OF_MIND_MEDIA_ROOT",
   "FRAME_OF_MIND_CHECKOUT_ROOT",

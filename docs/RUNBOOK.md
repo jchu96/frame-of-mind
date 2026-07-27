@@ -1194,6 +1194,8 @@ bun run studio
 Operational expectations:
 
 - Studio opens the one-time loopback URL in the default browser;
+- the URL lands on an inert fragment-exchange page; every data-bearing page
+  and API requires the resulting HttpOnly session;
 - Home shows active jobs, five recent completed runs, and sanitized provider
   presence without introducing a dashboard-only data store;
 - Studio-enabled pages share the responsive sidebar; ordinary review and
@@ -1220,6 +1222,8 @@ local server log and `GET /api/runs` before touching SQLite. The portable run
 bundle remains authoritative.
 
 If the bootstrap link fails, stop the process and run `bun run studio` again.
+An invalid or replayed link shows **Launch link expired** without opening Home
+or requesting run, job, or connection data.
 If automatic browser opening fails, stop Studio and rerun with
 `FRAME_OF_MIND_STUDIO_PRINT_URL=1`. This opt-in fallback prints a sensitive
 one-time bearer URL; do not record or share it. Do not reuse an old link:

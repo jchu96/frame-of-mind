@@ -270,3 +270,8 @@
   Studio Home. Revalidate jobs, runs, and connection presence on mount so an
   import or job transition cannot leave the dashboard showing an old empty
   projection.
+- A URL fragment is invisible to the initial HTTP request, so protecting `/`
+  while also using it as the fragment landing page is impossible. Use the
+  dedicated inert `/__studio/launch` route for exchange and protect Home,
+  review/import routes, run APIs, and every `/api/studio/*` route. Replayed
+  links must remain inert instead of mounting Home and generating 401 retries.

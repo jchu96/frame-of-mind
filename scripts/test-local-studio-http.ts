@@ -131,6 +131,19 @@ try {
 
   const probe = createStudioProbe(baseUrl);
   await expectStatus(
+    await probe.get("/"),
+    401,
+    "Studio Home requires a session",
+  );
+  const launchPage = await expectStatus(
+    await probe.get("/__studio/launch"),
+    200,
+    "inert launch page remains available for fragment exchange",
+  );
+  if (!(await launchPage.text()).includes("Opening private Studio")) {
+    throw new Error("Local Studio launch page did not render its inert exchange state.");
+  }
+  await expectStatus(
     await probe.get("/connections?probe=1"),
     401,
     "query-bearing Connections page requires a session",
@@ -213,16 +226,17 @@ try {
     "session cookie authorizes Studio APIs",
   );
   const studioPage = await expectStatus(
-    await probe.get("/connections"),
+    await probe.get("/"),
     200,
-    "authenticated Studio page renders",
+    "authenticated Studio Home renders",
   );
   const studioHtml = await studioPage.text();
   if (
     !studioHtml.includes('data-studio-shell="local"')
     || !studioHtml.includes("Studio navigation")
+    || !studioHtml.includes('data-studio-home="local"')
   ) {
-    throw new Error("Authenticated Studio page did not render the local dashboard shell.");
+    throw new Error("Authenticated Studio Home did not render the local dashboard shell.");
   }
 
   const fixture = new Uint8Array(20);
