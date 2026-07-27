@@ -14,7 +14,15 @@
   startup and with a non-overlapping periodic sweep that stops with Nitro.
 - Treat `in_use` as an execution lease. Startup reconciliation returns
   retained leases to `retained` and deletes abandoned ephemeral media before
-  the expiry sweep.
+  the expiry sweep through the same digest-bound local cleanup capability.
+- Reject browser/API abort and ordinary adapter deletion while media is
+  `in_use`. Only the executor's local digest-bound capability may delete an
+  exact ephemeral execution lease.
+- Resolve a sealed filesystem path only through the local-only execution
+  capability, while the receipt is `in_use` and its exact digest, current
+  streamed bytes, and regular-file identity still match. Recheck the digest
+  immediately before Gemini upload. Never add paths to the shared adapter or
+  HTTP.
 - Serialize write, seal, and delete ownership per media session. A disconnected
   completion request may still be hashing server-side.
 - Verify any browser-provided complete-file binding against the ordered

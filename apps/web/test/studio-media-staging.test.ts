@@ -4,6 +4,7 @@ import {
   lstat,
   mkdtemp,
   readFile,
+  realpath,
   readdir,
   rm,
   stat,
@@ -554,6 +555,28 @@ describe("local media staging adapter", () => {
     });
   });
 
+  test("deletes an abandoned ephemeral execution lease on startup", async () => {
+    const staging = adapter();
+    const fixture = mp4Fixture(20);
+    const session = await create(staging);
+    await writeFixture(staging, session.id, fixture);
+    await staging.seal(session.id);
+    await staging.transition(validateMediaSessionTransition({
+      id: session.id,
+      expected: "sealed",
+      next: "in_use",
+    }));
+
+    await expect(staging.reconcile()).resolves.toMatchObject({
+      repaired: [],
+      deleted: [session.id],
+      failed: [],
+    });
+    expect(await staging.get(session.id)).toMatchObject({
+      status: "deleted",
+    });
+  });
+
   test("expires sealed ephemeral media without relying on a browser receipt", async () => {
     const staging = adapter();
     const fixture = mp4Fixture(20);
@@ -735,6 +758,49 @@ describe("local media staging adapter", () => {
     expect(await staging.get(session.id)).toMatchObject({ status: "failed" });
     expect((await lstat(join(directory, "media.partial"))).size).toBe(20);
     expect((await lstat(join(directory, "media.sealed"))).size).toBe(20);
+  });
+
+  test("resolves a private path only for an exact active execution lease", async () => {
+    const staging = adapter();
+    const fixture = mp4Fixture(20);
+    const session = await create(staging);
+    await writeFixture(staging, session.id, fixture);
+    const sealed = await staging.seal(session.id, {
+      expectedSha256: digest(fixture),
+    });
+
+    await expectMediaError(
+      staging.resolveInUsePath(session.id, sealed.sha256),
+      "media_path_unavailable",
+    );
+    await staging.transition(validateMediaSessionTransition({
+      id: session.id,
+      expected: "sealed",
+      next: "in_use",
+    }));
+    const path = await staging.resolveInUsePath(
+      session.id,
+      sealed.sha256,
+    );
+    expect(path).toBe(await realpath(
+      join(root, "sessions", session.id, "media.sealed"),
+    ));
+    expect(new Uint8Array(await readFile(path))).toEqual(fixture);
+    await expectMediaError(
+      staging.resolveInUsePath(session.id, "f".repeat(64)),
+      "media_path_unavailable",
+    );
+    const mutated = fixture.slice();
+    mutated[mutated.byteLength - 1] ^= 0xff;
+    await writeFile(path, mutated);
+    await expectMediaError(
+      staging.resolveInUsePath(session.id, sealed.sha256),
+      "media_digest_mismatch",
+    );
+    await expectMediaError(staging.abort(session.id), "media_in_use");
+    await expect(
+      staging.deleteEphemeralExecutionLease(session.id, sealed.sha256),
+    ).resolves.toMatchObject({ status: "deleted" });
   });
 
   test("rejects unknown, traversal-shaped, and symlink-replaced resources", async () => {

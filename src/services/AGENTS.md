@@ -9,6 +9,9 @@
 - Check cancellation between provider/model/render boundaries, but retain an
   exact Gemini file identity long enough to attempt cleanup.
 - Fetch transcript context before video analysis.
+- CLI provider authorization may be interactive; durable Studio jobs must set
+  noninteractive provider auth and fail with reconnect guidance instead of
+  opening an OAuth callback from the worker.
 - When the user scopes a topic or speaker, use timestamped transcript evidence
   to prepare the smallest useful local clip before any Gemini upload. The
   current CLI does not auto-cut source media; this remains an operator step.

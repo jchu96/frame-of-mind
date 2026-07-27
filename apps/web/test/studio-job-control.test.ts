@@ -2,7 +2,6 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import type {
   AnalysisJobExecutor,
-  MediaStagingAdapter,
 } from "../../../src/domain/studio-ports";
 import {
   mediaSessionSchema,
@@ -18,6 +17,7 @@ import {
 } from "../server-local/studio-jobs/local-job-worker";
 import {
   LocalInitialMediaGuard,
+  type LocalExecutionMediaAdapter,
   LocalMediaReuseGuard,
   StudioMediaReuseError,
 } from "../server-local/studio-jobs/media-reuse-guard";
@@ -283,6 +283,34 @@ describe("LocalStudioJobControl", () => {
     ).toBe(1);
   });
 
+  test("does not create a retry when runtime input is no longer resolvable", async () => {
+    const { database, repository, worker } = runtime();
+    const parent = await createRetainedParent(repository);
+    const control = new LocalStudioJobControl(
+      repository,
+      worker,
+      new LocalMediaReuseGuard(mediaAdapter(retainedSession())),
+      {
+        async validateRetryInput() {
+          throw new Error("synthetic missing runtime capability");
+        },
+      },
+    );
+
+    await expect(control.createLinkedRetry({
+      parentJobId: parent.id,
+      idempotencyKey: "control-retry-unavailable",
+      createdAt: "2026-07-27T13:00:00.000Z",
+    })).rejects.toThrow("synthetic missing runtime capability");
+    expect(
+      database
+        .query<{ count: number }, []>(
+          "SELECT count(*) AS count FROM studio_analysis_jobs",
+        )
+        .get()?.count,
+    ).toBe(1);
+  });
+
   test("replays an existing retry even after retained media becomes unavailable", async () => {
     const { repository, worker } = runtime();
     const parent = await createRetainedParent(repository);
@@ -303,6 +331,11 @@ describe("LocalStudioJobControl", () => {
       new LocalMediaReuseGuard(mediaAdapter(
         retainedSession({ sha256: "b".repeat(64) }),
       )),
+      {
+        async validateRetryInput() {
+          throw new Error("must not validate an idempotent replay");
+        },
+      },
     );
 
     await expect(unavailable.createLinkedRetry(input)).resolves.toEqual({
@@ -436,7 +469,7 @@ function retainedSession(
 function mediaAdapter(
   session: MediaSession,
   transitions: string[] = [],
-): MediaStagingAdapter {
+): LocalExecutionMediaAdapter {
   let current = session;
   return {
     async get() {
@@ -455,6 +488,9 @@ function mediaAdapter(
       return current;
     },
     async delete() {
+      throw new Error("external delete must not release an execution lease");
+    },
+    async deleteEphemeralExecutionLease() {
       if (current.status !== "in_use") {
         throw new Error("media state conflict");
       }
@@ -466,5 +502,5 @@ function mediaAdapter(
       });
       return current;
     },
-  } as MediaStagingAdapter;
+  } as LocalExecutionMediaAdapter;
 }

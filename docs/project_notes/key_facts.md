@@ -71,7 +71,15 @@
   provider. Linked retries require exact unexpired retained media at creation
   and an `in_use` execution lease; indeterminate publication outranks cancel.
 - Local job routes are explicit node-only `/api/studio/jobs` handlers with
-  100-row/event caps and fail closed until one process runtime is configured.
+  100-row/event caps backed by one Nitro-owned process runtime.
+- The local runtime shares one Bun SQLite connection between operational job
+  tables and rebuildable completed-run projection, while media receipts remain
+  separate JSON authority.
+- Only an exact active media execution lease can resolve a private sealed-file
+  path; that capability is absent from shared and HTTP contracts.
+- External deletion rejects `in_use` media; ephemeral executor cleanup uses a
+  separate digest-bound release that startup reconciliation also uses for an
+  abandoned lease, and current bytes are rehashed before Gemini.
 - Initial jobs require explicit recipe provenance and lease sealed media while
   executing; cleanup deletes ephemeral staging or restores retained staging.
 - Studio media sessions, analysis jobs, and durable runs have separate

@@ -35,12 +35,39 @@ export async function getRunStore(event: H3Event): Promise<RunStore> {
   return store;
 }
 
+export function configureLocalRunStore(
+  pathValue: string,
+  store: RunStore,
+): void {
+  const path = resolve(pathValue);
+  const existing = stores.get(path);
+  if (existing && existing !== store) {
+    throw new Error("Local run store is already configured for this database.");
+  }
+  stores.set(path, store);
+}
+
+export function clearLocalRunStore(
+  pathValue: string,
+  store: RunStore,
+): void {
+  const path = resolve(pathValue);
+  if (stores.get(path) === store) stores.delete(path);
+}
+
 export function createLocalRunStore(path: string): RunStore {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const database = new Database(path, { create: true });
   chmodSync(path, 0o600);
+  return createLocalRunStoreFromDatabase(database);
+}
+
+export function createLocalRunStoreFromDatabase(
+  database: Database,
+): RunStore {
   database.exec(schemaSql);
   database.exec("PRAGMA foreign_keys = ON;");
+  database.exec("PRAGMA busy_timeout = 5000;");
   const supportedRun = `CASE
     WHEN json_valid(analysis_json) AND json_valid(manifest_json)
     THEN json_extract(analysis_json, '$.schemaVersion') = 2

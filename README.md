@@ -206,17 +206,21 @@ file to be reselected and verifies a bounded-memory complete-file fingerprint
 before continuing. Every staged copy has a visible server-owned expiry, so
 closing the tab cannot turn browser session storage into cleanup authority.
 
-The analysis composer and job activity routes arrive in later implementation
-phases, so `frameofmind analyze` remains the supported execution path today.
+The analysis composer and job activity pages arrive in later implementation
+phases, so `frameofmind analyze` remains the supported end-user execution path
+today.
 The local-only SQLite job/event repository, single-concurrency Bun worker, and
 shared typed orchestrator are now in place. Studio binds the immutable model
 and recipe receipt into that orchestrator; it does not scrape terminal output
-or fork a second analysis pipeline. Durable cancellation and linked retry
-controls are also implemented behind the forthcoming job routes; new retries
-require an exact, unexpired retained-media receipt that is leased for the
-duration of execution. The authenticated `/api/studio/jobs` route surface is
-registered with strict bounded contracts and fails closed with HTTP 503 until
-the process runtime singleton is wired. See the
+or fork a second analysis pipeline. The authenticated `/api/studio/jobs`
+surface now starts one process runtime that shares SQLite job state and
+completed-run projection, executes one job at a time, and shuts down
+cooperatively with Nitro. Durable cancellation and linked retries require an
+exact, unexpired retained-media receipt leased for execution. Private staged
+paths exist only inside the leased local executor and never enter SQLite or an
+HTTP response. Until the composer ships, the create API accepts supported
+built-in recipes with configured Gemini plus exact provider credentials; local
+context files and custom recipe staging remain later composer work. See the
 [web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
 for the browser workflow, backend contract, and private storage location.
 

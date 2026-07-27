@@ -154,17 +154,26 @@ export class OrchestratedAnalysisJobExecutor implements AnalysisJobExecutor {
       });
       return event.stage;
     }
-    await progress.report({
-      jobId: job.id,
-      attempt: job.attempt,
-      kind: event.kind,
-      stage: event.stage,
-      occurredAt,
-      ...(event.kind === "progress"
-        ? { progress: event.progress }
-        : {}),
-      ...(event.message ? { message: event.message } : {}),
-    });
+    if (event.kind === "progress") {
+      await progress.report({
+        jobId: job.id,
+        attempt: job.attempt,
+        kind: "progress",
+        stage: event.stage,
+        occurredAt,
+        progress: event.progress,
+        ...(event.message ? { message: event.message } : {}),
+      });
+    } else {
+      await progress.report({
+        jobId: job.id,
+        attempt: job.attempt,
+        kind: "warning",
+        stage: event.stage,
+        occurredAt,
+        message: event.message,
+      });
+    }
     return currentStage;
   }
 }
