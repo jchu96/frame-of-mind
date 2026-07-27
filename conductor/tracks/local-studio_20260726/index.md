@@ -12,7 +12,8 @@
 ## Progress
 
 - Phases: 5/9 complete
-- Tasks: 30/49 complete
+- Tasks: 31/49 complete
+- Current focus: Task 6.4, the Context step.
 
 ## Decision
 
