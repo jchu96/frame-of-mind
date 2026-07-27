@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   LOCAL_STUDIO_BOOTSTRAP_FRAGMENT,
   LOCAL_STUDIO_BOOTSTRAP_PATH,
+  LOCAL_STUDIO_LAUNCH_PATH,
 } from "../server-local/studio-session/contract";
 import { E2E_BOOTSTRAP_TOKEN } from "./support/constants";
 import { collectClientErrors } from "./support/client-errors";
@@ -19,13 +20,18 @@ test("the one-time launch fragment cannot be replayed", async ({ page }) => {
   });
 
   await page.goto(
-    `/${LOCAL_STUDIO_BOOTSTRAP_FRAGMENT}${encodeURIComponent(E2E_BOOTSTRAP_TOKEN)}`,
+    `${LOCAL_STUDIO_LAUNCH_PATH}${LOCAL_STUDIO_BOOTSTRAP_FRAGMENT}`
+    + encodeURIComponent(E2E_BOOTSTRAP_TOKEN),
   );
 
   expect((await rejectedExchange).status()).toBe(403);
-  await page.waitForURL((url) => url.pathname === "/" && url.hash === "");
+  await page.waitForURL((url) =>
+    url.pathname === LOCAL_STUDIO_LAUNCH_PATH
+    && url.searchParams.get("error") === "invalid"
+    && url.hash === ""
+  );
   await expect(
-    page.getByRole("heading", { name: "Find the signal after the call." }),
+    page.getByRole("heading", { name: "Launch link expired" }),
   ).toBeVisible();
   expect(new URL(page.url()).hash).toBe("");
 

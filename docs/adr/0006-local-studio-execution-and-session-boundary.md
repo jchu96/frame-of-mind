@@ -37,12 +37,16 @@ Phase A is a single-user local Studio:
    When Bun does not expose the socket peer, the fallback additionally
    requires an explicitly loopback-bound listener; wildcard binding fails
    closed.
-6. Mutating and sensitive routes also require a high-entropy per-launch
+6. Every data-bearing Studio page and API requires a high-entropy per-launch
    capability exchanged once for an HttpOnly, SameSite=Strict session cookie.
-7. The launch capability travels in a URL fragment, which is not sent in the
-   initial HTTP request. A client bootstrap removes it with `replaceState`
-   before a bounded same-origin exchange, then redirects to a clean URL. It
-   must not enter logs, diagnostics, referrers, or durable configuration.
+   Only the inert `/__studio/launch` page and bounded bootstrap mutation are
+   reachable without that cookie.
+7. The launch capability travels in the dedicated launch page's URL fragment,
+   which is not sent in the initial HTTP request. A client bootstrap removes
+   it with `replaceState` before a bounded same-origin exchange, then redirects
+   to a clean protected URL. It must not enter logs, diagnostics, referrers, or
+   durable configuration. Rejected/replayed links remain on the inert launch
+   page and never mount a data-fetching dashboard.
 8. Browser mutations require same-origin semantics, bounded bodies, and
    non-simple content types or explicit anti-CSRF headers.
 9. Cloudflare review builds exclude the local session bootstrap, secret,
@@ -62,6 +66,8 @@ Positive:
 - the first product remains easy to run with Bun and no cloud account;
 - closing or refreshing the browser does not stop the job;
 - credential and deletion routes are not protected by network location alone;
+- a missing or replayed capability cannot trigger unauthenticated dashboard
+  reads;
 - hosted review cannot accidentally expose partially implemented local control
   routes;
 - concurrency one gives predictable local CPU, disk, and Gemini quota use.

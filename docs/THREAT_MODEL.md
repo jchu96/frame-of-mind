@@ -105,13 +105,16 @@ Controls:
 - validate the connected peer address and an allowlist of literal local Hosts;
 - if Bun omits the peer address, require both an allowlisted Host and an
   explicitly loopback-bound listener; never apply this fallback to a wildcard;
-- require the Studio session for every local Studio route;
+- require the Studio session for every data-bearing local Studio route;
+- expose only the inert fragment-exchange page and bounded bootstrap mutation
+  before authentication;
 - require same-origin mutation semantics and JSON or an explicit non-simple
   request header;
 - reject forwarded-host trust unless a future deployment mode defines it.
 
 Verification: hostile Host, non-loopback peer abstraction, cross-site fetch,
-simple-form request, and forwarded-header tests.
+simple-form request, forwarded-header, unauthenticated Home/run API, and inert
+launch-page tests.
 
 ### Untrusted local process
 

@@ -221,3 +221,7 @@
   adversarial review had added Task 3.6 without increasing the task total or
   reopening Phase 3 verification. The plan now records 29 of 49 tasks complete
   and returns next-work focus to the missing bounded context-file path.
+- The full CI browser project exposed unauthenticated Home requests after a
+  replayed bootstrap link. Added a dedicated inert launch route, protected
+  Home/review/import and run APIs with the same per-launch session, and proved
+  invalid/replayed links mount no dashboard or credential/data reads.

@@ -2,6 +2,7 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 
 const route = useRoute();
+const launchRoute = computed(() => route.path === "/__studio/launch");
 const navigation: NavigationMenuItem[] = [
   {
     label: "Home",
@@ -36,7 +37,9 @@ const title = computed(() => {
 </script>
 
 <template>
+  <slot v-if="launchRoute" />
   <UDashboardGroup
+    v-else
     data-studio-shell="local"
     storage-key="frame-of-mind-studio-shell"
     unit="rem"

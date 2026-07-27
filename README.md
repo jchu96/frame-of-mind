@@ -173,9 +173,11 @@ bun run studio
 ```
 
 Studio opens its one-time URL in the default browser. The bootstrap capability
-stays in the URL fragment, is removed before the browser makes the exchange
-request, and becomes an HttpOnly, SameSite=Strict session cookie. Restarting
-Bun invalidates the browser session and creates a new capability.
+stays in the fragment of a dedicated inert launch page, is removed before the
+browser makes the exchange request, and becomes an HttpOnly, SameSite=Strict
+session cookie. Every data-bearing page and API then requires that cookie.
+Restarting Bun invalidates the browser session and creates a new capability;
+a replayed or invalid link remains on the inert launch page.
 
 When Studio is enabled, Home, Recording, Connections, Import, and run detail
 share a responsive Nuxt UI dashboard shell with persistent desktop navigation

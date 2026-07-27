@@ -130,9 +130,11 @@ The local Studio uses the same file:
 bun run studio
 ```
 
-Studio opens a one-time URL and visits **Connections**. An environment value
-always takes precedence over a temporary value entered in the page. To replace
-an environment value, edit `.env`, stop Bun, and launch Studio again.
+Studio opens a one-time URL on an inert launch page, exchanges the fragment,
+and then visits **Connections**. Every data-bearing Studio page/API requires
+the resulting HttpOnly session. An environment value always takes precedence
+over a temporary value entered in the page. To replace an environment value,
+edit `.env`, stop Bun, and launch Studio again.
 
 If automatic browser opening fails, stop Studio and rerun with
 `FRAME_OF_MIND_STUDIO_PRINT_URL=1`. This explicitly prints the sensitive

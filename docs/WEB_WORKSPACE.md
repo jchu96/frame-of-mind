@@ -24,10 +24,12 @@ cp .env.example .env
 bun run studio
 ```
 
-The command binds to loopback and prints a one-time launch URL. Its capability
-is carried in the URL fragment, removed before the exchange request, and
-exchanged once for an HttpOnly, SameSite=Strict session cookie. Sensitive
-`/api/studio/*` routes require that session in addition to Host/peer validation.
+The command binds to loopback and opens a one-time launch URL. Its capability
+is carried in the fragment of an inert `/__studio/launch` page, removed before
+the exchange request, and exchanged once for an HttpOnly, SameSite=Strict
+session cookie. Home, review/import pages, run APIs, and `/api/studio/*`
+require that session in addition to Host/peer validation. A rejected or
+replayed link stays on the inert page and starts no dashboard reads.
 
 The Studio-enabled node build selects a local-only Nuxt UI dashboard frame and
 Home route for Home, Recording, Connections, Import, and run detail. Home

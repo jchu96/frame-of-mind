@@ -111,3 +111,6 @@
   aggregate. It revalidates after client navigation.
 - Tailwind scans local-only Studio components through an explicit stylesheet
   `@source` because they live outside Nuxt's automatic `app/` source tree.
+- Local Studio uses an unauthenticated inert `/__studio/launch` page only for
+  fragment exchange; every data-bearing Studio page and API requires the
+  per-launch HttpOnly session.
