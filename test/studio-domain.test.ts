@@ -38,7 +38,7 @@ const immutableInput = {
     sha256,
   },
   model: "gemini-3.6-flash",
-  retention: { mode: "ephemeral" as const },
+  retention: { mode: "ephemeral" as const, expiresAt: later },
 };
 const canonicalInputDigest = await digestImmutableJobInput(immutableInput);
 
@@ -357,7 +357,7 @@ describe("Studio boundary schemas", () => {
       }],
       mimeType: "video/mp4",
       sha256,
-      retention: { mode: "ephemeral" },
+      retention: { mode: "ephemeral", expiresAt: later },
       createdAt: now,
       updatedAt: later,
     })).toMatchObject({ status: "sealed", sha256 });
@@ -376,7 +376,7 @@ describe("Studio boundary schemas", () => {
       }],
       mimeType: "video/mp4",
       sha256,
-      retention: { mode: "ephemeral" },
+      retention: { mode: "ephemeral", expiresAt: later },
       path: "/private/tmp/recording.mp4",
       createdAt: now,
       updatedAt: later,
@@ -396,7 +396,7 @@ describe("Studio boundary schemas", () => {
       }],
       mimeType: "video/mp4",
       sha256,
-      retention: { mode: "ephemeral" },
+      retention: { mode: "ephemeral", expiresAt: later },
       createdAt: now,
       updatedAt: later,
     })).toThrow(/retained receipt/);

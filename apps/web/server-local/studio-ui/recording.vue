@@ -18,9 +18,11 @@ const {
   progressBytes,
   restart,
   resume,
+  resumeWarning,
   retentionMode,
   retentionTtlSeconds,
   selectedFile,
+  selectionLocked,
   session,
   start,
   statusMessage,
@@ -115,7 +117,7 @@ function formatDate(value: string | undefined): string {
                 layout="list"
                 position="inside"
                 :multiple="false"
-                :disabled="busy"
+                :disabled="busy || selectionLocked"
                 :file-image="false"
                 class="min-h-52 w-full"
                 :ui="{ base: 'min-h-52' }"
@@ -126,7 +128,7 @@ function formatDate(value: string | undefined): string {
                     color="neutral"
                     variant="outline"
                     icon="i-lucide-folder-open"
-                    :disabled="busy"
+                    :disabled="busy || selectionLocked"
                     @click.stop="open()"
                   >
                     Choose recording
@@ -166,7 +168,7 @@ function formatDate(value: string | undefined): string {
                 v-model="retentionMode"
                 :items="retentionOptions"
                 variant="card"
-                :disabled="Boolean(session)"
+                :disabled="Boolean(session) || selectionLocked"
               />
             </UFormField>
 
@@ -182,7 +184,7 @@ function formatDate(value: string | undefined): string {
                 value-key="value"
                 label-key="label"
                 class="w-full sm:max-w-xs"
-                :disabled="Boolean(session)"
+                :disabled="Boolean(session) || selectionLocked"
               />
             </UFormField>
           </UCard>
@@ -224,6 +226,8 @@ function formatDate(value: string | undefined): string {
               <p class="mt-2 text-sm text-zinc-600">
                 {{ formatBytes(progressBytes) }} of
                 {{ formatBytes(totalBytes) }} confirmed locally
+                ({{ progressBytes.toLocaleString() }} of
+                {{ totalBytes.toLocaleString() }} bytes)
               </p>
             </div>
 
@@ -235,6 +239,15 @@ function formatDate(value: string | undefined): string {
               icon="i-lucide-triangle-alert"
               title="Staging needs attention"
               :description="operationError"
+            />
+            <UAlert
+              v-if="resumeWarning"
+              class="mt-5"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-refresh-cw-off"
+              title="Refresh-resume is limited"
+              :description="resumeWarning"
             />
 
             <dl
@@ -249,8 +262,8 @@ function formatDate(value: string | undefined): string {
                 <dt class="text-xs font-bold uppercase tracking-wider text-zinc-500">Upload expires</dt>
                 <dd class="mt-1">{{ formatDate(session.uploadExpiresAt) }}</dd>
               </div>
-              <div v-if="session.retention.mode === 'retained'">
-                <dt class="text-xs font-bold uppercase tracking-wider text-zinc-500">Retained until</dt>
+              <div>
+                <dt class="text-xs font-bold uppercase tracking-wider text-zinc-500">Server-owned expiry</dt>
                 <dd class="mt-1">{{ formatDate(session.retention.expiresAt) }}</dd>
               </div>
               <div>
@@ -261,7 +274,7 @@ function formatDate(value: string | undefined): string {
 
             <div class="mt-6 flex flex-wrap gap-3">
               <UButton
-                v-if="phase === 'selected' || (phase === 'failed' && !session)"
+                v-if="phase === 'selected' || phase === 'aborted' || (phase === 'failed' && !session)"
                 type="button"
                 icon="i-lucide-hard-drive-upload"
                 :disabled="!selectedFile"
@@ -270,7 +283,7 @@ function formatDate(value: string | undefined): string {
                 {{ phase === 'failed' ? 'Retry staging' : 'Stage locally' }}
               </UButton>
               <UButton
-                v-if="phase === 'uploading' || phase === 'verifying' || phase === 'sealing'"
+                v-if="phase === 'fingerprinting' || phase === 'uploading' || phase === 'verifying'"
                 type="button"
                 color="neutral"
                 variant="outline"
@@ -298,7 +311,7 @@ function formatDate(value: string | undefined): string {
                 Delete old upload and restart
               </UButton>
               <UButton
-                v-if="session && !['aborted', 'deleted'].includes(session.status)"
+                v-if="session && phase !== 'sealing' && !['aborted', 'deleted'].includes(session.status)"
                 type="button"
                 color="error"
                 variant="soft"

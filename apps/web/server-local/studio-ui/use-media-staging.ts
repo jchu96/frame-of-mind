@@ -13,16 +13,19 @@ import {
   MediaUploadClientError,
   clearMediaResumeReceipt,
   createMediaStagingTransport,
+  fingerprintRecordingFile,
   loadMediaResumeReceipt,
   persistMediaResumeReceipt,
   uploadMissingMediaParts,
   validateRecordingFile,
+  type MediaStagingTransport,
 } from "./media-upload";
 
 export type MediaUploadPhase =
   | "idle"
   | "restoring"
   | "selected"
+  | "fingerprinting"
   | "creating"
   | "verifying"
   | "uploading"
@@ -39,6 +42,31 @@ export type MediaUploadPhase =
 
 const activeServerStates = new Set(["created", "uploading"]);
 const usableServerStates = new Set(["sealed", "in_use", "retained"]);
+const replacementLockedServerStates = new Set([
+  ...usableServerStates,
+  "cleanup_failed",
+  "failed",
+]);
+
+type BrowserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+export interface MediaStagingOptions {
+  transport?: MediaStagingTransport;
+  storage?: BrowserStorage;
+  mountLifecycle?: boolean;
+}
+
+const unavailableStorage: BrowserStorage = {
+  getItem() {
+    throw new Error("Browser session storage is unavailable.");
+  },
+  setItem() {
+    throw new Error("Browser session storage is unavailable.");
+  },
+  removeItem() {
+    throw new Error("Browser session storage is unavailable.");
+  },
+};
 
 function messageFor(error: unknown): string {
   if (error instanceof MediaUploadClientError) return error.message;
@@ -52,30 +80,40 @@ function isAbort(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-export function useMediaStaging() {
-  const transport = createMediaStagingTransport();
+export function useMediaStaging(options: MediaStagingOptions = {}) {
+  const transport = options.transport ?? createMediaStagingTransport();
+  const storage = options.storage
+    ?? (typeof sessionStorage === "undefined"
+      ? unavailableStorage
+      : sessionStorage);
   const selectedFile = shallowRef<File | null>(null);
   const session = shallowRef<MediaSession | null>(null);
   const phase = ref<MediaUploadPhase>("idle");
   const fieldError = ref<string>();
   const operationError = ref<string>();
+  const resumeWarning = ref<string>();
+  const ambiguousCreate = ref(false);
   const retentionMode = ref<"ephemeral" | "retained">("ephemeral");
   const retentionTtlSeconds = ref(24 * 60 * 60);
   let controller: AbortController | undefined;
   let activeOperation: Promise<void> | undefined;
+  let pendingCreate: MediaCreateRequest | undefined;
 
   const progressBytes = computed(() => session.value?.receivedBytes ?? 0);
   const totalBytes = computed(
     () => session.value?.expectedBytes ?? selectedFile.value?.size ?? 0,
   );
-  const progressPercent = computed(() => totalBytes.value
-    ? Math.round((progressBytes.value / totalBytes.value) * 100)
-    : 0);
+  const progressPercent = computed(() => {
+    if (!totalBytes.value) return 0;
+    if (progressBytes.value >= totalBytes.value) return 100;
+    return Math.floor((progressBytes.value / totalBytes.value) * 100);
+  });
   const hasActiveSession = computed(
     () => Boolean(session.value && activeServerStates.has(session.value.status)),
   );
   const busy = computed(() => [
     "restoring",
+    "fingerprinting",
     "creating",
     "verifying",
     "uploading",
@@ -83,6 +121,13 @@ export function useMediaStaging() {
     "sealing",
     "aborting",
   ].includes(phase.value));
+  const selectionLocked = computed(() => (
+    ambiguousCreate.value
+    || Boolean(
+      session.value
+      && replacementLockedServerStates.has(session.value.status),
+    )
+  ));
 
   const statusMessage = computed(() => {
     switch (phase.value) {
@@ -90,6 +135,8 @@ export function useMediaStaging() {
         return "Checking for an unfinished local upload.";
       case "selected":
         return "Recording selected. Review retention before staging.";
+      case "fingerprinting":
+        return "Binding this exact recording to its private upload session.";
       case "creating":
         return "Reserving private local staging space.";
       case "verifying":
@@ -122,7 +169,16 @@ export function useMediaStaging() {
   });
 
   function selectFile(file: File | null | undefined): void {
-    if (busy.value) return;
+    if (busy.value || ambiguousCreate.value) return;
+    if (
+      file
+      && session.value
+      && replacementLockedServerStates.has(session.value.status)
+    ) {
+      fieldError.value =
+        "Delete the current staged copy before choosing another recording.";
+      return;
+    }
     selectedFile.value = file ?? null;
     fieldError.value = undefined;
     operationError.value = undefined;
@@ -161,7 +217,12 @@ export function useMediaStaging() {
   });
 
   async function restore(): Promise<void> {
-    const id = loadMediaResumeReceipt(sessionStorage);
+    const receipt = loadMediaResumeReceipt(storage);
+    if (!receipt.storageAvailable) {
+      resumeWarning.value =
+        "Browser session storage is unavailable. Current staging can continue, but refresh-resume is disabled.";
+    }
+    const id = receipt.mediaSessionId;
     if (!id) return;
     phase.value = "restoring";
     try {
@@ -175,15 +236,26 @@ export function useMediaStaging() {
         operationError.value =
           "The staged bytes could not be deleted. Retry deletion before continuing.";
         phase.value = "failed";
+      } else if (restored.status === "failed") {
+        operationError.value =
+          "The server marked this media as failed and may still hold bytes. Keep this receipt for manual remediation.";
+        phase.value = "failed";
       } else {
-        clearMediaResumeReceipt(sessionStorage);
+        if (!clearMediaResumeReceipt(storage)) {
+          resumeWarning.value =
+            "The completed browser receipt could not be cleared. The server state remains authoritative.";
+        }
         phase.value = ["aborted", "deleted"].includes(restored.status)
           ? "aborted"
           : "idle";
+        session.value = null;
       }
     } catch (error) {
       if (error instanceof MediaUploadClientError && error.status === 404) {
-        clearMediaResumeReceipt(sessionStorage);
+        if (!clearMediaResumeReceipt(storage)) {
+          resumeWarning.value =
+            "The stale browser receipt could not be cleared.";
+        }
         phase.value = "idle";
         return;
       }
@@ -203,8 +275,23 @@ export function useMediaStaging() {
   async function reconcileAfterPause(): Promise<void> {
     if (!session.value) return;
     try {
-      session.value = await transport.status(session.value.id);
-      phase.value = selectedFile.value ? "paused" : "reselect-required";
+      const reconciled = await transport.status(session.value.id);
+      session.value = reconciled;
+      if (activeServerStates.has(reconciled.status)) {
+        phase.value = selectedFile.value ? "paused" : "reselect-required";
+      } else if (usableServerStates.has(reconciled.status)) {
+        phase.value = "sealed";
+      } else if (reconciled.status === "cleanup_failed") {
+        operationError.value =
+          "The staged bytes could not be deleted. Retry deletion.";
+        phase.value = "failed";
+      } else if (reconciled.status === "failed") {
+        operationError.value =
+          "The server marked this media as failed and may still hold bytes.";
+        phase.value = "failed";
+      } else {
+        phase.value = "aborted";
+      }
     } catch (error) {
       operationError.value = messageFor(error);
       phase.value = "failed";
@@ -239,8 +326,9 @@ export function useMediaStaging() {
       } else if (
         error instanceof MediaUploadClientError
         && [
-          "confirmed_part_mismatch",
+          "file_fingerprint_mismatch",
           "file_metadata_mismatch",
+          "resume_identity_unavailable",
         ].includes(error.code)
       ) {
         fieldError.value = error.message;
@@ -267,24 +355,51 @@ export function useMediaStaging() {
         return;
       }
 
-      phase.value = "creating";
       operationError.value = undefined;
       controller = new AbortController();
-      const retention: MediaCreateRequest["retention"] =
-        retentionMode.value === "retained"
-          ? { mode: "retained", ttlSeconds: retentionTtlSeconds.value }
-          : { mode: "ephemeral" };
+      let createRequested = false;
       try {
-        session.value = await transport.create({
-          idempotencyKey: crypto.randomUUID(),
-          expectedBytes: file.size,
-          mimeType: validation.mimeType,
-          retention,
-        }, controller.signal);
-        persistMediaResumeReceipt(sessionStorage, session.value.id);
+        if (!pendingCreate) {
+          phase.value = "fingerprinting";
+          const fileFingerprintSha256 = await fingerprintRecordingFile(
+            file,
+            undefined,
+            controller.signal,
+          );
+          const retention: MediaCreateRequest["retention"] =
+            retentionMode.value === "retained"
+              ? { mode: "retained", ttlSeconds: retentionTtlSeconds.value }
+              : { mode: "ephemeral" };
+          pendingCreate = {
+            idempotencyKey: crypto.randomUUID(),
+            expectedBytes: file.size,
+            mimeType: validation.mimeType,
+            fileFingerprintSha256,
+            retention,
+          };
+        }
+        phase.value = "creating";
+        createRequested = true;
+        session.value = await transport.create(
+          pendingCreate,
+          controller.signal,
+        );
+        pendingCreate = undefined;
+        ambiguousCreate.value = false;
+        if (!persistMediaResumeReceipt(storage, session.value.id)) {
+          resumeWarning.value =
+            "Browser session storage is unavailable. This upload cannot resume after a refresh; keep this page open or delete the staged copy.";
+        }
       } catch (error) {
+        const definitiveHttpFailure = error instanceof MediaUploadClientError;
+        if (definitiveHttpFailure) pendingCreate = undefined;
+        ambiguousCreate.value = createRequested && !definitiveHttpFailure;
         if (isAbort(error)) {
-          phase.value = "selected";
+          phase.value = ambiguousCreate.value ? "failed" : "selected";
+          if (ambiguousCreate.value) {
+            operationError.value =
+              "Creation may have reached the local server. Retry with the same request before changing the recording.";
+          }
         } else {
           operationError.value = messageFor(error);
           phase.value = "failed";
@@ -302,7 +417,7 @@ export function useMediaStaging() {
   }
 
   function pause(): void {
-    if (!controller) return;
+    if (!controller || phase.value === "sealing") return;
     phase.value = "pausing";
     controller.abort();
   }
@@ -317,11 +432,16 @@ export function useMediaStaging() {
         phase.value = "aborting";
         operationError.value = undefined;
         try {
-          session.value = await transport.abort(session.value.id);
-          if (["aborted", "deleted"].includes(session.value.status)) {
-            clearMediaResumeReceipt(sessionStorage);
+          const deleted = await transport.abort(session.value.id);
+          if (["aborted", "deleted"].includes(deleted.status)) {
+            if (!clearMediaResumeReceipt(storage)) {
+              resumeWarning.value =
+                "The browser receipt could not be cleared, but the server confirmed deletion.";
+            }
+            session.value = null;
             phase.value = "aborted";
           } else {
+            session.value = deleted;
             operationError.value =
               "The staged bytes could not be deleted. Retry deletion.";
             phase.value = "failed";
@@ -336,21 +456,19 @@ export function useMediaStaging() {
 
   async function restart(): Promise<void> {
     await abortStaging();
-    if (
-      !session.value
-      || !["aborted", "deleted"].includes(session.value.status)
-    ) return;
-    session.value = null;
+    if (session.value) return;
     phase.value = selectedFile.value ? "selected" : "idle";
     await start();
   }
 
-  onMounted(() => {
-    void restore();
-  });
-  onBeforeUnmount(() => {
-    controller?.abort();
-  });
+  if (options.mountLifecycle !== false) {
+    onMounted(() => {
+      void restore();
+    });
+    onBeforeUnmount(() => {
+      controller?.abort();
+    });
+  }
 
   return {
     abortStaging,
@@ -365,8 +483,11 @@ export function useMediaStaging() {
     progressPercent,
     restart,
     resume,
+    resumeWarning,
     retentionMode,
     retentionTtlSeconds,
+    restore,
+    selectionLocked,
     selectedFile,
     session,
     start,

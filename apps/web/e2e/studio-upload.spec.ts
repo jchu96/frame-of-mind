@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { MEDIA_RESUME_STORAGE_KEY } from "../server-local/studio-ui/media-upload";
 import { collectClientErrors } from "./support/client-errors";
@@ -12,6 +13,16 @@ function syntheticMp4(bytes: number): Buffer {
   return fixture;
 }
 
+function fileFingerprint(bytes: Buffer, partSizeBytes = 8 * 1_024 * 1_024): string {
+  const partDigests: string[] = [];
+  for (let offset = 0; offset < bytes.byteLength; offset += partSizeBytes) {
+    partDigests.push(createHash("sha256")
+      .update(bytes.subarray(offset, Math.min(offset + partSizeBytes, bytes.byteLength)))
+      .digest("hex"));
+  }
+  return createHash("sha256").update(partDigests.join("")).digest("hex");
+}
+
 test("reconciles an unfinished upload and resumes only after file re-selection", async ({
   page,
 }) => {
@@ -22,6 +33,7 @@ test("reconciles an unfinished upload and resumes only after file re-selection",
       idempotencyKey: "e2e-browser-resume-0001",
       expectedBytes: recording.byteLength,
       mimeType: "video/mp4",
+      fileFingerprintSha256: fileFingerprint(recording),
       retention: { mode: "ephemeral" },
     },
   });
@@ -56,7 +68,7 @@ test("reconciles an unfinished upload and resumes only after file re-selection",
     page.getByText("An unfinished upload was found.", { exact: false }),
   ).toBeVisible();
   await expect(
-    page.getByText("8.0 MB of 8.0 MB confirmed locally"),
+    page.getByText("8,388,608 of 8,388,672 bytes", { exact: false }),
   ).toBeVisible();
 
   await page.getByLabel("Screen recording").setInputFiles({
@@ -73,7 +85,7 @@ test("reconciles an unfinished upload and resumes only after file re-selection",
     page.getByText("Recording staged and sealed locally."),
   ).toBeVisible();
   await expect(
-    page.getByText("8.0 MB of 8.0 MB confirmed locally"),
+    page.getByText("8,388,672 of 8,388,672 bytes", { exact: false }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Delete staged copy" }).click();

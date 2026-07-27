@@ -10,6 +10,7 @@ import { opaqueIdSchema } from "./studio-identifiers.js";
 export const MAX_MEDIA_BYTES = 2 * 1_024 * 1_024 * 1_024;
 export const MAX_MEDIA_PARTS = 512;
 export const MAX_MEDIA_PART_BYTES = 64 * 1_024 * 1_024;
+export const DEFAULT_MEDIA_PART_SIZE_BYTES = 8 * 1_024 * 1_024;
 export const MAX_RETAINED_MEDIA_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -38,7 +39,10 @@ const retainedMediaSchema = z.object({
 }).strict();
 
 export const mediaRetentionSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("ephemeral") }).strict(),
+  z.object({
+    mode: z.literal("ephemeral"),
+    expiresAt: utcDateTimeSchema,
+  }).strict(),
   retainedMediaSchema,
 ]);
 
@@ -60,6 +64,7 @@ export const mediaCreateRequestSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
   expectedBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
   mimeType: supportedMediaMimeTypeSchema,
+  fileFingerprintSha256: sha256Schema.optional(),
   retention: mediaRetentionRequestSchema,
 }).strict();
 
@@ -397,6 +402,7 @@ export const mediaSessionSchema = z.object({
   partSizeBytes: z.number().int().positive().max(MAX_MEDIA_PART_BYTES),
   parts: z.array(mediaPartReceiptSchema).max(MAX_MEDIA_PARTS),
   mimeType: supportedMediaMimeTypeSchema,
+  fileFingerprintSha256: sha256Schema.optional(),
   sha256: sha256Schema.optional(),
   retention: mediaRetentionSchema,
   uploadExpiresAt: utcDateTimeSchema.optional(),
@@ -488,17 +494,14 @@ export const mediaSessionSchema = z.object({
     });
   }
   if (
-    media.retention.mode === "retained"
-    && (
-      Date.parse(media.retention.expiresAt) <= Date.parse(media.createdAt)
-      || Date.parse(media.retention.expiresAt)
-        > Date.parse(media.createdAt) + MAX_RETAINED_MEDIA_TTL_SECONDS * 1_000
-    )
+    Date.parse(media.retention.expiresAt) <= Date.parse(media.createdAt)
+    || Date.parse(media.retention.expiresAt)
+      > Date.parse(media.createdAt) + MAX_RETAINED_MEDIA_TTL_SECONDS * 1_000
   ) {
     context.addIssue({
       code: "custom",
       path: ["retention", "expiresAt"],
-      message: "retained media must use the bounded server-owned lifetime",
+      message: "media must use the bounded server-owned lifetime",
     });
   }
   if (

@@ -166,7 +166,9 @@ staging. After the user confirms retention, Studio streams server-advertised
 parts to private local application data, reports only receipt-confirmed
 progress, and supports pause, retry, verified resume, restart, and deletion.
 Only the opaque upload ID survives a refresh; the browser requires the same
-file to be reselected and verifies existing part hashes before continuing.
+file to be reselected and verifies a bounded-memory complete-file fingerprint
+before continuing. Every staged copy has a visible server-owned expiry, so
+closing the tab cannot turn browser session storage into cleanup authority.
 
 The analysis composer and job activity arrive in later implementation phases,
 so `frameofmind analyze` remains the supported execution path today. See the

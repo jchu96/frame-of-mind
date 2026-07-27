@@ -78,3 +78,10 @@
   tests and production Playwright cover small-file stage/delete and an
   8 MiB confirmed-part resume; the browser pass also caught and fixed deleted
   terminal-state handling and mobile header overflow.
+- Adversarially reviewed the Recording slice and closed sealed-media orphaning,
+  seal/delete concurrency, replacement-handle loss, ambiguous create
+  duplication, storage-denial, incomplete identity verification, rounded
+  progress, and missing controller/drop/keyboard coverage. The client now
+  verifies a complete bounded-part fingerprint, the server owns every expiry,
+  and focused state-machine plus production-browser tests cover the repaired
+  seams.

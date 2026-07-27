@@ -7,16 +7,28 @@ import type {
 import {
   MediaUploadClientError,
   clearMediaResumeReceipt,
+  fingerprintRecordingFile,
   loadMediaResumeReceipt,
   persistMediaResumeReceipt,
   uploadMissingMediaParts,
   validateRecordingFile,
-  verifyConfirmedMediaParts,
+  verifyRecordingForResume,
   type MediaStagingTransport,
 } from "../server-local/studio-ui/media-upload";
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function fileFingerprint(bytes: Uint8Array, partSizeBytes = 8): string {
+  const partDigests: string[] = [];
+  for (let offset = 0; offset < bytes.byteLength; offset += partSizeBytes) {
+    partDigests.push(sha256(bytes.slice(
+      offset,
+      Math.min(offset + partSizeBytes, bytes.byteLength),
+    )));
+  }
+  return sha256(new TextEncoder().encode(partDigests.join("")));
 }
 
 function recording(
@@ -54,7 +66,11 @@ function session(
     partSizeBytes: 8,
     parts,
     mimeType: "video/mp4",
-    retention: { mode: "ephemeral" },
+    fileFingerprintSha256: fileFingerprint(bytes),
+    retention: {
+      mode: "ephemeral",
+      expiresAt: "2026-07-28T08:00:00.000Z",
+    },
     uploadExpiresAt: "2026-07-28T08:00:00.000Z",
     createdAt: "2026-07-27T08:00:00.000Z",
     updatedAt: "2026-07-27T08:00:01.000Z",
@@ -76,6 +92,18 @@ class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem
     this.values.delete(key);
   }
 }
+
+const unavailableStorage: Pick<Storage, "getItem" | "setItem" | "removeItem"> = {
+  getItem() {
+    throw new DOMException("blocked", "SecurityError");
+  },
+  setItem() {
+    throw new DOMException("blocked", "SecurityError");
+  },
+  removeItem() {
+    throw new DOMException("blocked", "SecurityError");
+  },
+};
 
 describe("Studio browser media upload", () => {
   test("validates size, extension, and declared MIME without trusting accept", () => {
@@ -117,29 +145,53 @@ describe("Studio browser media upload", () => {
         mediaSessionId: "media_01K123456789ABC",
       }),
     ]);
-    expect(loadMediaResumeReceipt(storage)).toBe("media_01K123456789ABC");
+    expect(loadMediaResumeReceipt(storage)).toEqual({
+      mediaSessionId: "media_01K123456789ABC",
+      storageAvailable: true,
+    });
 
     clearMediaResumeReceipt(storage);
-    expect(loadMediaResumeReceipt(storage)).toBeUndefined();
+    expect(loadMediaResumeReceipt(storage)).toEqual({
+      storageAvailable: true,
+    });
   });
 
-  test("verifies every confirmed part before resuming a reselected file", async () => {
+  test("treats unavailable browser storage as degraded resumability", () => {
+    expect(persistMediaResumeReceipt(
+      unavailableStorage,
+      "media_01K123456789ABC",
+    )).toBe(false);
+    expect(loadMediaResumeReceipt(unavailableStorage)).toEqual({
+      storageAvailable: false,
+    });
+    expect(clearMediaResumeReceipt(unavailableStorage)).toBe(false);
+  });
+
+  test("verifies the complete reselected file before resuming", async () => {
     const bytes = Uint8Array.from({ length: 20 }, (_, index) => index + 1);
     const firstPart = bytes.slice(0, 8);
     const media = session(bytes, [receipt(0, 0, firstPart)]);
 
     await expect(
-      verifyConfirmedMediaParts(recording(bytes), media),
+      verifyRecordingForResume(recording(bytes), media),
     ).resolves.toBeUndefined();
 
     const changed = bytes.slice();
-    changed[3] ^= 0xff;
+    changed[19] ^= 0xff;
     await expect(
-      verifyConfirmedMediaParts(recording(changed), media),
+      verifyRecordingForResume(recording(changed), media),
     ).rejects.toMatchObject({
       name: "MediaUploadClientError",
-      code: "confirmed_part_mismatch",
+      code: "file_fingerprint_mismatch",
     });
+  });
+
+  test("computes a bounded-part fingerprint for the complete recording", async () => {
+    const bytes = Uint8Array.from({ length: 20 }, (_, index) => index + 1);
+    await expect(fingerprintRecordingFile(
+      recording(bytes),
+      8,
+    )).resolves.toBe(fileFingerprint(bytes));
   });
 
   test("uploads only missing server-advertised parts and counts confirmed bytes", async () => {
@@ -190,13 +242,13 @@ describe("Studio browser media upload", () => {
     const media = session(bytes, [receipt(0, 0, bytes.slice(0, 8))]);
 
     await expect(
-      verifyConfirmedMediaParts(
+      verifyRecordingForResume(
         recording(bytes.slice(0, 19)),
         media,
       ),
     ).rejects.toBeInstanceOf(MediaUploadClientError);
     await expect(
-      verifyConfirmedMediaParts(
+      verifyRecordingForResume(
         recording(bytes, { name: "review.webm", type: "video/webm" }),
         media,
       ),

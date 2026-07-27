@@ -76,3 +76,12 @@
 - Successful media cleanup may return the stronger terminal state `deleted`
   rather than `aborted`. Browser clients must treat both as clean deletion and
   must never turn `cleanup_failed` into a success message.
+- Per-tab session storage is a resume convenience, never retention authority.
+  Every staged copy needs a server-owned expiry that survives tab closure and
+  storage denial.
+- Matching filename, size, MIME, or confirmed-prefix hashes does not prove a
+  reselected recording is identical. Bind and verify the complete file using
+  bounded part digests before refresh-resume.
+- Canceling the browser completion request does not cancel server-side
+  sealing. Hide conflicting actions while sealing and make server deletion
+  reject any active writer.

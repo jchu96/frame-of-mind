@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MEDIA_PART_SIZE_BYTES,
   MAX_MEDIA_BYTES,
   mediaSessionSchema,
   type MediaCreateRequest,
@@ -119,37 +120,86 @@ function parseResumeReceipt(value: string | null): string | undefined {
 export function persistMediaResumeReceipt(
   storage: BrowserStorage,
   mediaSessionId: string,
-): void {
-  const id = opaqueIdSchema.parse(mediaSessionId);
-  storage.setItem(MEDIA_RESUME_STORAGE_KEY, JSON.stringify({
-    schemaVersion: 1,
-    mediaSessionId: id,
-  }));
+): boolean {
+  try {
+    const id = opaqueIdSchema.parse(mediaSessionId);
+    storage.setItem(MEDIA_RESUME_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      mediaSessionId: id,
+    }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function loadMediaResumeReceipt(
   storage: BrowserStorage,
-): string | undefined {
-  const id = parseResumeReceipt(storage.getItem(MEDIA_RESUME_STORAGE_KEY));
-  if (!id) storage.removeItem(MEDIA_RESUME_STORAGE_KEY);
-  return id;
+): { mediaSessionId?: string; storageAvailable: boolean } {
+  try {
+    const id = parseResumeReceipt(storage.getItem(MEDIA_RESUME_STORAGE_KEY));
+    if (!id) storage.removeItem(MEDIA_RESUME_STORAGE_KEY);
+    return { mediaSessionId: id, storageAvailable: true };
+  } catch {
+    return { storageAvailable: false };
+  }
 }
 
-export function clearMediaResumeReceipt(storage: BrowserStorage): void {
-  storage.removeItem(MEDIA_RESUME_STORAGE_KEY);
+export function clearMediaResumeReceipt(storage: BrowserStorage): boolean {
+  try {
+    storage.removeItem(MEDIA_RESUME_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-async function sha256Blob(blob: Blob): Promise<string> {
+function abortIfRequested(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException("Upload paused.", "AbortError");
+  }
+}
+
+async function sha256Blob(
+  blob: Blob,
+  signal?: AbortSignal,
+): Promise<string> {
+  abortIfRequested(signal);
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  abortIfRequested(signal);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
 
-export async function verifyConfirmedMediaParts(
+export async function fingerprintRecordingFile(
+  file: RecordingFile,
+  partSizeBytes = DEFAULT_MEDIA_PART_SIZE_BYTES,
+  signal?: AbortSignal,
+): Promise<string> {
+  const partDigests: string[] = [];
+  for (let offset = 0; offset < file.size; offset += partSizeBytes) {
+    abortIfRequested(signal);
+    partDigests.push(await sha256Blob(
+      file.slice(offset, Math.min(offset + partSizeBytes, file.size)),
+      signal,
+    ));
+  }
+  return sha256Blob(
+    new Blob([new TextEncoder().encode(partDigests.join(""))]),
+    signal,
+  );
+}
+
+export async function verifyRecordingForResume(
   file: RecordingFile,
   session: MediaSession,
-  digest: (blob: Blob) => Promise<string> = sha256Blob,
+  signal?: AbortSignal,
+  fingerprint: (
+    file: RecordingFile,
+    partSizeBytes: number,
+    signal?: AbortSignal,
+  ) => Promise<string> = fingerprintRecordingFile,
 ): Promise<void> {
   const validation = validateRecordingFile(file);
   if (
@@ -163,17 +213,20 @@ export async function verifyConfirmedMediaParts(
     );
   }
 
-  for (const part of session.parts) {
-    const bytes = file.slice(part.offset, part.offset + part.bytes);
-    if (
-      bytes.size !== part.bytes
-      || await digest(bytes) !== part.sha256
-    ) {
-      throw new MediaUploadClientError(
-        "confirmed_part_mismatch",
-        "This recording does not match the confirmed upload parts.",
-      );
-    }
+  if (!session.fileFingerprintSha256) {
+    throw new MediaUploadClientError(
+      "resume_identity_unavailable",
+      "This older upload cannot be safely resumed. Delete it and start again.",
+    );
+  }
+  if (
+    await fingerprint(file, session.partSizeBytes, signal)
+      !== session.fileFingerprintSha256
+  ) {
+    throw new MediaUploadClientError(
+      "file_fingerprint_mismatch",
+      "This recording does not match the file selected when staging began.",
+    );
   }
 }
 
@@ -310,7 +363,7 @@ export async function uploadMissingMediaParts(input: {
   signal?: AbortSignal;
   onConfirmed?: (session: MediaSession) => void;
 }): Promise<MediaSession> {
-  await verifyConfirmedMediaParts(input.file, input.session);
+  await verifyRecordingForResume(input.file, input.session, input.signal);
   let session = mediaSessionSchema.parse(input.session);
   const partCount = Math.ceil(
     session.expectedBytes / session.partSizeBytes,

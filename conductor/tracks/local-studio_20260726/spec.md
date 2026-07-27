@@ -145,9 +145,12 @@ directory outside the repository:
 - per-session/part concurrency, chunk order, byte count, disk reservation, and
   final streamed digest are validated;
 - interrupted uploads can resume or abort;
-- abandoned staging entries expire;
+- every staged copy has a server-owned expiry independent of browser state;
+- refresh-resume binds and verifies the complete reselected file using
+  bounded-memory part digests before accepting missing parts;
 - user-owned source files are never deleted;
-- ephemeral staged copies are deleted after terminal job cleanup;
+- ephemeral staged copies are deleted after terminal job cleanup, with expiry
+  as the no-job/no-browser backstop;
 - retained-for-review copies require an explicit time-bounded choice;
 - deleted media can be reattached only after its streamed SHA-256 matches the
   run manifest.
