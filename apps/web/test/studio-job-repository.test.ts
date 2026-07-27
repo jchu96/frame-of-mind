@@ -30,6 +30,7 @@ const baseInput = {
   },
   recipe: {
     id: "issue-review",
+    custom: false,
     revision: "builtin-v1",
     sha256,
   },
@@ -188,6 +189,58 @@ describe("LocalSqliteJobRepository", () => {
         )
         .get()?.count,
     ).toBe(0);
+  });
+
+  test("requires explicit recipe provenance on newly created jobs", async () => {
+    const { repository } = createRepository();
+    const { custom: _custom, ...legacyRecipe } = baseInput.recipe;
+    const verifiedInput = await verifyImmutableJobInput({
+      ...baseInput,
+      recipe: legacyRecipe,
+    });
+
+    await expect(
+      repository.createOrReplay({
+        idempotencyKey: "request-missing-recipe-provenance",
+        verifiedInput,
+        createdAt,
+      }),
+    ).rejects.toMatchObject({ code: "missing_recipe_provenance" });
+  });
+
+  test("still replays a legacy job whose original receipt predates provenance", async () => {
+    const { database, repository } = createRepository();
+    const created = await createJob(
+      repository,
+      "request-legacy-replay-0001",
+    );
+    const { custom: _custom, ...legacyRecipe } = baseInput.recipe;
+    const legacy = await verifyImmutableJobInput({
+      ...baseInput,
+      recipe: legacyRecipe,
+    });
+    database
+      .query<never, [string, string, string]>(
+        `UPDATE studio_analysis_jobs
+         SET input_json = ?, input_digest = ?
+         WHERE id = ?`,
+      )
+      .run(
+        JSON.stringify(legacy.input),
+        legacy.inputDigest,
+        created.id,
+      );
+
+    await expect(
+      repository.createOrReplay({
+        idempotencyKey: "request-legacy-replay-0001",
+        verifiedInput: legacy,
+        createdAt: oneMinuteLater,
+      }),
+    ).resolves.toMatchObject({
+      kind: "replayed",
+      job: { id: created.id, inputDigest: legacy.inputDigest },
+    });
   });
 
   test("persists legal transitions and assigns ordered event sequences", async () => {
@@ -465,10 +518,15 @@ describe("LocalSqliteJobRepository", () => {
       limit: 10,
       stages: ["fetching_context"],
     });
+    const oldest = await repository.list({
+      limit: 1,
+      order: "oldest",
+    });
 
     expect(pageOne.jobs.map((job) => job.id)).toEqual([second.id]);
     expect(pageTwo.jobs.map((job) => job.id)).toEqual([first.id]);
     expect(filtered.jobs.map((job) => job.id)).toEqual([first.id]);
+    expect(oldest.jobs.map((job) => job.id)).toEqual([first.id]);
 
     database
       .query("UPDATE studio_analysis_jobs SET input_digest = ? WHERE id = ?")

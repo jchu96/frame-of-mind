@@ -26,6 +26,13 @@ const safeMessageSchema = z.string()
     (value) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value),
     "message contains control characters",
   );
+export const publishedRunIdSchema = z.string().min(1).max(240)
+  .regex(/^[a-zA-Z0-9._:-]+$/);
+
+export const analysisJobExecutionResultSchema = z.object({
+  runId: publishedRunIdSchema,
+  projectionWarning: safeMessageSchema.optional(),
+}).strict();
 
 export const analysisJobStageSchema = z.enum(ANALYSIS_JOB_STAGES);
 export const analysisJobTerminalStageSchema = z.enum(
@@ -115,6 +122,9 @@ const immutableJobInputSchema = z.object({
   context: providerContextSchema,
   recipe: z.object({
     id: recipeIdSchema,
+    // Optional only for compatibility with pre-executor local rows. New job
+    // creation must persist the composer-resolved provenance explicitly.
+    custom: z.boolean().optional(),
     revision: z.string().min(1).max(120),
     sha256: sha256Schema,
   }).strict(),
@@ -195,9 +205,7 @@ export const analysisJobSchema = z.object({
     code: z.string().min(1).max(120).regex(/^[a-z0-9_:-]+$/).optional(),
     message: safeMessageSchema.optional(),
   }).strict().optional(),
-  runId: z.string().min(1).max(240)
-    .regex(/^[a-zA-Z0-9._:-]+$/)
-    .optional(),
+  runId: publishedRunIdSchema.optional(),
   projectionWarning: safeMessageSchema.optional(),
   createdAt: utcDateTimeSchema,
   updatedAt: utcDateTimeSchema,

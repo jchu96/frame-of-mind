@@ -684,6 +684,23 @@ the environment or process-memory session input. Mutating local routes require
 a per-launch capability/session in addition to loopback, Host, and same-origin
 checks.
 
+`LocalStudioJobWorker` is the process-local queue owner. It scans the durable
+queue oldest-first, atomically claims one `queued` row as
+`fetching_context`, and does not claim another until the current executor has
+settled. Startup marks abandoned nonterminal attempts `interrupted`; shutdown
+aborts the active signal and waits for cooperative cleanup. Wakeups coalesce,
+and a browser refresh has no control over the worker lifetime. A production
+runtime must construct exactly one worker singleton per local database.
+
+`OrchestratedAnalysisJobExecutor` is the typed bridge from a claimed job to
+`AnalysisOrchestrator`. A local factory resolves the sealed-media path,
+context file/provider, exact recipe, output root, and process-memory secret at
+execution time. The bridge re-verifies recipe content against the job's
+immutable digest and overwrites mutable resolver values with the recorded
+model, focus, provider, transport, meeting ID, recipe revision, and
+custom/built-in flag. It translates orchestration events into job-bound events;
+the worker alone owns terminal success/failure/interruption.
+
 The CLI analysis command is a thin adapter over `AnalysisOrchestrator`. The
 orchestrator accepts explicit context/analyzer factories, an optional
 `AbortSignal`, a typed progress reporter, and an optional completed-run
@@ -707,9 +724,10 @@ failures are converted to a fixed, sanitized warning and returned alongside
 the successful run. They never delete or mutate `analysis.json`,
 `manifest.json`, their cleanup provenance, or rendered artifacts. The
 projection port receives cloned validated contracts without the authoritative
-bundle path, so it has no filesystem capability through this interface. A
-future Bun job executor maps these service events into job-bound sequenced
-events; it does not parse CLI text.
+bundle path, so it has no filesystem capability through this interface. The
+Bun executor maps these service events into job-bound sequenced events; it
+does not parse CLI text. Route wiring and validated staged-media reuse remain
+in the next implementation slices.
 
 The local media backend streams server-advertised fixed-size parts directly
 from H3's Node request iterable into a private Bun `FileSink`. Durable JSON

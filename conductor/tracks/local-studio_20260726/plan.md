@@ -193,7 +193,7 @@ separate proposed track.
       limited to completed-run projection tables.
 - [x] Task 5.2: Implement the SQLite `JobRepository` with atomic transitions,
       idempotent creation, bounded listing, and event ordering.
-- [ ] Task 5.3: Implement the local Bun executor with concurrency one,
+- [x] Task 5.3: Implement the local Bun executor with concurrency one,
       startup/shutdown reconciliation, signal-aware interruption, structured
       progress persistence, and no CLI log scraping.
 - [ ] Task 5.4: Implement durable cancellation and linked retry attempts,

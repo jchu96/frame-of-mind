@@ -76,6 +76,28 @@ describe("AnalysisOrchestrator", () => {
     ).toEqual(result.analysis);
   });
 
+  it("passes the requested model into analyzer construction", async () => {
+    const fixture = await createFixture();
+    let requestedModel: string | undefined;
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: (_apiKey, options) => {
+        requestedModel = options.model;
+        return fixture.analyzer;
+      },
+      createRunId: () => "run-model-test",
+      now: () => "2026-07-27T12:00:00.000Z",
+      sleep: async () => undefined,
+    });
+
+    await orchestrator.analyze({
+      ...fixture.options,
+      model: "gemini-test",
+    });
+
+    expect(requestedModel).toBe("gemini-test");
+  });
+
   it("preserves the durable run when projection publication fails", async () => {
     const fixture = await createFixture();
     const events: AnalysisProgressEvent[] = [];

@@ -34,6 +34,7 @@ const immutableInput = {
   },
   recipe: {
     id: "issue-review",
+    custom: false,
     revision: "builtin-v1",
     sha256,
   },
@@ -254,6 +255,26 @@ describe("Studio analysis-job contracts", () => {
     await expect(validateAnalysisJob(job({
       inputDigest: "b".repeat(64),
     }))).rejects.toThrow(/canonical SHA-256/);
+  });
+
+  it("keeps pre-executor job receipts readable without recipe provenance", async () => {
+    const legacyInput = {
+      ...immutableInput,
+      recipe: {
+        id: immutableInput.recipe.id,
+        revision: immutableInput.recipe.revision,
+        sha256: immutableInput.recipe.sha256,
+      },
+    };
+    const verified = await verifyImmutableJobInput(legacyInput);
+
+    await expect(validateAnalysisJob({
+      ...job(),
+      input: verified.input,
+      inputDigest: verified.inputDigest,
+    })).resolves.toMatchObject({
+      input: { recipe: { id: "issue-review" } },
+    });
   });
 
   it("replays the same immutable request and rejects key reuse for different input", () => {
