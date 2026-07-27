@@ -126,3 +126,12 @@ queue, remains authoritative. Startup marks abandoned active attempts
 interrupted; shutdown uses cooperative abort and waits for cleanup. The typed
 adapter reuses `AnalysisOrchestrator` and binds immutable model/recipe/provider
 values rather than invoking or scraping the CLI.
+
+## 2026-07-27 — Cancellation and retry share one control service
+
+`LocalStudioJobControl` persists cancellation before signaling the worker and
+creates linked retries only after the separate retained-media receipt proves
+the exact digest and expiry. Existing retry idempotency keys replay before the
+media check; new retries recheck retained media again immediately before
+orchestration and lease it as `in_use` until execution cleanup. A possibly
+published indeterminate result outranks concurrent cancellation.

@@ -31,6 +31,8 @@ const forbidden = [
   "LocalSqliteJobRepository",
   "LocalStudioJobWorker",
   "OrchestratedAnalysisJobExecutor",
+  "LocalStudioJobControl",
+  "LocalMediaReuseGuard",
   "studio_analysis_jobs",
 ];
 

@@ -166,3 +166,9 @@
   shutdown-after-queue-read races. The adapter now also revalidates the
   returned durable pair and reports a malformed publication receipt as
   indeterminate instead of failed.
+- Added the local job control and retained-media reuse guard. Cancellation is
+  durable before abort, queued cancellation avoids providers, new retries
+  require exact unexpired retained bytes, retry replays survive later expiry,
+  and linked attempts fail closed without a just-in-time media lease. Added
+  recovery for abandoned retained leases and kept indeterminate publication
+  outcomes from being mislabeled by a concurrent cancellation.

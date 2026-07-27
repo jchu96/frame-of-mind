@@ -211,7 +211,10 @@ phases, so `frameofmind analyze` remains the supported execution path today.
 The local-only SQLite job/event repository, single-concurrency Bun worker, and
 shared typed orchestrator are now in place. Studio binds the immutable model
 and recipe receipt into that orchestrator; it does not scrape terminal output
-or fork a second analysis pipeline. See the
+or fork a second analysis pipeline. Durable cancellation and linked retry
+controls are also implemented behind the forthcoming job routes; new retries
+require an exact, unexpired retained-media receipt that is leased for the
+duration of execution. See the
 [web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
 for the browser workflow, backend contract, and private storage location.
 
