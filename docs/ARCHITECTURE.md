@@ -615,6 +615,9 @@ flowchart LR
     Fragment[One-use fragment capability]
     Session[Per-launch local session]
     Connections[Connections control plane]
+    Context[Typed context draft]
+    Catalog[Bluedot meeting catalog]
+    ContextFile[Private context receipt]
     Environment[Ignored .env or environment]
     Memory[Process-memory keys]
     OAuth[Exact-resource OAuth files]
@@ -628,6 +631,9 @@ flowchart LR
 
     Browser --> Fragment --> Session --> Bun
     Session --> Connections
+    Session --> Context
+    Context --> Catalog
+    Context --> ContextFile
     Environment --> Connections
     Memory --> Connections
     OAuth --> Connections
@@ -687,6 +693,24 @@ parser is introduced. The executor releases and consumes the lease in its
 `finally` path, while one-hour expiry and a non-overlapping minute janitor
 remove abandoned uploads. External deletion fails while the lease is active.
 See [ADR 0011](adr/0011-ephemeral-local-context-staging.md).
+
+The authenticated Context composer preserves that ownership boundary. Its
+refresh-safe browser draft contains the sealed media ID plus exactly one typed
+provider/transport/meeting identifier or local context receipt, with an
+optional signed transcript offset. It never stores provider payloads,
+transcript text, local file names, paths, or preview content. Local previews
+are bounded prefixes held only in component memory; a refresh revalidates the
+opaque receipt through the context adapter.
+
+Meeting browsing is an optional capability, not a prerequisite for context
+selection. The local catalog route accepts an explicit provider and transport,
+returns only bounded meeting identity metadata, and sanitizes provider errors.
+Bluedot MCP supplies the first catalog implementation. Granola transports
+remain exact-ID-only until their own verified capability is implemented.
+Catalog failure therefore degrades only to exact-ID entry for the same
+provider/transport; it cannot authorize a fallback to another identity.
+Transcript alignment is part of immutable job input so the value reviewed in
+the composer is the value used by orchestration.
 
 The first Studio runs one job at a time in the Bun application process.
 Closing the browser does not cancel it; restarting the process marks active

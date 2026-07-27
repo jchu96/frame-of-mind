@@ -11,6 +11,10 @@ import {
   secureTokenDirectory,
 } from "./bluedot-oauth.js";
 import type { MeetingEvidence, MediaSource } from "../domain/types.js";
+import type {
+  MeetingCatalogPage,
+  MeetingCatalogSource,
+} from "../domain/studio-ports.js";
 import { findMediaUrl, firstStringForKeys } from "../lib/object.js";
 import { validateBluedotMediaUrl } from "../lib/files.js";
 
@@ -18,7 +22,7 @@ export const DEFAULT_BLUEDOT_MCP_URL = "https://app.bluedothq.com/api/v1/mcp";
 const CALLBACK_PORT = 8765;
 const CALLBACK_URL = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
 
-export class BluedotClient {
+export class BluedotClient implements MeetingCatalogSource {
   readonly provider = "bluedot" as const;
   private client?: Client;
   private transport?: StreamableHTTPClientTransport;
@@ -105,6 +109,49 @@ export class BluedotClient {
     };
   }
 
+  async search(input: {
+    query?: string;
+    cursor?: string;
+    limit: number;
+    signal?: AbortSignal;
+  }): Promise<MeetingCatalogPage> {
+    if (input.signal?.aborted) {
+      throw new DOMException("Catalog request canceled.", "AbortError");
+    }
+    const page = parseCatalogCursor(input.cursor);
+    const query = input.query?.trim();
+    const tool = this.requireTool(query ? "search_meetings" : "list_meetings");
+    const pageSize = Math.min(input.limit, query ? 12 : 16);
+    const args = query
+      ? {
+          query,
+          page,
+          pageSize,
+          order: "desc",
+          sortBy: "relevance",
+          searchBy: ["title", "description", "transcription"],
+        }
+      : {
+          pageNumber: page,
+          pageSize,
+          order: "desc",
+          sortBy: "uploadedAt",
+        };
+    const result = await this.client!.request(
+      { method: "tools/call", params: { name: tool.name, arguments: args } },
+      CallToolResultSchema,
+    );
+    assertToolSucceeded(result, "Bluedot", tool.name);
+    if (input.signal?.aborted) {
+      throw new DOMException("Catalog request canceled.", "AbortError");
+    }
+    return normalizeBluedotCatalog(
+      normalizeToolResult(result),
+      pageSize,
+      page,
+    );
+  }
+
   mediaFromMeeting(meeting: MeetingEvidence, overrideUrl?: string): MediaSource {
     if (overrideUrl) return { url: validateBluedotMediaUrl(overrideUrl).toString(), source: "override" };
     const url = findMediaUrl(meeting.raw);
@@ -128,6 +175,141 @@ export class BluedotClient {
     if (!tool) throw new Error(`Bluedot MCP does not expose required tool '${name}'.`);
     return tool;
   }
+}
+
+function parseCatalogCursor(cursor: string | undefined): number {
+  if (!cursor) return 1;
+  if (!/^[1-9][0-9]{0,5}$/.test(cursor)) {
+    throw new Error("Bluedot meeting catalog cursor is invalid.");
+  }
+  return Number(cursor);
+}
+
+function directString(
+  object: Record<string, unknown>,
+  names: readonly string[],
+): string | undefined {
+  const normalized = new Map(
+    Object.entries(object).map(([key, value]) => [
+      key.replaceAll("_", "").toLowerCase(),
+      value,
+    ]),
+  );
+  for (const name of names) {
+    const value = normalized.get(name.toLowerCase());
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function meetingArrays(value: unknown, depth = 0): unknown[][] {
+  if (Array.isArray(value)) return [value];
+  if (!value || typeof value !== "object" || depth >= 4) return [];
+  const arrays: unknown[][] = [];
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (
+      Array.isArray(child)
+      && /^(videos|meetings|recordings|results|items|data)$/i.test(key)
+    ) {
+      arrays.push(child);
+    } else if (child && typeof child === "object" && !Array.isArray(child)) {
+      arrays.push(...meetingArrays(child, depth + 1));
+    }
+  }
+  return arrays;
+}
+
+function scalarForKeys(
+  value: unknown,
+  pattern: RegExp,
+  depth = 0,
+): unknown {
+  if (
+    !value
+    || typeof value !== "object"
+    || Array.isArray(value)
+    || depth >= 4
+  ) {
+    return undefined;
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (pattern.test(key)) return child;
+  }
+  for (const child of Object.values(value as Record<string, unknown>)) {
+    const found = scalarForKeys(child, pattern, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+export function normalizeBluedotCatalog(
+  raw: unknown,
+  limit: number,
+  requestedPage?: number,
+): MeetingCatalogPage {
+  const items: MeetingCatalogPage["items"] = [];
+  const seen = new Set<string>();
+  for (const candidates of meetingArrays(raw)) {
+    for (const candidate of candidates.slice(0, Math.max(limit * 4, 64))) {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+        continue;
+      }
+      const object = candidate as Record<string, unknown>;
+      const id = directString(object, [
+        "id",
+        "videoid",
+        "meetingid",
+        "recordingid",
+      ]);
+      if (!id || id.length > 500 || seen.has(id)) continue;
+      const titleCandidate = directString(object, [
+        "title",
+        "name",
+        "meetingtitle",
+      ]);
+      const title = titleCandidate && titleCandidate.length <= 500
+        ? titleCandidate
+        : undefined;
+      const createdAtCandidate = directString(object, [
+        "uploadedat",
+        "createdat",
+        "datecreated",
+        "recordedat",
+        "starttime",
+      ]);
+      const createdAt = createdAtCandidate
+        && Number.isFinite(Date.parse(createdAtCandidate))
+        ? new Date(createdAtCandidate).toISOString()
+        : undefined;
+      seen.add(id);
+      items.push({
+        id,
+        ...(title ? { title } : {}),
+        ...(createdAt ? { createdAt } : {}),
+      });
+      if (items.length >= limit) break;
+    }
+    if (items.length >= limit) break;
+  }
+
+  const hasMore = scalarForKeys(raw, /^has_?more$/i);
+  const currentPageCandidate = requestedPage
+    ?? scalarForKeys(raw, /^(page|page_?number)$/i);
+  const currentPage = typeof currentPageCandidate === "number"
+    && Number.isSafeInteger(currentPageCandidate)
+    && currentPageCandidate > 0
+    ? currentPageCandidate
+    : 1;
+  const totalPages = scalarForKeys(raw, /^total_?pages$/i);
+  const more = typeof hasMore === "boolean"
+    ? hasMore
+    : typeof totalPages === "number" && Number.isFinite(totalPages)
+      ? currentPage < totalPages
+      : items.length >= limit;
+  return {
+    items,
+    ...(more ? { nextCursor: String(currentPage + 1) } : {}),
+  };
 }
 
 export function assertToolSucceeded(
