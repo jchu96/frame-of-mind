@@ -113,6 +113,12 @@ interrupted
   signal and waits for cooperative cleanup. There is no automatic Gemini
   resume, and the application must construct only one worker per local job
   database.
+- Operator cancellation is committed before signaling execution. Linked retry
+  creation and execution both consult the independent media receipt and
+  require an exact, unexpired retained SHA-256. Execution leases the receipt
+  as `in_use` until cleanup; retry idempotency replays an existing attempt even
+  if its media later expires. An indeterminate publication receipt outranks a
+  concurrent cancellation.
 
 ### Durable run
 

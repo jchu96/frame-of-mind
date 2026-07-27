@@ -208,3 +208,15 @@
   rows whose digest predates that field. New initial jobs fail closed unless
   they record the boolean explicitly; linked legacy retries preserve their
   original immutable receipt.
+- Signal cancellation only after its repository mutation resolves. For queued
+  jobs, terminalize the durable cancellation without starting provider work.
+- Check retry media after idempotency replay lookup. Otherwise a harmless
+  replay starts failing when retained media later expires. New retries still
+  require exact ID, SHA-256, retained state, matching expiry, and a
+  just-in-time `retained -> in_use` lease. Startup reconciliation repairs a
+  retained lease abandoned by process exit. Lease release retries once in the
+  live process and reports only `media_lease_release_failed`; never let that
+  cleanup failure replace the analysis outcome.
+- Never let cancellation convert an indeterminate publication receipt to
+  `canceled`. The run may exist even though its receipt could not be trusted,
+  so a retry could duplicate provider work or published output.

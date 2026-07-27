@@ -11,6 +11,16 @@
   queued work before invoking providers and never runs a second in-process job.
 - Bind every executor progress event to the claimed job/attempt; the worker,
   not the analysis adapter, owns terminal outcomes.
+- Persist operator cancellation before signaling the active AbortController.
+  Queued cancellations must settle without invoking providers.
+- Create retries only through `LocalStudioJobControl`: replay existing keys
+  before checking media, but require an exact unexpired retained receipt for a
+  new attempt. Retry execution must acquire `retained -> in_use` before path
+  resolution and release `in_use -> retained` afterward. Release retries once,
+  reports only a sanitized code, and leaves startup reconciliation as the
+  final repair path.
+- An indeterminate publication outcome always outranks cancellation because a
+  run may already exist and a retry could duplicate it.
 - Resolve paths, recipes, and process-memory secrets just in time. Enforce the
   immutable recipe digest, custom/built-in provenance, requested model, focus,
   and provider selection before orchestration.

@@ -530,6 +530,30 @@ describe("local media staging adapter", () => {
     });
   });
 
+  test("repairs an abandoned retained execution lease on startup", async () => {
+    const staging = adapter();
+    const fixture = mp4Fixture(20);
+    const session = await create(staging, {
+      retention: { mode: "retained", ttlSeconds: 3_600 },
+    });
+    await writeFixture(staging, session.id, fixture);
+    await staging.seal(session.id);
+    await staging.transition(validateMediaSessionTransition({
+      id: session.id,
+      expected: "sealed",
+      next: "in_use",
+    }));
+
+    await expect(staging.reconcile()).resolves.toMatchObject({
+      repaired: [session.id],
+      deleted: [],
+      failed: [],
+    });
+    expect(await staging.get(session.id)).toMatchObject({
+      status: "retained",
+    });
+  });
+
   test("expires sealed ephemeral media without relying on a browser receipt", async () => {
     const staging = adapter();
     const fixture = mp4Fixture(20);

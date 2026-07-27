@@ -253,6 +253,80 @@ describe("LocalStudioJobWorker", () => {
     expect(await repository.events(queued.id)).toEqual([]);
   });
 
+  test("settles a durably canceled queued job without invoking providers", async () => {
+    const { repository } = createRepository();
+    const job = await createJob(
+      repository,
+      "worker-canceled-queued-0001",
+      0,
+    );
+    await repository.requestCancellation(
+      job.id,
+      new Date(baseTime + 60_000).toISOString(),
+    );
+    let executions = 0;
+    const executor: AnalysisJobExecutor = {
+      async execute() {
+        executions += 1;
+        return { runId: "unreachable" };
+      },
+    };
+    const worker = new LocalStudioJobWorker(repository, executor, {
+      now: createClock(),
+    });
+
+    await worker.start();
+    await worker.whenIdle();
+
+    expect(executions).toBe(0);
+    expect(await repository.get(job.id)).toMatchObject({
+      stage: "canceled",
+      terminal: { code: "operator_canceled" },
+    });
+  });
+
+  test("observes durable cancellation before aborting active execution", async () => {
+    const { repository } = createRepository();
+    const job = await createJob(
+      repository,
+      "worker-canceled-active-0001",
+      0,
+    );
+    const started = deferred();
+    let eventsAtAbort: string[] = [];
+    const executor: AnalysisJobExecutor = {
+      async execute(_claimed, { signal }) {
+        started.resolve();
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener("abort", async () => {
+            eventsAtAbort = (await repository.events(job.id))
+              .map((event) => event.kind);
+            reject(new Error("aborted"));
+          }, { once: true });
+        });
+        return { runId: "unreachable" };
+      },
+    };
+    const worker = new LocalStudioJobWorker(repository, executor, {
+      now: createClock(),
+    });
+    await worker.start();
+    await started.promise;
+
+    await repository.requestCancellation(
+      job.id,
+      new Date(baseTime + 20 * 60_000).toISOString(),
+    );
+    worker.notifyCancellationPersisted(job.id);
+    await worker.whenIdle();
+
+    expect(eventsAtAbort).toContain("cancellation_requested");
+    expect(await repository.get(job.id)).toMatchObject({
+      stage: "canceled",
+      terminal: { code: "operator_canceled" },
+    });
+  });
+
   test("marks abandoned active jobs interrupted before draining queued work", async () => {
     const { repository } = createRepository();
     const abandoned = await createJob(
@@ -329,6 +403,42 @@ describe("LocalStudioJobWorker", () => {
     });
 
     await worker.start();
+    await worker.whenIdle();
+
+    expect(await repository.get(job.id)).toMatchObject({
+      stage: "interrupted",
+      terminal: { code: "executor_result_invalid" },
+    });
+  });
+
+  test("lets indeterminate publication outrank concurrent cancellation", async () => {
+    const { repository } = createRepository();
+    const job = await createJob(
+      repository,
+      "worker-indeterminate-cancel-0001",
+      0,
+    );
+    const started = deferred();
+    const finish = deferred();
+    const executor: AnalysisJobExecutor = {
+      async execute() {
+        started.resolve();
+        await finish.promise;
+        throw new AnalysisExecutionIndeterminateError();
+      },
+    };
+    const worker = new LocalStudioJobWorker(repository, executor, {
+      now: createClock(),
+    });
+    await worker.start();
+    await started.promise;
+
+    await repository.requestCancellation(
+      job.id,
+      new Date(baseTime + 20 * 60_000).toISOString(),
+    );
+    worker.notifyCancellationPersisted(job.id);
+    finish.resolve();
     await worker.whenIdle();
 
     expect(await repository.get(job.id)).toMatchObject({

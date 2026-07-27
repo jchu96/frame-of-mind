@@ -701,6 +701,20 @@ model, focus, provider, transport, meeting ID, recipe revision, and
 custom/built-in flag. It translates orchestration events into job-bound events;
 the worker alone owns terminal success/failure/interruption.
 
+`LocalStudioJobControl` is the only cancellation/retry mutation surface.
+Cancellation commits its timestamp and event before the active
+`AbortController` is signaled; a canceled queued job reaches `canceled`
+without invoking a provider. Retry creation first replays an existing
+idempotency key, then requires the parent to be retryable and its independent
+media receipt to prove the exact SHA-256 is still retained and unexpired.
+`OrchestratedAnalysisJobExecutor` repeats that guard immediately before a
+linked retry resolves any private path, atomically leases the receipt
+`retained -> in_use`, and releases it after execution. The expiry janitor
+cannot delete an active lease; startup reconciliation repairs an abandoned
+retained lease after a process exit. Receipt validation never copies media
+authority into the job database. An indeterminate publication receipt always
+outranks a concurrent cancellation because the run may already exist.
+
 The CLI analysis command is a thin adapter over `AnalysisOrchestrator`. The
 orchestrator accepts explicit context/analyzer factories, an optional
 `AbortSignal`, a typed progress reporter, and an optional completed-run

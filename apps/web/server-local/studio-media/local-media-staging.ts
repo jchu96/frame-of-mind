@@ -1223,8 +1223,22 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
           }
         }
       }
+      if (stored.session.status === "in_use") {
+        if (stored.session.retention.mode === "retained") {
+          stored = await this.#setStatus(stored, "retained");
+          report.repaired.push(id);
+        } else {
+          try {
+            await this.delete(id);
+            report.deleted.push(id);
+          } catch {
+            report.failed.push(id);
+          }
+          continue;
+        }
+      }
       if (
-        ["sealed", "in_use", "retained"].includes(stored.session.status)
+        ["sealed", "retained"].includes(stored.session.status)
         && !(await optionalStat(this.#sealedPath(id)))
       ) {
         await this.#setStatus(stored, "failed");
