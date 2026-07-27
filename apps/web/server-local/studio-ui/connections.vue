@@ -208,6 +208,7 @@ async function connectOAuth(name: "bluedot" | "granola") {
                 :color="provider(name)?.connected ? 'success' : 'neutral'"
                 :variant="provider(name)?.connected ? 'soft' : 'outline'"
               >
+                <span class="sr-only">{{ name }} connection: </span>
                 {{ provider(name)?.connected ? 'Configured' : 'Not configured' }}
               </UBadge>
             </div>

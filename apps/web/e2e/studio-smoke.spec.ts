@@ -8,15 +8,18 @@ test("manages a temporary Gemini key without reflecting it", {
   const clientErrors = collectClientErrors(page);
   const syntheticKey = "synthetic-e2e-key-never-use";
 
+  const resetResponse = await page.request.delete(
+    "/api/studio/configuration/secrets/gemini-api-key",
+    {
+      data: {},
+      headers: { "content-type": "application/json" },
+    },
+  );
+  expect(resetResponse.status()).toBe(200);
+
   await page.goto("/connections");
   const gemini = page.getByRole("region", { name: "Gemini connection" });
-  const clearButton = gemini.getByRole("button", {
-    name: "Clear temporary key",
-  });
-  if (await clearButton.isVisible()) {
-    await clearButton.click();
-  }
-  await expect(gemini.getByRole("status")).toHaveText("Not configured");
+  await expect(gemini.getByRole("status")).toContainText("Not configured");
 
   await gemini.getByLabel("Gemini API key").fill(syntheticKey);
   const saveResponsePromise = page.waitForResponse((response) =>
@@ -28,12 +31,12 @@ test("manages a temporary Gemini key without reflecting it", {
 
   expect(saveResponse.status()).toBe(200);
   expect(await saveResponse.text()).not.toContain(syntheticKey);
-  await expect(gemini.getByRole("status")).toHaveText("Configured");
+  await expect(gemini.getByRole("status")).toContainText("Configured");
   await expect(gemini.getByLabel("Gemini API key")).toHaveValue("");
   expect(await page.locator("body").textContent()).not.toContain(syntheticKey);
 
   await gemini.getByRole("button", { name: "Clear temporary key" }).click();
-  await expect(gemini.getByRole("status")).toHaveText("Not configured");
+  await expect(gemini.getByRole("status")).toContainText("Not configured");
   expect(clientErrors).toEqual([]);
 });
 

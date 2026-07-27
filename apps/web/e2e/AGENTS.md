@@ -6,7 +6,7 @@
 |------|---------|
 | Browser smoke | `bun run test:e2e:smoke` |
 | Full browser suite | `bun run test:e2e` |
-| One file | `bunx playwright test apps/web/e2e/<file>.spec.ts` |
+| One file | `bun run test:e2e -- apps/web/e2e/<file>.spec.ts` |
 
 ## Test Boundaries
 
