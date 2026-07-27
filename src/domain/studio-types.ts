@@ -33,6 +33,7 @@ export const MEDIA_SESSION_STATES = [
   "expired",
   "aborted",
   "deleting",
+  "cleanup_failed",
   "deleted",
   "failed",
 ] as const;

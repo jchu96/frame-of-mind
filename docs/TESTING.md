@@ -142,12 +142,19 @@ at three levels:
 - client presentation states such as paused and reselect-required;
 - no `File` or source path enters SSR state.
 
-### Media contract
+### Media contract — implemented
 
 - create, part receipt, out-of-order/concurrent rejection, retry, resume,
   digest mismatch, seal, abort, retention, expiry, and cleanup;
 - bounded streaming and disk-space behavior;
 - synthetic bytes only, outside the checkout.
+
+`apps/web/test/studio-media-staging.test.ts` owns the adapter matrix.
+`bun run test:studio-http` builds the real local Nitro target and verifies
+session denial, same-origin enforcement, raw streamed upload, exact-offset
+resume/replay, sealing, status, and cleanup. The Cloudflare boundary build
+proves that the complete local media implementation and route strings are
+absent. Browser drop-zone cases below remain Task 3.5.
 
 ### Browser journey
 

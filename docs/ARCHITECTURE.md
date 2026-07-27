@@ -570,8 +570,9 @@ of the Access JWT signature, issuer, audience, and algorithm.
 ### Local Studio
 
 Phase A evolves the local viewer into a Studio in independently shippable
-slices. The per-launch session and connection-health slice is implemented;
-media staging, execution, and durable jobs remain subsequent phases:
+slices. The per-launch session, connection health, and resumable local media
+backend are implemented; the recording UI, execution, and durable jobs remain
+subsequent slices:
 
 ```mermaid
 flowchart LR
@@ -630,6 +631,16 @@ work interrupted and requires an explicit linked retry. API secrets come from
 the environment or process-memory session input. Mutating local routes require
 a per-launch capability/session in addition to loopback, Host, and same-origin
 checks.
+
+The local media backend streams server-advertised fixed-size parts directly
+from H3's Node request iterable into a private Bun `FileSink`. Durable JSON
+receipts record only opaque IDs, exact byte/part hashes, lifecycle state, and
+server-owned expiry; neither source names nor filesystem paths cross the API.
+Part retries are accepted only when coordinates, length, and SHA-256 match the
+receipt. Completion re-reads the partial file as a stream, validates detected
+MP4/QuickTime/WebM magic and optional expected SHA-256, then atomically renames
+it. A local-only Nitro startup plugin reconciles uncommitted bytes, interrupted
+seals, expiry, and retryable cleanup before serving Studio work.
 
 `bun run studio` generates a capability and places it only in a URL fragment.
 The client removes the fragment before exchanging the capability once for an

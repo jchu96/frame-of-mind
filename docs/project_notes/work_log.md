@@ -63,3 +63,12 @@
   process/browser dotenv exposure, and forceful-shutdown temp leak. CI now
   fails flaky tests, provider canaries prove isolation, and the outer runner
   cleans its synthetic database after both success and failure.
+- Implemented the Phase 3 local media backend: private resumable staging,
+  durable part receipts, replay/conflict checks, streamed seal verification,
+  explicit retention/expiry, retryable cleanup, startup reconciliation, and
+  authenticated local-only HTTP routes. Adapter, production-built HTTP, and
+  Cloudflare-exclusion coverage use only synthetic bytes.
+- The adversarial pass closed canonical-root symlink escape, receipt
+  check/open replacement, stale-upload mutation, and contradictory
+  partial-plus-sealed restart cases. Full repository checks and five
+  production Playwright smoke journeys passed afterward.

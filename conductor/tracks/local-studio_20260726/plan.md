@@ -102,15 +102,15 @@ separate proposed track.
 
 ### Tasks
 
-- [ ] Task 3.1: Add failing adapter tests for create, ordered/out-of-order
+- [x] Task 3.1: Add failing adapter tests for create, ordered/out-of-order
       parts, concurrent writers, resume, disk exhaustion, complete, digest
       mismatch, retention, reattachment, abort, expiry, and idempotency.
-- [ ] Task 3.2: Implement private local staging outside the checkout with
+- [x] Task 3.2: Implement private local staging outside the checkout with
       opaque IDs, streamed part writes, byte/part limits, free-space
       reservation, MIME validation, streamed final SHA-256, and atomic sealing.
-- [ ] Task 3.3: Add bounded create, upload-part, status, complete, and abort
+- [x] Task 3.3: Add bounded create, upload-part, status, complete, and abort
       routes; never accept or return arbitrary filesystem paths.
-- [ ] Task 3.4: Implement expiry and startup reconciliation for abandoned,
+- [x] Task 3.4: Implement expiry and startup reconciliation for abandoned,
       partially written, sealed, retained, and cleanup-failed sessions.
 - [ ] Task 3.5: Build the accessible Nuxt drop zone with resumable progress,
       validation, abort, retry, ephemeral/retained selection, and explicit
@@ -153,10 +153,12 @@ separate proposed track.
 
 ### Verification
 
-- [ ] Stream a synthetic large fixture without full-body buffering; interrupt,
+- [x] Stream synthetic fixtures without full-body buffering; interrupt,
       restart, resume, reject a concurrent writer, handle disk exhaustion,
-      seal, retain/expire, reattach by digest, and clean it while preserving
-      source ownership.
+      seal, retain/expire, reattach by digest, and clean them while preserving
+      source ownership. The Phase 1 32 MiB probe supplies the measured
+      large-stream check; adapter and production-built HTTP probes cover the
+      durable Phase 3 contract.
 
 ## Phase 4: Reusable Analysis Orchestration
 

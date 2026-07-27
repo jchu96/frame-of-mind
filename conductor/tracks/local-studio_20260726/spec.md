@@ -194,8 +194,10 @@ Every transition records UTC time, progress metadata, and a sanitized message.
 Invalid transitions fail closed. Starting the same idempotency key cannot
 create duplicate analysis jobs. Cancellation intent is stored separately before
 the executor is signaled. `created`, `uploading`, `sealed`, `in_use`, `aborted`,
-`retained`, `expired`, `deleting`, and `deleted` belong to the media lifecycle,
-not the job.
+`retained`, `expired`, `deleting`, `cleanup_failed`, `deleted`, and `failed`
+belong to the media lifecycle, not the job. `cleanup_failed` is recoverable
+through another `deleting` attempt; `failed` is terminal corruption or
+inconsistency and is never used for a retryable filesystem cleanup error.
 
 ### FR-07 - Process Execution
 
@@ -260,15 +262,17 @@ Provisional local endpoints:
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/api/config/status` | Return non-secret connection and storage status |
-| `PUT` | `/api/config/:provider/session` | Validate/set or clear a process-memory API secret |
+| `GET` | `/api/studio/configuration` | Return non-secret connection and storage status |
+| `PUT` | `/api/studio/configuration/secrets/:name` | Validate/set a process-memory API secret |
+| `DELETE` | `/api/studio/configuration/secrets/:name` | Clear a process-memory API secret |
 | `GET` | `/api/providers/:provider/meetings` | Search authorized recent meetings |
 | `POST` | `/api/context-files` | Ingest one bounded private local context file |
 | `DELETE` | `/api/context-files/:id` | Delete staged local context |
-| `POST` | `/api/media` | Create an upload session |
-| `PUT` | `/api/media/:id/parts/:part` | Stream one validated local part |
-| `POST` | `/api/media/:id/complete` | Verify and seal staged media |
-| `DELETE` | `/api/media/:id` | Abort and clean staged media |
+| `POST` | `/api/studio/media` | Create an idempotent upload session |
+| `GET` | `/api/studio/media/:id` | Read the authoritative resumable receipt |
+| `PUT` | `/api/studio/media/:id/parts/:part` | Stream one exact part with `Upload-Offset` |
+| `POST` | `/api/studio/media/:id/complete` | Verify MIME/digest and atomically seal staged media |
+| `DELETE` | `/api/studio/media/:id` | Abort and clean staged media idempotently |
 | `POST` | `/api/jobs` | Validate a draft and create an analysis job |
 | `GET` | `/api/jobs` | List bounded job summaries |
 | `GET` | `/api/jobs/:id` | Read one job and stage history |
