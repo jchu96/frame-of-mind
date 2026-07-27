@@ -157,3 +157,12 @@
 - Adversarial review closed two lifecycle gaps: cancellation is rejected after
   durable publication, and event rows are bound to their owning attempt by
   both a composite foreign key and repository validation.
+- Added the single-concurrency local job worker and typed
+  `AnalysisOrchestrator` adapter. Tests cover oldest-first claims, concurrency,
+  startup interruption, cooperative shutdown, sanitized failure, progress
+  binding, invalid publication receipts, immutable recipe verification, and
+  model propagation.
+- Adversarial review closed shutdown-during-startup and
+  shutdown-after-queue-read races. The adapter now also revalidates the
+  returned durable pair and reports a malformed publication receipt as
+  indeterminate instead of failed.

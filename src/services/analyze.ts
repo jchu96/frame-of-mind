@@ -46,6 +46,7 @@ export interface AnalyzeOptions {
   granolaTransport: "mcp" | "api";
   contextFile?: string;
   apiKey: string;
+  model?: string;
   video?: string;
   recordingUrl?: string;
   focus?: string;
@@ -142,7 +143,10 @@ interface BluedotMediaContextSource extends MeetingContextSource {
 
 export interface AnalysisOrchestratorDependencies {
   createContextSource(options: AnalyzeOptions): MeetingContextSource;
-  createAnalyzer(apiKey: string): AnalysisVideoAnalyzer;
+  createAnalyzer(
+    apiKey: string,
+    options: AnalyzeOptions,
+  ): AnalysisVideoAnalyzer;
   createRunId?: () => string;
   now?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
@@ -256,7 +260,12 @@ export class AnalysisOrchestrator {
       await ensureDirectory(meetingDirectory);
       await ensureDirectory(stagingDirectory);
 
-      const analyzer = this.createAnalyzer(options.apiKey);
+      const analyzer = this.createAnalyzer(options.apiKey, options);
+      if (options.model && analyzer.model !== options.model) {
+        throw new Error(
+          "Resolved Gemini analyzer does not match the requested model.",
+        );
+      }
       await report(progress, {
         kind: "stage",
         stage: "uploading_to_gemini",
@@ -481,7 +490,8 @@ export async function analyzeMeeting(
 ): Promise<AnalyzeResult> {
   return new AnalysisOrchestrator({
     createContextSource: defaultCreateContextSource,
-    createAnalyzer: (apiKey) => new GeminiVideoAnalyzer(apiKey),
+    createAnalyzer: (apiKey, analyzeOptions) =>
+      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model),
   }).analyze(options, execution);
 }
 
