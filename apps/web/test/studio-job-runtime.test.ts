@@ -72,7 +72,7 @@ describe("Local Studio job runtime", () => {
         revision: recipe.revision,
         sha256: recipe.sha256,
       },
-    });
+    }, { transcriptOffsetSeconds: -3_723 });
 
     await expect(resolver.resolve(job)).resolves.toMatchObject({
       meetingId: "meeting-runtime",
@@ -86,6 +86,7 @@ describe("Local Studio job runtime", () => {
       maxIncidents: 7,
       screenshots: false,
       keepUpload: false,
+      transcriptOffsetSeconds: -3_723,
     });
   });
 
@@ -379,6 +380,7 @@ function immutableInput(
 
 function analysisJob(
   input: Pick<ImmutableJobInput, "context" | "recipe">,
+  overrides: Partial<ImmutableJobInput> = {},
 ): AnalysisJob {
   return {
     id: "job_01K123456789ABC",
@@ -387,7 +389,7 @@ function analysisJob(
     idempotencyKey: "runtime-options-0001",
     inputDigest: "b".repeat(64),
     stage: "fetching_context",
-    input: immutableInput(input),
+    input: { ...immutableInput(input), ...overrides },
     createdAt: "2026-07-27T12:00:00.000Z",
     updatedAt: "2026-07-27T12:00:01.000Z",
   };

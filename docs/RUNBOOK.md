@@ -1382,8 +1382,41 @@ Override the root only with an absolute private path outside the checkout:
 FRAME_OF_MIND_CONTEXT_ROOT="/private/path/frame-of-mind-context" bun run studio
 ```
 
-The browser-facing composer picker is a later Phase 6 task. The protected
-backend contract is available now:
+Open **Context** after sealing a recording. Choose exactly one source:
+
+- **Bluedot** uses the configured MCP OAuth identity. Use **Browse recent** or
+  search when the catalog is available, or enter the exact video ID.
+- **Granola MCP** uses the configured OAuth identity and exact meeting/note ID.
+- **Granola API** uses the configured API key and exact `not_…` note ID.
+- **Local context** accepts one bounded file and does not require provider
+  credentials.
+
+An unavailable Bluedot catalog does not block exact-ID entry for Bluedot MCP.
+It also does not fall back to Granola, a different account, or another
+transport. Granola catalog browsing is not implemented in this release; its
+exact-ID path is deliberate.
+
+For a local file:
+
+1. Select **Local context**.
+2. Choose or drop one JSON, text, Markdown, SRT, or VTT file no larger than
+   8 MiB.
+3. Review the bounded prefix preview; it is not persisted in browser storage.
+4. Select **Stage context locally** and verify the format, byte count, digest
+   prefix, and expiry receipt.
+5. If transcript time and recording time differ, open **Advanced transcript
+   alignment** and enter a signed `HH:MM:SS` value. Leave it blank to let the
+   model align evidence.
+6. Select **Save context step**. A refresh rechecks the opaque local receipt
+   before showing the draft as saved.
+7. Use **Delete staged context** before replacing it or when it is no longer
+   needed.
+
+The browser draft stores only typed identifiers/receipts and the optional
+alignment value. It does not store transcript text, provider responses,
+catalog results, local paths, file names, or preview content.
+
+The protected backend contract is:
 
 | Format header | Accepted content type | Content validation |
 |---|---|---|
@@ -1407,6 +1440,7 @@ only:
 }
 ```
 
+`GET /api/context-files/:id` refresh-verifies an exact unexpired receipt.
 `DELETE /api/context-files/:id` removes an unused staged copy and is
 idempotent. It returns HTTP 409 while the executor owns the receipt. Do not
 retry by editing private files or copying an old receipt: stage the authorized
@@ -1425,6 +1459,8 @@ is never deleted.
 | HTTP 413 | body exceeds 8 MiB or declared size | select a smaller authorized context file |
 | HTTP 415 | unsupported format or MIME mismatch | use one allowlisted header/content-type pair |
 | HTTP 422 | invalid UTF-8, JSON, caption cues, or byte count | repair the source; never bypass validation |
+| Catalog HTTP 501 | selected provider/transport has no catalog capability | enter the exact ID for that same transport |
+| Catalog HTTP 502 | provider connection or catalog call failed | reconnect that provider or enter its exact ID |
 | HTTP 409 on delete | context is executing or its digest changed | let execution finish; restage if the receipt was altered |
 | `context_file_not_found` | receipt is missing, expired, or already consumed | stage the source again and create a new attempt |
 | `context_cleanup_failed` | deletion could not be confirmed | repair private-root permissions; expiry will retry |

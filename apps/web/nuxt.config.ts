@@ -44,6 +44,9 @@ const studioLaunchPage = fileURLToPath(
 const studioRecordingPage = fileURLToPath(
   new URL("./server-local/studio-ui/recording.vue", import.meta.url),
 );
+const studioContextPage = fileURLToPath(
+  new URL("./server-local/studio-ui/context.vue", import.meta.url),
+);
 const appFrame = fileURLToPath(
   new URL(
     localStudioEnabled
@@ -93,6 +96,12 @@ const studioContextCreateHandler = fileURLToPath(
 );
 const studioContextDeleteHandler = fileURLToPath(
   new URL("./server-local/studio-context/delete.ts", import.meta.url),
+);
+const studioContextStatusHandler = fileURLToPath(
+  new URL("./server-local/studio-context/status.get.ts", import.meta.url),
+);
+const studioCatalogHandler = fileURLToPath(
+  new URL("./server-local/studio-catalog/index.get.ts", import.meta.url),
 );
 const studioJobsListHandler = fileURLToPath(
   new URL("./server-local/studio-jobs/index.get.ts", import.meta.url),
@@ -179,8 +188,18 @@ const localHandlers = [
         },
         {
           route: "/api/context-files/:id",
+          method: "get",
+          handler: studioContextStatusHandler,
+        },
+        {
+          route: "/api/context-files/:id",
           method: "delete",
           handler: studioContextDeleteHandler,
+        },
+        {
+          route: "/api/studio/catalog/:provider",
+          method: "get",
+          handler: studioCatalogHandler,
         },
         {
           route: "/api/studio/jobs",
@@ -258,6 +277,11 @@ export default defineNuxtConfig({
           name: "recording",
           path: "/recording",
           file: studioRecordingPage,
+        });
+        pages.push({
+          name: "context",
+          path: "/context",
+          file: studioContextPage,
         });
       }
     },

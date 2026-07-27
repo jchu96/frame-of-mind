@@ -42,6 +42,7 @@ const immutableInput = {
     sha256,
   },
   model: "gemini-3.6-flash",
+  transcriptOffsetSeconds: 3_723,
   retention: { mode: "ephemeral" as const, expiresAt: later },
 };
 const canonicalInputDigest = await digestImmutableJobInput(immutableInput);
@@ -490,12 +491,17 @@ describe("Studio boundary schemas", () => {
       },
       recipe: { id: "issue-review" },
       model: "gemini-3.6-flash",
+      transcriptOffsetSeconds: -3_723,
       retention: { mode: "ephemeral" },
     };
     expect(composerPayloadSchema.parse(payload)).toEqual(payload);
     expect(() => composerPayloadSchema.parse({
       ...payload,
       recordingPath: "/Users/example/recording.mp4",
+    })).toThrow();
+    expect(() => composerPayloadSchema.parse({
+      ...payload,
+      transcriptOffsetSeconds: Number.POSITIVE_INFINITY,
     })).toThrow();
     expect(() => composerPayloadSchema.parse({
       ...payload,

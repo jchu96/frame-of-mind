@@ -4,6 +4,7 @@
     "./.nuxt/types/nitro-nuxt.d.ts",
     "./.nuxt/types/nitro.d.ts",
     "./server-local/studio-jobs/startup.ts",
-    "./server-local/studio-context/startup.ts"
+    "./server-local/studio-context/startup.ts",
+    "./server-local/studio-catalog/index.get.ts"
   ]
 }
