@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import type { SessionInfo } from "../../shared/types";
 
-const { data: session } = await useFetch<SessionInfo>("/api/session");
 const config = useRuntimeConfig();
+const { data: session } = await useFetch<SessionInfo>("/api/session", {
+  immediate: !config.public.studioEnabled,
+});
 </script>
 
 <template>
-  <header class="border-b border-zinc-300/80 bg-[#f6f4ed]/90 backdrop-blur">
+  <header
+    v-if="!config.public.studioEnabled"
+    class="border-b border-zinc-300/80 bg-[#f6f4ed]/90 backdrop-blur"
+  >
     <div
       class="fom-shell flex min-h-18 flex-col items-stretch gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
     >

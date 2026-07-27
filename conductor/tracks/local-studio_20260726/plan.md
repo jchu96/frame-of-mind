@@ -214,7 +214,7 @@ separate proposed track.
 
 ### Tasks
 
-- [ ] Task 6.1: Convert the authenticated application routes to the Nuxt UI
+- [x] Task 6.1: Convert the authenticated application routes to the Nuxt UI
       dashboard shell behind an explicit local-only Studio enablement flag
       while preserving public/SSR and hosted review behavior.
 - [ ] Task 6.2: Add Studio Home with recent runs, active jobs, connection

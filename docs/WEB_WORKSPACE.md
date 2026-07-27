@@ -29,6 +29,12 @@ is carried in the URL fragment, removed before the exchange request, and
 exchanged once for an HttpOnly, SameSite=Strict session cookie. Sensitive
 `/api/studio/*` routes require that session in addition to Host/peer validation.
 
+The Studio-enabled node build selects a local-only Nuxt UI dashboard frame for
+Runs, Recording, Connections, Import, and run detail. The frame provides one
+responsive navigation model and a primary New Analysis entry point. Normal
+review and Cloudflare builds select the pass-through review frame at build
+time, retain their existing SSR header, and exclude the Studio frame module.
+
 The Connections page supports:
 
 - Gemini and Granola environment-key status;
@@ -53,7 +59,8 @@ authority. Startup reconciliation and a non-overlapping lifecycle-owned
 periodic sweep enforce that expiry even when the server remains open after the
 originating tab closes. If session storage is unavailable, the current page
 can finish but Studio explicitly reports that refresh-resume is disabled. The
-analysis composer and job execution remain later track tasks.
+analysis composer and job activity UI remain later track tasks; the protected
+durable job runtime is already present underneath them.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
@@ -79,8 +86,8 @@ and [ADR log](adr/README.md).
 | Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | configure providers and privately stage a recording; analysis jobs are phased |
 | Hosted | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | a controlled team workspace |
 
-The UI and API are shared. Only the `RunStore` adapter and Nitro preset change
-at build time.
+The run pages and API contracts are shared. The `RunStore`, Nitro preset, and
+top-level application frame are selected at build time.
 
 ```mermaid
 flowchart TB

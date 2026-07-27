@@ -212,6 +212,18 @@ try {
     200,
     "session cookie authorizes Studio APIs",
   );
+  const studioPage = await expectStatus(
+    await probe.get("/connections"),
+    200,
+    "authenticated Studio page renders",
+  );
+  const studioHtml = await studioPage.text();
+  if (
+    !studioHtml.includes('data-studio-shell="local"')
+    || !studioHtml.includes("Studio navigation")
+  ) {
+    throw new Error("Authenticated Studio page did not render the local dashboard shell.");
+  }
 
   const fixture = new Uint8Array(20);
   fixture.set([0x00, 0x00, 0x00, 0x18], 0);

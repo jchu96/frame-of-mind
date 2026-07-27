@@ -208,3 +208,7 @@
 - Adversarial review made fixture creation sequential so deterministic IDs
   cannot race, and bounded every child process so a recovery regression fails
   the test instead of hanging the suite.
+- Added the build-time local Studio dashboard shell over shared SSR pages,
+  retaining the existing review header in ordinary local and Cloudflare
+  builds. Production HTTP, Cloudflare marker, desktop, mobile, import, provider
+  isolation, and recording journeys verify the boundary.

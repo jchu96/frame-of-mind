@@ -28,6 +28,12 @@ test("manages a temporary Gemini key without reflecting it", {
   expect(resetResponse.status()).toBe(200);
 
   await page.goto("/connections");
+  await expect(
+    page.getByRole("navigation", { name: "Studio navigation" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "New analysis" }),
+  ).toBeVisible();
   const gemini = page.getByRole("region", { name: "Gemini connection" });
   await expect(gemini.getByRole("status")).toContainText("Not configured");
 
