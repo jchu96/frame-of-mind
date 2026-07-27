@@ -37,6 +37,8 @@ const statusByJobError: Readonly<Record<string, number>> = {
   bluedot_oauth_not_configured: 409,
   granola_oauth_not_configured: 409,
   context_file_staging_unavailable: 409,
+  context_file_not_found: 409,
+  context_file_receipt_mismatch: 409,
   custom_recipe_staging_unavailable: 409,
   recipe_not_found: 422,
   recipe_receipt_mismatch: 409,

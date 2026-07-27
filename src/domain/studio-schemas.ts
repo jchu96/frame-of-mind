@@ -12,6 +12,7 @@ export const MAX_MEDIA_PARTS = 512;
 export const MAX_MEDIA_PART_BYTES = 64 * 1_024 * 1_024;
 export const DEFAULT_MEDIA_PART_SIZE_BYTES = 8 * 1_024 * 1_024;
 export const MAX_RETAINED_MEDIA_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const MAX_CONTEXT_FILE_BYTES = 8 * 1_024 * 1_024;
 
 export const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const utcDateTimeSchema = z.string().datetime({ offset: false });
@@ -67,6 +68,15 @@ export const supportedMediaMimeTypeSchema = z.enum([
   "video/webm",
 ]);
 
+export const contextFileFormatSchema = z.enum([
+  "json",
+  "text",
+  "markdown",
+  "srt",
+  "vtt",
+]);
+export type ContextFileFormat = z.infer<typeof contextFileFormatSchema>;
+
 export const mediaCreateRequestSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
   expectedBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
@@ -94,6 +104,7 @@ const providerContextSchema = z.discriminatedUnion("provider", [
     provider: z.literal("file"),
     transport: z.literal("file"),
     contextFileId: opaqueIdSchema,
+    contextFileSha256: sha256Schema,
   }).strict(),
 ]);
 

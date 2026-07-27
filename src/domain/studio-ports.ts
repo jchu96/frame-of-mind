@@ -2,6 +2,7 @@ import type {
   AnalysisJob,
   AnalysisJobEvent,
   ConfigurationStatus,
+  ContextFileFormat,
   MediaCreateRequest,
   MediaPartReceipt,
   MediaSession,
@@ -65,7 +66,7 @@ export interface MediaStagingAdapter {
   }>;
 }
 
-export type ContextFileFormat = "json" | "text" | "markdown" | "srt" | "vtt";
+export type { ContextFileFormat } from "./studio-schemas.js";
 
 export interface ContextFileCreateInput {
   format: ContextFileFormat;

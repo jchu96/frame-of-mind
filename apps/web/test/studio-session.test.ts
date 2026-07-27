@@ -67,6 +67,10 @@ describe("local Studio per-launch session", () => {
     expect(requiresLocalStudioSession("/import")).toBe(true);
     expect(requiresLocalStudioSession("/runs/run_01K123")).toBe(true);
     expect(requiresLocalStudioSession("/api/runs")).toBe(true);
+    expect(requiresLocalStudioSession("/api/context-files")).toBe(true);
+    expect(requiresLocalStudioSession(
+      "/api/context-files/context_01K123456789ABC",
+    )).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/session")).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/configuration")).toBe(true);
     expect(requiresLocalStudioSession(

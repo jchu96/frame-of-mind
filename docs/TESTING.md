@@ -182,6 +182,28 @@ resume/replay, sealing, status, and cleanup. The Cloudflare boundary build
 proves that the complete local media implementation and route strings are
 absent.
 
+### Context-file contract — implemented
+
+`apps/web/test/local-context-staging.test.ts` owns the distinct small-input
+matrix:
+
+- JSON, text, Markdown, SRT, and VTT acceptance and shared
+  `FileContextSource` normalization;
+- 8 MiB/declaration, UTF-8, JSON, and caption validation;
+- opaque receipts without body or path disclosure;
+- digest and regular-file identity verification;
+- execution lease versus manual deletion;
+- single-use release cleanup, abandoned expiry, and unsafe-root rejection.
+
+`studio-job-runtime.test.ts` verifies that immutable file-context input resolves
+only through an exact receipt and that the private path exists only in
+execution options. `orchestrated-job-executor.test.ts` proves context cleanup
+runs in `finally`, before media release, without masking the analysis outcome.
+The production `bun run test:studio-http` probe covers session denial,
+same-origin rejection, format/MIME agreement, streamed creation, sanitized
+receipt shape, and idempotent private deletion. The Cloudflare boundary gate
+forbids the adapter, root override, janitor, and route markers.
+
 ### Browser journey — implemented
 
 1. `studio-smoke.spec.ts` exercises native input, actual DataTransfer drop, and

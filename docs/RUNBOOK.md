@@ -1207,6 +1207,7 @@ Operational expectations:
 - OAuth tokens remain in the CLI's private exact-resource files;
 - the Connections API never returns secret values;
 - the Recording page stages authenticated resumable media locally;
+- the local API stages optional bounded context separately from recordings;
 - selecting or dropping a recording does not start local staging or contact
   Gemini;
 - one local durable job runtime starts with Studio and backs the protected
@@ -1238,8 +1239,8 @@ never the endpoint query, authorization URL, token, or key.
 `bun run web` remains the unauthenticated loopback completed-run viewer.
 `frameofmind analyze` remains the end-user execution path until the composer
 ships. The protected job API is operational for development and automated
-clients, but it intentionally rejects custom recipes and local context-file
-receipts until those private staging contracts are implemented.
+clients. It accepts exact unexpired local context receipts but still rejects
+custom recipes until their separate staging contract is implemented.
 
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and
@@ -1337,9 +1338,84 @@ repeated failures require operator intervention.
 | `Reselect the same recording`           | browser refreshed and intentionally forgot the `File`     | choose the original file; Studio verifies the complete file binding |
 | `The selected recording does not match` | size, MIME, or complete-file fingerprint differs          | choose the original file or explicitly delete and restart           |
 
+### Local Studio context-file staging
+
+Context files are not media sessions. They use one bounded request, a short
+opaque receipt, and a single execution lease:
+
+- macOS root:
+  `~/Library/Application Support/Frame of Mind/staging/context`;
+- Linux root:
+  `${XDG_DATA_HOME:-~/.local/share}/frame-of-mind/staging/context`;
+- Windows root:
+  `%LOCALAPPDATA%\Frame of Mind\staging\context`;
+- maximum declared and received size: 8 MiB;
+- receipt lifetime before execution: one hour;
+- expiry sweep: once per minute, non-overlapping;
+- execution cleanup: delete in the executor `finally` path after success,
+  failure, or cancellation;
+- durable job storage: opaque context ID and expected SHA-256 only—never body,
+  path, or receipt.
+
+Override the root only with an absolute private path outside the checkout:
+
+```bash
+FRAME_OF_MIND_CONTEXT_ROOT="/private/path/frame-of-mind-context" bun run studio
+```
+
+The browser-facing composer picker is a later Phase 6 task. The protected
+backend contract is available now:
+
+| Format header | Accepted content type | Content validation |
+|---|---|---|
+| `json` | `application/json` | valid UTF-8 JSON |
+| `text` | `text/plain` | valid UTF-8 without NUL |
+| `markdown` | `text/markdown` or `text/plain` | valid UTF-8 without NUL |
+| `srt` | `application/x-subrip` or `text/plain` | at least one timed cue |
+| `vtt` | `text/vtt` | at least one timed cue |
+
+`POST /api/context-files` requires the per-launch session cookie,
+same-origin headers, exact `Content-Length`, and `X-Context-Format`. It returns
+only:
+
+```json
+{
+  "id": "context_<opaque>",
+  "format": "vtt",
+  "bytes": 1234,
+  "sha256": "<64 lowercase hex characters>",
+  "expiresAt": "2026-07-27T13:00:00.000Z"
+}
+```
+
+`DELETE /api/context-files/:id` removes an unused staged copy and is
+idempotent. It returns HTTP 409 while the executor owns the receipt. Do not
+retry by editing private files or copying an old receipt: stage the authorized
+source again and create a new attempt.
+
+Execution rechecks file identity, size, and digest, then passes the derived
+private path only to the shared `FileContextSource`. JSON/text/Markdown/caption
+normalization therefore stays identical to the CLI. The original selected file
+is never deleted.
+
+| Symptom | Meaning | Operator action |
+|---|---|---|
+| HTTP 401 | no valid per-launch session | stop and relaunch Studio |
+| HTTP 403 | foreign-origin or cross-site mutation | use the local Studio origin; do not disable the guard |
+| HTTP 411 | missing/invalid `Content-Length` | resend one exact bounded body |
+| HTTP 413 | body exceeds 8 MiB or declared size | select a smaller authorized context file |
+| HTTP 415 | unsupported format or MIME mismatch | use one allowlisted header/content-type pair |
+| HTTP 422 | invalid UTF-8, JSON, caption cues, or byte count | repair the source; never bypass validation |
+| HTTP 409 on delete | context is executing or its digest changed | let execution finish; restage if the receipt was altered |
+| `context_file_not_found` | receipt is missing, expired, or already consumed | stage the source again and create a new attempt |
+| `context_cleanup_failed` | deletion could not be confirmed | repair private-root permissions; expiry will retry |
+
 Maintainers validate the production-built boundary with:
 
 ```bash
+bun test apps/web/test/local-context-staging.test.ts
+bun test apps/web/test/studio-context-expiry-janitor.test.ts
+bun test apps/web/test/studio-job-runtime.test.ts
 bun test apps/web/test/studio-media-staging.test.ts
 bun test apps/web/test/studio-media-expiry-janitor.test.ts
 bun test apps/web/test/studio-media-upload.test.ts
