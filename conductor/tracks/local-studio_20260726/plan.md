@@ -196,7 +196,7 @@ separate proposed track.
 - [x] Task 5.3: Implement the local Bun executor with concurrency one,
       startup/shutdown reconciliation, signal-aware interruption, structured
       progress persistence, and no CLI log scraping.
-- [ ] Task 5.4: Implement durable cancellation and linked retry attempts,
+- [x] Task 5.4: Implement durable cancellation and linked retry attempts,
       including safe staged-media reuse checks.
 - [ ] Task 5.5: Add job list/detail/create/cancel/retry routes with strict
       schemas, bounded output, and sanitized failures.

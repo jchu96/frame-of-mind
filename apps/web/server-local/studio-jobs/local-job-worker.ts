@@ -108,6 +108,14 @@ export class LocalStudioJobWorker {
     if (!this.drainPromise) this.launchDrain();
   }
 
+  /**
+   * Signals only after JobRepository.requestCancellation has durably committed.
+   */
+  notifyCancellationPersisted(jobId: string): void {
+    if (this.active?.jobId === jobId) this.active.controller.abort();
+    this.notify();
+  }
+
   async whenIdle(): Promise<void> {
     while (this.drainPromise) {
       await this.drainPromise;
@@ -161,6 +169,17 @@ export class LocalStudioJobWorker {
       }
       if (!job) return;
       if (this.stopping) return;
+      if (job.cancellationRequestedAt) {
+        try {
+          await this.finishUnsuccessful(job.id, "canceled");
+        } catch {
+          await this.reportWorkerError(
+            new StudioJobWorkerError("job_persistence_failed", job.id),
+          );
+          return;
+        }
+        continue;
+      }
       try {
         await this.executeOne(job);
       } catch {
@@ -183,9 +202,13 @@ export class LocalStudioJobWorker {
         occurredAt: this.timestampAtOrAfter(queuedJob.updatedAt),
         message: "Claimed by the local single-concurrency executor.",
       });
+      if (claimed.cancellationRequestedAt) controller.abort();
       if (this.stopping) controller.abort();
       if (controller.signal.aborted) {
-        await this.finishUnsuccessful(claimed.id, "interrupted");
+        await this.finishUnsuccessful(
+          claimed.id,
+          claimed.cancellationRequestedAt ? "canceled" : "interrupted",
+        );
         return;
       }
 
@@ -198,11 +221,17 @@ export class LocalStudioJobWorker {
       } catch (error) {
         const indeterminate =
           error instanceof AnalysisExecutionIndeterminateError;
+        const latest = await this.requireJob(claimed.id);
+        const canceled = latest.cancellationRequestedAt !== undefined;
         await this.finishUnsuccessful(
           claimed.id,
-          controller.signal.aborted || indeterminate
+          indeterminate
             ? "interrupted"
-            : "failed",
+            : canceled
+              ? "canceled"
+              : controller.signal.aborted
+                ? "interrupted"
+                : "failed",
           indeterminate
             ? {
                 code: "executor_result_invalid",
@@ -300,7 +329,7 @@ export class LocalStudioJobWorker {
 
   private async finishUnsuccessful(
     jobId: string,
-    outcome: "failed" | "interrupted",
+    outcome: "failed" | "canceled" | "interrupted",
     override?: { code: string; message: string },
   ): Promise<void> {
     let job = await this.requireJob(jobId);
@@ -317,6 +346,11 @@ export class LocalStudioJobWorker {
           message:
             "Local execution stopped before publication; explicit retry is required.",
         }
+      : outcome === "canceled"
+        ? {
+            code: "operator_canceled",
+            message: "Analysis was canceled by the local operator.",
+          }
       : {
           code: "analysis_failed",
           message: "Analysis execution failed.",

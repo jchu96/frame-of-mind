@@ -137,6 +137,7 @@ export interface JobRepository {
    */
   createOrReplay(input: InitialJobCreateInput): Promise<JobCreateResult>;
   get(id: string): Promise<AnalysisJob | undefined>;
+  getByIdempotencyKey(key: string): Promise<AnalysisJob | undefined>;
   list(query: JobListQuery): Promise<JobListPage>;
   events(jobId: string, afterSequence?: number): Promise<AnalysisJobEvent[]>;
   appendEvent(
