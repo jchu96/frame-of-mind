@@ -639,8 +639,12 @@ server-owned expiry; neither source names nor filesystem paths cross the API.
 Part retries are accepted only when coordinates, length, and SHA-256 match the
 receipt. Completion re-reads the partial file as a stream, validates detected
 MP4/QuickTime/WebM magic and optional expected SHA-256, then atomically renames
-it. A local-only Nitro startup plugin reconciles uncommitted bytes, interrupted
-seals, expiry, and retryable cleanup before serving Studio work.
+it. A local-only Nitro plugin reconciles uncommitted bytes, interrupted seals,
+expiry, and retryable cleanup before serving Studio work, then runs a
+non-overlapping one-minute expiry sweep until Nitro closes. The sweep uses the
+same per-session ownership boundary as upload, seal, lifecycle transition, and
+delete; busy sessions wait for the next sweep, and cleanup failures remain
+durable and retryable.
 
 `bun run studio` generates a capability and places it only in a URL fragment.
 The client removes the fragment before exchanging the capability once for an

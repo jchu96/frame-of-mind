@@ -24,7 +24,9 @@ import type {
   MediaStagingAdapter,
 } from "../../../../src/domain/studio-ports";
 import {
+  DEFAULT_MEDIA_PART_SIZE_BYTES,
   MAX_MEDIA_PARTS,
+  MAX_RETAINED_MEDIA_TTL_SECONDS,
   mediaCreateRequestSchema,
   mediaSessionSchema,
   sha256Schema,
@@ -48,7 +50,7 @@ const storedMediaSessionSchema = z.object({
 
 type StoredMediaSession = z.infer<typeof storedMediaSessionSchema>;
 
-export const DEFAULT_MEDIA_PART_SIZE_BYTES = 8 * 1_024 * 1_024;
+export { DEFAULT_MEDIA_PART_SIZE_BYTES };
 const DEFAULT_UPLOAD_TTL_SECONDS = 24 * 60 * 60;
 const DEFAULT_MINIMUM_FREE_BYTES = 512 * 1_024 * 1_024;
 const FILE_SINK_HIGH_WATER_MARK = 256 * 1_024;
@@ -79,6 +81,34 @@ function digestText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function migrateEphemeralExpiry(
+  value: unknown,
+  uploadTtlSeconds: number,
+): unknown {
+  if (!value || typeof value !== "object") return value;
+  const stored = value as Record<string, unknown>;
+  if (!stored.session || typeof stored.session !== "object") return value;
+  const session = stored.session as Record<string, unknown>;
+  if (!session.retention || typeof session.retention !== "object") return value;
+  const retention = session.retention as Record<string, unknown>;
+  if (retention.mode !== "ephemeral" || retention.expiresAt !== undefined) {
+    return value;
+  }
+  const expiresAt = typeof session.uploadExpiresAt === "string"
+    ? session.uploadExpiresAt
+    : new Date(
+        Date.parse(String(session.createdAt))
+          + uploadTtlSeconds * 1_000,
+      ).toISOString();
+  return {
+    ...stored,
+    session: {
+      ...session,
+      retention: { ...retention, expiresAt },
+    },
+  };
+}
+
 function errorCode(error: unknown): string {
   if (
     error
@@ -96,6 +126,20 @@ function abortIfRequested(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new MediaStagingError("aborted", "Media staging was aborted.");
   }
+}
+
+export function isMediaExpiryCandidate(
+  session: MediaSession,
+  now: number,
+): boolean {
+  const uploadExpired = ["created", "uploading"].includes(session.status)
+    && session.uploadExpiresAt !== undefined
+    && Date.parse(session.uploadExpiresAt) <= now;
+  const retentionExpired = ["sealed", "retained"].includes(session.status)
+    && Date.parse(session.retention.expiresAt) <= now;
+  const cleanupPending = ["expired", "deleting", "cleanup_failed"]
+    .includes(session.status);
+  return uploadExpired || retentionExpired || cleanupPending;
 }
 
 async function optionalStat(path: string) {
@@ -199,10 +243,14 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
     }
     const uploadTtlSeconds = options.uploadTtlSeconds
       ?? DEFAULT_UPLOAD_TTL_SECONDS;
-    if (!Number.isSafeInteger(uploadTtlSeconds) || uploadTtlSeconds <= 0) {
+    if (
+      !Number.isSafeInteger(uploadTtlSeconds)
+      || uploadTtlSeconds <= 0
+      || uploadTtlSeconds > MAX_RETAINED_MEDIA_TTL_SECONDS
+    ) {
       throw new MediaStagingError(
         "invalid_upload_ttl",
-        "Media upload TTL must be a positive safe integer.",
+        "Media upload TTL must be between one second and seven days.",
       );
     }
 
@@ -314,9 +362,10 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
           "Media receipt identity changed while it was opened.",
         );
       }
-      return storedMediaSessionSchema.parse(
+      return storedMediaSessionSchema.parse(migrateEphemeralExpiry(
         JSON.parse(await handle.readFile("utf8")),
-      );
+        this.#uploadTtlSeconds,
+      ));
     } catch (error) {
       if (error instanceof MediaStagingError) throw error;
       throw new MediaStagingError(
@@ -417,6 +466,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
       const requestDigest = digestText(JSON.stringify({
         expectedBytes: parsed.expectedBytes,
         mimeType: parsed.mimeType,
+        fileFingerprintSha256: parsed.fileFingerprintSha256,
         retention: parsed.retention,
       }));
       for (const existing of await this.#storedSessions()) {
@@ -461,7 +511,12 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
               createdAt.getTime() + parsed.retention.ttlSeconds * 1_000,
             ).toISOString(),
           }
-        : { mode: "ephemeral" as const };
+        : {
+            mode: "ephemeral" as const,
+            expiresAt: new Date(
+              createdAt.getTime() + this.#uploadTtlSeconds * 1_000,
+            ).toISOString(),
+          };
       const session = mediaSessionSchema.parse({
         id,
         status: "created",
@@ -470,6 +525,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
         partSizeBytes: this.#partSizeBytes,
         parts: [],
         mimeType: parsed.mimeType,
+        fileFingerprintSha256: parsed.fileFingerprintSha256,
         retention,
         uploadExpiresAt: new Date(
           createdAt.getTime() + this.#uploadTtlSeconds * 1_000,
@@ -547,7 +603,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
         && Date.parse(session.uploadExpiresAt) <= this.#now().getTime()
       ) {
         const expired = await this.#setStatus(stored, "expired");
-        await this.delete(expired.session.id);
+        await this.delete(expired.session.id, { allowActiveWriter: true });
         throw new MediaStagingError(
           "media_expired",
           "Media upload session has expired.",
@@ -810,7 +866,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
         && Date.parse(session.uploadExpiresAt) <= this.#now().getTime()
       ) {
         const expired = await this.#setStatus(stored, "expired");
-        await this.delete(expired.session.id);
+        await this.delete(expired.session.id, { allowActiveWriter: true });
         throw new MediaStagingError(
           "media_expired",
           "Media upload session has expired.",
@@ -843,6 +899,16 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
         throw new MediaStagingError(
           "media_incomplete",
           "Media session is not complete enough to seal.",
+        );
+      }
+      if (
+        session.fileFingerprintSha256
+        && digestText(session.parts.map((part) => part.sha256).join(""))
+          !== session.fileFingerprintSha256
+      ) {
+        throw new MediaStagingError(
+          "file_fingerprint_mismatch",
+          "Uploaded parts do not match the recording selected at creation.",
         );
       }
 
@@ -921,46 +987,59 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
   async transition(
     transition: ValidatedMediaTransition,
   ): Promise<MediaSession> {
-    const stored = await this.#requireStored(transition.id);
-    if (stored.session.status !== transition.expected) {
+    const id = this.#parseId(transition.id);
+    if (this.#activeWriters.has(id)) {
       throw new MediaStagingError(
-        "media_state_conflict",
-        "Media session state changed before the requested transition.",
+        "concurrent_writer",
+        "Another writer already owns this media session.",
       );
     }
-    if (
-      transition.next === "retained"
-      && stored.session.retention.mode !== "retained"
-    ) {
-      throw new MediaStagingError(
-        "retention_not_requested",
-        "Ephemeral media cannot become retained.",
-      );
+    this.#activeWriters.add(id);
+    try {
+      const stored = await this.#requireStored(id);
+      if (stored.session.status !== transition.expected) {
+        throw new MediaStagingError(
+          "media_state_conflict",
+          "Media session state changed before the requested transition.",
+        );
+      }
+      if (
+        transition.next === "retained"
+        && stored.session.retention.mode !== "retained"
+      ) {
+        throw new MediaStagingError(
+          "retention_not_requested",
+          "Ephemeral media cannot become retained.",
+        );
+      }
+      if (
+        stored.session.retention.mode === "retained"
+        && Date.parse(stored.session.retention.expiresAt)
+          <= this.#now().getTime()
+        && transition.next === "in_use"
+      ) {
+        throw new MediaStagingError(
+          "media_expired",
+          "Retained media has expired.",
+        );
+      }
+      const updatedAt = this.#now().toISOString();
+      const session = mediaSessionSchema.parse({
+        ...stored.session,
+        status: transition.next,
+        uploadExpiresAt: ["created", "uploading"].includes(transition.next)
+          ? stored.session.uploadExpiresAt
+          : undefined,
+        cleanupFailureCode: transition.next === "cleanup_failed"
+          ? stored.session.cleanupFailureCode
+          : undefined,
+        updatedAt,
+      });
+      await this.#writeStored({ ...stored, session });
+      return session;
+    } finally {
+      this.#activeWriters.delete(id);
     }
-    if (
-      stored.session.retention.mode === "retained"
-      && Date.parse(stored.session.retention.expiresAt) <= this.#now().getTime()
-      && transition.next === "in_use"
-    ) {
-      throw new MediaStagingError(
-        "media_expired",
-        "Retained media has expired.",
-      );
-    }
-    const updatedAt = this.#now().toISOString();
-    const session = mediaSessionSchema.parse({
-      ...stored.session,
-      status: transition.next,
-      uploadExpiresAt: ["created", "uploading"].includes(transition.next)
-        ? stored.session.uploadExpiresAt
-        : undefined,
-      cleanupFailureCode: transition.next === "cleanup_failed"
-        ? stored.session.cleanupFailureCode
-        : undefined,
-      updatedAt,
-    });
-    await this.#writeStored({ ...stored, session });
-    return session;
   }
 
   async #setStatus(
@@ -983,45 +1062,59 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
     return next;
   }
 
-  async delete(idValue: string): Promise<MediaSession> {
+  async delete(
+    idValue: string,
+    options: { allowActiveWriter?: boolean } = {},
+  ): Promise<MediaSession> {
     const id = this.#parseId(idValue);
-    let stored = await this.#requireStored(id);
-    if (stored.session.status === "deleted") return stored.session;
-    if (stored.session.status === "failed") {
+    if (this.#activeWriters.has(id) && !options.allowActiveWriter) {
       throw new MediaStagingError(
-        "media_terminal_failure",
-        "Terminally failed media cannot be deleted automatically.",
+        "concurrent_writer",
+        "Media is still being written or sealed. Retry deletion shortly.",
       );
     }
-    if (["created", "uploading"].includes(stored.session.status)) {
-      stored = await this.#setStatus(stored, "aborted");
-    }
-    if (stored.session.status !== "deleting") {
-      stored = await this.#setStatus(stored, "deleting", {
+    if (!options.allowActiveWriter) this.#activeWriters.add(id);
+    try {
+      let stored = await this.#requireStored(id);
+      if (stored.session.status === "deleted") return stored.session;
+      if (stored.session.status === "failed") {
+        throw new MediaStagingError(
+          "media_terminal_failure",
+          "Terminally failed media cannot be deleted automatically.",
+        );
+      }
+      if (["created", "uploading"].includes(stored.session.status)) {
+        stored = await this.#setStatus(stored, "aborted");
+      }
+      if (stored.session.status !== "deleting") {
+        stored = await this.#setStatus(stored, "deleting", {
+          cleanupFailureCode: undefined,
+        });
+      }
+      try {
+        assertPrivateDirectory(await lstat(this.#sessionDirectory(id)));
+        await this.#removeFile(this.#partialPath(id));
+        await this.#removeFile(this.#sealedPath(id));
+      } catch (error) {
+        const session = mediaSessionSchema.parse({
+          ...stored.session,
+          status: "cleanup_failed",
+          cleanupFailureCode: errorCode(error),
+          updatedAt: this.#now().toISOString(),
+        });
+        await this.#writeStored({ ...stored, session });
+        throw new MediaStagingError(
+          "cleanup_failed",
+          "Staged media cleanup failed and can be retried.",
+        );
+      }
+      stored = await this.#setStatus(stored, "deleted", {
         cleanupFailureCode: undefined,
       });
+      return stored.session;
+    } finally {
+      if (!options.allowActiveWriter) this.#activeWriters.delete(id);
     }
-    try {
-      assertPrivateDirectory(await lstat(this.#sessionDirectory(id)));
-      await this.#removeFile(this.#partialPath(id));
-      await this.#removeFile(this.#sealedPath(id));
-    } catch (error) {
-      const session = mediaSessionSchema.parse({
-        ...stored.session,
-        status: "cleanup_failed",
-        cleanupFailureCode: errorCode(error),
-        updatedAt: this.#now().toISOString(),
-      });
-      await this.#writeStored({ ...stored, session });
-      throw new MediaStagingError(
-        "cleanup_failed",
-        "Staged media cleanup failed and can be retried.",
-      );
-    }
-    stored = await this.#setStatus(stored, "deleted", {
-      cleanupFailureCode: undefined,
-    });
-    return stored.session;
   }
 
   async abort(idValue: string): Promise<MediaSession> {
@@ -1033,29 +1126,36 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
 
   async expire(): Promise<MediaSession[]> {
     const expired: MediaSession[] = [];
-    for (let stored of await this.#storedSessions()) {
-      const now = this.#now().getTime();
-      const uploadExpired = ["created", "uploading"].includes(
-        stored.session.status,
-      )
-        && stored.session.uploadExpiresAt !== undefined
-        && Date.parse(stored.session.uploadExpiresAt) <= now;
-      const retentionExpired = stored.session.status === "retained"
-        && stored.session.retention.mode === "retained"
-        && Date.parse(stored.session.retention.expiresAt) <= now;
-      if (!uploadExpired && !retentionExpired) continue;
-      stored = await this.#setStatus(stored, "expired");
+    const now = this.#now().getTime();
+    const candidates = (await this.#storedSessions()).filter(
+      (candidate) => isMediaExpiryCandidate(candidate.session, now),
+    );
+    for (const candidate of candidates) {
+      const id = candidate.session.id;
+      if (this.#activeWriters.has(id)) continue;
+      this.#activeWriters.add(id);
       try {
-        expired.push(await this.delete(stored.session.id));
-      } catch (error) {
-        if (
-          error instanceof MediaStagingError
-          && error.code === "cleanup_failed"
-        ) {
-          expired.push((await this.#requireStored(stored.session.id)).session);
-          continue;
+        let stored = await this.#requireStored(id);
+        if (!isMediaExpiryCandidate(stored.session, now)) continue;
+        const cleanupPending = ["expired", "deleting", "cleanup_failed"]
+          .includes(stored.session.status);
+        if (!cleanupPending) {
+          stored = await this.#setStatus(stored, "expired");
         }
-        throw error;
+        try {
+          expired.push(await this.delete(id, { allowActiveWriter: true }));
+        } catch (error) {
+          if (
+            error instanceof MediaStagingError
+            && error.code === "cleanup_failed"
+          ) {
+            expired.push((await this.#requireStored(id)).session);
+            continue;
+          }
+          throw error;
+        }
+      } finally {
+        this.#activeWriters.delete(id);
       }
     }
     return expired;

@@ -16,8 +16,8 @@ rebuildable projections.
 ## Local Studio preview
 
 The completed-run workspace remains the stable v0.2 surface. A build-time
-isolated local Studio preview now provides per-launch authentication and a
-Connections page:
+isolated local Studio preview now provides per-launch authentication,
+Connections, and private recording staging:
 
 ```bash
 cp .env.example .env
@@ -37,10 +37,23 @@ The Connections page supports:
 - source, lifetime, last verification, and sanitized failure display;
 - `.env` guidance without writing the file or echoing a secret.
 
-The authenticated local API also supports resumable private media staging:
-create, status, exact-part upload, complete/seal, and abort. The accessible
-Nuxt drop zone and analysis execution remain later track tasks; there is no
-user-facing recording picker in this slice.
+The Recording page uses Nuxt UI's accessible single-file picker/drop zone over
+the authenticated resumable media API. It validates extension, declared MIME,
+and bytes before create; streams server-advertised fixed parts; counts only
+receipt-confirmed bytes; supports pause, retry, abort, and explicit
+ephemeral/retained selection; and discloses local storage and the later Gemini
+Files transfer before staging begins.
+
+The selected browser `File` remains component-local. Session storage contains
+only an opaque media ID. After refresh, Studio reconciles the server receipt,
+requires file re-selection, verifies a complete-file binding using bounded
+part hashes, and sends only missing parts. Both ephemeral and retained sessions
+carry a visible server-owned expiry; browser storage is never cleanup
+authority. Startup reconciliation and a non-overlapping lifecycle-owned
+periodic sweep enforce that expiry even when the server remains open after the
+originating tab closes. If session storage is unavailable, the current page
+can finish but Studio explicitly reports that refresh-resume is disabled. The
+analysis composer and job execution remain later track tasks.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
@@ -63,7 +76,7 @@ and [ADR log](adr/README.md).
 | Mode | Runtime | Database | Authentication | Intended use |
 |---|---|---|---|---|
 | Local review | Bun + Nuxt SSR | Bun SQLite | loopback Host/peer guard | browse completed runs |
-| Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | configure providers and stage media; recording UI/jobs are phased |
+| Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | configure providers and privately stage a recording; analysis jobs are phased |
 | Hosted | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | a controlled team workspace |
 
 The UI and API are shared. Only the `RunStore` adapter and Nitro preset change
@@ -176,7 +189,7 @@ bun run test:e2e:smoke
 
 Run the complete browser matrix with `bun run test:e2e`. No provider or Gemini
 network call is allowed. See [Testing Strategy](TESTING.md) for project
-isolation, current journeys, CI behavior, and the Phase 3 drag-and-drop plan.
+isolation, current journeys, CI behavior, and the recording-resume contract.
 
 ## Import a run
 

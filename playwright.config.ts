@@ -47,7 +47,7 @@ export default defineConfig({
     {
       name: "chromium",
       dependencies: ["setup"],
-      testMatch: /studio-smoke\.spec\.ts/,
+      testMatch: /studio-(?:smoke|upload)\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         storageState: E2E_STORAGE_STATE,

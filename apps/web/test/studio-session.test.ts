@@ -61,6 +61,8 @@ describe("local Studio per-launch session", () => {
   test("protects the Connections page and every Studio API route", () => {
     expect(requiresLocalStudioSession("/connections")).toBe(true);
     expect(requiresLocalStudioSession("/connections/")).toBe(true);
+    expect(requiresLocalStudioSession("/recording")).toBe(true);
+    expect(requiresLocalStudioSession("/recording/")).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/session")).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/configuration")).toBe(true);
     expect(requiresLocalStudioSession(
