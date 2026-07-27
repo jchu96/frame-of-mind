@@ -51,3 +51,15 @@
   3 Nuxt UI boundary: `UFileUpload` owns accessible selection while a separate
   composable and the server media-session contract own resumable staging,
   reconciliation, progress, cancellation, and cleanup.
+- Added an isolated Playwright Studio baseline covering browser bootstrap,
+  session denial/replay, temporary-key nonreflection, synthetic import/review,
+  console cleanliness, and narrow-screen overflow. The test server clears
+  provider credentials and uses temporary OAuth, SQLite, and dotenv state.
+
+## 2026-07-27
+
+- Adversarially reviewed the Playwright baseline and fixed a real replay
+  hydration race, retry false-green policy, non-idempotent secret precondition,
+  process/browser dotenv exposure, and forceful-shutdown temp leak. CI now
+  fails flaky tests, provider canaries prove isolation, and the outer runner
+  cleans its synthetic database after both success and failure.

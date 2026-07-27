@@ -12,6 +12,7 @@
 |------|---------|
 | Test one CLI file | `bunx vitest run test/time.test.ts` |
 | Test web workspace | `bun run test:web` |
+| Browser smoke | `bun run test:e2e:smoke` |
 | Typecheck | `bun run typecheck` |
 | Run CLI source | `bun run dev -- --help` |
 | Run local web app | `bun run web` |
