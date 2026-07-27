@@ -187,3 +187,24 @@
 - A job ID names one attempt, but duplicated `attempt` columns still need a
   composite foreign key and read-boundary comparison. Valid JSON alone does
   not prove an event belongs to the persisted attempt.
+- Claim `queued -> fetching_context` before provider work. An in-memory
+  "currently running" flag alone cannot stop duplicate execution after a
+  second wakeup or process race.
+- The job's model, custom/built-in recipe flag, recipe digest, provider,
+  transport, meeting ID, and focus are immutable execution inputs. A
+  just-in-time resolver may supply paths and secrets, but must not override
+  those recorded values.
+- A fake clock shared by repository and orchestration tests must be monotonic.
+  Separate advancing clocks can make a valid later stage appear older than the
+  atomic claim and correctly trigger timestamp rejection.
+- Shutdown must observe an in-flight startup reconciliation, and the drain loop
+  must recheck shutdown after every awaited queue read before claiming work.
+  Otherwise shutdown can be forgotten or can turn untouched queued work into
+  an interrupted attempt.
+- Revalidate the orchestrator's returned analysis/manifest pair at the Studio
+  adapter boundary. If its publication receipt is invalid, classify the
+  outcome as interrupted/indeterminate rather than claiming a failed run.
+- Recipe `custom` provenance is optional only when reading pre-executor local
+  rows whose digest predates that field. New initial jobs fail closed unless
+  they record the boolean explicitly; linked legacy retries preserve their
+  original immutable receipt.

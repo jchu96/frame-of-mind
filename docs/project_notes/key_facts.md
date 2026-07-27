@@ -62,6 +62,11 @@
 - Job rows retain opaque media/context identifiers and digests, not receipt
   copies or private paths. The private media JSON receipt remains the single
   media authority.
+- The local worker claims queued jobs oldest-first and runs one at a time.
+  Startup abandons active attempts as interrupted; shutdown cooperatively
+  aborts the current signal.
+- Studio execution reuses `AnalysisOrchestrator` through a typed adapter. The
+  immutable job model and recipe provenance override mutable resolver values.
 - Studio media sessions, analysis jobs, and durable runs have separate
   lifecycles and authority boundaries.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds

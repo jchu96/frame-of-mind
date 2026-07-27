@@ -5,7 +5,8 @@
 - Amended: 2026-07-27 — cleanup failure is recoverable; every media mode has
   a continuously enforced server-owned expiry; browser upload sessions bind
   the complete file; operational job persistence remains local-only and does
-  not duplicate media-receipt authority
+  not duplicate media-receipt authority; the local worker claims one queued
+  attempt at a time and never resumes abandoned provider work
 
 ## Invariant
 
@@ -104,6 +105,14 @@ interrupted
   projection schema and Cloudflare build. They are not described as rebuildable
   run projections, and hosted job execution requires a separate future
   architecture decision.
+- The process-local worker atomically claims the oldest queued job, runs at
+  concurrency one, and owns terminal outcomes. Its typed orchestration adapter
+  must bind progress to the claimed attempt and reassert immutable model,
+  provider, focus, and recipe provenance over just-in-time local resolution.
+- Startup marks abandoned active work `interrupted`; shutdown aborts the active
+  signal and waits for cooperative cleanup. There is no automatic Gemini
+  resume, and the application must construct only one worker per local job
+  database.
 
 ### Durable run
 

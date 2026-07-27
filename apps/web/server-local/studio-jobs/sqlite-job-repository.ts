@@ -157,7 +157,6 @@ export class LocalSqliteJobRepository implements JobRepository {
         "Verified immutable job input has an invalid digest.",
       );
     }
-
     const write = this.database.transaction(() => {
       const existing = this.findByIdempotencyKey(idempotencyKey);
       if (existing) {
@@ -173,6 +172,12 @@ export class LocalSqliteJobRepository implements JobRepository {
           );
         }
         return { kind: "replayed" as const, job };
+      }
+      if (input.verifiedInput.input.recipe.custom === undefined) {
+        throw new StudioJobRepositoryError(
+          "missing_recipe_provenance",
+          "New analysis jobs must identify built-in or custom recipe provenance.",
+        );
       }
       const id = parseOpaqueResourceId(this.createId());
       const candidate = analysisJobSchema.parse({
@@ -220,6 +225,9 @@ export class LocalSqliteJobRepository implements JobRepository {
     );
     const stagesJson = stages ? JSON.stringify(stages) : null;
     const cursor = query.cursor ? decodeJobCursor(query.cursor) : undefined;
+    const oldestFirst = query.order === "oldest";
+    const comparator = oldestFirst ? ">" : "<";
+    const direction = oldestFirst ? "ASC" : "DESC";
     const rows = cursor
       ? this.database
         .query<
@@ -229,10 +237,10 @@ export class LocalSqliteJobRepository implements JobRepository {
           `SELECT * FROM studio_analysis_jobs
            WHERE (? IS NULL OR stage IN (SELECT value FROM json_each(?)))
              AND (
-               created_at < ?
-               OR (created_at = ? AND id < ?)
+               created_at ${comparator} ?
+               OR (created_at = ? AND id ${comparator} ?)
              )
-           ORDER BY created_at DESC, id DESC
+           ORDER BY created_at ${direction}, id ${direction}
            LIMIT ?`,
         )
         .all(
@@ -245,9 +253,9 @@ export class LocalSqliteJobRepository implements JobRepository {
         )
       : this.database
         .query<JobRow, [string | null, string | null, number]>(
-          `SELECT * FROM studio_analysis_jobs
+           `SELECT * FROM studio_analysis_jobs
            WHERE (? IS NULL OR stage IN (SELECT value FROM json_each(?)))
-           ORDER BY created_at DESC, id DESC
+           ORDER BY created_at ${direction}, id ${direction}
            LIMIT ?`,
         )
         .all(stagesJson, stagesJson, query.limit + 1);

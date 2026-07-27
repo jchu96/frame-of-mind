@@ -29,6 +29,8 @@ const forbidden = [
   "media.sealed",
   "server-local/studio-jobs",
   "LocalSqliteJobRepository",
+  "LocalStudioJobWorker",
+  "OrchestratedAnalysisJobExecutor",
   "studio_analysis_jobs",
 ];
 

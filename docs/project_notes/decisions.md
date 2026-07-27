@@ -117,3 +117,12 @@ store the opaque media/context references and digests required by immutable job
 input, while Phase 3's private JSON receipt remains authoritative for media
 existence, retention, and cleanup. D1 remains limited to completed-run
 projection tables.
+
+## 2026-07-27 — The first executor is one process-local durable worker
+
+One singleton worker per local SQLite database claims queued attempts
+oldest-first and runs at concurrency one. Repository state, not an in-memory
+queue, remains authoritative. Startup marks abandoned active attempts
+interrupted; shutdown uses cooperative abort and waits for cleanup. The typed
+adapter reuses `AnalysisOrchestrator` and binds immutable model/recipe/provider
+values rather than invoking or scraping the CLI.
