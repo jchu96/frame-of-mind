@@ -85,7 +85,9 @@ separate proposed track.
 - [x] Task 2.6: Add a production-build Playwright baseline for fragment
       exchange, unauthenticated denial, replay rejection, session-key
       lifecycle, synthetic run import/review, console cleanliness, and mobile
-      overflow.
+      overflow. Sanitize the complete runner/browser/server environment, make
+      retries idempotent and fail CI on flakes, and clean external temp state
+      after passing and failing runs on every supported OS.
 
 ### Verification
 

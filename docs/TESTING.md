@@ -48,14 +48,19 @@ state:
 | `chromium` | manages and clears a synthetic process key; imports and reviews a valid synthetic run |
 | `mobile-chromium` | verifies the Connections surface and navigation remain usable without horizontal overflow |
 
-The server runner:
+The browser and server runners:
 
+- launch Playwright workers and browser processes with an explicit environment
+  allowlist instead of inheriting shell or dotenv secrets;
+- inject parent-process canaries and assert they never reach the test worker;
 - supplies an empty dotenv file;
-- passes an explicit environment allowlist instead of inheriting shell secrets;
+- disable Bun's automatic dotenv loading for Playwright, the Nuxt build, and
+  the production server;
 - uses a temporary `XDG_CONFIG_HOME` so real OAuth files are not read;
 - uses a temporary SQLite database;
 - binds only to `127.0.0.1`;
-- deletes the complete temporary directory on shutdown;
+- make the outer runner own temp cleanup so it works after success, failure,
+  and Playwright's forceful Windows web-server shutdown;
 - never calls Gemini, Bluedot, or Granola.
 
 ## Commands
@@ -78,6 +83,12 @@ Run all browser projects:
 bun run test:e2e
 ```
 
+Run one spec without bypassing environment isolation:
+
+```bash
+bun run test:e2e -- apps/web/e2e/studio-smoke.spec.ts
+```
+
 Debug with a visible browser:
 
 ```bash
@@ -90,8 +101,13 @@ Inspect a failed run:
 bunx playwright show-report
 ```
 
-Traces, screenshots, videos, reports, the authenticated storage state, and the
-temporary database are ignored by Git.
+Traces, screenshots, videos, reports, and authenticated storage state are
+ignored by Git. The temporary database lives outside the checkout and the
+runner removes its complete temp directory.
+
+CI uses `bun run test:e2e:ci`, keeps bounded retries for diagnostic artifacts,
+and passes `--fail-on-flaky-tests`. A test that fails once and passes on retry
+still fails the job.
 
 ## Authoring Rules
 
@@ -105,7 +121,8 @@ temporary database are ignored by Git.
 - End every state-changing test in a known state.
 - Make retries idempotent: establish the expected precondition first and clean
   mutations at the end. The one-use authentication setup itself is not retried.
-- Fail on unexpected browser console errors and uncaught page errors.
+- Fail on unexpected browser console errors and uncaught page errors. Narrowly
+  allowlist only an error that the test explicitly causes and verifies.
 - Keep one happy browser journey per feature; put combinatorial cases below
   the browser.
 - Never make a real provider request from CI.

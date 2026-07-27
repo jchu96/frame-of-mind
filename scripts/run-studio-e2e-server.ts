@@ -1,6 +1,6 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   E2E_BOOTSTRAP_TOKEN,
   E2E_PORT,
@@ -8,9 +8,6 @@ import {
 
 const repositoryRoot = process.cwd();
 const webRoot = join(repositoryRoot, "apps", "web");
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-e2e-"));
-const emptyDotenvPath = join(temporaryRoot, "empty.env");
-await writeFile(emptyDotenvPath, "", { mode: 0o600 });
 
 if (
   !Number.isSafeInteger(E2E_PORT)
@@ -19,6 +16,26 @@ if (
 ) {
   throw new Error("FRAME_OF_MIND_E2E_PORT must be an integer from 1024 to 65535.");
 }
+
+const configuredTemporaryRoot = process.env.FRAME_OF_MIND_E2E_TEMP_ROOT;
+const resolvedTemporaryRoot = configuredTemporaryRoot
+  ? resolve(configuredTemporaryRoot)
+  : undefined;
+if (
+  resolvedTemporaryRoot
+  && (
+    dirname(resolvedTemporaryRoot) !== resolve(tmpdir())
+    || !basename(resolvedTemporaryRoot).startsWith("frame-of-mind-e2e-")
+  )
+) {
+  throw new Error(
+    "FRAME_OF_MIND_E2E_TEMP_ROOT must be a managed directory under the OS temp root.",
+  );
+}
+const ownsTemporaryRoot = resolvedTemporaryRoot === undefined;
+const temporaryRoot = resolvedTemporaryRoot
+  ?? await mkdtemp(join(tmpdir(), "frame-of-mind-e2e-"));
+const emptyDotenvPath = join(temporaryRoot, "empty.env");
 
 const environment: Record<string, string> = {
   HOME: temporaryRoot,
@@ -54,8 +71,17 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 try {
+  await writeFile(emptyDotenvPath, "", { mode: 0o600 });
   activeChild = Bun.spawn(
-    ["bun", "x", "nuxi", "build", "--dotenv", emptyDotenvPath],
+    [
+      process.execPath,
+      "--no-env-file",
+      "x",
+      "nuxi",
+      "build",
+      "--dotenv",
+      emptyDotenvPath,
+    ],
     {
       cwd: webRoot,
       env: environment,
@@ -68,13 +94,16 @@ try {
   if (buildExitCode !== 0) {
     process.exitCode = buildExitCode;
   } else {
-    activeChild = Bun.spawn(["bun", ".output/server/index.mjs"], {
-      cwd: webRoot,
-      env: environment,
-      stdin: "ignore",
-      stdout: "inherit",
-      stderr: "inherit",
-    });
+    activeChild = Bun.spawn(
+      [process.execPath, "--no-env-file", ".output/server/index.mjs"],
+      {
+        cwd: webRoot,
+        env: environment,
+        stdin: "ignore",
+        stdout: "inherit",
+        stderr: "inherit",
+      },
+    );
     console.log(
       `Synthetic Studio E2E server listening on http://127.0.0.1:${E2E_PORT}`,
     );
@@ -82,5 +111,7 @@ try {
   }
 } finally {
   activeChild = undefined;
-  await rm(temporaryRoot, { recursive: true, force: true });
+  if (ownsTemporaryRoot) {
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
 }

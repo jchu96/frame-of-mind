@@ -15,6 +15,8 @@ setup("exchanges the one-time launch fragment for a local session", {
   tag: "@smoke",
 }, async ({ page }) => {
   const clientErrors = collectClientErrors(page);
+  expect(process.env.FRAME_OF_MIND_E2E_SECRET_CANARY).toBeUndefined();
+  expect(process.env.GEMINI_API_KEY).toBeUndefined();
   await rm(E2E_STORAGE_STATE, { force: true });
 
   await setup.step("exchange and clean the launch URL", async () => {

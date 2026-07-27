@@ -3,6 +3,7 @@ import {
   E2E_BASE_URL,
   E2E_STORAGE_STATE,
 } from "./apps/web/e2e/support/constants";
+import { createE2EEnvironment } from "./scripts/e2e-environment";
 
 export default defineConfig({
   testDir: "./apps/web/e2e",
@@ -22,6 +23,9 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
+    launchOptions: {
+      env: createE2EEnvironment(process.env),
+    },
   },
   projects: [
     {
@@ -60,10 +64,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bun run test:e2e:server",
+    command: "bun --no-env-file run test:e2e:server",
     url: `${E2E_BASE_URL}/api/health`,
     reuseExistingServer: false,
     timeout: 180_000,
+    gracefulShutdown: {
+      signal: "SIGTERM",
+      timeout: 5_000,
+    },
     stdout: "pipe",
     stderr: "pipe",
   },

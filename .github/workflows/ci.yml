@@ -52,7 +52,7 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Run synthetic Studio browser tests
-        run: bun run test:e2e
+        run: bun run test:e2e:ci
 
       - name: Upload Playwright failure artifacts
         if: failure()
