@@ -2,7 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-26
-- Amended: 2026-07-27 — cleanup failure is a recoverable media state
+- Amended: 2026-07-27 — cleanup failure is recoverable; every media mode has
+  a server-owned expiry; browser upload sessions bind the complete file
 
 ## Invariant
 
@@ -44,13 +45,19 @@ any nonterminal state -> failed
   sufficient disk space, and computes the final SHA-256 by streaming the sealed
   file.
 - One writer owns a part/session transition at a time.
+- Delete and seal use the same per-session writer exclusion, so a disconnected
+  browser cannot race cleanup against a seal that is still hashing.
 - `cleanup_failed` records a sanitized retryable deletion failure. It returns
   only to `deleting`; it is deliberately distinct from terminal `failed`.
 - Original user files are never deleted.
 - The default mode is ephemeral: delete the staged copy after terminal job
-  cleanup.
+  cleanup, with a server-owned expiry as the backstop when no job or browser
+  receipt survives.
 - Retained-for-review mode is explicit and time-bounded, with visible expiry
   and manual deletion.
+- A browser-created session records a SHA-256 binding over the ordered upload
+  part digests. Resume re-hashes the complete reselected file in bounded parts,
+  so matching size, MIME, or a confirmed prefix cannot splice two recordings.
 - An expired/deleted recording can be reattached. The Studio accepts it only
   when its streamed SHA-256 matches the run manifest.
 - Recording bytes never enter SQLite, D1, the run bundle, logs, or analytics.
@@ -110,6 +117,8 @@ Costs:
 - the UI must display media, job, and run status separately;
 - reattachment hashes the selected recording before playback;
 - retained playback consumes local disk until expiry or deletion;
+- initial stage and refresh-resume each read the complete selected file once to
+  establish or verify its bounded-memory file binding;
 - future annotations need a new durable contract.
 
 ## Alternatives Considered

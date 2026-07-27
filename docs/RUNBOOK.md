@@ -1041,18 +1041,23 @@ Browser procedure:
 4. Choose **Ephemeral** or **Retained**. Retained media may last one hour, one
    day, or seven days and is still private local application data.
 5. Select **Stage locally**. The visible byte count advances only after the
-   server durably records a part receipt.
+   server durably records a part receipt. Before create, the browser reads the
+   file in bounded parts to bind that exact recording to the upload session.
 6. Use **Pause** to stop the current request. Use **Resume** to continue from
    confirmed parts.
 7. After a browser refresh, reselect the same source file. Studio verifies the
-   hashes for confirmed parts before sending missing parts. If it differs,
+   complete file binding before sending missing parts. If it differs,
    choose the correct file or explicitly delete the old upload and restart.
 8. Use **Delete staged copy** when the recording is no longer needed.
 
 The browser stores only the opaque resumable media ID in per-tab session
 storage. It does not store the recording name, path, bytes, or `File` object.
 Closing the tab loses the browser receipt, but the private server session
-remains subject to its upload expiry and startup reconciliation.
+remains subject to its server-owned expiry and startup reconciliation.
+Ephemeral media uses the upload lifetime as a sealed-media cleanup backstop;
+retained media uses the explicit one-hour, one-day, or seven-day choice.
+Session-storage denial does not fail a live upload, but the page warns that
+refresh-resume is unavailable and should remain open until seal or deletion.
 
 On startup, Studio reconciles each durable receipt with its partial or sealed
 file. Extra bytes from an interrupted part are truncated to the last receipt;
@@ -1063,19 +1068,21 @@ reported as deleted. Never edit `session.json` manually.
 | Symptom | Meaning | Operator action |
 |---|---|---|
 | HTTP 409 on a part | wrong order, conflicting replay, or another active writer | refresh status; resend only the exact next part |
+| HTTP 409 on delete | a part write or seal still owns the session | wait for authoritative status, then retry deletion |
 | HTTP 413 | declared recording/part exceeds a bound | select a smaller supported recording |
 | HTTP 422 on completion | incomplete bytes, digest mismatch, or MIME mismatch | reselect/verify the source; restart rather than overriding |
 | HTTP 507 | reservation or streaming write exhausted disk | free private disk space, then restart or abort the session |
 | `cleanup_failed` | deletion was attempted but not proven | repair permissions and retry abort; do not claim deletion |
 | terminal `failed` | receipt/file corruption or irrecoverable inconsistency | preserve sanitized diagnostics and create a new session |
-| `Reselect the same recording` | browser refreshed and intentionally forgot the `File` | choose the original file; Studio verifies confirmed part hashes |
-| `The selected recording does not match` | size, MIME, or confirmed part digest differs | choose the original file or explicitly delete and restart |
+| `Reselect the same recording` | browser refreshed and intentionally forgot the `File` | choose the original file; Studio verifies the complete file binding |
+| `The selected recording does not match` | size, MIME, or complete-file fingerprint differs | choose the original file or explicitly delete and restart |
 
 Maintainers validate the production-built boundary with:
 
 ```bash
 bun test apps/web/test/studio-media-staging.test.ts
 bun test apps/web/test/studio-media-upload.test.ts
+bun test apps/web/test/studio-media-controller.test.ts
 bun run test:studio-http
 bun run test:e2e:smoke
 bun run test:e2e -- apps/web/e2e/studio-upload.spec.ts

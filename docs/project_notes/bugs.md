@@ -88,3 +88,24 @@
   `cleanup_failed` as an actionable failure.
 - Prevention: the production Playwright happy path now stages and deletes a
   synthetic recording through the real local API.
+
+## 2026-07-27 — Browser receipt accidentally owned private-media cleanup
+
+- Symptom: closing the tab after seal could discard the only UI handle while
+  an ephemeral recording had no remaining expiry.
+- Cause: upload expiry was cleared at seal, but the media retention receipt did
+  not carry its own server-owned bound.
+- Fix: every media mode now has a server-owned expiry; sealed ephemeral media
+  expires independently of browser state, and legacy receipts migrate on read.
+- Prevention: adapter regressions cover sealed expiry and the ADR states that
+  browser storage is never cleanup authority.
+
+## 2026-07-27 — Resume could splice recordings with a shared prefix
+
+- Symptom: a same-size/MIME replacement with matching confirmed parts could
+  append a different suffix after refresh.
+- Cause: resume verified only already-confirmed part hashes.
+- Fix: create binds the ordered digests of every fixed-size file part; resume
+  recomputes that complete binding with bounded memory before any new write.
+- Prevention: client and adapter tests mutate only the unconfirmed tail and
+  require a closed mismatch.

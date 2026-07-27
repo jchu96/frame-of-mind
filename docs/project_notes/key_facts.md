@@ -33,5 +33,7 @@
   expiry, and retryable cleanup before Studio serves work; Cloudflare builds
   exclude the entire implementation.
 - The local Recording page keeps the selected `File` component-local, stores
-  only an opaque media ID in session storage, and verifies confirmed part
-  hashes before a refresh-resume sends missing parts.
+  only an opaque media ID in session storage, and verifies a complete
+  bounded-part fingerprint before a refresh-resume sends missing parts.
+- Ephemeral and retained media both carry a server-owned expiry; the seal and
+  delete paths share per-session writer exclusion.

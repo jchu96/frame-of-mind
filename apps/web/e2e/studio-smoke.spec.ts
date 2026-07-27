@@ -87,6 +87,48 @@ test("stages and deletes one synthetic recording through the browser", {
   expect(clientErrors).toEqual([]);
 });
 
+test("accepts an actual drop and keyboard file selection", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+  await page.goto("/recording");
+  const dropzone = page.locator('div[data-slot="base"][role="button"]');
+  const droppedBytes = [...syntheticMp4()];
+  const dataTransfer = await page.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(
+      [new Uint8Array(bytes)],
+      "dropped-walkthrough.mp4",
+      { type: "video/mp4" },
+    ));
+    return transfer;
+  }, droppedBytes);
+  await dropzone.dispatchEvent("drop", { dataTransfer });
+  await expect(dropzone).toContainText("dropped-walkthrough.mp4");
+
+  await page.reload();
+  const keyboardDropzone = page.locator('div[data-slot="base"][role="button"]');
+  const chooserPromise = page.waitForEvent("filechooser");
+  await keyboardDropzone.focus();
+  await page.keyboard.press("Enter");
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: "keyboard-walkthrough.mp4",
+    mimeType: "video/mp4",
+    buffer: syntheticMp4(),
+  });
+  await expect(keyboardDropzone).toContainText("keyboard-walkthrough.mp4");
+  const stageButton = page.getByRole("button", { name: "Stage locally" });
+  await stageButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByText("Recording staged and sealed locally."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Delete staged copy" }).click();
+  await expect(page.getByText("Staged recording deleted.")).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});
+
 test("imports and reviews one synthetic run", {
   tag: "@smoke",
 }, async ({ page }) => {

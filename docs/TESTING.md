@@ -139,19 +139,25 @@ tested at three levels:
 - extension, size, and browser-declared MIME validation independent of
   `accept`;
 - opaque-ID-only session-storage serialization;
-- confirmed-part hash verification before resume;
+- graceful degradation when session storage throws;
+- complete-file fingerprint verification before resume, with abort checkpoints
+  between bounded hashes;
 - missing-part-only upload with receipt-confirmed progress;
 - explicit mismatch failure rather than silent continuation.
 
-`apps/web/test/studio-media-upload.test.ts` owns this deterministic client
-matrix. The selected `File` stays in a component-local `shallowRef`; it never
-enters Nuxt SSR state.
+`apps/web/test/studio-media-upload.test.ts` owns the pure client contract.
+`apps/web/test/studio-media-controller.test.ts` owns ambiguous create-key
+reuse, pause/reconcile/resume, cleanup retry, and delete-before-restart state
+transitions. The selected `File` stays in a component-local `shallowRef`; it
+never enters Nuxt SSR state.
 
 ### Media contract — implemented
 
 - create, part receipt, out-of-order/concurrent rejection, retry, resume,
   digest mismatch, seal, abort, retention, expiry, and cleanup;
 - bounded streaming and disk-space behavior;
+- sealed-ephemeral expiry independent of browser state, complete-file binding,
+  and delete-versus-seal writer exclusion;
 - synthetic bytes only, outside the checkout.
 
 `apps/web/test/studio-media-staging.test.ts` owns the adapter matrix.
@@ -163,9 +169,9 @@ absent.
 
 ### Browser journey — implemented
 
-1. `studio-smoke.spec.ts` selects through the accessible file input, stages a
-   small synthetic MP4 through the real local API, observes confirmed progress,
-   seals it, and deletes the staged copy.
+1. `studio-smoke.spec.ts` exercises native input, actual DataTransfer drop, and
+   keyboard file-dialog/action paths; it stages a small synthetic MP4 through
+   the real local API, observes confirmed progress, seals it, and deletes it.
 2. `studio-upload.spec.ts` seeds one real confirmed 8 MiB part, reloads the
    page, observes `reselect-required`, reselects the same synthetic recording,
    verifies the receipt, sends the missing part, seals, and deletes.
