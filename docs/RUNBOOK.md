@@ -519,6 +519,44 @@ an already-created retry does not depend on later media availability. If
 cancellation races an indeterminate publication receipt, the attempt remains
 `interrupted`; verify whether the run exists before retrying.
 
+### 3.8 Restart recovery
+
+Treat a process restart as a recovery event, not as an automatic retry. The
+startup worker applies this matrix before it drains the queue:
+
+| State found in SQLite | Expected recovery |
+|---|---|
+| `queued` | remains queued and executes oldest-first |
+| `fetching_context` through `cleaning_up` | becomes `interrupted` with code `executor_restart` |
+| active with cancellation already requested | becomes `interrupted`; the cancellation event and timestamp remain |
+| any terminal state | remains unchanged at the job/event contract level |
+
+For every interrupted attempt:
+
+1. inspect the run output root for an already-published bundle;
+2. inspect the attempt's sanitized events and terminal code;
+3. confirm the retained media receipt still identifies the exact SHA-256;
+4. reconnect the provider if authorization expired;
+5. use the protected retry action to create a linked attempt;
+6. never edit the original row back to `queued`.
+
+The retry gets a new job ID, attempt number, and idempotency key while
+preserving the root job ID and immutable input digest. Reusing the retry
+idempotency key replays that attempt; it does not create a third execution.
+
+Run the deterministic hard-restart drill after changing job state,
+reconciliation, retry lineage, or SQLite lifecycle:
+
+```bash
+bun test apps/web/test/studio-job-restart-process.test.ts
+```
+
+The drill uses only synthetic metadata. One Bun child commits queued, active,
+cancellation-in-flight, and terminal rows, then exits without closing SQLite.
+A second child opens the same file, reconciles it, drains the queue, and
+creates one explicit linked retry. The parent verifies exact event histories,
+no duplicate claims, preserved terminal results, and retry lineage.
+
 The authenticated `/api/studio/jobs` route contracts are registered, bounded,
 and configured only after the repository/control/worker singleton starts. A
 startup failure prevents Studio from advertising a dead queue. Do not insert
