@@ -84,11 +84,18 @@ on their behalf. A Google Cloud project can be imported into AI Studio. Vertex
 AI ADC is not a drop-in replacement because the current Files API upload method
 is unavailable on a Vertex client. See `docs/CREDENTIALS.md`.
 
-As of 2026-07-27, do not represent live `analyze` as healthy on Bun: the shipped
-SDK upload call reproduced an empty 404 and the shipped full Zod-derived schema
-was rejected by Gemini 3.6. Direct upload and provider-safe schema diagnostics
-are not production fallbacks. Read the current README warning and runbook before
-using media.
+Version 0.2.1 uses Google's documented resumable upload protocol and a
+provider-safe response schema with strict local Zod validation. Before the
+first sensitive analysis, and after changing Bun, `@google/genai`, the model,
+upload, or response schemas, run:
+
+```bash
+bun run smoke:gemini
+```
+
+The smoke uses generated media and verifies upload, index, interrogation, and
+exact deletion. It must pass without printing provider payloads or remote
+identifiers.
 
 ## Authorize Context
 

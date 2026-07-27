@@ -22,7 +22,7 @@
     },
     "apps/web": {
       "name": "@frame-of-mind/web",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "@nuxt/ui": "4.10.0",
         "jose": "6.2.4",

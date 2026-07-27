@@ -28,6 +28,7 @@ decision may be made in place.
 | [0007](0007-separate-media-job-and-run-lifecycles.md) | Separate media, analysis-job, and durable-run lifecycles | Accepted | 2026-07-26 |
 | [0008](0008-local-secret-resolution.md) | Keep new API secrets environment- or session-scoped | Accepted | 2026-07-26 |
 | [0009](0009-transcript-first-semantic-scoping.md) | Use transcript-first semantic scoping for bounded media analysis | Accepted | 2026-07-27 |
+| [0010](0010-resumable-gemini-upload-and-local-schema-authority.md) | Use resumable Gemini upload and keep Zod authoritative | Accepted | 2026-07-27 |
 
 ## Adding An ADR
 

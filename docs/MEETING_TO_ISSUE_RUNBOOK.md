@@ -235,12 +235,10 @@ For a clip that begins at full-meeting `00:12:40`, pass
 
 ## 5. Run bounded analysis
 
-> **Compatibility stop — 2026-07-27:** the released v0.2 analysis path is not
-> currently safe to use with private media on Bun. The shipped SDK upload
-> reproduced an empty 404, and Gemini rejected the shipped full Zod-derived
-> provider schema. Do not run the command below on sensitive media until the
-> adapter fix lands and a synthetic upload/generate/delete smoke test passes.
-> The command documents the intended operator path after that gate is restored.
+> **Live preflight:** v0.2.1 ships the direct resumable upload and
+> provider-safe schema fixes. Before using private media, run
+> `bun run smoke:gemini`. It must complete upload, both structured model
+> passes, and exact remote deletion using generated media.
 
 Choose the recipe based on the desired artifact:
 
@@ -265,10 +263,10 @@ Analyze separate windows independently when their offsets differ. Reconcile the
 accepted records during synthesis; do not concatenate arbitrary clips and then
 pretend they share one continuous timeline.
 
-Current production behavior uses the repository's Gemini adapter. Diagnostic
-scripts that exercise a direct resumable upload or the Beta Interactions API
-are not a substitute for the production CLI and must not be described as a
-shipped fallback until implemented and tested in the adapter.
+Current production behavior uses the repository's Gemini adapter. Direct
+resumable upload is shipped and tested in v0.2.1. Beta Interactions remains a
+diagnostic path and is not a substitute for the stable production generation
+surface.
 
 ## 6. Review the run before synthesis
 
@@ -599,7 +597,8 @@ details, and generated analysis remain outside this public repository.
   tiles are separate signals that need reconciliation.
 - Provider-accepted structured output is not durable until strict local Zod
   validation succeeds.
-- A successful diagnostic is not shipped production behavior.
+- A successful diagnostic becomes production behavior only after adapter
+  integration, contract tests, live synthetic verification, and documentation.
 - Repository inspection turns a meeting summary into an executable issue.
 - BI extrapolation is valuable when its evidence boundary is explicit.
 - Screenshot publication has its own privacy, integrity, and retention
@@ -615,7 +614,7 @@ details, and generated analysis remain outside this public repository.
 | Analysis includes irrelevant meeting content | available media was mistaken for requested scope | reselect transcript windows and cut derivatives |
 | Useful collaborator detail was omitted | scope was reduced to a person's airtime | expand to the full relevant conversational turn |
 | Clip quotes come from meeting start | missing transcript offset | calculate and pass the full-meeting clip start |
-| Gemini SDK upload returns empty 404 | SDK wrapper/runtime seam | run a non-sensitive resumable-upload diagnostic; do not call it an auth failure |
+| Gemini upload returns empty 404 | old SDK wrapper or current transport failure | upgrade to v0.2.1, run `bun run smoke:gemini`, and diagnose the sanitized phase/status; do not assume invalid auth |
 | Structured output returns `400 INVALID_ARGUMENT` | unsupported JSON Schema keyword | minimize provider schema and retain strict local Zod validation |
 | Provider-valid JSON fails local validation | provider subset omitted local bounds | fail closed; an adapter change may add at most one corrective retry, never a cast or truncation |
 | Automated screenshot upload fails | browser security or tool boundary | use the UI manually or an authorized artifact path |

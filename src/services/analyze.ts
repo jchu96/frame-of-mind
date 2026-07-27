@@ -188,8 +188,8 @@ export async function analyzeMeeting(options: AnalyzeOptions): Promise<{ directo
       const analysisSha256 = await analysisDigest(analysis);
       const manifest: RunManifest = {
         schemaVersion: 2,
-        toolVersion: "0.2.0",
-        promptRevision: "2026-07-26.1",
+        toolVersion: "0.2.1",
+        promptRevision: "2026-07-27.1",
         runId,
         startedAt,
         completedAt: new Date().toISOString(),

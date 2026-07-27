@@ -1,6 +1,6 @@
 {
   "name": "frameofmind",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Video in. Understanding out. Run recipe-driven analysis over Bluedot, Granola, or local meeting recordings with Gemini.",
   "license": "MIT",
@@ -38,6 +38,7 @@
     "check": "bun run typecheck && bun run test && bun run test:web && bun run build:cli && bun run build:web && bun run test:studio-http && bun run build:web:cloudflare && bun run spike:studio-streaming",
     "dev": "bun src/cli.ts",
     "install:skill": "node scripts/install-skill.mjs",
+    "smoke:gemini": "bun scripts/smoke-gemini.ts",
     "spike:studio-streaming": "bun scripts/run-studio-streaming-spike.ts",
     "start": "bun dist/cli.js",
     "studio": "bun scripts/run-studio.ts",
