@@ -10,17 +10,17 @@ reviewed GitHub issue, use
 
 ## Runbook metadata
 
-| Field | Value |
+| Field             | Value                                       |
 |---|---|
-| Repository | `jchu96/frame-of-mind` |
-| CLI | `frameofmind` |
-| Skill | `/frame-of-mind` |
-| Current version | `0.2.1` |
-| Default model | `gemini-3.6-flash` |
-| Gemini backend | Developer API Files API |
-| Context providers | Bluedot MCP, Granola MCP/API, local file |
-| Durable outputs | local `analysis.json` and `manifest.json` |
-| Optional review | Nuxt SSR with local SQLite or Cloudflare D1 |
+| Repository        | `jchu96/frame-of-mind`                      |
+| CLI               | `frameofmind`                               |
+| Skill             | `/frame-of-mind`                            |
+| Current version   | `0.2.1`                                     |
+| Default model     | `gemini-3.6-flash`                          |
+| Gemini backend    | Developer API Files API                     |
+| Context providers | Bluedot MCP, Granola MCP/API, local file    |
+| Durable outputs   | local `analysis.json` and `manifest.json`   |
+| Optional review   | Nuxt SSR with local SQLite or Cloudflare D1 |
 
 ## Operating invariant
 
@@ -36,13 +36,13 @@ after model, SDK, runtime, or upload changes.
 
 ## Responsibility matrix
 
-| Role | Responsibility |
+| Role               | Responsibility                                                                             |
 |---|---|
-| Operator | choose authorized inputs/recipe, protect credentials, review output, delete stale runs |
-| Provider admin | control Bluedot/Granola workspace access and policy |
-| Google Cloud owner | approve project, billing, key/IAM policy, quota |
-| Maintainer | preserve contracts, cleanup, tests, docs, and safe defaults |
-| Reviewing agent | distinguish observed facts, quotes, and inference; avoid external writes without authority |
+| Operator           | choose authorized inputs/recipe, protect credentials, review output, delete stale runs     |
+| Provider admin     | control Bluedot/Granola workspace access and policy                                        |
+| Google Cloud owner | approve project, billing, key/IAM policy, quota                                            |
+| Maintainer         | preserve contracts, cleanup, tests, docs, and safe defaults                                |
+| Reviewing agent    | distinguish observed facts, quotes, and inference; avoid external writes without authority |
 
 ## Data lifecycle
 
@@ -174,6 +174,11 @@ export GEMINI_API_KEY="your-key"
 Rules:
 
 - do not paste the key into chat;
+- do not commit it;
+- do not echo it;
+- do not scrape a dotenv file with `grep | cut`;
+- prefer a new AI Studio authorization key;
+- verify project and billing ownership.
 
 Verify the complete live Gemini boundary with generated media:
 
@@ -185,11 +190,6 @@ This explicit maintainer smoke is not part of CI. It creates a temporary
 synthetic video, exercises upload, index, detail interrogation, and exact
 remote deletion, then removes the local temporary directory. It prints no
 provider payload, remote file name, signed URL, or key.
-- do not commit it;
-- do not echo it;
-- do not scrape a dotenv file with `grep | cut`;
-- prefer a new AI Studio authorization key;
-- verify project and billing ownership.
 
 ### 1.6 Run preflight
 
@@ -445,15 +445,36 @@ after review.
 Normal messages:
 
 ```text
-Uploading recording.mp4 to Gemini Files API…
+Uploading recording to Gemini Files API…
 Pass 1/2: indexing the whole recording…
-Pass 2/2 [1/3] at 00:08
+Pass 2/2 [1/3] at 00:00:08
 Analysis: <run-directory>
 2 accepted record(s).
 ```
 
-Do not interrupt during upload/cleanup unless required. On interruption, verify
-temporary and remote cleanup.
+`Ctrl-C` requests cooperative cancellation. Frame of Mind finishes the active
+provider boundary so it can retain an exact Gemini file identity, then checks
+the cancellation signal before continuing. If an upload identity is known, it
+attempts exact remote cleanup before returning `Analysis was canceled.` It
+also removes its staging directory and any downloaded temporary recording;
+the operator-supplied source video remains untouched.
+
+If cancellation arrives after the validated bundle has been atomically
+published, the run remains a success: a durable bundle is never relabeled or
+removed because a later projection was canceled or failed.
+
+The local Studio executor consumes typed progress events from this same
+orchestrator. It must never invoke the CLI and scrape these display strings.
+
+If a later Studio run reports:
+
+```text
+Published run could not be added to the review projection.
+```
+
+the analysis itself succeeded. Open the returned run directory, validate its
+`analysis.json` and `manifest.json`, then retry the explicit projection import.
+Do not rerun Gemini merely to repair SQLite or D1.
 
 ## 4. Review procedure
 
@@ -979,24 +1000,24 @@ Do not apply forced audit fixes without reviewing breaking changes.
 
 ## 9. Maintainer validation
 
-| Scenario | Required |
+| Scenario                          | Required                       |
 |---|---|
-| Build/typecheck/unit tests | every change |
-| Bluedot helper contracts | every adapter change |
-| Granola helper contracts | every adapter change |
-| Non-zero transcript offset | every alignment change |
-| Built-in recipe registry | every recipe change |
-| Custom recipe rejection | every schema change |
-| Markdown/HTML escaping | every renderer change |
-| Gemini cleanup success/failure | every analyzer change |
-| Skill validator | every skill change |
-| Installer temporary-home test | every installer change |
-| Local SQLite import/list/get | every web data change |
-| Local Nuxt SSR build | every web change |
-| Synthetic Playwright Studio smoke | every Studio UI/auth change |
-| Cloudflare/D1 Nuxt build | every web or deployment change |
-| Access missing/invalid JWT denial | every auth change |
-| No tracked sensitive artifacts | every release |
+| Build/typecheck/unit tests        | every change                   |
+| Bluedot helper contracts          | every adapter change           |
+| Granola helper contracts          | every adapter change           |
+| Non-zero transcript offset        | every alignment change         |
+| Built-in recipe registry          | every recipe change            |
+| Custom recipe rejection           | every schema change            |
+| Markdown/HTML escaping            | every renderer change          |
+| Gemini cleanup success/failure    | every analyzer change          |
+| Skill validator                   | every skill change             |
+| Installer temporary-home test     | every installer change         |
+| Local SQLite import/list/get      | every web data change          |
+| Local Nuxt SSR build              | every web change               |
+| Synthetic Playwright Studio smoke | every Studio UI/auth change    |
+| Cloudflare/D1 Nuxt build          | every web or deployment change |
+| Access missing/invalid JWT denial | every auth change              |
+| No tracked sensitive artifacts    | every release                  |
 
 ## 10. Release procedure
 
@@ -1174,17 +1195,17 @@ expiry deletion that cannot prove byte removal remains `cleanup_failed`,
 emits only a sanitized failure count/code, and is retried by the next sweep;
 repeated failures require operator intervention.
 
-| Symptom | Meaning | Operator action |
+| Symptom                                 | Meaning                                                   | Operator action                                                     |
 |---|---|---|
-| HTTP 409 on a part | wrong order, conflicting replay, or another active writer | refresh status; resend only the exact next part |
-| HTTP 409 on delete | a part write or seal still owns the session | wait for authoritative status, then retry deletion |
-| HTTP 413 | declared recording/part exceeds a bound | select a smaller supported recording |
-| HTTP 422 on completion | incomplete bytes, digest mismatch, or MIME mismatch | reselect/verify the source; restart rather than overriding |
-| HTTP 507 | reservation or streaming write exhausted disk | free private disk space, then restart or abort the session |
-| `cleanup_failed` | deletion was attempted but not proven | repair permissions and retry abort; do not claim deletion |
-| terminal `failed` | receipt/file corruption or irrecoverable inconsistency | preserve sanitized diagnostics and create a new session |
-| `Reselect the same recording` | browser refreshed and intentionally forgot the `File` | choose the original file; Studio verifies the complete file binding |
-| `The selected recording does not match` | size, MIME, or complete-file fingerprint differs | choose the original file or explicitly delete and restart |
+| HTTP 409 on a part                      | wrong order, conflicting replay, or another active writer | refresh status; resend only the exact next part                     |
+| HTTP 409 on delete                      | a part write or seal still owns the session               | wait for authoritative status, then retry deletion                  |
+| HTTP 413                                | declared recording/part exceeds a bound                   | select a smaller supported recording                                |
+| HTTP 422 on completion                  | incomplete bytes, digest mismatch, or MIME mismatch       | reselect/verify the source; restart rather than overriding          |
+| HTTP 507                                | reservation or streaming write exhausted disk             | free private disk space, then restart or abort the session          |
+| `cleanup_failed`                        | deletion was attempted but not proven                     | repair permissions and retry abort; do not claim deletion           |
+| terminal `failed`                       | receipt/file corruption or irrecoverable inconsistency    | preserve sanitized diagnostics and create a new session             |
+| `Reselect the same recording`           | browser refreshed and intentionally forgot the `File`     | choose the original file; Studio verifies the complete file binding |
+| `The selected recording does not match` | size, MIME, or complete-file fingerprint differs          | choose the original file or explicitly delete and restart           |
 
 Maintainers validate the production-built boundary with:
 

@@ -164,3 +164,14 @@
 - Canceling the browser completion request does not cancel server-side
   sealing. Hide conflicting actions while sealing and make server deletion
   reject any active writer.
+- Do not race an in-flight Gemini upload against `AbortSignal` and abandon the
+  request: the remote file identity may arrive only when the boundary returns.
+  Cooperative cancellation waits for that identity, then performs exact-file
+  cleanup before stopping.
+- Warning-reporting failures must not mask an analysis failure or invalidate a
+  published bundle. Job event persistence may fail the active stage, but
+  cleanup/projection warning sinks are best-effort after the underlying
+  outcome is already known.
+- Validate generated/injected run IDs as one strict portable path segment
+  before creating a staging directory. Dependency injection is a trust
+  boundary too; never feed an unchecked factory value to recursive cleanup.
