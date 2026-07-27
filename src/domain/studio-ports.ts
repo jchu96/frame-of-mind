@@ -1,8 +1,10 @@
 import type {
   AnalysisJob,
   AnalysisJobEvent,
-  ComposerPayload,
   ConfigurationStatus,
+  ContextFileFormat,
+  MediaCreateRequest,
+  MediaPartReceipt,
   MediaSession,
   VerifiedImmutableJobInput,
 } from "./studio-schemas.js";
@@ -13,16 +15,19 @@ import type { ValidatedMediaTransition } from "./studio-state.js";
 
 export type BinaryChunkSource = AsyncIterable<Uint8Array>;
 
-export interface MediaSessionCreateInput {
-  expectedBytes: number;
-  mimeType: string;
-  retention: ComposerPayload["retention"];
-}
+export type MediaSessionCreateInput = MediaCreateRequest;
 
 export interface MediaPartInput {
   part: number;
   offset: number;
-  bytes: Uint8Array;
+  contentLength: number;
+  bytes: BinaryChunkSource;
+}
+
+export interface MediaPartWriteResult {
+  session: MediaSession;
+  receipt: MediaPartReceipt;
+  replayed: boolean;
 }
 
 export interface MediaSealReceipt {
@@ -43,19 +48,25 @@ export interface MediaStagingAdapter {
     id: string,
     input: MediaPartInput,
     options?: { signal?: AbortSignal },
-  ): Promise<MediaSession>;
+  ): Promise<MediaPartWriteResult>;
   seal(
     id: string,
-    options?: { signal?: AbortSignal },
+    options?: { expectedSha256?: string; signal?: AbortSignal },
   ): Promise<MediaSealReceipt>;
   transition(
     transition: ValidatedMediaTransition,
   ): Promise<MediaSession>;
   abort(id: string): Promise<MediaSession>;
-  delete(id: string): Promise<void>;
+  delete(id: string): Promise<MediaSession>;
+  expire(): Promise<MediaSession[]>;
+  reconcile(): Promise<{
+    repaired: string[];
+    deleted: string[];
+    failed: string[];
+  }>;
 }
 
-export type ContextFileFormat = "json" | "text" | "markdown" | "srt" | "vtt";
+export type { ContextFileFormat } from "./studio-schemas.js";
 
 export interface ContextFileCreateInput {
   format: ContextFileFormat;
@@ -84,6 +95,7 @@ export interface JobListQuery {
   cursor?: string;
   limit: number;
   stages?: AnalysisJobStage[];
+  order?: "newest" | "oldest";
 }
 
 export interface JobListPage {
@@ -97,6 +109,9 @@ export interface JobTransitionInput {
   nextStage: AnalysisJobStage;
   occurredAt: string;
   message?: string;
+  code?: string;
+  runId?: string;
+  projectionWarning?: string;
 }
 
 export interface InitialJobCreateInput {
@@ -123,10 +138,15 @@ export interface JobRepository {
    */
   createOrReplay(input: InitialJobCreateInput): Promise<JobCreateResult>;
   get(id: string): Promise<AnalysisJob | undefined>;
+  getByIdempotencyKey(key: string): Promise<AnalysisJob | undefined>;
   list(query: JobListQuery): Promise<JobListPage>;
-  events(jobId: string, afterSequence?: number): Promise<AnalysisJobEvent[]>;
+  events(
+    jobId: string,
+    afterSequence?: number,
+    limit?: number,
+  ): Promise<AnalysisJobEvent[]>;
   appendEvent(
-    event: Omit<AnalysisJobEvent, "sequence">,
+    event: ProgressEventInput,
   ): Promise<AnalysisJobEvent>;
   transition(input: JobTransitionInput): Promise<AnalysisJob>;
   requestCancellation(jobId: string, requestedAt: string): Promise<AnalysisJob>;
@@ -152,7 +172,21 @@ export interface AnalysisJobExecutionResult {
   projectionWarning?: string;
 }
 
+export class AnalysisExecutionIndeterminateError extends Error {
+  constructor() {
+    super(
+      "Analysis execution completed without a trustworthy publication receipt.",
+    );
+    this.name = "AnalysisExecutionIndeterminateError";
+  }
+}
+
 export interface AnalysisJobExecutor {
+  /**
+   * Executes a job after the local worker has atomically claimed it by moving
+   * it from queued to fetching_context. Progress events must remain bound to
+   * this job and must not repeat that initial claim or emit terminal stages.
+   */
   execute(
     job: AnalysisJob,
     options: {

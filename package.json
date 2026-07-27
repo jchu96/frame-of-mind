@@ -1,6 +1,6 @@
 {
   "name": "frameofmind",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Video in. Understanding out. Run recipe-driven analysis over Bluedot, Granola, or local meeting recordings with Gemini.",
   "license": "MIT",
@@ -38,10 +38,15 @@
     "check": "bun run typecheck && bun run test && bun run test:web && bun run build:cli && bun run build:web && bun run test:studio-http && bun run build:web:cloudflare && bun run spike:studio-streaming",
     "dev": "bun src/cli.ts",
     "install:skill": "node scripts/install-skill.mjs",
+    "smoke:gemini": "bun scripts/smoke-gemini.ts",
     "spike:studio-streaming": "bun scripts/run-studio-streaming-spike.ts",
     "start": "bun dist/cli.js",
     "studio": "bun scripts/run-studio.ts",
     "test": "vitest run",
+    "test:e2e": "bun --no-env-file scripts/run-playwright-e2e.ts",
+    "test:e2e:ci": "bun --no-env-file scripts/run-playwright-e2e.ts --fail-on-flaky-tests",
+    "test:e2e:server": "bun --no-env-file scripts/run-studio-e2e-server.ts",
+    "test:e2e:smoke": "bun --no-env-file scripts/run-playwright-e2e.ts --grep @smoke",
     "test:studio-http": "bun scripts/test-local-studio-http.ts",
     "test:web": "bun test apps/web/test",
     "test:watch": "vitest",
@@ -62,6 +67,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.0",
     "@types/bun": "1.3.14",
     "@types/node": "^24.10.0",
     "tsx": "^4.20.6",

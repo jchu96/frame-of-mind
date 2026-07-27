@@ -145,9 +145,12 @@ directory outside the repository:
 - per-session/part concurrency, chunk order, byte count, disk reservation, and
   final streamed digest are validated;
 - interrupted uploads can resume or abort;
-- abandoned staging entries expire;
+- every staged copy has a server-owned expiry independent of browser state;
+- refresh-resume binds and verifies the complete reselected file using
+  bounded-memory part digests before accepting missing parts;
 - user-owned source files are never deleted;
-- ephemeral staged copies are deleted after terminal job cleanup;
+- ephemeral staged copies are deleted after terminal job cleanup, with expiry
+  as the no-job/no-browser backstop;
 - retained-for-review copies require an explicit time-bounded choice;
 - deleted media can be reattached only after its streamed SHA-256 matches the
   run manifest.
@@ -194,8 +197,10 @@ Every transition records UTC time, progress metadata, and a sanitized message.
 Invalid transitions fail closed. Starting the same idempotency key cannot
 create duplicate analysis jobs. Cancellation intent is stored separately before
 the executor is signaled. `created`, `uploading`, `sealed`, `in_use`, `aborted`,
-`retained`, `expired`, `deleting`, and `deleted` belong to the media lifecycle,
-not the job.
+`retained`, `expired`, `deleting`, `cleanup_failed`, `deleted`, and `failed`
+belong to the media lifecycle, not the job. `cleanup_failed` is recoverable
+through another `deleting` attempt; `failed` is terminal corruption or
+inconsistency and is never used for a retryable filesystem cleanup error.
 
 ### FR-07 - Process Execution
 
@@ -260,20 +265,22 @@ Provisional local endpoints:
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/api/config/status` | Return non-secret connection and storage status |
-| `PUT` | `/api/config/:provider/session` | Validate/set or clear a process-memory API secret |
+| `GET` | `/api/studio/configuration` | Return non-secret connection and storage status |
+| `PUT` | `/api/studio/configuration/secrets/:name` | Validate/set a process-memory API secret |
+| `DELETE` | `/api/studio/configuration/secrets/:name` | Clear a process-memory API secret |
 | `GET` | `/api/providers/:provider/meetings` | Search authorized recent meetings |
 | `POST` | `/api/context-files` | Ingest one bounded private local context file |
 | `DELETE` | `/api/context-files/:id` | Delete staged local context |
-| `POST` | `/api/media` | Create an upload session |
-| `PUT` | `/api/media/:id/parts/:part` | Stream one validated local part |
-| `POST` | `/api/media/:id/complete` | Verify and seal staged media |
-| `DELETE` | `/api/media/:id` | Abort and clean staged media |
-| `POST` | `/api/jobs` | Validate a draft and create an analysis job |
-| `GET` | `/api/jobs` | List bounded job summaries |
-| `GET` | `/api/jobs/:id` | Read one job and stage history |
-| `POST` | `/api/jobs/:id/cancel` | Request durable cancellation |
-| `POST` | `/api/jobs/:id/retry` | Create a linked retry attempt |
+| `POST` | `/api/studio/media` | Create an idempotent upload session |
+| `GET` | `/api/studio/media/:id` | Read the authoritative resumable receipt |
+| `PUT` | `/api/studio/media/:id/parts/:part` | Stream one exact part with `Upload-Offset` |
+| `POST` | `/api/studio/media/:id/complete` | Verify MIME/digest and atomically seal staged media |
+| `DELETE` | `/api/studio/media/:id` | Abort and clean staged media idempotently |
+| `POST` | `/api/studio/jobs` | Validate a draft and create an analysis job |
+| `GET` | `/api/studio/jobs` | List bounded job summaries |
+| `GET` | `/api/studio/jobs/:id` | Read one job and stage history |
+| `POST` | `/api/studio/jobs/:id/cancel` | Request durable cancellation |
+| `POST` | `/api/studio/jobs/:id/retry` | Create a linked retry attempt |
 | `GET` | `/api/runs/:id/media` | Stream authorized retained local media by opaque ID |
 | `POST` | `/api/runs/:id/media/reattach` | Bind matching reattached media by manifest digest |
 

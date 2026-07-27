@@ -41,9 +41,9 @@ describe("local Studio per-launch session", () => {
 
   test("redacts bootstrap material from URLs and arbitrary log text", () => {
     const dirtyUrl =
-      `http://127.0.0.1:3000/#studio-bootstrap=${bootstrapToken}`;
+      `http://127.0.0.1:3000/__studio/launch#studio-bootstrap=${bootstrapToken}`;
     expect(redactStudioBootstrap(dirtyUrl, [bootstrapToken])).toBe(
-      "http://127.0.0.1:3000/#studio-bootstrap=%5BREDACTED%5D",
+      "http://127.0.0.1:3000/__studio/launch#studio-bootstrap=%5BREDACTED%5D",
     );
     expect(redactStudioBootstrap(
       `bootstrap failed for ${bootstrapToken}`,
@@ -58,16 +58,28 @@ describe("local Studio per-launch session", () => {
     expect(shouldRegisterLocalStudioRoutes("node-server", false)).toBe(false);
   });
 
-  test("protects the Connections page and every Studio API route", () => {
+  test("protects Studio data surfaces while leaving only launch bootstrap inert", () => {
+    expect(requiresLocalStudioSession("/")).toBe(true);
     expect(requiresLocalStudioSession("/connections")).toBe(true);
     expect(requiresLocalStudioSession("/connections/")).toBe(true);
+    expect(requiresLocalStudioSession("/recording")).toBe(true);
+    expect(requiresLocalStudioSession("/recording/")).toBe(true);
+    expect(requiresLocalStudioSession("/import")).toBe(true);
+    expect(requiresLocalStudioSession("/runs/run_01K123")).toBe(true);
+    expect(requiresLocalStudioSession("/api/runs")).toBe(true);
+    expect(requiresLocalStudioSession("/api/context-files")).toBe(true);
+    expect(requiresLocalStudioSession(
+      "/api/context-files/context_01K123456789ABC",
+    )).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/session")).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/configuration")).toBe(true);
     expect(requiresLocalStudioSession(
       new URL("http://127.0.0.1/connections?probe=1").pathname,
     )).toBe(true);
-    expect(requiresLocalStudioSession("/")).toBe(false);
-    expect(requiresLocalStudioSession("/api/session")).toBe(false);
+    expect(requiresLocalStudioSession("/api/session")).toBe(true);
+    expect(requiresLocalStudioSession("/__studio/launch")).toBe(false);
+    expect(requiresLocalStudioSession("/__studio/bootstrap")).toBe(false);
+    expect(requiresLocalStudioSession("/api/health")).toBe(false);
     expect(requiresLocalStudioSession("/connections-help")).toBe(false);
   });
 });

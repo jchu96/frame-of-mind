@@ -183,19 +183,32 @@ async function connectOAuth(name: "bluedot" | "granola") {
       />
 
       <section v-else class="mt-10 grid gap-5 lg:grid-cols-3" aria-label="Provider connections">
-        <UCard v-for="name in (['gemini', 'bluedot', 'granola'] as ProviderName[])" :key="name">
+        <UCard
+          v-for="name in (['gemini', 'bluedot', 'granola'] as ProviderName[])"
+          :key="name"
+          role="region"
+          :aria-labelledby="`provider-heading-${name}`"
+        >
           <template #header>
             <div class="flex items-start justify-between gap-4">
               <div>
                 <p class="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">
                   {{ name === 'gemini' ? 'Analysis' : 'Meeting context' }}
                 </p>
-                <h2 class="mt-1 text-xl font-black capitalize">{{ name }}</h2>
+                <h2
+                  :id="`provider-heading-${name}`"
+                  class="mt-1 text-xl font-black capitalize"
+                >
+                  {{ name }}
+                  <span class="sr-only"> connection</span>
+                </h2>
               </div>
               <UBadge
+                role="status"
                 :color="provider(name)?.connected ? 'success' : 'neutral'"
                 :variant="provider(name)?.connected ? 'soft' : 'outline'"
               >
+                <span class="sr-only">{{ name }} connection: </span>
                 {{ provider(name)?.connected ? 'Configured' : 'Not configured' }}
               </UBadge>
             </div>

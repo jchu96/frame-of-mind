@@ -35,6 +35,23 @@ const studioBootstrapPlugin = fileURLToPath(
 const studioConnectionsPage = fileURLToPath(
   new URL("./server-local/studio-ui/connections.vue", import.meta.url),
 );
+const studioHomePage = fileURLToPath(
+  new URL("./server-local/studio-ui/home.vue", import.meta.url),
+);
+const studioLaunchPage = fileURLToPath(
+  new URL("./server-local/studio-ui/launch.vue", import.meta.url),
+);
+const studioRecordingPage = fileURLToPath(
+  new URL("./server-local/studio-ui/recording.vue", import.meta.url),
+);
+const appFrame = fileURLToPath(
+  new URL(
+    localStudioEnabled
+      ? "./server-local/studio-ui/app-frame.vue"
+      : "./app/components/ReviewAppFrame.vue",
+    import.meta.url,
+  ),
+);
 const studioConfigurationStatusHandler = fileURLToPath(
   new URL("./server-local/studio-configuration/status.get.ts", import.meta.url),
 );
@@ -46,6 +63,51 @@ const studioSecretDeleteHandler = fileURLToPath(
 );
 const studioOAuthHandler = fileURLToPath(
   new URL("./server-local/studio-configuration/oauth.post.ts", import.meta.url),
+);
+const studioMediaStartup = fileURLToPath(
+  new URL("./server-local/studio-media/startup.ts", import.meta.url),
+);
+const studioContextStartup = fileURLToPath(
+  new URL("./server-local/studio-context/startup.ts", import.meta.url),
+);
+const studioJobsStartup = fileURLToPath(
+  new URL("./server-local/studio-jobs/startup.ts", import.meta.url),
+);
+const studioMediaCreateHandler = fileURLToPath(
+  new URL("./server-local/studio-media/create.post.ts", import.meta.url),
+);
+const studioMediaStatusHandler = fileURLToPath(
+  new URL("./server-local/studio-media/status.get.ts", import.meta.url),
+);
+const studioMediaPartHandler = fileURLToPath(
+  new URL("./server-local/studio-media/part.put.ts", import.meta.url),
+);
+const studioMediaCompleteHandler = fileURLToPath(
+  new URL("./server-local/studio-media/complete.post.ts", import.meta.url),
+);
+const studioMediaAbortHandler = fileURLToPath(
+  new URL("./server-local/studio-media/abort.delete.ts", import.meta.url),
+);
+const studioContextCreateHandler = fileURLToPath(
+  new URL("./server-local/studio-context/create.post.ts", import.meta.url),
+);
+const studioContextDeleteHandler = fileURLToPath(
+  new URL("./server-local/studio-context/delete.ts", import.meta.url),
+);
+const studioJobsListHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/index.get.ts", import.meta.url),
+);
+const studioJobsCreateHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/index.post.ts", import.meta.url),
+);
+const studioJobDetailHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/detail.get.ts", import.meta.url),
+);
+const studioJobCancelHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/cancel.post.ts", import.meta.url),
+);
+const studioJobRetryHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/retry.post.ts", import.meta.url),
 );
 
 const localHandlers = [
@@ -85,6 +147,66 @@ const localHandlers = [
           method: "post",
           handler: studioOAuthHandler,
         },
+        {
+          route: "/api/studio/media",
+          method: "post",
+          handler: studioMediaCreateHandler,
+        },
+        {
+          route: "/api/studio/media/:id",
+          method: "get",
+          handler: studioMediaStatusHandler,
+        },
+        {
+          route: "/api/studio/media/:id/parts/:part",
+          method: "put",
+          handler: studioMediaPartHandler,
+        },
+        {
+          route: "/api/studio/media/:id/complete",
+          method: "post",
+          handler: studioMediaCompleteHandler,
+        },
+        {
+          route: "/api/studio/media/:id",
+          method: "delete",
+          handler: studioMediaAbortHandler,
+        },
+        {
+          route: "/api/context-files",
+          method: "post",
+          handler: studioContextCreateHandler,
+        },
+        {
+          route: "/api/context-files/:id",
+          method: "delete",
+          handler: studioContextDeleteHandler,
+        },
+        {
+          route: "/api/studio/jobs",
+          method: "get",
+          handler: studioJobsListHandler,
+        },
+        {
+          route: "/api/studio/jobs",
+          method: "post",
+          handler: studioJobsCreateHandler,
+        },
+        {
+          route: "/api/studio/jobs/:id",
+          method: "get",
+          handler: studioJobDetailHandler,
+        },
+        {
+          route: "/api/studio/jobs/:id/cancel",
+          method: "post",
+          handler: studioJobCancelHandler,
+        },
+        {
+          route: "/api/studio/jobs/:id/retry",
+          method: "post",
+          handler: studioJobRetryHandler,
+        },
       ]
     : []),
   ...(studioSpikeEnabled
@@ -112,21 +234,45 @@ export default defineNuxtConfig({
   hooks: {
     "pages:extend"(pages) {
       if (localStudioEnabled) {
+        const indexPage = pages.find((page) => page.path === "/");
+        if (indexPage) {
+          indexPage.file = studioHomePage;
+        } else {
+          pages.push({
+            name: "index",
+            path: "/",
+            file: studioHomePage,
+          });
+        }
         pages.push({
           name: "connections",
           path: "/connections",
           file: studioConnectionsPage,
         });
+        pages.push({
+          name: "studio-launch",
+          path: "/__studio/launch",
+          file: studioLaunchPage,
+        });
+        pages.push({
+          name: "recording",
+          path: "/recording",
+          file: studioRecordingPage,
+        });
       }
     },
   },
   alias: {
+    "#frame-app": appFrame,
     "#frame-contracts": `${projectRoot}/src/domain/schemas.ts`,
     "#frame-store": storeImplementation,
   },
   nitro: {
     preset: nitroPreset,
     handlers: localHandlers,
+    plugins: localStudioEnabled
+      ? [studioMediaStartup, studioContextStartup, studioJobsStartup]
+      : [],
   },
   runtimeConfig: {
     authMode: "off",
@@ -136,7 +282,7 @@ export default defineNuxtConfig({
     cloudflareAccessAud: "",
     public: {
       appName: "Frame of Mind",
-      appVersion: "0.2.0",
+      appVersion: "0.2.1",
       studioEnabled: localStudioEnabled,
     },
   },

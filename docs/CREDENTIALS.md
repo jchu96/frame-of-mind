@@ -25,18 +25,20 @@ belong to Google Cloud and Google AI Studio.
 
 ## Why the current path uses an API key
 
-The CLI uploads videos through:
+The CLI uploads videos through Google's documented resumable Files protocol:
 
 ```ts
-const ai = new GoogleGenAI({ apiKey });
-await ai.files.upload({ file: videoPath });
+POST /upload/v1beta/files
+X-Goog-Api-Key: <local key>
+X-Goog-Upload-Protocol: resumable
 ```
 
-Google documents `files.upload` for the Gemini Developer API. The SDK does not
-provide this upload method on a Vertex AI client. Vertex therefore needs a
-different media path, such as a Google Cloud Storage object plus Vertex
-multimodal input. That backend is architectural future work, not an environment
-variable switch.
+The upload is streamed to the exact signed Gemini URL returned by the start
+request. `@google/genai` handles file status, generation, and deletion. The
+Gemini Developer Files service is not available on a Vertex AI client. Vertex
+therefore needs a different media path, such as a Google Cloud Storage object
+plus Vertex multimodal input. That backend is architectural future work, not an
+environment variable switch.
 
 ## Option A: New user in Google AI Studio
 
@@ -128,9 +130,11 @@ The local Studio uses the same file:
 bun run studio
 ```
 
-Studio opens a one-time URL and visits **Connections**. An environment value
-always takes precedence over a temporary value entered in the page. To replace
-an environment value, edit `.env`, stop Bun, and launch Studio again.
+Studio opens a one-time URL on an inert launch page, exchanges the fragment,
+and then visits **Connections**. Every data-bearing Studio page/API requires
+the resulting HttpOnly session. An environment value always takes precedence
+over a temporary value entered in the page. To replace an environment value,
+edit `.env`, stop Bun, and launch Studio again.
 
 If automatic browser opening fails, stop Studio and rerun with
 `FRAME_OF_MIND_STUDIO_PRINT_URL=1`. This explicitly prints the sensitive

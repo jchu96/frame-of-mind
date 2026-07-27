@@ -73,6 +73,11 @@ export function listBuiltInRecipes(): AnalysisRecipe[] {
   return Object.values(recipes);
 }
 
+export function digestRecipe(recipe: AnalysisRecipe): Promise<string> {
+  const canonical = JSON.stringify(recipe, Object.keys(recipe).sort());
+  return sha256Utf8(canonical);
+}
+
 export async function loadRecipe(id: string, recipeFile?: string): Promise<{
   recipe: AnalysisRecipe;
   custom: boolean;
@@ -82,11 +87,10 @@ export async function loadRecipe(id: string, recipeFile?: string): Promise<{
   const recipe = recipeFile
     ? recipeSchema.parse(JSON.parse(await readFile(resolve(recipeFile), "utf8")))
     : builtInRecipe(id);
-  const canonical = JSON.stringify(recipe, Object.keys(recipe).sort());
   return {
     recipe,
     custom: Boolean(recipeFile),
-    sha256: await sha256Utf8(canonical),
-    revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-07-26.1"),
+    sha256: await digestRecipe(recipe),
+    revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-07-27.1"),
   };
 }

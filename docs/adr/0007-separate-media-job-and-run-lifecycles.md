@@ -2,6 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Amended: 2026-07-27 — cleanup failure is recoverable; every media mode has
+  a continuously enforced server-owned expiry; browser upload sessions bind
+  the complete file; operational job persistence remains local-only and does
+  not duplicate media-receipt authority; the local worker claims one queued
+  attempt at a time and never resumes abandoned provider work
 
 ## Invariant
 
@@ -34,6 +39,7 @@ retained -> in_use
 created|uploading -> aborted
 created|uploading|sealed|retained -> expired
 sealed|in_use|retained|expired|aborted -> deleting -> deleted
+deleting -> cleanup_failed -> deleting
 any nonterminal state -> failed
 ```
 
@@ -42,14 +48,30 @@ any nonterminal state -> failed
   sufficient disk space, and computes the final SHA-256 by streaming the sealed
   file.
 - One writer owns a part/session transition at a time.
+- Delete and seal use the same per-session writer exclusion, so a disconnected
+  browser cannot race cleanup against a seal that is still hashing.
+- `cleanup_failed` records a sanitized retryable deletion failure. It returns
+  only to `deleting`; it is deliberately distinct from terminal `failed`.
 - Original user files are never deleted.
 - The default mode is ephemeral: delete the staged copy after terminal job
-  cleanup.
+  cleanup, with a server-owned expiry as the backstop when no job or browser
+  receipt survives.
 - Retained-for-review mode is explicit and time-bounded, with visible expiry
   and manual deletion.
+- Expiry is enforced during restart reconciliation and by a lifecycle-owned,
+  non-overlapping periodic sweep while the local server remains open. Busy
+  sessions are skipped until the next sweep, and retryable cleanup failures
+  remain durable while later sweeps retry them.
+- A browser-created session records a SHA-256 binding over the ordered upload
+  part digests. Resume re-hashes the complete reselected file in bounded parts,
+  so matching size, MIME, or a confirmed prefix cannot splice two recordings.
 - An expired/deleted recording can be reattached. The Studio accepts it only
   when its streamed SHA-256 matches the run manifest.
 - Recording bytes never enter SQLite, D1, the run bundle, logs, or analytics.
+- The private media-session JSON receipt remains the sole authority for staged
+  media ownership, retention, and cleanup. Jobs carry only opaque media IDs and
+  immutable-input digests; they do not copy paths, signed URLs, transcripts,
+  provider payloads, or the media receipt into SQLite.
 
 ### Analysis job
 
@@ -75,8 +97,28 @@ interrupted
 - Retry creates a new linked attempt with its own ID and idempotency key.
 - Restart turns an active job into `interrupted`; it does not invent success,
   failure, or automatic remote resume.
-- SQLite job and event rows are operational authority until terminal
-  publication. They are not described as rebuildable run projections.
+- Local-only SQLite job and event rows are operational authority until terminal
+  publication. Writes that allocate an event sequence or claim an idempotency
+  key use an immediate transaction so concurrent local connections cannot
+  create duplicate attempts or event positions.
+- Job and event tables are deliberately absent from the shared SQLite/D1 run
+  projection schema and Cloudflare build. They are not described as rebuildable
+  run projections, and hosted job execution requires a separate future
+  architecture decision.
+- The process-local worker atomically claims the oldest queued job, runs at
+  concurrency one, and owns terminal outcomes. Its typed orchestration adapter
+  must bind progress to the claimed attempt and reassert immutable model,
+  provider, focus, and recipe provenance over just-in-time local resolution.
+- Startup marks abandoned active work `interrupted`; shutdown aborts the active
+  signal and waits for cooperative cleanup. There is no automatic Gemini
+  resume, and the application must construct only one worker per local job
+  database.
+- Operator cancellation is committed before signaling execution. Linked retry
+  creation and execution both consult the independent media receipt and
+  require an exact, unexpired retained SHA-256. Execution leases the receipt
+  as `in_use` until cleanup; retry idempotency replays an existing attempt even
+  if its media later expires. An indeterminate publication receipt outranks a
+  concurrent cancellation.
 
 ### Durable run
 
@@ -106,6 +148,8 @@ Costs:
 - the UI must display media, job, and run status separately;
 - reattachment hashes the selected recording before playback;
 - retained playback consumes local disk until expiry or deletion;
+- initial stage and refresh-resume each read the complete selected file once to
+  establish or verify its bounded-memory file binding;
 - future annotations need a new durable contract.
 
 ## Alternatives Considered

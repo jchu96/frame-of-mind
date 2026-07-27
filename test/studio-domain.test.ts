@@ -6,6 +6,9 @@ import {
   composerPayloadSchema,
   configurationStatusSchema,
   digestImmutableJobInput,
+  jobCancelRequestSchema,
+  jobCreateRequestSchema,
+  jobRetryRequestSchema,
   mediaSessionSchema,
   validateAnalysisJob,
   verifyImmutableJobInput,
@@ -34,11 +37,12 @@ const immutableInput = {
   },
   recipe: {
     id: "issue-review",
+    custom: false,
     revision: "builtin-v1",
     sha256,
   },
   model: "gemini-3.6-flash",
-  retention: { mode: "ephemeral" as const },
+  retention: { mode: "ephemeral" as const, expiresAt: later },
 };
 const canonicalInputDigest = await digestImmutableJobInput(immutableInput);
 
@@ -141,6 +145,8 @@ describe("Studio media-session state machine", () => {
       ["retained", "expired"],
       ["expired", "deleting"],
       ["deleting", "deleted"],
+      ["deleting", "cleanup_failed"],
+      ["cleanup_failed", "deleting"],
       ["uploading", "failed"],
     ] as const;
     for (const [from, to] of legalTransitions) {
@@ -237,12 +243,41 @@ describe("Studio analysis-job contracts", () => {
     }
   });
 
+  it("requires a published run before recording a projection warning", () => {
+    expect(() => analysisJobSchema.parse(job({
+      stage: "cleaning_up",
+      projectionWarning:
+        "Published run could not be added to the review projection.",
+      updatedAt: later,
+    }))).toThrow(/published run/);
+  });
+
   it("binds the stored input digest to canonical immutable input", async () => {
     const verified = await verifyImmutableJobInput(immutableInput);
     expect(verified.inputDigest).toBe(canonicalInputDigest);
     await expect(validateAnalysisJob(job({
       inputDigest: "b".repeat(64),
     }))).rejects.toThrow(/canonical SHA-256/);
+  });
+
+  it("keeps pre-executor job receipts readable without recipe provenance", async () => {
+    const legacyInput = {
+      ...immutableInput,
+      recipe: {
+        id: immutableInput.recipe.id,
+        revision: immutableInput.recipe.revision,
+        sha256: immutableInput.recipe.sha256,
+      },
+    };
+    const verified = await verifyImmutableJobInput(legacyInput);
+
+    await expect(validateAnalysisJob({
+      ...job(),
+      input: verified.input,
+      inputDigest: verified.inputDigest,
+    })).resolves.toMatchObject({
+      input: { recipe: { id: "issue-review" } },
+    });
   });
 
   it("replays the same immutable request and rejects key reuse for different input", () => {
@@ -345,9 +380,17 @@ describe("Studio boundary schemas", () => {
       status: "sealed",
       expectedBytes: 1_024,
       receivedBytes: 1_024,
+      partSizeBytes: 1_024,
+      parts: [{
+        part: 0,
+        offset: 0,
+        bytes: 1_024,
+        sha256,
+        receivedAt: later,
+      }],
       mimeType: "video/mp4",
       sha256,
-      retention: { mode: "ephemeral" },
+      retention: { mode: "ephemeral", expiresAt: later },
       createdAt: now,
       updatedAt: later,
     })).toMatchObject({ status: "sealed", sha256 });
@@ -356,9 +399,17 @@ describe("Studio boundary schemas", () => {
       status: "sealed",
       expectedBytes: 1_024,
       receivedBytes: 1_024,
+      partSizeBytes: 1_024,
+      parts: [{
+        part: 0,
+        offset: 0,
+        bytes: 1_024,
+        sha256,
+        receivedAt: later,
+      }],
       mimeType: "video/mp4",
       sha256,
-      retention: { mode: "ephemeral" },
+      retention: { mode: "ephemeral", expiresAt: later },
       path: "/private/tmp/recording.mp4",
       createdAt: now,
       updatedAt: later,
@@ -368,9 +419,17 @@ describe("Studio boundary schemas", () => {
       status: "retained",
       expectedBytes: 1_024,
       receivedBytes: 1_024,
+      partSizeBytes: 1_024,
+      parts: [{
+        part: 0,
+        offset: 0,
+        bytes: 1_024,
+        sha256,
+        receivedAt: later,
+      }],
       mimeType: "video/mp4",
       sha256,
-      retention: { mode: "ephemeral" },
+      retention: { mode: "ephemeral", expiresAt: later },
       createdAt: now,
       updatedAt: later,
     })).toThrow(/retained receipt/);
@@ -427,6 +486,7 @@ describe("Studio boundary schemas", () => {
         provider: "file",
         transport: "file",
         contextFileId: "context_01K12345678",
+        contextFileSha256: "c".repeat(64),
       },
       recipe: { id: "issue-review" },
       model: "gemini-3.6-flash",
@@ -443,6 +503,41 @@ describe("Studio boundary schemas", () => {
         mode: "retained",
         ttlSeconds: MAX_RETAINED_MEDIA_TTL_SECONDS + 1,
       },
+    })).toThrow();
+  });
+
+  it("keeps job mutation bodies strict and server-timestamped", () => {
+    expect(jobCreateRequestSchema.parse({
+      idempotencyKey: "studio-job-create-0001",
+      input: immutableInput,
+    })).toEqual({
+      idempotencyKey: "studio-job-create-0001",
+      input: immutableInput,
+    });
+    expect(jobRetryRequestSchema.parse({
+      idempotencyKey: "studio-job-retry-0001",
+    })).toEqual({
+      idempotencyKey: "studio-job-retry-0001",
+    });
+    expect(jobCancelRequestSchema.parse({})).toEqual({});
+    expect(() => jobCancelRequestSchema.parse({
+      requestedAt: now,
+    })).toThrow();
+    expect(() => jobCreateRequestSchema.parse({
+      idempotencyKey: "studio-job-create-0001",
+      input: {
+        ...immutableInput,
+        recipe: {
+          id: "issue-review",
+          revision: "builtin-v1",
+          sha256,
+        },
+      },
+    })).toThrow();
+    expect(() => jobCreateRequestSchema.parse({
+      idempotencyKey: "studio-job-create-0001",
+      input: immutableInput,
+      filesystemPath: "/private/recording.mp4",
     })).toThrow();
   });
 });

@@ -49,29 +49,41 @@ async function importRun() {
 
         <div class="fom-panel mt-8 p-6 sm:p-8">
           <form class="space-y-6" @submit.prevent="importRun">
-            <label class="block">
-              <span class="text-sm font-bold">analysis.json</span>
-              <span class="mt-1 block text-xs text-zinc-500">Structured analysis records; no raw transcript.</span>
+            <div>
+              <label for="analysis-file" class="block text-sm font-bold">
+                analysis.json
+              </label>
+              <span id="analysis-file-description" class="mt-1 block text-xs text-zinc-500">
+                Structured analysis records; no raw transcript.
+              </span>
               <input
+                id="analysis-file"
                 type="file"
+                aria-describedby="analysis-file-description"
                 accept="application/json,.json"
                 required
                 class="mt-3 block w-full border border-zinc-300 bg-white p-3 text-sm file:mr-4 file:border-0 file:bg-emerald-100 file:px-3 file:py-2 file:font-bold"
                 @change="selectFile('analysis', $event)"
               >
-            </label>
+            </div>
 
-            <label class="block">
-              <span class="text-sm font-bold">manifest.json</span>
-              <span class="mt-1 block text-xs text-zinc-500">Run provenance, hashes, alignment, and cleanup state.</span>
+            <div>
+              <label for="manifest-file" class="block text-sm font-bold">
+                manifest.json
+              </label>
+              <span id="manifest-file-description" class="mt-1 block text-xs text-zinc-500">
+                Run provenance, hashes, alignment, and cleanup state.
+              </span>
               <input
+                id="manifest-file"
                 type="file"
+                aria-describedby="manifest-file-description"
                 accept="application/json,.json"
                 required
                 class="mt-3 block w-full border border-zinc-300 bg-white p-3 text-sm file:mr-4 file:border-0 file:bg-emerald-100 file:px-3 file:py-2 file:font-bold"
                 @change="selectFile('manifest', $event)"
               >
-            </label>
+            </div>
 
             <UAlert
               color="neutral"

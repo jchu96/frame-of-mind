@@ -2,6 +2,7 @@ import {
   LOCAL_STUDIO_BOOTSTRAP_FRAGMENT,
   LOCAL_STUDIO_BOOTSTRAP_PATH,
   LOCAL_STUDIO_CLEAN_PATH,
+  LOCAL_STUDIO_LAUNCH_PATH,
 } from "./contract";
 
 export default defineNuxtPlugin(() => {
@@ -19,7 +20,7 @@ export default defineNuxtPlugin(() => {
       hash.slice(LOCAL_STUDIO_BOOTSTRAP_FRAGMENT.length),
     );
   } catch {
-    window.location.replace("/");
+    window.location.replace(`${LOCAL_STUDIO_LAUNCH_PATH}?error=invalid`);
     return;
   }
 
@@ -29,6 +30,6 @@ export default defineNuxtPlugin(() => {
   }).then(({ redirect }) => {
     window.location.replace(redirect || LOCAL_STUDIO_CLEAN_PATH);
   }).catch(() => {
-    window.location.replace("/");
+    window.location.replace(`${LOCAL_STUDIO_LAUNCH_PATH}?error=invalid`);
   });
 });

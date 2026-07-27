@@ -4,6 +4,34 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-07-27 — Local context staging is bounded and single-use
+
+Studio accepts only five text-oriented formats through an 8 MiB private upload.
+The receipt stays outside SQLite, execution normalizes through
+`FileContextSource`, and the executor deletes the staged copy when its lease
+ends. One-hour expiry is the abandoned-upload backstop. See ADR 0011.
+
+## 2026-07-27 — Resumable upload is shipped; local Zod remains authoritative
+
+The production Bun adapter uses Google's documented resumable Files upload,
+the SDK for status/generation/deletion, an allowlisted provider schema, and the
+complete local Zod contract. Beta Interactions remains outside production.
+See ADR 0010.
+
+## 2026-07-27 — Transcript-first scope is semantic, not speaker-exclusive
+
+Topic- or speaker-focused analysis selects bounded local media derivatives
+before Gemini upload, while retaining the complete relevant conversational
+turn. Direct requests, collaborative clarification, and analyst inference stay
+distinguishable. See ADR 0009.
+
+## 2026-07-27 — The repository skill has no activation shim
+
+`.agents/skills/frame-of-mind/` is the canonical real skill. The maintainer's
+dotfiles, Codex, Claude, and shared-agent discovery paths symlink directly to
+it. Portable colleague and Windows installs may copy that directory through the
+managed installer.
+
 ## 2026-07-26 — Local Studio runs through Bun before hosted execution
 
 Phase A is a Nuxt Studio controlled through a per-launch authenticated local
@@ -72,3 +100,61 @@ The first Frame of Mind MCP surface is deferred to the next iteration. Local
 stdio and Cloudflare Streamable HTTP will share read-only run query contracts;
 analysis, media, provider authentication, deletion, and publishing stay outside
 the initial tool set.
+
+## 2026-07-27 — Cleanup failure is recoverable, media failure is terminal
+
+Local media deletion transitions through `deleting`. A failed filesystem
+cleanup persists `cleanup_failed` and may retry only through `deleting`;
+terminal `failed` is reserved for corrupt or irreconcilable receipt/file state.
+This prevents the UI from claiming deletion while preserving an honest repair
+path. See the amended ADR 0007.
+
+## 2026-07-27 — CLI and Studio share one analysis orchestrator
+
+The CLI owns argument parsing and terminal rendering only. Provider access,
+Gemini analysis, cancellation boundaries, cleanup, validation, atomic
+publication, and optional projection are implemented once in the typed
+`AnalysisOrchestrator`. The future Bun executor consumes its events directly;
+it never shells out to the CLI or parses display text.
+
+## 2026-07-27 — Job SQLite does not duplicate media receipt authority
+
+Local job and event tables are operational authority for execution only. They
+store the opaque media/context references and digests required by immutable job
+input, while Phase 3's private JSON receipt remains authoritative for media
+existence, retention, and cleanup. D1 remains limited to completed-run
+projection tables.
+
+## 2026-07-27 — The first executor is one process-local durable worker
+
+One singleton worker per local SQLite database claims queued attempts
+oldest-first and runs at concurrency one. Repository state, not an in-memory
+queue, remains authoritative. Startup marks abandoned active attempts
+interrupted; shutdown uses cooperative abort and waits for cleanup. The typed
+adapter reuses `AnalysisOrchestrator` and binds immutable model/recipe/provider
+values rather than invoking or scraping the CLI.
+
+## 2026-07-27 — Cancellation and retry share one control service
+
+`LocalStudioJobControl` persists cancellation before signaling the worker and
+creates linked retries only after the separate retained-media receipt proves
+the exact digest and expiry. Existing retry idempotency keys replay before the
+media check; new retries recheck retained media again immediately before
+orchestration and lease it as `in_use` until execution cleanup. A possibly
+published indeterminate result outranks concurrent cancellation.
+
+## 2026-07-27 — Job HTTP surface fails closed before runtime wiring
+
+Local job endpoints live under the already session-protected
+`/api/studio/jobs` prefix and are registered only in enabled node-server
+builds. Their route/service contracts are present before the process singleton,
+but return HTTP 503 until repository, control, worker, and executor are wired
+together; a route must never acknowledge work that cannot execute.
+
+## 2026-07-27 — One local runtime owns job execution and run projection
+
+The local Nitro process constructs one Bun SQLite connection, job repository,
+worker, control service, typed orchestrator adapter, and completed-run
+projection. Private media paths resolve only during an exact `in_use` lease.
+Job execution never opens an interactive OAuth callback; missing or expired
+provider authorization requires explicit reconnection.

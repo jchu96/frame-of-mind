@@ -1,14 +1,24 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
 const port = 34_000 + Math.floor(Math.random() * 10_000);
 const baseUrl = `http://127.0.0.1:${port}`;
+const mediaRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-http-media-"));
 const environment = {
   ...process.env,
   FRAME_OF_MIND_STUDIO: "1",
   FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: bootstrapToken,
+  FRAME_OF_MIND_CHECKOUT_ROOT: process.cwd(),
+  FRAME_OF_MIND_MEDIA_ROOT: mediaRoot,
+  FRAME_OF_MIND_CONTEXT_ROOT: join(mediaRoot, "context"),
   HOST: "127.0.0.1",
   NITRO_HOST: "127.0.0.1",
   PORT: String(port),
   NITRO_PORT: String(port),
+  NUXT_SQLITE_PATH: join(mediaRoot, "studio.sqlite"),
 };
 delete environment.NITRO_UNIX_SOCKET;
 
@@ -53,7 +63,7 @@ function createStudioProbe(origin: string) {
     },
     mutate(
       path: string,
-      method: "PUT" | "DELETE",
+      method: "POST" | "PUT" | "DELETE",
       body: unknown,
       headers: Record<string, string> = {},
     ) {
@@ -61,6 +71,40 @@ function createStudioProbe(origin: string) {
         method,
         headers: { ...jsonHeaders(), ...headers },
         body: JSON.stringify(body),
+      });
+    },
+    upload(
+      path: string,
+      bytes: Uint8Array,
+      headers: Record<string, string> = {},
+    ) {
+      return fetch(`${origin}${path}`, {
+        method: "PUT",
+        headers: {
+          "content-type": "video/mp4",
+          "content-length": String(bytes.byteLength),
+          origin,
+          ...(cookie ? { cookie } : {}),
+          ...headers,
+        },
+        body: bytes,
+      });
+    },
+    uploadContext(
+      bytes: Uint8Array,
+      headers: Record<string, string> = {},
+    ) {
+      return fetch(`${origin}/api/context-files`, {
+        method: "POST",
+        headers: {
+          "content-type": "text/vtt",
+          "content-length": String(bytes.byteLength),
+          "x-context-format": "vtt",
+          origin,
+          ...(cookie ? { cookie } : {}),
+          ...headers,
+        },
+        body: bytes,
       });
     },
   };
@@ -105,6 +149,19 @@ try {
 
   const probe = createStudioProbe(baseUrl);
   await expectStatus(
+    await probe.get("/"),
+    401,
+    "Studio Home requires a session",
+  );
+  const launchPage = await expectStatus(
+    await probe.get("/__studio/launch"),
+    200,
+    "inert launch page remains available for fragment exchange",
+  );
+  if (!(await launchPage.text()).includes("Opening private Studio")) {
+    throw new Error("Local Studio launch page did not render its inert exchange state.");
+  }
+  await expectStatus(
     await probe.get("/connections?probe=1"),
     401,
     "query-bearing Connections page requires a session",
@@ -118,6 +175,18 @@ try {
     await probe.get("/api/studio/session", { host: "attacker.example" }),
     403,
     "hostile Host fails closed",
+  );
+  await expectStatus(
+    await probe.get("/api/studio/jobs"),
+    401,
+    "job list requires a Studio session",
+  );
+  await expectStatus(
+    await probe.uploadContext(new TextEncoder().encode(
+      "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nSynthetic context\n",
+    )),
+    401,
+    "context-file staging requires a Studio session",
   );
   await expectStatus(
     await probe.bootstrap(bootstrapToken, {
@@ -149,6 +218,28 @@ try {
   if (bootstrapBody.redirect !== "/connections") {
     throw new Error("Bootstrap did not return the clean Connections path.");
   }
+  const jobs = await expectStatus(
+    await probe.get("/api/studio/jobs"),
+    200,
+    "job runtime starts before authenticated routes accept work",
+  );
+  const jobsBody = await jobs.json() as { jobs?: unknown[] };
+  if (!Array.isArray(jobsBody.jobs) || jobsBody.jobs.length !== 0) {
+    throw new Error("Fresh Studio job runtime did not return an empty queue.");
+  }
+  await expectStatus(
+    await probe.mutate(
+      "/api/studio/jobs/job_01K123456789ABC/cancel",
+      "POST",
+      {},
+      {
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    ),
+    403,
+    "cross-site job cancellation fails closed",
+  );
   await expectStatus(
     await probe.bootstrap(bootstrapToken),
     403,
@@ -158,6 +249,193 @@ try {
     await probe.get("/api/studio/session"),
     200,
     "session cookie authorizes Studio APIs",
+  );
+  const studioPage = await expectStatus(
+    await probe.get("/"),
+    200,
+    "authenticated Studio Home renders",
+  );
+  const studioHtml = await studioPage.text();
+  if (
+    !studioHtml.includes('data-studio-shell="local"')
+    || !studioHtml.includes("Studio navigation")
+    || !studioHtml.includes('data-studio-home="local"')
+  ) {
+    throw new Error("Authenticated Studio Home did not render the local dashboard shell.");
+  }
+
+  const fixture = new Uint8Array(20);
+  fixture.set([0x00, 0x00, 0x00, 0x18], 0);
+  fixture.set(new TextEncoder().encode("ftypisom"), 4);
+  const createMediaBody = {
+    idempotencyKey: "studio-http-media-0001",
+    expectedBytes: fixture.byteLength,
+    mimeType: "video/mp4",
+    retention: { mode: "ephemeral" },
+  };
+  await expectStatus(
+    await probe.mutate(
+      "/api/studio/media",
+      "POST",
+      createMediaBody,
+      {
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    ),
+    403,
+    "cross-site media creation fails closed",
+  );
+  const created = await expectStatus(
+    await probe.mutate("/api/studio/media", "POST", createMediaBody),
+    201,
+    "authenticated media creation succeeds",
+  );
+  const media = await created.json() as {
+    id: string;
+    status: string;
+    partSizeBytes: number;
+  };
+  if (
+    !media.id.startsWith("media_")
+    || media.status !== "created"
+    || media.partSizeBytes < fixture.byteLength
+  ) {
+    throw new Error("Media creation returned an invalid resumable receipt.");
+  }
+  await expectStatus(
+    await probe.upload(
+      `/api/studio/media/${media.id}/parts/0`,
+      fixture,
+      { origin: "https://attacker.example", "sec-fetch-site": "cross-site" },
+    ),
+    403,
+    "cross-site media upload fails closed",
+  );
+  await expectStatus(
+    await probe.upload(`/api/studio/media/${media.id}/parts/0`, fixture),
+    422,
+    "media upload requires an explicit offset",
+  );
+  const uploaded = await expectStatus(
+    await probe.upload(
+      `/api/studio/media/${media.id}/parts/0`,
+      fixture,
+      { "upload-offset": "0" },
+    ),
+    200,
+    "streamed media part succeeds",
+  );
+  const uploadReceipt = await uploaded.json() as {
+    replayed: boolean;
+    session: { receivedBytes: number };
+  };
+  if (
+    uploadReceipt.replayed
+    || uploadReceipt.session.receivedBytes !== fixture.byteLength
+  ) {
+    throw new Error("Media upload receipt did not acknowledge durable bytes.");
+  }
+  const replay = await expectStatus(
+    await probe.upload(
+      `/api/studio/media/${media.id}/parts/0`,
+      fixture,
+      { "upload-offset": "0" },
+    ),
+    200,
+    "identical media part retry replays safely",
+  );
+  if (!(await replay.json() as { replayed: boolean }).replayed) {
+    throw new Error("Media part retry was not identified as a replay.");
+  }
+  const mediaStatus = await expectStatus(
+    await probe.get(`/api/studio/media/${media.id}`),
+    200,
+    "media status supports resumable clients",
+  );
+  if (
+    (await mediaStatus.json() as { receivedBytes: number }).receivedBytes
+      !== fixture.byteLength
+  ) {
+    throw new Error("Media status did not expose the durable byte receipt.");
+  }
+  const complete = await expectStatus(
+    await probe.mutate(
+      `/api/studio/media/${media.id}/complete`,
+      "POST",
+      {
+        expectedSha256: createHash("sha256").update(fixture).digest("hex"),
+      },
+    ),
+    200,
+    "complete verifies and seals streamed media",
+  );
+  const completeBody = await complete.json() as {
+    sha256: string;
+    bytes: number;
+  };
+  if (
+    completeBody.bytes !== fixture.byteLength
+    || completeBody.sha256
+      !== createHash("sha256").update(fixture).digest("hex")
+  ) {
+    throw new Error("Media completion returned an invalid seal receipt.");
+  }
+  await expectStatus(
+    await probe.mutate(`/api/studio/media/${media.id}`, "DELETE", {}),
+    200,
+    "media abort deletes only the private staged copy",
+  );
+
+  const contextBytes = new TextEncoder().encode(
+    "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nSynthetic context\n",
+  );
+  await expectStatus(
+    await probe.uploadContext(contextBytes, {
+      origin: "https://attacker.example",
+      "sec-fetch-site": "cross-site",
+    }),
+    403,
+    "cross-site context staging fails closed",
+  );
+  await expectStatus(
+    await probe.uploadContext(contextBytes, {
+      "content-type": "application/json",
+    }),
+    415,
+    "context format and MIME must agree",
+  );
+  const stagedContext = await expectStatus(
+    await probe.uploadContext(contextBytes),
+    201,
+    "bounded context-file staging succeeds",
+  );
+  const contextReceiptText = await stagedContext.text();
+  const contextReceipt = JSON.parse(contextReceiptText) as {
+    id: string;
+    format: string;
+    bytes: number;
+    sha256: string;
+  };
+  if (
+    !contextReceipt.id.startsWith("context_")
+    || contextReceipt.format !== "vtt"
+    || contextReceipt.bytes !== contextBytes.byteLength
+    || contextReceipt.sha256
+      !== createHash("sha256").update(contextBytes).digest("hex")
+    || contextReceiptText.includes("Synthetic context")
+    || contextReceiptText.includes(mediaRoot)
+  ) {
+    throw new Error("Context staging returned an invalid or private receipt.");
+  }
+  await expectStatus(
+    await probe.mutate(
+      `/api/context-files/${contextReceipt.id}`,
+      "DELETE",
+      {},
+    ),
+    204,
+    "context delete removes only the private staged copy",
   );
 
   const secret = "studio-http-test-secret-value";
@@ -200,4 +478,5 @@ try {
 } finally {
   server.kill("SIGTERM");
   await server.exited;
+  await rm(mediaRoot, { recursive: true, force: true });
 }
