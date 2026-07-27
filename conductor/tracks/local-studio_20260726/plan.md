@@ -82,14 +82,19 @@ separate proposed track.
 - [x] Task 2.5: Build the Nuxt UI Connections settings page with status,
       source/lifetime, last verification, session set/clear, OAuth reconnect,
       and persistent-environment guidance but no secret echo.
+- [x] Task 2.6: Add a production-build Playwright baseline for fragment
+      exchange, unauthenticated denial, replay rejection, session-key
+      lifecycle, synthetic run import/review, console cleanliness, and mobile
+      overflow.
 
 ### Verification
 
 - [x] A built-Nitro loopback contract probe verifies hostile Host,
       missing/invalid local session, query-bearing protected pages,
       bootstrap replay, cross-site mutation, oversized bodies, and no secret
-      reflection. The Cloudflare artifact gate verifies no local
-      bootstrap/config mutation route or runtime secret implementation.
+      reflection. Playwright verifies the browser exchange/hydration and
+      critical synthetic UI journeys. The Cloudflare artifact gate verifies no
+      local bootstrap/config mutation route or runtime secret implementation.
 
 ## Phase 3: Resumable Local Media Staging
 

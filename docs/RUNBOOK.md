@@ -894,6 +894,7 @@ Do not apply forced audit fixes without reviewing breaking changes.
 | Installer temporary-home test | every installer change |
 | Local SQLite import/list/get | every web data change |
 | Local Nuxt SSR build | every web change |
+| Synthetic Playwright Studio smoke | every Studio UI/auth change |
 | Cloudflare/D1 Nuxt build | every web or deployment change |
 | Access missing/invalid JWT denial | every auth change |
 | No tracked sensitive artifacts | every release |
