@@ -21,6 +21,8 @@ const statusByMediaError: Readonly<Record<string, number>> = {
   part_conflict: 409,
   part_out_of_order: 409,
   media_not_uploadable: 409,
+  media_in_use: 409,
+  media_execution_lease_mismatch: 409,
   media_state_conflict: 409,
   retention_not_requested: 409,
   media_terminal_failure: 409,

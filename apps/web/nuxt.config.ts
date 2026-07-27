@@ -53,6 +53,9 @@ const studioOAuthHandler = fileURLToPath(
 const studioMediaStartup = fileURLToPath(
   new URL("./server-local/studio-media/startup.ts", import.meta.url),
 );
+const studioJobsStartup = fileURLToPath(
+  new URL("./server-local/studio-jobs/startup.ts", import.meta.url),
+);
 const studioMediaCreateHandler = fileURLToPath(
   new URL("./server-local/studio-media/create.post.ts", import.meta.url),
 );
@@ -218,7 +221,9 @@ export default defineNuxtConfig({
   nitro: {
     preset: nitroPreset,
     handlers: localHandlers,
-    plugins: localStudioEnabled ? [studioMediaStartup] : [],
+    plugins: localStudioEnabled
+      ? [studioMediaStartup, studioJobsStartup]
+      : [],
   },
   runtimeConfig: {
     authMode: "off",

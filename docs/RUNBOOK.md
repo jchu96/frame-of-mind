@@ -478,9 +478,9 @@ Do not rerun Gemini merely to repair SQLite or D1.
 
 ### 3.8 Inspect local job persistence
 
-The Studio job repository and executor are local-only and currently have no
-public job route or UI. Their operational tables live in the configured local
-SQLite file:
+The Studio job repository and executor are local-only. Their protected API is
+available under `/api/studio/jobs`; job activity and composer pages are still
+future UI work. Operational tables live in the configured local SQLite file:
 
 ```text
 studio_job_schema_migrations
@@ -507,8 +507,8 @@ the active signal and waits for cooperative Gemini cleanup before recording
 
 An `interrupted` attempt requires an explicit linked retry. Do not edit it back
 to `queued`, and do not run two local Studio processes against the same job
-database. Cancellation and retry control are implemented behind the
-forthcoming routes: cancellation is durable before provider abort, and a new
+database. Cancellation and retry use the protected job routes: cancellation
+is durable before provider abort, and a new
 retry requires the exact retained receipt both at creation and immediately
 before execution. Execution atomically leases that receipt as `in_use`, which
 keeps the expiry janitor from deleting it, and returns it to `retained` in
@@ -519,14 +519,17 @@ an already-created retry does not depend on later media availability. If
 cancellation races an indeterminate publication receipt, the attempt remains
 `interrupted`; verify whether the run exists before retrying.
 
-The authenticated `/api/studio/jobs` route contracts are registered and
-bounded, but deliberately return HTTP 503 until the runtime plugin configures
-the one repository/control/worker singleton. Do not bypass this gate or insert
-queued rows manually: that would acknowledge work without a live executor.
+The authenticated `/api/studio/jobs` route contracts are registered, bounded,
+and configured only after the repository/control/worker singleton starts. A
+startup failure prevents Studio from advertising a dead queue. Do not insert
+queued rows manually.
 Initial execution must own the sealed recording as `in_use`; terminal cleanup
 deletes ephemeral staging and returns retained staging to `retained`.
-The CLI remains the supported user-facing execution entry point until runtime
-wiring lands.
+External media deletion returns conflict while that lease is active. The
+executor rechecks the current recording SHA-256 before Gemini upload and uses
+a separate local-only capability to release ephemeral leased media.
+The CLI remains the supported user-facing execution entry point until the
+composer UI lands.
 
 ## 4. Review procedure
 
@@ -1162,7 +1165,10 @@ Operational expectations:
 - the Recording page stages authenticated resumable media locally;
 - selecting or dropping a recording does not start local staging or contact
   Gemini;
-- analysis execution is not yet exposed in the Studio UI.
+- one local durable job runtime starts with Studio and backs the protected
+  `/api/studio/jobs` routes;
+- the analysis composer and job activity pages are not yet exposed in the
+  Studio UI.
 
 If the bootstrap link fails, stop the process and run `bun run studio` again.
 If automatic browser opening fails, stop Studio and rerun with
@@ -1177,8 +1183,10 @@ provider identity. Public diagnostics may include the sanitized failure code,
 never the endpoint query, authorization URL, token, or key.
 
 `bun run web` remains the unauthenticated loopback completed-run viewer.
-`frameofmind analyze` remains the execution path until the later Studio phases
-ship.
+`frameofmind analyze` remains the end-user execution path until the composer
+ships. The protected job API is operational for development and automated
+clients, but it intentionally rejects custom recipes and local context-file
+receipts until those private staging contracts are implemented.
 
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and
@@ -1191,6 +1199,23 @@ The default staging root is private per-user application data:
 - macOS: `~/Library/Application Support/Frame of Mind/staging/media`;
 - Linux: `${XDG_DATA_HOME:-~/.local/share}/frame-of-mind/staging/media`;
 - Windows: `%LOCALAPPDATA%\Frame of Mind\staging\media`.
+
+`bun run studio` also keeps its SQLite job/run database in per-user
+application data by default:
+
+- macOS: `~/Library/Application Support/frame-of-mind/studio.sqlite`;
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/frame-of-mind/studio.sqlite`;
+- Windows: `%LOCALAPPDATA%\Frame of Mind\studio.sqlite`.
+
+Set `NUXT_SQLITE_PATH` to override that location. A relative override is
+resolved from the process working directory, so prefer an explicit absolute
+private path for regular use. The database stores job receipts, sanitized
+events, and completed-run projections—not recordings, paths, transcripts,
+provider payloads, or credentials.
+
+Set `FRAME_OF_MIND_OUTPUT` to an absolute private directory to override the
+Studio run-bundle root. Relative Studio output roots fail startup so generated
+meeting artifacts cannot silently land in the public checkout.
 
 For isolated testing or an alternate private volume, set an absolute path
 outside the checkout before launch:

@@ -227,3 +227,30 @@
   legacy rows may omit recipe `custom`, while every new job must provide it.
   Initial execution also needs a `sealed -> in_use` lease; a creation-time
   receipt read alone does not protect bytes from the expiry janitor.
+- Configure job routes only after the durable worker starts successfully.
+  Sharing one Bun SQLite connection with the run projection avoids a second
+  path/configuration authority while keeping jobs operational and completed
+  run rows rebuildable.
+- Nitro plugins registered by an absolute string path outside Nuxt's scanned
+  `server/` tree are bundled but are not automatically included in
+  `nuxi typecheck`. Keep the explicit `tsconfig.server-local.json` gate rooted
+  at the Studio job startup plugin; a successful production build alone does
+  not prove TypeScript scope safety for that graph.
+- Never expose the sealed recording path through `MediaStagingAdapter`.
+  Resolve it through a local-only capability after `sealed/retained -> in_use`,
+  require the exact digest and regular-file identity, and release the lease in
+  the executor's `finally` path.
+- `in_use` must block browser/API abort even though the media state machine can
+  transition to deletion. Ephemeral execution cleanup uses a separate
+  digest-bound local capability, and startup reconciliation must use that same
+  capability for an abandoned ephemeral lease instead of the externally
+  guarded delete method. Rehash current bytes at path resolution and again at
+  orchestration consumption so a same-size mutation cannot inherit a trusted
+  receipt.
+- Background jobs must not launch provider OAuth. Verify the exact requested
+  transport before queue insertion and use noninteractive MCP clients during
+  execution; expired authorization requires reconnect and explicit retry.
+- Do not accept a custom recipe or local context-file ID merely because its
+  shape validates. Until a private content-addressed receipt exists, there is
+  nothing trustworthy to resolve at execution time, so reject it before
+  durable queue insertion.

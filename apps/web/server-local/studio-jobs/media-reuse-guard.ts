@@ -22,6 +22,13 @@ export interface LocalMediaReuseLease {
   release(): Promise<void>;
 }
 
+export interface LocalExecutionMediaAdapter extends MediaStagingAdapter {
+  deleteEphemeralExecutionLease(
+    id: string,
+    expectedSha256: string,
+  ): Promise<MediaSession>;
+}
+
 export class LocalMediaReuseGuard {
   constructor(private readonly media: MediaStagingAdapter) {}
 
@@ -119,7 +126,7 @@ export class LocalMediaReuseGuard {
 }
 
 export class LocalInitialMediaGuard {
-  constructor(private readonly media: MediaStagingAdapter) {}
+  constructor(private readonly media: LocalExecutionMediaAdapter) {}
 
   async assertUsable(
     input: ImmutableJobInput,
@@ -202,7 +209,7 @@ export class LocalInitialMediaGuard {
 }
 
 async function releaseInitialLease(
-  media: MediaStagingAdapter,
+  media: LocalExecutionMediaAdapter,
   session: MediaSession,
 ): Promise<void> {
   if (session.retention.mode === "retained") {
@@ -213,5 +220,5 @@ async function releaseInitialLease(
     }));
     return;
   }
-  await media.delete(session.id);
+  await media.deleteEphemeralExecutionLease(session.id, session.sha256!);
 }

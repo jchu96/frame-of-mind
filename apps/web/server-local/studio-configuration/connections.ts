@@ -26,7 +26,7 @@ export type OAuthProviderName = "bluedot" | "granola";
 type OAuthPresence = (provider: OAuthProviderName) => boolean;
 type OAuthConnector = (provider: OAuthProviderName) => Promise<void>;
 
-function storedOAuthPresent(provider: OAuthProviderName): boolean {
+export function storedOAuthPresent(provider: OAuthProviderName): boolean {
   const isBluedot = provider === "bluedot";
   const endpoint = resolveMcpEndpoint(
     provider,

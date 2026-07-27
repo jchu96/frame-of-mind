@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  clearStudioJobApi,
   configureStudioJobApi,
   getStudioJobApi,
   RepositoryStudioJobApi,
@@ -73,6 +74,10 @@ describe("Local Studio job HTTP contracts", () => {
     expect(getStudioJobApi()).toBe(api);
     expect(() => configureStudioJobApi({} as StudioJobApi))
       .toThrow("already configured");
+    clearStudioJobApi({} as StudioJobApi);
+    expect(getStudioJobApi()).toBe(api);
+    clearStudioJobApi(api);
+    expect(() => getStudioJobApi()).toThrow(StudioJobApiUnavailableError);
   });
 
   test("creates or replays once and keyset-pages bounded event history", async () => {
@@ -92,7 +97,7 @@ describe("Local Studio job HTTP contracts", () => {
       },
       { notify: () => notifications += 1 },
       {
-        async validateInitialMedia() {
+        async validateInitialInput() {
           validations += 1;
         },
       },
