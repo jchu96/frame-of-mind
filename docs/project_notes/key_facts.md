@@ -5,7 +5,32 @@
 - Granola MCP advertises `get_meetings` and paid-plan `get_meeting_transcript` tools.
 - Granola also documents `GET https://public-api.granola.ai/v1/notes/{note_id}?include=transcript` for API-key automation.
 - Frame of Mind exposes Granola REST only through explicit `--granola-transport api`; MCP remains the default.
-- The analyzer uses the official `@google/genai` SDK and defaults to `gemini-3.6-flash`.
+- As verified on 2026-07-27, the repository and npm latest both use the
+  official `@google/genai` 2.13.0 package; the analyzer defaults to
+  `gemini-3.6-flash`.
+- The v0.2 live analyzer is compatibility-blocked on the required Bun runtime:
+  the shipped SDK upload reproduced an empty 404 and the shipped full
+  Zod-derived provider schema was rejected. Successful direct upload and
+  provider-safe schema paths remain diagnostic until integrated.
+- Google's current Interactions API uses top-level `response_format`; the
+  previous generateContent API uses `config.responseFormat`. Both accept only
+  a subset of JSON Schema, so Frame of Mind must retain stricter local Zod
+  validation.
+- The repository vendors Google's official `gemini-api-dev` and
+  `gemini-interactions-api` skills at upstream commit
+  `47d75caf3bfce63d83ea2c7ed9618d82bff06335`.
+- The documented Gemini Developer API resumable upload endpoint isolated the
+  SDK upload failure in a live diagnostic. It is a production fallback
+  candidate, not shipped behavior, until implemented and cleanup-tested in the
+  adapter.
+- Topic-scoped work uses timestamped transcript evidence to select bounded
+  operator-owned media derivatives. Semantic scope includes all relevant
+  speakers and distinguishes direct request, collaborative clarification, and
+  analyst inference.
+- The validated two-window run retained nine timestamped screenshots generated
+  by the shipped ffmpeg-backed screenshot extractor.
+- Each clip's current index request still transfers the full normalized
+  transcript unless the operator uses a bounded local context file.
 - The analysis contract is `analysis.json`; execution provenance is `manifest.json`; Markdown and self-contained HTML are renderings.
 - Full provider payloads and full transcripts are processed in memory but are not persisted in a normal run.
 - Local output files and provider token files are created with user-only permissions where the platform supports POSIX modes.

@@ -71,7 +71,7 @@ flowchart TB
     subgraph Core
         NM[Context normalizer]
         AL[Alignment]
-        IX[Whole-video index]
+        IX[Selected-media index]
         IG[Moment interrogation]
         EV[Evidence and inference policy]
     end
@@ -149,11 +149,23 @@ The normal path is `--video`. A signed Bluedot URL is a fallback with:
 Audio-only files are currently rejected. The shipped recipes use visible screen
 state as a first-class signal.
 
-### 4.3 Transcript alignment
+### 4.3 Semantic scope and transcript alignment
 
 Provider transcripts often cover the full meeting while a recording is a clip.
 Video timestamp `00:00:00` therefore does not necessarily equal transcript
 timestamp `00:00:00`.
+
+When an operator asks about a topic or speaker, the transcript is used before
+upload to identify one or more semantic windows. The boundary includes the
+complete relevant conversational turn: a named speaker is a search signal, not
+permission to discard collaborators' clarifications. Private local derivatives
+are then supplied as `--video`; the current CLI does not cut them
+automatically.
+
+This preserves the more important invariant: process the least media needed
+without removing context that materially changes the answer. Untimestamped
+transcripts require explicit operator bounds or whole-selected-media analysis.
+See [ADR 0009](adr/0009-transcript-first-semantic-scoping.md).
 
 Frame of Mind stores:
 
@@ -166,8 +178,8 @@ interface TranscriptAlignment {
 }
 ```
 
-The whole-video pass proposes an offset. `--transcript-offset` overrides it for
-deterministic runs. Nearby transcript windows apply:
+The selected-media pass proposes an offset. `--transcript-offset` overrides it
+for deterministic runs. Nearby transcript windows apply:
 
 ```text
 transcript time = video candidate time + offset
@@ -223,7 +235,8 @@ The current backend uses the Gemini Developer API and official
 Pass 1:
 
 - uploads the selected video to Gemini Files;
-- samples the full video at low resolution and 0.5 frames per second;
+- samples the complete operator-selected video at low resolution and 0.5
+  frames per second;
 - checks video/context relevance;
 - estimates transcript alignment;
 - returns recipe-relevant candidate moments.
@@ -238,6 +251,11 @@ Pass 2:
 
 This shape bounds cost while preserving close visual inspection.
 
+The production adapter defines shipped API behavior. Direct resumable-upload
+and Beta Interactions diagnostics are evidence for future adapter work, not
+production fallbacks until implemented and covered by the normal upload,
+generation, and cleanup tests.
+
 ### 4.6 Evidence and inference
 
 All recipes share one policy:
@@ -248,6 +266,8 @@ All recipes share one policy:
 - exact quotes are distinguished from summaries;
 - visible URLs are retained only when fully readable;
 - inferred implementation implications must be labeled;
+- direct requests, collaborative clarifications, and analyst inference remain
+  distinguishable during downstream synthesis;
 - owners and due dates are absent unless explicitly stated;
 - rejected candidates remain in `analysis.json` for audit;
 - human review remains required.
@@ -308,7 +328,7 @@ sequenceDiagram
     CLI->>CLI: validate media and compute hash
     CLI->>Files: upload video
     Files-->>CLI: active remote file
-    CLI->>Model: index full recording
+    CLI->>Model: index operator-selected video
     Model-->>CLI: match, alignment, moments
     loop bounded moments
         CLI->>Model: interrogate clip + aligned transcript

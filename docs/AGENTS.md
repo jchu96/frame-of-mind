@@ -12,6 +12,7 @@
 - `docs/CLOUDFLARE_DEPLOYMENT.md`: Workers, D1, Access, verification, rollback.
 - `docs/MCP_ROADMAP.md`: deferred local/hosted read-only MCP boundary.
 - `docs/RUNBOOK.md`: installation, operations, incident response, and troubleshooting.
+- `docs/MEETING_TO_ISSUE_RUNBOOK.md`: transcript-scoped analysis, repository grounding, BI synthesis, and authorized issue publication.
 - `docs/VERSIONING.md`: release and compatibility policy.
 - `docs/project_notes/`: sanitized causal history and gotchas.
 - `docs/adr/`: durable architecture decisions and unresolved proposals.
