@@ -5,6 +5,7 @@ import {
   getRouterParam,
 } from "h3";
 import { z } from "zod";
+import { meetingCatalogRequestSchema } from "../../../../src/domain/studio-schemas.js";
 import { getStudioMeetingCatalogService, StudioMeetingCatalogError } from "./service.js";
 
 const querySchema = z.object({
@@ -25,10 +26,19 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Meeting catalog query is invalid.",
     });
   }
+  const request = meetingCatalogRequestSchema.safeParse({
+    provider: provider.data,
+    ...query.data,
+  });
+  if (!request.success) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: "Meeting catalog query is invalid.",
+    });
+  }
   try {
     return await getStudioMeetingCatalogService().search({
-      provider: provider.data,
-      ...query.data,
+      ...request.data,
     });
   } catch (error) {
     if (error instanceof StudioMeetingCatalogError) {
