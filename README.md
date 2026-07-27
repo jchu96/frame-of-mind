@@ -206,10 +206,10 @@ file to be reselected and verifies a bounded-memory complete-file fingerprint
 before continuing. Every staged copy has a visible server-owned expiry, so
 closing the tab cannot turn browser session storage into cleanup authority.
 
-The analysis composer and job activity arrive in later implementation phases,
-so `frameofmind analyze` remains the supported execution path today. The CLI
-now delegates to the same typed, cancellation-aware orchestration service that
-the local Bun job executor will use; Studio will not scrape terminal output or
+The analysis composer and job activity routes arrive in later implementation
+phases, so `frameofmind analyze` remains the supported execution path today.
+The local-only SQLite job/event repository and shared typed orchestrator are
+now in place for the Bun executor; Studio will not scrape terminal output or
 fork a second analysis pipeline. See the
 [web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
 for the browser workflow, backend contract, and private storage location.

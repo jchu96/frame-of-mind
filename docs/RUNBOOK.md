@@ -476,6 +476,28 @@ the analysis itself succeeded. Open the returned run directory, validate its
 `analysis.json` and `manifest.json`, then retry the explicit projection import.
 Do not rerun Gemini merely to repair SQLite or D1.
 
+### 3.8 Inspect local job persistence
+
+The Studio job repository is local-only and currently has no public route or
+UI. When the executor is enabled in the next slice, its operational tables
+will live in the configured local SQLite file:
+
+```text
+studio_job_schema_migrations
+studio_analysis_jobs
+studio_analysis_job_events
+```
+
+These tables contain immutable job configuration, opaque media/context IDs,
+digests, state, retry lineage, sanitized messages, and resulting run IDs. They
+must not contain media bytes, transcripts, provider payloads, signed URLs,
+filesystem paths, or credentials.
+
+Do not copy these tables to D1 or rebuild an active job from `analysis_runs`.
+For backup or troubleshooting, stop Studio before copying the SQLite file so
+the operational job/event pair is consistent. Media availability must still
+be checked against its separate private receipt.
+
 ## 4. Review procedure
 
 ### 4.1 Open manifest first

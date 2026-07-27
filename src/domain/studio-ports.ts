@@ -107,6 +107,9 @@ export interface JobTransitionInput {
   nextStage: AnalysisJobStage;
   occurredAt: string;
   message?: string;
+  code?: string;
+  runId?: string;
+  projectionWarning?: string;
 }
 
 export interface InitialJobCreateInput {

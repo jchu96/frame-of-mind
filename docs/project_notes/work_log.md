@@ -148,3 +148,12 @@
 - Adversarial review closed an injected run-ID traversal into recursive cleanup
   and removed the authoritative bundle path from the projection capability.
   Projection now receives only cloned validated contracts.
+- Added the local-only SQLite job/event migration and `JobRepository`.
+  Immediate transactions serialize idempotent creation, transitions plus
+  events, cancellation intent, retry lineage, and sequence allocation. Tests
+  cover migration isolation, cross-connection replay, persistence after
+  reopen, pagination/filtering, terminal publication metadata, and digest
+  corruption while keeping media receipt authority outside SQLite.
+- Adversarial review closed two lifecycle gaps: cancellation is rejected after
+  durable publication, and event rows are bound to their owning attempt by
+  both a composite foreign key and repository validation.

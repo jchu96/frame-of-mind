@@ -239,6 +239,15 @@ describe("Studio analysis-job contracts", () => {
     }
   });
 
+  it("requires a published run before recording a projection warning", () => {
+    expect(() => analysisJobSchema.parse(job({
+      stage: "cleaning_up",
+      projectionWarning:
+        "Published run could not be added to the review projection.",
+      updatedAt: later,
+    }))).toThrow(/published run/);
+  });
+
   it("binds the stored input digest to canonical immutable input", async () => {
     const verified = await verifyImmutableJobInput(immutableInput);
     expect(verified.inputDigest).toBe(canonicalInputDigest);

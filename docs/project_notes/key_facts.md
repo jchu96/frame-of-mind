@@ -56,6 +56,12 @@
 - Projection receives cloned validated contracts without the authoritative run
   directory path. The projection port cannot mutate bundle files through its
   interface.
+- Local Studio jobs/events use separate local-only SQLite tables and Bun
+  `BEGIN IMMEDIATE` writes. These operational tables are excluded from D1 and
+  Cloudflare builds.
+- Job rows retain opaque media/context identifiers and digests, not receipt
+  copies or private paths. The private media JSON receipt remains the single
+  media authority.
 - Studio media sessions, analysis jobs, and durable runs have separate
   lifecycles and authority boundaries.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds
