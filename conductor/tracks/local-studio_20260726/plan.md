@@ -110,8 +110,9 @@ separate proposed track.
       reservation, MIME validation, streamed final SHA-256, and atomic sealing.
 - [x] Task 3.3: Add bounded create, upload-part, status, complete, and abort
       routes; never accept or return arbitrary filesystem paths.
-- [x] Task 3.4: Implement expiry and startup reconciliation for abandoned,
-      partially written, sealed, retained, and cleanup-failed sessions.
+- [x] Task 3.4: Implement startup reconciliation and lifecycle-owned periodic
+      expiry for abandoned, partially written, sealed, retained, and
+      cleanup-failed sessions.
 - [x] Task 3.5: Build the accessible Nuxt drop zone with resumable progress,
       validation, abort, retry, ephemeral/retained selection, and explicit
       storage/remote-transfer disclosure.

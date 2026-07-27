@@ -109,3 +109,16 @@
   recomputes that complete binding with bounded memory before any new write.
 - Prevention: client and adapter tests mutate only the unconfirmed tail and
   require a closed mismatch.
+
+## 2026-07-27 — Expired media cleanup depended on process restart
+
+- Symptom: a sealed recording whose browser receipt was lost could remain on
+  disk after expiry for as long as the same Studio process stayed open.
+- Cause: the adapter enforced expiry during access and startup reconciliation,
+  but the server had no lifecycle-owned periodic sweep.
+- Fix: Nitro now owns a one-minute, non-overlapping expiry janitor, skips
+  writer-owned sessions, retries cleanup failures, cancels the interval on
+  close, and waits for an active sweep to finish.
+- Prevention: deterministic scheduler tests cover non-overlap, sanitized
+  failures, cleanup retry, active-writer exclusion, continued operation, and
+  shutdown draining.

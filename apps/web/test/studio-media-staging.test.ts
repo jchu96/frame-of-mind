@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { validateMediaSessionTransition } from "../../../src/domain/studio-state";
 import {
+  isMediaExpiryCandidate,
   LocalMediaStagingAdapter,
   MediaStagingError,
 } from "../server-local/studio-media/local-media-staging";
@@ -305,6 +306,60 @@ describe("local media staging adapter", () => {
     await firstWrite;
   });
 
+  test("skips an active writer and expires it on the next sweep", async () => {
+    const staging = adapter();
+    const session = await create(staging);
+    const fixture = mp4Fixture(8);
+    let release!: () => void;
+    let started!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    async function* blockedPart() {
+      yield fixture.subarray(0, 4);
+      started();
+      await releasePromise;
+      yield fixture.subarray(4);
+    }
+
+    const activeWrite = staging.writePart(session.id, {
+      part: 0,
+      offset: 0,
+      contentLength: 8,
+      bytes: blockedPart(),
+    });
+    await startedPromise;
+    now += 60_001;
+
+    expect(await staging.expire()).toEqual([]);
+    expect(await staging.get(session.id)).toMatchObject({
+      status: "created",
+      receivedBytes: 0,
+    });
+
+    release();
+    await activeWrite;
+    expect(await staging.get(session.id)).toMatchObject({
+      status: "uploading",
+      receivedBytes: 8,
+    });
+    expect(await staging.expire()).toEqual([
+      expect.objectContaining({ id: session.id, status: "deleted" }),
+    ]);
+  });
+
+  test("prefilters non-expired sessions before acquiring ownership", async () => {
+    const staging = adapter();
+    const session = await create(staging);
+
+    expect(isMediaExpiryCandidate(session, now)).toBe(false);
+    now += 60_001;
+    expect(isMediaExpiryCandidate(session, now)).toBe(true);
+  });
+
   test("rolls back short, long, and disk-exhausted part writes", async () => {
     const staging = adapter();
     const session = await create(staging);
@@ -561,6 +616,40 @@ describe("local media staging adapter", () => {
     const deleted = await staging.abort(session.id);
     expect(deleted).toMatchObject({ status: "deleted" });
     expect(deleted.cleanupFailureCode).toBeUndefined();
+  });
+
+  test("retries an expiry cleanup failure on the next sweep", async () => {
+    let shouldFail = true;
+    const staging = adapter({
+      removeFile: async (path) => {
+        if (shouldFail && path.endsWith("media.partial")) {
+          shouldFail = false;
+          throw Object.assign(new Error("synthetic permission failure"), {
+            code: "EACCES",
+          });
+        }
+        await rm(path, { force: true });
+      },
+    });
+    const session = await create(staging);
+    await staging.writePart(session.id, {
+      part: 0,
+      offset: 0,
+      contentLength: 8,
+      bytes: chunks(mp4Fixture(8)),
+    });
+    now += 60_001;
+
+    expect(await staging.expire()).toEqual([
+      expect.objectContaining({
+        id: session.id,
+        status: "cleanup_failed",
+        cleanupFailureCode: "eacces",
+      }),
+    ]);
+    expect(await staging.expire()).toEqual([
+      expect.objectContaining({ id: session.id, status: "deleted" }),
+    ]);
   });
 
   test("expires abandoned uploads and reconciles uncommitted partial bytes", async () => {

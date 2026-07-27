@@ -10,7 +10,8 @@
 - Never claim deletion until byte removal succeeds; preserve
   `cleanup_failed` receipts for explicit retry.
 - Give every media mode a server-owned expiry. Browser state must never own
-  cleanup, and legacy receipts need an explicit migration.
+  cleanup, and legacy receipts need an explicit migration. Enforce expiry at
+  startup and with a non-overlapping periodic sweep that stops with Nitro.
 - Serialize write, seal, and delete ownership per media session. A disconnected
   completion request may still be hashing server-side.
 - Verify any browser-provided complete-file binding against the ordered

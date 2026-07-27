@@ -49,9 +49,11 @@ only an opaque media ID. After refresh, Studio reconciles the server receipt,
 requires file re-selection, verifies a complete-file binding using bounded
 part hashes, and sends only missing parts. Both ephemeral and retained sessions
 carry a visible server-owned expiry; browser storage is never cleanup
-authority. If session storage is unavailable, the current page can finish but
-Studio explicitly reports that refresh-resume is disabled. The analysis
-composer and job execution remain later track tasks.
+authority. Startup reconciliation and a non-overlapping lifecycle-owned
+periodic sweep enforce that expiry even when the server remains open after the
+originating tab closes. If session storage is unavailable, the current page
+can finish but Studio explicitly reports that refresh-resume is disabled. The
+analysis composer and job execution remain later track tasks.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
