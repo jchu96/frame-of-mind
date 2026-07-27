@@ -477,6 +477,7 @@ src/
 └── lib/            file, object, and time helpers
 test/               deterministic offline tests
 apps/web/            Nuxt SSR review workspace, SQLite/D1 adapters, migrations
+apps/web/e2e/        Playwright Studio journeys with synthetic fixtures
 scripts/            safe cross-platform skill installer
 docs/
 ├── ARCHITECTURE.md
@@ -501,6 +502,7 @@ bun install --frozen-lockfile
 bun run typecheck
 bun run test
 bun run test:web
+bun run test:e2e:smoke
 bun run build
 bun run build:web:cloudflare
 bun run check
@@ -526,6 +528,7 @@ structured output, video metadata, OAuth, and cleanup contracts.
 - [Recipes](docs/RECIPES.md)
 - [Provider contracts](docs/PROVIDERS.md)
 - [Nuxt review workspace](docs/WEB_WORKSPACE.md)
+- [Testing strategy](docs/TESTING.md)
 - [Cloudflare deployment and Access runbook](docs/CLOUDFLARE_DEPLOYMENT.md)
 - [Future local and hosted MCP architecture](docs/MCP_ROADMAP.md)
 - [Operations runbook](docs/RUNBOOK.md)

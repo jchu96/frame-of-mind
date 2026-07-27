@@ -42,6 +42,10 @@
     "start": "bun dist/cli.js",
     "studio": "bun scripts/run-studio.ts",
     "test": "vitest run",
+    "test:e2e": "bun --no-env-file scripts/run-playwright-e2e.ts",
+    "test:e2e:ci": "bun --no-env-file scripts/run-playwright-e2e.ts --fail-on-flaky-tests",
+    "test:e2e:server": "bun --no-env-file scripts/run-studio-e2e-server.ts",
+    "test:e2e:smoke": "bun --no-env-file scripts/run-playwright-e2e.ts --grep @smoke",
     "test:studio-http": "bun scripts/test-local-studio-http.ts",
     "test:web": "bun test apps/web/test",
     "test:watch": "vitest",
@@ -62,6 +66,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.61.0",
     "@types/bun": "1.3.14",
     "@types/node": "^24.10.0",
     "tsx": "^4.20.6",
