@@ -12,6 +12,42 @@ function syntheticMp4(bytes = 64): Buffer {
   return fixture;
 }
 
+test("shows local work, connection health, and one clear start action", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Your local analysis desk." }),
+  ).toBeVisible();
+  await expect(page.locator('[data-studio-home="local"]')).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Active jobs" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Connections" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Recent runs" }),
+  ).toBeVisible();
+  await expect(page.getByRole("status")).toHaveCount(3);
+  await expect(page.getByText("No analyses yet")).toBeVisible();
+  const activeSummary = await page.getByTestId("active-jobs-summary").boundingBox();
+  const recentSummary = await page.getByTestId("recent-runs-summary").boundingBox();
+  expect(activeSummary).not.toBeNull();
+  expect(recentSummary).not.toBeNull();
+  expect(Math.abs(activeSummary!.y - recentSummary!.y)).toBeLessThanOrEqual(2);
+
+  const newAnalysis = page.getByRole("link", { name: "New analysis" });
+  await expect(newAnalysis).toHaveCount(1);
+  await newAnalysis.click();
+  await expect(
+    page.getByRole("heading", { name: "Put one recording in the frame." }),
+  ).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});
+
 test("manages a temporary Gemini key without reflecting it", {
   tag: "@smoke",
 }, async ({ page }) => {
@@ -168,7 +204,7 @@ test("imports and reviews one synthetic run", {
   ).toBeVisible();
   await expect(page.getByText("The database remains a projection.")).toBeVisible();
 
-  await page.getByRole("link", { name: "Runs", exact: true }).click();
+  await page.getByRole("link", { name: "Home", exact: true }).click();
   await expect(
     page.getByRole("link", { name: "Product review", exact: true }),
   ).toBeVisible();

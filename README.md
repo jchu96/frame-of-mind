@@ -173,15 +173,24 @@ bun run studio
 ```
 
 Studio opens its one-time URL in the default browser. The bootstrap capability
-stays in the URL fragment, is removed before the browser makes the exchange
-request, and becomes an HttpOnly, SameSite=Strict session cookie. Restarting
-Bun invalidates the browser session and creates a new capability.
+stays in the fragment of a dedicated inert launch page, is removed before the
+browser makes the exchange request, and becomes an HttpOnly, SameSite=Strict
+session cookie. Every data-bearing page and API then requires that cookie.
+Restarting Bun invalidates the browser session and creates a new capability;
+a replayed or invalid link remains on the inert launch page.
 
-When Studio is enabled, Runs, Recording, Connections, Import, and run detail
+When Studio is enabled, Home, Recording, Connections, Import, and run detail
 share a responsive Nuxt UI dashboard shell with persistent desktop navigation
 and a mobile sidebar. This frame is selected at build time: normal local review
 and Cloudflare builds retain the existing SSR review header and do not bundle
 the local Studio shell.
+
+Studio Home is the local launch surface. It reads the durable job queue,
+completed-run projection, and credential-presence API independently; shows
+active work, five recent runs, and sanitized Gemini/Bluedot/Granola health;
+and provides one primary New analysis action. Empty Studio state directs the
+user to choose or drop a recording without implying that selection transfers
+anything to Gemini.
 
 If the browser cannot be opened, stop Studio and explicitly opt into terminal
 output for that launch:
@@ -212,9 +221,9 @@ file to be reselected and verifies a bounded-memory complete-file fingerprint
 before continuing. Every staged copy has a visible server-owned expiry, so
 closing the tab cannot turn browser session storage into cleanup authority.
 
-The analysis composer and job activity pages arrive in later implementation
-phases, so `frameofmind analyze` remains the supported end-user execution path
-today.
+The remaining composer steps and job-detail activity page arrive in later
+implementation phases, so `frameofmind analyze` remains the supported
+end-user execution path today.
 The local-only SQLite job/event repository, single-concurrency Bun worker, and
 shared typed orchestrator are now in place. Studio binds the immutable model
 and recipe receipt into that orchestrator; it does not scrape terminal output

@@ -16,24 +16,29 @@ rebuildable projections.
 ## Local Studio preview
 
 The completed-run workspace remains the stable v0.2 surface. A build-time
-isolated local Studio preview now provides per-launch authentication,
-Connections, and private recording staging:
+isolated local Studio preview now provides per-launch authentication, a local
+Home dashboard, Connections, and private recording staging:
 
 ```bash
 cp .env.example .env
 bun run studio
 ```
 
-The command binds to loopback and prints a one-time launch URL. Its capability
-is carried in the URL fragment, removed before the exchange request, and
-exchanged once for an HttpOnly, SameSite=Strict session cookie. Sensitive
-`/api/studio/*` routes require that session in addition to Host/peer validation.
+The command binds to loopback and opens a one-time launch URL. Its capability
+is carried in the fragment of an inert `/__studio/launch` page, removed before
+the exchange request, and exchanged once for an HttpOnly, SameSite=Strict
+session cookie. Home, review/import pages, run APIs, and `/api/studio/*`
+require that session in addition to Host/peer validation. A rejected or
+replayed link stays on the inert page and starts no dashboard reads.
 
-The Studio-enabled node build selects a local-only Nuxt UI dashboard frame for
-Runs, Recording, Connections, Import, and run detail. The frame provides one
-responsive navigation model and a primary New Analysis entry point. Normal
-review and Cloudflare builds select the pass-through review frame at build
-time, retain their existing SSR header, and exclude the Studio frame module.
+The Studio-enabled node build selects a local-only Nuxt UI dashboard frame and
+Home route for Home, Recording, Connections, Import, and run detail. Home
+combines three existing read contracts: operational jobs, rebuildable run
+summaries, and sanitized connection presence. It creates no fourth authority
+or dashboard-only persistence, revalidates after client navigation, and keeps
+one primary New Analysis entry point. Normal review and Cloudflare builds
+select the pass-through review frame and original completed-run index at build
+time, retain their existing SSR header, and exclude the Studio modules.
 
 The Connections page supports:
 
@@ -59,8 +64,9 @@ authority. Startup reconciliation and a non-overlapping lifecycle-owned
 periodic sweep enforce that expiry even when the server remains open after the
 originating tab closes. If session storage is unavailable, the current page
 can finish but Studio explicitly reports that refresh-resume is disabled. The
-analysis composer and job activity UI remain later track tasks; the protected
-durable job runtime is already present underneath them.
+remaining analysis-composer steps and job-detail activity UI remain later
+track tasks; Home already reports active work from the protected durable job
+runtime underneath them.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
@@ -83,7 +89,7 @@ and [ADR log](adr/README.md).
 | Mode | Runtime | Database | Authentication | Intended use |
 |---|---|---|---|---|
 | Local review | Bun + Nuxt SSR | Bun SQLite | loopback Host/peer guard | browse completed runs |
-| Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | configure providers and privately stage a recording; analysis jobs are phased |
+| Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | start from Home, configure providers, stage a recording, and monitor active work |
 | Hosted | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | a controlled team workspace |
 
 The run pages and API contracts are shared. The `RunStore`, Nitro preset, and

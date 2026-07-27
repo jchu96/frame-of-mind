@@ -4,6 +4,7 @@ import { expect, test as setup } from "@playwright/test";
 import {
   LOCAL_STUDIO_BOOTSTRAP_FRAGMENT,
   LOCAL_STUDIO_COOKIE_NAME,
+  LOCAL_STUDIO_LAUNCH_PATH,
 } from "../server-local/studio-session/contract";
 import {
   E2E_BOOTSTRAP_TOKEN,
@@ -21,7 +22,8 @@ setup("exchanges the one-time launch fragment for a local session", {
 
   await setup.step("exchange and clean the launch URL", async () => {
     await page.goto(
-      `/${LOCAL_STUDIO_BOOTSTRAP_FRAGMENT}${encodeURIComponent(E2E_BOOTSTRAP_TOKEN)}`,
+      `${LOCAL_STUDIO_LAUNCH_PATH}${LOCAL_STUDIO_BOOTSTRAP_FRAGMENT}`
+      + encodeURIComponent(E2E_BOOTSTRAP_TOKEN),
     );
     await page.waitForURL("**/connections");
 

@@ -2,10 +2,11 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 
 const route = useRoute();
+const launchRoute = computed(() => route.path === "/__studio/launch");
 const navigation: NavigationMenuItem[] = [
   {
-    label: "Runs",
-    icon: "i-lucide-library",
+    label: "Home",
+    icon: "i-lucide-house",
     to: "/",
     exact: true,
   },
@@ -26,7 +27,7 @@ const navigation: NavigationMenuItem[] = [
   },
 ];
 const title = computed(() => {
-  if (route.path === "/") return "Runs";
+  if (route.path === "/") return "Home";
   if (route.path === "/recording") return "Recording";
   if (route.path === "/connections") return "Connections";
   if (route.path === "/import") return "Import run";
@@ -36,7 +37,9 @@ const title = computed(() => {
 </script>
 
 <template>
+  <slot v-if="launchRoute" />
   <UDashboardGroup
+    v-else
     data-studio-shell="local"
     storage-key="frame-of-mind-studio-shell"
     unit="rem"
@@ -105,6 +108,7 @@ const title = computed(() => {
           </template>
           <template #right>
             <UButton
+              v-if="route.path !== '/'"
               to="/recording"
               icon="i-lucide-plus"
               label="New analysis"

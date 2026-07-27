@@ -35,6 +35,12 @@ const studioBootstrapPlugin = fileURLToPath(
 const studioConnectionsPage = fileURLToPath(
   new URL("./server-local/studio-ui/connections.vue", import.meta.url),
 );
+const studioHomePage = fileURLToPath(
+  new URL("./server-local/studio-ui/home.vue", import.meta.url),
+);
+const studioLaunchPage = fileURLToPath(
+  new URL("./server-local/studio-ui/launch.vue", import.meta.url),
+);
 const studioRecordingPage = fileURLToPath(
   new URL("./server-local/studio-ui/recording.vue", import.meta.url),
 );
@@ -209,10 +215,25 @@ export default defineNuxtConfig({
   hooks: {
     "pages:extend"(pages) {
       if (localStudioEnabled) {
+        const indexPage = pages.find((page) => page.path === "/");
+        if (indexPage) {
+          indexPage.file = studioHomePage;
+        } else {
+          pages.push({
+            name: "index",
+            path: "/",
+            file: studioHomePage,
+          });
+        }
         pages.push({
           name: "connections",
           path: "/connections",
           file: studioConnectionsPage,
+        });
+        pages.push({
+          name: "studio-launch",
+          path: "/__studio/launch",
+          file: studioLaunchPage,
         });
         pages.push({
           name: "recording",
