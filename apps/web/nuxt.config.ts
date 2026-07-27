@@ -38,6 +38,14 @@ const studioConnectionsPage = fileURLToPath(
 const studioRecordingPage = fileURLToPath(
   new URL("./server-local/studio-ui/recording.vue", import.meta.url),
 );
+const appFrame = fileURLToPath(
+  new URL(
+    localStudioEnabled
+      ? "./server-local/studio-ui/app-frame.vue"
+      : "./app/components/ReviewAppFrame.vue",
+    import.meta.url,
+  ),
+);
 const studioConfigurationStatusHandler = fileURLToPath(
   new URL("./server-local/studio-configuration/status.get.ts", import.meta.url),
 );
@@ -215,6 +223,7 @@ export default defineNuxtConfig({
     },
   },
   alias: {
+    "#frame-app": appFrame,
     "#frame-contracts": `${projectRoot}/src/domain/schemas.ts`,
     "#frame-store": storeImplementation,
   },
