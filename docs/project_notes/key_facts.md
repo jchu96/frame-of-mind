@@ -21,6 +21,9 @@
 - The production adapter derives an allowlisted Gemini schema from Zod and
   always applies the complete originating Zod schema locally. The provider
   subset never becomes the durable contract.
+- A locally invalid structured response gets one regeneration attempt whose
+  added corrective feedback contains schema paths/codes only. The unchanged
+  Zod contract still decides whether analysis may proceed.
 - Google's current Interactions API uses top-level `response_format` and
   remains Beta. Frame of Mind intentionally retains stable `generateContent`
   for production generation until a later architecture decision changes it.

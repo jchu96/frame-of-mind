@@ -736,6 +736,10 @@ Actions:
 
 ### 6.6 Structured response parse failure
 
+The CLI prints both pass boundaries. If the error names a field that exists
+only in an analysis record, such as `where.appUrl`, it occurred during
+`Pass 2/2` even if an older CLI's last visible line said it was indexing.
+
 Possible causes:
 
 - model ignored schema;
@@ -743,7 +747,14 @@ Possible causes:
 - recipe text was too broad/adversarial;
 - SDK/schema conversion regression.
 
-Actions:
+The adapter automatically makes one corrective generation request only when
+the first JSON response reaches strict Zod validation and fails there. Its
+additional repair feedback contains only sanitized schema paths and issue
+codes; it never echoes the rejected value. The same full local schema validates
+the second response. There is no third request, coercion, truncation, or silent
+field deletion.
+
+Actions after the bounded retry also fails:
 
 1. retry with `--max-moments 1`;
 2. use a built-in recipe;
@@ -757,6 +768,14 @@ that subset from the Zod schema, parses every response as `unknown`, and then
 validates it against the complete local contract. Sanitized errors identify
 only failing field paths and issue codes. The adapter fails closed; it does not
 truncate, cast, expose the response, or weaken the durable schema.
+
+On either pass's terminal failure, the orchestrator attempts exact Gemini file
+deletion up to three times and removes the private staging directory. A cleanup
+warning means deletion could not be confirmed. No warning means a delete call
+completed, although a failed run has no manifest in which to persist that
+provenance. Empty meeting containers from pre-fix releases are safe to remove
+after verifying they contain no run bundles; builds containing this fix remove
+them automatically when the failed attempt created no artifacts.
 
 ### 6.7 OAuth browser does not open
 
