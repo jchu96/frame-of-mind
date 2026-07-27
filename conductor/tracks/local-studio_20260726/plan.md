@@ -165,20 +165,20 @@ separate proposed track.
 
 ### Tasks
 
-- [ ] Task 4.1: Add failing service tests for structured progress, cancellation,
+- [x] Task 4.1: Add failing service tests for structured progress, cancellation,
       cleanup, projection warning, and successful durable publication.
-- [ ] Task 4.2: Refactor the CLI pipeline into a reusable orchestration service
+- [x] Task 4.2: Refactor the CLI pipeline into a reusable orchestration service
       that accepts explicit dependencies and emits typed progress events.
-- [ ] Task 4.3: Preserve CLI commands and output while routing execution through
+- [x] Task 4.3: Preserve CLI commands and output while routing execution through
       the shared orchestration service.
-- [ ] Task 4.4: Add `AbortSignal` propagation and explicit cancellation checks
+- [x] Task 4.4: Add `AbortSignal` propagation and explicit cancellation checks
       around provider, Gemini, clip, render, and cleanup boundaries.
-- [ ] Task 4.5: Ensure a valid run bundle survives projection failure and that
+- [x] Task 4.5: Ensure a valid run bundle survives projection failure and that
       cleanup provenance freezes at publication.
 
 ### Verification
 
-- [ ] Existing CLI tests remain green; new orchestration tests prove progress,
+- [x] Existing CLI tests remain green; new orchestration tests prove progress,
       cancellation, cleanup, and projection-failure behavior.
 
 ## Phase 5: Durable Bun Job Executor
@@ -298,31 +298,31 @@ separate proposed track.
 
 Each phase can become a public GitHub issue after the specification is approved:
 
-| Issue | Title | Depends On |
+| Issue | Title                                                     | Depends On |
 |---|---|---|
-| 1 | Define Studio job, staging, and execution contracts | None |
-| 2 | Add local session, runtime secrets, and connection health | 1 |
-| 3 | Add resumable local recording staging | 1 |
-| 4 | Extract reusable analysis orchestration from the CLI | 1 |
-| 5 | Implement the durable Bun job executor | 2, 3, 4 |
-| 6 | Build the Studio shell and analysis composer | 2, 3, 5 |
-| 7 | Build activity, cancellation, retry, and recovery UX | 5, 6 |
-| 8 | Build timestamp-linked video review | 3, 5, 6 |
-| 9 | Harden, document, and define the hosted roadmap | 1-8 |
+| 1     | Define Studio job, staging, and execution contracts       | None       |
+| 2     | Add local session, runtime secrets, and connection health | 1          |
+| 3     | Add resumable local recording staging                     | 1          |
+| 4     | Extract reusable analysis orchestration from the CLI      | 1          |
+| 5     | Implement the durable Bun job executor                    | 2, 3, 4    |
+| 6     | Build the Studio shell and analysis composer              | 2, 3, 5    |
+| 7     | Build activity, cancellation, retry, and recovery UX      | 5, 6       |
+| 8     | Build timestamp-linked video review                       | 3, 5, 6    |
+| 9     | Harden, document, and define the hosted roadmap           | 1-8        |
 
 ## Risk Register
 
-| Risk | Early evidence or mitigation | Stop condition |
+| Risk                                           | Early evidence or mitigation                                                | Stop condition                                     |
 |---|---|---|
-| Nitro/H3 buffers upload parts | Phase 1 streaming spike with measured memory | No Phase 3 API until streaming is proven |
-| Local credential routes rely only on localhost | Per-launch capability and hostile-request tests | No settings mutation without session gate |
-| Upload exhausts disk or races writers | Reservation, one-writer transition, bounded parts | Abort and clean without sealing |
-| Process exits during Gemini work | Persist stage/events and mark interrupted | Never auto-resume indeterminate remote state |
-| Playback contradicts deletion policy | Explicit ephemeral/retained modes and digest reattachment | No player claim without accessible matching media |
-| Job DB is mistaken for a run projection | ADR 0007 authority boundary and schema tests | No active job reconstruction from run rows |
-| Local Bun code leaks into Worker | Per-phase artifact inspection and route-absence tests | Cloudflare build fails |
-| Local operational tables leak into D1 | Separate local migrations; parity stays scoped to completed-run projections | D1 migration diff fails |
-| Track scope hides an unusable middle | Three delivery slices with stop/go gates | Do not expose beta before synthetic end-to-end run |
+| Nitro/H3 buffers upload parts                  | Phase 1 streaming spike with measured memory                                | No Phase 3 API until streaming is proven           |
+| Local credential routes rely only on localhost | Per-launch capability and hostile-request tests                             | No settings mutation without session gate          |
+| Upload exhausts disk or races writers          | Reservation, one-writer transition, bounded parts                           | Abort and clean without sealing                    |
+| Process exits during Gemini work               | Persist stage/events and mark interrupted                                   | Never auto-resume indeterminate remote state       |
+| Playback contradicts deletion policy           | Explicit ephemeral/retained modes and digest reattachment                   | No player claim without accessible matching media  |
+| Job DB is mistaken for a run projection        | ADR 0007 authority boundary and schema tests                                | No active job reconstruction from run rows         |
+| Local Bun code leaks into Worker               | Per-phase artifact inspection and route-absence tests                       | Cloudflare build fails                             |
+| Local operational tables leak into D1          | Separate local migrations; parity stays scoped to completed-run projections | D1 migration diff fails                            |
+| Track scope hides an unusable middle           | Three delivery slices with stop/go gates                                    | Do not expose beta before synthetic end-to-end run |
 
 ## Rollback And Compatibility
 

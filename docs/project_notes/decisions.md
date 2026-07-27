@@ -101,3 +101,11 @@ cleanup persists `cleanup_failed` and may retry only through `deleting`;
 terminal `failed` is reserved for corrupt or irreconcilable receipt/file state.
 This prevents the UI from claiming deletion while preserving an honest repair
 path. See the amended ADR 0007.
+
+## 2026-07-27 — CLI and Studio share one analysis orchestrator
+
+The CLI owns argument parsing and terminal rendering only. Provider access,
+Gemini analysis, cancellation boundaries, cleanup, validation, atomic
+publication, and optional projection are implemented once in the typed
+`AnalysisOrchestrator`. The future Bun executor consumes its events directly;
+it never shells out to the CLI or parses display text.

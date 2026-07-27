@@ -139,3 +139,9 @@
   an in-bounds indexed candidate, an accepted matching detail kind, and an
   in-candidate evidence timestamp. The stricter live canary and full repository
   gate passed.
+- Extracted the CLI analysis pipeline into a typed `AnalysisOrchestrator` with
+  explicit provider/analyzer factories, structured stage/progress/warning
+  events, cooperative `AbortSignal` checks, exact-upload cleanup, atomic
+  publication, and nonfatal post-publication projection warnings. Deterministic
+  service tests cover success, cancellation, cleanup failure, and projection
+  failure; the CLI now adapts those events without log-scraping seams.
