@@ -33,6 +33,9 @@ const forbidden = [
   "OrchestratedAnalysisJobExecutor",
   "LocalStudioJobControl",
   "LocalMediaReuseGuard",
+  "LocalInitialMediaGuard",
+  "StudioJobApiUnavailableError",
+  "/api/studio/jobs",
   "studio_analysis_jobs",
 ];
 

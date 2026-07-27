@@ -199,7 +199,8 @@ separate proposed track.
 - [x] Task 5.4: Implement durable cancellation and linked retry attempts,
       including safe staged-media reuse checks.
 - [ ] Task 5.5: Add job list/detail/create/cancel/retry routes with strict
-      schemas, bounded output, and sanitized failures.
+      schemas, bounded output, and sanitized failures. Route contracts and
+      fail-closed registration are complete; process runtime wiring remains.
 - [ ] Task 5.6: Define interrupted restart behavior and require explicit retry
       for indeterminate Gemini operations.
 
