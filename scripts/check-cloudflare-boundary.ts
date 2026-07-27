@@ -27,6 +27,9 @@ const forbidden = [
   "/api/studio/media",
   "media.partial",
   "media.sealed",
+  "server-local/studio-jobs",
+  "LocalSqliteJobRepository",
+  "studio_analysis_jobs",
 ];
 
 async function files(directory: string): Promise<string[]> {

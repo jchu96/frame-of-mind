@@ -109,3 +109,11 @@ Gemini analysis, cancellation boundaries, cleanup, validation, atomic
 publication, and optional projection are implemented once in the typed
 `AnalysisOrchestrator`. The future Bun executor consumes its events directly;
 it never shells out to the CLI or parses display text.
+
+## 2026-07-27 — Job SQLite does not duplicate media receipt authority
+
+Local job and event tables are operational authority for execution only. They
+store the opaque media/context references and digests required by immutable job
+input, while Phase 3's private JSON receipt remains authoritative for media
+existence, retention, and cleanup. D1 remains limited to completed-run
+projection tables.
