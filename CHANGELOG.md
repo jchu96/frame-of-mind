@@ -5,6 +5,22 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Added the reusable local analysis orchestrator, durable single-concurrency
+  Studio job runtime, Home dashboard, and bounded local context-file staging.
+
+### Fixed
+
+- Regenerate a locally invalid Gemini structured response at most once using
+  sanitized corrective feedback while preserving the unchanged Zod contract.
+- Print the pass-2 boundary before detail interrogation and remove empty
+  failed-attempt meeting containers after cleanup.
+
+### Changed
+
+- Updated Cloudflare Workers development types to `5.20260727.1`.
+
 ### Planned
 
 - Vertex AI backend with private Cloud Storage media staging

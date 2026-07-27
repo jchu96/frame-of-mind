@@ -245,3 +245,15 @@
 - Adversarial review additionally bounded and identifier-sanitized validation
   path segments so a future record-shaped schema cannot turn a model-controlled
   key into repair-instruction text.
+- Reconciled the Local Studio track against shipped code: the authenticated
+  Recording step and its production-build browser coverage complete Task 6.3,
+  advancing the canonical pointer to Task 6.4 and 31 of 49 tasks.
+- Restored the track metadata's missing post-orchestration commit ledger for
+  Phase 4 hardening, durable jobs, restart recovery, dashboard shell/Home, and
+  bounded context staging so logical revert discovery remains traceable.
+- Synchronized prompt revision documentation with runtime revision
+  `2026-07-27.2`, moved post-v0.2.1 work into Unreleased notes, and merged the
+  current Cloudflare Workers types housekeeping update.
+- Completed the previously omitted v0.2.1 release steps by creating the
+  annotated tag at PR #14's verified merge boundary and publishing the matching
+  GitHub release; later Studio and structured-repair work remains Unreleased.
