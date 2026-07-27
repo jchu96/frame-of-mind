@@ -140,10 +140,18 @@ function canonicalJson(value: unknown): string {
     .join(",")}}`;
 }
 
+export function canonicalImmutableJobInputJson(
+  input: ImmutableJobInput,
+): string {
+  return canonicalJson(input);
+}
+
 export async function digestImmutableJobInput(
   input: ImmutableJobInput,
 ): Promise<string> {
-  const bytes = new TextEncoder().encode(canonicalJson(input));
+  const bytes = new TextEncoder().encode(
+    canonicalImmutableJobInputJson(input),
+  );
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -268,6 +276,13 @@ export const analysisJobSchema = z.object({
       code: "custom",
       path: ["projectionWarning"],
       message: "only a published run may carry a projection warning",
+    });
+  }
+  if (job.projectionWarning && !job.runId) {
+    context.addIssue({
+      code: "custom",
+      path: ["projectionWarning"],
+      message: "a projection warning requires a published run",
     });
   }
   if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) {

@@ -4,7 +4,8 @@
 - Date: 2026-07-26
 - Amended: 2026-07-27 — cleanup failure is recoverable; every media mode has
   a continuously enforced server-owned expiry; browser upload sessions bind
-  the complete file
+  the complete file; operational job persistence remains local-only and does
+  not duplicate media-receipt authority
 
 ## Invariant
 
@@ -66,6 +67,10 @@ any nonterminal state -> failed
 - An expired/deleted recording can be reattached. The Studio accepts it only
   when its streamed SHA-256 matches the run manifest.
 - Recording bytes never enter SQLite, D1, the run bundle, logs, or analytics.
+- The private media-session JSON receipt remains the sole authority for staged
+  media ownership, retention, and cleanup. Jobs carry only opaque media IDs and
+  immutable-input digests; they do not copy paths, signed URLs, transcripts,
+  provider payloads, or the media receipt into SQLite.
 
 ### Analysis job
 
@@ -91,8 +96,14 @@ interrupted
 - Retry creates a new linked attempt with its own ID and idempotency key.
 - Restart turns an active job into `interrupted`; it does not invent success,
   failure, or automatic remote resume.
-- SQLite job and event rows are operational authority until terminal
-  publication. They are not described as rebuildable run projections.
+- Local-only SQLite job and event rows are operational authority until terminal
+  publication. Writes that allocate an event sequence or claim an idempotency
+  key use an immediate transaction so concurrent local connections cannot
+  create duplicate attempts or event positions.
+- Job and event tables are deliberately absent from the shared SQLite/D1 run
+  projection schema and Cloudflare build. They are not described as rebuildable
+  run projections, and hosted job execution requires a separate future
+  architecture decision.
 
 ### Durable run
 
