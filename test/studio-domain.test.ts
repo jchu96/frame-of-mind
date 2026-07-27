@@ -9,6 +9,7 @@ import {
   jobCancelRequestSchema,
   jobCreateRequestSchema,
   jobRetryRequestSchema,
+  meetingCatalogRequestSchema,
   mediaSessionSchema,
   validateAnalysisJob,
   verifyImmutableJobInput,
@@ -509,6 +510,31 @@ describe("Studio boundary schemas", () => {
         mode: "retained",
         ttlSeconds: MAX_RETAINED_MEDIA_TTL_SECONDS + 1,
       },
+    })).toThrow();
+  });
+
+  it("keeps meeting catalog requests on an exact provider transport", () => {
+    expect(meetingCatalogRequestSchema.parse({
+      provider: "bluedot",
+      transport: "mcp",
+      cursor: "2",
+      limit: 8,
+    })).toEqual({
+      provider: "bluedot",
+      transport: "mcp",
+      cursor: "2",
+      limit: 8,
+    });
+    expect(() => meetingCatalogRequestSchema.parse({
+      provider: "bluedot",
+      transport: "api",
+      limit: 8,
+    })).toThrow();
+    expect(() => meetingCatalogRequestSchema.parse({
+      provider: "bluedot",
+      transport: "mcp",
+      cursor: "../private",
+      limit: 8,
     })).toThrow();
   });
 
