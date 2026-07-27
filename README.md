@@ -7,16 +7,16 @@ or a local transcript, then runs a structured Gemini analysis recipe. Use it to
 extract decisions, requirements, action items, repository plans, or grounded
 issue reviews into private JSON, Markdown, self-contained HTML, and screenshots.
 
-> **Known live-analysis blocker (2026-07-27):** offline checks pass, but the
-> required Bun runtime reproduced an empty 404 in the shipped SDK upload call,
-> and Gemini 3.6 rejected the shipped full Zod-derived response schema. Direct
-> resumable upload and a provider-safe schema succeeded only in diagnostics.
-> Treat `frameofmind analyze` as compatibility-blocked until those paths are
-> implemented and tested in the production adapter; do not use sensitive media
-> to probe the failure. Provider auth, recipes, local Studio foundations, and
-> run-contract tooling remain available.
+Version 0.2.1 uses Google's documented resumable Files upload protocol and a
+Gemini-safe response schema while retaining the complete Zod contract as the
+local authority. Maintainers can verify upload, both structured model passes,
+and exact cleanup with generated media before processing a meeting:
 
-Intended analysis command after that blocker is resolved:
+```bash
+bun run smoke:gemini
+```
+
+Analysis command:
 
 ```bash
 frameofmind analyze "MEETING_ID" \
@@ -25,7 +25,7 @@ frameofmind analyze "MEETING_ID" \
   --recipe requirements
 ```
 
-> Early public release: `v0.2.0`. Review generated work before using or
+> Early public release: `v0.2.1`. Review generated work before using or
 > publishing it.
 
 ## Product roadmap
@@ -111,7 +111,7 @@ sensitive because screenshots are embedded.
 - Bun 1.3.14+
 - Node.js 22+ for the linked `frameofmind` executable
 - Git; GitHub CLI is optional but used by the examples
-- optional `ffmpeg` for screenshots
+- `ffmpeg` for `bun run smoke:gemini`, derivative clips, and screenshots
 - Gemini Developer API auth key
 - Bluedot, Granola, or local context
 - local MP4/MOV/M4V/WebM screen recording
@@ -223,6 +223,7 @@ for the browser workflow, backend contract, and private storage location.
 ```bash
 export GEMINI_API_KEY="your-key"
 frameofmind doctor
+bun run smoke:gemini
 ```
 
 For a private local clone, copying `.env.example` to `.env` is also supported:
@@ -350,7 +351,7 @@ frameofmind analyze "MEETING_ID" \
   "id": "customer-objections",
   "label": "Customer objections",
   "description": "Extract explicit objections, responses, and unresolved risk.",
-  "revision": "2026-07-26.1",
+  "revision": "2026-07-27.1",
   "indexInstruction": "Find explicit concerns that may block adoption. Reject neutral questions.",
   "interrogationInstruction": "Preserve the exact objection, context, response, resolution status, and follow-up."
 }
@@ -602,8 +603,8 @@ structured output, video metadata, OAuth, and cleanup contracts.
 - Automatic transcript alignment is model-derived.
 - No built-in external publishing yet.
 - No centralized/encrypted evidence vault.
-- No cross-run vector index in `v0.2.0`.
-- Review-workspace imports are manual in `v0.2.0`.
+- No cross-run vector index in `v0.2.1`.
+- Review-workspace imports are manual in `v0.2.1`.
 - The local/Cloudflare MCP server is designed but intentionally deferred to the
   next iteration.
 

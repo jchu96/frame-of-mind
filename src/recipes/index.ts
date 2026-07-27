@@ -87,6 +87,6 @@ export async function loadRecipe(id: string, recipeFile?: string): Promise<{
     recipe,
     custom: Boolean(recipeFile),
     sha256: await sha256Utf8(canonical),
-    revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-07-26.1"),
+    revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-07-27.1"),
   };
 }

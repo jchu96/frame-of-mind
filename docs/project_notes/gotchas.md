@@ -18,8 +18,10 @@
   only the derived finding, using audio, visible active-speaker state,
   adjacent-turn continuity, and direct address; otherwise mark it uncertain.
 - `@google/genai` 2.13.0 `files.upload()` can return an empty 404 under Bun
-  even when the key and Files API are healthy. Confirm with a synthetic
-  resumable upload before treating this as authentication or quota failure.
+  even when the key and Files API are healthy. Version 0.2.1 bypasses that
+  wrapper with Google's documented resumable protocol. Run
+  `bun run smoke:gemini` before treating an upload failure as authentication
+  or quota failure.
 - Use the vendored official Google `gemini-api-dev` and
   `gemini-interactions-api` skills before Gemini changes, then fetch the
   task-specific hosted documentation they require.
@@ -39,10 +41,18 @@
   Zod failure, fail closed. A future adapter implementation may permit at most
   one corrective model retry containing only the validation error; never
   truncate evidence or weaken the durable schema.
-- Live diagnostic code is not product behavior. A successful direct resumable
-  upload or Beta Interactions call becomes a shipped fallback only after it is
-  isolated in the adapter and passes upload, generation, timeout, and cleanup
-  tests.
+- Direct resumable upload is shipped product behavior as of v0.2.1. Beta
+  Interactions remains diagnostic only; a later migration still requires
+  upload, generation, validation, timeout, and cleanup equivalence.
+- Fetch follows redirects unless told otherwise and can forward
+  `X-Goog-Api-Key` across a 307. Both Gemini upload requests must keep
+  `redirect: "error"`; validating the final URL after a redirect is too late.
+- A finalize timeout, invalid JSON body, or unnamed invalid envelope can leave
+  remote cleanup unconfirmed because no exact file name is available. Report
+  that ambiguity; never claim deletion or expose the provider body.
+- The live synthetic smoke must exercise both structured passes. An
+  upload/index/delete-only canary missed a detail timestamp that violated the
+  stricter local refinement.
 - Browser automation may be unable to attach a local screenshot. Do not
   extract cookies or call undocumented upload endpoints; use normal GitHub
   attachment behavior or an explicitly approved artifact path.

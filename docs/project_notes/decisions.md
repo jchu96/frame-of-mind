@@ -4,6 +4,13 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-07-27 — Resumable upload is shipped; local Zod remains authoritative
+
+The production Bun adapter uses Google's documented resumable Files upload,
+the SDK for status/generation/deletion, an allowlisted provider schema, and the
+complete local Zod contract. Beta Interactions remains outside production.
+See ADR 0010.
+
 ## 2026-07-27 — Transcript-first scope is semantic, not speaker-exclusive
 
 Topic- or speaker-focused analysis selects bounded local media derivatives
