@@ -67,6 +67,9 @@ const studioOAuthHandler = fileURLToPath(
 const studioMediaStartup = fileURLToPath(
   new URL("./server-local/studio-media/startup.ts", import.meta.url),
 );
+const studioContextStartup = fileURLToPath(
+  new URL("./server-local/studio-context/startup.ts", import.meta.url),
+);
 const studioJobsStartup = fileURLToPath(
   new URL("./server-local/studio-jobs/startup.ts", import.meta.url),
 );
@@ -84,6 +87,12 @@ const studioMediaCompleteHandler = fileURLToPath(
 );
 const studioMediaAbortHandler = fileURLToPath(
   new URL("./server-local/studio-media/abort.delete.ts", import.meta.url),
+);
+const studioContextCreateHandler = fileURLToPath(
+  new URL("./server-local/studio-context/create.post.ts", import.meta.url),
+);
+const studioContextDeleteHandler = fileURLToPath(
+  new URL("./server-local/studio-context/delete.ts", import.meta.url),
 );
 const studioJobsListHandler = fileURLToPath(
   new URL("./server-local/studio-jobs/index.get.ts", import.meta.url),
@@ -162,6 +171,16 @@ const localHandlers = [
           route: "/api/studio/media/:id",
           method: "delete",
           handler: studioMediaAbortHandler,
+        },
+        {
+          route: "/api/context-files",
+          method: "post",
+          handler: studioContextCreateHandler,
+        },
+        {
+          route: "/api/context-files/:id",
+          method: "delete",
+          handler: studioContextDeleteHandler,
         },
         {
           route: "/api/studio/jobs",
@@ -252,7 +271,7 @@ export default defineNuxtConfig({
     preset: nitroPreset,
     handlers: localHandlers,
     plugins: localStudioEnabled
-      ? [studioMediaStartup, studioJobsStartup]
+      ? [studioMediaStartup, studioContextStartup, studioJobsStartup]
       : [],
   },
   runtimeConfig: {

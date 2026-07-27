@@ -141,7 +141,7 @@ seals incomplete or corrupt media.
 
 Controls:
 
-- cap media at 2 GB and context files at their smaller route-specific limit;
+- cap media at 2 GB and context files at an independent 8 MiB limit;
 - reserve capacity before accepting bytes and retain a safety margin;
 - enforce one writer per part or session transition;
 - stream into a private temporary file while counting bytes;
@@ -149,6 +149,14 @@ Controls:
 - stream the final SHA-256 and atomically rename only after exact byte-count
   and MIME validation;
 - reconcile temporary and sealed receipts at startup.
+
+Context files use an atomic one-request staging directory rather than media
+multipart state. The server requires valid UTF-8 plus format-specific
+JSON/caption validation, binds the receipt to exact bytes and SHA-256, and
+deletes the copy after its one execution lease. A one-hour expiry and
+non-overlapping minute sweep remove abandoned context. Context validation may
+hold at most the explicit 8 MiB cap in memory after the request has streamed to
+disk; recording paths remain bounded-memory streams.
 
 Verification: bounded-memory measurement, insufficient-space simulation,
 short or long body, digest mismatch, concurrent writer, interrupted write, and
@@ -166,6 +174,7 @@ Controls:
 - create files without following user-selected paths;
 - fail closed on symlinks or identity changes where the platform exposes the
   check;
+- reject context deletion while its process-local execution lease is active;
 - never delete the original user-selected file.
 
 Verification: traversal encodings, separator variants, symlink fixtures,

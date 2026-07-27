@@ -4,6 +4,13 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-07-27 — Local context staging is bounded and single-use
+
+Studio accepts only five text-oriented formats through an 8 MiB private upload.
+The receipt stays outside SQLite, execution normalizes through
+`FileContextSource`, and the executor deletes the staged copy when its lease
+ends. One-hour expiry is the abandoned-upload backstop. See ADR 0011.
+
 ## 2026-07-27 — Resumable upload is shipped; local Zod remains authoritative
 
 The production Bun adapter uses Google's documented resumable Files upload,

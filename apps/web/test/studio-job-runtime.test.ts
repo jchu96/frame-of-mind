@@ -140,8 +140,42 @@ describe("Local Studio job runtime", () => {
         provider: "file",
         transport: "file",
         contextFileId: "context_01K123456789ABC",
+        contextFileSha256: "c".repeat(64),
       },
     }), "context_file_staging_unavailable");
+    const withMismatchedContext = new LocalStudioAnalyzeOptionsResolver({
+      media: {
+        async resolveInUsePath() {
+          throw new Error("must not resolve media for rejected input");
+        },
+      },
+      contextFiles: {
+        async get(id) {
+          return {
+            id,
+            format: "text",
+            bytes: 4,
+            sha256: "d".repeat(64),
+            expiresAt: "2026-07-27T13:00:00.000Z",
+          };
+        },
+        async acquire() {
+          throw new Error("must not lease mismatched context");
+        },
+      },
+      secrets: secrets({ "gemini-api-key": "synthetic-gemini-key" }),
+      oauthCredentialPresent: () => false,
+      outputRoot: "/private/synthetic/runs",
+    });
+    await expectInputError(withMismatchedContext.assertReady({
+      ...base,
+      context: {
+        provider: "file",
+        transport: "file",
+        contextFileId: "context_01K123456789ABC",
+        contextFileSha256: "c".repeat(64),
+      },
+    }), "context_file_receipt_mismatch");
     await expectInputError(withGemini.assertReady({
       ...base,
       context: {
@@ -150,6 +184,73 @@ describe("Local Studio job runtime", () => {
         meetingId: "not_12345678901234",
       },
     }), "granola_api_not_configured");
+  });
+
+  test("leases an exact local context receipt and releases it after execution", async () => {
+    const recipe = await loadRecipe("issue-review");
+    const releases: string[] = [];
+    const contextFileId = "context_01K123456789ABC";
+    const resolver = new LocalStudioAnalyzeOptionsResolver({
+      media: {
+        async resolveInUsePath() {
+          return "/private/synthetic/media.sealed";
+        },
+      },
+      contextFiles: {
+        async get(id) {
+          expect(id).toBe(contextFileId);
+          return {
+            id,
+            format: "vtt",
+            bytes: 42,
+            sha256: "c".repeat(64),
+            expiresAt: "2026-07-27T13:00:00.000Z",
+          };
+        },
+        async acquire(id) {
+          expect(id).toBe(contextFileId);
+          return {
+            path: "/private/synthetic/context.vtt",
+            receipt: {
+              id,
+              format: "vtt",
+              bytes: 42,
+              sha256: "c".repeat(64),
+              expiresAt: "2026-07-27T13:00:00.000Z",
+            },
+            async release() {
+              releases.push(id);
+            },
+          };
+        },
+      },
+      secrets: secrets({ "gemini-api-key": "synthetic-gemini-key" }),
+      oauthCredentialPresent: () => false,
+      outputRoot: "/private/synthetic/runs",
+    });
+    const job = analysisJob({
+      context: {
+        provider: "file",
+        transport: "file",
+        contextFileId,
+        contextFileSha256: "c".repeat(64),
+      },
+      recipe: {
+        id: recipe.recipe.id,
+        custom: false,
+        revision: recipe.revision,
+        sha256: recipe.sha256,
+      },
+    });
+
+    await expect(resolver.resolve(job)).resolves.toMatchObject({
+      meetingId: contextFileId,
+      contextProvider: "file",
+      contextFile: "/private/synthetic/context.vtt",
+    });
+    await resolver.releaseContextFile(job.id);
+    await resolver.releaseContextFile(job.id);
+    expect(releases).toEqual([contextFileId]);
   });
 
   test("starts one durable worker and executes API-created work", async () => {

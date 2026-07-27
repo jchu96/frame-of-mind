@@ -107,6 +107,8 @@ export function requiresLocalStudioSession(pathname: string): boolean {
     || pathname === "/api/session"
     || pathname === "/api/runs"
     || pathname.startsWith("/api/runs/")
+    || pathname === "/api/context-files"
+    || pathname.startsWith("/api/context-files/")
     || pathname.startsWith("/api/studio/");
 }
 

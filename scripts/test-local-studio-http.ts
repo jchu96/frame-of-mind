@@ -13,6 +13,7 @@ const environment = {
   FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: bootstrapToken,
   FRAME_OF_MIND_CHECKOUT_ROOT: process.cwd(),
   FRAME_OF_MIND_MEDIA_ROOT: mediaRoot,
+  FRAME_OF_MIND_CONTEXT_ROOT: join(mediaRoot, "context"),
   HOST: "127.0.0.1",
   NITRO_HOST: "127.0.0.1",
   PORT: String(port),
@@ -82,6 +83,23 @@ function createStudioProbe(origin: string) {
         headers: {
           "content-type": "video/mp4",
           "content-length": String(bytes.byteLength),
+          origin,
+          ...(cookie ? { cookie } : {}),
+          ...headers,
+        },
+        body: bytes,
+      });
+    },
+    uploadContext(
+      bytes: Uint8Array,
+      headers: Record<string, string> = {},
+    ) {
+      return fetch(`${origin}/api/context-files`, {
+        method: "POST",
+        headers: {
+          "content-type": "text/vtt",
+          "content-length": String(bytes.byteLength),
+          "x-context-format": "vtt",
           origin,
           ...(cookie ? { cookie } : {}),
           ...headers,
@@ -162,6 +180,13 @@ try {
     await probe.get("/api/studio/jobs"),
     401,
     "job list requires a Studio session",
+  );
+  await expectStatus(
+    await probe.uploadContext(new TextEncoder().encode(
+      "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nSynthetic context\n",
+    )),
+    401,
+    "context-file staging requires a Studio session",
   );
   await expectStatus(
     await probe.bootstrap(bootstrapToken, {
@@ -360,6 +385,57 @@ try {
     await probe.mutate(`/api/studio/media/${media.id}`, "DELETE", {}),
     200,
     "media abort deletes only the private staged copy",
+  );
+
+  const contextBytes = new TextEncoder().encode(
+    "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nSynthetic context\n",
+  );
+  await expectStatus(
+    await probe.uploadContext(contextBytes, {
+      origin: "https://attacker.example",
+      "sec-fetch-site": "cross-site",
+    }),
+    403,
+    "cross-site context staging fails closed",
+  );
+  await expectStatus(
+    await probe.uploadContext(contextBytes, {
+      "content-type": "application/json",
+    }),
+    415,
+    "context format and MIME must agree",
+  );
+  const stagedContext = await expectStatus(
+    await probe.uploadContext(contextBytes),
+    201,
+    "bounded context-file staging succeeds",
+  );
+  const contextReceiptText = await stagedContext.text();
+  const contextReceipt = JSON.parse(contextReceiptText) as {
+    id: string;
+    format: string;
+    bytes: number;
+    sha256: string;
+  };
+  if (
+    !contextReceipt.id.startsWith("context_")
+    || contextReceipt.format !== "vtt"
+    || contextReceipt.bytes !== contextBytes.byteLength
+    || contextReceipt.sha256
+      !== createHash("sha256").update(contextBytes).digest("hex")
+    || contextReceiptText.includes("Synthetic context")
+    || contextReceiptText.includes(mediaRoot)
+  ) {
+    throw new Error("Context staging returned an invalid or private receipt.");
+  }
+  await expectStatus(
+    await probe.mutate(
+      `/api/context-files/${contextReceipt.id}`,
+      "DELETE",
+      {},
+    ),
+    204,
+    "context delete removes only the private staged copy",
   );
 
   const secret = "studio-http-test-secret-value";
