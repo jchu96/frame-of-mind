@@ -47,6 +47,24 @@ const studioSecretDeleteHandler = fileURLToPath(
 const studioOAuthHandler = fileURLToPath(
   new URL("./server-local/studio-configuration/oauth.post.ts", import.meta.url),
 );
+const studioMediaStartup = fileURLToPath(
+  new URL("./server-local/studio-media/startup.ts", import.meta.url),
+);
+const studioMediaCreateHandler = fileURLToPath(
+  new URL("./server-local/studio-media/create.post.ts", import.meta.url),
+);
+const studioMediaStatusHandler = fileURLToPath(
+  new URL("./server-local/studio-media/status.get.ts", import.meta.url),
+);
+const studioMediaPartHandler = fileURLToPath(
+  new URL("./server-local/studio-media/part.put.ts", import.meta.url),
+);
+const studioMediaCompleteHandler = fileURLToPath(
+  new URL("./server-local/studio-media/complete.post.ts", import.meta.url),
+);
+const studioMediaAbortHandler = fileURLToPath(
+  new URL("./server-local/studio-media/abort.delete.ts", import.meta.url),
+);
 
 const localHandlers = [
   ...(localStudioEnabled
@@ -84,6 +102,31 @@ const localHandlers = [
           route: "/api/studio/connections/:provider/oauth",
           method: "post",
           handler: studioOAuthHandler,
+        },
+        {
+          route: "/api/studio/media",
+          method: "post",
+          handler: studioMediaCreateHandler,
+        },
+        {
+          route: "/api/studio/media/:id",
+          method: "get",
+          handler: studioMediaStatusHandler,
+        },
+        {
+          route: "/api/studio/media/:id/parts/:part",
+          method: "put",
+          handler: studioMediaPartHandler,
+        },
+        {
+          route: "/api/studio/media/:id/complete",
+          method: "post",
+          handler: studioMediaCompleteHandler,
+        },
+        {
+          route: "/api/studio/media/:id",
+          method: "delete",
+          handler: studioMediaAbortHandler,
         },
       ]
     : []),
@@ -127,6 +170,7 @@ export default defineNuxtConfig({
   nitro: {
     preset: nitroPreset,
     handlers: localHandlers,
+    plugins: localStudioEnabled ? [studioMediaStartup] : [],
   },
   runtimeConfig: {
     authMode: "off",

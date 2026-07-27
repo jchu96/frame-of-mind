@@ -19,6 +19,7 @@ const studioEnvironment = {
   ...process.env,
   FRAME_OF_MIND_STUDIO: "1",
   FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: bootstrapToken,
+  FRAME_OF_MIND_CHECKOUT_ROOT: process.cwd(),
   HOST: "127.0.0.1",
   NITRO_HOST: "127.0.0.1",
   PORT: String(configuredPort),

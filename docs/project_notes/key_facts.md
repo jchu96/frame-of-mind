@@ -26,3 +26,9 @@
   lifecycles and authority boundaries.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds
   no plaintext API-key store.
+- Local Studio media uses server-advertised fixed-size parts, exact
+  `Upload-Offset` receipts, streamed SHA-256/MIME verification, and private
+  per-user application-data storage outside the checkout.
+- The local Nitro startup plugin reconciles interrupted media writes, seals,
+  expiry, and retryable cleanup before Studio serves work; Cloudflare builds
+  exclude the entire implementation.
