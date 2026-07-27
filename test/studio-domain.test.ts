@@ -6,6 +6,9 @@ import {
   composerPayloadSchema,
   configurationStatusSchema,
   digestImmutableJobInput,
+  jobCancelRequestSchema,
+  jobCreateRequestSchema,
+  jobRetryRequestSchema,
   mediaSessionSchema,
   validateAnalysisJob,
   verifyImmutableJobInput,
@@ -499,6 +502,41 @@ describe("Studio boundary schemas", () => {
         mode: "retained",
         ttlSeconds: MAX_RETAINED_MEDIA_TTL_SECONDS + 1,
       },
+    })).toThrow();
+  });
+
+  it("keeps job mutation bodies strict and server-timestamped", () => {
+    expect(jobCreateRequestSchema.parse({
+      idempotencyKey: "studio-job-create-0001",
+      input: immutableInput,
+    })).toEqual({
+      idempotencyKey: "studio-job-create-0001",
+      input: immutableInput,
+    });
+    expect(jobRetryRequestSchema.parse({
+      idempotencyKey: "studio-job-retry-0001",
+    })).toEqual({
+      idempotencyKey: "studio-job-retry-0001",
+    });
+    expect(jobCancelRequestSchema.parse({})).toEqual({});
+    expect(() => jobCancelRequestSchema.parse({
+      requestedAt: now,
+    })).toThrow();
+    expect(() => jobCreateRequestSchema.parse({
+      idempotencyKey: "studio-job-create-0001",
+      input: {
+        ...immutableInput,
+        recipe: {
+          id: "issue-review",
+          revision: "builtin-v1",
+          sha256,
+        },
+      },
+    })).toThrow();
+    expect(() => jobCreateRequestSchema.parse({
+      idempotencyKey: "studio-job-create-0001",
+      input: immutableInput,
+      filesystemPath: "/private/recording.mp4",
     })).toThrow();
   });
 });

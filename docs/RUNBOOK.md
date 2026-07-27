@@ -519,8 +519,14 @@ an already-created retry does not depend on later media availability. If
 cancellation races an indeterminate publication receipt, the attempt remains
 `interrupted`; verify whether the run exists before retrying.
 
-The job routes and runtime singleton wiring land in the following slice; the
-CLI remains the supported user-facing execution entry point until then.
+The authenticated `/api/studio/jobs` route contracts are registered and
+bounded, but deliberately return HTTP 503 until the runtime plugin configures
+the one repository/control/worker singleton. Do not bypass this gate or insert
+queued rows manually: that would acknowledge work without a live executor.
+Initial execution must own the sealed recording as `in_use`; terminal cleanup
+deletes ephemeral staging and returns retained staging to `retained`.
+The CLI remains the supported user-facing execution entry point until runtime
+wiring lands.
 
 ## 4. Review procedure
 

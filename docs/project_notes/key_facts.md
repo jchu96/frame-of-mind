@@ -70,6 +70,10 @@
 - Cancellation persists before abort and queued cancellations invoke no
   provider. Linked retries require exact unexpired retained media at creation
   and an `in_use` execution lease; indeterminate publication outranks cancel.
+- Local job routes are explicit node-only `/api/studio/jobs` handlers with
+  100-row/event caps and fail closed until one process runtime is configured.
+- Initial jobs require explicit recipe provenance and lease sealed media while
+  executing; cleanup deletes ephemeral staging or restores retained staging.
 - Studio media sessions, analysis jobs, and durable runs have separate
   lifecycles and authority boundaries.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds

@@ -276,11 +276,11 @@ Provisional local endpoints:
 | `PUT` | `/api/studio/media/:id/parts/:part` | Stream one exact part with `Upload-Offset` |
 | `POST` | `/api/studio/media/:id/complete` | Verify MIME/digest and atomically seal staged media |
 | `DELETE` | `/api/studio/media/:id` | Abort and clean staged media idempotently |
-| `POST` | `/api/jobs` | Validate a draft and create an analysis job |
-| `GET` | `/api/jobs` | List bounded job summaries |
-| `GET` | `/api/jobs/:id` | Read one job and stage history |
-| `POST` | `/api/jobs/:id/cancel` | Request durable cancellation |
-| `POST` | `/api/jobs/:id/retry` | Create a linked retry attempt |
+| `POST` | `/api/studio/jobs` | Validate a draft and create an analysis job |
+| `GET` | `/api/studio/jobs` | List bounded job summaries |
+| `GET` | `/api/studio/jobs/:id` | Read one job and stage history |
+| `POST` | `/api/studio/jobs/:id/cancel` | Request durable cancellation |
+| `POST` | `/api/studio/jobs/:id/retry` | Create a linked retry attempt |
 | `GET` | `/api/runs/:id/media` | Stream authorized retained local media by opaque ID |
 | `POST` | `/api/runs/:id/media/reattach` | Bind matching reattached media by manifest digest |
 

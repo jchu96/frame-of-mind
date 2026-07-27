@@ -17,6 +17,7 @@ import {
   LocalStudioJobWorker,
 } from "../server-local/studio-jobs/local-job-worker";
 import {
+  LocalInitialMediaGuard,
   LocalMediaReuseGuard,
   StudioMediaReuseError,
 } from "../server-local/studio-jobs/media-reuse-guard";
@@ -109,6 +110,72 @@ describe("LocalMediaReuseGuard", () => {
 
     expect(releaseAttempts).toBe(2);
     expect(transitions).toEqual(["retained->in_use", "in_use->retained"]);
+  });
+});
+
+describe("LocalInitialMediaGuard", () => {
+  test("accepts only the exact unexpired sealed upload receipt", async () => {
+    const job = await retainedJob();
+    const guard = new LocalInitialMediaGuard(mediaAdapter(
+      retainedSession({ status: "sealed" }),
+    ));
+
+    await expect(guard.assertUsable(
+      job.input,
+      "2026-07-27T13:00:00.000Z",
+    )).resolves.toBeUndefined();
+  });
+
+  test("rejects retained state and a mismatched digest", async () => {
+    const job = await retainedJob();
+    await expect(
+      new LocalInitialMediaGuard(mediaAdapter(retainedSession()))
+        .assertUsable(job.input, "2026-07-27T13:00:00.000Z"),
+    ).rejects.toMatchObject({ code: "media_not_usable" });
+    await expect(
+      new LocalInitialMediaGuard(mediaAdapter(retainedSession({
+        status: "sealed",
+        sha256: "b".repeat(64),
+      }))).assertUsable(job.input, "2026-07-27T13:00:00.000Z"),
+    ).rejects.toMatchObject({ code: "media_not_usable" });
+  });
+
+  test("leases initial retained media and returns it to retained", async () => {
+    const job = await retainedJob();
+    const transitions: string[] = [];
+    const guard = new LocalInitialMediaGuard(mediaAdapter(
+      retainedSession({ status: "sealed" }),
+      transitions,
+    ));
+
+    const lease = await guard.acquire(
+      job.input,
+      "2026-07-27T13:00:00.000Z",
+    );
+    await lease.release();
+
+    expect(transitions).toEqual(["sealed->in_use", "in_use->retained"]);
+  });
+
+  test("deletes an ephemeral staged copy when its initial lease ends", async () => {
+    const job = await retainedJob();
+    const transitions: string[] = [];
+    const retention = {
+      mode: "ephemeral" as const,
+      expiresAt: retainedUntil,
+    };
+    const guard = new LocalInitialMediaGuard(mediaAdapter(
+      retainedSession({ status: "sealed", retention }),
+      transitions,
+    ));
+
+    const lease = await guard.acquire(
+      { ...job.input, retention },
+      "2026-07-27T13:00:00.000Z",
+    );
+    await lease.release();
+
+    expect(transitions).toEqual(["sealed->in_use", "in_use->deleted"]);
   });
 });
 
@@ -383,6 +450,18 @@ function mediaAdapter(
       current = mediaSessionSchema.parse({
         ...current,
         status: input.next,
+        updatedAt: "2026-07-27T13:00:00.000Z",
+      });
+      return current;
+    },
+    async delete() {
+      if (current.status !== "in_use") {
+        throw new Error("media state conflict");
+      }
+      transitions.push("in_use->deleted");
+      current = mediaSessionSchema.parse({
+        ...current,
+        status: "deleted",
         updatedAt: "2026-07-27T13:00:00.000Z",
       });
       return current;

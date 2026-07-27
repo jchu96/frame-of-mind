@@ -172,3 +172,10 @@
   and linked attempts fail closed without a just-in-time media lease. Added
   recovery for abandoned retained leases and kept indeterminate publication
   outcomes from being mislabeled by a concurrent cancellation.
+- Added the local job list/create/detail/cancel/retry HTTP contracts, bounded
+  query/body parsing, sanitized error mapping, initial sealed-media guard, and
+  a repository-backed service adapter. Registration is node-only and returns
+  503 until the runtime singleton is supplied in the next seam.
+- Adversarial review tightened create-time recipe provenance and extended the
+  execution lease to initial attempts, including terminal deletion of
+  ephemeral staging and restoration of retained staging.

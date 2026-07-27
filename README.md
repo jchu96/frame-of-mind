@@ -214,7 +214,9 @@ and recipe receipt into that orchestrator; it does not scrape terminal output
 or fork a second analysis pipeline. Durable cancellation and linked retry
 controls are also implemented behind the forthcoming job routes; new retries
 require an exact, unexpired retained-media receipt that is leased for the
-duration of execution. See the
+duration of execution. The authenticated `/api/studio/jobs` route surface is
+registered with strict bounded contracts and fails closed with HTTP 503 until
+the process runtime singleton is wired. See the
 [web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
 for the browser workflow, backend contract, and private storage location.
 
