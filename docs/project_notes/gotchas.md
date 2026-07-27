@@ -175,3 +175,15 @@
 - Validate generated/injected run IDs as one strict portable path segment
   before creating a staging directory. Dependency injection is a trust
   boundary too; never feed an unchecked factory value to recursive cleanup.
+- A default deferred SQLite transaction can race when idempotency or sequence
+  allocation reads before it writes. Job repository mutations use Bun's
+  documented `transaction().immediate()` form and a bounded busy timeout.
+- Do not mirror Phase 3 media JSON receipts into job tables. Jobs may retain
+  only opaque IDs and digests; duplicating lifecycle authority creates
+  irreconcilable cleanup/retention state.
+- A `cleaning_up` job may already own a published run. Reject new cancellation
+  intent and any replacement run ID after publication; the durable bundle
+  cannot be relabeled by a later control request.
+- A job ID names one attempt, but duplicated `attempt` columns still need a
+  composite foreign key and read-boundary comparison. Valid JSON alone does
+  not prove an event belongs to the persisted attempt.

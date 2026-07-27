@@ -660,6 +660,23 @@ rebuildable from a run that does not exist yet. After success,
 `analysis.json`/`manifest.json` become authoritative and their run/item
 projection remains disposable.
 
+The local-only `LocalSqliteJobRepository` owns `studio_analysis_jobs` and
+`studio_analysis_job_events` in the same private SQLite file as the rebuildable
+run projection, but through a separate migration and interface. Its tables are
+intentionally absent from D1 and the Cloudflare bundle. Every write operation
+uses Bun SQLite `BEGIN IMMEDIATE` transactions so idempotency lookup plus
+creation, expected-stage transition plus event append, cancellation intent,
+retry derivation, and sequence allocation are serialized across connections.
+Rows are parsed through the shared Zod schemas on every read, and immutable
+input digests are recomputed before creation and verified again after reads.
+
+The job database stores an opaque media session ID and digest inside immutable
+job input; it does not copy the media receipt or private path. Phase 3's
+private JSON media receipt remains the single media authority. A future
+bounded context-staging adapter similarly owns its receipt and exposes only an
+opaque context ID to jobs. This avoids two durable owners drifting over whether
+bytes still exist.
+
 The first Studio runs one job at a time in the Bun application process.
 Closing the browser does not cancel it; restarting the process marks active
 work interrupted and requires an explicit linked retry. API secrets come from

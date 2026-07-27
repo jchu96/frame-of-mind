@@ -185,11 +185,13 @@ separate proposed track.
 
 ### Tasks
 
-- [ ] Task 5.1: Add local-only SQLite migrations and migration tests for
-      operational jobs, events, and staged-media/context receipts without
-      storing media, transcripts, or reviewer-authored state; keep the existing
-      SQLite/D1 parity contract limited to completed-run projection tables.
-- [ ] Task 5.2: Implement the SQLite `JobRepository` with atomic transitions,
+- [x] Task 5.1: Add local-only SQLite migrations and migration tests for
+      operational jobs and events without copying media/context receipt
+      authority, media, transcripts, or reviewer-authored state into the job
+      database. Existing media JSON receipts remain authoritative; future
+      context staging owns its own bounded receipt. Keep SQLite/D1 parity
+      limited to completed-run projection tables.
+- [x] Task 5.2: Implement the SQLite `JobRepository` with atomic transitions,
       idempotent creation, bounded listing, and event ordering.
 - [ ] Task 5.3: Implement the local Bun executor with concurrency one,
       startup/shutdown reconciliation, signal-aware interruption, structured
