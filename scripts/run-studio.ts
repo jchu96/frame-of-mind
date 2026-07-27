@@ -1,7 +1,10 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { generateStudioCapability } from "../apps/web/server-local/studio-session/session.js";
-import { LOCAL_STUDIO_BOOTSTRAP_FRAGMENT } from "../apps/web/server-local/studio-session/contract.js";
+import {
+  LOCAL_STUDIO_BOOTSTRAP_FRAGMENT,
+  LOCAL_STUDIO_LAUNCH_PATH,
+} from "../apps/web/server-local/studio-session/contract.js";
 import { openBrowser } from "../src/adapters/bluedot-oauth.js";
 
 const configuredPort = Number(process.env.PORT || 3_000);
@@ -15,7 +18,8 @@ if (
 
 const bootstrapToken = generateStudioCapability();
 const launchUrl =
-  `http://127.0.0.1:${configuredPort}/${LOCAL_STUDIO_BOOTSTRAP_FRAGMENT}`
+  `http://127.0.0.1:${configuredPort}${LOCAL_STUDIO_LAUNCH_PATH}`
+  + LOCAL_STUDIO_BOOTSTRAP_FRAGMENT
   + encodeURIComponent(bootstrapToken);
 const studioEnvironment = {
   ...process.env,

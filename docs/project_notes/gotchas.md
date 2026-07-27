@@ -261,3 +261,17 @@
 - Nuxt serializes builds in one workspace with a build lock. Do not run local
   and Cloudflare Nuxt builds concurrently against `apps/web`; run them
   sequentially so one target cannot fail or reuse the other's generated state.
+- Tailwind v4 automatic source detection does not cover build-injected Studio
+  Vue files under `server-local/`. Keep the explicit relative `@source` in
+  `app/assets/css/main.css`; a successful Vue build can otherwise omit unique
+  responsive utilities. Assert real desktop geometry, not only element
+  visibility.
+- Nuxt may reuse cached `useFetch` state when client navigation returns to
+  Studio Home. Revalidate jobs, runs, and connection presence on mount so an
+  import or job transition cannot leave the dashboard showing an old empty
+  projection.
+- A URL fragment is invisible to the initial HTTP request, so protecting `/`
+  while also using it as the fragment landing page is impossible. Use the
+  dedicated inert `/__studio/launch` route for exchange and protect Home,
+  review/import routes, run APIs, and every `/api/studio/*` route. Replayed
+  links must remain inert instead of mounting Home and generating 401 retries.
