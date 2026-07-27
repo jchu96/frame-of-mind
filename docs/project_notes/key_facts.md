@@ -47,6 +47,12 @@
   bounded keyset pagination and summary-only selects.
 - The accepted Studio Phase A direction uses an authenticated local Bun process
   with concurrency one; hosted execution is a separate Phase B track.
+- CLI analysis now runs through a provider-neutral `AnalysisOrchestrator` with
+  typed progress, cooperative cancellation, explicit factories, and an
+  optional post-publication projection publisher.
+- A validated run is durable at atomic staging-directory rename. Projection
+  failure returns a sanitized warning and cannot invalidate the bundle or
+  rewrite its frozen cleanup provenance.
 - Studio media sessions, analysis jobs, and durable runs have separate
   lifecycles and authority boundaries.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds

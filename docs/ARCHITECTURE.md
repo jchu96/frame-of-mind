@@ -285,11 +285,11 @@ All recipes share one policy:
 
 Default roots:
 
-| Platform | Root |
+| Platform | Root                                                                       |
 |---|---|
-| macOS | `~/Library/Application Support/frame-of-mind/runs` |
-| Linux | `$XDG_DATA_HOME/frame-of-mind/runs` or `~/.local/share/frame-of-mind/runs` |
-| Windows | `%LOCALAPPDATA%\\frame-of-mind\\runs` |
+| macOS    | `~/Library/Application Support/frame-of-mind/runs`                         |
+| Linux    | `$XDG_DATA_HOME/frame-of-mind/runs` or `~/.local/share/frame-of-mind/runs` |
+| Windows  | `%LOCALAPPDATA%\\frame-of-mind\\runs`                                      |
 
 Layout:
 
@@ -667,6 +667,31 @@ the environment or process-memory session input. Mutating local routes require
 a per-launch capability/session in addition to loopback, Host, and same-origin
 checks.
 
+The CLI analysis command is a thin adapter over `AnalysisOrchestrator`. The
+orchestrator accepts explicit context/analyzer factories, an optional
+`AbortSignal`, a typed progress reporter, and an optional completed-run
+projection publisher. Its stage vocabulary deliberately matches the
+nonterminal work stages of the Studio job model:
+
+```text
+fetching_context -> uploading_to_gemini -> indexing -> interrogating
+-> rendering -> cleaning_up
+```
+
+Cancellation is cooperative at provider, upload, model, screenshot, render,
+and publication boundaries. Once a Gemini file identity is known, failure or
+cancellation still runs exact-file cleanup. Cancellation is no longer observed
+after the validated staging directory is atomically renamed: at that point the
+durable run already exists and must be reported as published rather than
+retroactively canceled.
+
+Projection publication occurs only after that atomic rename. Projection
+failures are converted to a fixed, sanitized warning and returned alongside
+the successful run. They never delete or mutate `analysis.json`,
+`manifest.json`, their cleanup provenance, or rendered artifacts. A future Bun
+job executor maps these service events into job-bound sequenced events; it
+does not parse CLI text.
+
 The local media backend streams server-advertised fixed-size parts directly
 from H3's Node request iterable into a private Bun `FileSink`. Durable JSON
 receipts record only opaque IDs, exact byte/part hashes, lifecycle state, and
@@ -725,19 +750,19 @@ weaken the Nuxt UI boundary. See [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 ## 10. Failure model
 
-| Failure | Behavior |
+| Failure                                 | Behavior                                                     |
 |---|---|
-| Provider OAuth fails | no Gemini upload starts |
-| Context unavailable | run stops before media upload |
-| Media validation fails | no provider/model processing |
-| Gemini upload fails | partial remote file deletion attempted |
-| Upload processing and cleanup both fail | sanitized combined failure; remote cleanup is not claimed |
-| Gemini HTTP request stalls | per-operation deadline aborts locally so cleanup can proceed |
-| Index mismatch | remote cleanup, no published run |
-| One interrogation fails | current release fails the run; resumability is future work |
-| Screenshot fails | analysis can continue without screenshot |
-| Remote deletion fails | warning plus `deleted: false` in manifest |
-| Artifact write fails | staging directory removed; no partial final run |
+| Provider OAuth fails                    | no Gemini upload starts                                      |
+| Context unavailable                     | run stops before media upload                                |
+| Media validation fails                  | no provider/model processing                                 |
+| Gemini upload fails                     | partial remote file deletion attempted                       |
+| Upload processing and cleanup both fail | sanitized combined failure; remote cleanup is not claimed    |
+| Gemini HTTP request stalls              | per-operation deadline aborts locally so cleanup can proceed |
+| Index mismatch                          | remote cleanup, no published run                             |
+| One interrogation fails                 | current release fails the run; resumability is future work   |
+| Screenshot fails                        | analysis can continue without screenshot                     |
+| Remote deletion fails                   | warning plus `deleted: false` in manifest                    |
+| Artifact write fails                    | staging directory removed; no partial final run              |
 
 ## 11. Testing strategy
 
