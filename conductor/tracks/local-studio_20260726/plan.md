@@ -221,7 +221,7 @@ separate proposed track.
       while preserving public/SSR and hosted review behavior.
 - [x] Task 6.2: Add Studio Home with recent runs, active jobs, connection
       health, empty state, and one primary New Analysis action.
-- [ ] Task 6.3: Build the Recording step over the Phase 3 staging composable.
+- [x] Task 6.3: Build the Recording step over the Phase 3 staging composable.
 - [ ] Task 6.4: Build the Context step with explicit provider/transport
       selection, optional paginated meeting catalog or exact-ID fallback,
       bounded local context upload, preview, and advanced alignment.
@@ -229,6 +229,14 @@ separate proposed track.
       recipe validation, and advanced model details.
 - [ ] Task 6.6: Build the Run receipt with privacy, retention, Gemini transfer,
       cleanup, and final validated job creation.
+
+Task 6.3 is complete: the authenticated `/recording` route uses the Phase 3
+composable for accessible file selection/drop, explicit retention, bounded
+part upload, pause/resume, verified reselection, restart, abort, and server-
+owned expiry. Component and production-build browser tests cover staging,
+keyboard/drop interaction, refresh reconciliation, verified resume, and
+deletion. The page intentionally stops after sealing; Task 6.4 is the next
+composer step.
 
 ### Verification
 
