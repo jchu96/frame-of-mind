@@ -177,6 +177,12 @@ stays in the URL fragment, is removed before the browser makes the exchange
 request, and becomes an HttpOnly, SameSite=Strict session cookie. Restarting
 Bun invalidates the browser session and creates a new capability.
 
+When Studio is enabled, Runs, Recording, Connections, Import, and run detail
+share a responsive Nuxt UI dashboard shell with persistent desktop navigation
+and a mobile sidebar. This frame is selected at build time: normal local review
+and Cloudflare builds retain the existing SSR review header and do not bundle
+the local Studio shell.
+
 If the browser cannot be opened, stop Studio and explicitly opt into terminal
 output for that launch:
 

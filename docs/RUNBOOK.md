@@ -1194,6 +1194,8 @@ bun run studio
 Operational expectations:
 
 - Studio opens the one-time loopback URL in the default browser;
+- Studio-enabled pages share the responsive sidebar; ordinary review and
+  Cloudflare builds retain the existing SSR review header;
 - do not paste or share that URL while its fragment is present;
 - restarting Bun invalidates the session and all temporary keys;
 - environment values take precedence over keys entered in the page;
@@ -1269,7 +1271,7 @@ margin before creation, enforces a 2 GB maximum, and records only opaque IDs.
 
 Browser procedure:
 
-1. Open **Recording** from the authenticated Studio header.
+1. Open **Recording** from the authenticated Studio sidebar.
 2. Choose or drop one authorized MP4, MOV, M4V, or WebM.
 3. Review the local-storage and future Gemini-transfer disclosures. Selection
    alone performs neither transfer.

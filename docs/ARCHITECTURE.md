@@ -684,6 +684,15 @@ the environment or process-memory session input. Mutating local routes require
 a per-launch capability/session in addition to loopback, Host, and same-origin
 checks.
 
+The top-level Nuxt application frame is also a build-time boundary. The
+Studio-enabled Bun build resolves `#frame-app` to the local-only Nuxt UI
+dashboard frame under `server-local/`; review-only local and Cloudflare builds
+resolve it to a pass-through frame and retain `AppHeader`. This lets shared SSR
+run/import pages live inside the Studio navigation without shipping dormant
+local navigation or session affordances to the hosted Worker. Cloudflare
+artifact checks require the hosted review markers and reject the Studio frame
+markers.
+
 Process recovery is state-based and intentionally does not infer what Gemini
 may have completed:
 

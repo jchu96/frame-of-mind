@@ -103,3 +103,6 @@
   bounded-part fingerprint before a refresh-resume sends missing parts.
 - Ephemeral and retained media both carry a server-owned expiry; the seal and
   delete paths share per-session writer exclusion.
+- The Studio-enabled Bun build selects a local-only Nuxt UI dashboard frame;
+  review-only local and Cloudflare builds select the pass-through SSR review
+  frame and exclude Studio shell markers.
