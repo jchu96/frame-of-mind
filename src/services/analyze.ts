@@ -99,8 +99,10 @@ export interface PublishedAnalysisRun {
   readonly manifest: RunManifest;
 }
 
+export type AnalysisProjectionInput = Omit<PublishedAnalysisRun, "directory">;
+
 export interface AnalysisProjectionPublisher {
-  publish(run: PublishedAnalysisRun): Promise<void>;
+  publish(run: AnalysisProjectionInput): Promise<void>;
 }
 
 export interface AnalyzeExecutionOptions {
@@ -176,7 +178,7 @@ export class AnalysisOrchestrator {
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
-    const runId = this.nextRunId();
+    const runId = requireSafeRunId(this.nextRunId());
     const startedAt = this.now();
     const context = this.createContextSource(options);
     const progress = execution.progress ?? NOOP_PROGRESS_REPORTER;
@@ -436,7 +438,10 @@ export class AnalysisOrchestrator {
         let projectionWarning: string | undefined;
         if (execution.projection) {
           try {
-            await execution.projection.publish(structuredClone(published));
+            await execution.projection.publish(structuredClone({
+              analysis: published.analysis,
+              manifest: published.manifest,
+            }));
           } catch {
             projectionWarning = "Published run could not be added to the review projection.";
             await reportWarning(progress, {
@@ -528,6 +533,16 @@ async function reportWarning(
 
 function assertNotCanceled(signal?: AbortSignal): void {
   if (signal?.aborted) throw new AnalysisCanceledError();
+}
+
+function requireSafeRunId(value: string): string {
+  if (
+    !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,239}$/.test(value) ||
+    safePathSegment(value) !== value
+  ) {
+    throw new Error("Generated run ID is not a safe path segment.");
+  }
+  return value;
 }
 
 function isBluedotMediaContextSource(context: MeetingContextSource): context is BluedotMediaContextSource {

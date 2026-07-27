@@ -11,8 +11,8 @@
 
 ## Progress
 
-- Phases: 2/9 complete
-- Tasks: 15/48 complete
+- Phases: 4/9 complete
+- Tasks: 25/48 complete
 
 ## Decision
 

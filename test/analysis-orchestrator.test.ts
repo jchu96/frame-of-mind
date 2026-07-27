@@ -42,7 +42,7 @@ describe("AnalysisOrchestrator", () => {
       },
       projection: {
         async publish(run) {
-          projected.push(run.directory);
+          projected.push(run.analysis.runId);
         },
       },
     });
@@ -60,7 +60,7 @@ describe("AnalysisOrchestrator", () => {
       kind: "progress",
       progress: { completed: 1, total: 1, unit: "items" },
     });
-    expect(projected).toEqual([result.directory]);
+    expect(projected).toEqual([result.analysis.runId]);
     expect(result.projectionWarning).toBeUndefined();
     expect(result.manifest.remoteFile?.deleted).toBe(true);
     await expect(
@@ -118,6 +118,22 @@ describe("AnalysisOrchestrator", () => {
       await readFile(join(result.directory, "analysis.json"), "utf8"),
     );
     expect(persistedAnalysis.meeting.id).toBe(fixture.meeting.id);
+  });
+
+  it("rejects an unsafe injected run ID before touching providers or paths", async () => {
+    const fixture = await createFixture();
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => fixture.analyzer,
+      createRunId: () => "../../../outside-run-root",
+      now: () => "2026-07-27T12:00:00.000Z",
+    });
+
+    await expect(orchestrator.analyze(fixture.options)).rejects.toThrow(
+      "Generated run ID is not a safe path segment.",
+    );
+    expect(fixture.context.connect).not.toHaveBeenCalled();
+    expect(fixture.analyzer.upload).not.toHaveBeenCalled();
   });
 
   it("cancels between provider boundaries and still deletes the remote upload", async () => {
