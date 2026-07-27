@@ -684,6 +684,23 @@ the environment or process-memory session input. Mutating local routes require
 a per-launch capability/session in addition to loopback, Host, and same-origin
 checks.
 
+Process recovery is state-based and intentionally does not infer what Gemini
+may have completed:
+
+| Durable state at process loss | Startup action | Provider execution |
+|---|---|---|
+| `queued` | preserve and claim oldest-first after reconciliation | execute once in the new process |
+| `fetching_context` through `cleaning_up` | transition directly to `interrupted` with `executor_restart` | never auto-resume |
+| active with `cancellationRequestedAt` | preserve cancellation evidence and transition to `interrupted` | never relabel as canceled or auto-resume |
+| `succeeded`, `failed`, `canceled`, or `interrupted` | preserve row, events, run receipt, and outcome | never execute |
+
+This distinction is load-bearing: a committed queue row proves that work has
+not yet been claimed, while any later stage may conceal a completed remote
+operation or published run whose local acknowledgement was lost. Retrying an
+interrupted attempt therefore creates a new, immutable, linked attempt after
+the operator has reconciled possible output. The original attempt and event
+history are never reset or reused.
+
 `LocalStudioJobWorker` is the process-local queue owner. It scans the durable
 queue oldest-first, atomically claims one `queued` row as
 `fetching_context`, and does not claim another until the current executor has

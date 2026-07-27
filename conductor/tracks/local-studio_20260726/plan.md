@@ -201,12 +201,12 @@ separate proposed track.
 - [x] Task 5.5: Add job list/detail/create/cancel/retry routes with strict
       schemas, bounded output, sanitized failures, and one process runtime
       sharing operational job state with completed-run projection.
-- [ ] Task 5.6: Define interrupted restart behavior and require explicit retry
+- [x] Task 5.6: Define interrupted restart behavior and require explicit retry
       for indeterminate Gemini operations.
 
 ### Verification
 
-- [ ] Restart the server during queued, running, cancellation, and terminal
+- [x] Restart the server during queued, running, cancellation, and terminal
       states; prove no duplicate execution, correct interruption/retry actions,
       and a Cloudflare artifact free of the executor and `bun:` imports.
 

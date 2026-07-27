@@ -12,6 +12,9 @@
   sequencing atomic.
 - Construct one `LocalStudioJobWorker` singleton per local database. It claims
   queued work before invoking providers and never runs a second in-process job.
+- On startup, interrupt only abandoned active attempts. Preserve queued and
+  terminal rows, preserve durable cancellation intent, never auto-resume an
+  indeterminate provider call, and require a new linked attempt for retry.
 - Configure the HTTP API only after the Nitro-owned runtime and worker start
   successfully. Share the runtime's Bun SQLite connection with completed-run
   projection; close it only after cooperative worker shutdown.
