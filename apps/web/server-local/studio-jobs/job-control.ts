@@ -5,6 +5,7 @@ import type {
 } from "../../../../src/domain/studio-ports";
 import type {
   AnalysisJob,
+  ImmutableJobInput,
 } from "../../../../src/domain/studio-schemas";
 import {
   LocalMediaReuseGuard,
@@ -20,11 +21,19 @@ export class StudioJobControlError extends Error {
   }
 }
 
+export interface LocalStudioJobControlOptions {
+  validateRetryInput?(
+    input: ImmutableJobInput,
+    checkedAt: string,
+  ): Promise<void>;
+}
+
 export class LocalStudioJobControl {
   constructor(
     private readonly repository: JobRepository,
     private readonly worker: LocalStudioJobWorker,
     private readonly mediaReuse: LocalMediaReuseGuard,
+    private readonly options: LocalStudioJobControlOptions = {},
   ) {}
 
   async requestCancellation(
@@ -48,6 +57,7 @@ export class LocalStudioJobControl {
       return this.repository.createLinkedRetry(input);
     }
     await this.mediaReuse.assertReusable(parent, input.createdAt);
+    await this.options.validateRetryInput?.(parent.input, input.createdAt);
     const result = await this.repository.createLinkedRetry(input);
     this.worker.notify();
     return result;

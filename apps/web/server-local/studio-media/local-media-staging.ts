@@ -548,6 +548,72 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
     return (await this.#readStored(this.#parseId(id)))?.session;
   }
 
+  /**
+   * Resolves the private recording path only while execution owns the receipt.
+   *
+   * This capability is intentionally absent from the shared
+   * MediaStagingAdapter and every HTTP response.
+   */
+  async resolveInUsePath(
+    idValue: string,
+    expectedSha256: string,
+  ): Promise<string> {
+    const id = this.#parseId(idValue);
+    sha256Schema.parse(expectedSha256);
+    await this.#ensureRoot();
+    const stored = await this.#requireStored(id);
+    if (
+      stored.session.status !== "in_use"
+      || stored.session.sha256 !== expectedSha256
+    ) {
+      throw new MediaStagingError(
+        "media_path_unavailable",
+        "Staged media is not leased for this execution.",
+      );
+    }
+    const path = this.#sealedPath(id);
+    const before = await lstat(path);
+    assertRegularFile(before);
+    if (before.size !== stored.session.expectedBytes) {
+      throw new MediaStagingError(
+        "staging_inconsistent",
+        "Sealed media size does not match its durable receipt.",
+      );
+    }
+    const canonical = await realpath(path);
+    const canonicalSessionDirectory = await realpath(
+      this.#sessionDirectory(id),
+    );
+    if (canonical !== join(canonicalSessionDirectory, "media.sealed")) {
+      throw new MediaStagingError(
+        "unsafe_staging_file",
+        "Sealed media resolved outside its private receipt path.",
+      );
+    }
+    const after = await lstat(canonical);
+    assertRegularFile(after);
+    if (!sameFile(before, after)) {
+      throw new MediaStagingError(
+        "unsafe_staging_file",
+        "Sealed media identity changed while resolving it.",
+      );
+    }
+    const verified = await this.#streamedDigest(canonical);
+    const final = await lstat(canonical);
+    assertRegularFile(final);
+    if (
+      !sameFile(before, final)
+      || verified.bytes !== stored.session.expectedBytes
+      || verified.sha256 !== expectedSha256
+    ) {
+      throw new MediaStagingError(
+        "media_digest_mismatch",
+        "Sealed media no longer matches its durable receipt.",
+      );
+    }
+    return canonical;
+  }
+
   async #hashIncomingPart(
     bytes: BinaryChunkSource,
     contentLength: number,
@@ -603,7 +669,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
         && Date.parse(session.uploadExpiresAt) <= this.#now().getTime()
       ) {
         const expired = await this.#setStatus(stored, "expired");
-        await this.delete(expired.session.id, { allowActiveWriter: true });
+        await this.#delete(expired.session.id, { allowActiveWriter: true });
         throw new MediaStagingError(
           "media_expired",
           "Media upload session has expired.",
@@ -866,7 +932,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
         && Date.parse(session.uploadExpiresAt) <= this.#now().getTime()
       ) {
         const expired = await this.#setStatus(stored, "expired");
-        await this.delete(expired.session.id, { allowActiveWriter: true });
+        await this.#delete(expired.session.id, { allowActiveWriter: true });
         throw new MediaStagingError(
           "media_expired",
           "Media upload session has expired.",
@@ -1062,9 +1128,24 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
     return next;
   }
 
-  async delete(
+  async delete(idValue: string): Promise<MediaSession> {
+    return this.#delete(idValue);
+  }
+
+  async deleteEphemeralExecutionLease(
     idValue: string,
-    options: { allowActiveWriter?: boolean } = {},
+    expectedSha256: string,
+  ): Promise<MediaSession> {
+    sha256Schema.parse(expectedSha256);
+    return this.#delete(idValue, { executionDigest: expectedSha256 });
+  }
+
+  async #delete(
+    idValue: string,
+    options: {
+      allowActiveWriter?: boolean;
+      executionDigest?: string;
+    } = {},
   ): Promise<MediaSession> {
     const id = this.#parseId(idValue);
     if (this.#activeWriters.has(id) && !options.allowActiveWriter) {
@@ -1077,6 +1158,28 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
     try {
       let stored = await this.#requireStored(id);
       if (stored.session.status === "deleted") return stored.session;
+      if (stored.session.status === "in_use") {
+        if (!options.executionDigest) {
+          throw new MediaStagingError(
+            "media_in_use",
+            "Media is leased by an active analysis.",
+          );
+        }
+        if (
+          stored.session.retention.mode !== "ephemeral"
+          || stored.session.sha256 !== options.executionDigest
+        ) {
+          throw new MediaStagingError(
+            "media_execution_lease_mismatch",
+            "Media execution lease does not match its receipt.",
+          );
+        }
+      } else if (options.executionDigest) {
+        throw new MediaStagingError(
+          "media_execution_lease_mismatch",
+          "Media execution lease is no longer active.",
+        );
+      }
       if (stored.session.status === "failed") {
         throw new MediaStagingError(
           "media_terminal_failure",
@@ -1143,7 +1246,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
           stored = await this.#setStatus(stored, "expired");
         }
         try {
-          expired.push(await this.delete(id, { allowActiveWriter: true }));
+          expired.push(await this.#delete(id, { allowActiveWriter: true }));
         } catch (error) {
           if (
             error instanceof MediaStagingError
@@ -1229,7 +1332,15 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
           report.repaired.push(id);
         } else {
           try {
-            await this.delete(id);
+            if (!stored.session.sha256) {
+              throw new MediaStagingError(
+                "media_execution_lease_mismatch",
+                "Abandoned media execution lease has no digest.",
+              );
+            }
+            await this.#delete(id, {
+              executionDigest: stored.session.sha256,
+            });
             report.deleted.push(id);
           } catch {
             report.failed.push(id);

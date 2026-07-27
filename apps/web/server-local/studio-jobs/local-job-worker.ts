@@ -1,6 +1,7 @@
 import type {
   AnalysisJobExecutor,
   JobRepository,
+  ProgressEventInput,
   ProgressReporter,
 } from "../../../../src/domain/studio-ports";
 import {
@@ -279,7 +280,7 @@ export class LocalStudioJobWorker {
 
   private assertBoundProgressEvent(
     job: AnalysisJob,
-    event: Omit<AnalysisJobEvent, "sequence">,
+    event: ProgressEventInput,
   ): void {
     if (event.jobId !== job.id || event.attempt !== job.attempt) {
       throw new StudioJobWorkerError("progress_job_mismatch", job.id);

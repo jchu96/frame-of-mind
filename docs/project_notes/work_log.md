@@ -179,3 +179,25 @@
 - Adversarial review tightened create-time recipe provenance and extended the
   execution lease to initial attempts, including terminal deletion of
   ephemeral staging and restoration of retained staging.
+- Wired the protected job routes to one Nitro-owned local runtime: shared Bun
+  SQLite repository/projection, single-concurrency worker, cancellation/retry
+  controls, typed orchestrator, process-memory credentials, noninteractive
+  provider execution, and lease-gated private media path resolution.
+- Added focused resolver/runtime/media capability tests and updated the
+  production-built local HTTP contract from expected startup 503 to an
+  authenticated empty durable queue. Cloudflare remained free of local
+  runtime and `bun:` implementation.
+- Adversarial review found and closed two execution-lease blockers: external
+  media abort can no longer delete `in_use` bytes, and same-size post-seal
+  mutation now fails digest validation both at private-path resolution and
+  immediately before Gemini upload. Studio run routes now also reuse the
+  Nitro-owned run store instead of opening an unowned second connection.
+- Follow-up adversarial review caught the corresponding restart seam:
+  externally guarded deletion also blocked abandoned ephemeral-lease cleanup.
+  Startup now uses the exact digest-bound cleanup capability, database
+  bootstrap owns failure cleanup from its first schema operation, and focused
+  tests cover both reconciliation and configured `RunStore` lifecycle identity.
+- Final review exposed that Nuxt did not typecheck the absolute-path,
+  local-only plugin graph. Added a dedicated server-local TypeScript project
+  to the normal web typecheck and fixed the latent discriminated-union,
+  OAuth-state, and numeric-reduction errors it surfaced.

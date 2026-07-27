@@ -3,8 +3,15 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { createLocalRunStore } from "../server/data/sqlite";
+import type { H3Event } from "h3";
+import {
+  clearLocalRunStore,
+  configureLocalRunStore,
+  createLocalRunStore,
+  getRunStore,
+} from "../server/data/sqlite";
 import { schemaSql } from "../server/data/sql";
+import type { RunStore } from "../server/data/types";
 import { runFixture } from "./fixtures";
 import { analysisDigest } from "../../../src/domain/integrity";
 
@@ -16,6 +23,38 @@ afterEach(async () => {
 });
 
 describe("local SQLite projection", () => {
+  test("shares and unregisters the configured process run store by path", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "runs.sqlite");
+    const first = emptyRunStore();
+    const replacement = emptyRunStore();
+    const runtimeGlobal = globalThis as typeof globalThis & {
+      useRuntimeConfig?: (event: H3Event) => { sqlitePath: string };
+    };
+    const previousRuntimeConfig = runtimeGlobal.useRuntimeConfig;
+    runtimeGlobal.useRuntimeConfig = () => ({ sqlitePath: path });
+
+    try {
+      configureLocalRunStore(path, first);
+      expect(await getRunStore({} as H3Event)).toBe(first);
+      clearLocalRunStore(path, replacement);
+      expect(await getRunStore({} as H3Event)).toBe(first);
+      clearLocalRunStore(path, first);
+      configureLocalRunStore(path, replacement);
+      expect(await getRunStore({} as H3Event)).toBe(replacement);
+      clearLocalRunStore(path, replacement);
+    } finally {
+      clearLocalRunStore(path, first);
+      clearLocalRunStore(path, replacement);
+      if (previousRuntimeConfig) {
+        runtimeGlobal.useRuntimeConfig = previousRuntimeConfig;
+      } else {
+        delete runtimeGlobal.useRuntimeConfig;
+      }
+    }
+  });
+
   test("imports, lists, reads, and refreshes a run", async () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
@@ -116,3 +155,17 @@ describe("local SQLite projection", () => {
     expect(await store.getRun(input.manifest.runId)).toBeNull();
   });
 });
+
+function emptyRunStore(): RunStore {
+  return {
+    async listRuns() {
+      return { runs: [] };
+    },
+    async getRun() {
+      return null;
+    },
+    async importRun(input) {
+      return { runId: input.manifest.runId, created: true };
+    },
+  };
+}

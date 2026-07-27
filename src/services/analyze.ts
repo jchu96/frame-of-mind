@@ -44,10 +44,13 @@ export interface AnalyzeOptions {
   recipeRevision: string;
   contextProvider: ContextProvider;
   granolaTransport: "mcp" | "api";
+  granolaApiKey?: string;
+  interactiveProviderAuth?: boolean;
   contextFile?: string;
   apiKey: string;
   model?: string;
   video?: string;
+  expectedVideoSha256?: string;
   recordingUrl?: string;
   focus?: string;
   outputRoot: string;
@@ -253,6 +256,14 @@ export class AnalysisOrchestrator {
         throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
       }
       const recordingSha256 = await sha256File(localVideo);
+      if (
+        options.expectedVideoSha256
+        && recordingSha256 !== options.expectedVideoSha256
+      ) {
+        throw new Error(
+          "Selected recording no longer matches its staged media receipt.",
+        );
+      }
       assertNotCanceled(execution.signal);
       const meetingDirectory = join(resolve(options.outputRoot), safePathSegment(meeting.id));
       const outputDirectory = join(meetingDirectory, runId);
@@ -488,17 +499,26 @@ export async function analyzeMeeting(
   options: AnalyzeOptions,
   execution: AnalyzeExecutionOptions = {},
 ): Promise<AnalyzeResult> {
+  return createDefaultAnalysisOrchestrator().analyze(options, execution);
+}
+
+export function createDefaultAnalysisOrchestrator(): AnalysisOrchestrator {
   return new AnalysisOrchestrator({
     createContextSource: defaultCreateContextSource,
     createAnalyzer: (apiKey, analyzeOptions) =>
       new GeminiVideoAnalyzer(apiKey, analyzeOptions.model),
-  }).analyze(options, execution);
+  });
 }
 
 function defaultCreateContextSource(options: AnalyzeOptions): MeetingContextSource {
-  if (options.contextProvider === "bluedot") return new BluedotClient();
+  const interactive = options.interactiveProviderAuth ?? true;
+  if (options.contextProvider === "bluedot") {
+    return new BluedotClient(undefined, interactive, interactive);
+  }
   if (options.contextProvider === "granola") {
-    return options.granolaTransport === "api" ? new GranolaApiClient() : new GranolaClient();
+    return options.granolaTransport === "api"
+      ? new GranolaApiClient(options.granolaApiKey)
+      : new GranolaClient(undefined, interactive, interactive);
   }
   if (!options.contextFile) throw new Error("--context-file is required when --source file is selected.");
   return new FileContextSource(options.contextFile);

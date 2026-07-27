@@ -145,7 +145,7 @@ export interface JobRepository {
     limit?: number,
   ): Promise<AnalysisJobEvent[]>;
   appendEvent(
-    event: Omit<AnalysisJobEvent, "sequence">,
+    event: ProgressEventInput,
   ): Promise<AnalysisJobEvent>;
   transition(input: JobTransitionInput): Promise<AnalysisJob>;
   requestCancellation(jobId: string, requestedAt: string): Promise<AnalysisJob>;

@@ -17,6 +17,7 @@ const environment = {
   NITRO_HOST: "127.0.0.1",
   PORT: String(port),
   NITRO_PORT: String(port),
+  NUXT_SQLITE_PATH: join(mediaRoot, "studio.sqlite"),
 };
 delete environment.NITRO_UNIX_SOCKET;
 
@@ -179,11 +180,15 @@ try {
   if (bootstrapBody.redirect !== "/connections") {
     throw new Error("Bootstrap did not return the clean Connections path.");
   }
-  await expectStatus(
+  const jobs = await expectStatus(
     await probe.get("/api/studio/jobs"),
-    503,
-    "job routes fail closed until the process runtime is configured",
+    200,
+    "job runtime starts before authenticated routes accept work",
   );
+  const jobsBody = await jobs.json() as { jobs?: unknown[] };
+  if (!Array.isArray(jobsBody.jobs) || jobsBody.jobs.length !== 0) {
+    throw new Error("Fresh Studio job runtime did not return an empty queue.");
+  }
   await expectStatus(
     await probe.mutate(
       "/api/studio/jobs/job_01K123456789ABC/cancel",

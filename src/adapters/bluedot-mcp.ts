@@ -29,6 +29,7 @@ export class BluedotClient {
   constructor(
     serverUrl = process.env.BLUEDOT_MCP_URL,
     private readonly announceAuthorization = true,
+    private readonly allowAuthorization = true,
   ) {
     this.endpoint = resolveMcpEndpoint(
       "bluedot",
@@ -54,6 +55,11 @@ export class BluedotClient {
       await this.attemptConnection(provider);
     } catch (error) {
       if (!(error instanceof UnauthorizedError)) throw error;
+      if (!this.allowAuthorization) {
+        throw new Error(
+          "Bluedot authorization is missing or expired. Reconnect it from Local Studio before retrying.",
+        );
+      }
       if (!authorizationUrl) throw new Error("Bluedot did not provide an OAuth authorization URL.");
       await callback.listen();
       if (this.announceAuthorization) {

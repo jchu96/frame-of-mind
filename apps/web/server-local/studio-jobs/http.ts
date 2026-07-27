@@ -32,6 +32,16 @@ const statusByJobError: Readonly<Record<string, number>> = {
   media_lease_invalid: 409,
   media_initial_guard_required: 500,
   media_retention_expired: 410,
+  gemini_not_configured: 409,
+  granola_api_not_configured: 409,
+  bluedot_oauth_not_configured: 409,
+  granola_oauth_not_configured: 409,
+  context_file_staging_unavailable: 409,
+  custom_recipe_staging_unavailable: 409,
+  recipe_not_found: 422,
+  recipe_receipt_mismatch: 409,
+  unsafe_output_root: 500,
+  invalid_runtime_bounds: 500,
   corrupt_job: 500,
 };
 

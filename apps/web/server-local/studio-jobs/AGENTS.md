@@ -1,6 +1,9 @@
 # Local Studio Job Persistence Instructions
 
 - Keep this directory local-only and absent from Cloudflare bundles.
+- Keep `tsconfig.server-local.json` rooted at the production startup plugin so
+  `bun run typecheck:web` checks this string-registered local-only import graph;
+  Nuxt's generated server project does not discover it automatically.
 - SQLite job/event rows are operational authority until a terminal run
   publishes; they are not rebuildable projections.
 - Store immutable job input and sanitized events, never media bytes,
@@ -9,6 +12,9 @@
   sequencing atomic.
 - Construct one `LocalStudioJobWorker` singleton per local database. It claims
   queued work before invoking providers and never runs a second in-process job.
+- Configure the HTTP API only after the Nitro-owned runtime and worker start
+  successfully. Share the runtime's Bun SQLite connection with completed-run
+  projection; close it only after cooperative worker shutdown.
 - Bind every executor progress event to the claimed job/attempt; the worker,
   not the analysis adapter, owns terminal outcomes.
 - Persist operator cancellation before signaling the active AbortController.
@@ -29,6 +35,10 @@
 - Resolve paths, recipes, and process-memory secrets just in time. Enforce the
   immutable recipe digest, custom/built-in provenance, requested model, focus,
   and provider selection before orchestration.
+- Reject custom recipes and local context-file IDs before queue insertion
+  until their separate private, content-addressed staging receipts exist.
+- Never launch OAuth from the background worker. Provider authorization must
+  already exist for the exact requested transport; execution is noninteractive.
 - Validate every row crossing the database boundary with the shared Zod
   contracts and verify immutable-input digests on reads.
 - Keep `migrations/0001_jobs.sql` synchronized with `studioJobSchemaSql`.

@@ -31,7 +31,7 @@ interface StudioJobNotifier {
 }
 
 export interface RepositoryStudioJobApiOptions {
-  validateInitialMedia(
+  validateInitialInput(
     input: ImmutableJobInput,
     checkedAt: string,
   ): Promise<void>;
@@ -82,7 +82,7 @@ export class RepositoryStudioJobApi implements StudioJobApi {
       input.idempotencyKey,
     );
     if (!existing) {
-      await this.options.validateInitialMedia(verifiedInput.input, createdAt);
+      await this.options.validateInitialInput(verifiedInput.input, createdAt);
     }
     const result = await this.repository.createOrReplay({
       idempotencyKey: input.idempotencyKey,
@@ -142,6 +142,10 @@ export function configureStudioJobApi(api: StudioJobApi): void {
     throw new Error("Local Studio job API is already configured.");
   }
   configuredApi = api;
+}
+
+export function clearStudioJobApi(api: StudioJobApi): void {
+  if (configuredApi === api) configuredApi = undefined;
 }
 
 export function getStudioJobApi(): StudioJobApi {

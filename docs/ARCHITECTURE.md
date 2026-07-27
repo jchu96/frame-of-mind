@@ -722,9 +722,13 @@ semantics. List pages are capped at 100 jobs, detail pages at 100 ordered
 events, request bodies at 32 KiB, and failures use fixed messages instead of
 repository, media, provider, or filesystem content. `RepositoryStudioJobApi`
 keeps idempotent create/replay, initial-media validation, queue notification,
-control mutations, and event paging behind one process singleton. Until the
-runtime plugin supplies that singleton, every authenticated handler fails
-closed with HTTP 503 rather than creating work that cannot execute.
+control mutations, and event paging behind one process singleton. The local
+Nitro startup plugin now constructs that singleton before routes become
+available: one Bun SQLite connection, repository, control service, worker,
+typed executor, and completed-run projection. The normal run routes receive
+that same configured `RunStore`; Nitro shutdown removes it before closing the
+database. Startup failure prevents the server from advertising a job API that
+cannot execute its queue.
 
 New create bodies use a stricter immutable-input schema than legacy persisted
 rows: recipe `custom` provenance is required at the HTTP boundary. First
@@ -732,6 +736,23 @@ attempts validate the exact unexpired `sealed` receipt before insertion and
 must acquire `sealed -> in_use` before resolving a private path. Terminal
 cleanup returns explicitly retained media to `retained` and deletes the
 ephemeral staged copy; retries retain their separate retained-media lease.
+Only that active lease can resolve the canonical private `media.sealed` path.
+The path capability is local-only, requires the exact receipt digest and file
+identity, and is absent from the shared media adapter, database, events, and
+HTTP contracts. External abort/delete requests reject `in_use` media; only the
+executor's digest-bound ephemeral-release capability may delete that lease.
+The resolver hashes the current sealed file, and orchestration compares the
+receipt digest again immediately before starting the Gemini upload.
+
+Execution options resolve built-in recipe content, provider transport,
+environment/process-memory secrets, output root, and the leased recording
+path just in time. Creation rejects missing Gemini credentials, missing
+transport-specific provider credentials, stale recipe receipts, and inputs
+whose private staging contract does not exist yet. Custom recipes and local
+context files therefore fail before queue insertion until Phase 6 adds their
+separate bounded receipts. Provider OAuth is noninteractive inside a job:
+expired authorization fails the attempt and must be reconnected explicitly
+rather than opening a callback flow from the background worker.
 
 The CLI analysis command is a thin adapter over `AnalysisOrchestrator`. The
 orchestrator accepts explicit context/analyzer factories, an optional
