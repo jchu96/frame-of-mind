@@ -3,15 +3,18 @@ import {
   appendFile,
   lstat,
   mkdtemp,
+  readFile,
   readdir,
   rm,
   stat,
+  writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { validateMediaSessionTransition } from "../../../src/domain/studio-state";
 import {
+  isMediaExpiryCandidate,
   LocalMediaStagingAdapter,
   MediaStagingError,
 } from "../server-local/studio-media/local-media-staging";
@@ -54,6 +57,17 @@ async function* chunks(
 
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function fileFingerprint(bytes: Uint8Array, partSizeBytes = 8): string {
+  const parts: string[] = [];
+  for (let offset = 0; offset < bytes.byteLength; offset += partSizeBytes) {
+    parts.push(digest(bytes.subarray(
+      offset,
+      Math.min(offset + partSizeBytes, bytes.byteLength),
+    )));
+  }
+  return createHash("sha256").update(parts.join("")).digest("hex");
 }
 
 async function expectMediaError(
@@ -111,6 +125,7 @@ describe("local media staging adapter", () => {
       idempotencyKey: string;
       expectedBytes: number;
       mimeType: string;
+      fileFingerprintSha256: string;
       retention:
         | { mode: "ephemeral" }
         | { mode: "retained"; ttlSeconds: number };
@@ -156,7 +171,10 @@ describe("local media staging adapter", () => {
       partSizeBytes: 8,
       parts: [],
       uploadExpiresAt: "2026-07-27T08:01:00.000Z",
-      retention: { mode: "ephemeral" },
+      retention: {
+        mode: "ephemeral",
+        expiresAt: "2026-07-27T08:01:00.000Z",
+      },
     });
     expect(JSON.stringify(first)).not.toContain(root);
 
@@ -169,6 +187,24 @@ describe("local media staging adapter", () => {
     await expectMediaError(create(staging, {
       expectedBytes: 21,
     }), "idempotency_conflict");
+  });
+
+  test("migrates an existing ephemeral receipt to a server-owned expiry", async () => {
+    const staging = adapter();
+    const session = await create(staging);
+    const receiptPath = join(root, "sessions", session.id, "session.json");
+    const stored = JSON.parse(await readFile(receiptPath, "utf8")) as {
+      session: { retention: { expiresAt?: string } };
+    };
+    delete stored.session.retention.expiresAt;
+    await writeFile(receiptPath, `${JSON.stringify(stored)}\n`);
+
+    await expect(staging.get(session.id)).resolves.toMatchObject({
+      retention: {
+        mode: "ephemeral",
+        expiresAt: "2026-07-27T08:01:00.000Z",
+      },
+    });
   });
 
   test("reserves the complete upload plus a free-space safety margin", async () => {
@@ -270,6 +306,60 @@ describe("local media staging adapter", () => {
     await firstWrite;
   });
 
+  test("skips an active writer and expires it on the next sweep", async () => {
+    const staging = adapter();
+    const session = await create(staging);
+    const fixture = mp4Fixture(8);
+    let release!: () => void;
+    let started!: () => void;
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    async function* blockedPart() {
+      yield fixture.subarray(0, 4);
+      started();
+      await releasePromise;
+      yield fixture.subarray(4);
+    }
+
+    const activeWrite = staging.writePart(session.id, {
+      part: 0,
+      offset: 0,
+      contentLength: 8,
+      bytes: blockedPart(),
+    });
+    await startedPromise;
+    now += 60_001;
+
+    expect(await staging.expire()).toEqual([]);
+    expect(await staging.get(session.id)).toMatchObject({
+      status: "created",
+      receivedBytes: 0,
+    });
+
+    release();
+    await activeWrite;
+    expect(await staging.get(session.id)).toMatchObject({
+      status: "uploading",
+      receivedBytes: 8,
+    });
+    expect(await staging.expire()).toEqual([
+      expect.objectContaining({ id: session.id, status: "deleted" }),
+    ]);
+  });
+
+  test("prefilters non-expired sessions before acquiring ownership", async () => {
+    const staging = adapter();
+    const session = await create(staging);
+
+    expect(isMediaExpiryCandidate(session, now)).toBe(false);
+    now += 60_001;
+    expect(isMediaExpiryCandidate(session, now)).toBe(true);
+  });
+
   test("rolls back short, long, and disk-exhausted part writes", async () => {
     const staging = adapter();
     const session = await create(staging);
@@ -362,6 +452,26 @@ describe("local media staging adapter", () => {
     });
   });
 
+  test("binds all uploaded parts to the file fingerprint from creation", async () => {
+    const staging = adapter();
+    const fixture = mp4Fixture(20);
+    const changed = fixture.slice();
+    changed[19] ^= 0xff;
+    const session = await create(staging, {
+      fileFingerprintSha256: fileFingerprint(fixture),
+    });
+    await writeFixture(staging, session.id, changed);
+
+    await expectMediaError(
+      staging.seal(session.id),
+      "file_fingerprint_mismatch",
+    );
+    expect(await staging.get(session.id)).toMatchObject({
+      status: "uploading",
+      fileFingerprintSha256: fileFingerprint(fixture),
+    });
+  });
+
   test("accepts WebM magic and supports digest-verified reattachment", async () => {
     const fixture = webmFixture(20);
     const staging = adapter();
@@ -417,6 +527,36 @@ describe("local media staging adapter", () => {
     ]);
     expect(await staging.get(session.id)).toMatchObject({
       status: "deleted",
+    });
+  });
+
+  test("expires sealed ephemeral media without relying on a browser receipt", async () => {
+    const staging = adapter();
+    const fixture = mp4Fixture(20);
+    const session = await create(staging);
+    expect(session.retention).toEqual({
+      mode: "ephemeral",
+      expiresAt: "2026-07-27T08:01:00.000Z",
+    });
+    await writeFixture(staging, session.id, fixture);
+    await staging.seal(session.id);
+
+    now += 60_001;
+    await expect(staging.expire()).resolves.toEqual([
+      expect.objectContaining({ id: session.id, status: "deleted" }),
+    ]);
+  });
+
+  test("rejects deletion while a seal writer owns the session", async () => {
+    const staging = adapter();
+    const fixture = mp4Fixture(20);
+    const session = await create(staging);
+    await writeFixture(staging, session.id, fixture);
+
+    const sealing = staging.seal(session.id);
+    await expectMediaError(staging.abort(session.id), "concurrent_writer");
+    await expect(sealing).resolves.toMatchObject({
+      mediaSessionId: session.id,
     });
   });
 
@@ -476,6 +616,40 @@ describe("local media staging adapter", () => {
     const deleted = await staging.abort(session.id);
     expect(deleted).toMatchObject({ status: "deleted" });
     expect(deleted.cleanupFailureCode).toBeUndefined();
+  });
+
+  test("retries an expiry cleanup failure on the next sweep", async () => {
+    let shouldFail = true;
+    const staging = adapter({
+      removeFile: async (path) => {
+        if (shouldFail && path.endsWith("media.partial")) {
+          shouldFail = false;
+          throw Object.assign(new Error("synthetic permission failure"), {
+            code: "EACCES",
+          });
+        }
+        await rm(path, { force: true });
+      },
+    });
+    const session = await create(staging);
+    await staging.writePart(session.id, {
+      part: 0,
+      offset: 0,
+      contentLength: 8,
+      bytes: chunks(mp4Fixture(8)),
+    });
+    now += 60_001;
+
+    expect(await staging.expire()).toEqual([
+      expect.objectContaining({
+        id: session.id,
+        status: "cleanup_failed",
+        cleanupFailureCode: "eacces",
+      }),
+    ]);
+    expect(await staging.expire()).toEqual([
+      expect.objectContaining({ id: session.id, status: "deleted" }),
+    ]);
   });
 
   test("expires abandoned uploads and reconciles uncommitted partial bytes", async () => {

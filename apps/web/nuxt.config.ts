@@ -35,6 +35,9 @@ const studioBootstrapPlugin = fileURLToPath(
 const studioConnectionsPage = fileURLToPath(
   new URL("./server-local/studio-ui/connections.vue", import.meta.url),
 );
+const studioRecordingPage = fileURLToPath(
+  new URL("./server-local/studio-ui/recording.vue", import.meta.url),
+);
 const studioConfigurationStatusHandler = fileURLToPath(
   new URL("./server-local/studio-configuration/status.get.ts", import.meta.url),
 );
@@ -159,6 +162,11 @@ export default defineNuxtConfig({
           name: "connections",
           path: "/connections",
           file: studioConnectionsPage,
+        });
+        pages.push({
+          name: "recording",
+          path: "/recording",
+          file: studioRecordingPage,
         });
       }
     },

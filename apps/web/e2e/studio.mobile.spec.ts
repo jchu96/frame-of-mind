@@ -22,5 +22,20 @@ test("keeps the local Studio usable on a narrow screen", {
     content: document.documentElement.scrollWidth,
   }));
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport + 1);
+
+  await page.goto("/recording");
+  await expect(
+    page.getByRole("heading", { name: "Put one recording in the frame." }),
+  ).toBeVisible();
+  await expect(
+    page.locator('div[data-slot="base"][role="button"]'),
+  ).toBeVisible();
+  const recordingDimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }));
+  expect(recordingDimensions.content).toBeLessThanOrEqual(
+    recordingDimensions.viewport + 1,
+  );
   expect(clientErrors).toEqual([]);
 });

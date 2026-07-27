@@ -72,3 +72,19 @@
   check/open replacement, stale-upload mutation, and contradictory
   partial-plus-sealed restart cases. Full repository checks and five
   production Playwright smoke journeys passed afterward.
+- Added the accessible local Recording page with explicit retention and remote
+  transfer disclosure, browser-side validation, receipt-confirmed progress,
+  pause/retry/abort, and hash-verified refresh resume. Deterministic client
+  tests and production Playwright cover small-file stage/delete and an
+  8 MiB confirmed-part resume; the browser pass also caught and fixed deleted
+  terminal-state handling and mobile header overflow.
+- Adversarially reviewed the Recording slice and closed sealed-media orphaning,
+  seal/delete concurrency, replacement-handle loss, ambiguous create
+  duplication, storage-denial, incomplete identity verification, rounded
+  progress, and missing controller/drop/keyboard coverage. The client now
+  verifies a complete bounded-part fingerprint, the server owns every expiry,
+  and focused state-machine plus production-browser tests cover the repaired
+  seams.
+- Closed the follow-up retention seam by adding a non-overlapping,
+  lifecycle-owned media expiry sweep with shared writer ownership, cleanup
+  retry, sanitized failure reporting, and deterministic shutdown tests.

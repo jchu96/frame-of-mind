@@ -78,3 +78,47 @@
 - Fix: pin `tailwindcss` in `apps/web/package.json`.
 - Prevention: run at least one fresh `bun install --frozen-lockfile` build
   before release.
+
+## 2026-07-27 — Recording UI misread successful deletion
+
+- Symptom: the browser showed a cleanup failure after the server had removed
+  the staged bytes and returned terminal state `deleted`.
+- Cause: the client accepted only `aborted` as a clean deletion terminal.
+- Fix: accept both `aborted` and `deleted`, while retaining
+  `cleanup_failed` as an actionable failure.
+- Prevention: the production Playwright happy path now stages and deletes a
+  synthetic recording through the real local API.
+
+## 2026-07-27 — Browser receipt accidentally owned private-media cleanup
+
+- Symptom: closing the tab after seal could discard the only UI handle while
+  an ephemeral recording had no remaining expiry.
+- Cause: upload expiry was cleared at seal, but the media retention receipt did
+  not carry its own server-owned bound.
+- Fix: every media mode now has a server-owned expiry; sealed ephemeral media
+  expires independently of browser state, and legacy receipts migrate on read.
+- Prevention: adapter regressions cover sealed expiry and the ADR states that
+  browser storage is never cleanup authority.
+
+## 2026-07-27 — Resume could splice recordings with a shared prefix
+
+- Symptom: a same-size/MIME replacement with matching confirmed parts could
+  append a different suffix after refresh.
+- Cause: resume verified only already-confirmed part hashes.
+- Fix: create binds the ordered digests of every fixed-size file part; resume
+  recomputes that complete binding with bounded memory before any new write.
+- Prevention: client and adapter tests mutate only the unconfirmed tail and
+  require a closed mismatch.
+
+## 2026-07-27 — Expired media cleanup depended on process restart
+
+- Symptom: a sealed recording whose browser receipt was lost could remain on
+  disk after expiry for as long as the same Studio process stayed open.
+- Cause: the adapter enforced expiry during access and startup reconciliation,
+  but the server had no lifecycle-owned periodic sweep.
+- Fix: Nitro now owns a one-minute, non-overlapping expiry janitor, skips
+  writer-owned sessions, retries cleanup failures, cancels the interval on
+  close, and waits for an active sweep to finish.
+- Prevention: deterministic scheduler tests cover non-overlap, sanitized
+  failures, cleanup retry, active-writer exclusion, continued operation, and
+  shutdown draining.
