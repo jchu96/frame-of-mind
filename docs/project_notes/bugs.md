@@ -78,3 +78,13 @@
 - Fix: pin `tailwindcss` in `apps/web/package.json`.
 - Prevention: run at least one fresh `bun install --frozen-lockfile` build
   before release.
+
+## 2026-07-27 — Recording UI misread successful deletion
+
+- Symptom: the browser showed a cleanup failure after the server had removed
+  the staged bytes and returned terminal state `deleted`.
+- Cause: the client accepted only `aborted` as a clean deletion terminal.
+- Fix: accept both `aborted` and `deleted`, while retaining
+  `cleanup_failed` as an actionable failure.
+- Prevention: the production Playwright happy path now stages and deletes a
+  synthetic recording through the real local API.

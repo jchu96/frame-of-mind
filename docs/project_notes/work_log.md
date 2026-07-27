@@ -72,3 +72,9 @@
   check/open replacement, stale-upload mutation, and contradictory
   partial-plus-sealed restart cases. Full repository checks and five
   production Playwright smoke journeys passed afterward.
+- Added the accessible local Recording page with explicit retention and remote
+  transfer disclosure, browser-side validation, receipt-confirmed progress,
+  pause/retry/abort, and hash-verified refresh resume. Deterministic client
+  tests and production Playwright cover small-file stage/delete and an
+  8 MiB confirmed-part resume; the browser pass also caught and fixed deleted
+  terminal-state handling and mobile header overflow.
