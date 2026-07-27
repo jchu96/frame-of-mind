@@ -19,6 +19,13 @@ const forbidden = [
   "ProcessRuntimeSecretResolver",
   "server-local/studio-ui",
   "Connections, without a credential vault",
+  "server-local/studio-media",
+  "FRAME_OF_MIND_MEDIA_ROOT",
+  "FRAME_OF_MIND_CHECKOUT_ROOT",
+  "LocalMediaStagingAdapter",
+  "/api/studio/media",
+  "media.partial",
+  "media.sealed",
 ];
 
 async function files(directory: string): Promise<string[]> {

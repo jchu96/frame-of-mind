@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Amended: 2026-07-27 — cleanup failure is a recoverable media state
 
 ## Invariant
 
@@ -34,6 +35,7 @@ retained -> in_use
 created|uploading -> aborted
 created|uploading|sealed|retained -> expired
 sealed|in_use|retained|expired|aborted -> deleting -> deleted
+deleting -> cleanup_failed -> deleting
 any nonterminal state -> failed
 ```
 
@@ -42,6 +44,8 @@ any nonterminal state -> failed
   sufficient disk space, and computes the final SHA-256 by streaming the sealed
   file.
 - One writer owns a part/session transition at a time.
+- `cleanup_failed` records a sanitized retryable deletion failure. It returns
+  only to `deleting`; it is deliberately distinct from terminal `failed`.
 - Original user files are never deleted.
 - The default mode is ephemeral: delete the staged copy after terminal job
   cleanup.

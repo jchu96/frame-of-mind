@@ -48,6 +48,7 @@ const environment: Record<string, string> = {
   FRAME_OF_MIND_DB_DRIVER: "sqlite",
   FRAME_OF_MIND_STUDIO: "1",
   FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: E2E_BOOTSTRAP_TOKEN,
+  FRAME_OF_MIND_CHECKOUT_ROOT: repositoryRoot,
   HOST: "127.0.0.1",
   NITRO_HOST: "127.0.0.1",
   PORT: String(E2E_PORT),

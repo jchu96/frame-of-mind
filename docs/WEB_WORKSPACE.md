@@ -37,8 +37,10 @@ The Connections page supports:
 - source, lifetime, last verification, and sanitized failure display;
 - `.env` guidance without writing the file or echoing a secret.
 
-It does not yet stage recordings or run analysis. Those capabilities remain the
-next phases of the accepted local Studio track.
+The authenticated local API also supports resumable private media staging:
+create, status, exact-part upload, complete/seal, and abort. The accessible
+Nuxt drop zone and analysis execution remain later track tasks; there is no
+user-facing recording picker in this slice.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
@@ -61,7 +63,7 @@ and [ADR log](adr/README.md).
 | Mode | Runtime | Database | Authentication | Intended use |
 |---|---|---|---|---|
 | Local review | Bun + Nuxt SSR | Bun SQLite | loopback Host/peer guard | browse completed runs |
-| Local Studio | Bun + Nuxt SSR | Bun SQLite | Host/peer guard plus per-launch session | configure now; media/jobs are phased |
+| Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | configure providers and stage media; recording UI/jobs are phased |
 | Hosted | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | a controlled team workspace |
 
 The UI and API are shared. Only the `RunStore` adapter and Nitro preset change
@@ -106,6 +108,16 @@ The `analysis_items` table stores one normalized row per analysis item:
 
 The normalized table supports future filters without rewriting the durable
 contract.
+
+Local Studio recording bytes are stored separately under the operating
+system's per-user application-data directory. Receipts and responses expose
+opaque IDs, byte counts, hashes, lifecycle state, and expiry—not filesystem
+paths or original filenames. Override the dedicated staging root only with an
+absolute path outside the checkout:
+
+```bash
+FRAME_OF_MIND_MEDIA_ROOT="/private/path/frame-of-mind-media" bun run studio
+```
 
 ## What is not stored
 
@@ -272,9 +284,16 @@ For a new migration:
 | `GET` | `/api/runs?limit=50&cursor=...` | keyset-paginate projected run summaries |
 | `POST` | `/api/runs` | validate and import a run |
 | `GET` | `/api/runs/:id` | fetch one projected run |
+| `POST` | `/api/studio/media` | create an authenticated local upload session |
+| `GET` | `/api/studio/media/:id` | read its resumable receipt |
+| `PUT` | `/api/studio/media/:id/parts/:part` | stream one exact part with `Upload-Offset` |
+| `POST` | `/api/studio/media/:id/complete` | verify and atomically seal media |
+| `DELETE` | `/api/studio/media/:id` | abort and clean the staged copy |
 
 The entire hostname should be protected by Access. `/api/health` is not a
 public bypass because a health response can reveal deployment state.
+The `/api/studio/*` rows above are local-only and are absent from Cloudflare
+artifacts.
 
 ## Troubleshooting
 

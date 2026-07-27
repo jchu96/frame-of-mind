@@ -1,8 +1,9 @@
 import type {
   AnalysisJob,
   AnalysisJobEvent,
-  ComposerPayload,
   ConfigurationStatus,
+  MediaCreateRequest,
+  MediaPartReceipt,
   MediaSession,
   VerifiedImmutableJobInput,
 } from "./studio-schemas.js";
@@ -13,16 +14,19 @@ import type { ValidatedMediaTransition } from "./studio-state.js";
 
 export type BinaryChunkSource = AsyncIterable<Uint8Array>;
 
-export interface MediaSessionCreateInput {
-  expectedBytes: number;
-  mimeType: string;
-  retention: ComposerPayload["retention"];
-}
+export type MediaSessionCreateInput = MediaCreateRequest;
 
 export interface MediaPartInput {
   part: number;
   offset: number;
-  bytes: Uint8Array;
+  contentLength: number;
+  bytes: BinaryChunkSource;
+}
+
+export interface MediaPartWriteResult {
+  session: MediaSession;
+  receipt: MediaPartReceipt;
+  replayed: boolean;
 }
 
 export interface MediaSealReceipt {
@@ -43,16 +47,22 @@ export interface MediaStagingAdapter {
     id: string,
     input: MediaPartInput,
     options?: { signal?: AbortSignal },
-  ): Promise<MediaSession>;
+  ): Promise<MediaPartWriteResult>;
   seal(
     id: string,
-    options?: { signal?: AbortSignal },
+    options?: { expectedSha256?: string; signal?: AbortSignal },
   ): Promise<MediaSealReceipt>;
   transition(
     transition: ValidatedMediaTransition,
   ): Promise<MediaSession>;
   abort(id: string): Promise<MediaSession>;
-  delete(id: string): Promise<void>;
+  delete(id: string): Promise<MediaSession>;
+  expire(): Promise<MediaSession[]>;
+  reconcile(): Promise<{
+    repaired: string[];
+    deleted: string[];
+    failed: string[];
+  }>;
 }
 
 export type ContextFileFormat = "json" | "text" | "markdown" | "srt" | "vtt";

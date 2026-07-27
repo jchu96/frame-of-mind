@@ -67,3 +67,9 @@
   2.0.12. Current code uses only MCP client transports and the full adapter
   suite must stay green; revisit the override before adding the planned MCP
   server or when the SDK declares Hono 2.x support.
+- A browser-selected `File` is not a filesystem path and must never become one
+  in a Studio DTO. Media routes expose only opaque IDs and durable part
+  receipts; the private root is server-resolved outside the checkout.
+- A write completing in memory is not a durable upload receipt. Flush/sync the
+  part, atomically replace `session.json`, and count only receipt-confirmed
+  bytes as resumable progress.
