@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../../server-local/studio-ui";
 @import "@nuxt/ui";
 
 :root {

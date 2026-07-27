@@ -22,6 +22,7 @@ const forbidden = [
   "frame-of-mind-studio-shell",
   "Private local process",
   "Studio navigation",
+  "Your local analysis desk",
   "server-local/studio-media",
   "FRAME_OF_MIND_MEDIA_ROOT",
   "FRAME_OF_MIND_CHECKOUT_ROOT",

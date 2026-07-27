@@ -4,8 +4,8 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 const route = useRoute();
 const navigation: NavigationMenuItem[] = [
   {
-    label: "Runs",
-    icon: "i-lucide-library",
+    label: "Home",
+    icon: "i-lucide-house",
     to: "/",
     exact: true,
   },
@@ -26,7 +26,7 @@ const navigation: NavigationMenuItem[] = [
   },
 ];
 const title = computed(() => {
-  if (route.path === "/") return "Runs";
+  if (route.path === "/") return "Home";
   if (route.path === "/recording") return "Recording";
   if (route.path === "/connections") return "Connections";
   if (route.path === "/import") return "Import run";
@@ -105,6 +105,7 @@ const title = computed(() => {
           </template>
           <template #right>
             <UButton
+              v-if="route.path !== '/'"
               to="/recording"
               icon="i-lucide-plus"
               label="New analysis"
