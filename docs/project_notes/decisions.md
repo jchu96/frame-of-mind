@@ -4,6 +4,20 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-07-27 — Transcript-first scope is semantic, not speaker-exclusive
+
+Topic- or speaker-focused analysis selects bounded local media derivatives
+before Gemini upload, while retaining the complete relevant conversational
+turn. Direct requests, collaborative clarification, and analyst inference stay
+distinguishable. See ADR 0009.
+
+## 2026-07-27 — The repository skill has no activation shim
+
+`.agents/skills/frame-of-mind/` is the canonical real skill. The maintainer's
+dotfiles, Codex, Claude, and shared-agent discovery paths symlink directly to
+it. Portable colleague and Windows installs may copy that directory through the
+managed installer.
+
 ## 2026-07-26 — Local Studio runs through Bun before hosted execution
 
 Phase A is a Nuxt Studio controlled through a per-launch authenticated local

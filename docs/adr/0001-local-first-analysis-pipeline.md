@@ -17,8 +17,9 @@ delete. A convenience layer must not become an ungoverned archive.
 3. The recording is downloaded to a private temporary directory when necessary.
 4. The Gemini Developer API Files service holds it only for the analysis run by
    default.
-5. `gemini-3.6-flash` runs a low-resolution whole-video index, then
-   medium-resolution clipped interrogations.
+5. `gemini-3.6-flash` runs a low-resolution index over the complete
+   operator-selected recording or derivative, then medium-resolution clipped
+   interrogations.
 6. Versioned JSON, Markdown, HTML, screenshots, and provenance are written locally.
 7. The temporary recording and Gemini file are deleted.
 

@@ -27,6 +27,7 @@ decision may be made in place.
 | [0006](0006-local-studio-execution-and-session-boundary.md) | Run Phase A Studio locally behind a per-launch session | Accepted | 2026-07-26 |
 | [0007](0007-separate-media-job-and-run-lifecycles.md) | Separate media, analysis-job, and durable-run lifecycles | Accepted | 2026-07-26 |
 | [0008](0008-local-secret-resolution.md) | Keep new API secrets environment- or session-scoped | Accepted | 2026-07-26 |
+| [0009](0009-transcript-first-semantic-scoping.md) | Use transcript-first semantic scoping for bounded media analysis | Accepted | 2026-07-27 |
 
 ## Adding An ADR
 
