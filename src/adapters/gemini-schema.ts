@@ -18,6 +18,16 @@ export interface GeminiProviderSchema {
   additionalProperties?: boolean | GeminiProviderSchema;
 }
 
+export class GeminiResponseValidationError extends Error {
+  readonly issues: readonly string[];
+
+  constructor(label: string, issues: readonly string[]) {
+    super(`${label} failed strict local validation at ${issues.join(", ")}.`);
+    this.name = "GeminiResponseValidationError";
+    this.issues = issues;
+  }
+}
+
 export function toGeminiProviderSchema(
   schema: z.ZodType,
 ): GeminiProviderSchema {
@@ -43,16 +53,23 @@ export function parseGeminiJson<T>(
   const result = schema.safeParse(decoded);
   if (!result.success) {
     const issues = result.error.issues.slice(0, 3).map((issue) => {
-      const path = issue.path.length > 0
-        ? issue.path.map(String).join(".")
-        : "<root>";
+      const path = sanitizeIssuePath(issue.path);
       return `${path} (${issue.code})`;
     });
-    throw new Error(
-      `${label} failed strict local validation at ${issues.join(", ")}.`,
-    );
+    throw new GeminiResponseValidationError(label, issues);
   }
   return result.data;
+}
+
+function sanitizeIssuePath(path: readonly PropertyKey[]): string {
+  if (path.length === 0) return "<root>";
+  return path
+    .slice(0, 8)
+    .map((segment) => {
+      const bounded = String(segment).slice(0, 64);
+      return bounded.replace(/[^a-zA-Z0-9_-]/g, "_") || "_";
+    })
+    .join(".");
 }
 
 function sanitizeSchemaNode(input: unknown): GeminiProviderSchema {

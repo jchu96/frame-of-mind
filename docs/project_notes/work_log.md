@@ -238,3 +238,10 @@
   replayed bootstrap link. Added a dedicated inert launch route, protected
   Home/review/import and run APIs with the same per-launch session, and proved
   invalid/replayed links mount no dashboard or credential/data reads.
+- Diagnosed a live `where.appUrl` detail-validation failure. Added one
+  sanitized structured-response regeneration, preserved strict Zod authority,
+  surfaced the pass-2 CLI boundary, removed empty failed-attempt containers,
+  and covered repair, redaction, retry bounds, and cleanup with regressions.
+- Adversarial review additionally bounded and identifier-sanitized validation
+  path segments so a future record-shaped schema cannot turn a model-controlled
+  key into repair-instruction text.

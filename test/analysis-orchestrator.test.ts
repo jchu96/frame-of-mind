@@ -186,7 +186,7 @@ describe("AnalysisOrchestrator", () => {
 
     expect(fixture.analyzer.delete).toHaveBeenCalledTimes(1);
     await expect(
-      stat(join(fixture.outputRoot, fixture.meeting.id, "run-test")),
+      stat(join(fixture.outputRoot, fixture.meeting.id)),
     ).rejects.toThrow();
   });
 
@@ -212,6 +212,24 @@ describe("AnalysisOrchestrator", () => {
 
     expect(fixture.analyzer.index).not.toHaveBeenCalled();
     expect(fixture.analyzer.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes the remote upload and empty meeting container after analysis failure", async () => {
+    const fixture = await createFixture();
+    fixture.analyzer.interrogate = vi.fn(async () => {
+      throw new Error(
+        "Gemini analysis response failed strict local validation at where.appUrl (custom).",
+      );
+    });
+
+    await expect(
+      createOrchestrator(fixture).analyze(fixture.options),
+    ).rejects.toThrow("where.appUrl");
+
+    expect(fixture.analyzer.delete).toHaveBeenCalledTimes(1);
+    await expect(
+      stat(join(fixture.outputRoot, fixture.meeting.id)),
+    ).rejects.toThrow();
   });
 
   it("freezes cleanup provenance at publication and warns when deletion fails", async () => {

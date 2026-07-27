@@ -9,8 +9,11 @@ issue reviews into private JSON, Markdown, self-contained HTML, and screenshots.
 
 Version 0.2.1 uses Google's documented resumable Files upload protocol and a
 Gemini-safe response schema while retaining the complete Zod contract as the
-local authority. Maintainers can verify upload, both structured model passes,
-and exact cleanup with generated media before processing a meeting:
+local authority. A locally invalid structured response gets one regeneration
+attempt with sanitized corrective feedback; the unchanged Zod contract still
+fails closed if that attempt is invalid. Maintainers can verify upload, both
+structured model passes, and exact cleanup with generated media before
+processing a meeting:
 
 ```bash
 bun run smoke:gemini
