@@ -987,7 +987,8 @@ Operational expectations:
 - temporary keys are process-memory only;
 - OAuth tokens remain in the CLI's private exact-resource files;
 - the Connections API never returns secret values;
-- the Studio preview does not yet accept media or start analysis.
+- the Studio backend accepts authenticated resumable media, but the recording
+  drop zone and analysis execution are not yet exposed in the UI.
 
 If the bootstrap link fails, stop the process and run `bun run studio` again.
 If automatic browser opening fails, stop Studio and rerun with
@@ -1008,6 +1009,52 @@ ship.
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and
 [Conductor track](../conductor/tracks/local-studio_20260726/).
+
+### Local Studio media staging
+
+The default staging root is private per-user application data:
+
+- macOS: `~/Library/Application Support/Frame of Mind/staging/media`;
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/frame-of-mind/staging/media`;
+- Windows: `%LOCALAPPDATA%\Frame of Mind\staging\media`.
+
+For isolated testing or an alternate private volume, set an absolute path
+outside the checkout before launch:
+
+```bash
+FRAME_OF_MIND_MEDIA_ROOT="/private/path/frame-of-mind-media" bun run studio
+```
+
+Do not place this root in the repository, a shared synchronized folder, or a
+world-readable directory. The server creates user-only session directories on
+POSIX systems. It reserves the declared recording size plus a free-space
+margin before creation, enforces a 2 GB maximum, and records only opaque IDs.
+
+On startup, Studio reconciles each durable receipt with its partial or sealed
+file. Extra bytes from an interrupted part are truncated to the last receipt;
+an interrupted atomic seal is completed; expired/aborted entries are cleaned;
+and retryable permission failures remain `cleanup_failed` instead of being
+reported as deleted. Never edit `session.json` manually.
+
+| Symptom | Meaning | Operator action |
+|---|---|---|
+| HTTP 409 on a part | wrong order, conflicting replay, or another active writer | refresh status; resend only the exact next part |
+| HTTP 413 | declared recording/part exceeds a bound | select a smaller supported recording |
+| HTTP 422 on completion | incomplete bytes, digest mismatch, or MIME mismatch | reselect/verify the source; restart rather than overriding |
+| HTTP 507 | reservation or streaming write exhausted disk | free private disk space, then restart or abort the session |
+| `cleanup_failed` | deletion was attempted but not proven | repair permissions and retry abort; do not claim deletion |
+| terminal `failed` | receipt/file corruption or irrecoverable inconsistency | preserve sanitized diagnostics and create a new session |
+
+Maintainers validate the production-built boundary with:
+
+```bash
+bun test apps/web/test/studio-media-staging.test.ts
+bun run test:studio-http
+bun run build:web:cloudflare
+```
+
+The Cloudflare gate must report that all local media classes, paths, files, and
+route markers are absent.
 
 ## 13. Escalation payload
 

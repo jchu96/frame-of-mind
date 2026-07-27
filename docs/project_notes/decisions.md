@@ -72,3 +72,11 @@ The first Frame of Mind MCP surface is deferred to the next iteration. Local
 stdio and Cloudflare Streamable HTTP will share read-only run query contracts;
 analysis, media, provider authentication, deletion, and publishing stay outside
 the initial tool set.
+
+## 2026-07-27 — Cleanup failure is recoverable, media failure is terminal
+
+Local media deletion transitions through `deleting`. A failed filesystem
+cleanup persists `cleanup_failed` and may retry only through `deleting`;
+terminal `failed` is reserved for corrupt or irreconcilable receipt/file state.
+This prevents the UI from claiming deletion while preserving an honest repair
+path. See the amended ADR 0007.

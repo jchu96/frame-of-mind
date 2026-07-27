@@ -181,6 +181,9 @@ Controls:
   instead of accepting a client-authored timestamp;
 - transition through `deleting` and persist success or a sanitized failure
   receipt;
+- represent a retryable filesystem failure as `cleanup_failed`, then permit
+  only `cleanup_failed -> deleting`; reserve terminal `failed` for corruption
+  or irrecoverable state inconsistency;
 - retry cleanup without changing an already-published manifest;
 - require digest-verified reattachment after expiry or deletion.
 

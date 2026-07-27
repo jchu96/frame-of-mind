@@ -160,9 +160,13 @@ sanitized provider status:
   token files;
 - no key is stored in SQLite or returned to the browser after submission.
 
-This preview configures connections only. Drag-and-drop media staging, the
-analysis composer, and job activity arrive in the next implementation phases.
-The existing CLI remains the supported execution path today.
+The authenticated local backend now implements private resumable media
+staging, streamed part receipts, MIME/digest sealing, expiry, and restart
+reconciliation. The Nuxt drag-and-drop surface, analysis composer, and job
+activity arrive in the next implementation phases, so the existing CLI remains
+the supported execution path today. See the
+[web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
+for the backend contract and private storage location.
 
 ## Get a Gemini API key
 

@@ -7,12 +7,14 @@ import {
 import { canTransitionAnalysisJob } from "./studio-state.js";
 import { opaqueIdSchema } from "./studio-identifiers.js";
 
-const MAX_MEDIA_BYTES = 2 * 1_024 * 1_024 * 1_024;
+export const MAX_MEDIA_BYTES = 2 * 1_024 * 1_024 * 1_024;
+export const MAX_MEDIA_PARTS = 512;
+export const MAX_MEDIA_PART_BYTES = 64 * 1_024 * 1_024;
 export const MAX_RETAINED_MEDIA_TTL_SECONDS = 7 * 24 * 60 * 60;
 
-const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+export const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const utcDateTimeSchema = z.string().datetime({ offset: false });
-const idempotencyKeySchema = z.string()
+export const idempotencyKeySchema = z.string()
   .min(8)
   .max(200)
   .regex(/^[a-zA-Z0-9._:-]+$/, "idempotency key contains unsafe characters");
@@ -47,6 +49,23 @@ export const mediaRetentionRequestSchema = z.discriminatedUnion("mode", [
     ttlSeconds: z.number().int().min(60 * 60).max(MAX_RETAINED_MEDIA_TTL_SECONDS),
   }).strict(),
 ]);
+
+export const supportedMediaMimeTypeSchema = z.enum([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+]);
+
+export const mediaCreateRequestSchema = z.object({
+  idempotencyKey: idempotencyKeySchema,
+  expectedBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
+  mimeType: supportedMediaMimeTypeSchema,
+  retention: mediaRetentionRequestSchema,
+}).strict();
+
+export const mediaCompleteRequestSchema = z.object({
+  expectedSha256: sha256Schema.optional(),
+}).strict();
 
 const providerContextSchema = z.discriminatedUnion("provider", [
   z.object({
@@ -362,16 +381,25 @@ export const analysisJobEventSchema = z.discriminatedUnion("kind", [
   }).strict(),
 ]);
 
+export const mediaPartReceiptSchema = z.object({
+  part: z.number().int().nonnegative().max(MAX_MEDIA_PARTS - 1),
+  offset: z.number().int().nonnegative().max(MAX_MEDIA_BYTES - 1),
+  bytes: z.number().int().positive().max(MAX_MEDIA_PART_BYTES),
+  sha256: sha256Schema,
+  receivedAt: utcDateTimeSchema,
+}).strict();
+
 export const mediaSessionSchema = z.object({
   id: opaqueIdSchema,
   status: mediaSessionStateSchema,
   expectedBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
   receivedBytes: z.number().int().nonnegative().max(MAX_MEDIA_BYTES),
-  mimeType: z.string().min(1).max(240)
-    .refine((value) => value.startsWith("video/"), "media must be video"),
+  partSizeBytes: z.number().int().positive().max(MAX_MEDIA_PART_BYTES),
+  parts: z.array(mediaPartReceiptSchema).max(MAX_MEDIA_PARTS),
+  mimeType: supportedMediaMimeTypeSchema,
   sha256: sha256Schema.optional(),
   retention: mediaRetentionSchema,
-  expiresAt: utcDateTimeSchema.optional(),
+  uploadExpiresAt: utcDateTimeSchema.optional(),
   cleanupFailureCode: z.string().min(1).max(120)
     .regex(/^[a-z0-9_:-]+$/)
     .optional(),
@@ -385,6 +413,63 @@ export const mediaSessionSchema = z.object({
       message: "received bytes must not exceed expected bytes",
     });
   }
+  const expectedPartCount = Math.ceil(
+    media.expectedBytes / media.partSizeBytes,
+  );
+  if (expectedPartCount > MAX_MEDIA_PARTS) {
+    context.addIssue({
+      code: "custom",
+      path: ["partSizeBytes"],
+      message: "media part size would exceed the maximum part count",
+    });
+  }
+  let receiptBytes = 0;
+  media.parts.forEach((part, index) => {
+    const expectedOffset = index * media.partSizeBytes;
+    const expectedBytes = Math.min(
+      media.partSizeBytes,
+      media.expectedBytes - expectedOffset,
+    );
+    if (
+      part.part !== index
+      || part.offset !== expectedOffset
+      || part.bytes !== expectedBytes
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["parts", index],
+        message: "media part receipts must be contiguous and exact",
+      });
+    }
+    receiptBytes += part.bytes;
+    if (
+      Date.parse(part.receivedAt) < Date.parse(media.createdAt)
+      || Date.parse(part.receivedAt) > Date.parse(media.updatedAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["parts", index, "receivedAt"],
+        message: "media part time must fall within the session lifetime",
+      });
+    }
+  });
+  if (receiptBytes !== media.receivedBytes) {
+    context.addIssue({
+      code: "custom",
+      path: ["receivedBytes"],
+      message: "received bytes must equal the durable part receipts",
+    });
+  }
+  if (
+    media.status === "created"
+    && (media.receivedBytes !== 0 || media.parts.length !== 0)
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["status"],
+      message: "created media cannot claim uploaded parts",
+    });
+  }
   if (
     ["sealed", "in_use", "retained"].includes(media.status)
     && (!media.sha256 || media.receivedBytes !== media.expectedBytes)
@@ -393,16 +478,6 @@ export const mediaSessionSchema = z.object({
       code: "custom",
       path: ["sha256"],
       message: "sealed media requires complete bytes and a digest",
-    });
-  }
-  if (
-    media.retention.mode === "retained"
-    && media.expiresAt !== media.retention.expiresAt
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["expiresAt"],
-      message: "media expiry must agree with its retention receipt",
     });
   }
   if (media.status === "retained" && media.retention.mode !== "retained") {
@@ -426,18 +501,36 @@ export const mediaSessionSchema = z.object({
       message: "retained media must use the bounded server-owned lifetime",
     });
   }
-  if (media.retention.mode === "ephemeral" && media.expiresAt) {
+  if (
+    ["created", "uploading"].includes(media.status)
+    && (
+      !media.uploadExpiresAt
+      || Date.parse(media.uploadExpiresAt) <= Date.parse(media.createdAt)
+    )
+  ) {
     context.addIssue({
       code: "custom",
-      path: ["expiresAt"],
-      message: "ephemeral media cannot claim a retained expiry",
+      path: ["uploadExpiresAt"],
+      message: "an unfinished upload requires a future expiry",
     });
   }
-  if (media.cleanupFailureCode && media.status !== "failed") {
+  if (
+    !["created", "uploading"].includes(media.status)
+    && media.uploadExpiresAt
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["uploadExpiresAt"],
+      message: "only unfinished uploads carry an upload expiry",
+    });
+  }
+  if (
+    (media.status === "cleanup_failed") !== Boolean(media.cleanupFailureCode)
+  ) {
     context.addIssue({
       code: "custom",
       path: ["cleanupFailureCode"],
-      message: "only failed media may carry a cleanup failure code",
+      message: "cleanup failure state and code must agree",
     });
   }
   if (Date.parse(media.updatedAt) < Date.parse(media.createdAt)) {
@@ -531,5 +624,8 @@ export const composerPayloadSchema = z.object({
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export type AnalysisJobEvent = z.infer<typeof analysisJobEventSchema>;
 export type MediaSession = z.infer<typeof mediaSessionSchema>;
+export type MediaPartReceipt = z.infer<typeof mediaPartReceiptSchema>;
+export type MediaCreateRequest = z.infer<typeof mediaCreateRequestSchema>;
+export type MediaCompleteRequest = z.infer<typeof mediaCompleteRequestSchema>;
 export type ConfigurationStatus = z.infer<typeof configurationStatusSchema>;
 export type ComposerPayload = z.infer<typeof composerPayloadSchema>;
