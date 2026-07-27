@@ -258,3 +258,6 @@
   shape validates. Until a private content-addressed receipt exists, there is
   nothing trustworthy to resolve at execution time, so reject it before
   durable queue insertion.
+- Nuxt serializes builds in one workspace with a build lock. Do not run local
+  and Cloudflare Nuxt builds concurrently against `apps/web`; run them
+  sequentially so one target cannot fail or reuse the other's generated state.
