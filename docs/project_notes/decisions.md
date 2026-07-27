@@ -143,3 +143,11 @@ Local job endpoints live under the already session-protected
 builds. Their route/service contracts are present before the process singleton,
 but return HTTP 503 until repository, control, worker, and executor are wired
 together; a route must never acknowledge work that cannot execute.
+
+## 2026-07-27 — One local runtime owns job execution and run projection
+
+The local Nitro process constructs one Bun SQLite connection, job repository,
+worker, control service, typed orchestrator adapter, and completed-run
+projection. Private media paths resolve only during an exact `in_use` lease.
+Job execution never opens an interactive OAuth callback; missing or expired
+provider authorization requires explicit reconnection.

@@ -9,6 +9,7 @@ import type {
   JobRepository,
   JobTransitionInput,
   LinkedRetryCreateInput,
+  ProgressEventInput,
 } from "../../../../src/domain/studio-ports";
 import {
   analysisJobEventSchema,
@@ -313,7 +314,7 @@ export class LocalSqliteJobRepository implements JobRepository {
   }
 
   async appendEvent(
-    event: Omit<AnalysisJobEvent, "sequence">,
+    event: ProgressEventInput,
   ): Promise<AnalysisJobEvent> {
     if (
       event.kind === "transition"

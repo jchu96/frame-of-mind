@@ -166,7 +166,7 @@ export function assertD1RunRowSize(
   actor?: string,
 ): void {
   const encoder = new TextEncoder();
-  const bytes = importValues(input, actor).reduce(
+  const bytes = importValues(input, actor).reduce<number>(
     (total, value) => total + (
       typeof value === "string" ? encoder.encode(value).byteLength : 8
     ),

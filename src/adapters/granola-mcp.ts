@@ -29,6 +29,7 @@ export class GranolaClient {
   constructor(
     serverUrl = process.env.GRANOLA_MCP_URL,
     private readonly announceAuthorization = true,
+    private readonly allowAuthorization = true,
   ) {
     this.endpoint = resolveMcpEndpoint(
       "granola",
@@ -54,6 +55,11 @@ export class GranolaClient {
       await this.attemptConnection(provider);
     } catch (error) {
       if (!(error instanceof UnauthorizedError)) throw error;
+      if (!this.allowAuthorization) {
+        throw new Error(
+          "Granola authorization is missing or expired. Reconnect it from Local Studio before retrying.",
+        );
+      }
       if (!authorizationUrl) throw new Error("Granola did not provide an OAuth authorization URL.");
       await callback.listen();
       if (this.announceAuthorization) {

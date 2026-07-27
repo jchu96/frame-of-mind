@@ -98,6 +98,18 @@ describe("AnalysisOrchestrator", () => {
     expect(requestedModel).toBe("gemini-test");
   });
 
+  it("rejects staged media whose bytes no longer match its receipt", async () => {
+    const fixture = await createFixture();
+
+    await expect(createOrchestrator(fixture).analyze({
+      ...fixture.options,
+      expectedVideoSha256: "f".repeat(64),
+    })).rejects.toThrow(
+      "Selected recording no longer matches its staged media receipt.",
+    );
+    expect(fixture.analyzer.upload).not.toHaveBeenCalled();
+  });
+
   it("preserves the durable run when projection publication fails", async () => {
     const fixture = await createFixture();
     const events: AnalysisProgressEvent[] = [];
