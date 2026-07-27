@@ -6,8 +6,67 @@ Frame of Mind includes one canonical repository-owned skill:
 .agents/skills/frame-of-mind/
 ```
 
+That directory is the one real project skill. Do not create a second wrapper or
+activation shim.
+
+Its portable `references/meeting-to-issue.md` incorporates the durable parts
+of the document-coauthoring and GitHub issue-authoring workflows used during
+live validation. Runtime-specific browser automation was intentionally not
+copied: it is optional, changes by agent host, and is not part of the analysis
+contract. See the skill's `PROVENANCE.md`.
+
+It also vendors two unmodified Google-owned companion skills:
+
+```text
+.agents/skills/gemini-api-dev/
+.agents/skills/gemini-interactions-api/
+```
+
+Their `PROVENANCE.md` files pin
+[`google-gemini/gemini-skills`](https://github.com/google-gemini/gemini-skills)
+and their Apache-2.0 license. Agents operating inside the clone discover these
+companions directly. Do not edit their upstream `SKILL.md` or `references/`
+files; refresh the vendor copy and update provenance instead.
+
 The installer copies that skill into the discovery directory for Codex, Claude,
-the shared agents convention, or all three.
+the shared agents convention, or all three. “That skill” means the
+Frame of Mind product skill; the Google companions remain repository-local so
+the public project does not overwrite a colleague's global Gemini guidance.
+
+## Maintainer direct-symlink mode
+
+On macOS or Linux, a maintainer who keeps the repository at
+`~/repos/frame-of-mind` may expose the canonical skill directly:
+
+```bash
+ln -s "$HOME/repos/frame-of-mind/.agents/skills/frame-of-mind" \
+  "$HOME/.agents/skills/frame-of-mind"
+ln -s "$HOME/repos/frame-of-mind/.agents/skills/frame-of-mind" \
+  "$HOME/.codex/skills/frame-of-mind"
+ln -s "$HOME/repos/frame-of-mind/.agents/skills/frame-of-mind" \
+  "$HOME/.dotfiles/claude/skills/frame-of-mind"
+```
+
+If `~/.claude` already resolves to the dotfiles Claude directory, the final
+link exposes the same canonical skill to Claude. No activation shim is needed.
+Use the copy installer below for colleagues, CI, containers, and native Windows
+where that repository path or symlink support is not guaranteed.
+
+The installer intentionally refuses an existing unmanaged symlink. Choose one
+mode: direct local symlinks or managed copies.
+
+When switching an existing managed-copy installation to direct links, verify
+each exact `.frame-of-mind-managed.json` marker and move the old directories to
+a recoverable location outside every skill-discovery root before running
+`ln -s`. Never remove or overwrite an unmarked skill directory.
+
+To install Google's current companions globally outside this repository, use
+their official package:
+
+```bash
+npx skills add google-gemini/gemini-skills --skill gemini-api-dev --global
+npx skills add google-gemini/gemini-skills --skill gemini-interactions-api --global
+```
 
 ## Why copy
 
@@ -33,6 +92,14 @@ bun install --frozen-lockfile
 bun run check
 bun run build
 bun link
+```
+
+Requirements are Bun 1.3.14+, Node.js 22+, and Git. GitHub CLI is optional;
+without it:
+
+```bash
+git clone https://github.com/jchu96/frame-of-mind.git
+cd frame-of-mind
 ```
 
 Verify:

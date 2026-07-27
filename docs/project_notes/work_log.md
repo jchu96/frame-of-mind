@@ -58,6 +58,18 @@
 
 ## 2026-07-27
 
+- Diagnosed a live Bluedot-to-Gemini video run without persisting meeting
+  content: preserved speaker-before-text transcript ownership, isolated an
+  SDK-only Files upload 404, rejected an untyped generate-content shim, and
+  verified Gemini 3.6's typed Interactions `response_format` contract with a
+  provider-safe Zod-derived schema and synthetic video.
+- Corrected the live analysis scope to transcript-selected local clips before
+  upload, rather than treating the entire available recording as the user's
+  requested review boundary.
+- Vendored Google's official `gemini-api-dev` and
+  `gemini-interactions-api` skills into the public repository and dotfiles,
+  with pinned provenance, Apache-2.0 licenses, activation rules, and shared
+  Codex/Claude discovery.
 - Adversarially reviewed the Playwright baseline and fixed a real replay
   hydration race, retry false-green policy, non-idempotent secret precondition,
   process/browser dotenv exposure, and forceful-shutdown temp leak. CI now
@@ -88,3 +100,26 @@
 - Closed the follow-up retention seam by adding a non-overlapping,
   lifecycle-owned media expiry sweep with shared writer ownership, cleanup
   retry, sanitized failure reporting, and deterministic shutdown tests.
+- Converted the sanitized live meeting-to-issue experience into a public
+  operator runbook, accepted transcript-first semantic-scoping ADR, portable
+  skill reference, attribution ladder, BI synthesis checklist, GitHub
+  publishing safeguards, failure matrix, and future-agent guidance.
+- Corrected documentation so successful resumable-upload and Interactions
+  experiments remain diagnostics rather than being described as shipped
+  adapter behavior.
+- Made the pinned official Google companion skill directories visible to Git
+  so a fresh public clone receives the same Gemini guidance and provenance.
+- A cold-reader review found that the production adapter still uses both
+  diagnostic-failing Gemini paths, transcript-first clipping does not minimize
+  transcript transfer, the initial ffmpeg mapping could preserve extra streams,
+  and cleanup guidance overpromised. Public docs now mark live analysis
+  compatibility-blocked, disclose full-transcript transfer, use a
+  metadata-stripped re-encode recipe, and provide exact manifest-owned cleanup.
+- Replaced stale managed Frame of Mind skill copies in dotfiles, Codex, and
+  shared-agent discovery with direct symlinks to the repository's canonical
+  skill. Claude resolves the same link through the existing dotfiles
+  configuration; no activation shim remains.
+- Verified from retained artifacts that the two bounded analysis runs produced
+  nine timestamped screenshots through the shipped ffmpeg extractor; both
+  Gemini uploads were recorded as deleted and the original local recording
+  remained outside the repository.

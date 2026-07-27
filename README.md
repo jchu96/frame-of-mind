@@ -7,6 +7,17 @@ or a local transcript, then runs a structured Gemini analysis recipe. Use it to
 extract decisions, requirements, action items, repository plans, or grounded
 issue reviews into private JSON, Markdown, self-contained HTML, and screenshots.
 
+> **Known live-analysis blocker (2026-07-27):** offline checks pass, but the
+> required Bun runtime reproduced an empty 404 in the shipped SDK upload call,
+> and Gemini 3.6 rejected the shipped full Zod-derived response schema. Direct
+> resumable upload and a provider-safe schema succeeded only in diagnostics.
+> Treat `frameofmind analyze` as compatibility-blocked until those paths are
+> implemented and tested in the production adapter; do not use sensitive media
+> to probe the failure. Provider auth, recipes, local Studio foundations, and
+> run-contract tooling remain available.
+
+Intended analysis command after that blocker is resolved:
+
 ```bash
 frameofmind analyze "MEETING_ID" \
   --source bluedot \
@@ -75,9 +86,10 @@ flowchart LR
     J --> H
 ```
 
-The full video is indexed at low resolution. Candidate moments are then
-re-examined in bounded higher-resolution clips with an aligned transcript
-window. Ambiguous candidates are retained as rejected records for review.
+The complete operator-selected video is indexed at low resolution. Candidate
+moments are then re-examined in bounded higher-resolution clips with an aligned
+transcript window. Ambiguous candidates are retained as rejected records for
+review.
 
 The durable source is local:
 
@@ -97,6 +109,8 @@ sensitive because screenshots are embedded.
 ## Requirements
 
 - Bun 1.3.14+
+- Node.js 22+ for the linked `frameofmind` executable
+- Git; GitHub CLI is optional but used by the examples
 - optional `ffmpeg` for screenshots
 - Gemini Developer API auth key
 - Bluedot, Granola, or local context
@@ -105,6 +119,21 @@ sensitive because screenshots are embedded.
 The current pipeline uses the official `@google/genai` `2.13.0` Files API and defaults
 to `gemini-3.6-flash`. Recordings must use a supported video extension and stay
 within the Files API's 2 GB per-file limit.
+
+This repository also vendors Google's official `gemini-api-dev` and
+`gemini-interactions-api` agent skills at a pinned upstream commit. They give
+Codex and Claude current model, multimodal, Files API, structured-output, and
+migration guidance while keeping the Frame of Mind workflow in its own skill.
+The project skill itself has one real directory in this repository; local
+maintainers may link discovery paths directly to it without an activation shim.
+Portable colleague and Windows installs use the copy installer. See
+[skill installation](docs/SKILL_INSTALLATION.md).
+
+For an end-to-end meeting-to-GitHub workflow—including transcript-first clip
+selection, speaker verification, BI synthesis, repository grounding, issue
+review, screenshots, publication, and cleanup—use the
+[meeting-to-issue runbook](docs/MEETING_TO_ISSUE_RUNBOOK.md). Topic scope
+includes every relevant clarification, not only a named speaker's airtime.
 
 ## Install
 
@@ -115,6 +144,13 @@ bun install --frozen-lockfile
 bun run check
 bun run build
 bun link
+```
+
+Without GitHub CLI:
+
+```bash
+git clone https://github.com/jchu96/frame-of-mind.git
+cd frame-of-mind
 ```
 
 Verify:
@@ -461,8 +497,11 @@ import boundary, backups, and troubleshooting.
 - Meeting content is untrusted data, never instructions.
 - The immutable content-safety guard is a Gemini system instruction; recipes
   and transcript text remain untrusted user content.
-- Gemini receives the selected video and normalized transcript.
-- Gemini uploads are deleted on success and failure by default.
+- Gemini receives the selected video and, in the current index pass, the full
+  normalized meeting transcript. Video clipping does not automatically reduce
+  transcript transfer.
+- Gemini upload deletion is attempted on success and failure by default. A
+  failed attempt is recorded honestly; provider expiration is the backstop.
 - Raw MCP payloads and full transcripts are not persisted in a normal run.
 - Signed URLs are treated as bearer secrets and never written to artifacts.
 - Evidence app URLs retain only credential-free HTTPS origin/path values;
@@ -493,14 +532,18 @@ scripts/            safe cross-platform skill installer
 docs/
 ├── ARCHITECTURE.md
 ├── CREDENTIALS.md
+├── MEETING_TO_ISSUE_RUNBOOK.md
 ├── RECIPES.md
 ├── RUNBOOK.md
 ├── SKILL_INSTALLATION.md
 ├── VERSIONING.md
 ├── adr/
 └── project_notes/
-.agents/skills/frame-of-mind/
-                    canonical portable agent skill
+.agents/skills/
+├── frame-of-mind/  canonical portable product skill
+├── gemini-api-dev/ pinned official Google companion skill
+└── gemini-interactions-api/
+                    pinned official Google companion skill
 ```
 
 Scoped `AGENTS.md` files guide future agents. Adjacent `CLAUDE.md` files are
