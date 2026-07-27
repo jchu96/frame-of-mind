@@ -1,4 +1,4 @@
-import { mkdtemp, rename, rm, stat } from "node:fs/promises";
+import { mkdtemp, rename, rm, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { File as GeminiFile } from "@google/genai";
@@ -201,6 +201,7 @@ export class AnalysisOrchestrator {
     let downloadedMimeType: string | undefined;
     let mediaSource: RunManifest["mediaSource"] = "local-file";
     let stagingDirectory: string | undefined;
+    let meetingDirectory: string | undefined;
 
     try {
       assertNotCanceled(execution.signal);
@@ -265,7 +266,7 @@ export class AnalysisOrchestrator {
         );
       }
       assertNotCanceled(execution.signal);
-      const meetingDirectory = join(resolve(options.outputRoot), safePathSegment(meeting.id));
+      meetingDirectory = join(resolve(options.outputRoot), safePathSegment(meeting.id));
       const outputDirectory = join(meetingDirectory, runId);
       stagingDirectory = join(meetingDirectory, `.${runId}.staging`);
       await ensureDirectory(meetingDirectory);
@@ -392,7 +393,7 @@ export class AnalysisOrchestrator {
         const manifest: RunManifest = {
           schemaVersion: 2,
           toolVersion: "0.2.1",
-          promptRevision: "2026-07-27.1",
+          promptRevision: "2026-07-27.2",
           runId,
           startedAt,
           completedAt: this.now(),
@@ -490,6 +491,7 @@ export class AnalysisOrchestrator {
     } finally {
       await context.close().catch(() => undefined);
       if (stagingDirectory) await rm(stagingDirectory, { recursive: true, force: true });
+      if (meetingDirectory) await rmdir(meetingDirectory).catch(() => undefined);
       await rm(temp, { recursive: true, force: true });
     }
   }

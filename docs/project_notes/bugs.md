@@ -131,6 +131,23 @@
   interrogation, and exact deletion on `gemini-3.6-flash`.
 - Prevention: the explicit smoke command must keep both structured passes.
 
+## 2026-07-27 — Optional Gemini app URL aborted an otherwise usable detail
+
+- Symptom: an `issue-review` run reached Gemini and then failed strict local
+  validation at `where.appUrl (custom)`, leaving no bundle and an empty meeting
+  container.
+- Cause: Gemini emitted a URL-shaped optional value that violated the stricter
+  no-query/no-fragment evidence rule. Provider-safe JSON Schema could not
+  express the refinement, and the adapter had no bounded repair path. CLI
+  progress also hid the pass-2 boundary until a detail completed.
+- Fix: describe the optional URL constraint in the provider schema, regenerate
+  the complete structured response once using sanitized issue paths/codes,
+  retain unchanged Zod validation, print the pass-2 boundary, and remove an
+  empty meeting container after failure.
+- Prevention: tests cover repair success, repeated invalid output, rejected
+  value non-disclosure, exact remote cleanup, and failed-attempt directory
+  cleanup.
+
 ## 2026-07-27 — Upload-start redirects could forward the Gemini key
 
 - Symptom: the new direct uploader validated the returned resumable URL but

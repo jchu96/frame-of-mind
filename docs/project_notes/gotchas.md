@@ -54,9 +54,19 @@
   with the full Zod schema. Keep the provider schema intentionally looser than
   local validation; never replace validation with casts, `any`, or a proxy.
 - A provider-safe schema cannot express every local string bound. On local
-  Zod failure, fail closed. A future adapter implementation may permit at most
-  one corrective model retry containing only the validation error; never
-  truncate evidence or weaken the durable schema.
+  Zod failure, the adapter makes at most one corrective generation request
+  whose added feedback contains only sanitized issue paths/codes, then fails
+  closed. It never echoes the rejected value, truncates evidence, deletes
+  fields locally, or weakens the durable schema.
+- Zod issue paths can include model-controlled record keys. Bound the number
+  and length of path segments and allow identifier characters only before
+  placing diagnostics in a repair system instruction.
+- Older CLI progress output printed the index stage but not the interrogation
+  stage until after the first detail succeeded. A `where.*` validation error
+  therefore looked like a pass-1 failure even though it came from pass 2.
+- A failed attempt has no manifest, so exact remote cleanup provenance cannot
+  be persisted. The absence of a cleanup warning means a delete call completed;
+  it is not equivalent to a durable `deleted: true` receipt.
 - Direct resumable upload is shipped product behavior as of v0.2.1. Beta
   Interactions remains diagnostic only; a later migration still requires
   upload, generation, validation, timeout, and cleanup equivalence.

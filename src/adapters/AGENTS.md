@@ -25,6 +25,10 @@
   the same upload, generation, validation, timeout, and cleanup guarantees.
 - Decode every model response as `unknown` and validate with the stricter
   originating Zod contract, even when the provider accepted its schema subset.
+- A structured-output repair may regenerate the complete response once; its
+  added corrective feedback may contain sanitized issue paths/codes only.
+  Never echo rejected values, retry more than once, coerce output, or weaken
+  the originating Zod contract.
 
 ## Failure Behavior
 
