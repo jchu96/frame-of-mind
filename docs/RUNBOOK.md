@@ -1181,7 +1181,7 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
-### Local Studio Connections and Recording preview
+### Local Studio Home, Connections, and Recording preview
 
 Launch the authenticated local configuration surface:
 
@@ -1194,6 +1194,8 @@ bun run studio
 Operational expectations:
 
 - Studio opens the one-time loopback URL in the default browser;
+- Home shows active jobs, five recent completed runs, and sanitized provider
+  presence without introducing a dashboard-only data store;
 - Studio-enabled pages share the responsive sidebar; ordinary review and
   Cloudflare builds retain the existing SSR review header;
 - do not paste or share that URL while its fragment is present;
@@ -1207,8 +1209,15 @@ Operational expectations:
   Gemini;
 - one local durable job runtime starts with Studio and backs the protected
   `/api/studio/jobs` routes;
-- the analysis composer and job activity pages are not yet exposed in the
-  Studio UI.
+- the remaining composer steps and job-detail controls are not yet exposed in
+  the Studio UI.
+
+Home refreshes its three status sources when opened and through its Refresh
+action. If one source fails, its section reports that failure without
+displaying credential or provider payload details. A newly imported run should
+appear after returning Home; if it does not, use Refresh once, then inspect the
+local server log and `GET /api/runs` before touching SQLite. The portable run
+bundle remains authoritative.
 
 If the bootstrap link fails, stop the process and run `bun run studio` again.
 If automatic browser opening fails, stop Studio and rerun with

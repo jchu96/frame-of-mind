@@ -106,3 +106,8 @@
 - The Studio-enabled Bun build selects a local-only Nuxt UI dashboard frame;
   review-only local and Cloudflare builds select the pass-through SSR review
   frame and exclude Studio shell markers.
+- Studio Home composes existing operational jobs, rebuildable run summaries,
+  and sanitized connection presence without persisting a dashboard-specific
+  aggregate. It revalidates after client navigation.
+- Tailwind scans local-only Studio components through an explicit stylesheet
+  `@source` because they live outside Nuxt's automatic `app/` source tree.

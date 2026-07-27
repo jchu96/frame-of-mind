@@ -605,9 +605,9 @@ of the Access JWT signature, issuer, audience, and algorithm.
 ### Local Studio
 
 Phase A evolves the local viewer into a Studio in independently shippable
-slices. The per-launch session, connection health, and resumable local media
-backend are implemented; the recording UI, execution, and durable jobs remain
-subsequent slices:
+slices. The per-launch session, dashboard shell and Home, connection health,
+recording UI, resumable local media, execution adapter, and durable jobs are
+implemented; the remaining composer and job-detail slices build on them:
 
 ```mermaid
 flowchart LR
@@ -692,6 +692,16 @@ run/import pages live inside the Studio navigation without shipping dormant
 local navigation or session affordances to the hosted Worker. Cloudflare
 artifact checks require the hosted review markers and reject the Studio frame
 markers.
+
+The Studio-enabled build also replaces the root review index with a local-only
+Home page. Home composes bounded reads from the operational job repository,
+rebuildable run projection, and sanitized connection-status service. It does
+not persist a denormalized dashboard view. Its data loads in the browser after
+the fragment bootstrap can establish the HttpOnly session, and it explicitly
+revalidates on mount so returning from an import cannot display a stale empty
+projection. Tailwind scans `server-local/studio-ui` through an explicit
+stylesheet `@source`; otherwise utilities unique to build-injected pages would
+be absent from production CSS even though the Vue build succeeds.
 
 Process recovery is state-based and intentionally does not infer what Gemini
 may have completed:

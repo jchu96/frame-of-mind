@@ -45,7 +45,7 @@ state:
 | `setup` | exchanges the one-use URL fragment, verifies clean redirect and HttpOnly cookie, writes ignored storage state |
 | `unauthenticated` | proves protected Studio page/API denial without a session |
 | `bootstrap-replay` | proves the consumed launch capability cannot create another session |
-| `chromium` | manages a synthetic process key; stages/deletes a synthetic recording; refreshes, reselects, verifies, and resumes an unfinished upload; imports/reviews a synthetic run |
+| `chromium` | verifies Studio Home empty state, connection health, one primary action, desktop columns, and return-after-import revalidation; manages a synthetic process key; stages/deletes a synthetic recording; refreshes, reselects, verifies, and resumes an unfinished upload; imports/reviews a synthetic run |
 | `mobile-chromium` | verifies the Connections surface and navigation remain usable without horizontal overflow |
 
 The browser and server runners:

@@ -154,12 +154,14 @@ separate proposed track.
 
 ### Verification
 
-- [x] Stream synthetic fixtures without full-body buffering; interrupt,
+- [ ] Stream synthetic fixtures without full-body buffering; interrupt,
       restart, resume, reject a concurrent writer, handle disk exhaustion,
       seal, retain/expire, reattach by digest, and clean them while preserving
-      source ownership. The Phase 1 32 MiB probe supplies the measured
-      large-stream check; adapter and production-built HTTP probes cover the
-      durable Phase 3 contract.
+      source ownership. Prove the separate bounded context-file path accepts
+      only JSON, text, Markdown, SRT, and VTT and deletes its private staging
+      after use. The Phase 1 32 MiB probe supplies the measured large-stream
+      check; adapter and production-built HTTP probes cover the durable Phase
+      3 contract.
 
 ## Phase 4: Reusable Analysis Orchestration
 
@@ -217,7 +219,7 @@ separate proposed track.
 - [x] Task 6.1: Convert the authenticated application routes to the Nuxt UI
       dashboard shell behind an explicit local-only Studio enablement flag
       while preserving public/SSR and hosted review behavior.
-- [ ] Task 6.2: Add Studio Home with recent runs, active jobs, connection
+- [x] Task 6.2: Add Studio Home with recent runs, active jobs, connection
       health, empty state, and one primary New Analysis action.
 - [ ] Task 6.3: Build the Recording step over the Phase 3 staging composable.
 - [ ] Task 6.4: Build the Context step with explicit provider/transport
