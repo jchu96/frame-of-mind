@@ -4,6 +4,10 @@ This runbook covers installation, provider authorization, recipe-driven video
 analysis, validation, troubleshooting, incident response, upgrades, and
 removal.
 
+For the complete workflow that turns a bounded meeting topic into a grounded,
+reviewed GitHub issue, use
+[MEETING_TO_ISSUE_RUNBOOK.md](MEETING_TO_ISSUE_RUNBOOK.md).
+
 ## Runbook metadata
 
 | Field | Value |
@@ -23,6 +27,11 @@ removal.
 Context and video are sensitive inputs. The operator controls authorization,
 retention, review, and publishing. Frame of Mind produces drafts with
 provenance; it does not make product, personnel, or engineering decisions.
+
+Current release status: live `analyze` is compatibility-blocked on Bun by the
+SDK-upload and provider-schema failures in sections 6.4 and 6.6. The operating
+steps below remain the intended contract, but do not use sensitive media until
+the production adapter—not a diagnostic script—passes a live canary.
 
 ## Responsibility matrix
 
@@ -86,10 +95,13 @@ Require Bun 1.3.14 or newer:
 
 ```bash
 bun --version
+node --version
+git --version
 ```
 
-The compiled CLI remains compatible with Node.js 22+, but the repository's
-install, test, web, and release workflow uses Bun.
+Require Node.js 22+ for the linked CLI executable and Git for cloning. The
+repository's install, test, web, and release workflow uses Bun. GitHub CLI is
+optional but used by the shortest clone and issue-publishing examples.
 
 ### 1.3 Install ffmpeg
 
@@ -126,6 +138,13 @@ bun install --frozen-lockfile
 bun run check
 bun run build
 bun link
+```
+
+Without GitHub CLI:
+
+```bash
+git clone https://github.com/jchu96/frame-of-mind.git
+cd frame-of-mind
 ```
 
 Verify:
@@ -271,6 +290,11 @@ Read [RECIPES.md](RECIPES.md) when uncertain.
 
 ### 3.2 Choose context
 
+The CLI has no fetch-only or transcript-preview command in v0.2. Use the
+authorized provider UI, the provider's MCP tools in a compatible client, or an
+existing local export to inspect timestamps before a scoped run. Calling
+`frameofmind analyze` proceeds from context fetch to upload.
+
 Bluedot meeting/preview ID:
 
 ```text
@@ -315,6 +339,18 @@ controlled. Prefer a local download.
 ```
 
 This limits the close interrogation pass. The full video is still indexed.
+“Full video” means the exact operator-selected `--video`, not every recording
+available for the meeting.
+
+For a topic- or speaker-scoped request, fetch the timestamped transcript first,
+identify every relevant conversational window, and create private derivative
+clips before running the CLI. Include collaborators who clarify or complete the
+request; do not reduce semantic scope to the named person's airtime. Follow
+[ADR 0009](adr/0009-transcript-first-semantic-scoping.md).
+
+Video clipping does not currently clip provider transcript transfer: each
+index pass receives the full normalized meeting transcript. Use a bounded local
+context file when transcript minimization is also required.
 
 ### 3.5 Run by provider
 
@@ -388,6 +424,10 @@ Offset means: full transcript time corresponding to clip time `00:00`.
 If omitted, Gemini estimates it. Review manifest confidence before trusting
 nearby transcript excerpts.
 
+Analyze separate windows independently when they use different offsets. Keep
+the original recording unchanged and delete only the derived temporary clips
+after review.
+
 ### 3.7 Observe progress
 
 Normal messages:
@@ -443,6 +483,10 @@ Open:
 - Are implementation implications labeled as inference?
 - Was an ambiguous candidate correctly rejected?
 - Is private participant information necessary?
+- Does a raw provider speaker tag own the text that follows it?
+- If attribution was corrected, is the audio/video evidence recorded?
+- Does the synthesis distinguish direct request, collaborative clarification,
+  and analyst inference?
 
 ### 4.4 Publish minimally
 
@@ -543,6 +587,13 @@ Check:
 On timeout, the CLI attempts remote deletion. Do not use `--keep-upload` as a
 troubleshooting shortcut.
 
+If `@google/genai` `files.upload()` instead returns an empty 404 before
+processing, a 2026-07-27 diagnostic proved that the same Developer API account
+could complete the documented resumable upload. That isolates an SDK/runtime
+seam; it does not mean the production CLI has a direct-upload fallback.
+Reproduce only with non-sensitive synthetic media and open a maintainer
+follow-up rather than treating the failure as invalid credentials.
+
 ### 6.5 Gemini model name rejected
 
 Actions:
@@ -570,6 +621,13 @@ Actions:
 4. run tests;
 5. record a sanitized failure fixture;
 6. do not persist raw private model output in an issue.
+
+Gemini accepts only a subset of JSON Schema. A provider-safe schema may omit
+constraints that remain mandatory in the durable Zod contract. The current
+production adapter fails the run on provider or local schema rejection; it
+does not ship the diagnostic retry path. A maintainer change must parse model
+output as `unknown`, validate locally, and may permit at most one corrective
+retry. Never cast, truncate, or weaken the durable schema to force publication.
 
 ### 6.7 OAuth browser does not open
 
@@ -752,10 +810,36 @@ If manifest says:
 The Gemini file normally expires automatically, but:
 
 1. record the run ID and expiration time;
-2. retry cleanup only through the exact file identity and supported API;
-3. never list/share unrelated files;
-4. investigate auth/network errors;
-5. do not claim cleanup succeeded.
+2. inspect only that run's private `manifest.json`;
+3. retry cleanup through the exact `remoteFile.name`;
+4. never list, share, or broadly delete unrelated files;
+5. investigate auth/network errors;
+6. do not claim cleanup succeeded.
+
+From the repository clone, with the same `GEMINI_API_KEY` available locally:
+
+```bash
+FRAME_OF_MIND_MANIFEST="<absolute-run-directory>/manifest.json" \
+bun -e '
+  import { GoogleGenAI } from "@google/genai";
+  const manifestPath = process.env.FRAME_OF_MIND_MANIFEST;
+  if (!manifestPath) throw new Error("FRAME_OF_MIND_MANIFEST is required.");
+  const manifest = await Bun.file(manifestPath).json();
+  const name = manifest.remoteFile?.name;
+  if (!name) throw new Error("The manifest has no exact Gemini file name.");
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY is required.");
+  const ai = new GoogleGenAI({ apiKey });
+  await ai.files.delete({ name });
+  console.log("Deleted the exact Gemini file recorded in the manifest.");
+'
+```
+
+Do not rewrite the immutable manifest from `deleted: false` to `true`; record
+the later cleanup in the owning incident or work item. If analysis failed
+before a manifest/file name existed, the CLI has already exhausted its
+identity-scoped retries. Rely on provider expiration and escalate through the
+approved account owner rather than listing and deleting by guess.
 
 ### 6.22 Staging/temp directory remains
 

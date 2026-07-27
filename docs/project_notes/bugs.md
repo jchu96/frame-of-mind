@@ -1,5 +1,102 @@
 # Bugs and Failure History
 
+## 2026-07-27 — Narrow request initially analyzed too much media
+
+- Symptom: a topic-focused request was treated as permission to analyze the
+  complete available recording.
+- Cause: media availability was conflated with the user's semantic scope.
+- Correction: use timestamped transcript evidence to select bounded local
+  derivatives before Gemini upload.
+- Prevention: ADR 0009 makes transcript-first semantic scoping the default for
+  topic- or speaker-focused work.
+
+## 2026-07-27 — Speaker-only correction omitted useful collaboration
+
+- Symptom: a first correction narrowed the review to the named requester's
+  literal airtime and risked dropping useful clarifications.
+- Cause: speaker identity was mistaken for the semantic topic boundary.
+- Correction: retain the complete relevant conversational turn, then classify
+  direct request, collaborative clarification, and analyst inference.
+- Prevention: the meeting-to-issue workflow treats a named speaker as a search
+  signal, not an exclusion rule.
+
+## 2026-07-27 — Model attribution needed transcript and video reconciliation
+
+- Symptom: model output associated a request with a visually prominent
+  participant even though provider segment ownership and conversational
+  continuity suggested another speaker.
+- Cause: neither transcript diarization nor visible tile prominence is
+  sufficient attribution authority by itself.
+- Correction: preserve the raw `speakerTag`, then reconcile audio, visible
+  active-speaker labels, adjacent turns, and direct address.
+- Prevention: uncertain attribution remains explicitly unverified.
+
+## 2026-07-27 — Screenshot evidence upload briefly created a zero-byte object
+
+- Symptom: an issue-asset path existed remotely but its object size was zero.
+- Cause: a failed local file-to-base64 step was followed by a successful API
+  call because the shell pipeline did not fail as a unit.
+- Correction: replace the object from the verified source and confirm the
+  remote size before linking it.
+- Prevention: enable `pipefail`, validate local existence and nonzero size, and
+  re-read the remote object after any evidence upload.
+
+## 2026-07-27 — Gemini SDK upload returned an empty 404 for a valid API key
+
+- Symptom: `@google/genai` 2.13.0 `files.upload()` failed before media
+  processing with an empty 404 response under Bun.
+- Isolation: the same API key, file, MIME type, and Gemini Developer API
+  accepted the documented resumable upload protocol; file listing, model
+  generation, media understanding, and deletion also succeeded.
+- Diagnostic result: the official resumable Files API upload sequence worked
+  while the SDK continued to handle polling, generation, and cleanup.
+- Status: this isolated the runtime/SDK seam but is not a shipped production
+  fallback until the adapter and its cleanup tests implement it.
+- Prevention: keep a tiny synthetic-video upload/delete smoke test and recheck
+  the SDK wrapper before removing the fallback.
+
+## 2026-07-27 — Gemini 3.6 rejected the full Zod JSON Schema
+
+- Symptom: `gemini-3.6-flash` returned `400 INVALID_ARGUMENT` for both text-only
+  and video structured-output requests.
+- Cause: `z.toJSONSchema(...)` emitted constraints outside Gemini's supported
+  schema subset; a generated `maxItems: 1000` alone caused the current
+  Interactions endpoint to reject the request. The failure was independent of
+  transcript size, private media, and upload state.
+- Solution: derive a provider-safe JSON Schema subset from the Zod schema,
+  while parsing the response as `unknown` and validating it against the full,
+  stricter originating Zod schema.
+- Status: verified in a diagnostic runner; the production adapter still needs
+  an isolated, tested implementation.
+- Prevention: contract-test structured output against a minimal schema when
+  upgrading the model or `@google/genai`.
+
+## 2026-07-27 — A generateContent test did not prove responseFormat support
+
+- Symptom: `models.generateContent` accepted `responseFormat` without a request
+  error but returned Markdown/prose that failed strict JSON parsing.
+- Cause: the diagnostic used an array shape from the 2.13.0 declaration plus
+  an unsanitized schema, while Google's current generateContent documentation
+  shows an object-shaped `responseFormat`.
+- Resolution: treat that diagnostic as inconclusive. The current official
+  Interactions API path passed the exact sanitized Zod-derived schema and a
+  synthetic video; generateContent remains a documented previous API.
+- Prevention: load Google's official skills and hosted feature page before
+  reconciling SDK declarations with a changing Beta API.
+
+## 2026-07-27 — Provider-safe output exceeded a stricter local field bound
+
+- Symptom: a structured video response passed Gemini's provider schema but
+  failed local Zod validation because `where.surface` exceeded 2,000
+  characters.
+- Cause: Gemini's supported JSON Schema subset could not carry every local
+  string-length constraint.
+- Solution: keep the strict local schema, make bounded fields explicit in the
+  prompt, and allow one corrective retry containing the validation error.
+- Status: verified diagnostic behavior, not a shipped production retry.
+- Prevention: never truncate or cast a model response to force acceptance;
+  schema success is required before artifact publication.
+
 ## 2026-07-25 — Bluedot tool output rejects its own duration value
 
 - Symptom: the MCP SDK's high-level `callTool` path rejects `get_meeting` even though the tool returned meeting data.

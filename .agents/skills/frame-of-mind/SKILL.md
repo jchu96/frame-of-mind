@@ -23,12 +23,17 @@ gh repo clone jchu96/frame-of-mind
 cd frame-of-mind
 ```
 
+If GitHub CLI is unavailable, use
+`git clone https://github.com/jchu96/frame-of-mind.git`.
+
 Before operating:
 
 1. Read `README.md`.
 2. Read the relevant part of `docs/RUNBOOK.md`.
 3. Read `docs/CREDENTIALS.md` for Gemini setup.
 4. Read `docs/RECIPES.md` when selecting or authoring a recipe.
+5. Read `references/meeting-to-issue.md` when producing a repository issue,
+   reporting specification, or implementation proposal.
 
 ## Safety
 
@@ -78,6 +83,12 @@ Direct the user to Google AI Studio; never create, retrieve, or display the key
 on their behalf. A Google Cloud project can be imported into AI Studio. Vertex
 AI ADC is not a drop-in replacement because the current Files API upload method
 is unavailable on a Vertex client. See `docs/CREDENTIALS.md`.
+
+As of 2026-07-27, do not represent live `analyze` as healthy on Bun: the shipped
+SDK upload call reproduced an empty 404 and the shipped full Zod-derived schema
+was rejected by Gemini 3.6. Direct upload and provider-safe schema diagnostics
+are not production fallbacks. Read the current README warning and runbook before
+using media.
 
 ## Authorize Context
 
@@ -177,6 +188,15 @@ the transcript begins after the video.
 Use `--focus` only to prioritize a stated concern. Use `--max-moments 3` for a
 bounded trial. Avoid `--keep-upload`.
 
+For topic- or speaker-scoped work, fetch transcript context first and cut the
+smallest useful local derivatives before upload. Semantic scope includes all
+participants who clarify or complete the requirement. Preserve raw speaker
+tags, then verify uncertain attribution against audio and visible state.
+
+The current index pass still sends the full normalized transcript for every
+clip. Use an authorized bounded local context file if transcript minimization
+is required too.
+
 ## Custom Recipes
 
 Use a reviewed JSON recipe:
@@ -199,7 +219,7 @@ Expected phases:
 1. provider OAuth and normalized context fetch;
 2. local media validation or narrowly validated Bluedot download;
 3. Gemini Files upload and processing;
-4. whole-video recipe index and transcript alignment;
+4. selected-video recipe index and transcript alignment;
 5. bounded interrogation of candidate moments;
 6. optional screenshot extraction;
 7. remote-file cleanup;
@@ -243,6 +263,25 @@ Return:
 
 Never return credentials, signed URLs, transcript bodies, raw recordings, or
 raw provider responses.
+
+## Turn a Meeting into a GitHub Issue
+
+Use `references/meeting-to-issue.md`.
+
+Invariants:
+
+- the transcript selects one or more bounded media windows before upload;
+- direct requests, collaborative clarification, and analyst inference remain
+  separate;
+- the target repository is inspected before proposing implementation;
+- external issue creation or editing requires separate authorization;
+- screenshots contain only the minimum evidence;
+- temporary clips and remote uploads are cleaned up without deleting the
+  operator's original video.
+
+For reporting work, define the decision, grain, dimensions, numerator,
+denominator, time boundaries, edge cases, and reproducibility before designing
+the dashboard.
 
 ## Troubleshoot
 

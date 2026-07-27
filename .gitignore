@@ -13,10 +13,15 @@ bun-error.log
 .dev.vars
 .DS_Store
 
-# Runtime-installed skills and lockfiles; keep only the repo-owned skill
+# Runtime-installed skills and lockfiles; keep the product skill and pinned
+# official Google companions only
 .agents/skills/*
 !.agents/skills/frame-of-mind/
 !.agents/skills/frame-of-mind/**
+!.agents/skills/gemini-api-dev/
+!.agents/skills/gemini-api-dev/**
+!.agents/skills/gemini-interactions-api/
+!.agents/skills/gemini-interactions-api/**
 skills-lock.json
 .claude/skills/
 apps/web/wrangler.jsonc
