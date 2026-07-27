@@ -45,7 +45,7 @@ state:
 | `setup` | exchanges the one-use URL fragment, verifies clean redirect and HttpOnly cookie, writes ignored storage state |
 | `unauthenticated` | proves protected Studio page/API denial without a session |
 | `bootstrap-replay` | proves the consumed launch capability cannot create another session |
-| `chromium` | manages and clears a synthetic process key; imports and reviews a valid synthetic run |
+| `chromium` | manages a synthetic process key; stages/deletes a synthetic recording; refreshes, reselects, verifies, and resumes an unfinished upload; imports/reviews a synthetic run |
 | `mobile-chromium` | verifies the Connections surface and navigation remain usable without horizontal overflow |
 
 The browser and server runners:
@@ -130,17 +130,22 @@ still fails the job.
 
 ## Phase 3 Recording Drop Zone
 
-Nuxt UI's `UFileUpload` will remain the selection surface. The upload
-composable and media-session API remain the transfer authority. Test that split
-at three levels:
+Nuxt UI's `UFileUpload` is the selection surface. The upload composable and
+media-session API remain the transfer authority. The implemented split is
+tested at three levels:
 
-### Component/runtime
+### Browser-client contract — implemented
 
-- selecting, replacing, and removing a `File`;
-- keyboard activation and visible focus;
-- accessible label, description, error, and status announcements;
-- client presentation states such as paused and reselect-required;
-- no `File` or source path enters SSR state.
+- extension, size, and browser-declared MIME validation independent of
+  `accept`;
+- opaque-ID-only session-storage serialization;
+- confirmed-part hash verification before resume;
+- missing-part-only upload with receipt-confirmed progress;
+- explicit mismatch failure rather than silent continuation.
+
+`apps/web/test/studio-media-upload.test.ts` owns this deterministic client
+matrix. The selected `File` stays in a component-local `shallowRef`; it never
+enters Nuxt SSR state.
 
 ### Media contract — implemented
 
@@ -154,22 +159,20 @@ at three levels:
 session denial, same-origin enforcement, raw streamed upload, exact-offset
 resume/replay, sealing, status, and cleanup. The Cloudflare boundary build
 proves that the complete local media implementation and route strings are
-absent. Browser drop-zone cases below remain Task 3.5.
+absent.
 
-### Browser journey
+### Browser journey — implemented
 
-1. Use `setInputFiles` against the accessible input for the stable happy path.
-2. Keep one focused `DataTransfer`/drop event test to prove drop-zone wiring;
-   do not implement every upload test through synthetic drag events.
-3. Stage a small synthetic recording through the real local API and assert
-   progress from confirmed part receipts.
-4. Interrupt after at least one confirmed part, reload, and show
-   reselect-required.
-5. Reselect the matching file, verify existing receipts, and send only missing
-   parts.
-6. Reselect a mismatch and require an explicit restart.
-7. Abort and prove the UI and server both reach a clean terminal state.
-8. Repeat the happy path with keyboard-only interaction and at mobile width.
+1. `studio-smoke.spec.ts` selects through the accessible file input, stages a
+   small synthetic MP4 through the real local API, observes confirmed progress,
+   seals it, and deletes the staged copy.
+2. `studio-upload.spec.ts` seeds one real confirmed 8 MiB part, reloads the
+   page, observes `reselect-required`, reselects the same synthetic recording,
+   verifies the receipt, sends the missing part, seals, and deletes.
+3. Lower-level browser-client tests own mismatched re-selection and
+   missing-part assertions so those checks do not depend on browser timing.
+4. The mobile Chromium project guards the responsive Studio header against
+   horizontal overflow.
 
 The browser suite will not call Gemini for this flow. Later composer tests use
 an injected synthetic executor at the existing port boundary. A separate,
@@ -177,8 +180,8 @@ explicit maintainer check covers live Gemini/provider compatibility.
 
 ## Browser Matrix
 
-Chromium desktop plus mobile emulation is the pull-request baseline. Add Firefox
-and WebKit when Phase 3 lands because drag-and-drop, file-input, and media
-playback behavior justify the added runtime. Keep those projects identical and
-do not add browser-specific application behavior unless a documented platform
-limitation requires it.
+Chromium desktop plus mobile emulation is the pull-request baseline. Firefox
+and WebKit remain a release-hardening expansion once the complete composer and
+media playback surface lands. Keep projects identical and do not add
+browser-specific application behavior unless a documented platform limitation
+requires it.

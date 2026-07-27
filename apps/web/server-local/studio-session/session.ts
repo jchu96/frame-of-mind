@@ -95,6 +95,8 @@ export function shouldRegisterLocalStudioRoutes(
 export function requiresLocalStudioSession(pathname: string): boolean {
   return pathname === "/connections"
     || pathname === "/connections/"
+    || pathname === "/recording"
+    || pathname === "/recording/"
     || pathname.startsWith("/api/studio/");
 }
 

@@ -127,8 +127,8 @@ frameofmind doctor
 
 ## Launch the local Studio preview
 
-The local Connections workspace is available behind a per-launch browser
-session:
+The local Connections and Recording workspaces are available behind a
+per-launch browser session:
 
 ```bash
 cp .env.example .env
@@ -160,13 +160,18 @@ sanitized provider status:
   token files;
 - no key is stored in SQLite or returned to the browser after submission.
 
-The authenticated local backend now implements private resumable media
-staging, streamed part receipts, MIME/digest sealing, expiry, and restart
-reconciliation. The Nuxt drag-and-drop surface, analysis composer, and job
-activity arrive in the next implementation phases, so the existing CLI remains
-the supported execution path today. See the
+The Recording page accepts one MP4, MOV, M4V, or WebM through an accessible
+picker/drop zone. Selection alone does not upload to Gemini or start local
+staging. After the user confirms retention, Studio streams server-advertised
+parts to private local application data, reports only receipt-confirmed
+progress, and supports pause, retry, verified resume, restart, and deletion.
+Only the opaque upload ID survives a refresh; the browser requires the same
+file to be reselected and verifies existing part hashes before continuing.
+
+The analysis composer and job activity arrive in later implementation phases,
+so `frameofmind analyze` remains the supported execution path today. See the
 [web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
-for the backend contract and private storage location.
+for the browser workflow, backend contract, and private storage location.
 
 ## Get a Gemini API key
 

@@ -73,3 +73,6 @@
 - A write completing in memory is not a durable upload receipt. Flush/sync the
   part, atomically replace `session.json`, and count only receipt-confirmed
   bytes as resumable progress.
+- Successful media cleanup may return the stronger terminal state `deleted`
+  rather than `aborted`. Browser clients must treat both as clean deletion and
+  must never turn `cleanup_failed` into a success message.

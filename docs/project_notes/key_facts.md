@@ -32,3 +32,6 @@
 - The local Nitro startup plugin reconciles interrupted media writes, seals,
   expiry, and retryable cleanup before Studio serves work; Cloudflare builds
   exclude the entire implementation.
+- The local Recording page keeps the selected `File` component-local, stores
+  only an opaque media ID in session storage, and verifies confirmed part
+  hashes before a refresh-resume sends missing parts.

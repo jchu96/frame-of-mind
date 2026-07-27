@@ -2,6 +2,16 @@ import { expect, test } from "@playwright/test";
 import { runFixture } from "../test/fixtures";
 import { collectClientErrors } from "./support/client-errors";
 
+function syntheticMp4(bytes = 64): Buffer {
+  const fixture = Buffer.alloc(bytes);
+  fixture.writeUInt32BE(24, 0);
+  fixture.write("ftypisom", 4, "ascii");
+  for (let index = 12; index < fixture.length; index += 1) {
+    fixture[index] = index % 251;
+  }
+  return fixture;
+}
+
 test("manages a temporary Gemini key without reflecting it", {
   tag: "@smoke",
 }, async ({ page }) => {
@@ -37,6 +47,43 @@ test("manages a temporary Gemini key without reflecting it", {
 
   await gemini.getByRole("button", { name: "Clear temporary key" }).click();
   await expect(gemini.getByRole("status")).toContainText("Not configured");
+  expect(clientErrors).toEqual([]);
+});
+
+test("stages and deletes one synthetic recording through the browser", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+
+  await page.goto("/recording");
+  await expect(
+    page.getByRole("heading", {
+      name: "Put one recording in the frame.",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Selecting or staging does not contact Gemini.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+
+  await page.getByLabel("Screen recording").setInputFiles({
+    name: "synthetic-walkthrough.mp4",
+    mimeType: "video/mp4",
+    buffer: syntheticMp4(),
+  });
+  await expect(page.getByText("Recording selected.", { exact: false })).toBeVisible();
+
+  await page.getByRole("button", { name: "Stage locally" }).click();
+  await expect(
+    page.getByText("Recording staged and sealed locally."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("64 B of 64 B confirmed locally"),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete staged copy" }).click();
+  await expect(page.getByText("Staged recording deleted.")).toBeVisible();
   expect(clientErrors).toEqual([]);
 });
 
