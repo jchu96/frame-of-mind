@@ -82,33 +82,41 @@ separate proposed track.
 - [x] Task 2.5: Build the Nuxt UI Connections settings page with status,
       source/lifetime, last verification, session set/clear, OAuth reconnect,
       and persistent-environment guidance but no secret echo.
+- [x] Task 2.6: Add a production-build Playwright baseline for fragment
+      exchange, unauthenticated denial, replay rejection, session-key
+      lifecycle, synthetic run import/review, console cleanliness, and mobile
+      overflow. Sanitize the complete runner/browser/server environment, make
+      retries idempotent and fail CI on flakes, and clean external temp state
+      after passing and failing runs on every supported OS.
 
 ### Verification
 
 - [x] A built-Nitro loopback contract probe verifies hostile Host,
       missing/invalid local session, query-bearing protected pages,
       bootstrap replay, cross-site mutation, oversized bodies, and no secret
-      reflection. The Cloudflare artifact gate verifies no local
-      bootstrap/config mutation route or runtime secret implementation.
+      reflection. Playwright verifies the browser exchange/hydration and
+      critical synthetic UI journeys. The Cloudflare artifact gate verifies no
+      local bootstrap/config mutation route or runtime secret implementation.
 
 ## Phase 3: Resumable Local Media Staging
 
 ### Tasks
 
-- [ ] Task 3.1: Add failing adapter tests for create, ordered/out-of-order
+- [x] Task 3.1: Add failing adapter tests for create, ordered/out-of-order
       parts, concurrent writers, resume, disk exhaustion, complete, digest
       mismatch, retention, reattachment, abort, expiry, and idempotency.
-- [ ] Task 3.2: Implement private local staging outside the checkout with
+- [x] Task 3.2: Implement private local staging outside the checkout with
       opaque IDs, streamed part writes, byte/part limits, free-space
       reservation, MIME validation, streamed final SHA-256, and atomic sealing.
-- [ ] Task 3.3: Add bounded create, upload-part, status, complete, and abort
+- [x] Task 3.3: Add bounded create, upload-part, status, complete, and abort
       routes; never accept or return arbitrary filesystem paths.
-- [ ] Task 3.4: Implement expiry and startup reconciliation for abandoned,
-      partially written, sealed, retained, and cleanup-failed sessions.
-- [ ] Task 3.5: Build the accessible Nuxt drop zone with resumable progress,
+- [x] Task 3.4: Implement startup reconciliation and lifecycle-owned periodic
+      expiry for abandoned, partially written, sealed, retained, and
+      cleanup-failed sessions.
+- [x] Task 3.5: Build the accessible Nuxt drop zone with resumable progress,
       validation, abort, retry, ephemeral/retained selection, and explicit
       storage/remote-transfer disclosure.
-- [ ] Task 3.6: Add a distinct bounded context-file ingestion path for JSON,
+- [x] Task 3.6: Add a distinct bounded context-file ingestion path for JSON,
       text, Markdown, SRT, and VTT; normalize through the existing adapter and
       delete private context staging after use.
 
@@ -146,54 +154,61 @@ separate proposed track.
 
 ### Verification
 
-- [ ] Stream a synthetic large fixture without full-body buffering; interrupt,
+- [x] Stream synthetic fixtures without full-body buffering; interrupt,
       restart, resume, reject a concurrent writer, handle disk exhaustion,
-      seal, retain/expire, reattach by digest, and clean it while preserving
-      source ownership.
+      seal, retain/expire, reattach by digest, and clean them while preserving
+      source ownership. Prove the separate bounded context-file path accepts
+      only JSON, text, Markdown, SRT, and VTT and deletes its private staging
+      after use. The Phase 1 32 MiB probe supplies the measured large-stream
+      check; adapter and production-built HTTP probes cover the durable Phase
+      3 contract.
 
 ## Phase 4: Reusable Analysis Orchestration
 
 ### Tasks
 
-- [ ] Task 4.1: Add failing service tests for structured progress, cancellation,
+- [x] Task 4.1: Add failing service tests for structured progress, cancellation,
       cleanup, projection warning, and successful durable publication.
-- [ ] Task 4.2: Refactor the CLI pipeline into a reusable orchestration service
+- [x] Task 4.2: Refactor the CLI pipeline into a reusable orchestration service
       that accepts explicit dependencies and emits typed progress events.
-- [ ] Task 4.3: Preserve CLI commands and output while routing execution through
+- [x] Task 4.3: Preserve CLI commands and output while routing execution through
       the shared orchestration service.
-- [ ] Task 4.4: Add `AbortSignal` propagation and explicit cancellation checks
+- [x] Task 4.4: Add `AbortSignal` propagation and explicit cancellation checks
       around provider, Gemini, clip, render, and cleanup boundaries.
-- [ ] Task 4.5: Ensure a valid run bundle survives projection failure and that
+- [x] Task 4.5: Ensure a valid run bundle survives projection failure and that
       cleanup provenance freezes at publication.
 
 ### Verification
 
-- [ ] Existing CLI tests remain green; new orchestration tests prove progress,
+- [x] Existing CLI tests remain green; new orchestration tests prove progress,
       cancellation, cleanup, and projection-failure behavior.
 
 ## Phase 5: Durable Bun Job Executor
 
 ### Tasks
 
-- [ ] Task 5.1: Add local-only SQLite migrations and migration tests for
-      operational jobs, events, and staged-media/context receipts without
-      storing media, transcripts, or reviewer-authored state; keep the existing
-      SQLite/D1 parity contract limited to completed-run projection tables.
-- [ ] Task 5.2: Implement the SQLite `JobRepository` with atomic transitions,
+- [x] Task 5.1: Add local-only SQLite migrations and migration tests for
+      operational jobs and events without copying media/context receipt
+      authority, media, transcripts, or reviewer-authored state into the job
+      database. Existing media JSON receipts remain authoritative; future
+      context staging owns its own bounded receipt. Keep SQLite/D1 parity
+      limited to completed-run projection tables.
+- [x] Task 5.2: Implement the SQLite `JobRepository` with atomic transitions,
       idempotent creation, bounded listing, and event ordering.
-- [ ] Task 5.3: Implement the local Bun executor with concurrency one,
+- [x] Task 5.3: Implement the local Bun executor with concurrency one,
       startup/shutdown reconciliation, signal-aware interruption, structured
       progress persistence, and no CLI log scraping.
-- [ ] Task 5.4: Implement durable cancellation and linked retry attempts,
+- [x] Task 5.4: Implement durable cancellation and linked retry attempts,
       including safe staged-media reuse checks.
-- [ ] Task 5.5: Add job list/detail/create/cancel/retry routes with strict
-      schemas, bounded output, and sanitized failures.
-- [ ] Task 5.6: Define interrupted restart behavior and require explicit retry
+- [x] Task 5.5: Add job list/detail/create/cancel/retry routes with strict
+      schemas, bounded output, sanitized failures, and one process runtime
+      sharing operational job state with completed-run projection.
+- [x] Task 5.6: Define interrupted restart behavior and require explicit retry
       for indeterminate Gemini operations.
 
 ### Verification
 
-- [ ] Restart the server during queued, running, cancellation, and terminal
+- [x] Restart the server during queued, running, cancellation, and terminal
       states; prove no duplicate execution, correct interruption/retry actions,
       and a Cloudflare artifact free of the executor and `bun:` imports.
 
@@ -201,10 +216,10 @@ separate proposed track.
 
 ### Tasks
 
-- [ ] Task 6.1: Convert the authenticated application routes to the Nuxt UI
+- [x] Task 6.1: Convert the authenticated application routes to the Nuxt UI
       dashboard shell behind an explicit local-only Studio enablement flag
       while preserving public/SSR and hosted review behavior.
-- [ ] Task 6.2: Add Studio Home with recent runs, active jobs, connection
+- [x] Task 6.2: Add Studio Home with recent runs, active jobs, connection
       health, empty state, and one primary New Analysis action.
 - [ ] Task 6.3: Build the Recording step over the Phase 3 staging composable.
 - [ ] Task 6.4: Build the Context step with explicit provider/transport
@@ -288,31 +303,31 @@ separate proposed track.
 
 Each phase can become a public GitHub issue after the specification is approved:
 
-| Issue | Title | Depends On |
+| Issue | Title                                                     | Depends On |
 |---|---|---|
-| 1 | Define Studio job, staging, and execution contracts | None |
-| 2 | Add local session, runtime secrets, and connection health | 1 |
-| 3 | Add resumable local recording staging | 1 |
-| 4 | Extract reusable analysis orchestration from the CLI | 1 |
-| 5 | Implement the durable Bun job executor | 2, 3, 4 |
-| 6 | Build the Studio shell and analysis composer | 2, 3, 5 |
-| 7 | Build activity, cancellation, retry, and recovery UX | 5, 6 |
-| 8 | Build timestamp-linked video review | 3, 5, 6 |
-| 9 | Harden, document, and define the hosted roadmap | 1-8 |
+| 1     | Define Studio job, staging, and execution contracts       | None       |
+| 2     | Add local session, runtime secrets, and connection health | 1          |
+| 3     | Add resumable local recording staging                     | 1          |
+| 4     | Extract reusable analysis orchestration from the CLI      | 1          |
+| 5     | Implement the durable Bun job executor                    | 2, 3, 4    |
+| 6     | Build the Studio shell and analysis composer              | 2, 3, 5    |
+| 7     | Build activity, cancellation, retry, and recovery UX      | 5, 6       |
+| 8     | Build timestamp-linked video review                       | 3, 5, 6    |
+| 9     | Harden, document, and define the hosted roadmap           | 1-8        |
 
 ## Risk Register
 
-| Risk | Early evidence or mitigation | Stop condition |
+| Risk                                           | Early evidence or mitigation                                                | Stop condition                                     |
 |---|---|---|
-| Nitro/H3 buffers upload parts | Phase 1 streaming spike with measured memory | No Phase 3 API until streaming is proven |
-| Local credential routes rely only on localhost | Per-launch capability and hostile-request tests | No settings mutation without session gate |
-| Upload exhausts disk or races writers | Reservation, one-writer transition, bounded parts | Abort and clean without sealing |
-| Process exits during Gemini work | Persist stage/events and mark interrupted | Never auto-resume indeterminate remote state |
-| Playback contradicts deletion policy | Explicit ephemeral/retained modes and digest reattachment | No player claim without accessible matching media |
-| Job DB is mistaken for a run projection | ADR 0007 authority boundary and schema tests | No active job reconstruction from run rows |
-| Local Bun code leaks into Worker | Per-phase artifact inspection and route-absence tests | Cloudflare build fails |
-| Local operational tables leak into D1 | Separate local migrations; parity stays scoped to completed-run projections | D1 migration diff fails |
-| Track scope hides an unusable middle | Three delivery slices with stop/go gates | Do not expose beta before synthetic end-to-end run |
+| Nitro/H3 buffers upload parts                  | Phase 1 streaming spike with measured memory                                | No Phase 3 API until streaming is proven           |
+| Local credential routes rely only on localhost | Per-launch capability and hostile-request tests                             | No settings mutation without session gate          |
+| Upload exhausts disk or races writers          | Reservation, one-writer transition, bounded parts                           | Abort and clean without sealing                    |
+| Process exits during Gemini work               | Persist stage/events and mark interrupted                                   | Never auto-resume indeterminate remote state       |
+| Playback contradicts deletion policy           | Explicit ephemeral/retained modes and digest reattachment                   | No player claim without accessible matching media  |
+| Job DB is mistaken for a run projection        | ADR 0007 authority boundary and schema tests                                | No active job reconstruction from run rows         |
+| Local Bun code leaks into Worker               | Per-phase artifact inspection and route-absence tests                       | Cloudflare build fails                             |
+| Local operational tables leak into D1          | Separate local migrations; parity stays scoped to completed-run projections | D1 migration diff fails                            |
+| Track scope hides an unusable middle           | Three delivery slices with stop/go gates                                    | Do not expose beta before synthetic end-to-end run |
 
 ## Rollback And Compatibility
 

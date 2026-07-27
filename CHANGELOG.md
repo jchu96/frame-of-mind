@@ -13,6 +13,34 @@ Semantic Versioning.
 - Optional local search/index over prior analyses
 - Read-only local stdio and Cloudflare Streamable HTTP MCP servers
 
+## [0.2.1] - 2026-07-27
+
+### Fixed
+
+- Replaced the Bun-incompatible `@google/genai` upload wrapper with Google's
+  documented two-step resumable Files upload while retaining SDK-backed file
+  status, generation, and deletion.
+- Derived Gemini's supported response-schema subset from Zod while preserving
+  strict local validation as the durable contract authority.
+- Added concise output and canonical evidence-timestamp instructions for both
+  structured model passes.
+
+### Security
+
+- Stream uploads without placing the Gemini API key in a URL, validate the
+  exact signed upload host, reject redirects, use a generic remote display
+  name, and sanitize provider and local-validation errors.
+- Preserve exact remote cleanup whenever a valid file name is known and report
+  ambiguous finalization honestly; no meeting content or provider payload is
+  emitted by compatibility checks.
+
+### Testing
+
+- Added adapter contract tests for upload, schema sanitization, local Zod
+  enforcement, processing failure, and cleanup retry behavior.
+- Added `bun run smoke:gemini`, which generates local media and verifies
+  upload, index, detail interrogation, and deletion on the configured model.
+
 ## [0.2.0] - 2026-07-26
 
 ### Security

@@ -42,7 +42,8 @@ const mediaTransitions: Partial<
   retained: ["in_use", "expired", "deleting", "failed"],
   expired: ["deleting", "failed"],
   aborted: ["deleting", "failed"],
-  deleting: ["deleted", "failed"],
+  deleting: ["deleted", "cleanup_failed", "failed"],
+  cleanup_failed: ["deleting"],
 };
 
 const validatedMediaTransitionBrand: unique symbol = Symbol(

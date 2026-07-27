@@ -32,7 +32,7 @@ export function runFixture(): RunImport {
     },
     manifest: {
       schemaVersion: 2,
-      toolVersion: "0.2.0",
+  toolVersion: "0.2.1",
       promptRevision: "test",
       runId: "20260725T120000Z-test",
       startedAt: "2026-07-25T12:00:00.000Z",

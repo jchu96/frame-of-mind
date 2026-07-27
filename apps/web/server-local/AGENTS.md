@@ -9,7 +9,10 @@ Use **Bun 1.3.14+**: `bun install --frozen-lockfile`, `bun test`, `bun run typec
 - Keep this tree local-only and register it only when `FRAME_OF_MIND_STUDIO=1`.
 - Keep imports out of `apps/web/server/`, shared client code, and Cloudflare builds.
 - Extend `scripts/check-cloudflare-boundary.ts` for every new local-control-plane marker.
-- Require loopback Host/peer validation and the Studio session for `/api/studio/*`.
+- Require loopback Host/peer validation everywhere. Permit only the inert
+  `/__studio/launch` page and bounded bootstrap mutation before authentication;
+  require the Studio session for every data-bearing page, run API, and
+  `/api/studio/*`.
 - Require same-origin JSON semantics and bounded request bodies for mutations.
 
 ## Credentials And Media

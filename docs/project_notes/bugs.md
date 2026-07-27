@@ -1,5 +1,167 @@
 # Bugs and Failure History
 
+## 2026-07-27 — Context expiry could race an active upload
+
+- Symptom: the first janitor draft removed every `.stage-*` directory as
+  abandoned, including a request that was still streaming.
+- Cause: temporary directories were not included in the adapter's in-process
+  ownership set.
+- Correction: register the temporary directory before creation, skip it during
+  expiry, and release ownership only after publish or cleanup.
+- Prevention: the adapter test pauses a live stream, runs expiry, then proves
+  the complete file still publishes.
+
+## 2026-07-27 — One corrupt context receipt blocked unrelated expiry
+
+- Symptom: a malformed receipt aborted the sweep before later expired context
+  could be deleted.
+- Cause: reconciliation treated the directory scan as one all-or-nothing
+  operation.
+- Correction: continue safe per-entry cleanup, retain the first failure, then
+  report its sanitized code after the scan.
+- Prevention: the corruption regression test proves a later valid expired file
+  is removed even though the sweep reports the unrelated invalid receipt.
+
+## 2026-07-27 — Narrow request initially analyzed too much media
+
+- Symptom: a topic-focused request was treated as permission to analyze the
+  complete available recording.
+- Cause: media availability was conflated with the user's semantic scope.
+- Correction: use timestamped transcript evidence to select bounded local
+  derivatives before Gemini upload.
+- Prevention: ADR 0009 makes transcript-first semantic scoping the default for
+  topic- or speaker-focused work.
+
+## 2026-07-27 — Speaker-only correction omitted useful collaboration
+
+- Symptom: a first correction narrowed the review to the named requester's
+  literal airtime and risked dropping useful clarifications.
+- Cause: speaker identity was mistaken for the semantic topic boundary.
+- Correction: retain the complete relevant conversational turn, then classify
+  direct request, collaborative clarification, and analyst inference.
+- Prevention: the meeting-to-issue workflow treats a named speaker as a search
+  signal, not an exclusion rule.
+
+## 2026-07-27 — Model attribution needed transcript and video reconciliation
+
+- Symptom: model output associated a request with a visually prominent
+  participant even though provider segment ownership and conversational
+  continuity suggested another speaker.
+- Cause: neither transcript diarization nor visible tile prominence is
+  sufficient attribution authority by itself.
+- Correction: preserve the raw `speakerTag`, then reconcile audio, visible
+  active-speaker labels, adjacent turns, and direct address.
+- Prevention: uncertain attribution remains explicitly unverified.
+
+## 2026-07-27 — Screenshot evidence upload briefly created a zero-byte object
+
+- Symptom: an issue-asset path existed remotely but its object size was zero.
+- Cause: a failed local file-to-base64 step was followed by a successful API
+  call because the shell pipeline did not fail as a unit.
+- Correction: replace the object from the verified source and confirm the
+  remote size before linking it.
+- Prevention: enable `pipefail`, validate local existence and nonzero size, and
+  re-read the remote object after any evidence upload.
+
+## 2026-07-27 — Gemini SDK upload returned an empty 404 for a valid API key
+
+- Symptom: `@google/genai` 2.13.0 `files.upload()` failed before media
+  processing with an empty 404 response under Bun.
+- Isolation: the same API key, file, MIME type, and Gemini Developer API
+  accepted the documented resumable upload protocol; file listing, model
+  generation, media understanding, and deletion also succeeded.
+- Diagnostic result: the official resumable Files API upload sequence worked
+  while the SDK continued to handle polling, generation, and cleanup.
+- Status: resolved in v0.2.1 by a typed, streaming production uploader with
+  exact-host validation and cleanup coverage.
+- Prevention: keep `bun run smoke:gemini` and rerun it after Bun, SDK, model,
+  Files protocol, or adapter changes.
+
+## 2026-07-27 — Gemini 3.6 rejected the full Zod JSON Schema
+
+- Symptom: `gemini-3.6-flash` returned `400 INVALID_ARGUMENT` for both text-only
+  and video structured-output requests.
+- Cause: `z.toJSONSchema(...)` emitted constraints outside Gemini's supported
+  schema subset; a generated `maxItems: 1000` alone caused the current
+  Interactions endpoint to reject the request. The failure was independent of
+  transcript size, private media, and upload state.
+- Solution: derive a provider-safe JSON Schema subset from the Zod schema,
+  while parsing the response as `unknown` and validating it against the full,
+  stricter originating Zod schema.
+- Status: resolved in v0.2.1 by an isolated schema sanitizer plus complete
+  local Zod validation.
+- Prevention: contract-test the sanitizer and run both structured video passes
+  when upgrading the model or `@google/genai`.
+
+## 2026-07-27 — A generateContent test did not prove responseFormat support
+
+- Symptom: `models.generateContent` accepted `responseFormat` without a request
+  error but returned Markdown/prose that failed strict JSON parsing.
+- Cause: the diagnostic used an array shape from the 2.13.0 declaration plus
+  an unsanitized schema, while Google's current generateContent documentation
+  shows an object-shaped `responseFormat`.
+- Resolution: treat that diagnostic as inconclusive. The current official
+  Interactions API path passed the exact sanitized Zod-derived schema and a
+  synthetic video; generateContent remains a documented previous API.
+- Prevention: load Google's official skills and hosted feature page before
+  reconciling SDK declarations with a changing Beta API.
+
+## 2026-07-27 — Provider-safe output exceeded a stricter local field bound
+
+- Symptom: a structured video response passed Gemini's provider schema but
+  failed local Zod validation because `where.surface` exceeded 2,000
+  characters.
+- Cause: Gemini's supported JSON Schema subset could not carry every local
+  string-length constraint.
+- Solution: keep the strict local schema, make bounded fields explicit in the
+  prompt, and fail closed with sanitized issue paths.
+- Status: resolved in v0.2.1 without a corrective retry.
+- Prevention: never truncate or cast a model response to force acceptance;
+  schema success is required before artifact publication.
+
+## 2026-07-27 — Detail smoke returned a noncanonical evidence timestamp
+
+- Symptom: upload and index passed, but the first complete synthetic smoke
+  failed local detail validation at `evidence.timestamp`.
+- Cause: the provider-safe schema cannot express the local canonical timestamp
+  refinement, and the detail prompt had not restated the candidate bounds.
+- Fix: require `HH:MM:SS` evidence inside the exact candidate range and retain
+  strict local parsing.
+- Verification: the next generated-video run passed upload, index, detail
+  interrogation, and exact deletion on `gemini-3.6-flash`.
+- Prevention: the explicit smoke command must keep both structured passes.
+
+## 2026-07-27 — Optional Gemini app URL aborted an otherwise usable detail
+
+- Symptom: an `issue-review` run reached Gemini and then failed strict local
+  validation at `where.appUrl (custom)`, leaving no bundle and an empty meeting
+  container.
+- Cause: Gemini emitted a URL-shaped optional value that violated the stricter
+  no-query/no-fragment evidence rule. Provider-safe JSON Schema could not
+  express the refinement, and the adapter had no bounded repair path. CLI
+  progress also hid the pass-2 boundary until a detail completed.
+- Fix: describe the optional URL constraint in the provider schema, regenerate
+  the complete structured response once using sanitized issue paths/codes,
+  retain unchanged Zod validation, print the pass-2 boundary, and remove an
+  empty meeting container after failure.
+- Prevention: tests cover repair success, repeated invalid output, rejected
+  value non-disclosure, exact remote cleanup, and failed-attempt directory
+  cleanup.
+
+## 2026-07-27 — Upload-start redirects could forward the Gemini key
+
+- Symptom: the new direct uploader validated the returned resumable URL but
+  left Fetch's default redirect behavior enabled on the earlier key-bearing
+  request.
+- Cause: a cross-origin 307 can be followed before post-response URL
+  validation, and Bun 1.3.14/Node 22 can forward `X-Goog-Api-Key`.
+- Fix: set `redirect: "error"` on both upload requests and retain exact-host
+  validation for the returned resumable URL and finalized file URI.
+- Verification: an offline request-contract test requires redirects disabled
+  on both hops; the generated-video live smoke still passes.
+- Prevention: never treat validation after an automatic redirect as a
+  credential boundary.
+
 ## 2026-07-25 — Bluedot tool output rejects its own duration value
 
 - Symptom: the MCP SDK's high-level `callTool` path rejects `get_meeting` even though the tool returned meeting data.
@@ -78,3 +240,47 @@
 - Fix: pin `tailwindcss` in `apps/web/package.json`.
 - Prevention: run at least one fresh `bun install --frozen-lockfile` build
   before release.
+
+## 2026-07-27 — Recording UI misread successful deletion
+
+- Symptom: the browser showed a cleanup failure after the server had removed
+  the staged bytes and returned terminal state `deleted`.
+- Cause: the client accepted only `aborted` as a clean deletion terminal.
+- Fix: accept both `aborted` and `deleted`, while retaining
+  `cleanup_failed` as an actionable failure.
+- Prevention: the production Playwright happy path now stages and deletes a
+  synthetic recording through the real local API.
+
+## 2026-07-27 — Browser receipt accidentally owned private-media cleanup
+
+- Symptom: closing the tab after seal could discard the only UI handle while
+  an ephemeral recording had no remaining expiry.
+- Cause: upload expiry was cleared at seal, but the media retention receipt did
+  not carry its own server-owned bound.
+- Fix: every media mode now has a server-owned expiry; sealed ephemeral media
+  expires independently of browser state, and legacy receipts migrate on read.
+- Prevention: adapter regressions cover sealed expiry and the ADR states that
+  browser storage is never cleanup authority.
+
+## 2026-07-27 — Resume could splice recordings with a shared prefix
+
+- Symptom: a same-size/MIME replacement with matching confirmed parts could
+  append a different suffix after refresh.
+- Cause: resume verified only already-confirmed part hashes.
+- Fix: create binds the ordered digests of every fixed-size file part; resume
+  recomputes that complete binding with bounded memory before any new write.
+- Prevention: client and adapter tests mutate only the unconfirmed tail and
+  require a closed mismatch.
+
+## 2026-07-27 — Expired media cleanup depended on process restart
+
+- Symptom: a sealed recording whose browser receipt was lost could remain on
+  disk after expiry for as long as the same Studio process stayed open.
+- Cause: the adapter enforced expiry during access and startup reconciliation,
+  but the server had no lifecycle-owned periodic sweep.
+- Fix: Nitro now owns a one-minute, non-overlapping expiry janitor, skips
+  writer-owned sessions, retries cleanup failures, cancels the interval on
+  close, and waits for an active sweep to finish.
+- Prevention: deterministic scheduler tests cover non-overlap, sanitized
+  failures, cleanup retry, active-writer exclusion, continued operation, and
+  shutdown draining.

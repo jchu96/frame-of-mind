@@ -1,0 +1,212 @@
+import { expect, test } from "@playwright/test";
+import { runFixture } from "../test/fixtures";
+import { collectClientErrors } from "./support/client-errors";
+
+function syntheticMp4(bytes = 64): Buffer {
+  const fixture = Buffer.alloc(bytes);
+  fixture.writeUInt32BE(24, 0);
+  fixture.write("ftypisom", 4, "ascii");
+  for (let index = 12; index < fixture.length; index += 1) {
+    fixture[index] = index % 251;
+  }
+  return fixture;
+}
+
+test("shows local work, connection health, and one clear start action", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "Your local analysis desk." }),
+  ).toBeVisible();
+  await expect(page.locator('[data-studio-home="local"]')).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Active jobs" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Connections" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Recent runs" }),
+  ).toBeVisible();
+  await expect(page.getByRole("status")).toHaveCount(3);
+  await expect(page.getByText("No analyses yet")).toBeVisible();
+  const activeSummary = await page.getByTestId("active-jobs-summary").boundingBox();
+  const recentSummary = await page.getByTestId("recent-runs-summary").boundingBox();
+  expect(activeSummary).not.toBeNull();
+  expect(recentSummary).not.toBeNull();
+  expect(Math.abs(activeSummary!.y - recentSummary!.y)).toBeLessThanOrEqual(2);
+
+  const newAnalysis = page.getByRole("link", { name: "New analysis" });
+  await expect(newAnalysis).toHaveCount(1);
+  await newAnalysis.click();
+  await expect(
+    page.getByRole("heading", { name: "Put one recording in the frame." }),
+  ).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});
+
+test("manages a temporary Gemini key without reflecting it", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+  const syntheticKey = "synthetic-e2e-key-never-use";
+
+  const resetResponse = await page.request.delete(
+    "/api/studio/configuration/secrets/gemini-api-key",
+    {
+      data: {},
+      headers: { "content-type": "application/json" },
+    },
+  );
+  expect(resetResponse.status()).toBe(200);
+
+  await page.goto("/connections");
+  await expect(
+    page.getByRole("navigation", { name: "Studio navigation" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "New analysis" }),
+  ).toBeVisible();
+  const gemini = page.getByRole("region", { name: "Gemini connection" });
+  await expect(gemini.getByRole("status")).toContainText("Not configured");
+
+  await gemini.getByLabel("Gemini API key").fill(syntheticKey);
+  const saveResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/studio/configuration/secrets/gemini-api-key")
+    && response.request().method() === "PUT"
+  );
+  await gemini.getByRole("button", { name: "Use for this launch" }).click();
+  const saveResponse = await saveResponsePromise;
+
+  expect(saveResponse.status()).toBe(200);
+  expect(await saveResponse.text()).not.toContain(syntheticKey);
+  await expect(gemini.getByRole("status")).toContainText("Configured");
+  await expect(gemini.getByLabel("Gemini API key")).toHaveValue("");
+  expect(await page.locator("body").textContent()).not.toContain(syntheticKey);
+
+  await gemini.getByRole("button", { name: "Clear temporary key" }).click();
+  await expect(gemini.getByRole("status")).toContainText("Not configured");
+  expect(clientErrors).toEqual([]);
+});
+
+test("stages and deletes one synthetic recording through the browser", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+
+  await page.goto("/recording");
+  await expect(
+    page.getByRole("heading", {
+      name: "Put one recording in the frame.",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Selecting or staging does not contact Gemini.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+
+  await page.getByLabel("Screen recording").setInputFiles({
+    name: "synthetic-walkthrough.mp4",
+    mimeType: "video/mp4",
+    buffer: syntheticMp4(),
+  });
+  await expect(page.getByText("Recording selected.", { exact: false })).toBeVisible();
+
+  await page.getByRole("button", { name: "Stage locally" }).click();
+  await expect(
+    page.getByText("Recording staged and sealed locally."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("64 B of 64 B confirmed locally"),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete staged copy" }).click();
+  await expect(page.getByText("Staged recording deleted.")).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});
+
+test("accepts an actual drop and keyboard file selection", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+  await page.goto("/recording");
+  const dropzone = page.locator('div[data-slot="base"][role="button"]');
+  const droppedBytes = [...syntheticMp4()];
+  const dataTransfer = await page.evaluateHandle((bytes) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(
+      [new Uint8Array(bytes)],
+      "dropped-walkthrough.mp4",
+      { type: "video/mp4" },
+    ));
+    return transfer;
+  }, droppedBytes);
+  await dropzone.dispatchEvent("drop", { dataTransfer });
+  await expect(dropzone).toContainText("dropped-walkthrough.mp4");
+
+  await page.reload();
+  const keyboardDropzone = page.locator('div[data-slot="base"][role="button"]');
+  const chooserPromise = page.waitForEvent("filechooser");
+  await keyboardDropzone.focus();
+  await page.keyboard.press("Enter");
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: "keyboard-walkthrough.mp4",
+    mimeType: "video/mp4",
+    buffer: syntheticMp4(),
+  });
+  await expect(keyboardDropzone).toContainText("keyboard-walkthrough.mp4");
+  const stageButton = page.getByRole("button", { name: "Stage locally" });
+  await stageButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByText("Recording staged and sealed locally."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Delete staged copy" }).click();
+  await expect(page.getByText("Staged recording deleted.")).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});
+
+test("imports and reviews one synthetic run", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+  const fixture = runFixture();
+
+  await page.goto("/import");
+  await page.getByLabel("analysis.json", { exact: true }).setInputFiles({
+    name: "analysis.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(fixture.analysis)),
+  });
+  await page.getByLabel("manifest.json", { exact: true }).setInputFiles({
+    name: "manifest.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(fixture.manifest)),
+  });
+
+  await page.getByRole("button", { name: "Validate and import" }).click();
+  await expect(page.getByText("Run imported", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Open run" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Product review", level: 1 }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "Use the portable contract",
+      level: 3,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText("The database remains a projection.")).toBeVisible();
+
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  await expect(
+    page.getByRole("link", { name: "Product review", exact: true }),
+  ).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});

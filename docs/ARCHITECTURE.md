@@ -71,7 +71,7 @@ flowchart TB
     subgraph Core
         NM[Context normalizer]
         AL[Alignment]
-        IX[Whole-video index]
+        IX[Selected-media index]
         IG[Moment interrogation]
         EV[Evidence and inference policy]
     end
@@ -149,11 +149,23 @@ The normal path is `--video`. A signed Bluedot URL is a fallback with:
 Audio-only files are currently rejected. The shipped recipes use visible screen
 state as a first-class signal.
 
-### 4.3 Transcript alignment
+### 4.3 Semantic scope and transcript alignment
 
 Provider transcripts often cover the full meeting while a recording is a clip.
 Video timestamp `00:00:00` therefore does not necessarily equal transcript
 timestamp `00:00:00`.
+
+When an operator asks about a topic or speaker, the transcript is used before
+upload to identify one or more semantic windows. The boundary includes the
+complete relevant conversational turn: a named speaker is a search signal, not
+permission to discard collaborators' clarifications. Private local derivatives
+are then supplied as `--video`; the current CLI does not cut them
+automatically.
+
+This preserves the more important invariant: process the least media needed
+without removing context that materially changes the answer. Untimestamped
+transcripts require explicit operator bounds or whole-selected-media analysis.
+See [ADR 0009](adr/0009-transcript-first-semantic-scoping.md).
 
 Frame of Mind stores:
 
@@ -166,8 +178,8 @@ interface TranscriptAlignment {
 }
 ```
 
-The whole-video pass proposes an offset. `--transcript-offset` overrides it for
-deterministic runs. Nearby transcript windows apply:
+The selected-media pass proposes an offset. `--transcript-offset` overrides it
+for deterministic runs. Nearby transcript windows apply:
 
 ```text
 transcript time = video candidate time + offset
@@ -217,13 +229,15 @@ or the stable `content-addressed` marker.
 
 ### 4.5 Gemini analysis
 
-The current backend uses the Gemini Developer API and official
-`@google/genai` SDK.
+The current backend uses the Gemini Developer API. Version 0.2.1 uploads
+through Google's documented two-step resumable Files REST protocol, then uses
+the official `@google/genai` SDK for file status, generation, and deletion.
 
 Pass 1:
 
 - uploads the selected video to Gemini Files;
-- samples the full video at low resolution and 0.5 frames per second;
+- samples the complete operator-selected video at low resolution and 0.5
+  frames per second;
 - checks video/context relevance;
 - estimates transcript alignment;
 - returns recipe-relevant candidate moments.
@@ -238,6 +252,19 @@ Pass 2:
 
 This shape bounds cost while preserving close visual inspection.
 
+The production adapter defines shipped API behavior. Direct resumable upload
+is the tested production transport. The adapter accepts only an exact HTTPS
+Gemini upload host, disables redirects, streams the video, and never places the
+key in a URL.
+Beta Interactions remains a diagnostic and future migration candidate; stable
+`generateContent` remains the generation surface until a separate decision
+changes that boundary.
+
+Gemini's provider schema is intentionally less expressive than the durable
+contract. It is derived from the same Zod schema using an explicit supported
+keyword allowlist. Every returned payload is still decoded as `unknown` and
+validated against the complete Zod contract before publication.
+
 ### 4.6 Evidence and inference
 
 All recipes share one policy:
@@ -248,6 +275,8 @@ All recipes share one policy:
 - exact quotes are distinguished from summaries;
 - visible URLs are retained only when fully readable;
 - inferred implementation implications must be labeled;
+- direct requests, collaborative clarifications, and analyst inference remain
+  distinguishable during downstream synthesis;
 - owners and due dates are absent unless explicitly stated;
 - rejected candidates remain in `analysis.json` for audit;
 - human review remains required.
@@ -256,11 +285,11 @@ All recipes share one policy:
 
 Default roots:
 
-| Platform | Root |
+| Platform | Root                                                                       |
 |---|---|
-| macOS | `~/Library/Application Support/frame-of-mind/runs` |
-| Linux | `$XDG_DATA_HOME/frame-of-mind/runs` or `~/.local/share/frame-of-mind/runs` |
-| Windows | `%LOCALAPPDATA%\\frame-of-mind\\runs` |
+| macOS    | `~/Library/Application Support/frame-of-mind/runs`                         |
+| Linux    | `$XDG_DATA_HOME/frame-of-mind/runs` or `~/.local/share/frame-of-mind/runs` |
+| Windows  | `%LOCALAPPDATA%\\frame-of-mind\\runs`                                      |
 
 Layout:
 
@@ -308,7 +337,7 @@ sequenceDiagram
     CLI->>CLI: validate media and compute hash
     CLI->>Files: upload video
     Files-->>CLI: active remote file
-    CLI->>Model: index full recording
+    CLI->>Model: index operator-selected video
     Model-->>CLI: match, alignment, moments
     loop bounded moments
         CLI->>Model: interrogate clip + aligned transcript
@@ -464,6 +493,12 @@ new GoogleGenAI({ apiKey })
 
 It supports the Files API used for large video uploads.
 
+The upload start call authenticates with `X-Goog-Api-Key`, validates the
+returned resumable URL against the exact Gemini API host, and streams the file
+to that URL. Both upload requests reject redirects. The SDK remains responsible
+for file polling, model generation, and exact-name deletion. A generated-video
+smoke test exercises this complete boundary without meeting content.
+
 ### Vertex AI boundary
 
 Vertex AI uses:
@@ -570,8 +605,9 @@ of the Access JWT signature, issuer, audience, and algorithm.
 ### Local Studio
 
 Phase A evolves the local viewer into a Studio in independently shippable
-slices. The per-launch session and connection-health slice is implemented;
-media staging, execution, and durable jobs remain subsequent phases:
+slices. The per-launch session, dashboard shell and Home, connection health,
+recording UI, resumable local media, execution adapter, and durable jobs are
+implemented; the remaining composer and job-detail slices build on them:
 
 ```mermaid
 flowchart LR
@@ -624,12 +660,190 @@ rebuildable from a run that does not exist yet. After success,
 `analysis.json`/`manifest.json` become authoritative and their run/item
 projection remains disposable.
 
+The local-only `LocalSqliteJobRepository` owns `studio_analysis_jobs` and
+`studio_analysis_job_events` in the same private SQLite file as the rebuildable
+run projection, but through a separate migration and interface. Its tables are
+intentionally absent from D1 and the Cloudflare bundle. Every write operation
+uses Bun SQLite `BEGIN IMMEDIATE` transactions so idempotency lookup plus
+creation, expected-stage transition plus event append, cancellation intent,
+retry derivation, and sequence allocation are serialized across connections.
+Rows are parsed through the shared Zod schemas on every read, and immutable
+input digests are recomputed before creation and verified again after reads.
+
+The job database stores an opaque media session ID and digest inside immutable
+job input; it does not copy the media receipt or private path. Phase 3's
+private JSON media receipt remains the single media authority. The distinct
+context-file adapter likewise owns its short-lived receipt and exposes only an
+opaque context ID plus expected SHA-256 to jobs. It accepts at most 8 MiB of
+UTF-8 JSON, text, Markdown, SRT, or VTT under a separate per-user root; it
+does not reuse media multipart state or put transcript content in SQLite. This
+avoids two durable owners drifting over whether bytes still exist.
+
+Immediately before execution, the context adapter rechecks regular-file
+identity, exact byte count, and SHA-256, then grants one process-local lease.
+Only the analysis resolver sees the derived private path. The existing
+`FileContextSource` performs normalization; no Studio-specific transcript
+parser is introduced. The executor releases and consumes the lease in its
+`finally` path, while one-hour expiry and a non-overlapping minute janitor
+remove abandoned uploads. External deletion fails while the lease is active.
+See [ADR 0011](adr/0011-ephemeral-local-context-staging.md).
+
 The first Studio runs one job at a time in the Bun application process.
 Closing the browser does not cancel it; restarting the process marks active
 work interrupted and requires an explicit linked retry. API secrets come from
 the environment or process-memory session input. Mutating local routes require
 a per-launch capability/session in addition to loopback, Host, and same-origin
 checks.
+
+The top-level Nuxt application frame is also a build-time boundary. The
+Studio-enabled Bun build resolves `#frame-app` to the local-only Nuxt UI
+dashboard frame under `server-local/`; review-only local and Cloudflare builds
+resolve it to a pass-through frame and retain `AppHeader`. This lets shared SSR
+run/import pages live inside the Studio navigation without shipping dormant
+local navigation or session affordances to the hosted Worker. Cloudflare
+artifact checks require the hosted review markers and reject the Studio frame
+markers.
+
+The Studio-enabled build also replaces the root review index with a local-only
+Home page. Home composes bounded reads from the operational job repository,
+rebuildable run projection, and sanitized connection-status service. It does
+not persist a denormalized dashboard view. The unauthenticated fragment first
+lands on a separate inert `/__studio/launch` page. After exchange, every
+data-bearing page/API requires the HttpOnly session; an invalid or replayed
+fragment never mounts Home or triggers its reads. Home explicitly revalidates
+on mount so returning from an import cannot display a stale empty projection.
+Tailwind scans `server-local/studio-ui` through an explicit stylesheet
+`@source`; otherwise utilities unique to build-injected pages would be absent
+from production CSS even though the Vue build succeeds.
+
+Process recovery is state-based and intentionally does not infer what Gemini
+may have completed:
+
+| Durable state at process loss | Startup action | Provider execution |
+|---|---|---|
+| `queued` | preserve and claim oldest-first after reconciliation | execute once in the new process |
+| `fetching_context` through `cleaning_up` | transition directly to `interrupted` with `executor_restart` | never auto-resume |
+| active with `cancellationRequestedAt` | preserve cancellation evidence and transition to `interrupted` | never relabel as canceled or auto-resume |
+| `succeeded`, `failed`, `canceled`, or `interrupted` | preserve row, events, run receipt, and outcome | never execute |
+
+This distinction is load-bearing: a committed queue row proves that work has
+not yet been claimed, while any later stage may conceal a completed remote
+operation or published run whose local acknowledgement was lost. Retrying an
+interrupted attempt therefore creates a new, immutable, linked attempt after
+the operator has reconciled possible output. The original attempt and event
+history are never reset or reused.
+
+`LocalStudioJobWorker` is the process-local queue owner. It scans the durable
+queue oldest-first, atomically claims one `queued` row as
+`fetching_context`, and does not claim another until the current executor has
+settled. Startup marks abandoned nonterminal attempts `interrupted`; shutdown
+aborts the active signal and waits for cooperative cleanup. Wakeups coalesce,
+and a browser refresh has no control over the worker lifetime. A production
+runtime must construct exactly one worker singleton per local database.
+
+`OrchestratedAnalysisJobExecutor` is the typed bridge from a claimed job to
+`AnalysisOrchestrator`. A local factory resolves the sealed-media path,
+context file/provider, exact recipe, output root, and process-memory secret at
+execution time. The bridge re-verifies recipe content against the job's
+immutable digest and overwrites mutable resolver values with the recorded
+model, focus, provider, transport, meeting ID, recipe revision, and
+custom/built-in flag. It translates orchestration events into job-bound events;
+the worker alone owns terminal success/failure/interruption.
+
+`LocalStudioJobControl` is the only cancellation/retry mutation surface.
+Cancellation commits its timestamp and event before the active
+`AbortController` is signaled; a canceled queued job reaches `canceled`
+without invoking a provider. Retry creation first replays an existing
+idempotency key, then requires the parent to be retryable and its independent
+media receipt to prove the exact SHA-256 is still retained and unexpired.
+`OrchestratedAnalysisJobExecutor` repeats that guard immediately before a
+linked retry resolves any private path, atomically leases the receipt
+`retained -> in_use`, and releases it after execution. The expiry janitor
+cannot delete an active lease; startup reconciliation repairs an abandoned
+retained lease after a process exit. Receipt validation never copies media
+authority into the job database. An indeterminate publication receipt always
+outranks a concurrent cancellation because the run may already exist.
+
+The local-only `/api/studio/jobs` list/create/detail/cancel/retry handlers are
+explicit Nitro registrations, not scanned shared-server routes. They require
+the Studio session; mutations additionally require JSON plus same-origin
+semantics. List pages are capped at 100 jobs, detail pages at 100 ordered
+events, request bodies at 32 KiB, and failures use fixed messages instead of
+repository, media, provider, or filesystem content. `RepositoryStudioJobApi`
+keeps idempotent create/replay, initial-media validation, queue notification,
+control mutations, and event paging behind one process singleton. The local
+Nitro startup plugin now constructs that singleton before routes become
+available: one Bun SQLite connection, repository, control service, worker,
+typed executor, and completed-run projection. The normal run routes receive
+that same configured `RunStore`; Nitro shutdown removes it before closing the
+database. Startup failure prevents the server from advertising a job API that
+cannot execute its queue.
+
+New create bodies use a stricter immutable-input schema than legacy persisted
+rows: recipe `custom` provenance is required at the HTTP boundary. First
+attempts validate the exact unexpired `sealed` receipt before insertion and
+must acquire `sealed -> in_use` before resolving a private path. Terminal
+cleanup returns explicitly retained media to `retained` and deletes the
+ephemeral staged copy; retries retain their separate retained-media lease.
+Only that active lease can resolve the canonical private `media.sealed` path.
+The path capability is local-only, requires the exact receipt digest and file
+identity, and is absent from the shared media adapter, database, events, and
+HTTP contracts. External abort/delete requests reject `in_use` media; only the
+executor's digest-bound ephemeral-release capability may delete that lease.
+The resolver hashes the current sealed file, and orchestration compares the
+receipt digest again immediately before starting the Gemini upload.
+
+Execution options resolve built-in recipe content, provider transport,
+environment/process-memory secrets, output root, leased recording path, and
+optional leased local context just in time. Creation rejects missing Gemini
+credentials, missing transport-specific provider credentials, stale recipe
+receipts, absent/expired local context receipts, and inputs whose remaining
+private staging contract does not exist yet. Custom recipes therefore remain
+disabled. Provider OAuth is noninteractive inside a job: expired authorization
+fails the attempt and must be reconnected explicitly rather than opening a
+callback flow from the background worker.
+
+The CLI analysis command is a thin adapter over `AnalysisOrchestrator`. The
+orchestrator accepts explicit context/analyzer factories, an optional
+`AbortSignal`, a typed progress reporter, and an optional completed-run
+projection publisher. Its stage vocabulary deliberately matches the
+nonterminal work stages of the Studio job model:
+
+```text
+fetching_context -> uploading_to_gemini -> indexing -> interrogating
+-> rendering -> cleaning_up
+```
+
+Cancellation is cooperative at provider, upload, model, screenshot, render,
+and publication boundaries. Once a Gemini file identity is known, failure or
+cancellation still runs exact-file cleanup. Cancellation is no longer observed
+after the validated staging directory is atomically renamed: at that point the
+durable run already exists and must be reported as published rather than
+retroactively canceled.
+
+Projection publication occurs only after that atomic rename. Projection
+failures are converted to a fixed, sanitized warning and returned alongside
+the successful run. They never delete or mutate `analysis.json`,
+`manifest.json`, their cleanup provenance, or rendered artifacts. The
+projection port receives cloned validated contracts without the authoritative
+bundle path, so it has no filesystem capability through this interface. The
+Bun executor maps these service events into job-bound sequenced events; it
+does not parse CLI text. Route wiring and validated staged-media reuse remain
+in the next implementation slices.
+
+The local media backend streams server-advertised fixed-size parts directly
+from H3's Node request iterable into a private Bun `FileSink`. Durable JSON
+receipts record only opaque IDs, exact byte/part hashes, lifecycle state, and
+server-owned expiry; neither source names nor filesystem paths cross the API.
+Part retries are accepted only when coordinates, length, and SHA-256 match the
+receipt. Completion re-reads the partial file as a stream, validates detected
+MP4/QuickTime/WebM magic and optional expected SHA-256, then atomically renames
+it. A local-only Nitro plugin reconciles uncommitted bytes, interrupted seals,
+expiry, and retryable cleanup before serving Studio work, then runs a
+non-overlapping one-minute expiry sweep until Nitro closes. The sweep uses the
+same per-session ownership boundary as upload, seal, lifecycle transition, and
+delete; busy sessions wait for the next sweep, and cleanup failures remain
+durable and retryable.
 
 `bun run studio` generates a capability and places it only in a URL fragment.
 The client removes the fragment before exchanging the capability once for an
@@ -675,19 +889,19 @@ weaken the Nuxt UI boundary. See [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 ## 10. Failure model
 
-| Failure | Behavior |
+| Failure                                 | Behavior                                                     |
 |---|---|
-| Provider OAuth fails | no Gemini upload starts |
-| Context unavailable | run stops before media upload |
-| Media validation fails | no provider/model processing |
-| Gemini upload fails | partial remote file deletion attempted |
-| Upload processing and cleanup both fail | sanitized combined failure; remote cleanup is not claimed |
-| Gemini HTTP request stalls | per-operation deadline aborts locally so cleanup can proceed |
-| Index mismatch | remote cleanup, no published run |
-| One interrogation fails | current release fails the run; resumability is future work |
-| Screenshot fails | analysis can continue without screenshot |
-| Remote deletion fails | warning plus `deleted: false` in manifest |
-| Artifact write fails | staging directory removed; no partial final run |
+| Provider OAuth fails                    | no Gemini upload starts                                      |
+| Context unavailable                     | run stops before media upload                                |
+| Media validation fails                  | no provider/model processing                                 |
+| Gemini upload fails                     | partial remote file deletion attempted                       |
+| Upload processing and cleanup both fail | sanitized combined failure; remote cleanup is not claimed    |
+| Gemini HTTP request stalls              | per-operation deadline aborts locally so cleanup can proceed |
+| Index mismatch                          | remote cleanup, no published run                             |
+| One interrogation fails                 | current release fails the run; resumability is future work   |
+| Screenshot fails                        | analysis can continue without screenshot                     |
+| Remote deletion fails                   | warning plus `deleted: false` in manifest                    |
+| Artifact write fails                    | staging directory removed; no partial final run              |
 
 ## 11. Testing strategy
 

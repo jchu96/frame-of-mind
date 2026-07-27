@@ -16,18 +16,29 @@ rebuildable projections.
 ## Local Studio preview
 
 The completed-run workspace remains the stable v0.2 surface. A build-time
-isolated local Studio preview now provides per-launch authentication and a
-Connections page:
+isolated local Studio preview now provides per-launch authentication, a local
+Home dashboard, Connections, and private recording staging:
 
 ```bash
 cp .env.example .env
 bun run studio
 ```
 
-The command binds to loopback and prints a one-time launch URL. Its capability
-is carried in the URL fragment, removed before the exchange request, and
-exchanged once for an HttpOnly, SameSite=Strict session cookie. Sensitive
-`/api/studio/*` routes require that session in addition to Host/peer validation.
+The command binds to loopback and opens a one-time launch URL. Its capability
+is carried in the fragment of an inert `/__studio/launch` page, removed before
+the exchange request, and exchanged once for an HttpOnly, SameSite=Strict
+session cookie. Home, review/import pages, run APIs, and `/api/studio/*`
+require that session in addition to Host/peer validation. A rejected or
+replayed link stays on the inert page and starts no dashboard reads.
+
+The Studio-enabled node build selects a local-only Nuxt UI dashboard frame and
+Home route for Home, Recording, Connections, Import, and run detail. Home
+combines three existing read contracts: operational jobs, rebuildable run
+summaries, and sanitized connection presence. It creates no fourth authority
+or dashboard-only persistence, revalidates after client navigation, and keeps
+one primary New Analysis entry point. Normal review and Cloudflare builds
+select the pass-through review frame and original completed-run index at build
+time, retain their existing SSR header, and exclude the Studio modules.
 
 The Connections page supports:
 
@@ -37,8 +48,25 @@ The Connections page supports:
 - source, lifetime, last verification, and sanitized failure display;
 - `.env` guidance without writing the file or echoing a secret.
 
-It does not yet stage recordings or run analysis. Those capabilities remain the
-next phases of the accepted local Studio track.
+The Recording page uses Nuxt UI's accessible single-file picker/drop zone over
+the authenticated resumable media API. It validates extension, declared MIME,
+and bytes before create; streams server-advertised fixed parts; counts only
+receipt-confirmed bytes; supports pause, retry, abort, and explicit
+ephemeral/retained selection; and discloses local storage and the later Gemini
+Files transfer before staging begins.
+
+The selected browser `File` remains component-local. Session storage contains
+only an opaque media ID. After refresh, Studio reconciles the server receipt,
+requires file re-selection, verifies a complete-file binding using bounded
+part hashes, and sends only missing parts. Both ephemeral and retained sessions
+carry a visible server-owned expiry; browser storage is never cleanup
+authority. Startup reconciliation and a non-overlapping lifecycle-owned
+periodic sweep enforce that expiry even when the server remains open after the
+originating tab closes. If session storage is unavailable, the current page
+can finish but Studio explicitly reports that refresh-resume is disabled. The
+remaining analysis-composer steps and job-detail activity UI remain later
+track tasks; Home already reports active work from the protected durable job
+runtime underneath them.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
@@ -61,11 +89,11 @@ and [ADR log](adr/README.md).
 | Mode | Runtime | Database | Authentication | Intended use |
 |---|---|---|---|---|
 | Local review | Bun + Nuxt SSR | Bun SQLite | loopback Host/peer guard | browse completed runs |
-| Local Studio | Bun + Nuxt SSR | Bun SQLite | Host/peer guard plus per-launch session | configure now; media/jobs are phased |
+| Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | start from Home, configure providers, stage a recording, and monitor active work |
 | Hosted | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | a controlled team workspace |
 
-The UI and API are shared. Only the `RunStore` adapter and Nitro preset change
-at build time.
+The run pages and API contracts are shared. The `RunStore`, Nitro preset, and
+top-level application frame are selected at build time.
 
 ```mermaid
 flowchart TB
@@ -106,6 +134,26 @@ The `analysis_items` table stores one normalized row per analysis item:
 
 The normalized table supports future filters without rewriting the durable
 contract.
+
+Local Studio recording bytes are stored separately under the operating
+system's per-user application-data directory. Receipts and responses expose
+opaque IDs, byte counts, hashes, lifecycle state, and expiry—not filesystem
+paths or original filenames. Override the dedicated staging root only with an
+absolute path outside the checkout:
+
+```bash
+FRAME_OF_MIND_MEDIA_ROOT="/private/path/frame-of-mind-media" bun run studio
+```
+
+Optional local context is a separate, single-use staging class under
+`staging/context`. It accepts only JSON, text, Markdown, SRT, or VTT up to
+8 MiB, exposes no source name/path/body, and is deleted when its execution
+lease ends or its one-hour expiry is swept. Override it independently only with
+another absolute private path outside the checkout:
+
+```bash
+FRAME_OF_MIND_CONTEXT_ROOT="/private/path/frame-of-mind-context" bun run studio
+```
 
 ## What is not stored
 
@@ -150,6 +198,21 @@ NUXT_SQLITE_PATH="/private/path/frame-of-mind.sqlite" bun run web
 
 `.data/` is ignored by Git.
 The local database is created with user-only permissions on POSIX systems.
+
+## Browser smoke tests
+
+The Playwright suite builds the local Studio, launches it with Bun on an
+isolated loopback port, and uses only a temporary database, empty dotenv file,
+temporary OAuth configuration root, and synthetic fixtures:
+
+```bash
+bunx playwright install chromium
+bun run test:e2e:smoke
+```
+
+Run the complete browser matrix with `bun run test:e2e`. No provider or Gemini
+network call is allowed. See [Testing Strategy](TESTING.md) for project
+isolation, current journeys, CI behavior, and the recording-resume contract.
 
 ## Import a run
 
@@ -257,9 +320,16 @@ For a new migration:
 | `GET` | `/api/runs?limit=50&cursor=...` | keyset-paginate projected run summaries |
 | `POST` | `/api/runs` | validate and import a run |
 | `GET` | `/api/runs/:id` | fetch one projected run |
+| `POST` | `/api/studio/media` | create an authenticated local upload session |
+| `GET` | `/api/studio/media/:id` | read its resumable receipt |
+| `PUT` | `/api/studio/media/:id/parts/:part` | stream one exact part with `Upload-Offset` |
+| `POST` | `/api/studio/media/:id/complete` | verify and atomically seal media |
+| `DELETE` | `/api/studio/media/:id` | abort and clean the staged copy |
 
 The entire hostname should be protected by Access. `/api/health` is not a
 public bypass because a health response can reveal deployment state.
+The `/api/studio/*` rows above are local-only and are absent from Cloudflare
+artifacts.
 
 ## Troubleshooting
 

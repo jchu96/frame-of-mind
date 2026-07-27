@@ -7,12 +7,16 @@ import {
 import { canTransitionAnalysisJob } from "./studio-state.js";
 import { opaqueIdSchema } from "./studio-identifiers.js";
 
-const MAX_MEDIA_BYTES = 2 * 1_024 * 1_024 * 1_024;
+export const MAX_MEDIA_BYTES = 2 * 1_024 * 1_024 * 1_024;
+export const MAX_MEDIA_PARTS = 512;
+export const MAX_MEDIA_PART_BYTES = 64 * 1_024 * 1_024;
+export const DEFAULT_MEDIA_PART_SIZE_BYTES = 8 * 1_024 * 1_024;
 export const MAX_RETAINED_MEDIA_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const MAX_CONTEXT_FILE_BYTES = 8 * 1_024 * 1_024;
 
-const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
+export const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const utcDateTimeSchema = z.string().datetime({ offset: false });
-const idempotencyKeySchema = z.string()
+export const idempotencyKeySchema = z.string()
   .min(8)
   .max(200)
   .regex(/^[a-zA-Z0-9._:-]+$/, "idempotency key contains unsafe characters");
@@ -23,6 +27,13 @@ const safeMessageSchema = z.string()
     (value) => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value),
     "message contains control characters",
   );
+export const publishedRunIdSchema = z.string().min(1).max(240)
+  .regex(/^[a-zA-Z0-9._:-]+$/);
+
+export const analysisJobExecutionResultSchema = z.object({
+  runId: publishedRunIdSchema,
+  projectionWarning: safeMessageSchema.optional(),
+}).strict();
 
 export const analysisJobStageSchema = z.enum(ANALYSIS_JOB_STAGES);
 export const analysisJobTerminalStageSchema = z.enum(
@@ -36,7 +47,10 @@ const retainedMediaSchema = z.object({
 }).strict();
 
 export const mediaRetentionSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("ephemeral") }).strict(),
+  z.object({
+    mode: z.literal("ephemeral"),
+    expiresAt: utcDateTimeSchema,
+  }).strict(),
   retainedMediaSchema,
 ]);
 
@@ -47,6 +61,33 @@ export const mediaRetentionRequestSchema = z.discriminatedUnion("mode", [
     ttlSeconds: z.number().int().min(60 * 60).max(MAX_RETAINED_MEDIA_TTL_SECONDS),
   }).strict(),
 ]);
+
+export const supportedMediaMimeTypeSchema = z.enum([
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+]);
+
+export const contextFileFormatSchema = z.enum([
+  "json",
+  "text",
+  "markdown",
+  "srt",
+  "vtt",
+]);
+export type ContextFileFormat = z.infer<typeof contextFileFormatSchema>;
+
+export const mediaCreateRequestSchema = z.object({
+  idempotencyKey: idempotencyKeySchema,
+  expectedBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
+  mimeType: supportedMediaMimeTypeSchema,
+  fileFingerprintSha256: sha256Schema.optional(),
+  retention: mediaRetentionRequestSchema,
+}).strict();
+
+export const mediaCompleteRequestSchema = z.object({
+  expectedSha256: sha256Schema.optional(),
+}).strict();
 
 const providerContextSchema = z.discriminatedUnion("provider", [
   z.object({
@@ -63,6 +104,7 @@ const providerContextSchema = z.discriminatedUnion("provider", [
     provider: z.literal("file"),
     transport: z.literal("file"),
     contextFileId: opaqueIdSchema,
+    contextFileSha256: sha256Schema,
   }).strict(),
 ]);
 
@@ -85,18 +127,30 @@ const composerRecipeSchema = z.union([
   z.object({ custom: customRecipeSchema }).strict(),
 ]);
 
-const immutableJobInputSchema = z.object({
+export const immutableJobInputSchema = z.object({
   mediaSessionId: opaqueIdSchema,
   mediaSha256: sha256Schema,
   context: providerContextSchema,
   recipe: z.object({
     id: recipeIdSchema,
+    // Optional only for compatibility with pre-executor local rows. New job
+    // creation must persist the composer-resolved provenance explicitly.
+    custom: z.boolean().optional(),
     revision: z.string().min(1).max(120),
     sha256: sha256Schema,
   }).strict(),
   model: z.string().min(1).max(240),
   focus: z.string().max(10_000).optional(),
   retention: mediaRetentionSchema,
+}).strict();
+
+const newImmutableJobInputSchema = immutableJobInputSchema.extend({
+  recipe: z.object({
+    id: recipeIdSchema,
+    custom: z.boolean(),
+    revision: z.string().min(1).max(120),
+    sha256: sha256Schema,
+  }).strict(),
 }).strict();
 
 export type ImmutableJobInput = z.infer<typeof immutableJobInputSchema>;
@@ -116,10 +170,18 @@ function canonicalJson(value: unknown): string {
     .join(",")}}`;
 }
 
+export function canonicalImmutableJobInputJson(
+  input: ImmutableJobInput,
+): string {
+  return canonicalJson(input);
+}
+
 export async function digestImmutableJobInput(
   input: ImmutableJobInput,
 ): Promise<string> {
-  const bytes = new TextEncoder().encode(canonicalJson(input));
+  const bytes = new TextEncoder().encode(
+    canonicalImmutableJobInputJson(input),
+  );
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
@@ -163,9 +225,7 @@ export const analysisJobSchema = z.object({
     code: z.string().min(1).max(120).regex(/^[a-z0-9_:-]+$/).optional(),
     message: safeMessageSchema.optional(),
   }).strict().optional(),
-  runId: z.string().min(1).max(240)
-    .regex(/^[a-zA-Z0-9._:-]+$/)
-    .optional(),
+  runId: publishedRunIdSchema.optional(),
   projectionWarning: safeMessageSchema.optional(),
   createdAt: utcDateTimeSchema,
   updatedAt: utcDateTimeSchema,
@@ -244,6 +304,13 @@ export const analysisJobSchema = z.object({
       code: "custom",
       path: ["projectionWarning"],
       message: "only a published run may carry a projection warning",
+    });
+  }
+  if (job.projectionWarning && !job.runId) {
+    context.addIssue({
+      code: "custom",
+      path: ["projectionWarning"],
+      message: "a projection warning requires a published run",
     });
   }
   if (Date.parse(job.updatedAt) < Date.parse(job.createdAt)) {
@@ -362,16 +429,26 @@ export const analysisJobEventSchema = z.discriminatedUnion("kind", [
   }).strict(),
 ]);
 
+export const mediaPartReceiptSchema = z.object({
+  part: z.number().int().nonnegative().max(MAX_MEDIA_PARTS - 1),
+  offset: z.number().int().nonnegative().max(MAX_MEDIA_BYTES - 1),
+  bytes: z.number().int().positive().max(MAX_MEDIA_PART_BYTES),
+  sha256: sha256Schema,
+  receivedAt: utcDateTimeSchema,
+}).strict();
+
 export const mediaSessionSchema = z.object({
   id: opaqueIdSchema,
   status: mediaSessionStateSchema,
   expectedBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
   receivedBytes: z.number().int().nonnegative().max(MAX_MEDIA_BYTES),
-  mimeType: z.string().min(1).max(240)
-    .refine((value) => value.startsWith("video/"), "media must be video"),
+  partSizeBytes: z.number().int().positive().max(MAX_MEDIA_PART_BYTES),
+  parts: z.array(mediaPartReceiptSchema).max(MAX_MEDIA_PARTS),
+  mimeType: supportedMediaMimeTypeSchema,
+  fileFingerprintSha256: sha256Schema.optional(),
   sha256: sha256Schema.optional(),
   retention: mediaRetentionSchema,
-  expiresAt: utcDateTimeSchema.optional(),
+  uploadExpiresAt: utcDateTimeSchema.optional(),
   cleanupFailureCode: z.string().min(1).max(120)
     .regex(/^[a-z0-9_:-]+$/)
     .optional(),
@@ -385,6 +462,63 @@ export const mediaSessionSchema = z.object({
       message: "received bytes must not exceed expected bytes",
     });
   }
+  const expectedPartCount = Math.ceil(
+    media.expectedBytes / media.partSizeBytes,
+  );
+  if (expectedPartCount > MAX_MEDIA_PARTS) {
+    context.addIssue({
+      code: "custom",
+      path: ["partSizeBytes"],
+      message: "media part size would exceed the maximum part count",
+    });
+  }
+  let receiptBytes = 0;
+  media.parts.forEach((part, index) => {
+    const expectedOffset = index * media.partSizeBytes;
+    const expectedBytes = Math.min(
+      media.partSizeBytes,
+      media.expectedBytes - expectedOffset,
+    );
+    if (
+      part.part !== index
+      || part.offset !== expectedOffset
+      || part.bytes !== expectedBytes
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["parts", index],
+        message: "media part receipts must be contiguous and exact",
+      });
+    }
+    receiptBytes += part.bytes;
+    if (
+      Date.parse(part.receivedAt) < Date.parse(media.createdAt)
+      || Date.parse(part.receivedAt) > Date.parse(media.updatedAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["parts", index, "receivedAt"],
+        message: "media part time must fall within the session lifetime",
+      });
+    }
+  });
+  if (receiptBytes !== media.receivedBytes) {
+    context.addIssue({
+      code: "custom",
+      path: ["receivedBytes"],
+      message: "received bytes must equal the durable part receipts",
+    });
+  }
+  if (
+    media.status === "created"
+    && (media.receivedBytes !== 0 || media.parts.length !== 0)
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["status"],
+      message: "created media cannot claim uploaded parts",
+    });
+  }
   if (
     ["sealed", "in_use", "retained"].includes(media.status)
     && (!media.sha256 || media.receivedBytes !== media.expectedBytes)
@@ -395,16 +529,6 @@ export const mediaSessionSchema = z.object({
       message: "sealed media requires complete bytes and a digest",
     });
   }
-  if (
-    media.retention.mode === "retained"
-    && media.expiresAt !== media.retention.expiresAt
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["expiresAt"],
-      message: "media expiry must agree with its retention receipt",
-    });
-  }
   if (media.status === "retained" && media.retention.mode !== "retained") {
     context.addIssue({
       code: "custom",
@@ -413,31 +537,46 @@ export const mediaSessionSchema = z.object({
     });
   }
   if (
-    media.retention.mode === "retained"
-    && (
-      Date.parse(media.retention.expiresAt) <= Date.parse(media.createdAt)
-      || Date.parse(media.retention.expiresAt)
-        > Date.parse(media.createdAt) + MAX_RETAINED_MEDIA_TTL_SECONDS * 1_000
-    )
+    Date.parse(media.retention.expiresAt) <= Date.parse(media.createdAt)
+    || Date.parse(media.retention.expiresAt)
+      > Date.parse(media.createdAt) + MAX_RETAINED_MEDIA_TTL_SECONDS * 1_000
   ) {
     context.addIssue({
       code: "custom",
       path: ["retention", "expiresAt"],
-      message: "retained media must use the bounded server-owned lifetime",
+      message: "media must use the bounded server-owned lifetime",
     });
   }
-  if (media.retention.mode === "ephemeral" && media.expiresAt) {
+  if (
+    ["created", "uploading"].includes(media.status)
+    && (
+      !media.uploadExpiresAt
+      || Date.parse(media.uploadExpiresAt) <= Date.parse(media.createdAt)
+    )
+  ) {
     context.addIssue({
       code: "custom",
-      path: ["expiresAt"],
-      message: "ephemeral media cannot claim a retained expiry",
+      path: ["uploadExpiresAt"],
+      message: "an unfinished upload requires a future expiry",
     });
   }
-  if (media.cleanupFailureCode && media.status !== "failed") {
+  if (
+    !["created", "uploading"].includes(media.status)
+    && media.uploadExpiresAt
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["uploadExpiresAt"],
+      message: "only unfinished uploads carry an upload expiry",
+    });
+  }
+  if (
+    (media.status === "cleanup_failed") !== Boolean(media.cleanupFailureCode)
+  ) {
     context.addIssue({
       code: "custom",
       path: ["cleanupFailureCode"],
-      message: "only failed media may carry a cleanup failure code",
+      message: "cleanup failure state and code must agree",
     });
   }
   if (Date.parse(media.updatedAt) < Date.parse(media.createdAt)) {
@@ -528,8 +667,24 @@ export const composerPayloadSchema = z.object({
   retention: mediaRetentionRequestSchema,
 }).strict();
 
+export const jobCreateRequestSchema = z.object({
+  idempotencyKey: idempotencyKeySchema,
+  input: newImmutableJobInputSchema,
+}).strict();
+
+export const jobRetryRequestSchema = z.object({
+  idempotencyKey: idempotencyKeySchema,
+}).strict();
+
+export const jobCancelRequestSchema = z.object({}).strict();
+
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export type AnalysisJobEvent = z.infer<typeof analysisJobEventSchema>;
 export type MediaSession = z.infer<typeof mediaSessionSchema>;
+export type MediaPartReceipt = z.infer<typeof mediaPartReceiptSchema>;
+export type MediaCreateRequest = z.infer<typeof mediaCreateRequestSchema>;
+export type MediaCompleteRequest = z.infer<typeof mediaCompleteRequestSchema>;
 export type ConfigurationStatus = z.infer<typeof configurationStatusSchema>;
 export type ComposerPayload = z.infer<typeof composerPayloadSchema>;
+export type JobCreateRequest = z.infer<typeof jobCreateRequestSchema>;
+export type JobRetryRequest = z.infer<typeof jobRetryRequestSchema>;

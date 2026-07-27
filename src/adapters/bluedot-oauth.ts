@@ -63,7 +63,7 @@ export class FileOAuthProvider implements OAuthClientProvider {
     redirectUrl: string,
     private readonly tokenPath: string,
     private readonly onRedirect: (url: URL) => void,
-    private readonly oauthState = randomUUID(),
+    private readonly oauthState: string = randomUUID(),
     private readonly resource?: string,
     private readonly allowLegacyUnscoped = false,
   ) {

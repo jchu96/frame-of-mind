@@ -1,6 +1,6 @@
 {
   "name": "@frame-of-mind/web",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "dev": "FRAME_OF_MIND_DB_DRIVER=sqlite nuxi dev --host 127.0.0.1",
     "import": "bun scripts/import-run.ts",
     "preview": "bun .output/server/index.mjs",
-    "typecheck": "nuxi typecheck"
+    "typecheck": "nuxi typecheck && tsc -p tsconfig.server-local.json --noEmit"
   },
   "dependencies": {
     "@nuxt/ui": "4.10.0",

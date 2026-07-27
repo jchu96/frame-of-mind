@@ -1,5 +1,10 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { generateStudioCapability } from "../apps/web/server-local/studio-session/session.js";
-import { LOCAL_STUDIO_BOOTSTRAP_FRAGMENT } from "../apps/web/server-local/studio-session/contract.js";
+import {
+  LOCAL_STUDIO_BOOTSTRAP_FRAGMENT,
+  LOCAL_STUDIO_LAUNCH_PATH,
+} from "../apps/web/server-local/studio-session/contract.js";
 import { openBrowser } from "../src/adapters/bluedot-oauth.js";
 
 const configuredPort = Number(process.env.PORT || 3_000);
@@ -13,16 +18,20 @@ if (
 
 const bootstrapToken = generateStudioCapability();
 const launchUrl =
-  `http://127.0.0.1:${configuredPort}/${LOCAL_STUDIO_BOOTSTRAP_FRAGMENT}`
+  `http://127.0.0.1:${configuredPort}${LOCAL_STUDIO_LAUNCH_PATH}`
+  + LOCAL_STUDIO_BOOTSTRAP_FRAGMENT
   + encodeURIComponent(bootstrapToken);
 const studioEnvironment = {
   ...process.env,
   FRAME_OF_MIND_STUDIO: "1",
   FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: bootstrapToken,
+  FRAME_OF_MIND_CHECKOUT_ROOT: process.cwd(),
   HOST: "127.0.0.1",
   NITRO_HOST: "127.0.0.1",
   PORT: String(configuredPort),
   NITRO_PORT: String(configuredPort),
+  NUXT_SQLITE_PATH: process.env.NUXT_SQLITE_PATH
+    || defaultStudioDatabasePath(),
 };
 delete studioEnvironment.NITRO_UNIX_SOCKET;
 let activeChild: Bun.Subprocess | undefined;
@@ -90,3 +99,28 @@ console.log("The launch fragment is removed before the capability is exchanged."
 
 const exitCode = await activeChild.exited;
 process.exit(exitCode);
+
+function defaultStudioDatabasePath(): string {
+  if (process.platform === "darwin") {
+    return join(
+      homedir(),
+      "Library",
+      "Application Support",
+      "frame-of-mind",
+      "studio.sqlite",
+    );
+  }
+  if (process.platform === "win32") {
+    return join(
+      process.env.LOCALAPPDATA
+        || join(homedir(), "AppData", "Local"),
+      "Frame of Mind",
+      "studio.sqlite",
+    );
+  }
+  return join(
+    process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"),
+    "frame-of-mind",
+    "studio.sqlite",
+  );
+}

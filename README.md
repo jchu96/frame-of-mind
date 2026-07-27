@@ -7,6 +7,20 @@ or a local transcript, then runs a structured Gemini analysis recipe. Use it to
 extract decisions, requirements, action items, repository plans, or grounded
 issue reviews into private JSON, Markdown, self-contained HTML, and screenshots.
 
+Version 0.2.1 uses Google's documented resumable Files upload protocol and a
+Gemini-safe response schema while retaining the complete Zod contract as the
+local authority. A locally invalid structured response gets one regeneration
+attempt with sanitized corrective feedback; the unchanged Zod contract still
+fails closed if that attempt is invalid. Maintainers can verify upload, both
+structured model passes, and exact cleanup with generated media before
+processing a meeting:
+
+```bash
+bun run smoke:gemini
+```
+
+Analysis command:
+
 ```bash
 frameofmind analyze "MEETING_ID" \
   --source bluedot \
@@ -14,7 +28,7 @@ frameofmind analyze "MEETING_ID" \
   --recipe requirements
 ```
 
-> Early public release: `v0.2.0`. Review generated work before using or
+> Early public release: `v0.2.1`. Review generated work before using or
 > publishing it.
 
 ## Product roadmap
@@ -39,13 +53,13 @@ instead of naming. Frame of Mind reasons over both.
 
 It is not limited to “evidence dossiers.” Analysis intent is a recipe:
 
-| Recipe | Produces |
+| Recipe         | Produces                                                    |
 |---|---|
-| `issue-review` | bugs, wrong states, UX friction, issue inputs |
-| `decisions` | choices, rationale, alternatives, revisit triggers |
-| `requirements` | needs, constraints, acceptance criteria, edge cases |
-| `action-items` | commitments, owners, dates, dependencies |
-| `repo-plan` | grounded change requests, risks, validation, open questions |
+| `issue-review` | bugs, wrong states, UX friction, issue inputs               |
+| `decisions`    | choices, rationale, alternatives, revisit triggers          |
+| `requirements` | needs, constraints, acceptance criteria, edge cases         |
+| `action-items` | commitments, owners, dates, dependencies                    |
+| `repo-plan`    | grounded change requests, risks, validation, open questions |
 
 Custom JSON recipes are supported.
 
@@ -75,9 +89,10 @@ flowchart LR
     J --> H
 ```
 
-The full video is indexed at low resolution. Candidate moments are then
-re-examined in bounded higher-resolution clips with an aligned transcript
-window. Ambiguous candidates are retained as rejected records for review.
+The complete operator-selected video is indexed at low resolution. Candidate
+moments are then re-examined in bounded higher-resolution clips with an aligned
+transcript window. Ambiguous candidates are retained as rejected records for
+review.
 
 The durable source is local:
 
@@ -97,7 +112,9 @@ sensitive because screenshots are embedded.
 ## Requirements
 
 - Bun 1.3.14+
-- optional `ffmpeg` for screenshots
+- Node.js 22+ for the linked `frameofmind` executable
+- Git; GitHub CLI is optional but used by the examples
+- `ffmpeg` for `bun run smoke:gemini`, derivative clips, and screenshots
 - Gemini Developer API auth key
 - Bluedot, Granola, or local context
 - local MP4/MOV/M4V/WebM screen recording
@@ -105,6 +122,21 @@ sensitive because screenshots are embedded.
 The current pipeline uses the official `@google/genai` `2.13.0` Files API and defaults
 to `gemini-3.6-flash`. Recordings must use a supported video extension and stay
 within the Files API's 2 GB per-file limit.
+
+This repository also vendors Google's official `gemini-api-dev` and
+`gemini-interactions-api` agent skills at a pinned upstream commit. They give
+Codex and Claude current model, multimodal, Files API, structured-output, and
+migration guidance while keeping the Frame of Mind workflow in its own skill.
+The project skill itself has one real directory in this repository; local
+maintainers may link discovery paths directly to it without an activation shim.
+Portable colleague and Windows installs use the copy installer. See
+[skill installation](docs/SKILL_INSTALLATION.md).
+
+For an end-to-end meeting-to-GitHub workflow—including transcript-first clip
+selection, speaker verification, BI synthesis, repository grounding, issue
+review, screenshots, publication, and cleanup—use the
+[meeting-to-issue runbook](docs/MEETING_TO_ISSUE_RUNBOOK.md). Topic scope
+includes every relevant clarification, not only a named speaker's airtime.
 
 ## Install
 
@@ -117,6 +149,13 @@ bun run build
 bun link
 ```
 
+Without GitHub CLI:
+
+```bash
+git clone https://github.com/jchu96/frame-of-mind.git
+cd frame-of-mind
+```
+
 Verify:
 
 ```bash
@@ -127,8 +166,8 @@ frameofmind doctor
 
 ## Launch the local Studio preview
 
-The local Connections workspace is available behind a per-launch browser
-session:
+The local Connections and Recording workspaces are available behind a
+per-launch browser session:
 
 ```bash
 cp .env.example .env
@@ -137,9 +176,24 @@ bun run studio
 ```
 
 Studio opens its one-time URL in the default browser. The bootstrap capability
-stays in the URL fragment, is removed before the browser makes the exchange
-request, and becomes an HttpOnly, SameSite=Strict session cookie. Restarting
-Bun invalidates the browser session and creates a new capability.
+stays in the fragment of a dedicated inert launch page, is removed before the
+browser makes the exchange request, and becomes an HttpOnly, SameSite=Strict
+session cookie. Every data-bearing page and API then requires that cookie.
+Restarting Bun invalidates the browser session and creates a new capability;
+a replayed or invalid link remains on the inert launch page.
+
+When Studio is enabled, Home, Recording, Connections, Import, and run detail
+share a responsive Nuxt UI dashboard shell with persistent desktop navigation
+and a mobile sidebar. This frame is selected at build time: normal local review
+and Cloudflare builds retain the existing SSR review header and do not bundle
+the local Studio shell.
+
+Studio Home is the local launch surface. It reads the durable job queue,
+completed-run projection, and credential-presence API independently; shows
+active work, five recent runs, and sanitized Gemini/Bluedot/Granola health;
+and provides one primary New analysis action. Empty Studio state directs the
+user to choose or drop a recording without implying that selection transfers
+anything to Gemini.
 
 If the browser cannot be opened, stop Studio and explicitly opt into terminal
 output for that launch:
@@ -160,9 +214,43 @@ sanitized provider status:
   token files;
 - no key is stored in SQLite or returned to the browser after submission.
 
-This preview configures connections only. Drag-and-drop media staging, the
-analysis composer, and job activity arrive in the next implementation phases.
-The existing CLI remains the supported execution path today.
+The Recording page accepts one MP4, MOV, M4V, or WebM through an accessible
+picker/drop zone. Selection alone does not upload to Gemini or start local
+staging. After the user confirms retention, Studio streams server-advertised
+parts to private local application data, reports only receipt-confirmed
+progress, and supports pause, retry, verified resume, restart, and deletion.
+Only the opaque upload ID survives a refresh; the browser requires the same
+file to be reselected and verifies a bounded-memory complete-file fingerprint
+before continuing. Every staged copy has a visible server-owned expiry, so
+closing the tab cannot turn browser session storage into cleanup authority.
+
+The local backend also accepts one optional JSON, text, Markdown, SRT, or VTT
+context file through a separate 8 MiB stream. It returns only an opaque
+content-bound receipt—never a filename, path, or body. Studio revalidates that
+receipt when the job starts, normalizes it through the same `FileContextSource`
+used by the CLI, and deletes the private staged copy when execution ends.
+Unused context expires after one hour. The composer UI for choosing this
+optional file is the next slice; the protected API and execution lifecycle are
+already implemented.
+
+The remaining composer steps and job-detail activity page arrive in later
+implementation phases, so `frameofmind analyze` remains the supported
+end-user execution path today.
+The local-only SQLite job/event repository, single-concurrency Bun worker, and
+shared typed orchestrator are now in place. Studio binds the immutable model
+and recipe receipt into that orchestrator; it does not scrape terminal output
+or fork a second analysis pipeline. The authenticated `/api/studio/jobs`
+surface now starts one process runtime that shares SQLite job state and
+completed-run projection, executes one job at a time, and shuts down
+cooperatively with Nitro. Durable cancellation and linked retries require an
+exact, unexpired retained-media receipt leased for execution. Private staged
+paths exist only inside the leased local executor and never enter SQLite or an
+HTTP response. Until the composer ships, the create API accepts supported
+built-in recipes with configured Gemini plus exact provider credentials or an
+exact unexpired local context receipt; custom recipe staging remains later
+composer work. See the
+[web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
+for the browser workflow, backend contract, and private storage location.
 
 ## Get a Gemini API key
 
@@ -176,6 +264,7 @@ The existing CLI remains the supported execution path today.
 ```bash
 export GEMINI_API_KEY="your-key"
 frameofmind doctor
+bun run smoke:gemini
 ```
 
 For a private local clone, copying `.env.example` to `.env` is also supported:
@@ -303,7 +392,7 @@ frameofmind analyze "MEETING_ID" \
   "id": "customer-objections",
   "label": "Customer objections",
   "description": "Extract explicit objections, responses, and unresolved risk.",
-  "revision": "2026-07-26.1",
+  "revision": "2026-07-27.1",
   "indexInstruction": "Find explicit concerns that may block adoption. Reject neutral questions.",
   "interrogationInstruction": "Preserve the exact objection, context, response, resolution status, and follow-up."
 }
@@ -329,20 +418,20 @@ frameofmind analyze <meeting-id> --source <bluedot|granola|file> [options]
 
 Analysis options:
 
-| Option | Purpose |
+| Option                           | Purpose                                        |
 |---|---|
-| `--recipe <id>` | built-in recipe, default `issue-review` |
-| `--recipe-file <path>` | validated custom recipe |
+| `--recipe <id>`                  | built-in recipe, default `issue-review`        |
+| `--recipe-file <path>`           | validated custom recipe                        |
 | `--granola-transport <mcp\|api>` | explicit Granola data/auth path, default `mcp` |
-| `--context-file <path>` | required for `--source file` |
-| `--video <path>` | preferred local recording |
-| `--recording-url <url>` | validated Bluedot signed URL fallback |
-| `--transcript-offset <time>` | full transcript time at video `00:00` |
-| `--focus <text>` | prioritize a repository/workflow/concern |
-| `--max-moments <n>` | cap close interrogation, default `10` |
-| `--no-screenshots` | run without ffmpeg |
-| `--keep-upload` | retain Gemini upload until provider expiration |
-| `-o, --output <path>` | override private application-data root |
+| `--context-file <path>`          | required for `--source file`                   |
+| `--video <path>`                 | preferred local recording                      |
+| `--recording-url <url>`          | validated Bluedot signed URL fallback          |
+| `--transcript-offset <time>`     | full transcript time at video `00:00`          |
+| `--focus <text>`                 | prioritize a repository/workflow/concern       |
+| `--max-moments <n>`              | cap close interrogation, default `10`          |
+| `--no-screenshots`               | run without ffmpeg                             |
+| `--keep-upload`                  | retain Gemini upload until provider expiration |
+| `-o, --output <path>`            | override private application-data root         |
 
 Avoid `--keep-upload` during normal operation.
 
@@ -375,12 +464,13 @@ The database is a projection, not a replacement for the run bundle:
 ```mermaid
 flowchart LR
     CLI[frameofmind CLI]
+    Core[Shared analysis orchestrator]
     Bundle[Portable run bundle]
     Import[Explicit validated import]
     Local[Local Nuxt SSR and SQLite]
     Cloud[Cloudflare Worker and D1]
 
-    CLI --> Bundle
+    CLI --> Core --> Bundle
     Bundle --> Import
     Import --> Local
     Import --> Cloud
@@ -450,8 +540,11 @@ import boundary, backups, and troubleshooting.
 - Meeting content is untrusted data, never instructions.
 - The immutable content-safety guard is a Gemini system instruction; recipes
   and transcript text remain untrusted user content.
-- Gemini receives the selected video and normalized transcript.
-- Gemini uploads are deleted on success and failure by default.
+- Gemini receives the selected video and, in the current index pass, the full
+  normalized meeting transcript. Video clipping does not automatically reduce
+  transcript transfer.
+- Gemini upload deletion is attempted on success and failure by default. A
+  failed attempt is recorded honestly; provider expiration is the backstop.
 - Raw MCP payloads and full transcripts are not persisted in a normal run.
 - Signed URLs are treated as bearer secrets and never written to artifacts.
 - Evidence app URLs retain only credential-free HTTPS origin/path values;
@@ -477,18 +570,23 @@ src/
 └── lib/            file, object, and time helpers
 test/               deterministic offline tests
 apps/web/            Nuxt SSR review workspace, SQLite/D1 adapters, migrations
+apps/web/e2e/        Playwright Studio journeys with synthetic fixtures
 scripts/            safe cross-platform skill installer
 docs/
 ├── ARCHITECTURE.md
 ├── CREDENTIALS.md
+├── MEETING_TO_ISSUE_RUNBOOK.md
 ├── RECIPES.md
 ├── RUNBOOK.md
 ├── SKILL_INSTALLATION.md
 ├── VERSIONING.md
 ├── adr/
 └── project_notes/
-.agents/skills/frame-of-mind/
-                    canonical portable agent skill
+.agents/skills/
+├── frame-of-mind/  canonical portable product skill
+├── gemini-api-dev/ pinned official Google companion skill
+└── gemini-interactions-api/
+                    pinned official Google companion skill
 ```
 
 Scoped `AGENTS.md` files guide future agents. Adjacent `CLAUDE.md` files are
@@ -501,6 +599,7 @@ bun install --frozen-lockfile
 bun run typecheck
 bun run test
 bun run test:web
+bun run test:e2e:smoke
 bun run build
 bun run build:web:cloudflare
 bun run check
@@ -526,6 +625,7 @@ structured output, video metadata, OAuth, and cleanup contracts.
 - [Recipes](docs/RECIPES.md)
 - [Provider contracts](docs/PROVIDERS.md)
 - [Nuxt review workspace](docs/WEB_WORKSPACE.md)
+- [Testing strategy](docs/TESTING.md)
 - [Cloudflare deployment and Access runbook](docs/CLOUDFLARE_DEPLOYMENT.md)
 - [Future local and hosted MCP architecture](docs/MCP_ROADMAP.md)
 - [Operations runbook](docs/RUNBOOK.md)
@@ -545,8 +645,8 @@ structured output, video metadata, OAuth, and cleanup contracts.
 - Automatic transcript alignment is model-derived.
 - No built-in external publishing yet.
 - No centralized/encrypted evidence vault.
-- No cross-run vector index in `v0.2.0`.
-- Review-workspace imports are manual in `v0.2.0`.
+- No cross-run vector index in `v0.2.1`.
+- Review-workspace imports are manual in `v0.2.1`.
 - The local/Cloudflare MCP server is designed but intentionally deferred to the
   next iteration.
 

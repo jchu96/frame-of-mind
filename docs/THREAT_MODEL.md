@@ -105,13 +105,16 @@ Controls:
 - validate the connected peer address and an allowlist of literal local Hosts;
 - if Bun omits the peer address, require both an allowlisted Host and an
   explicitly loopback-bound listener; never apply this fallback to a wildcard;
-- require the Studio session for every local Studio route;
+- require the Studio session for every data-bearing local Studio route;
+- expose only the inert fragment-exchange page and bounded bootstrap mutation
+  before authentication;
 - require same-origin mutation semantics and JSON or an explicit non-simple
   request header;
 - reject forwarded-host trust unless a future deployment mode defines it.
 
 Verification: hostile Host, non-loopback peer abstraction, cross-site fetch,
-simple-form request, and forwarded-header tests.
+simple-form request, forwarded-header, unauthenticated Home/run API, and inert
+launch-page tests.
 
 ### Untrusted local process
 
@@ -138,7 +141,7 @@ seals incomplete or corrupt media.
 
 Controls:
 
-- cap media at 2 GB and context files at their smaller route-specific limit;
+- cap media at 2 GB and context files at an independent 8 MiB limit;
 - reserve capacity before accepting bytes and retain a safety margin;
 - enforce one writer per part or session transition;
 - stream into a private temporary file while counting bytes;
@@ -146,6 +149,14 @@ Controls:
 - stream the final SHA-256 and atomically rename only after exact byte-count
   and MIME validation;
 - reconcile temporary and sealed receipts at startup.
+
+Context files use an atomic one-request staging directory rather than media
+multipart state. The server requires valid UTF-8 plus format-specific
+JSON/caption validation, binds the receipt to exact bytes and SHA-256, and
+deletes the copy after its one execution lease. A one-hour expiry and
+non-overlapping minute sweep remove abandoned context. Context validation may
+hold at most the explicit 8 MiB cap in memory after the request has streamed to
+disk; recording paths remain bounded-memory streams.
 
 Verification: bounded-memory measurement, insufficient-space simulation,
 short or long body, digest mismatch, concurrent writer, interrupted write, and
@@ -163,6 +174,7 @@ Controls:
 - create files without following user-selected paths;
 - fail closed on symlinks or identity changes where the platform exposes the
   check;
+- reject context deletion while its process-local execution lease is active;
 - never delete the original user-selected file.
 
 Verification: traversal encodings, separator variants, symlink fixtures,
@@ -181,6 +193,9 @@ Controls:
   instead of accepting a client-authored timestamp;
 - transition through `deleting` and persist success or a sanitized failure
   receipt;
+- represent a retryable filesystem failure as `cleanup_failed`, then permit
+  only `cleanup_failed -> deleting`; reserve terminal `failed` for corruption
+  or irrecoverable state inconsistency;
 - retry cleanup without changing an already-published manifest;
 - require digest-verified reattachment after expiry or deletion.
 
