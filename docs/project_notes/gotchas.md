@@ -250,6 +250,10 @@
 - Background jobs must not launch provider OAuth. Verify the exact requested
   transport before queue insertion and use noninteractive MCP clients during
   execution; expired authorization requires reconnect and explicit retry.
+- A restart must not interpret durable cancellation intent as proof that the
+  remote operation stopped. If the process disappeared from any active stage,
+  preserve the cancellation event but classify the attempt as `interrupted`;
+  only a never-claimed `queued` row is safe to execute automatically.
 - Do not accept a custom recipe or local context-file ID merely because its
   shape validates. Until a private content-addressed receipt exists, there is
   nothing trustworthy to resolve at execution time, so reject it before

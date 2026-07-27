@@ -65,6 +65,9 @@
 - The local worker claims queued jobs oldest-first and runs one at a time.
   Startup abandons active attempts as interrupted; shutdown cooperatively
   aborts the current signal.
+- Process recovery preserves queued and terminal attempts, interrupts every
+  abandoned active attempt, and requires an explicit linked retry even when
+  durable cancellation intent existed before the restart.
 - Studio execution reuses `AnalysisOrchestrator` through a typed adapter. The
   immutable job model and recipe provenance override mutable resolver values.
 - Cancellation persists before abort and queued cancellations invoke no
