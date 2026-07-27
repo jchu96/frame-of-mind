@@ -1,5 +1,27 @@
 # Bugs and Failure History
 
+## 2026-07-27 — Context expiry could race an active upload
+
+- Symptom: the first janitor draft removed every `.stage-*` directory as
+  abandoned, including a request that was still streaming.
+- Cause: temporary directories were not included in the adapter's in-process
+  ownership set.
+- Correction: register the temporary directory before creation, skip it during
+  expiry, and release ownership only after publish or cleanup.
+- Prevention: the adapter test pauses a live stream, runs expiry, then proves
+  the complete file still publishes.
+
+## 2026-07-27 — One corrupt context receipt blocked unrelated expiry
+
+- Symptom: a malformed receipt aborted the sweep before later expired context
+  could be deleted.
+- Cause: reconciliation treated the directory scan as one all-or-nothing
+  operation.
+- Correction: continue safe per-entry cleanup, retain the first failure, then
+  report its sanitized code after the scan.
+- Prevention: the corruption regression test proves a later valid expired file
+  is removed even though the sweep reports the unrelated invalid receipt.
+
 ## 2026-07-27 — Narrow request initially analyzed too much media
 
 - Symptom: a topic-focused request was treated as permission to analyze the

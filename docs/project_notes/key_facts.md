@@ -1,5 +1,12 @@
 # Key Facts
 
+- Local context staging accepts only JSON, text, Markdown, SRT, or VTT up to
+  8 MiB, returns no path/body/name, expires after one hour, and is absent from
+  Cloudflare builds.
+- Local file-context execution revalidates exact bytes, normalizes through
+  `FileContextSource`, and consumes the process-local lease in the executor
+  cleanup path. SQLite stores only its opaque ID and expected SHA-256, never
+  transcript content.
 - The canonical Bluedot MCP endpoint is `https://app.bluedothq.com/api/v1/mcp`.
 - The canonical Granola MCP endpoint is `https://mcp.granola.ai/mcp`; it uses browser OAuth and Streamable HTTP.
 - Granola MCP advertises `get_meetings` and paid-plan `get_meeting_transcript` tools.

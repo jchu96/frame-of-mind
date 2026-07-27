@@ -36,6 +36,8 @@ export interface OrchestratedAnalysisJobExecutorOptions {
   projection?: AnalysisProjectionPublisher;
   initialMediaGuard?: LocalInitialMediaGuard;
   mediaReuseGuard?: LocalMediaReuseGuard;
+  releaseContextFile?: (job: AnalysisJob) => Promise<void>;
+  onContextFileReleaseError?: () => Promise<void> | void;
   onMediaLeaseReleaseError?: (
     error: StudioMediaReuseError,
   ) => Promise<void> | void;
@@ -112,6 +114,16 @@ export class OrchestratedAnalysisJobExecutor implements AnalysisJobExecutor {
           : {}),
       };
     } finally {
+      await this.options.releaseContextFile?.(job).catch(async () => {
+        if (this.options.onContextFileReleaseError) {
+          await Promise.resolve(this.options.onContextFileReleaseError())
+            .catch(() => undefined);
+          return;
+        }
+        console.error("Local Studio context-file cleanup failed.", {
+          code: "context_cleanup_failed",
+        });
+      });
       // A lease-release failure must not replace a valid publication receipt
       // or mask the original execution outcome. The lease retries once; this
       // reports a sanitized failure and startup reconciliation remains the

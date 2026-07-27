@@ -37,6 +37,9 @@
 - Keep local SQLite and Cloudflare D1 behind the same `RunStore` contract.
 - Hosted mode must fail closed unless Cloudflare Access JWT validation is
   configured.
+- Keep local context staging distinct from media: 8 MiB, five text formats,
+  opaque receipt only, shared `FileContextSource` normalization, and
+  executor-owned single-use deletion.
 
 ## Security
 

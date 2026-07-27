@@ -1,6 +1,7 @@
 import { homedir, platform } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import type {
+  ContextFileReceipt,
   RuntimeSecretResolver,
 } from "../../../../src/domain/studio-ports.js";
 import type {
@@ -23,12 +24,24 @@ interface LocalMediaPathResolver {
   ): Promise<string>;
 }
 
+interface LocalContextFileLease {
+  path: string;
+  receipt: ContextFileReceipt;
+  release(): Promise<void>;
+}
+
+interface LocalContextFileResolver {
+  get(id: string): Promise<ContextFileReceipt | undefined>;
+  acquire(id: string): Promise<LocalContextFileLease>;
+}
+
 type OAuthCredentialReader = (
   provider: "bluedot" | "granola",
 ) => boolean;
 
 export interface LocalStudioAnalyzeOptionsResolverOptions {
   media: LocalMediaPathResolver;
+  contextFiles?: LocalContextFileResolver;
   secrets: RuntimeSecretResolver;
   oauthCredentialPresent: OAuthCredentialReader;
   outputRoot?: string;
@@ -51,6 +64,7 @@ export class LocalStudioAnalyzeOptionsResolver {
   readonly #outputRoot: string;
   readonly #screenshots: boolean;
   readonly #maxIncidents: number;
+  readonly #contextLeases = new Map<string, LocalContextFileLease>();
 
   constructor(
     private readonly options: LocalStudioAnalyzeOptionsResolverOptions,
@@ -73,9 +87,23 @@ export class LocalStudioAnalyzeOptionsResolver {
     await this.#resolveRecipe(input);
     await this.#requireSecret("gemini-api-key", "gemini_not_configured");
     if (input.context.provider === "file") {
-      throw new StudioJobInputUnavailableError(
-        "context_file_staging_unavailable",
+      if (!this.options.contextFiles) {
+        throw new StudioJobInputUnavailableError(
+          "context_file_staging_unavailable",
+        );
+      }
+      const receipt = await this.options.contextFiles.get(
+        input.context.contextFileId,
       );
+      if (!receipt) {
+        throw new StudioJobInputUnavailableError("context_file_not_found");
+      }
+      if (receipt.sha256 !== input.context.contextFileSha256) {
+        throw new StudioJobInputUnavailableError(
+          "context_file_receipt_mismatch",
+        );
+      }
+      return;
     }
     if (
       input.context.provider === "granola"
@@ -102,11 +130,6 @@ export class LocalStudioAnalyzeOptionsResolver {
       "gemini_not_configured",
     );
     const context = job.input.context;
-    if (context.provider === "file") {
-      throw new StudioJobInputUnavailableError(
-        "context_file_staging_unavailable",
-      );
-    }
     const granolaApiKey = context.provider === "granola"
         && context.transport === "api"
       ? await this.#requireSecret(
@@ -118,8 +141,24 @@ export class LocalStudioAnalyzeOptionsResolver {
       job.input.mediaSessionId,
       job.input.mediaSha256,
     );
+    const contextLease = context.provider === "file"
+      ? await this.options.contextFiles!.acquire(context.contextFileId)
+      : undefined;
+    if (
+      context.provider === "file"
+      && contextLease
+      && contextLease.receipt.sha256 !== context.contextFileSha256
+    ) {
+      await contextLease.release().catch(() => undefined);
+      throw new StudioJobInputUnavailableError(
+        "context_file_receipt_mismatch",
+      );
+    }
+    if (contextLease) this.#contextLeases.set(job.id, contextLease);
     return {
-      meetingId: context.meetingId,
+      meetingId: context.provider === "file"
+        ? context.contextFileId
+        : context.meetingId,
       recipe: recipe.recipe,
       customRecipe: recipe.custom,
       recipeSha256: recipe.sha256,
@@ -134,12 +173,20 @@ export class LocalStudioAnalyzeOptionsResolver {
       model: job.input.model,
       video,
       expectedVideoSha256: job.input.mediaSha256,
+      ...(contextLease ? { contextFile: contextLease.path } : {}),
       ...(job.input.focus ? { focus: job.input.focus } : {}),
       outputRoot: this.#outputRoot,
       maxIncidents: this.#maxIncidents,
       screenshots: this.#screenshots,
       keepUpload: false,
     };
+  }
+
+  async releaseContextFile(jobId: string): Promise<void> {
+    const lease = this.#contextLeases.get(jobId);
+    if (!lease) return;
+    this.#contextLeases.delete(jobId);
+    await lease.release();
   }
 
   async #resolveRecipe(input: ImmutableJobInput) {

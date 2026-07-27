@@ -58,6 +58,19 @@
 
 ## 2026-07-27
 
+- Started reconciled Task 3.6 after merging Studio Home PR #24. Added a
+  separate 8 MiB context adapter and protected create/delete routes for JSON,
+  text, Markdown, SRT, and VTT; receipts contain no paths or bodies.
+- Wired exact context receipts into the local job resolver and executor. The
+  process-local lease blocks deletion during normalization, reuses
+  `FileContextSource`, and consumes private staging in `finally`; one-hour
+  expiry remains the abandoned-input backstop.
+- The full repository gate passed with 93 CLI tests, 166 web tests, the
+  production-built HTTP contract, Cloudflare exclusion, and the 32 MiB
+  streaming probe. All 10 production Playwright tests also passed.
+- The adversarial pass added the missing immutable context SHA-256 and closed
+  two cleanup races: expiry now skips a live temporary upload, and a corrupt
+  receipt no longer prevents later safe entries from expiring.
 - Diagnosed a live Bluedot-to-Gemini video run without persisting meeting
   content: preserved speaker-before-text transcript ownership, isolated an
   SDK-only Files upload 404, rejected an untyped generate-content shim, and
