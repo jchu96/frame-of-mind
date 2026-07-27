@@ -112,7 +112,7 @@ export class GranolaClient {
   }
 
   private async attemptConnection(provider: FileOAuthProvider): Promise<void> {
-    this.client = new Client({ name: "frame-of-mind", version: "0.2.0" }, { capabilities: {} });
+    this.client = new Client({ name: "frame-of-mind", version: "0.2.1" }, { capabilities: {} });
     this.transport = new StreamableHTTPClientTransport(this.endpoint.url, { authProvider: provider });
     await this.client.connect(this.transport);
   }

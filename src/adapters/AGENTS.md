@@ -17,9 +17,12 @@
 - Use Gemini Developer API mode; the Files API is not available through Vertex mode here.
 - Read the vendored official Google Gemini skills and their required hosted
   task documentation before changing Files, video, or structured-output code.
-- Treat Interactions `response_format` and direct resumable upload as verified
-  diagnostic paths, not shipped behavior. A production migration or fallback
-  must remain isolated, typed, tested, and cleanup-equivalent.
+- Direct resumable upload is the shipped v0.2.1 transport. Keep it isolated,
+  typed, streaming, redirect-disabled, exact-host validated, and
+  cleanup-equivalent.
+- Treat Interactions `response_format` as a verified Beta diagnostic path, not
+  shipped behavior. A production migration requires a separate decision and
+  the same upload, generation, validation, timeout, and cleanup guarantees.
 - Decode every model response as `unknown` and validate with the stricter
   originating Zod contract, even when the provider accepted its schema subset.
 

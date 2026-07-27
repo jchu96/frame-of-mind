@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository | `jchu96/frame-of-mind` |
 | CLI | `frameofmind` |
 | Skill | `/frame-of-mind` |
-| Current version | `0.2.0` |
+| Current version | `0.2.1` |
 | Default model | `gemini-3.6-flash` |
 | Gemini backend | Developer API Files API |
 | Context providers | Bluedot MCP, Granola MCP/API, local file |
@@ -28,10 +28,11 @@ Context and video are sensitive inputs. The operator controls authorization,
 retention, review, and publishing. Frame of Mind produces drafts with
 provenance; it does not make product, personnel, or engineering decisions.
 
-Current release status: live `analyze` is compatibility-blocked on Bun by the
-SDK-upload and provider-schema failures in sections 6.4 and 6.6. The operating
-steps below remain the intended contract, but do not use sensitive media until
-the production adapter—not a diagnostic script—passes a live canary.
+Current release status: the v0.2.1 production adapter bypasses the failing SDK
+upload wrapper with Google's documented resumable protocol and derives a
+provider-safe response schema from the authoritative local Zod contract. Run
+the synthetic canary in section 1.5 before the first sensitive analysis and
+after model, SDK, runtime, or upload changes.
 
 ## Responsibility matrix
 
@@ -157,7 +158,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.2.0
+0.2.1
 ```
 
 ### 1.5 Configure Gemini
@@ -173,6 +174,17 @@ export GEMINI_API_KEY="your-key"
 Rules:
 
 - do not paste the key into chat;
+
+Verify the complete live Gemini boundary with generated media:
+
+```bash
+bun run smoke:gemini
+```
+
+This explicit maintainer smoke is not part of CI. It creates a temporary
+synthetic video, exercises upload, index, detail interrogation, and exact
+remote deletion, then removes the local temporary directory. It prints no
+provider payload, remote file name, signed URL, or key.
 - do not commit it;
 - do not echo it;
 - do not scrape a dotenv file with `grep | cut`;
@@ -517,7 +529,7 @@ Delete stale runs through a file manager or exact verified path. Never run a
 broad recursive delete against home, application-data root, or repository root.
 
 Hosted D1 projections need an explicit owner and retention period because they
-can contain meeting quotes and visible UI text. Version 0.2.0 does not automate
+can contain meeting quotes and visible UI text. Version 0.2.1 does not automate
 hosted expiry. Use the ID-validated preview, delete, and verification procedure
 in [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md#hosted-retention-and-exact-run-purge);
 never delete by a partial title or meeting-name search.
@@ -587,12 +599,16 @@ Check:
 On timeout, the CLI attempts remote deletion. Do not use `--keep-upload` as a
 troubleshooting shortcut.
 
-If `@google/genai` `files.upload()` instead returns an empty 404 before
-processing, a 2026-07-27 diagnostic proved that the same Developer API account
-could complete the documented resumable upload. That isolates an SDK/runtime
-seam; it does not mean the production CLI has a direct-upload fallback.
-Reproduce only with non-sensitive synthetic media and open a maintainer
-follow-up rather than treating the failure as invalid credentials.
+Version 0.2.1 deliberately does not call `@google/genai`
+`files.upload()`. The production adapter uses Google's documented two-step
+resumable protocol, streams the local file, validates the exact Gemini upload
+host, keeps the API key in a header, and continues to use the SDK for status,
+generation, and deletion.
+
+If an older release returns an empty upload 404, upgrade to v0.2.1 and run
+`bun run smoke:gemini` with generated media before diagnosing credentials.
+If v0.2.1 fails, preserve only the sanitized phase/status error and open a
+maintainer follow-up.
 
 ### 6.5 Gemini model name rejected
 
@@ -622,12 +638,11 @@ Actions:
 5. record a sanitized failure fixture;
 6. do not persist raw private model output in an issue.
 
-Gemini accepts only a subset of JSON Schema. A provider-safe schema may omit
-constraints that remain mandatory in the durable Zod contract. The current
-production adapter fails the run on provider or local schema rejection; it
-does not ship the diagnostic retry path. A maintainer change must parse model
-output as `unknown`, validate locally, and may permit at most one corrective
-retry. Never cast, truncate, or weaken the durable schema to force publication.
+Gemini accepts only a subset of JSON Schema. The production adapter derives
+that subset from the Zod schema, parses every response as `unknown`, and then
+validates it against the complete local contract. Sanitized errors identify
+only failing field paths and issue codes. The adapter fails closed; it does not
+truncate, cast, expose the response, or weaken the durable schema.
 
 ### 6.7 OAuth browser does not open
 

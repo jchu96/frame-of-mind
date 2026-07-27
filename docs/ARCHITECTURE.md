@@ -229,8 +229,9 @@ or the stable `content-addressed` marker.
 
 ### 4.5 Gemini analysis
 
-The current backend uses the Gemini Developer API and official
-`@google/genai` SDK.
+The current backend uses the Gemini Developer API. Version 0.2.1 uploads
+through Google's documented two-step resumable Files REST protocol, then uses
+the official `@google/genai` SDK for file status, generation, and deletion.
 
 Pass 1:
 
@@ -251,10 +252,18 @@ Pass 2:
 
 This shape bounds cost while preserving close visual inspection.
 
-The production adapter defines shipped API behavior. Direct resumable-upload
-and Beta Interactions diagnostics are evidence for future adapter work, not
-production fallbacks until implemented and covered by the normal upload,
-generation, and cleanup tests.
+The production adapter defines shipped API behavior. Direct resumable upload
+is the tested production transport. The adapter accepts only an exact HTTPS
+Gemini upload host, disables redirects, streams the video, and never places the
+key in a URL.
+Beta Interactions remains a diagnostic and future migration candidate; stable
+`generateContent` remains the generation surface until a separate decision
+changes that boundary.
+
+Gemini's provider schema is intentionally less expressive than the durable
+contract. It is derived from the same Zod schema using an explicit supported
+keyword allowlist. Every returned payload is still decoded as `unknown` and
+validated against the complete Zod contract before publication.
 
 ### 4.6 Evidence and inference
 
@@ -483,6 +492,12 @@ new GoogleGenAI({ apiKey })
 ```
 
 It supports the Files API used for large video uploads.
+
+The upload start call authenticates with `X-Goog-Api-Key`, validates the
+returned resumable URL against the exact Gemini API host, and streams the file
+to that URL. Both upload requests reject redirects. The SDK remains responsible
+for file polling, model generation, and exact-name deletion. A generated-video
+smoke test exercises this complete boundary without meeting content.
 
 ### Vertex AI boundary
 

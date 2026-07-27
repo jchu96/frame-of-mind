@@ -50,10 +50,10 @@
   generation, media understanding, and deletion also succeeded.
 - Diagnostic result: the official resumable Files API upload sequence worked
   while the SDK continued to handle polling, generation, and cleanup.
-- Status: this isolated the runtime/SDK seam but is not a shipped production
-  fallback until the adapter and its cleanup tests implement it.
-- Prevention: keep a tiny synthetic-video upload/delete smoke test and recheck
-  the SDK wrapper before removing the fallback.
+- Status: resolved in v0.2.1 by a typed, streaming production uploader with
+  exact-host validation and cleanup coverage.
+- Prevention: keep `bun run smoke:gemini` and rerun it after Bun, SDK, model,
+  Files protocol, or adapter changes.
 
 ## 2026-07-27 — Gemini 3.6 rejected the full Zod JSON Schema
 
@@ -66,10 +66,10 @@
 - Solution: derive a provider-safe JSON Schema subset from the Zod schema,
   while parsing the response as `unknown` and validating it against the full,
   stricter originating Zod schema.
-- Status: verified in a diagnostic runner; the production adapter still needs
-  an isolated, tested implementation.
-- Prevention: contract-test structured output against a minimal schema when
-  upgrading the model or `@google/genai`.
+- Status: resolved in v0.2.1 by an isolated schema sanitizer plus complete
+  local Zod validation.
+- Prevention: contract-test the sanitizer and run both structured video passes
+  when upgrading the model or `@google/genai`.
 
 ## 2026-07-27 — A generateContent test did not prove responseFormat support
 
@@ -92,10 +92,36 @@
 - Cause: Gemini's supported JSON Schema subset could not carry every local
   string-length constraint.
 - Solution: keep the strict local schema, make bounded fields explicit in the
-  prompt, and allow one corrective retry containing the validation error.
-- Status: verified diagnostic behavior, not a shipped production retry.
+  prompt, and fail closed with sanitized issue paths.
+- Status: resolved in v0.2.1 without a corrective retry.
 - Prevention: never truncate or cast a model response to force acceptance;
   schema success is required before artifact publication.
+
+## 2026-07-27 — Detail smoke returned a noncanonical evidence timestamp
+
+- Symptom: upload and index passed, but the first complete synthetic smoke
+  failed local detail validation at `evidence.timestamp`.
+- Cause: the provider-safe schema cannot express the local canonical timestamp
+  refinement, and the detail prompt had not restated the candidate bounds.
+- Fix: require `HH:MM:SS` evidence inside the exact candidate range and retain
+  strict local parsing.
+- Verification: the next generated-video run passed upload, index, detail
+  interrogation, and exact deletion on `gemini-3.6-flash`.
+- Prevention: the explicit smoke command must keep both structured passes.
+
+## 2026-07-27 — Upload-start redirects could forward the Gemini key
+
+- Symptom: the new direct uploader validated the returned resumable URL but
+  left Fetch's default redirect behavior enabled on the earlier key-bearing
+  request.
+- Cause: a cross-origin 307 can be followed before post-response URL
+  validation, and Bun 1.3.14/Node 22 can forward `X-Goog-Api-Key`.
+- Fix: set `redirect: "error"` on both upload requests and retain exact-host
+  validation for the returned resumable URL and finalized file URI.
+- Verification: an offline request-contract test requires redirects disabled
+  on both hops; the generated-video live smoke still passes.
+- Prevention: never treat validation after an automatic redirect as a
+  credential boundary.
 
 ## 2026-07-25 — Bluedot tool output rejects its own duration value
 
