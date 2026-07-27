@@ -688,9 +688,11 @@ retroactively canceled.
 Projection publication occurs only after that atomic rename. Projection
 failures are converted to a fixed, sanitized warning and returned alongside
 the successful run. They never delete or mutate `analysis.json`,
-`manifest.json`, their cleanup provenance, or rendered artifacts. A future Bun
-job executor maps these service events into job-bound sequenced events; it
-does not parse CLI text.
+`manifest.json`, their cleanup provenance, or rendered artifacts. The
+projection port receives cloned validated contracts without the authoritative
+bundle path, so it has no filesystem capability through this interface. A
+future Bun job executor maps these service events into job-bound sequenced
+events; it does not parse CLI text.
 
 The local media backend streams server-advertised fixed-size parts directly
 from H3's Node request iterable into a private Bun `FileSink`. Durable JSON

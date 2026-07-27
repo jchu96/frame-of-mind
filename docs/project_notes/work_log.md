@@ -145,3 +145,6 @@
   publication, and nonfatal post-publication projection warnings. Deterministic
   service tests cover success, cancellation, cleanup failure, and projection
   failure; the CLI now adapts those events without log-scraping seams.
+- Adversarial review closed an injected run-ID traversal into recursive cleanup
+  and removed the authoritative bundle path from the projection capability.
+  Projection now receives only cloned validated contracts.

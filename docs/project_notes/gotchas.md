@@ -172,3 +172,6 @@
   published bundle. Job event persistence may fail the active stage, but
   cleanup/projection warning sinks are best-effort after the underlying
   outcome is already known.
+- Validate generated/injected run IDs as one strict portable path segment
+  before creating a staging directory. Dependency injection is a trust
+  boundary too; never feed an unchecked factory value to recursive cleanup.

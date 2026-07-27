@@ -53,6 +53,9 @@
 - A validated run is durable at atomic staging-directory rename. Projection
   failure returns a sanitized warning and cannot invalidate the bundle or
   rewrite its frozen cleanup provenance.
+- Projection receives cloned validated contracts without the authoritative run
+  directory path. The projection port cannot mutate bundle files through its
+  interface.
 - Studio media sessions, analysis jobs, and durable runs have separate
   lifecycles and authority boundaries.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds
