@@ -145,6 +145,11 @@ try {
     "hostile Host fails closed",
   );
   await expectStatus(
+    await probe.get("/api/studio/jobs"),
+    401,
+    "job list requires a Studio session",
+  );
+  await expectStatus(
     await probe.bootstrap(bootstrapToken, {
       origin: "https://attacker.example",
       "sec-fetch-site": "cross-site",
@@ -174,6 +179,24 @@ try {
   if (bootstrapBody.redirect !== "/connections") {
     throw new Error("Bootstrap did not return the clean Connections path.");
   }
+  await expectStatus(
+    await probe.get("/api/studio/jobs"),
+    503,
+    "job routes fail closed until the process runtime is configured",
+  );
+  await expectStatus(
+    await probe.mutate(
+      "/api/studio/jobs/job_01K123456789ABC/cancel",
+      "POST",
+      {},
+      {
+        origin: "https://attacker.example",
+        "sec-fetch-site": "cross-site",
+      },
+    ),
+    403,
+    "cross-site job cancellation fails closed",
+  );
   await expectStatus(
     await probe.bootstrap(bootstrapToken),
     403,

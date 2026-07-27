@@ -24,6 +24,7 @@ import {
   OrchestratedAnalysisJobExecutor,
 } from "../server-local/studio-jobs/orchestrated-job-executor";
 import type {
+  LocalInitialMediaGuard,
   LocalMediaReuseGuard,
 } from "../server-local/studio-jobs/media-reuse-guard";
 import { runFixture } from "./fixtures";
@@ -88,6 +89,7 @@ describe("OrchestratedAnalysisJobExecutor", () => {
     let time = Date.parse(createdAt) + 60_000;
     const executor = new OrchestratedAnalysisJobExecutor({
       orchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
       now: () => new Date(time += 1_000).toISOString(),
       async resolveAnalyzeOptions() {
         return resolvedOptions({
@@ -142,6 +144,7 @@ describe("OrchestratedAnalysisJobExecutor", () => {
     } as unknown as AnalysisOrchestrator;
     const executor = new OrchestratedAnalysisJobExecutor({
       orchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
       async resolveAnalyzeOptions() {
         return {
           ...resolvedOptions(),
@@ -176,6 +179,7 @@ describe("OrchestratedAnalysisJobExecutor", () => {
     } as unknown as AnalysisOrchestrator;
     const executor = new OrchestratedAnalysisJobExecutor({
       orchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
       resolveAnalyzeOptions: async () => resolvedOptions(),
     });
 
@@ -217,6 +221,24 @@ describe("OrchestratedAnalysisJobExecutor", () => {
       }),
     ).rejects.toMatchObject({ code: "media_reuse_guard_required" });
     expect(resolved).toBe(false);
+  });
+
+  test("fails closed when an initial attempt has no media execution guard", async () => {
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        analyze: async () => {
+          throw new Error("unreachable");
+        },
+      } as unknown as AnalysisOrchestrator,
+      resolveAnalyzeOptions: async () => resolvedOptions(),
+    });
+
+    await expect(
+      executor.execute(await claimedJob(), {
+        signal: new AbortController().signal,
+        progress: collect([]),
+      }),
+    ).rejects.toMatchObject({ code: "media_initial_guard_required" });
   });
 
   test("holds and releases the retry media lease around option resolution", async () => {
@@ -327,6 +349,17 @@ function resolvedOptions(
     keepUpload: false,
     ...overrides,
   };
+}
+
+function noOpInitialMediaGuard(): LocalInitialMediaGuard {
+  return {
+    async acquire() {
+      return {
+        session: {} as MediaSession,
+        async release() {},
+      };
+    },
+  } as LocalInitialMediaGuard;
 }
 
 function collect(

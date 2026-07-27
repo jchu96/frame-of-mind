@@ -68,6 +68,21 @@ const studioMediaCompleteHandler = fileURLToPath(
 const studioMediaAbortHandler = fileURLToPath(
   new URL("./server-local/studio-media/abort.delete.ts", import.meta.url),
 );
+const studioJobsListHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/index.get.ts", import.meta.url),
+);
+const studioJobsCreateHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/index.post.ts", import.meta.url),
+);
+const studioJobDetailHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/detail.get.ts", import.meta.url),
+);
+const studioJobCancelHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/cancel.post.ts", import.meta.url),
+);
+const studioJobRetryHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/retry.post.ts", import.meta.url),
+);
 
 const localHandlers = [
   ...(localStudioEnabled
@@ -130,6 +145,31 @@ const localHandlers = [
           route: "/api/studio/media/:id",
           method: "delete",
           handler: studioMediaAbortHandler,
+        },
+        {
+          route: "/api/studio/jobs",
+          method: "get",
+          handler: studioJobsListHandler,
+        },
+        {
+          route: "/api/studio/jobs",
+          method: "post",
+          handler: studioJobsCreateHandler,
+        },
+        {
+          route: "/api/studio/jobs/:id",
+          method: "get",
+          handler: studioJobDetailHandler,
+        },
+        {
+          route: "/api/studio/jobs/:id/cancel",
+          method: "post",
+          handler: studioJobCancelHandler,
+        },
+        {
+          route: "/api/studio/jobs/:id/retry",
+          method: "post",
+          handler: studioJobRetryHandler,
         },
       ]
     : []),

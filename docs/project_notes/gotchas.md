@@ -220,3 +220,10 @@
 - Never let cancellation convert an indeterminate publication receipt to
   `canceled`. The run may exist even though its receipt could not be trusted,
   so a retry could duplicate provider work or published output.
+- Keep local job routes under `/api/studio/`; the session middleware does not
+  protect a bare `/api/jobs` prefix. Before the runtime singleton exists,
+  authenticated routes must return 503 instead of persisting queued work.
+- Do not reuse the legacy persisted-input schema directly for create routes:
+  legacy rows may omit recipe `custom`, while every new job must provide it.
+  Initial execution also needs a `sealed -> in_use` lease; a creation-time
+  receipt read alone does not protect bytes from the expiry janitor.
