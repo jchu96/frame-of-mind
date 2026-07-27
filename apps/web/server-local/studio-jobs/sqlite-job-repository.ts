@@ -209,6 +209,13 @@ export class LocalSqliteJobRepository implements JobRepository {
     return this.validateJob(this.parseJobRow(row));
   }
 
+  async getByIdempotencyKey(key: string): Promise<AnalysisJob | undefined> {
+    const parsedKey = idempotencyKeySchema.parse(key);
+    const row = this.findByIdempotencyKey(parsedKey);
+    if (!row) return undefined;
+    return this.validateJob(this.parseJobRow(row));
+  }
+
   async list(query: JobListQuery): Promise<JobListPage> {
     if (
       !Number.isSafeInteger(query.limit)

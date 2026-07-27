@@ -10,6 +10,7 @@ import {
   verifyImmutableJobInput,
   type AnalysisJob,
   type AnalysisJobEvent,
+  type MediaSession,
 } from "../../../src/domain/studio-schemas";
 import type {
   AnalysisRecipe,
@@ -22,6 +23,9 @@ import type {
 import {
   OrchestratedAnalysisJobExecutor,
 } from "../server-local/studio-jobs/orchestrated-job-executor";
+import type {
+  LocalMediaReuseGuard,
+} from "../server-local/studio-jobs/media-reuse-guard";
 import { runFixture } from "./fixtures";
 
 const recipe: AnalysisRecipe = {
@@ -181,6 +185,89 @@ describe("OrchestratedAnalysisJobExecutor", () => {
         progress: collect([]),
       }),
     ).rejects.toBeInstanceOf(AnalysisExecutionIndeterminateError);
+  });
+
+  test("fails closed when a retry has no just-in-time media reuse guard", async () => {
+    const parent = await claimedJob();
+    const retry = analysisJobSchema.parse({
+      ...parent,
+      id: "job_01K123456789RETRY",
+      rootJobId: parent.id,
+      retryOfJobId: parent.id,
+      attempt: 2,
+      idempotencyKey: "orchestrated-retry-0001",
+    });
+    let resolved = false;
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        analyze: async () => {
+          throw new Error("unreachable");
+        },
+      } as unknown as AnalysisOrchestrator,
+      resolveAnalyzeOptions: async () => {
+        resolved = true;
+        return resolvedOptions();
+      },
+    });
+
+    await expect(
+      executor.execute(retry, {
+        signal: new AbortController().signal,
+        progress: collect([]),
+      }),
+    ).rejects.toMatchObject({ code: "media_reuse_guard_required" });
+    expect(resolved).toBe(false);
+  });
+
+  test("holds and releases the retry media lease around option resolution", async () => {
+    const parent = await claimedJob();
+    const retry = analysisJobSchema.parse({
+      ...parent,
+      id: "job_01K123456789LEASE",
+      rootJobId: parent.id,
+      retryOfJobId: parent.id,
+      attempt: 2,
+      idempotencyKey: "orchestrated-retry-lease",
+    });
+    const order: string[] = [];
+    let reportedCode: string | undefined;
+    const mediaReuseGuard = {
+      async acquire() {
+        order.push("acquire");
+        return {
+          session: {} as MediaSession,
+          async release() {
+            order.push("release");
+            throw new Error("synthetic release failure");
+          },
+        };
+      },
+    } as LocalMediaReuseGuard;
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        analyze: async () => {
+          throw new Error("unreachable");
+        },
+      } as unknown as AnalysisOrchestrator,
+      mediaReuseGuard,
+      onMediaLeaseReleaseError: async (error) => {
+        reportedCode = error.code;
+        order.push("report");
+      },
+      resolveAnalyzeOptions: async () => {
+        order.push("resolve");
+        throw new Error("synthetic resolver failure");
+      },
+    });
+
+    await expect(
+      executor.execute(retry, {
+        signal: new AbortController().signal,
+        progress: collect([]),
+      }),
+    ).rejects.toThrow("synthetic resolver failure");
+    expect(order).toEqual(["acquire", "resolve", "release", "report"]);
+    expect(reportedCode).toBe("media_lease_release_failed");
   });
 });
 

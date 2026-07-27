@@ -19,6 +19,11 @@ import type {
 } from "../../../../src/services/analyze";
 import { digestRecipe } from "../../../../src/recipes/index";
 import { validateRunImport } from "../../../../src/domain/integrity";
+import {
+  LocalMediaReuseGuard,
+  type LocalMediaReuseLease,
+  StudioMediaReuseError,
+} from "./media-reuse-guard";
 
 interface AnalysisOrchestratorPort {
   analyze: AnalysisOrchestrator["analyze"];
@@ -28,6 +33,10 @@ export interface OrchestratedAnalysisJobExecutorOptions {
   orchestrator: AnalysisOrchestratorPort;
   resolveAnalyzeOptions(job: AnalysisJob): Promise<AnalyzeOptions>;
   projection?: AnalysisProjectionPublisher;
+  mediaReuseGuard?: LocalMediaReuseGuard;
+  onMediaLeaseReleaseError?: (
+    error: StudioMediaReuseError,
+  ) => Promise<void> | void;
   now?: () => string;
 }
 
@@ -53,37 +62,66 @@ export class OrchestratedAnalysisJobExecutor implements AnalysisJobExecutor {
     if (job.stage !== "fetching_context") {
       throw new Error("Orchestrated execution requires a claimed job.");
     }
-    const resolved = await this.options.resolveAnalyzeOptions(job);
-    const analyzeOptions = await bindImmutableOptions(job, resolved);
-    let currentStage: AnalysisJobStage = job.stage;
-    const result = await this.options.orchestrator.analyze(analyzeOptions, {
-      signal: execution.signal,
-      ...(this.options.projection
-        ? { projection: this.options.projection }
-        : {}),
-      progress: {
-        report: async (event) => {
-          currentStage = await this.persistProgress(
-            job,
-            currentStage,
-            event,
-            execution.progress,
-          );
+    let mediaLease: LocalMediaReuseLease | undefined;
+    if (job.retryOfJobId) {
+      if (!this.options.mediaReuseGuard) {
+        throw new StudioMediaReuseError("media_reuse_guard_required");
+      }
+      mediaLease = await this.options.mediaReuseGuard.acquire(job, this.now());
+    }
+    try {
+      const resolved = await this.options.resolveAnalyzeOptions(job);
+      const analyzeOptions = await bindImmutableOptions(job, resolved);
+      let currentStage: AnalysisJobStage = job.stage;
+      const result = await this.options.orchestrator.analyze(analyzeOptions, {
+        signal: execution.signal,
+        ...(this.options.projection
+          ? { projection: this.options.projection }
+          : {}),
+        progress: {
+          report: async (event) => {
+            currentStage = await this.persistProgress(
+              job,
+              currentStage,
+              event,
+              execution.progress,
+            );
+          },
         },
-      },
-    });
-    const validated = await validateRunImport({
+      });
+      const validated = await validateRunImport({
         analysis: result.analysis,
         manifest: result.manifest,
       }).catch(() => {
         throw new AnalysisExecutionIndeterminateError();
       });
-    return {
-      runId: validated.analysis.runId,
-      ...(result.projectionWarning
-        ? { projectionWarning: result.projectionWarning }
-        : {}),
-    };
+      return {
+        runId: validated.analysis.runId,
+        ...(result.projectionWarning
+          ? { projectionWarning: result.projectionWarning }
+          : {}),
+      };
+    } finally {
+      // A lease-release failure must not replace a valid publication receipt
+      // or mask the original execution outcome. The lease retries once; this
+      // reports a sanitized failure and startup reconciliation remains the
+      // final repair path for an abandoned in_use receipt.
+      await mediaLease?.release().catch(async () => {
+        const failure = new StudioMediaReuseError(
+          "media_lease_release_failed",
+        );
+        if (this.options.onMediaLeaseReleaseError) {
+          await Promise.resolve(
+            this.options.onMediaLeaseReleaseError(failure),
+          )
+            .catch(() => undefined);
+          return;
+        }
+        console.error("Local Studio media lease release failed.", {
+          code: failure.code,
+        });
+      });
+    }
   }
 
   private async persistProgress(

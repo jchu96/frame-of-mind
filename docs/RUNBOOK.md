@@ -507,9 +507,20 @@ the active signal and waits for cooperative Gemini cleanup before recording
 
 An `interrupted` attempt requires an explicit linked retry. Do not edit it back
 to `queued`, and do not run two local Studio processes against the same job
-database. The job routes, user cancellation control, staged-media reuse gate,
-and runtime singleton wiring land in the following slices; the CLI remains the
-supported user-facing execution entry point until then.
+database. Cancellation and retry control are implemented behind the
+forthcoming routes: cancellation is durable before provider abort, and a new
+retry requires the exact retained receipt both at creation and immediately
+before execution. Execution atomically leases that receipt as `in_use`, which
+keeps the expiry janitor from deleting it, and returns it to `retained` in
+cleanup. A release failure gets one immediate retry and emits only the
+sanitized `media_lease_release_failed` code; startup media reconciliation is
+the final repair path for an abandoned retained lease. An idempotent replay of
+an already-created retry does not depend on later media availability. If
+cancellation races an indeterminate publication receipt, the attempt remains
+`interrupted`; verify whether the run exists before retrying.
+
+The job routes and runtime singleton wiring land in the following slice; the
+CLI remains the supported user-facing execution entry point until then.
 
 ## 4. Review procedure
 

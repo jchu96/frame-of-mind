@@ -67,6 +67,9 @@
   aborts the current signal.
 - Studio execution reuses `AnalysisOrchestrator` through a typed adapter. The
   immutable job model and recipe provenance override mutable resolver values.
+- Cancellation persists before abort and queued cancellations invoke no
+  provider. Linked retries require exact unexpired retained media at creation
+  and an `in_use` execution lease; indeterminate publication outranks cancel.
 - Studio media sessions, analysis jobs, and durable runs have separate
   lifecycles and authority boundaries.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds
