@@ -274,6 +274,14 @@ function formatDate(value: string | undefined): string {
 
             <div class="mt-6 flex flex-wrap gap-3">
               <UButton
+                v-if="phase === 'sealed'"
+                to="/context"
+                icon="i-lucide-arrow-right"
+                trailing
+              >
+                Continue to context
+              </UButton>
+              <UButton
                 v-if="phase === 'selected' || phase === 'aborted' || (phase === 'failed' && !session)"
                 type="button"
                 icon="i-lucide-hard-drive-upload"

@@ -7,6 +7,13 @@
   `FileContextSource`, and consumes the process-local lease in the executor
   cleanup path. SQLite stores only its opaque ID and expected SHA-256, never
   transcript content.
+- Studio Context drafts persist only a sealed media ID, one typed
+  provider/transport meeting identifier or local context ID plus digest, and
+  an optional signed transcript offset. File names, paths, transcript text,
+  catalog results, and the bounded preview remain unpersisted.
+- Bluedot MCP is the only Studio meeting-catalog capability currently
+  implemented. Granola MCP/API use exact-ID entry, and a catalog failure never
+  changes provider, transport, account, or credential.
 - The canonical Bluedot MCP endpoint is `https://app.bluedothq.com/api/v1/mcp`.
 - The canonical Granola MCP endpoint is `https://mcp.granola.ai/mcp`; it uses browser OAuth and Streamable HTTP.
 - Granola MCP advertises `get_meetings` and paid-plan `get_meeting_transcript` tools.

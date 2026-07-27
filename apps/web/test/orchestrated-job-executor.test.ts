@@ -118,6 +118,7 @@ describe("OrchestratedAnalysisJobExecutor", () => {
       customRecipe: false,
       recipeRevision: "builtin-v1",
       recipeSha256: job.input.recipe.sha256,
+      transcriptOffsetSeconds: 3_723,
     });
     expect(events.map((event) => [event.kind, event.stage])).toEqual([
       ["transition", "uploading_to_gemini"],
@@ -357,6 +358,7 @@ async function claimedJob(): Promise<AnalysisJob> {
     },
     model: "gemini-3.6-flash",
     focus: "Only the reporting request.",
+    transcriptOffsetSeconds: 3_723,
     retention: {
       mode: "ephemeral",
       expiresAt: "2026-07-28T12:00:00.000Z",

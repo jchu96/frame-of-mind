@@ -207,6 +207,7 @@ async function bindImmutableOptions(
     ...resolved,
     model: job.input.model,
     focus: job.input.focus,
+    transcriptOffsetSeconds: job.input.transcriptOffsetSeconds,
     customRecipe: job.input.recipe.custom ?? resolved.customRecipe,
     recipeRevision: job.input.recipe.revision,
     recipeSha256: job.input.recipe.sha256,

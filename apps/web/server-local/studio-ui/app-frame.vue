@@ -16,6 +16,11 @@ const navigation: NavigationMenuItem[] = [
     to: "/recording",
   },
   {
+    label: "Context",
+    icon: "i-lucide-notebook-text",
+    to: "/context",
+  },
+  {
     label: "Connections",
     icon: "i-lucide-plug-zap",
     to: "/connections",
@@ -29,6 +34,7 @@ const navigation: NavigationMenuItem[] = [
 const title = computed(() => {
   if (route.path === "/") return "Home";
   if (route.path === "/recording") return "Recording";
+  if (route.path === "/context") return "Context";
   if (route.path === "/connections") return "Connections";
   if (route.path === "/import") return "Import run";
   if (route.path.startsWith("/runs/")) return "Run detail";

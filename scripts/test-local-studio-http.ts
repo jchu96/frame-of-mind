@@ -172,6 +172,11 @@ try {
     "trailing-slash Connections page requires a session",
   );
   await expectStatus(
+    await probe.get("/context"),
+    401,
+    "Context page requires a session",
+  );
+  await expectStatus(
     await probe.get("/api/studio/session", { host: "attacker.example" }),
     403,
     "hostile Host fails closed",
@@ -262,6 +267,18 @@ try {
     || !studioHtml.includes('data-studio-home="local"')
   ) {
     throw new Error("Authenticated Studio Home did not render the local dashboard shell.");
+  }
+  const contextPage = await expectStatus(
+    await probe.get("/context"),
+    200,
+    "authenticated Context page renders",
+  );
+  const contextHtml = await contextPage.text();
+  if (
+    !contextHtml.includes('data-context-step="local"')
+    || !contextHtml.includes("Pair the recording with what was said.")
+  ) {
+    throw new Error("Authenticated Context page did not render its local composer step.");
   }
 
   const fixture = new Uint8Array(20);
@@ -427,6 +444,15 @@ try {
     || contextReceiptText.includes(mediaRoot)
   ) {
     throw new Error("Context staging returned an invalid or private receipt.");
+  }
+  const contextStatus = await expectStatus(
+    await probe.get(`/api/context-files/${contextReceipt.id}`),
+    200,
+    "context receipt can be refresh-verified",
+  );
+  if ((await contextStatus.json() as { sha256?: string }).sha256
+    !== contextReceipt.sha256) {
+    throw new Error("Context status did not return the exact staged receipt.");
   }
   await expectStatus(
     await probe.mutate(

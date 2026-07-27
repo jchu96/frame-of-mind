@@ -88,6 +88,47 @@ test("reconciles an unfinished upload and resumes only after file re-selection",
     page.getByText("8,388,672 of 8,388,672 bytes", { exact: false }),
   ).toBeVisible();
 
+  await page.getByRole("link", { name: "Continue to context" }).click();
+  await expect(page).toHaveURL(/\/context$/);
+  await expect(
+    page.getByRole("heading", {
+      name: "Pair the recording with what was said.",
+    }),
+  ).toBeVisible();
+
+  await page.getByLabel("Local context").check();
+  await page.getByLabel("Context file").setInputFiles({
+    name: "synthetic-context.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# Synthetic context\n\nNo private meeting data."),
+  });
+  await expect(page.getByText("# Synthetic context")).toBeVisible();
+  await page.getByRole("button", { name: "Stage context locally" }).click();
+  await expect(page.getByText("markdown", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Delete staged context" }),
+  ).toBeVisible();
+  await expect(page.getByText("Context step saved")).toHaveCount(0);
+
+  const alignmentDisclosure = page.locator("details").filter({
+    hasText: "Advanced transcript alignment",
+  });
+  await alignmentDisclosure.locator("summary").click();
+  await page.getByLabel("Transcript time at recording 00:00:00")
+    .fill("01:02:03");
+  await page.getByRole("button", { name: "Save context step" }).click();
+  await expect(page.getByText("Context step saved")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Context step saved")).toBeVisible();
+  await alignmentDisclosure.locator("summary").click();
+  await expect(alignmentDisclosure).toHaveAttribute("open", "");
+  await expect(
+    page.getByLabel("Transcript time at recording 00:00:00"),
+  ).toHaveValue("01:02:03");
+  await page.getByRole("button", { name: "Delete staged context" }).click();
+
+  await page.getByRole("link", { name: "Back to recording" }).click();
   await page.getByRole("button", { name: "Delete staged copy" }).click();
   await expect(page.getByText("Staged recording deleted.")).toBeVisible();
   expect(clientErrors).toEqual([]);

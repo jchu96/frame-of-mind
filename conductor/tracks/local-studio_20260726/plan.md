@@ -222,7 +222,7 @@ separate proposed track.
 - [x] Task 6.2: Add Studio Home with recent runs, active jobs, connection
       health, empty state, and one primary New Analysis action.
 - [x] Task 6.3: Build the Recording step over the Phase 3 staging composable.
-- [ ] Task 6.4: Build the Context step with explicit provider/transport
+- [x] Task 6.4: Build the Context step with explicit provider/transport
       selection, optional paginated meeting catalog or exact-ID fallback,
       bounded local context upload, preview, and advanced alignment.
 - [ ] Task 6.5: Build the Intent step with recipe cards, focus, strict custom
@@ -230,13 +230,15 @@ separate proposed track.
 - [ ] Task 6.6: Build the Run receipt with privacy, retention, Gemini transfer,
       cleanup, and final validated job creation.
 
-Task 6.3 is complete: the authenticated `/recording` route uses the Phase 3
-composable for accessible file selection/drop, explicit retention, bounded
-part upload, pause/resume, verified reselection, restart, abort, and server-
-owned expiry. Component and production-build browser tests cover staging,
-keyboard/drop interaction, refresh reconciliation, verified resume, and
-deletion. The page intentionally stops after sealing; Task 6.4 is the next
-composer step.
+Task 6.4 is complete: the authenticated `/context` route preserves exact
+provider/transport identity, offers bounded Bluedot MCP catalog browsing with
+same-transport exact-ID fallback, and supports Granola exact-ID or a private
+8 MiB local context receipt. The refresh-safe draft stores no provider payload,
+transcript, path, filename, or preview; staged and committed state remain
+distinct. Signed transcript alignment is now immutable job input. Component,
+production HTTP, Cloudflare exclusion, and browser tests cover provider
+isolation, staging, refresh recovery, explicit save, alignment, and deletion.
+Task 6.5 Intent is next.
 
 ### Verification
 

@@ -175,6 +175,11 @@ export class LocalStudioAnalyzeOptionsResolver {
       expectedVideoSha256: job.input.mediaSha256,
       ...(contextLease ? { contextFile: contextLease.path } : {}),
       ...(job.input.focus ? { focus: job.input.focus } : {}),
+      ...(job.input.transcriptOffsetSeconds === undefined
+        ? {}
+        : {
+            transcriptOffsetSeconds: job.input.transcriptOffsetSeconds,
+          }),
       outputRoot: this.#outputRoot,
       maxIncidents: this.#maxIncidents,
       screenshots: this.#screenshots,

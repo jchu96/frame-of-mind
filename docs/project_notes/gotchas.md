@@ -3,6 +3,25 @@
 - A local context receipt is intentionally single-use. Execution acquires it,
   normalization reads it through `FileContextSource`, and the executor deletes
   it in `finally`; a linked retry must restage the authorized source.
+- Nuxt UI 4.10 `URadioGroup` can expose machine values such as `file:file` as
+  accessible radio names even while visible item labels render correctly.
+  For the Context source selector, use the native labeled radio fieldset and
+  keep the browser test user-facing; do not weaken it to select machine values.
+- Give conditional Nuxt UI form controls a stable explicit `id` when the
+  component tree changes after hydration. The Context alignment input otherwise
+  rendered its visible label after refresh while the generated `for`/`id`
+  association drifted and left the textbox unnamed.
+- Browsers restore radio, disclosure, and text-input state before Vue hydrates.
+  That can make a refresh-safe Context draft disagree with SSR's intentionally
+  credential-free defaults. Mount the interactive composer after hydration;
+  keep the protected Context shell and privacy disclosures server-rendered.
+- Normalize provider catalog datetimes to canonical ISO UTC before applying
+  the shared schema. A valid provider offset such as `+01:00` should not make a
+  bounded catalog response fail local validation.
+- Persist an uncommitted local Context draft immediately after staging so a
+  refresh can recover and delete the receipt, but do not present it as saved.
+  The explicit Save action flips the typed `committed` flag; conflating these
+  states makes an abandoned staging action look like user approval.
 - Do not route context through resumable media upload. Context is capped at
   8 MiB, validated as UTF-8/JSON/captions, and held under a separate root and
   one-hour receipt. Sharing the media lifecycle would imply unsupported

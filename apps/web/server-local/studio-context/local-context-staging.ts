@@ -25,9 +25,9 @@ import type {
   ContextFileStagingAdapter,
 } from "../../../../src/domain/studio-ports";
 import {
+  contextFileReceiptSchema,
   contextFileFormatSchema,
   MAX_CONTEXT_FILE_BYTES,
-  sha256Schema,
 } from "../../../../src/domain/studio-schemas";
 import {
   parseOpaqueResourceId,
@@ -37,14 +37,6 @@ import { parseCaptionTranscript } from "../../../../src/adapters/file-context.js
 
 const DEFAULT_CONTEXT_TTL_SECONDS = 60 * 60;
 const MAX_CONTEXT_TTL_SECONDS = 24 * 60 * 60;
-
-const contextFileReceiptSchema = z.object({
-  id: z.string().min(16).max(128).regex(/^[a-zA-Z0-9_-]+$/),
-  format: contextFileFormatSchema,
-  bytes: z.number().int().min(1).max(MAX_CONTEXT_FILE_BYTES),
-  sha256: sha256Schema,
-  expiresAt: z.string().datetime({ offset: false }),
-}).strict();
 
 const storedContextFileSchema = z.object({
   schemaVersion: z.literal(1),
