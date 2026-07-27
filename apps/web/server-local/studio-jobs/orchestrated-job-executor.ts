@@ -20,6 +20,7 @@ import type {
 import { digestRecipe } from "../../../../src/recipes/index";
 import { validateRunImport } from "../../../../src/domain/integrity";
 import {
+  LocalInitialMediaGuard,
   LocalMediaReuseGuard,
   type LocalMediaReuseLease,
   StudioMediaReuseError,
@@ -33,6 +34,7 @@ export interface OrchestratedAnalysisJobExecutorOptions {
   orchestrator: AnalysisOrchestratorPort;
   resolveAnalyzeOptions(job: AnalysisJob): Promise<AnalyzeOptions>;
   projection?: AnalysisProjectionPublisher;
+  initialMediaGuard?: LocalInitialMediaGuard;
   mediaReuseGuard?: LocalMediaReuseGuard;
   onMediaLeaseReleaseError?: (
     error: StudioMediaReuseError,
@@ -68,6 +70,14 @@ export class OrchestratedAnalysisJobExecutor implements AnalysisJobExecutor {
         throw new StudioMediaReuseError("media_reuse_guard_required");
       }
       mediaLease = await this.options.mediaReuseGuard.acquire(job, this.now());
+    } else {
+      if (!this.options.initialMediaGuard) {
+        throw new StudioMediaReuseError("media_initial_guard_required");
+      }
+      mediaLease = await this.options.initialMediaGuard.acquire(
+        job.input,
+        this.now(),
+      );
     }
     try {
       const resolved = await this.options.resolveAnalyzeOptions(job);

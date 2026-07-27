@@ -116,7 +116,7 @@ const composerRecipeSchema = z.union([
   z.object({ custom: customRecipeSchema }).strict(),
 ]);
 
-const immutableJobInputSchema = z.object({
+export const immutableJobInputSchema = z.object({
   mediaSessionId: opaqueIdSchema,
   mediaSha256: sha256Schema,
   context: providerContextSchema,
@@ -131,6 +131,15 @@ const immutableJobInputSchema = z.object({
   model: z.string().min(1).max(240),
   focus: z.string().max(10_000).optional(),
   retention: mediaRetentionSchema,
+}).strict();
+
+const newImmutableJobInputSchema = immutableJobInputSchema.extend({
+  recipe: z.object({
+    id: recipeIdSchema,
+    custom: z.boolean(),
+    revision: z.string().min(1).max(120),
+    sha256: sha256Schema,
+  }).strict(),
 }).strict();
 
 export type ImmutableJobInput = z.infer<typeof immutableJobInputSchema>;
@@ -647,6 +656,17 @@ export const composerPayloadSchema = z.object({
   retention: mediaRetentionRequestSchema,
 }).strict();
 
+export const jobCreateRequestSchema = z.object({
+  idempotencyKey: idempotencyKeySchema,
+  input: newImmutableJobInputSchema,
+}).strict();
+
+export const jobRetryRequestSchema = z.object({
+  idempotencyKey: idempotencyKeySchema,
+}).strict();
+
+export const jobCancelRequestSchema = z.object({}).strict();
+
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export type AnalysisJobEvent = z.infer<typeof analysisJobEventSchema>;
 export type MediaSession = z.infer<typeof mediaSessionSchema>;
@@ -655,3 +675,5 @@ export type MediaCreateRequest = z.infer<typeof mediaCreateRequestSchema>;
 export type MediaCompleteRequest = z.infer<typeof mediaCompleteRequestSchema>;
 export type ConfigurationStatus = z.infer<typeof configurationStatusSchema>;
 export type ComposerPayload = z.infer<typeof composerPayloadSchema>;
+export type JobCreateRequest = z.infer<typeof jobCreateRequestSchema>;
+export type JobRetryRequest = z.infer<typeof jobRetryRequestSchema>;

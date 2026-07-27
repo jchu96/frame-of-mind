@@ -139,7 +139,11 @@ export interface JobRepository {
   get(id: string): Promise<AnalysisJob | undefined>;
   getByIdempotencyKey(key: string): Promise<AnalysisJob | undefined>;
   list(query: JobListQuery): Promise<JobListPage>;
-  events(jobId: string, afterSequence?: number): Promise<AnalysisJobEvent[]>;
+  events(
+    jobId: string,
+    afterSequence?: number,
+    limit?: number,
+  ): Promise<AnalysisJobEvent[]>;
   appendEvent(
     event: Omit<AnalysisJobEvent, "sequence">,
   ): Promise<AnalysisJobEvent>;

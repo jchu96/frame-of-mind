@@ -282,6 +282,7 @@ export class LocalSqliteJobRepository implements JobRepository {
   async events(
     jobId: string,
     afterSequence = 0,
+    limit = 1_000,
   ): Promise<AnalysisJobEvent[]> {
     const parsedId = parseOpaqueResourceId(jobId);
     if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
@@ -290,18 +291,24 @@ export class LocalSqliteJobRepository implements JobRepository {
         "Event sequence cursor must be a nonnegative integer.",
       );
     }
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+      throw new StudioJobRepositoryError(
+        "invalid_event_limit",
+        "Event page limit must be between 1 and 1000.",
+      );
+    }
     const jobRow = this.findById(parsedId);
     if (!jobRow) {
       throw new StudioJobRepositoryError("job_not_found", "Analysis job not found.");
     }
     const job = this.parseJobRow(jobRow);
     return this.database
-      .query<EventRow, [string, number]>(
+      .query<EventRow, [string, number, number]>(
         `SELECT * FROM studio_analysis_job_events
          WHERE job_id = ? AND sequence > ?
-         ORDER BY sequence ASC`,
+         ORDER BY sequence ASC LIMIT ?`,
       )
-      .all(parsedId, afterSequence)
+      .all(parsedId, afterSequence, limit)
       .map((row) => this.parseEventRow(row, job.attempt));
   }
 

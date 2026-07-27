@@ -19,6 +19,11 @@
   resolution and release `in_use -> retained` afterward. Release retries once,
   reports only a sanitized code, and leaves startup reconciliation as the
   final repair path.
+- New initial jobs must validate the exact digest, retention receipt, expiry,
+  and `sealed` state through `LocalInitialMediaGuard`; idempotent replays occur
+  before checking whether media still exists. Initial execution acquires
+  `sealed -> in_use`, then returns retained media to `retained` or deletes the
+  ephemeral staged copy during terminal cleanup.
 - An indeterminate publication outcome always outranks cancellation because a
   run may already exist and a retry could duplicate it.
 - Resolve paths, recipes, and process-memory secrets just in time. Enforce the

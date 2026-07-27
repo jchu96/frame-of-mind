@@ -135,3 +135,11 @@ the exact digest and expiry. Existing retry idempotency keys replay before the
 media check; new retries recheck retained media again immediately before
 orchestration and lease it as `in_use` until execution cleanup. A possibly
 published indeterminate result outranks concurrent cancellation.
+
+## 2026-07-27 — Job HTTP surface fails closed before runtime wiring
+
+Local job endpoints live under the already session-protected
+`/api/studio/jobs` prefix and are registered only in enabled node-server
+builds. Their route/service contracts are present before the process singleton,
+but return HTTP 503 until repository, control, worker, and executor are wired
+together; a route must never acknowledge work that cannot execute.

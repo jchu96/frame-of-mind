@@ -715,6 +715,24 @@ retained lease after a process exit. Receipt validation never copies media
 authority into the job database. An indeterminate publication receipt always
 outranks a concurrent cancellation because the run may already exist.
 
+The local-only `/api/studio/jobs` list/create/detail/cancel/retry handlers are
+explicit Nitro registrations, not scanned shared-server routes. They require
+the Studio session; mutations additionally require JSON plus same-origin
+semantics. List pages are capped at 100 jobs, detail pages at 100 ordered
+events, request bodies at 32 KiB, and failures use fixed messages instead of
+repository, media, provider, or filesystem content. `RepositoryStudioJobApi`
+keeps idempotent create/replay, initial-media validation, queue notification,
+control mutations, and event paging behind one process singleton. Until the
+runtime plugin supplies that singleton, every authenticated handler fails
+closed with HTTP 503 rather than creating work that cannot execute.
+
+New create bodies use a stricter immutable-input schema than legacy persisted
+rows: recipe `custom` provenance is required at the HTTP boundary. First
+attempts validate the exact unexpired `sealed` receipt before insertion and
+must acquire `sealed -> in_use` before resolving a private path. Terminal
+cleanup returns explicitly retained media to `retained` and deletes the
+ephemeral staged copy; retries retain their separate retained-media lease.
+
 The CLI analysis command is a thin adapter over `AnalysisOrchestrator`. The
 orchestrator accepts explicit context/analyzer factories, an optional
 `AbortSignal`, a typed progress reporter, and an optional completed-run
