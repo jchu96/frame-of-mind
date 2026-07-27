@@ -257,3 +257,12 @@
 - Completed the previously omitted v0.2.1 release steps by creating the
   annotated tag at PR #14's verified merge boundary and publishing the matching
   GitHub release; later Studio and structured-repair work remains Unreleased.
+- Built the authenticated Context composer step with exact Bluedot/Granola
+  transport selection, bounded Bluedot MCP catalog browsing, Granola exact-ID
+  fallback, private local context staging/preview, refresh-safe typed drafts,
+  and optional signed transcript alignment bound into immutable job input.
+  Production HTTP and browser coverage verify receipt refresh/deletion,
+  provider isolation, reload recovery, and the Recording-to-Context journey.
+- Browser review exposed Nuxt UI 4.10 radio labels that retained machine-value
+  accessible names. Replaced that selector with a native labeled fieldset and
+  retained Nuxt UI for the surrounding workflow.

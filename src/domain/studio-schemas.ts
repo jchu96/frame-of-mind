@@ -77,6 +77,14 @@ export const contextFileFormatSchema = z.enum([
 ]);
 export type ContextFileFormat = z.infer<typeof contextFileFormatSchema>;
 
+export const contextFileReceiptSchema = z.object({
+  id: opaqueIdSchema,
+  format: contextFileFormatSchema,
+  bytes: z.number().int().min(1).max(MAX_CONTEXT_FILE_BYTES),
+  sha256: sha256Schema,
+  expiresAt: utcDateTimeSchema,
+}).strict();
+
 export const mediaCreateRequestSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
   expectedBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
@@ -89,7 +97,7 @@ export const mediaCompleteRequestSchema = z.object({
   expectedSha256: sha256Schema.optional(),
 }).strict();
 
-const providerContextSchema = z.discriminatedUnion("provider", [
+export const providerContextSchema = z.discriminatedUnion("provider", [
   z.object({
     provider: z.literal("bluedot"),
     transport: z.literal("mcp"),
@@ -107,6 +115,11 @@ const providerContextSchema = z.discriminatedUnion("provider", [
     contextFileSha256: sha256Schema,
   }).strict(),
 ]);
+
+export const transcriptOffsetSecondsSchema = z.number()
+  .int()
+  .min(-31_536_000)
+  .max(31_536_000);
 
 const recipeIdSchema = z.string()
   .min(2)
@@ -141,6 +154,7 @@ export const immutableJobInputSchema = z.object({
   }).strict(),
   model: z.string().min(1).max(240),
   focus: z.string().max(10_000).optional(),
+  transcriptOffsetSeconds: transcriptOffsetSecondsSchema.optional(),
   retention: mediaRetentionSchema,
 }).strict();
 
@@ -657,6 +671,35 @@ export const configurationStatusSchema = z.object({
   });
 });
 
+export const meetingCatalogItemSchema = z.object({
+  id: z.string().min(1).max(500),
+  title: z.string().min(1).max(500).optional(),
+  createdAt: z.string().datetime({ offset: true }).optional(),
+}).strict();
+
+export const meetingCatalogPageSchema = z.object({
+  items: z.array(meetingCatalogItemSchema).max(16),
+  nextCursor: z.string().min(1).max(200).optional(),
+}).strict();
+
+export const meetingCatalogRequestSchema = z.object({
+  provider: z.enum(["bluedot", "granola"]),
+  transport: z.enum(["mcp", "api"]),
+  query: z.string().trim().max(200).optional(),
+  cursor: z.string().min(1).max(200)
+    .regex(/^[a-zA-Z0-9._~:-]+$/)
+    .optional(),
+  limit: z.number().int().min(1).max(16),
+}).strict().superRefine((value, context) => {
+  if (value.provider === "bluedot" && value.transport !== "mcp") {
+    context.addIssue({
+      code: "custom",
+      path: ["transport"],
+      message: "Bluedot catalog transport must be MCP",
+    });
+  }
+});
+
 export const composerPayloadSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
   mediaSessionId: opaqueIdSchema,
@@ -664,6 +707,7 @@ export const composerPayloadSchema = z.object({
   recipe: composerRecipeSchema,
   model: z.string().min(1).max(240),
   focus: z.string().max(10_000).optional(),
+  transcriptOffsetSeconds: transcriptOffsetSecondsSchema.optional(),
   retention: mediaRetentionRequestSchema,
 }).strict();
 

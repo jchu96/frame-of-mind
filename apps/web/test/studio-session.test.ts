@@ -64,6 +64,8 @@ describe("local Studio per-launch session", () => {
     expect(requiresLocalStudioSession("/connections/")).toBe(true);
     expect(requiresLocalStudioSession("/recording")).toBe(true);
     expect(requiresLocalStudioSession("/recording/")).toBe(true);
+    expect(requiresLocalStudioSession("/context")).toBe(true);
+    expect(requiresLocalStudioSession("/context/")).toBe(true);
     expect(requiresLocalStudioSession("/import")).toBe(true);
     expect(requiresLocalStudioSession("/runs/run_01K123")).toBe(true);
     expect(requiresLocalStudioSession("/api/runs")).toBe(true);
@@ -73,6 +75,7 @@ describe("local Studio per-launch session", () => {
     )).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/session")).toBe(true);
     expect(requiresLocalStudioSession("/api/studio/configuration")).toBe(true);
+    expect(requiresLocalStudioSession("/api/studio/catalog/bluedot")).toBe(true);
     expect(requiresLocalStudioSession(
       new URL("http://127.0.0.1/connections?probe=1").pathname,
     )).toBe(true);

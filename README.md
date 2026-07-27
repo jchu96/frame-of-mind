@@ -182,11 +182,11 @@ session cookie. Every data-bearing page and API then requires that cookie.
 Restarting Bun invalidates the browser session and creates a new capability;
 a replayed or invalid link remains on the inert launch page.
 
-When Studio is enabled, Home, Recording, Connections, Import, and run detail
-share a responsive Nuxt UI dashboard shell with persistent desktop navigation
-and a mobile sidebar. This frame is selected at build time: normal local review
-and Cloudflare builds retain the existing SSR review header and do not bundle
-the local Studio shell.
+When Studio is enabled, Home, Recording, Context, Connections, Import, and run
+detail share a responsive Nuxt UI dashboard shell with persistent desktop
+navigation and a mobile sidebar. This frame is selected at build time: normal
+local review and Cloudflare builds retain the existing SSR review header and
+do not bundle the local Studio shell.
 
 Studio Home is the local launch surface. It reads the durable job queue,
 completed-run projection, and credential-presence API independently; shows
@@ -224,17 +224,23 @@ file to be reselected and verifies a bounded-memory complete-file fingerprint
 before continuing. Every staged copy has a visible server-owned expiry, so
 closing the tab cannot turn browser session storage into cleanup authority.
 
-The local backend also accepts one optional JSON, text, Markdown, SRT, or VTT
-context file through a separate 8 MiB stream. It returns only an opaque
-content-bound receipt—never a filename, path, or body. Studio revalidates that
-receipt when the job starts, normalizes it through the same `FileContextSource`
-used by the CLI, and deletes the private staged copy when execution ends.
-Unused context expires after one hour. The composer UI for choosing this
-optional file is the next slice; the protected API and execution lifecycle are
-already implemented.
+The Context page requires one exact source: Bluedot MCP, Granola MCP, Granola
+API, or a local file. Bluedot can browse or search a bounded meeting catalog;
+catalog failure retains exact-ID entry for that same transport and never
+switches accounts or providers. Granola uses exact-ID entry until a verified
+catalog capability ships. Draft storage contains only the sealed media ID,
+typed provider/meeting identifier or content-bound local receipt, and an
+optional signed transcript offset.
 
-The remaining composer steps and job-detail activity page arrive in later
-implementation phases, so `frameofmind analyze` remains the supported
+Local JSON, text, Markdown, SRT, or VTT context uses a separate 8 MiB request.
+The page previews at most 4 KiB in component memory and the server returns only
+an opaque content-bound receipt—never a filename, path, or body. Studio
+refresh-verifies that receipt, normalizes it through the same
+`FileContextSource` used by the CLI, and deletes the private staged copy when
+execution ends. Unused context expires after one hour.
+
+The Intent and final Run-receipt composer steps plus job-detail activity arrive
+in later implementation phases, so `frameofmind analyze` remains the supported
 end-user execution path today.
 The local-only SQLite job/event repository, single-concurrency Bun worker, and
 shared typed orchestrator are now in place. Studio binds the immutable model

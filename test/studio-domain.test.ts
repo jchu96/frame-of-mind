@@ -9,6 +9,7 @@ import {
   jobCancelRequestSchema,
   jobCreateRequestSchema,
   jobRetryRequestSchema,
+  meetingCatalogRequestSchema,
   mediaSessionSchema,
   validateAnalysisJob,
   verifyImmutableJobInput,
@@ -42,6 +43,7 @@ const immutableInput = {
     sha256,
   },
   model: "gemini-3.6-flash",
+  transcriptOffsetSeconds: 3_723,
   retention: { mode: "ephemeral" as const, expiresAt: later },
 };
 const canonicalInputDigest = await digestImmutableJobInput(immutableInput);
@@ -490,6 +492,7 @@ describe("Studio boundary schemas", () => {
       },
       recipe: { id: "issue-review" },
       model: "gemini-3.6-flash",
+      transcriptOffsetSeconds: -3_723,
       retention: { mode: "ephemeral" },
     };
     expect(composerPayloadSchema.parse(payload)).toEqual(payload);
@@ -499,10 +502,39 @@ describe("Studio boundary schemas", () => {
     })).toThrow();
     expect(() => composerPayloadSchema.parse({
       ...payload,
+      transcriptOffsetSeconds: Number.POSITIVE_INFINITY,
+    })).toThrow();
+    expect(() => composerPayloadSchema.parse({
+      ...payload,
       retention: {
         mode: "retained",
         ttlSeconds: MAX_RETAINED_MEDIA_TTL_SECONDS + 1,
       },
+    })).toThrow();
+  });
+
+  it("keeps meeting catalog requests on an exact provider transport", () => {
+    expect(meetingCatalogRequestSchema.parse({
+      provider: "bluedot",
+      transport: "mcp",
+      cursor: "2",
+      limit: 8,
+    })).toEqual({
+      provider: "bluedot",
+      transport: "mcp",
+      cursor: "2",
+      limit: 8,
+    });
+    expect(() => meetingCatalogRequestSchema.parse({
+      provider: "bluedot",
+      transport: "api",
+      limit: 8,
+    })).toThrow();
+    expect(() => meetingCatalogRequestSchema.parse({
+      provider: "bluedot",
+      transport: "mcp",
+      cursor: "../private",
+      limit: 8,
     })).toThrow();
   });
 
