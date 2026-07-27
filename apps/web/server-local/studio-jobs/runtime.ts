@@ -17,6 +17,12 @@ import {
 import {
   storedOAuthPresent,
 } from "../studio-configuration/connections.js";
+import type {
+  LocalContextFileStagingAdapter,
+} from "../studio-context/local-context-staging.js";
+import {
+  getLocalContextFileStaging,
+} from "../studio-context/service.js";
 import {
   getRuntimeSecretResolver,
 } from "../studio-configuration/runtime-secrets.js";
@@ -59,6 +65,7 @@ export interface LocalStudioJobRuntime {
 export interface LocalStudioJobRuntimeOptions {
   database: Database;
   media: LocalMediaStagingAdapter;
+  contextFiles?: LocalContextFileStagingAdapter;
   secrets: RuntimeSecretResolver;
   oauthCredentialPresent(provider: "bluedot" | "granola"): boolean;
   executor?: AnalysisJobExecutor;
@@ -75,6 +82,7 @@ export async function createLocalStudioJobRuntime(
   const mediaReuse = new LocalMediaReuseGuard(options.media);
   const analyzeOptions = new LocalStudioAnalyzeOptionsResolver({
     media: options.media,
+    ...(options.contextFiles ? { contextFiles: options.contextFiles } : {}),
     secrets: options.secrets,
     oauthCredentialPresent: options.oauthCredentialPresent,
     ...(options.outputRoot ? { outputRoot: options.outputRoot } : {}),
@@ -93,6 +101,12 @@ export async function createLocalStudioJobRuntime(
     projection,
     initialMediaGuard: initialMedia,
     mediaReuseGuard: mediaReuse,
+    releaseContextFile: (job) => analyzeOptions.releaseContextFile(job.id),
+    onContextFileReleaseError: () => {
+      console.error("Local Studio context-file cleanup failed.", {
+        code: "context_cleanup_failed",
+      });
+    },
     onMediaLeaseReleaseError: (failure) => {
       console.error("Local Studio media lease release failed.", {
         code: failure.code,
@@ -164,6 +178,7 @@ async function startProductionRuntime(): Promise<LocalStudioJobRuntime> {
     runtime = await createLocalStudioJobRuntime({
       database,
       media: await getLocalMediaStaging(),
+      contextFiles: await getLocalContextFileStaging(),
       secrets: getRuntimeSecretResolver(),
       oauthCredentialPresent: storedOAuthPresent,
       projection: {

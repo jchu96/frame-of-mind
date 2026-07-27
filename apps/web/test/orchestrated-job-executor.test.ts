@@ -291,6 +291,53 @@ describe("OrchestratedAnalysisJobExecutor", () => {
     expect(order).toEqual(["acquire", "resolve", "release", "report"]);
     expect(reportedCode).toBe("media_lease_release_failed");
   });
+
+  test("attempts context cleanup before releasing media without masking failure", async () => {
+    const order: string[] = [];
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        analyze: async () => {
+          throw new Error("unreachable");
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: {
+        async acquire() {
+          order.push("media-acquire");
+          return {
+            session: {} as MediaSession,
+            async release() {
+              order.push("media-release");
+            },
+          };
+        },
+      } as LocalInitialMediaGuard,
+      resolveAnalyzeOptions: async () => {
+        order.push("resolve");
+        throw new Error("synthetic resolver failure");
+      },
+      releaseContextFile: async () => {
+        order.push("context-release");
+        throw new Error("private path must not escape");
+      },
+      onContextFileReleaseError: () => {
+        order.push("context-report");
+      },
+    });
+
+    await expect(
+      executor.execute(await claimedJob(), {
+        signal: new AbortController().signal,
+        progress: collect([]),
+      }),
+    ).rejects.toThrow("synthetic resolver failure");
+    expect(order).toEqual([
+      "media-acquire",
+      "resolve",
+      "context-release",
+      "context-report",
+      "media-release",
+    ]);
+  });
 });
 
 async function claimedJob(): Promise<AnalysisJob> {

@@ -29,6 +29,7 @@ decision may be made in place.
 | [0008](0008-local-secret-resolution.md) | Keep new API secrets environment- or session-scoped | Accepted | 2026-07-26 |
 | [0009](0009-transcript-first-semantic-scoping.md) | Use transcript-first semantic scoping for bounded media analysis | Accepted | 2026-07-27 |
 | [0010](0010-resumable-gemini-upload-and-local-schema-authority.md) | Use resumable Gemini upload and keep Zod authoritative | Accepted | 2026-07-27 |
+| [0011](0011-ephemeral-local-context-staging.md) | Keep local context staging bounded and ephemeral | Accepted | 2026-07-27 |
 
 ## Adding An ADR
 

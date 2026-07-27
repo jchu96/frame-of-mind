@@ -116,7 +116,7 @@ separate proposed track.
 - [x] Task 3.5: Build the accessible Nuxt drop zone with resumable progress,
       validation, abort, retry, ephemeral/retained selection, and explicit
       storage/remote-transfer disclosure.
-- [ ] Task 3.6: Add a distinct bounded context-file ingestion path for JSON,
+- [x] Task 3.6: Add a distinct bounded context-file ingestion path for JSON,
       text, Markdown, SRT, and VTT; normalize through the existing adapter and
       delete private context staging after use.
 
@@ -154,7 +154,7 @@ separate proposed track.
 
 ### Verification
 
-- [ ] Stream synthetic fixtures without full-body buffering; interrupt,
+- [x] Stream synthetic fixtures without full-body buffering; interrupt,
       restart, resume, reject a concurrent writer, handle disk exhaustion,
       seal, retain/expire, reattach by digest, and clean them while preserving
       source ownership. Prove the separate bounded context-file path accepts

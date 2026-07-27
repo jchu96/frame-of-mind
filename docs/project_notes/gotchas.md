@@ -1,5 +1,21 @@
 # Gotchas
 
+- A local context receipt is intentionally single-use. Execution acquires it,
+  normalization reads it through `FileContextSource`, and the executor deletes
+  it in `finally`; a linked retry must restage the authorized source.
+- Do not route context through resumable media upload. Context is capped at
+  8 MiB, validated as UTF-8/JSON/captions, and held under a separate root and
+  one-hour receipt. Sharing the media lifecycle would imply unsupported
+  retention and resume semantics.
+- Lock a context receipt before awaiting its final integrity check. Marking it
+  active afterward leaves a delete race between successful verification and
+  lease creation.
+- A `.stage-*` context directory is not necessarily abandoned. The janitor
+  must skip directories owned by an active request and sweep them only after
+  process restart or request cleanup releases ownership.
+- Continue context expiry after a corrupt unrelated receipt, then report the
+  first sanitized failure. Failing the scan immediately turns one damaged
+  directory into unbounded retention for every later entry.
 - Bluedot transcript segments assign the `speakerTag` to the text that follows
   it. Preserve `[timestamp] Speaker: text` boundaries, and verify attribution
   against audio when another participant is restating the request owner's

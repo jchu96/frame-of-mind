@@ -486,6 +486,7 @@ describe("Studio boundary schemas", () => {
         provider: "file",
         transport: "file",
         contextFileId: "context_01K12345678",
+        contextFileSha256: "c".repeat(64),
       },
       recipe: { id: "issue-review" },
       model: "gemini-3.6-flash",

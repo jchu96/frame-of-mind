@@ -145,6 +145,16 @@ absolute path outside the checkout:
 FRAME_OF_MIND_MEDIA_ROOT="/private/path/frame-of-mind-media" bun run studio
 ```
 
+Optional local context is a separate, single-use staging class under
+`staging/context`. It accepts only JSON, text, Markdown, SRT, or VTT up to
+8 MiB, exposes no source name/path/body, and is deleted when its execution
+lease ends or its one-hour expiry is swept. Override it independently only with
+another absolute private path outside the checkout:
+
+```bash
+FRAME_OF_MIND_CONTEXT_ROOT="/private/path/frame-of-mind-context" bun run studio
+```
+
 ## What is not stored
 
 The import path does not copy:

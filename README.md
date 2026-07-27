@@ -221,6 +221,15 @@ file to be reselected and verifies a bounded-memory complete-file fingerprint
 before continuing. Every staged copy has a visible server-owned expiry, so
 closing the tab cannot turn browser session storage into cleanup authority.
 
+The local backend also accepts one optional JSON, text, Markdown, SRT, or VTT
+context file through a separate 8 MiB stream. It returns only an opaque
+content-bound receipt—never a filename, path, or body. Studio revalidates that
+receipt when the job starts, normalizes it through the same `FileContextSource`
+used by the CLI, and deletes the private staged copy when execution ends.
+Unused context expires after one hour. The composer UI for choosing this
+optional file is the next slice; the protected API and execution lifecycle are
+already implemented.
+
 The remaining composer steps and job-detail activity page arrive in later
 implementation phases, so `frameofmind analyze` remains the supported
 end-user execution path today.
@@ -234,8 +243,9 @@ cooperatively with Nitro. Durable cancellation and linked retries require an
 exact, unexpired retained-media receipt leased for execution. Private staged
 paths exist only inside the leased local executor and never enter SQLite or an
 HTTP response. Until the composer ships, the create API accepts supported
-built-in recipes with configured Gemini plus exact provider credentials; local
-context files and custom recipe staging remain later composer work. See the
+built-in recipes with configured Gemini plus exact provider credentials or an
+exact unexpired local context receipt; custom recipe staging remains later
+composer work. See the
 [web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
 for the browser workflow, backend contract, and private storage location.
 

@@ -38,8 +38,11 @@
 - Resolve paths, recipes, and process-memory secrets just in time. Enforce the
   immutable recipe digest, custom/built-in provenance, requested model, focus,
   and provider selection before orchestration.
-- Reject custom recipes and local context-file IDs before queue insertion
-  until their separate private, content-addressed staging receipts exist.
+- Reject custom recipes before queue insertion until their separate staging
+  contract exists. Local context-file IDs must resolve to an exact, unexpired
+  private receipt before queue insertion and again at execution.
+- Acquire context files only for execution, normalize them through the shared
+  file adapter, and delete the private copy in the executor `finally` path.
 - Never launch OAuth from the background worker. Provider authorization must
   already exist for the exact requested transport; execution is noninteractive.
 - Validate every row crossing the database boundary with the shared Zod

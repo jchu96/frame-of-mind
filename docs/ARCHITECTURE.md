@@ -672,10 +672,21 @@ input digests are recomputed before creation and verified again after reads.
 
 The job database stores an opaque media session ID and digest inside immutable
 job input; it does not copy the media receipt or private path. Phase 3's
-private JSON media receipt remains the single media authority. A future
-bounded context-staging adapter similarly owns its receipt and exposes only an
-opaque context ID to jobs. This avoids two durable owners drifting over whether
-bytes still exist.
+private JSON media receipt remains the single media authority. The distinct
+context-file adapter likewise owns its short-lived receipt and exposes only an
+opaque context ID plus expected SHA-256 to jobs. It accepts at most 8 MiB of
+UTF-8 JSON, text, Markdown, SRT, or VTT under a separate per-user root; it
+does not reuse media multipart state or put transcript content in SQLite. This
+avoids two durable owners drifting over whether bytes still exist.
+
+Immediately before execution, the context adapter rechecks regular-file
+identity, exact byte count, and SHA-256, then grants one process-local lease.
+Only the analysis resolver sees the derived private path. The existing
+`FileContextSource` performs normalization; no Studio-specific transcript
+parser is introduced. The executor releases and consumes the lease in its
+`finally` path, while one-hour expiry and a non-overlapping minute janitor
+remove abandoned uploads. External deletion fails while the lease is active.
+See [ADR 0011](adr/0011-ephemeral-local-context-staging.md).
 
 The first Studio runs one job at a time in the Bun application process.
 Closing the browser does not cancel it; restarting the process marks active
@@ -783,14 +794,14 @@ The resolver hashes the current sealed file, and orchestration compares the
 receipt digest again immediately before starting the Gemini upload.
 
 Execution options resolve built-in recipe content, provider transport,
-environment/process-memory secrets, output root, and the leased recording
-path just in time. Creation rejects missing Gemini credentials, missing
-transport-specific provider credentials, stale recipe receipts, and inputs
-whose private staging contract does not exist yet. Custom recipes and local
-context files therefore fail before queue insertion until Phase 6 adds their
-separate bounded receipts. Provider OAuth is noninteractive inside a job:
-expired authorization fails the attempt and must be reconnected explicitly
-rather than opening a callback flow from the background worker.
+environment/process-memory secrets, output root, leased recording path, and
+optional leased local context just in time. Creation rejects missing Gemini
+credentials, missing transport-specific provider credentials, stale recipe
+receipts, absent/expired local context receipts, and inputs whose remaining
+private staging contract does not exist yet. Custom recipes therefore remain
+disabled. Provider OAuth is noninteractive inside a job: expired authorization
+fails the attempt and must be reconnected explicitly rather than opening a
+callback flow from the background worker.
 
 The CLI analysis command is a thin adapter over `AnalysisOrchestrator`. The
 orchestrator accepts explicit context/analyzer factories, an optional
