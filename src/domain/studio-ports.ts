@@ -94,6 +94,7 @@ export interface JobListQuery {
   cursor?: string;
   limit: number;
   stages?: AnalysisJobStage[];
+  order?: "newest" | "oldest";
 }
 
 export interface JobListPage {
@@ -165,7 +166,21 @@ export interface AnalysisJobExecutionResult {
   projectionWarning?: string;
 }
 
+export class AnalysisExecutionIndeterminateError extends Error {
+  constructor() {
+    super(
+      "Analysis execution completed without a trustworthy publication receipt.",
+    );
+    this.name = "AnalysisExecutionIndeterminateError";
+  }
+}
+
 export interface AnalysisJobExecutor {
+  /**
+   * Executes a job after the local worker has atomically claimed it by moving
+   * it from queued to fetching_context. Progress events must remain bound to
+   * this job and must not repeat that initial claim or emit terminal stages.
+   */
   execute(
     job: AnalysisJob,
     options: {

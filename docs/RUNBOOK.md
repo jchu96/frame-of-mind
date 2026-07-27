@@ -478,9 +478,9 @@ Do not rerun Gemini merely to repair SQLite or D1.
 
 ### 3.8 Inspect local job persistence
 
-The Studio job repository is local-only and currently has no public route or
-UI. When the executor is enabled in the next slice, its operational tables
-will live in the configured local SQLite file:
+The Studio job repository and executor are local-only and currently have no
+public job route or UI. Their operational tables live in the configured local
+SQLite file:
 
 ```text
 studio_job_schema_migrations
@@ -497,6 +497,19 @@ Do not copy these tables to D1 or rebuild an active job from `analysis_runs`.
 For backup or troubleshooting, stop Studio before copying the SQLite file so
 the operational job/event pair is consistent. Media availability must still
 be checked against its separate private receipt.
+
+On local worker startup, any attempt left in
+`fetching_context` through `cleaning_up` is marked `interrupted`; it is never
+silently resumed against an indeterminate provider operation. Queued jobs are
+claimed oldest-first and execute one at a time. Normal process shutdown aborts
+the active signal and waits for cooperative Gemini cleanup before recording
+`interrupted`. A browser close or refresh does not stop the worker.
+
+An `interrupted` attempt requires an explicit linked retry. Do not edit it back
+to `queued`, and do not run two local Studio processes against the same job
+database. The job routes, user cancellation control, staged-media reuse gate,
+and runtime singleton wiring land in the following slices; the CLI remains the
+supported user-facing execution entry point until then.
 
 ## 4. Review procedure
 
