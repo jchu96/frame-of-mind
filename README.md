@@ -50,13 +50,13 @@ instead of naming. Frame of Mind reasons over both.
 
 It is not limited to “evidence dossiers.” Analysis intent is a recipe:
 
-| Recipe | Produces |
+| Recipe         | Produces                                                    |
 |---|---|
-| `issue-review` | bugs, wrong states, UX friction, issue inputs |
-| `decisions` | choices, rationale, alternatives, revisit triggers |
-| `requirements` | needs, constraints, acceptance criteria, edge cases |
-| `action-items` | commitments, owners, dates, dependencies |
-| `repo-plan` | grounded change requests, risks, validation, open questions |
+| `issue-review` | bugs, wrong states, UX friction, issue inputs               |
+| `decisions`    | choices, rationale, alternatives, revisit triggers          |
+| `requirements` | needs, constraints, acceptance criteria, edge cases         |
+| `action-items` | commitments, owners, dates, dependencies                    |
+| `repo-plan`    | grounded change requests, risks, validation, open questions |
 
 Custom JSON recipes are supported.
 
@@ -207,7 +207,10 @@ before continuing. Every staged copy has a visible server-owned expiry, so
 closing the tab cannot turn browser session storage into cleanup authority.
 
 The analysis composer and job activity arrive in later implementation phases,
-so `frameofmind analyze` remains the supported execution path today. See the
+so `frameofmind analyze` remains the supported execution path today. The CLI
+now delegates to the same typed, cancellation-aware orchestration service that
+the local Bun job executor will use; Studio will not scrape terminal output or
+fork a second analysis pipeline. See the
 [web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
 for the browser workflow, backend contract, and private storage location.
 
@@ -377,20 +380,20 @@ frameofmind analyze <meeting-id> --source <bluedot|granola|file> [options]
 
 Analysis options:
 
-| Option | Purpose |
+| Option                           | Purpose                                        |
 |---|---|
-| `--recipe <id>` | built-in recipe, default `issue-review` |
-| `--recipe-file <path>` | validated custom recipe |
+| `--recipe <id>`                  | built-in recipe, default `issue-review`        |
+| `--recipe-file <path>`           | validated custom recipe                        |
 | `--granola-transport <mcp\|api>` | explicit Granola data/auth path, default `mcp` |
-| `--context-file <path>` | required for `--source file` |
-| `--video <path>` | preferred local recording |
-| `--recording-url <url>` | validated Bluedot signed URL fallback |
-| `--transcript-offset <time>` | full transcript time at video `00:00` |
-| `--focus <text>` | prioritize a repository/workflow/concern |
-| `--max-moments <n>` | cap close interrogation, default `10` |
-| `--no-screenshots` | run without ffmpeg |
-| `--keep-upload` | retain Gemini upload until provider expiration |
-| `-o, --output <path>` | override private application-data root |
+| `--context-file <path>`          | required for `--source file`                   |
+| `--video <path>`                 | preferred local recording                      |
+| `--recording-url <url>`          | validated Bluedot signed URL fallback          |
+| `--transcript-offset <time>`     | full transcript time at video `00:00`          |
+| `--focus <text>`                 | prioritize a repository/workflow/concern       |
+| `--max-moments <n>`              | cap close interrogation, default `10`          |
+| `--no-screenshots`               | run without ffmpeg                             |
+| `--keep-upload`                  | retain Gemini upload until provider expiration |
+| `-o, --output <path>`            | override private application-data root         |
 
 Avoid `--keep-upload` during normal operation.
 
@@ -423,12 +426,13 @@ The database is a projection, not a replacement for the run bundle:
 ```mermaid
 flowchart LR
     CLI[frameofmind CLI]
+    Core[Shared analysis orchestrator]
     Bundle[Portable run bundle]
     Import[Explicit validated import]
     Local[Local Nuxt SSR and SQLite]
     Cloud[Cloudflare Worker and D1]
 
-    CLI --> Bundle
+    CLI --> Core --> Bundle
     Bundle --> Import
     Import --> Local
     Import --> Cloud
