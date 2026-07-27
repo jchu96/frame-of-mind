@@ -17,7 +17,7 @@ loadDotenv({ quiet: true });
 const program = new Command()
   .name("frameofmind")
   .description("Video in. Understanding out. Run structured analysis recipes over meeting recordings.")
-  .version("0.2.0");
+  .version("0.2.1");
 
 program
   .command("auth")

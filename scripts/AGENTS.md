@@ -12,3 +12,8 @@
   process tree.
 - The outer Playwright runner owns its exact OS-temp directory and must remove
   it after both passing and failing runs.
+- Live provider smoke scripts must use generated media only, print no provider
+  payloads or remote identifiers, and delete exact local and remote temporary
+  resources on success and failure.
+- Do not place live provider smoke commands in `bun run check` or CI. They are
+  explicit maintainer operations that require locally configured credentials.

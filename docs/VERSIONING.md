@@ -7,10 +7,10 @@ versions for durable schemas and prompts.
 
 | Surface | Current | Change rule |
 |---|---:|---|
-| CLI/package | `0.2.0` | Semantic Versioning |
+| CLI/package | `0.2.1` | Semantic Versioning |
 | `analysis.json` schema | `2` | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` | increment for breaking provenance changes |
-| prompt revision | `2026-07-26.1` | increment for material instruction changes |
+| prompt revision | `2026-07-27.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
 ## Before 1.0
@@ -28,15 +28,16 @@ versions for durable schemas and prompts.
 4. Confirm official provider and Google links.
 5. Run `bun install --frozen-lockfile`.
 6. Run `bun run check`.
-7. Validate the repository skill.
-8. Test the skill installer in a temporary home directory.
-9. Run `bun audit --production --audit-level=high`.
-10. Review generated package contents.
-11. Confirm no secrets, recordings, transcripts, or runs are tracked.
-12. Commit with the release version.
-13. Create an annotated `vX.Y.Z` tag.
-14. Push commit and tag.
-15. Create a GitHub release from the changelog.
+7. Run `bun run smoke:gemini` with a maintainer key and generated media.
+8. Validate the repository skill.
+9. Test the skill installer in a temporary home directory.
+10. Run `bun audit --production --audit-level=high`.
+11. Review generated package contents.
+12. Confirm no secrets, recordings, transcripts, or runs are tracked.
+13. Commit with the release version.
+14. Create an annotated `vX.Y.Z` tag.
+15. Push commit and tag.
+16. Create a GitHub release from the changelog.
 
 ## Model and dependency updates
 
@@ -52,8 +53,9 @@ Model changes require:
 
 - compare installed and registry versions;
 - read official release/migration notes;
-- verify `files.upload/get/delete`;
+- verify documented resumable upload plus SDK `files.get/delete`;
 - verify media metadata and response JSON schema;
+- run `bun run smoke:gemini`;
 - run the full check suite.
 
 Provider SDK updates require OAuth, tool discovery, schema, and cleanup tests.

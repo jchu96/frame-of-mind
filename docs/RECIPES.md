@@ -191,7 +191,7 @@ that work.
   "id": "customer-objections",
   "label": "Customer objections",
   "description": "Extract explicit objections, context, responses, and unresolved risk.",
-  "revision": "2026-07-26.1",
+  "revision": "2026-07-27.1",
   "indexInstruction": "Find moments where a participant expresses concern, blocks adoption, questions value, or names a risk. Reject neutral questions.",
   "interrogationInstruction": "Accept only a clearly stated objection. Preserve the exact quote, context, response, whether it was resolved, and any follow-up."
 }

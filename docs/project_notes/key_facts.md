@@ -8,21 +8,21 @@
 - As verified on 2026-07-27, the repository and npm latest both use the
   official `@google/genai` 2.13.0 package; the analyzer defaults to
   `gemini-3.6-flash`.
-- The v0.2 live analyzer is compatibility-blocked on the required Bun runtime:
-  the shipped SDK upload reproduced an empty 404 and the shipped full
-  Zod-derived provider schema was rejected. Successful direct upload and
-  provider-safe schema paths remain diagnostic until integrated.
-- Google's current Interactions API uses top-level `response_format`; the
-  previous generateContent API uses `config.responseFormat`. Both accept only
-  a subset of JSON Schema, so Frame of Mind must retain stricter local Zod
-  validation.
+- Version 0.2.1 uses Google's documented two-step resumable Files upload
+  protocol under Bun and retains `@google/genai` for polling, stable
+  `generateContent`, and deletion.
+- The production adapter derives an allowlisted Gemini schema from Zod and
+  always applies the complete originating Zod schema locally. The provider
+  subset never becomes the durable contract.
+- Google's current Interactions API uses top-level `response_format` and
+  remains Beta. Frame of Mind intentionally retains stable `generateContent`
+  for production generation until a later architecture decision changes it.
 - The repository vendors Google's official `gemini-api-dev` and
   `gemini-interactions-api` skills at upstream commit
   `47d75caf3bfce63d83ea2c7ed9618d82bff06335`.
-- The documented Gemini Developer API resumable upload endpoint isolated the
-  SDK upload failure in a live diagnostic. It is a production fallback
-  candidate, not shipped behavior, until implemented and cleanup-tested in the
-  adapter.
+- `bun run smoke:gemini` uses generated video to verify production upload,
+  index, detail interrogation, and exact deletion without printing payloads or
+  remote identifiers.
 - Topic-scoped work uses timestamped transcript evidence to select bounded
   operator-owned media derivatives. Semantic scope includes all relevant
   speakers and distinguishes direct request, collaborative clarification, and

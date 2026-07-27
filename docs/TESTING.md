@@ -31,7 +31,7 @@ flowchart TB
 | Adapter/contract | SQLite/D1 parity, auth denial, request limits, media state | Nuxt interaction |
 | Built HTTP | production Nitro routing, session exchange, Host/Origin policy | visual behavior |
 | Playwright | hydration, cookie/redirect flow, accessible controls, responsive journeys | exhaustive provider/error permutations |
-| Live maintainer | current Gemini/provider compatibility with authorized data | pull-request CI |
+| Live maintainer | current Gemini compatibility with generated media | pull-request CI and meeting data |
 
 ## Current Browser Baseline
 
@@ -76,6 +76,17 @@ Run the fast browser gate:
 ```bash
 bun run test:e2e:smoke
 ```
+
+Verify the live Gemini upload, index, detail, and cleanup boundary with
+generated media:
+
+```bash
+bun run smoke:gemini
+```
+
+This command requires a locally configured `GEMINI_API_KEY`, is intentionally
+outside CI, prints no provider payload or remote identifier, and removes its
+temporary local and remote files.
 
 Run all browser projects:
 

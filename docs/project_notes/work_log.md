@@ -123,3 +123,19 @@
   nine timestamped screenshots through the shipped ffmpeg extractor; both
   Gemini uploads were recorded as deleted and the original local recording
   remained outside the repository.
+- Replaced the broken SDK Files upload wrapper with a typed, streaming
+  resumable uploader; added provider-schema sanitization with strict local Zod
+  validation, adapter tests, ADR 0010, and v0.2.1 release documentation.
+- Added `bun run smoke:gemini`. The first generated-video run caught a detail
+  timestamp refinement gap; after tightening the prompt, a complete
+  upload/index/interrogate/delete run passed on `gemini-3.6-flash` with exact
+  remote cleanup.
+- Adversarial review caught cross-origin redirect credential forwarding,
+  smoke false-green behavior, ambiguous finalize cleanup, and raw provider
+  error propagation. The adapter now disables redirects, redacts every model
+  and delete failure, reports unknown cleanup honestly, and requires relevant,
+  accepted synthetic evidence before the canary passes.
+- The follow-up adversarial review returned clear after the smoke also required
+  an in-bounds indexed candidate, an accepted matching detail kind, and an
+  in-candidate evidence timestamp. The stricter live canary and full repository
+  gate passed.
