@@ -1,4 +1,4 @@
-import { runImportSchema } from "../../../../../src/domain/schemas";
+import { versionedRunImportSchema } from "../../../../../src/domain/schemas";
 import { analysisDigest } from "../../../../../src/domain/integrity";
 import { readLimitedText, RequestBodyTooLargeError } from "../../utils/request-body";
 import { assertTrustedJsonMutation } from "../../utils/request-security";
@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
     }
     throw createError({ statusCode: 400, statusMessage: "Run import must be valid UTF-8 JSON." });
   }
-  const parsed = runImportSchema.safeParse(body);
+  const parsed = versionedRunImportSchema.safeParse(body);
   if (!parsed.success) {
     throw createError({
       statusCode: 422,

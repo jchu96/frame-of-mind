@@ -419,12 +419,12 @@ frameofmind analyze "<meeting-id>" \
   --focus "Repository example-repo; distinguish requested UX from inferred implementation"
 ```
 
-The core orchestrator now has an explicit video-only schema-v3 mode for the
-next Studio slice. The current public CLI and review projection still operate
-on meeting-backed v2 runs. Do not supply an invalid meeting or disconnect a
-provider to force video-only behavior: a selected context source that fails
-must fail the run. Video-only execution becomes operator-facing only after the
-Studio immutable-input and projection migration is complete. See
+The core orchestrator and Studio job/projection boundaries support explicit
+video-only schema-v3 runs. The current public CLI still creates meeting-backed
+v2 runs, and the Studio composer does not expose its final Run action until the
+Intent/readiness slice is complete. Do not supply an invalid meeting or
+disconnect a provider to force video-only behavior: a selected context source
+that fails must fail the run. See
 [ADR 0012](adr/0012-explicit-video-only-run-provenance.md).
 
 ### 3.6 Align clips

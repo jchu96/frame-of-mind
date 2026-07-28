@@ -86,6 +86,9 @@ export class LocalStudioAnalyzeOptionsResolver {
   async assertReady(input: ImmutableJobInput): Promise<void> {
     await this.#resolveRecipe(input);
     await this.#requireSecret("gemini-api-key", "gemini_not_configured");
+    if (!("provider" in input.context)) {
+      return;
+    }
     if (input.context.provider === "file") {
       if (!this.options.contextFiles) {
         throw new StudioJobInputUnavailableError(
@@ -130,6 +133,31 @@ export class LocalStudioAnalyzeOptionsResolver {
       "gemini_not_configured",
     );
     const context = job.input.context;
+    const video = await this.options.media.resolveInUsePath(
+      job.input.mediaSessionId,
+      job.input.mediaSha256,
+    );
+    const common = {
+      recipe: recipe.recipe,
+      customRecipe: recipe.custom,
+      recipeSha256: recipe.sha256,
+      recipeRevision: recipe.revision,
+      apiKey,
+      model: job.input.model,
+      video,
+      expectedVideoSha256: job.input.mediaSha256,
+      ...(job.input.focus ? { focus: job.input.focus } : {}),
+      outputRoot: this.#outputRoot,
+      maxIncidents: this.#maxIncidents,
+      screenshots: this.#screenshots,
+      keepUpload: false,
+    } as const;
+    if (!("provider" in context)) {
+      return {
+        ...common,
+        contextMode: "none",
+      };
+    }
     const granolaApiKey = context.provider === "granola"
         && context.transport === "api"
       ? await this.#requireSecret(
@@ -137,10 +165,6 @@ export class LocalStudioAnalyzeOptionsResolver {
         "granola_api_not_configured",
       )
       : undefined;
-    const video = await this.options.media.resolveInUsePath(
-      job.input.mediaSessionId,
-      job.input.mediaSha256,
-    );
     const contextLease = context.provider === "file"
       ? await this.options.contextFiles!.acquire(context.contextFileId)
       : undefined;
@@ -156,6 +180,7 @@ export class LocalStudioAnalyzeOptionsResolver {
     }
     if (contextLease) this.#contextLeases.set(job.id, contextLease);
     return {
+      ...common,
       meetingId: context.provider === "file"
         ? context.contextFileId
         : context.meetingId,
@@ -169,21 +194,12 @@ export class LocalStudioAnalyzeOptionsResolver {
         : "mcp",
       ...(granolaApiKey ? { granolaApiKey } : {}),
       interactiveProviderAuth: false,
-      apiKey,
-      model: job.input.model,
-      video,
-      expectedVideoSha256: job.input.mediaSha256,
       ...(contextLease ? { contextFile: contextLease.path } : {}),
-      ...(job.input.focus ? { focus: job.input.focus } : {}),
       ...(job.input.transcriptOffsetSeconds === undefined
         ? {}
         : {
             transcriptOffsetSeconds: job.input.transcriptOffsetSeconds,
           }),
-      outputRoot: this.#outputRoot,
-      maxIncidents: this.#maxIncidents,
-      screenshots: this.#screenshots,
-      keepUpload: false,
     };
   }
 

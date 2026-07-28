@@ -52,8 +52,9 @@ make a formally valid bundle misrepresent its evidence.
   accidentally expose a fabricated transcript or provider.
 - Core readers that opt into the versioned contract can validate v2 and v3;
   legacy readers reject v3 visibly.
-- Studio immutable job input and SQLite/D1 projection need an additive v3
-  adoption step before the UI can launch or browse video-only runs.
+- Studio immutable job input and SQLite/D1 projection adopt v3 through a
+  separate additive table family and shared run-version registry. Composer
+  launch UX remains a separate step.
 - Recording-only analysis has less evidence than an enriched run. Renderers
   and downstream agents must not imply off-screen discussion or participant
   identity.

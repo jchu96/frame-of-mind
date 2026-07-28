@@ -1,5 +1,9 @@
 import type { H3Event } from "h3";
-import type { RunImport } from "#frame-contracts";
+import {
+  isRunImportV2,
+  isRunImportV3,
+  type VersionedRunImport,
+} from "../../../../src/domain/schemas";
 import type { RunPage, RunSummary, StoredRun } from "../../shared/types";
 
 export interface ListRunsOptions {
@@ -10,7 +14,7 @@ export interface ListRunsOptions {
 export interface RunStore {
   listRuns(options: ListRunsOptions): Promise<RunPage>;
   getRun(runId: string): Promise<StoredRun | null>;
-  importRun(input: RunImport, actor?: string): Promise<{ runId: string; created: boolean }>;
+  importRun(input: VersionedRunImport, actor?: string): Promise<{ runId: string; created: boolean }>;
 }
 
 export function encodeRunCursor(row: RunSummaryRow): string {
@@ -34,11 +38,13 @@ export function decodeRunCursor(value: string | undefined): [string, string, str
 export type RunStoreFactory = (event: H3Event) => Promise<RunStore>;
 
 export interface RunRow {
+  schema_version: 2 | 3;
+  context_mode: "meeting" | "none";
   run_id: string;
-  meeting_id: string;
+  meeting_id: string | null;
   meeting_title: string | null;
-  provider: "bluedot" | "granola" | "file";
-  transport: "mcp" | "api" | "file";
+  provider: "bluedot" | "granola" | "file" | null;
+  transport: "mcp" | "api" | "file" | null;
   recipe_id: string;
   recipe_label: string;
   model: string;
@@ -59,12 +65,8 @@ export type RunSummaryRow = Omit<
 >;
 
 export function rowToSummary(row: RunSummaryRow): RunSummary {
-  return {
+  const common = {
     runId: row.run_id,
-    meetingId: row.meeting_id,
-    ...(row.meeting_title ? { meetingTitle: row.meeting_title } : {}),
-    provider: row.provider,
-    transport: row.transport,
     recipeId: row.recipe_id,
     recipeLabel: row.recipe_label,
     model: row.model,
@@ -75,19 +77,36 @@ export function rowToSummary(row: RunSummaryRow): RunSummary {
     importedAt: row.imported_at,
     ...(row.imported_by ? { importedBy: row.imported_by } : {}),
   };
+  if (row.schema_version === 3 && row.context_mode === "none") {
+    return { ...common, schemaVersion: 3, contextMode: "none" };
+  }
+  if (
+    row.schema_version !== 2
+    || row.context_mode !== "meeting"
+    || !row.meeting_id
+    || !row.provider
+    || !row.transport
+  ) {
+    throw new Error("Stored run projection has invalid context columns.");
+  }
+  return {
+    ...common,
+    schemaVersion: 2,
+    contextMode: "meeting",
+    meetingId: row.meeting_id,
+    ...(row.meeting_title ? { meetingTitle: row.meeting_title } : {}),
+    provider: row.provider,
+    transport: row.transport,
+  };
 }
 
 export function assertStoredRunConsistency(
   row: RunRow,
-  input: RunImport,
+  input: VersionedRunImport,
 ): void {
   const accepted = input.analysis.items.filter((item) => item.result.accepted).length;
-  const mismatched =
+  const commonMismatch =
     row.run_id !== input.manifest.runId
-    || row.meeting_id !== input.analysis.meeting.id
-    || row.meeting_title !== (input.analysis.meeting.title ?? null)
-    || row.provider !== input.analysis.meeting.provider
-    || row.transport !== input.manifest.contextTransport
     || row.recipe_id !== input.analysis.recipe.id
     || row.recipe_label !== input.analysis.recipe.label
     || row.model !== input.analysis.model
@@ -96,7 +115,45 @@ export function assertStoredRunConsistency(
     || row.match_notes !== input.analysis.matchNotes
     || row.accepted_count !== accepted
     || row.rejected_count !== input.analysis.items.length - accepted;
-  if (mismatched) {
+  const contextMismatch = isRunImportV2(input)
+    ? row.schema_version !== 2
+      || row.context_mode !== "meeting"
+      || row.meeting_id !== input.analysis.meeting.id
+      || row.meeting_title !== (input.analysis.meeting.title ?? null)
+      || row.provider !== input.analysis.meeting.provider
+      || row.transport !== input.manifest.contextTransport
+    : row.schema_version !== 3
+      || row.context_mode !== "none"
+      || row.meeting_id !== null
+      || row.meeting_title !== null
+      || row.provider !== null
+      || row.transport !== null;
+  if (commonMismatch || contextMismatch) {
     throw new Error("Stored run projection does not match its authoritative run bundle.");
   }
+}
+
+export function storedRunFrom(
+  row: RunRow,
+  input: VersionedRunImport,
+): StoredRun {
+  assertStoredRunConsistency(row, input);
+  const summary = rowToSummary(row);
+  if (summary.schemaVersion === 2 && isRunImportV2(input)) {
+    return {
+      ...summary,
+      matchNotes: row.match_notes,
+      analysis: input.analysis,
+      manifest: input.manifest,
+    };
+  }
+  if (summary.schemaVersion === 3 && isRunImportV3(input)) {
+    return {
+      ...summary,
+      matchNotes: row.match_notes,
+      analysis: input.analysis,
+      manifest: input.manifest,
+    };
+  }
+  throw new Error("Stored run projection schema does not match its bundle.");
 }

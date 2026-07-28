@@ -64,15 +64,17 @@ authority. Startup reconciliation and a non-overlapping lifecycle-owned
 periodic sweep enforce that expiry even when the server remains open after the
 originating tab closes. If session storage is unavailable, the current page
 can finish but Studio explicitly reports that refresh-resume is disabled. The
-remaining analysis-composer steps and job-detail activity UI remain later
-track tasks; Home already reports active work from the protected durable job
-runtime underneath them.
+immutable job/runtime and completed-run projection support deliberate
+video-only work without provider credentials. The remaining Intent/readiness,
+Run receipt, and job-detail activity UI remain later track tasks; Home already
+reports active work from the protected durable job runtime underneath them.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
 
 - active job/events in SQLite are operational authority until completion;
-- a successful v2 run pair becomes completed-analysis authority;
+- a successful v2 meeting-backed or v3 video-only pair becomes
+  completed-analysis authority;
 - run/item rows remain rebuildable;
 - recording and context bytes never enter SQLite;
 - reviewer-authored notes remain out of scope until they have a durable
@@ -115,7 +117,7 @@ flowchart TB
 
 ## What is stored
 
-The `analysis_runs` table stores:
+The `analysis_runs` table stores schema-v2 meeting-backed projections:
 
 - run, meeting, recipe, provider, transport, and model identity;
 - start/completion/import timestamps;
@@ -124,7 +126,11 @@ The `analysis_runs` table stores:
 - validated `analysis.json` and `manifest.json`;
 - optional authenticated importer email.
 
-The `analysis_items` table stores one normalized row per analysis item:
+The `video_analysis_runs` table stores schema-v3 video-only projections and
+deliberately has no meeting, provider, transport, transcript, or alignment
+columns. `analysis_run_registry` binds each run ID to exactly one schema
+version. The corresponding `analysis_items` and `video_analysis_items` tables
+store one normalized row per analysis item:
 
 - accepted state;
 - kind, title, summary, and importance;
@@ -226,10 +232,11 @@ isolation, current journeys, CI behavior, and the recording-resume contract.
 
 The request is limited to 2 MiB and must use `application/json`. Browser
 requests with cross-site Fetch Metadata or a foreign `Origin` are rejected.
-Both files are parsed against the version 2 contract. The importer recomputes
-the canonical analysis SHA-256 and rejects mismatched run/meeting/recipe/model
-identity, invalid timestamps, contradictory provider transport, and modified
-content.
+Both files are parsed as one versioned pair. The importer recomputes the
+canonical analysis SHA-256 and rejects mismatched schema/run/recipe/model
+identity, invalid timestamps, contradictory provenance, and modified content.
+V2 additionally binds meeting/provider/transport; v3 requires explicit
+no-context provenance and local media.
 
 ### Terminal
 
@@ -295,10 +302,11 @@ Do not commit a database backup. It contains meeting-derived analysis.
 
 ## Schema changes
 
-The initial schema exists in two checked-in forms:
+The projection schema exists in two checked-in forms:
 
 - `apps/web/server/data/sql.ts` for automatic local bootstrap;
-- `apps/web/db/migrations/0001_initial.sql` for D1.
+- append-only files under `apps/web/db/migrations/` for D1. Migration 0002 adds
+  the video-only table family and shared run-version registry.
 
 The Bun test suite compares the normalized SQL text and fails when they drift.
 
@@ -350,7 +358,8 @@ Do not run `.output/server/index.mjs` with Node.
 
 ### Import returns 422
 
-Confirm both files came from the same run directory and use schema version 2.
+Confirm both files came from the same run directory and use supported schema
+version 2 or 3.
 Do not hand-edit either file: the manifest binds the exact canonical
 `analysis.json` bytes. For a v1 run, rerun the original source analysis under
 v0.2 rather than relabeling the schema.

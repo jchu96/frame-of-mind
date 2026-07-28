@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { runFixture } from "../test/fixtures";
+import { runFixture, videoRunFixture } from "../test/fixtures";
 import { collectClientErrors } from "./support/client-errors";
 
 function syntheticMp4(bytes = 64): Buffer {
@@ -208,5 +208,45 @@ test("imports and reviews one synthetic run", {
   await expect(
     page.getByRole("link", { name: "Product review", exact: true }),
   ).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});
+
+test("imports and reviews one video-only run without meeting provenance", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+  const fixture = await videoRunFixture();
+
+  await page.goto("/import");
+  await page.getByLabel("analysis.json", { exact: true }).setInputFiles({
+    name: "analysis.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(fixture.analysis)),
+  });
+  await page.getByLabel("manifest.json", { exact: true }).setInputFiles({
+    name: "manifest.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(fixture.manifest)),
+  });
+
+  await page.getByRole("button", { name: "Validate and import" }).click();
+  await expect(page.getByText("Run imported", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Open run" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Video analysis", level: 1 }),
+  ).toBeVisible();
+  await expect(page.getByText("video only · no external context")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Fix the visible issue", level: 3 }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "Home", exact: true }).click();
+  const runLink = page.getByRole("link", {
+    name: "Video analysis",
+    exact: true,
+  });
+  await expect(runLink).toBeVisible();
+  await expect(runLink).toContainText("Issue review · video only");
   expect(clientErrors).toEqual([]);
 });

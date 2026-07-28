@@ -111,8 +111,14 @@
   boundaries instead of judging completeness by length.
 - Bluedot and Granola are context sources. A local screen recording is still required for visual evidence.
 - Video-only is an explicit mode, never a provider-failure fallback. Until the
-  Studio v3 migration lands, only the core orchestrator can create the v3 pair
-  and the review projection must reject it.
+  Intent/readiness UI lands, the Studio backend can execute/project v3 but the
+  composer does not yet expose the final video-only Run action.
+- Never reuse `analysis_runs` meeting columns for video-only placeholders.
+  V3 belongs in `video_analysis_runs`; register the run ID before either
+  upsert so concurrent cross-version imports fail closed.
+- Nuxt UI run-card metadata is one accessible paragraph. In Playwright, scope
+  the provenance assertion to the run link and use `toContainText`; an exact
+  standalone `video only` text locator does not match the combined label.
 - Granola MCP transcript access can depend on plan and workspace policy; switch the active Granola workspace before authenticating or querying.
 - Granola's public API is a separate automation surface and requires an eligible plan/API key. Do not silently fall back from user OAuth to a shared key.
 - A clip can begin hours into a provider transcript. Inspect `manifest.json` alignment before trusting nearby quotes.

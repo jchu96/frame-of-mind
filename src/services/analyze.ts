@@ -6,6 +6,7 @@ import type {
   AnalysisDetail,
   AnalysisRecipe,
   AnalysisRun,
+  AnalysisRunV3,
   AnalysisItem,
   ContextProvider,
   IndexedMoment,
@@ -13,6 +14,7 @@ import type {
   MeetingEvidence,
   MediaSource,
   RunManifest,
+  RunManifestV3,
   VersionedAnalysisRun,
   VersionedRunManifest,
 } from "../domain/types.js";
@@ -20,6 +22,10 @@ import {
   analysisDigest,
   validateVersionedRunImport,
 } from "../domain/integrity.js";
+import {
+  isRunImportV2,
+  isRunImportV3,
+} from "../domain/schemas.js";
 import { BluedotClient } from "../adapters/bluedot-mcp.js";
 import { GranolaClient } from "../adapters/granola-mcp.js";
 import { GranolaApiClient } from "../adapters/granola-api.js";
@@ -122,16 +128,13 @@ export interface AnalysisProgressReporter {
   report(event: AnalysisProgressEvent): Promise<void> | void;
 }
 
-export interface PublishedAnalysisRun {
-  readonly directory: string;
-  readonly analysis: VersionedAnalysisRun;
-  readonly manifest: VersionedRunManifest;
-}
+export type AnalysisProjectionInput =
+  | { analysis: AnalysisRun; manifest: RunManifest }
+  | { analysis: AnalysisRunV3; manifest: RunManifestV3 };
 
-export interface AnalysisProjectionInput {
-  analysis: AnalysisRun;
-  manifest: RunManifest;
-}
+export type PublishedAnalysisRun = AnalysisProjectionInput & {
+  readonly directory: string;
+};
 
 export interface AnalysisProjectionPublisher {
   publish(run: AnalysisProjectionInput): Promise<void>;
@@ -196,9 +199,9 @@ export interface AnalysisOrchestratorDependencies {
   extractScreenshot?: typeof extractScreenshot;
 }
 
-export interface AnalyzeResult extends PublishedAnalysisRun {
+export type AnalyzeResult = PublishedAnalysisRun & {
   projectionWarning?: string;
-}
+};
 
 export class AnalysisCanceledError extends Error {
   constructor() {
@@ -553,35 +556,34 @@ export class AnalysisOrchestrator {
             message: "Gemini file cleanup failed; manifest records deleted=false.",
           });
         }
-        const published: PublishedAnalysisRun = {
-          directory: outputDirectory,
-          analysis: validated.analysis,
-          manifest: validated.manifest,
-        };
+        const published: PublishedAnalysisRun = isRunImportV2(validated)
+          ? {
+              directory: outputDirectory,
+              analysis: validated.analysis,
+              manifest: validated.manifest,
+            }
+          : isRunImportV3(validated)
+            ? {
+                directory: outputDirectory,
+                analysis: validated.analysis,
+                manifest: validated.manifest,
+              }
+            : (() => {
+                throw new Error("Run contract schema versions do not match.");
+              })();
         let projectionWarning: string | undefined;
         if (execution.projection) {
-          if (published.analysis.schemaVersion === 3) {
-            projectionWarning =
-              "Published video-only run could not be added until the review projection supports schema v3.";
+          try {
+            await execution.projection.publish(
+              structuredClone(projectionInputFrom(published)),
+            );
+          } catch {
+            projectionWarning = "Published run could not be added to the review projection.";
             await reportWarning(progress, {
               kind: "warning",
               stage: "cleaning_up",
               message: projectionWarning,
             });
-          } else if (published.manifest.schemaVersion === 2) {
-            try {
-              await execution.projection.publish(structuredClone({
-                analysis: published.analysis,
-                manifest: published.manifest,
-              }));
-            } catch {
-              projectionWarning = "Published run could not be added to the review projection.";
-              await reportWarning(progress, {
-                kind: "warning",
-                stage: "cleaning_up",
-                message: projectionWarning,
-              });
-            }
           }
         }
         return {
@@ -703,6 +705,24 @@ function isMeetingAnalysisIndex(
   index: AnalysisIndex,
 ): index is MeetingAnalysisIndex {
   return "isRelevantCall" in index && "transcriptAlignment" in index;
+}
+
+function projectionInputFrom(
+  published: PublishedAnalysisRun,
+): AnalysisProjectionInput {
+  if (
+    published.analysis.schemaVersion === 2
+    && published.manifest.schemaVersion === 2
+  ) {
+    return { analysis: published.analysis, manifest: published.manifest };
+  }
+  if (
+    published.analysis.schemaVersion === 3
+    && published.manifest.schemaVersion === 3
+  ) {
+    return { analysis: published.analysis, manifest: published.manifest };
+  }
+  throw new Error("Run contract schema versions do not match.");
 }
 
 export function assertEvidenceWithinCandidate(

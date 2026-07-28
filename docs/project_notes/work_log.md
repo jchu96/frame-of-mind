@@ -281,3 +281,13 @@
   `bun run check` passed with 109 CLI tests, 175 web tests, both production
   builds, the Studio HTTP probe, Cloudflare boundary check, and 32 MiB stream
   spike.
+- Adopted v3 in Studio immutable input, readiness, execution receipts, shared
+  import DTOs, and SQLite/D1 projections. Video-only jobs require Gemini and
+  sealed media but no meeting credential; immutable mode mismatches fail
+  before orchestration. The additive projection uses separate v2/v3 table
+  families plus a shared run-version registry, and run pages render both.
+- Task 6.6 verification passed `bun run check` with 109 core tests, 183 web
+  tests, both production builds, the Studio HTTP probe, Cloudflare boundary
+  audit, and the 32 MiB stream spike. All eight existing browser smoke journeys
+  passed; a focused ninth journey then proved v3 import, detail provenance, and
+  Local Studio home rendering end to end.

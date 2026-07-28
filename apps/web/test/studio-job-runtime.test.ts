@@ -15,6 +15,9 @@ import type {
   ImmutableJobInput,
 } from "../../../src/domain/studio-schemas";
 import {
+  immutableJobInputSchema,
+} from "../../../src/domain/studio-schemas";
+import {
   loadRecipe,
 } from "../../../src/recipes/index";
 import {
@@ -88,6 +91,43 @@ describe("Local Studio job runtime", () => {
       keepUpload: false,
       transcriptOffsetSeconds: -3_723,
     });
+  });
+
+  test("requires no meeting credentials for explicit video-only input", async () => {
+    const recipe = await loadRecipe("issue-review");
+    let resolvedMedia = false;
+    const resolver = new LocalStudioAnalyzeOptionsResolver({
+      media: {
+        async resolveInUsePath() {
+          resolvedMedia = true;
+          return "/private/synthetic/media.sealed";
+        },
+      },
+      secrets: secrets({ "gemini-api-key": "synthetic-gemini-key" }),
+      oauthCredentialPresent: () => false,
+      outputRoot: "/private/synthetic/runs",
+    });
+    const job = analysisJob({
+      context: { mode: "none" },
+      recipe: {
+        id: recipe.recipe.id,
+        custom: false,
+        revision: recipe.revision,
+        sha256: recipe.sha256,
+      },
+    });
+
+    await expect(resolver.assertReady(job.input)).resolves.toBeUndefined();
+    await expect(resolver.resolve(job)).resolves.toMatchObject({
+      contextMode: "none",
+      apiKey: "synthetic-gemini-key",
+      video: "/private/synthetic/media.sealed",
+    });
+    expect(resolvedMedia).toBe(true);
+    expect(immutableJobInputSchema.safeParse({
+      ...job.input,
+      transcriptOffsetSeconds: 42,
+    }).success).toBe(false);
   });
 
   test("rejects unavailable custom, file, credential, and transport inputs", async () => {
@@ -254,7 +294,7 @@ describe("Local Studio job runtime", () => {
     expect(releases).toEqual([contextFileId]);
   });
 
-  test("starts one durable worker and executes API-created work", async () => {
+  test("starts one durable worker and executes API-created video-only work", async () => {
     const root = await mkdtemp(join(tmpdir(), "frame-of-mind-runtime-test-"));
     temporaryRoots.push(root);
     const database = new Database(":memory:");
@@ -295,7 +335,7 @@ describe("Local Studio job runtime", () => {
       secrets: secrets({
         "gemini-api-key": "synthetic-gemini-key",
       }),
-      oauthCredentialPresent: () => true,
+      oauthCredentialPresent: () => false,
       executor,
       outputRoot: join(root, "runs"),
     });
@@ -305,11 +345,7 @@ describe("Local Studio job runtime", () => {
       input: {
         mediaSessionId: session.id,
         mediaSha256: sealed.sha256,
-        context: {
-          provider: "bluedot",
-          transport: "mcp",
-          meetingId: "meeting-runtime",
-        },
+        context: { mode: "none" },
         recipe: {
           id: recipe.recipe.id,
           custom: false,

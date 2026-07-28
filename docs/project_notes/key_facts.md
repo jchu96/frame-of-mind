@@ -60,7 +60,9 @@
   canonical analysis SHA-256; import and hydration fail closed on divergence.
 - Schema v3 is the explicit video-only pair: `context.mode` is `none`, media is
   local-file only, and meeting/transcript/provider/alignment fields are absent.
-  Core readers accept v2/v3; the current SQLite/D1 projection remains v2-only.
+  Core readers and SQLite/D1 projection accept v2/v3 through separate tables.
+- `analysis_run_registry` prevents a run ID from crossing the v2 meeting and
+  v3 video-only projection tables, including concurrent import attempts.
 - MCP OAuth credentials are bound to the exact HTTPS resource URL, and custom
   endpoints use isolated origin-hashed token files.
 - D1 item import uses transactional `json_each` expansion; list APIs use

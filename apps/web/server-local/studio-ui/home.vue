@@ -132,7 +132,21 @@ function providerStatusLabel(provider: ProviderStatus): string {
 }
 
 function runTitle(run: RunSummary): string {
-  return run.meetingTitle || run.meetingId;
+  return run.schemaVersion === 2
+    ? run.meetingTitle || run.meetingId
+    : "Video analysis";
+}
+
+function runContext(run: RunSummary): string {
+  return run.schemaVersion === 2
+    ? `${run.provider} via ${run.transport}`
+    : "video only";
+}
+
+function jobContext(job: AnalysisJob): string {
+  return "provider" in job.input.context
+    ? `${job.input.context.provider} context`
+    : "video only";
 }
 </script>
 
@@ -271,7 +285,7 @@ function runTitle(run: RunSummary): string {
                 </UBadge>
               </div>
               <p class="mt-1 truncate text-sm text-muted">
-                {{ job.input.context.provider }} context · attempt {{ job.attempt }}
+                {{ jobContext(job) }} · attempt {{ job.attempt }}
               </p>
             </div>
             <time :datetime="job.updatedAt" class="text-xs text-muted">
@@ -392,7 +406,7 @@ function runTitle(run: RunSummary): string {
             <div class="min-w-0">
               <p class="truncate font-bold">{{ runTitle(run) }}</p>
               <p class="mt-1 truncate text-sm text-muted">
-                {{ run.recipeLabel }} · {{ run.provider }} via {{ run.transport }}
+                {{ run.recipeLabel }} · {{ runContext(run) }}
               </p>
             </div>
             <div class="flex items-center gap-3 text-xs text-muted">
