@@ -6,28 +6,74 @@ import type {
 } from "../domain/types.js";
 import { ensureDirectory } from "../lib/files.js";
 import { canonicalAnalysisJson } from "../domain/integrity.js";
+import {
+  analysisOutcomeSchema,
+  type AnalysisOutcome,
+} from "../domain/analysis-outcome.js";
+import {
+  runFailureManifestSchema,
+  type RunFailureManifest,
+} from "../domain/run-failure.js";
+
+export async function writeFailureManifest(
+  directory: string,
+  manifest: RunFailureManifest,
+): Promise<string> {
+  const validated = runFailureManifestSchema.parse(manifest);
+  await ensureDirectory(directory);
+  const path = join(directory, "failure-manifest.json");
+  await writeFile(path, `${JSON.stringify(validated, null, 2)}\n`, { mode: 0o600 });
+  return path;
+}
 
 export async function writeArtifacts(
   directory: string,
   analysis: VersionedAnalysisRun,
   manifest: VersionedRunManifest,
+  outcome: AnalysisOutcome,
 ): Promise<string[]> {
   if (analysis.schemaVersion !== manifest.schemaVersion) {
     throw new Error("Analysis and manifest schema versions must match.");
   }
+  const validatedOutcome = analysisOutcomeSchema.parse(outcome);
+  if (analysis.runId !== validatedOutcome.runId) {
+    throw new Error("Analysis and outcome run IDs must match.");
+  }
+  const acceptedItems = analysis.items.filter((item) => item.result.accepted).length;
+  const rejectedItems = analysis.items.length - acceptedItems;
+  if (
+    validatedOutcome.candidates.validated !== analysis.items.length
+    || validatedOutcome.candidates.accepted !== acceptedItems
+    || validatedOutcome.candidates.rejected !== rejectedItems
+  ) {
+    throw new Error("Analysis items and outcome candidate counts must match.");
+  }
   await ensureDirectory(directory);
   const analysisJson = join(directory, "analysis.json");
+  const outcomeJson = join(directory, "analysis-outcome.json");
   const analysisMarkdown = join(directory, "analysis.md");
   const reportHtml = join(directory, "report.html");
   const manifestJson = join(directory, "manifest.json");
   await writeFile(analysisJson, canonicalAnalysisJson(analysis), { mode: 0o600 });
-  await writeFile(analysisMarkdown, renderAnalysis(analysis), { mode: 0o600 });
-  await writeFile(reportHtml, await renderHtmlArtifact(directory, analysis, manifest), { mode: 0o600 });
+  await writeFile(
+    outcomeJson,
+    `${JSON.stringify(validatedOutcome, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome), { mode: 0o600 });
+  await writeFile(
+    reportHtml,
+    await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome),
+    { mode: 0o600 },
+  );
   await writeFile(manifestJson, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  return [analysisJson, analysisMarkdown, reportHtml, manifestJson];
+  return [analysisJson, outcomeJson, analysisMarkdown, reportHtml, manifestJson];
 }
 
-export function renderAnalysis(analysis: VersionedAnalysisRun): string {
+export function renderAnalysis(
+  analysis: VersionedAnalysisRun,
+  outcome?: AnalysisOutcome,
+): string {
   const accepted = analysis.items.filter((item) => item.result.accepted);
   const heading = analysis.schemaVersion === 2
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
@@ -42,7 +88,18 @@ export function renderAnalysis(analysis: VersionedAnalysisRun): string {
     `- Recipe: \`${escapeInline(analysis.recipe.id)}\``,
     `- Model: \`${escapeInline(analysis.model)}\``,
     `- Accepted records: ${accepted.length}`,
+    ...(outcome
+      ? [
+          `- Analysis outcome: ${outcome.status}`,
+          `- Candidate responses: ${outcome.candidates.validated}/${outcome.candidates.selected} validated (${outcome.candidates.accepted} accepted, ${outcome.candidates.rejected} rejected)`,
+          `- Indexed candidates: ${outcome.candidates.indexed} (${outcome.candidates.omittedByLimit} omitted by the configured limit)`,
+        ]
+      : []),
     "",
+    outcome?.status === "partial" || outcome?.status === "failed"
+      ? `> ${outcome.candidates.failed} candidate response(s) failed validation and were excluded. See \`analysis-outcome.json\` for sanitized diagnostics.`
+      : "",
+    outcome?.status === "partial" || outcome?.status === "failed" ? "" : "",
     analysis.matchNotes ? "## Recording match notes" : "",
     analysis.matchNotes ? renderBlock(analysis.matchNotes) : "",
     "",
@@ -103,6 +160,7 @@ async function renderHtmlArtifact(
   directory: string,
   analysis: VersionedAnalysisRun,
   manifest: VersionedRunManifest,
+  outcome: AnalysisOutcome,
 ): Promise<string> {
   const accepted = analysis.items.filter((item) => item.result.accepted);
   const cards = await Promise.all(accepted.map(async (item, index) => {
@@ -150,6 +208,9 @@ async function renderHtmlArtifact(
   const alignment = manifest.schemaVersion === 2
     ? `Transcript alignment: ${manifest.transcriptAlignment.offsetSeconds >= 0 ? "+" : ""}${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).`
     : "Transcript alignment: not applicable to a video-only run.";
+  const outcomeNotice = outcome.status === "complete"
+    ? ""
+    : `<aside><strong>${html(outcome.status === "partial" ? "Partial analysis" : "Analysis failed")}</strong>: ${outcome.candidates.failed} candidate response(s) failed validation and were excluded. Sanitized diagnostics are available in <code>analysis-outcome.json</code>.</aside>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -166,6 +227,7 @@ async function renderHtmlArtifact(
     h2{line-height:1.2;margin:.35em 0 1em}h3{font-size:1rem;margin-top:24px}dl{display:grid;grid-template-columns:110px 1fr;gap:10px 18px}dt{color:var(--muted);font-weight:700}dd{margin:0}
     blockquote{border-left:4px solid var(--accent);margin:24px 0;padding:4px 18px;font-size:1.12rem}img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:9px;margin-top:24px}
     a{color:var(--accent)}.muted{color:var(--muted)}code{overflow-wrap:anywhere}@media(max-width:600px){main{padding:28px 14px}article{padding:20px}dl{grid-template-columns:1fr;gap:2px}dd{margin-bottom:10px}}
+    aside{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:14px 16px;margin:20px 0;background:var(--card)}
   </style>
 </head>
 <body><main>
@@ -174,6 +236,7 @@ async function renderHtmlArtifact(
     <h1>${html(heading)}</h1>
     <div class="meta"><span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
   </header>
+  ${outcomeNotice}
   <section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>
     <p class="muted">${alignment}</p>
   </section>

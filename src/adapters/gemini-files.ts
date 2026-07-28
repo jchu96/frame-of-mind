@@ -47,12 +47,18 @@ export interface GeminiFileUploader {
   upload(path: string, mimeType: string): Promise<GeminiFile>;
 }
 
+export type GeminiUploadCleanup =
+  | "not_obtained"
+  | "confirmed_deleted"
+  | "unconfirmed";
+
 export class GeminiFileError extends Error {
   override readonly name = "GeminiFileError";
 
   constructor(
     message: string,
     readonly remoteFileName?: string,
+    readonly uploadCleanup?: GeminiUploadCleanup,
   ) {
     super(message);
   }
@@ -81,6 +87,8 @@ export function createGeminiFileUploader(
       if (!Number.isSafeInteger(size) || size <= 0) {
         throw new GeminiFileError(
           "Gemini upload requires a non-empty file with a safe byte size.",
+          undefined,
+          "not_obtained",
         );
       }
 
@@ -105,7 +113,11 @@ export function createGeminiFileUploader(
           signal: AbortSignal.timeout(timeoutMs),
         });
       } catch {
-        throw new GeminiFileError("Gemini resumable upload start failed.");
+        throw new GeminiFileError(
+          "Gemini resumable upload start failed.",
+          undefined,
+          "not_obtained",
+        );
       }
       assertSuccessfulResponse(startResponse, "resumable upload start");
 
@@ -130,11 +142,15 @@ export function createGeminiFileUploader(
       } catch {
         throw new GeminiFileError(
           "Gemini upload finalize failed; remote cleanup cannot be confirmed.",
+          undefined,
+          "unconfirmed",
         );
       }
       if (!uploadResponse.ok) {
         throw new GeminiFileError(
           `Gemini upload finalize failed (HTTP ${uploadResponse.status}); remote cleanup cannot be confirmed.`,
+          undefined,
+          "unconfirmed",
         );
       }
 
@@ -144,6 +160,8 @@ export function createGeminiFileUploader(
       } catch {
         throw new GeminiFileError(
           "Gemini upload finalize returned invalid JSON; remote cleanup cannot be confirmed.",
+          undefined,
+          "unconfirmed",
         );
       }
       const parsed = uploadedFileEnvelopeSchema.safeParse(payload);
@@ -159,6 +177,7 @@ export function createGeminiFileUploader(
             ? "Gemini upload finalize returned an invalid file record."
             : "Gemini upload finalize returned an invalid file record; remote cleanup cannot be confirmed.",
           remoteFileName,
+          "unconfirmed",
         );
       }
 
@@ -195,6 +214,8 @@ function assertSuccessfulResponse(response: Response, phase: string): void {
   if (!response.ok) {
     throw new GeminiFileError(
       `Gemini ${phase} failed (HTTP ${response.status}).`,
+      undefined,
+      "not_obtained",
     );
   }
 }
@@ -203,6 +224,8 @@ function validateUploadUrl(value: string | null): URL {
   if (!value) {
     throw new GeminiFileError(
       "Gemini upload start did not return a resumable URL.",
+      undefined,
+      "not_obtained",
     );
   }
   let url: URL;
@@ -211,6 +234,8 @@ function validateUploadUrl(value: string | null): URL {
   } catch {
     throw new GeminiFileError(
       "Gemini upload start returned an invalid resumable URL.",
+      undefined,
+      "not_obtained",
     );
   }
   if (
@@ -223,6 +248,8 @@ function validateUploadUrl(value: string | null): URL {
   ) {
     throw new GeminiFileError(
       "Gemini upload start returned an untrusted resumable URL.",
+      undefined,
+      "not_obtained",
     );
   }
   return url;

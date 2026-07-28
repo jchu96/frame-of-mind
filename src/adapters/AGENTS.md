@@ -17,7 +17,7 @@
 - Use Gemini Developer API mode; the Files API is not available through Vertex mode here.
 - Read the vendored official Google Gemini skills and their required hosted
   task documentation before changing Files, video, or structured-output code.
-- Direct resumable upload is the shipped v0.2.1 transport. Keep it isolated,
+- Direct resumable upload is the shipped v0.3.0 transport. Keep it isolated,
   typed, streaming, redirect-disabled, exact-host validated, and
   cleanup-equivalent.
 - Treat Interactions `response_format` as a verified Beta diagnostic path, not
@@ -25,10 +25,12 @@
   the same upload, generation, validation, timeout, and cleanup guarantees.
 - Decode every model response as `unknown` and validate with the stricter
   originating Zod contract, even when the provider accepted its schema subset.
-- A structured-output repair may regenerate the complete response once; its
-  added corrective feedback may contain sanitized issue paths/codes only.
-  Never echo rejected values, retry more than once, coerce output, or weaken
-  the originating Zod contract.
+- A missing, invalid-JSON, or schema-invalid structured response may regenerate
+  the complete response once; corrective feedback may contain sanitized issue
+  paths/codes only. Normalize only provably lossless variants such as a `.000`
+  timestamp suffix. Never echo rejected values, retry more than once, round a
+  non-zero timestamp fraction, truncate evidence, coerce output, or weaken the
+  originating Zod contract.
 
 ## Failure Behavior
 

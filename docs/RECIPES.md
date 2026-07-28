@@ -13,6 +13,7 @@ safety, cleanup, and durable schemas unchanged.
 | User needs, constraints, acceptance criteria, edge cases | `requirements` |
 | Commitments, owners, dates, dependencies, done conditions | `action-items` |
 | Grounded repository changes, risks, validation, open questions | `repo-plan` |
+| Communication/self-review, intent versus impact, missed cues | `communication-coaching` |
 
 List recipes:
 
@@ -184,6 +185,88 @@ Use `--focus` to name the repository or subsystem. The recipe still labels
 inferences and does not inspect the repository unless an agent separately does
 that work.
 
+### `communication-coaching`
+
+Use when a user wants:
+
+- feedback on their own meeting participation;
+- teaching, facilitation, or explanation review;
+- strengths and growth opportunities;
+- interpreted intent versus observable audience impact;
+- questions, objections, or openings they may have missed;
+- concrete next-time language or practice.
+
+It rejects:
+
+- personality diagnoses;
+- unsupported claims about aptitude, mental state, or sensitive traits;
+- a single recording generalized into a stable judgment about a person;
+- hidden intent presented as fact.
+
+Recommended detail labels:
+
+- Stated goal
+- Observation
+- Interpreted intent
+- Likely effect
+- Missed cue
+- Alternative interpretation
+- Strength
+- Guidance
+- Suggested practice
+
+Intent is a legitimate analysis target. Label inferred intent as interpretation,
+cite its observed basis, and include a plausible alternative. Optional context
+should state the speaker's goal, audience, role, and desired feedback so the
+analysis can compare intent with observable response.
+
+## Recipes versus artifact families
+
+The current v2/v3 contract stores recipe-neutral label/value details. A recipe
+therefore selects what to find and how to interrogate it, while an agent or
+renderer composes the final artifact.
+
+Recipes can ultimately target different artifact families:
+
+| Family | Examples |
+|---|---|
+| Findings/brief | UX review, issue, requirement, decision |
+| Procedure | process walkthrough converted into an SOP |
+| Technical explanation | construction or electrical component walkthrough |
+| Coaching report | self-review, facilitation, teaching |
+| Q&A | targeted or exploratory questions about a video |
+
+These families are proposed in ADR 0014 and do not yet change the durable
+schema. They will share a versioned evidence/claim spine rather than adding
+every possible field to one object or giving every recipe unrelated evidence
+semantics.
+
+## Standard and deep review
+
+Depth is independent of the subject of a recipe:
+
+```bash
+frameofmind analyze \
+  --source none \
+  --video "<recording.mp4>" \
+  --recipe communication-coaching \
+  --depth deep \
+  --model gemini-pro-latest
+```
+
+`standard` indexes at 0.5 FPS. `deep` indexes at 1 FPS and adds layered
+observation, intent, implication, alternative, uncertainty, and verification
+instructions. It still uses the current two-pass v2/v3 schema and one selected
+model across both passes. Higher FPS is denser visual sampling, not proof of
+better reasoning. Until analysis profiles receive their own manifest contract,
+the deep instructions are content-addressed as the effective recipe and the
+bounded revision records `deep-understanding-v1` plus the base recipe digest
+prefix; this is explicit compatibility provenance, not the proposed long-term
+separation of recipe and profile.
+
+See [Video Understanding](VIDEO_UNDERSTANDING.md) for current behavior and the
+proposed role-separated deep pipeline.
+
 ## Custom recipe format
 
 ```json
@@ -259,10 +342,11 @@ Name the nearest false positives:
 - discussion versus issue;
 - implementation inference versus repository fact.
 
-### 4. Define neutral details
+### 4. Define current neutral details
 
-Use label/value pairs. Do not require a new durable schema field for each
-recipe.
+Use label/value pairs in v2/v3. Do not add ad hoc top-level fields for one
+recipe. Long-term typed automation belongs in a versioned artifact family and
+bounded recipe extension under ADR 0014.
 
 ### 5. Preserve ambiguity
 
@@ -320,3 +404,6 @@ repository and record its hash in a future manifest revision.
 - [ ] Details use neutral labels.
 - [ ] Bounded test includes rejected candidates.
 - [ ] Output remains useful without HTML.
+- [ ] Inferred intent is labeled and has evidence plus an alternative.
+- [ ] High-stakes technical guidance names required external verification.
+- [ ] SOP steps distinguish demonstrated behavior from recommended procedure.

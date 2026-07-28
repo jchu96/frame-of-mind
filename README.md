@@ -5,16 +5,17 @@
 Frame of Mind runs structured Gemini analysis recipes over an
 operator-selected recording, optionally enriched with context from Bluedot,
 Granola, or a local transcript. Use it to extract decisions, requirements,
-action items, repository plans, or grounded issue reviews into private JSON,
-Markdown, self-contained HTML, and screenshots.
+action items, repository plans, grounded issue reviews, or communication
+coaching into private JSON, Markdown, self-contained HTML, and screenshots.
 
-Version 0.2.1 uses Google's documented resumable Files upload protocol and a
+Version 0.3.0 uses Google's documented resumable Files upload protocol and a
 Gemini-safe response schema while retaining the complete Zod contract as the
 local authority. A locally invalid structured response gets one regeneration
-attempt with sanitized corrective feedback; the unchanged Zod contract still
-fails closed if that attempt is invalid. Maintainers can verify upload, both
-structured model passes, and exact cleanup with generated media before
-processing a meeting:
+attempt with sanitized corrective feedback. A terminal detail failure is
+isolated to its candidate, valid candidates are retained, and sanitized outcome
+or whole-run failure receipts prove what completed without storing provider
+payloads. Maintainers can verify upload, both structured model passes, and exact
+cleanup with generated media before processing a meeting:
 
 ```bash
 bun run smoke:gemini
@@ -29,7 +30,7 @@ frameofmind analyze "MEETING_ID" \
   --recipe requirements
 ```
 
-> Early public release: `v0.2.1`. Review generated work before using or
+> Early public release: `v0.3.0`. Review generated work before using or
 > publishing it.
 
 ## Product roadmap
@@ -61,6 +62,7 @@ It is not limited to “evidence dossiers.” Analysis intent is a recipe:
 | `requirements` | needs, constraints, acceptance criteria, edge cases         |
 | `action-items` | commitments, owners, dates, dependencies                    |
 | `repo-plan`    | grounded change requests, risks, validation, open questions |
+| `communication-coaching` | observed delivery, intent/impact, missed cues, guidance |
 
 Custom JSON recipes are supported.
 
@@ -76,6 +78,7 @@ flowchart LR
     R[Analysis recipe]
     M[Gemini 3.6 Flash]
     J[analysis.json]
+    O[analysis-outcome.json]
     P[manifest.json]
     H[Markdown and HTML]
 
@@ -86,6 +89,7 @@ flowchart LR
     A --> M
     R --> M
     M --> J
+    M --> O
     J -->|runId plus SHA-256| P
     J --> H
 ```
@@ -100,6 +104,7 @@ The durable source is local:
 ```text
 <application-data>/frame-of-mind/runs/<meeting-id>/<run-id>/
 ├── analysis.json
+├── analysis-outcome.json
 ├── analysis.md
 ├── report.html
 ├── manifest.json
@@ -120,8 +125,10 @@ sensitive because screenshots are embedded.
 - Bluedot, Granola, or local context
 - local MP4/MOV/M4V/WebM screen recording
 
-The current pipeline uses the official `@google/genai` `2.13.0` Files API and defaults
-to `gemini-3.6-flash`. Recordings must use a supported video extension and stay
+The current pipeline uses the official `@google/genai` `2.13.0` Files API and
+defaults to `gemini-3.6-flash`. `gemini-pro-latest` is accepted for an in-depth
+run, but it is a mutable alias and therefore less reproducible than a stable
+supported model ID. Recordings must use a supported video extension and stay
 within the Files API's 2 GB per-file limit.
 
 This repository also vendors Google's official `gemini-api-dev` and
@@ -392,6 +399,24 @@ frameofmind analyze "MEETING_ID" \
   --max-moments 3
 ```
 
+### In-depth communication or self-review
+
+```bash
+frameofmind analyze "<stable-id>" \
+  --source none \
+  --video "/path/to/recording.mp4" \
+  --recipe communication-coaching \
+  --depth deep \
+  --model gemini-pro-latest \
+  --focus "Compare my stated goal with audience response and identify missed cues"
+```
+
+`deep` currently increases whole-video sampling and adds layered prompts for
+observation, interpreted intent, implication, alternatives, uncertainty, and
+verification. The selected model runs both existing passes. It is not yet the
+future role-separated Flash discovery, Pro interpretation, and synthesis
+pipeline described in ADR 0014.
+
 ## Custom recipes
 
 ```json
@@ -420,7 +445,7 @@ See [docs/RECIPES.md](docs/RECIPES.md).
 frameofmind auth <bluedot|granola>
 frameofmind doctor
 frameofmind recipes
-frameofmind analyze <meeting-id> --source <bluedot|granola|file> [options]
+frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|none> [options]
 ```
 
 Analysis options:
@@ -435,6 +460,8 @@ Analysis options:
 | `--recording-url <url>`          | validated Bluedot signed URL fallback          |
 | `--transcript-offset <time>`     | full transcript time at video `00:00`          |
 | `--focus <text>`                 | prioritize a repository/workflow/concern       |
+| `--depth <standard\|deep>`       | sampling/prompt rigor, default `standard`       |
+| `--model <id>`                   | Gemini model for both current passes            |
 | `--max-moments <n>`              | cap close interrogation, default `10`          |
 | `--no-screenshots`               | run without ffmpeg                             |
 | `--keep-upload`                  | retain Gemini upload until provider expiration |
@@ -511,6 +538,12 @@ imports and renders both versions through separate rebuildable projection
 tables; one schema-version registry prevents a run ID from crossing versions.
 Imports reject mismatched IDs, modified analyses, malformed timestamps, and
 contradictory normalized provenance.
+`analysis-outcome.json` is a versioned auxiliary receipt. It separates indexed,
+selected, limit-omitted, validated, accepted, rejected, and failed candidates.
+A whole-run failure after upload publishes only a sanitized
+`failure-manifest.json` with phase and cleanup provenance. Neither diagnostic
+artifact contains the rejected model response.
+
 Version 1 bundles are intentionally unsupported; rerun the source analysis to
 migrate.
 
@@ -558,6 +591,9 @@ import boundary, backups, and troubleshooting.
   transcript transfer.
 - Gemini upload deletion is attempted on success and failure by default. A
   failed attempt is recorded honestly; provider expiration is the backstop.
+- Invalid JSON, schema mismatch, and overlong fields receive one bounded repair
+  attempt. Only a zero millisecond suffix is normalized losslessly. One bad
+  detail does not erase other validated candidates.
 - Raw MCP payloads and full transcripts are not persisted in a normal run.
 - Signed URLs are treated as bearer secrets and never written to artifacts.
 - Evidence app URLs retain only credential-free HTTPS origin/path values;
@@ -636,6 +672,8 @@ structured output, video metadata, OAuth, and cleanup contracts.
 - [Local Studio streaming spike](docs/spikes/local-studio-streaming-20260726.md)
 - [Gemini credentials](docs/CREDENTIALS.md)
 - [Recipes](docs/RECIPES.md)
+- [Video understanding and deep-analysis guide](docs/VIDEO_UNDERSTANDING.md)
+- [Artifact composition quality guide](docs/ARTIFACT_COMPOSITION.md)
 - [Provider contracts](docs/PROVIDERS.md)
 - [Nuxt review workspace](docs/WEB_WORKSPACE.md)
 - [Testing strategy](docs/TESTING.md)
@@ -658,8 +696,8 @@ structured output, video metadata, OAuth, and cleanup contracts.
 - Automatic transcript alignment is model-derived.
 - No built-in external publishing yet.
 - No centralized/encrypted evidence vault.
-- No cross-run vector index in `v0.2.1`.
-- Review-workspace imports are manual in `v0.2.1`.
+- No cross-run vector index in `v0.3.0`.
+- Review-workspace imports are manual in `v0.3.0`.
 - The local/Cloudflare MCP server is designed but intentionally deferred to the
   next iteration.
 

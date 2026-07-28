@@ -165,7 +165,7 @@ export class BluedotClient implements MeetingCatalogSource {
   }
 
   private async attemptConnection(provider: FileOAuthProvider): Promise<void> {
-    this.client = new Client({ name: "frame-of-mind", version: "0.2.1" }, { capabilities: {} });
+    this.client = new Client({ name: "frame-of-mind", version: "0.3.0" }, { capabilities: {} });
     this.transport = new StreamableHTTPClientTransport(this.endpoint.url, { authProvider: provider });
     await this.client.connect(this.transport);
   }

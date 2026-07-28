@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  CandidateAnalysisError,
+  type CandidateValidationIssue,
+} from "../domain/analysis-outcome.js";
 
 const jsonObjectSchema = z.record(z.string(), z.unknown());
 const schemaType = z.union([z.string(), z.array(z.string())]);
@@ -18,13 +22,16 @@ export interface GeminiProviderSchema {
   additionalProperties?: boolean | GeminiProviderSchema;
 }
 
-export class GeminiResponseValidationError extends Error {
-  readonly issues: readonly string[];
+export class GeminiResponseValidationError extends CandidateAnalysisError {
+  override readonly name: string = "GeminiResponseValidationError";
 
-  constructor(label: string, issues: readonly string[]) {
-    super(`${label} failed strict local validation at ${issues.join(", ")}.`);
-    this.name = "GeminiResponseValidationError";
-    this.issues = issues;
+  constructor(
+    label: string,
+    code: "response_missing" | "invalid_json" | "schema_validation",
+    issues: readonly CandidateValidationIssue[] = [],
+    attempts: 1 | 2 = 1,
+  ) {
+    super({ code, attempts, ...(issues.length ? { issues: [...issues] } : {}) }, label);
   }
 }
 
@@ -40,29 +47,37 @@ export function parseGeminiJson<T>(
   label: string,
 ): T {
   if (!text) {
-    throw new Error(`${label} is missing.`);
+    throw new GeminiResponseValidationError(label, "response_missing");
   }
 
   let decoded: unknown;
   try {
     decoded = JSON.parse(text);
   } catch {
-    throw new Error(`${label} was not valid JSON.`);
+    throw new GeminiResponseValidationError(label, "invalid_json");
   }
 
   const result = schema.safeParse(decoded);
   if (!result.success) {
-    const issues = result.error.issues.slice(0, 3).map((issue) => {
-      const path = sanitizeIssuePath(issue.path);
-      return `${path} (${issue.code})`;
-    });
-    throw new GeminiResponseValidationError(label, issues);
+    const issues = result.error.issues.slice(0, 3).map((issue) => ({
+      path: sanitizeIssuePath(issue.path),
+      code: sanitizeIssueCode(issue.code),
+    }));
+    throw new GeminiResponseValidationError(
+      label,
+      "schema_validation",
+      issues,
+    );
   }
   return result.data;
 }
 
+function sanitizeIssueCode(code: string): string {
+  return code.slice(0, 64).replace(/[^a-z_]/g, "_") || "custom";
+}
+
 function sanitizeIssuePath(path: readonly PropertyKey[]): string {
-  if (path.length === 0) return "<root>";
+  if (path.length === 0) return "_root_";
   return path
     .slice(0, 8)
     .map((segment) => {

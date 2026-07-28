@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-28
+
 ### Added
 
 - Added the reusable local analysis orchestrator, durable single-concurrency
@@ -12,6 +14,11 @@ Semantic Versioning.
 - Added a versioned schema-v3 video-only run pair, recording-only Gemini
   prompts, and provenance-aware Markdown/HTML rendering while preserving the
   existing meeting-backed v2 contract.
+- Added explicit `--source none`, `--depth standard|deep`, `--model`, and the
+  `communication-coaching` recipe for intent-versus-impact and missed-cue
+  review.
+- Added `analysis-outcome.json` and sanitized whole-run
+  `failure-manifest.json` receipts.
 
 ### Fixed
 
@@ -19,12 +26,17 @@ Semantic Versioning.
   sanitized corrective feedback while preserving the unchanged Zod contract.
 - Print the pass-2 boundary before detail interrogation and remove empty
   failed-attempt meeting containers after cleanup.
+- Repair missing/invalid/schema-invalid detail responses once, normalize only
+  zero millisecond suffixes, isolate terminal typed failures per candidate, and
+  retain independently validated results.
 
 ### Changed
 
 - Updated Cloudflare Workers development types to `5.20260727.1`.
 - Studio immutable jobs and SQLite/D1 projections now accept v2 and v3 while
   requiring meeting-provider credentials only for context-enriched runs.
+- Documented the current two-pass deep profile and the proposed v4
+  claim-evidence/artifact-family and role-based multi-model architecture.
 
 ### Planned
 
