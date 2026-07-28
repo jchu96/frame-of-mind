@@ -15,6 +15,8 @@
 - Do not log transcripts, signed URLs, credentials, or raw MCP payloads.
 - Keep prompts resistant to instructions embedded in meeting evidence.
 - Add schema versions before changing durable output shapes.
+- Keep successful analysis, auxiliary outcome, and whole-run failure receipts
+  distinct. Never make a diagnostic artifact a second analysis authority.
 - Prefer dependency injection when adding provider alternatives.
 - Do not add Vertex conditionals throughout services; implement a backend boundary.
 

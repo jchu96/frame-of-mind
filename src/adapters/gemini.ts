@@ -14,7 +14,12 @@ import type {
   MeetingEvidence,
 } from "../domain/types.js";
 import { analysisDetailSchema, indexedMomentSchema } from "../domain/schemas.js";
-import { clipWindow } from "../lib/time.js";
+import {
+  clipWindow,
+  isCanonicalTimestamp,
+  timestampToSeconds,
+} from "../lib/time.js";
+import { CandidateAnalysisError } from "../domain/analysis-outcome.js";
 import {
   createGeminiFileUploader,
   GeminiFileError,
@@ -38,17 +43,17 @@ const FILE_REQUEST_TIMEOUT_MS = 30_000;
 
 const meetingIndexSchema = z.object({
   isRelevantCall: z.boolean(),
-  matchNotes: z.string(),
+  matchNotes: z.string().max(20_000),
   transcriptAlignment: z.object({
     offsetSeconds: z.number().finite(),
     confidence: z.enum(["high", "medium", "low", "none"]),
-    rationale: z.string(),
+    rationale: z.string().max(10_000),
   }),
   moments: z.array(indexedMomentSchema).max(1_000),
 }).strict();
 
 const videoOnlyIndexSchema = z.object({
-  matchNotes: z.string(),
+  matchNotes: z.string().max(20_000),
   moments: z.array(indexedMomentSchema).max(1_000),
 }).strict();
 
@@ -122,13 +127,29 @@ export class GeminiVideoAnalyzer {
         (error instanceof GeminiFileError
           ? error.remoteFileName
           : undefined);
-      if (cleanupName && !(await this.deleteByNameWithRetry(cleanupName))) {
+      if (cleanupName) {
+        const deleted = await this.deleteByNameWithRetry(cleanupName);
+        if (!deleted) {
+          throw new GeminiFileError(
+            "Gemini upload processing failed and remote cleanup could not be confirmed.",
+            cleanupName,
+            "unconfirmed",
+          );
+        }
         throw new GeminiFileError(
-          "Gemini upload processing failed and remote cleanup could not be confirmed.",
+          error instanceof GeminiFileError
+            ? error.message
+            : "Gemini file upload or processing failed.",
+          cleanupName,
+          "confirmed_deleted",
         );
       }
       if (error instanceof GeminiFileError) throw error;
-      throw new GeminiFileError("Gemini file upload or processing failed.");
+      throw new GeminiFileError(
+        "Gemini file upload or processing failed.",
+        undefined,
+        "unconfirmed",
+      );
     }
   }
 
@@ -137,6 +158,7 @@ export class GeminiVideoAnalyzer {
     meeting: MeetingEvidence | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
+    indexFps = 0.5,
   ): Promise<{
     isRelevantCall: boolean;
     matchNotes: string;
@@ -161,20 +183,29 @@ export class GeminiVideoAnalyzer {
                 fileUri: requireString(file.uri, "Gemini file URI"),
                 mimeType: file.mimeType,
               },
-              videoMetadata: { fps: 0.5 },
+              videoMetadata: { fps: indexFps },
             },
             {
               text: [
-                `Run the "${recipe.label}" recipe: ${recipe.description}`,
-                recipe.indexInstruction,
-                "Watch the entire screen recording and build an index of every potentially relevant moment.",
-                "For each candidate give precise start/end timestamps, speaker only when directly audible or visible, UI surface, kind, one-line summary, and importance.",
-                "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
-                "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
-                "No external meeting context or transcript was supplied. Base relevance and every claim on recording evidence only. Do not infer a meeting identity, participant identity, or off-screen discussion.",
-                focus
-                  ? `Prioritize this operator-supplied review focus, while still requiring direct recording evidence: ${focus}`
-                  : "Apply the selected recipe broadly while requiring direct recording evidence.",
+                promptSection(
+                  "context",
+                  "No external meeting context or transcript was supplied. Base relevance and every claim on recording evidence only. Do not infer a meeting identity, participant identity, or off-screen discussion.",
+                ),
+                promptSection("recipe", recipePrompt(recipe, "index")),
+                promptSection(
+                  "focus",
+                  focus
+                    ? `Prioritize this operator-supplied review focus, while still requiring direct recording evidence: ${focus}`
+                    : "Apply the selected recipe broadly while requiring direct recording evidence.",
+                ),
+                promptSection("task", [
+                  "Watch the entire screen recording and build an index of every potentially relevant moment.",
+                  "For each candidate give precise start/end timestamps, speaker only when directly audible or visible, UI surface, kind, one-line summary, and importance.",
+                  "Describe the direct audio and visual evidence before deciding why a moment is relevant.",
+                  "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
+                  "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
+                ].join("\n")),
+                "Based on the video and bounded context above, return only the structured index.",
               ].join("\n\n"),
             },
           ],
@@ -195,23 +226,35 @@ export class GeminiVideoAnalyzer {
         parts: [
           {
             fileData: { fileUri: requireString(file.uri, "Gemini file URI"), mimeType: file.mimeType },
-            videoMetadata: { fps: 0.5 },
+            videoMetadata: { fps: indexFps },
           },
           {
             text: [
-              `Run the "${recipe.label}" recipe: ${recipe.description}`,
-              recipe.indexInstruction,
-              "Watch the entire screen recording and build an index of every potentially relevant moment.",
-              "For each candidate give precise start/end timestamps, speaker when known, UI surface, kind, one-line summary, and importance.",
-              "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
-              "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
-              "Reject material outside the recipe. State whether video and transcript describe the same meeting.",
-              "The video may be a clip from the middle of a longer meeting transcript. Return transcriptAlignment.offsetSeconds as signed transcript-time minus video-time seconds. Negative values are valid when the transcript begins after the video. Use 0 only when both begin together or alignment is unavailable; explain confidence and rationale.",
-              focus
-                ? `Prioritize this operator-supplied review focus, while still requiring direct evidence: ${focus}`
-                : "Apply the selected recipe broadly while requiring direct meeting evidence.",
-              "Use the full timestamped transcript as corroborating evidence; the recording remains authoritative for visible UI claims.",
-              `<transcript>\n${meeting.transcript || `(No transcript returned by ${meeting.provider}.)`}\n</transcript>`,
+              promptSection(
+                "context",
+                [
+                  "Use the timestamped transcript as corroborating evidence; the recording remains authoritative for visible UI claims.",
+                  `<transcript>\n${escapePromptData(meeting.transcript || `(No transcript returned by ${meeting.provider}.)`)}\n</transcript>`,
+                ].join("\n"),
+                false,
+              ),
+              promptSection("recipe", recipePrompt(recipe, "index")),
+              promptSection(
+                "focus",
+                focus
+                  ? `Prioritize this operator-supplied review focus, while still requiring direct evidence: ${focus}`
+                  : "Apply the selected recipe broadly while requiring direct meeting evidence.",
+              ),
+              promptSection("task", [
+                "Watch the entire screen recording and build an index of every potentially relevant moment.",
+                "For each candidate give precise start/end timestamps, speaker when known, UI surface, kind, one-line summary, and importance.",
+                "Describe the direct audio and visual evidence before deciding why a moment is relevant.",
+                "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
+                "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
+                "Reject material outside the recipe. State whether video and transcript describe the same meeting.",
+                "The video may be a clip from the middle of a longer meeting transcript. Return transcriptAlignment.offsetSeconds as signed transcript-time minus video-time seconds. Negative values are valid when the transcript begins after the video. Use 0 only when both begin together or alignment is unavailable; explain confidence and rationale.",
+              ].join("\n")),
+              "Based on the video and bounded context above, return only the structured index.",
             ].join("\n\n"),
           },
         ],
@@ -234,6 +277,24 @@ export class GeminiVideoAnalyzer {
     focus?: string,
   ): Promise<AnalysisDetail> {
     const window = clipWindow(candidate.start, candidate.end);
+    const detailResponseSchema = z.preprocess(
+      normalizeLosslessDetailResponse,
+      analysisDetailSchema.superRefine((value, context) => {
+        const timestamp = value.evidence?.timestamp;
+        if (!timestamp || !isCanonicalTimestamp(timestamp)) return;
+        const seconds = timestampToSeconds(timestamp);
+        if (
+          seconds < timestampToSeconds(candidate.start)
+          || seconds > timestampToSeconds(candidate.end)
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["evidence", "timestamp"],
+            message: "evidence timestamp must fall inside the candidate range",
+          });
+        }
+      }),
+    );
     return this.generateStructured({
       model: this.model,
       contents: [{
@@ -249,19 +310,33 @@ export class GeminiVideoAnalyzer {
           },
           {
             text: [
-              `The whole-video index flagged: "${candidate.summary}" on ${candidate.surface || "an unknown surface"}.`,
-              `Apply the "${recipe.label}" recipe: ${recipe.description}`,
-              recipe.interrogationInstruction,
-              focus ? `The operator's review focus is: ${focus}` : "",
-              "Inspect the clip closely and produce one structured analysis record.",
-              "Only include appUrl when a browser address bar is visible and fully readable in this clip. Never infer, repair, or invent a URL.",
-              "Use details as neutral label/value pairs appropriate to the recipe. Copy relevant visible text and quotes verbatim. Record only steps actually observed.",
-              `If evidence.timestamp is present, use canonical HH:MM:SS within the indexed candidate range ${candidate.start} through ${candidate.end}.`,
-              "Keep output concise: title at most 500 characters; kind at most 120; at most 100 details and 100 steps; where.step and where.surface at most 2,000 each. Do not add keys outside the response schema.",
-              "If the candidate is ambiguous, outside the recipe, or unsupported on closer inspection, set accepted=false and explain why.",
-              nearbyTranscript === undefined
-                ? "No external meeting context or transcript was supplied. Base every claim on recording evidence and do not infer off-screen discussion."
-                : `<nearby-transcript>\n${nearbyTranscript || "(No aligned transcript slice available.)"}\n</nearby-transcript>`,
+              promptSection(
+                "context",
+                [
+                  `The whole-video index flagged: "${escapePromptData(candidate.summary)}" on ${escapePromptData(candidate.surface || "an unknown surface")}.`,
+                  nearbyTranscript === undefined
+                    ? "No external meeting context or transcript was supplied. Base every claim on recording evidence and do not infer off-screen discussion."
+                    : `<nearby-transcript>\n${escapePromptData(nearbyTranscript || "(No aligned transcript slice available.)")}\n</nearby-transcript>`,
+                ].join("\n"),
+                false,
+              ),
+              promptSection("recipe", recipePrompt(recipe, "detail")),
+              ...(focus
+                ? [promptSection("focus", `The operator's review focus is: ${focus}`)]
+                : []),
+              promptSection("evidence-example", [
+                "Observed state: a control is visibly disabled. This is direct evidence.",
+                "Inference: validation may be blocking the action. This is not a fact unless the clip or transcript establishes it, so label it Inference and state the observed basis.",
+              ].join("\n")),
+              promptSection("task", [
+                "Inspect the clip closely and produce one structured analysis record.",
+                "Only include appUrl when a browser address bar is visible and fully readable in this clip. Never infer, repair, or invent a URL.",
+                "Use details as neutral label/value pairs appropriate to the recipe. Copy relevant visible text and quotes verbatim. Record only steps actually observed.",
+                `If evidence.timestamp is present, use canonical HH:MM:SS within the indexed candidate range ${candidate.start} through ${candidate.end}.`,
+                "Keep output concise: title at most 500 characters; kind at most 120; at most 100 details and 100 steps; where.step and where.surface at most 2,000 each. Do not add keys outside the response schema.",
+                "If the candidate is ambiguous, outside the recipe, or unsupported on closer inspection, set accepted=false and explain why.",
+              ].join("\n")),
+              "Based on the clip and bounded context above, return only the structured analysis record.",
             ].join("\n\n"),
           },
         ],
@@ -274,7 +349,7 @@ export class GeminiVideoAnalyzer {
         responseJsonSchema: toGeminiProviderSchema(analysisDetailSchema),
       },
     }, "detail",
-      analysisDetailSchema,
+      detailResponseSchema,
       "Gemini analysis response",
     );
   }
@@ -317,7 +392,14 @@ export class GeminiVideoAnalyzer {
         withValidationRepairInstruction(parameters, error),
         phase,
       );
-      return parseGeminiJson(repaired.text, schema, label);
+      try {
+        return parseGeminiJson(repaired.text, schema, label);
+      } catch (repairError) {
+        if (repairError instanceof CandidateAnalysisError) {
+          throw repairError.withAttempts(2);
+        }
+        throw repairError;
+      }
     }
   }
 
@@ -347,7 +429,12 @@ function withValidationRepairInstruction(
   if (typeof systemInstruction !== "string") {
     throw new Error("Gemini structured request is missing its text system instruction.");
   }
-  const issues = error.issues.join(", ");
+  const issues = error.issues
+    .map((issue) => `${issue.path} (${issue.code})`)
+    .join(", ");
+  const failure = issues
+    ? `${error.code}: ${issues}`
+    : error.code;
   return {
     ...parameters,
     config: {
@@ -355,13 +442,61 @@ function withValidationRepairInstruction(
       systemInstruction: [
         systemInstruction,
         "The previous response was discarded because strict local validation rejected " +
-          `these schema locations: ${issues}.`,
+          `it (${failure}).`,
         "Regenerate the complete JSON object from the recording. Preserve evidence fidelity. " +
           "If an optional value cannot satisfy its schema exactly, omit that optional property. " +
           "Do not invent, repair, truncate, or coerce evidence to make it pass.",
       ].join("\n\n"),
     },
   };
+}
+
+function normalizeLosslessDetailResponse(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.evidence)) return value;
+  const timestamp = value.evidence.timestamp;
+  if (typeof timestamp !== "string") return value;
+  const match = /^(\d{2,}:[0-5]\d:[0-5]\d)\.0+$/.exec(timestamp);
+  if (!match?.[1]) return value;
+  return {
+    ...value,
+    evidence: {
+      ...value.evidence,
+      timestamp: match[1],
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function recipePrompt(
+  recipe: AnalysisRecipe,
+  phase: "index" | "detail",
+): string {
+  return [
+    `Name: ${recipe.label}`,
+    `Description: ${recipe.description}`,
+    phase === "index"
+      ? `Index instruction: ${recipe.indexInstruction}`
+      : `Interrogation instruction: ${recipe.interrogationInstruction}`,
+  ].join("\n");
+}
+
+function promptSection(
+  name: string,
+  value: string,
+  escape = true,
+): string {
+  const content = escape ? escapePromptData(value) : value;
+  return `<${name}>\n${content}\n</${name}>`;
+}
+
+function escapePromptData(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 export interface GeminiAnalyzerDependencies {
