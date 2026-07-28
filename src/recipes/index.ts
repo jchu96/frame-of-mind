@@ -13,6 +13,22 @@ const recipeSchema = z.object({
   revision: z.string().min(1).max(120).optional(),
 }).strict();
 
+export const analysisDepthSchema = z.enum(["standard", "deep"]);
+export type AnalysisDepth = z.infer<typeof analysisDepthSchema>;
+
+const DEEP_INDEX_INSTRUCTION = [
+  "Deep-understanding profile:",
+  "First identify direct audio and visual observations, then identify the intent, constraint, alternative, exception, consequence, or uncertainty they support.",
+  "Include adjacent moments that materially clarify or contradict the apparent request; do not isolate a quote from its resolution.",
+  "Prefer precise timestamps and small coherent windows. Keep observation distinct from interpretation and never promote a plausible implication to a stated fact.",
+].join(" ");
+
+const DEEP_INTERROGATION_INSTRUCTION = [
+  "Analyze the candidate in layers: directly observed audio/visual evidence; supported meaning or intent; plausible implications; counterevidence or alternatives; and what still requires verification.",
+  "Label every inference as Inference and state its observed basis. Use labels such as Observed state, Direct request, Interpretation, Inference, Alternative, Uncertainty, and Verification needed when applicable.",
+  "Do not expose hidden reasoning or invent off-screen state; return only concise conclusions and evidence through the structured fields.",
+].join(" ");
+
 const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
   "issue-review": {
     id: "issue-review",
@@ -59,6 +75,16 @@ const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
     interrogationInstruction:
       "Produce a grounded implementation input, not invented code architecture. Separate what was requested from inferred implementation implications and clearly label every inference.",
   },
+  "communication-coaching": {
+    id: "communication-coaching",
+    label: "Communication coaching",
+    description:
+      "Analyze observable communication and teaching patterns in this recording and produce respectful, evidence-backed guidance.",
+    indexInstruction:
+      "Find representative moments of observable communication: explanation structure, questioning, examples, pacing, emphasis, turn-taking, response to confusion, and repair or reframing. Include counterexamples and learner or audience signals when visible or audible. Find missed questions, objections, openings, or response cues when supported by the interaction; reject personality diagnoses and unsupported claims about aptitude, mental state, or sensitive traits.",
+    interrogationInstruction:
+      "Scope every pattern to behavior observable in this recording. Separate Observation, Stated goal, Interpreted intent, Likely effect, Missed cue, Alternative interpretation, Guidance, and Suggested practice. Infer likely intent only when useful, cite its observed basis, label it as interpretation rather than an observed fact, and include a plausible alternative. Compare stated intent with observable audience response when context supplies the speaker's goal. Preserve strengths as well as growth opportunities, cite exact spoken or visible evidence, and make advice conditional on the audience and goal. Do not diagnose personality, aptitude, mental health, or protected or sensitive traits, and do not generalize one recording into a stable judgment about the person.",
+  },
 };
 
 export function builtInRecipe(id: string): AnalysisRecipe {
@@ -92,5 +118,32 @@ export async function loadRecipe(id: string, recipeFile?: string): Promise<{
     custom: Boolean(recipeFile),
     sha256: await digestRecipe(recipe),
     revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-07-27.1"),
+  };
+}
+
+export async function withAnalysisDepth(
+  loaded: Awaited<ReturnType<typeof loadRecipe>>,
+  depth: AnalysisDepth,
+): Promise<Awaited<ReturnType<typeof loadRecipe>> & {
+  depth: AnalysisDepth;
+  indexFps: number;
+}> {
+  const validatedDepth = analysisDepthSchema.parse(depth);
+  if (validatedDepth === "standard") {
+    return { ...loaded, depth: validatedDepth, indexFps: 0.5 };
+  }
+  const recipe: AnalysisRecipe = {
+    ...loaded.recipe,
+    indexInstruction: `${loaded.recipe.indexInstruction}\n\n${DEEP_INDEX_INSTRUCTION}`,
+    interrogationInstruction:
+      `${loaded.recipe.interrogationInstruction}\n\n${DEEP_INTERROGATION_INSTRUCTION}`,
+  };
+  return {
+    ...loaded,
+    recipe,
+    sha256: await digestRecipe(recipe),
+    revision: `deep-understanding-v1-${loaded.sha256.slice(0, 12)}`,
+    depth: validatedDepth,
+    indexFps: 1,
   };
 }

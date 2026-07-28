@@ -26,11 +26,19 @@
 
 ## Artifacts
 
-- Write `analysis.json`, `analysis.md`, `report.html`, and `manifest.json` together.
+- Write `analysis.json`, `analysis-outcome.json`, `analysis.md`, `report.html`,
+  and `manifest.json` together.
+- Isolate only typed model-response failures per detail candidate. Keep
+  schema-valid rejected records, distinguish them from failures, and record
+  indexed candidates omitted by the configured limit.
+- Publish only a sanitized `failure-manifest.json` when a whole run fails after
+  remote upload. Never persist exception messages or provider payloads.
 - Publish the validated staging directory atomically before optional projection.
 - Treat projection failure as a warning; the durable run remains successful.
 - Use private file permissions for meeting artifacts.
-- Include SHA-256 provenance, model, timestamps, source class, and remote deletion state.
+- Include SHA-256 provenance, model, timestamps, source class, and remote
+  deletion state. Failure cleanup uses an explicit confirmed/retained/unconfirmed
+  state.
 - Never include signed recording URLs or credential values.
 
 ## Cleanup

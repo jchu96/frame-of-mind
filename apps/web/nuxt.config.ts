@@ -306,7 +306,7 @@ export default defineNuxtConfig({
     cloudflareAccessAud: "",
     public: {
       appName: "Frame of Mind",
-      appVersion: "0.2.1",
+      appVersion: "0.3.0",
       studioEnabled: localStudioEnabled,
     },
   },

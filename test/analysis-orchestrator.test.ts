@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +16,8 @@ import {
   type AnalysisProgressEvent,
   type AnalysisVideoAnalyzer,
 } from "../src/services/analyze.js";
+import { CandidateAnalysisError } from "../src/domain/analysis-outcome.js";
+import { GeminiFileError } from "../src/adapters/gemini-files.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -77,6 +79,7 @@ describe("AnalysisOrchestrator", () => {
       undefined,
       fixture.options.recipe,
       undefined,
+      0.5,
     );
     expect(fixture.analyzer.interrogate).toHaveBeenCalledWith(
       expect.any(Object),
@@ -168,6 +171,23 @@ describe("AnalysisOrchestrator", () => {
     });
 
     expect(requestedModel).toBe("gemini-test");
+  });
+
+  it("records the selected whole-video sampling rate in provenance", async () => {
+    const fixture = await createFixture();
+    const result = await createOrchestrator(fixture).analyze({
+      ...fixture.options,
+      indexFps: 1,
+    });
+
+    expect(fixture.analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      fixture.meeting,
+      fixture.options.recipe,
+      undefined,
+      1,
+    );
+    expect(result.manifest.analysis.indexFps).toBe(1);
   });
 
   it("rejects staged media whose bytes no longer match its receipt", async () => {
@@ -297,22 +317,352 @@ describe("AnalysisOrchestrator", () => {
     expect(fixture.analyzer.delete).toHaveBeenCalledTimes(1);
   });
 
-  it("deletes the remote upload and empty meeting container after analysis failure", async () => {
+  it("does not publish when cancellation coincides with an upload failure", async () => {
     const fixture = await createFixture();
+    const controller = new AbortController();
+    fixture.analyzer.upload = vi.fn(async () => {
+      controller.abort();
+      throw new GeminiFileError(
+        "Gemini upload failed after cancellation.",
+        "files/canceled-upload",
+        "confirmed_deleted",
+      );
+    });
+
+    await expect(
+      createOrchestrator(fixture).analyze(fixture.options, {
+        signal: controller.signal,
+      }),
+    ).rejects.toBeInstanceOf(AnalysisCanceledError);
+
+    await expect(stat(join(fixture.outputRoot, fixture.meeting.id)))
+      .rejects.toThrow();
+  });
+
+  it("deletes the remote upload and publishes a sanitized failure manifest after an unexpected analysis failure", async () => {
+    const fixture = await createFixture();
+    const privateProviderPayload = "private-provider-payload-must-not-persist";
     fixture.analyzer.interrogate = vi.fn(async () => {
       throw new Error(
-        "Gemini analysis response failed strict local validation at where.appUrl (custom).",
+        `Gemini adapter invariant failed: ${privateProviderPayload}`,
       );
     });
 
     await expect(
       createOrchestrator(fixture).analyze(fixture.options),
-    ).rejects.toThrow("where.appUrl");
+    ).rejects.toThrow(privateProviderPayload);
 
     expect(fixture.analyzer.delete).toHaveBeenCalledTimes(1);
-    await expect(
-      stat(join(fixture.outputRoot, fixture.meeting.id)),
-    ).rejects.toThrow();
+    const receiptPath = join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+      "failure-manifest.json",
+    );
+    const receipt = await readFile(receiptPath, "utf8");
+    expect(JSON.parse(receipt)).toMatchObject({
+      schemaVersion: 1,
+      runId: "run-test",
+      status: "failed",
+      phase: "detail",
+      error: { code: "unexpected_failure" },
+      remoteFile: { cleanup: "confirmed_deleted" },
+    });
+    expect(receipt).not.toContain(privateProviderPayload);
+    expect(await readdir(join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+    ))).toEqual(["failure-manifest.json"]);
+  });
+
+  it("publishes only sanitized schema locations when indexing exhausts repair", async () => {
+    const fixture = await createFixture();
+    fixture.analyzer.index = vi.fn(async () => {
+      throw new CandidateAnalysisError({
+        code: "schema_validation",
+        attempts: 2,
+        issues: [{ path: "moments.0.surface", code: "too_big" }],
+        cause: new Error("private index response"),
+      });
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options))
+      .rejects.toBeInstanceOf(CandidateAnalysisError);
+
+    const receipt = await readFile(join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+      "failure-manifest.json",
+    ), "utf8");
+    expect(JSON.parse(receipt)).toMatchObject({
+      phase: "index",
+      error: {
+        code: "schema_validation",
+        attempts: 2,
+        issues: [{ path: "moments.0.surface", code: "too_big" }],
+      },
+      remoteFile: { cleanup: "confirmed_deleted" },
+    });
+    expect(receipt).not.toContain("private index response");
+  });
+
+  it("does not let malformed optional remote metadata mask the original failure", async () => {
+    const fixture = await createFixture();
+    fixture.analyzer.upload = vi.fn(async () => ({
+      name: "files/test",
+      uri: "https://generativelanguage.googleapis.com/v1beta/files/test",
+      mimeType: "video/mp4",
+      state: "ACTIVE",
+      expirationTime: "x".repeat(121),
+    }));
+    fixture.analyzer.interrogate = vi.fn(async () => {
+      throw new Error("original-safe-failure");
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options))
+      .rejects.toThrow("original-safe-failure");
+
+    const receipt = JSON.parse(await readFile(join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+      "failure-manifest.json",
+    ), "utf8"));
+    expect(receipt.remoteFile).not.toHaveProperty("expirationTime");
+    expect(receipt.remoteFile.cleanup).toBe("confirmed_deleted");
+  });
+
+  it("records unconfirmed cleanup without persisting the thrown provider error", async () => {
+    const fixture = await createFixture();
+    const events: AnalysisProgressEvent[] = [];
+    fixture.analyzer.interrogate = vi.fn(async () => {
+      throw new Error("private detail response");
+    });
+    fixture.analyzer.delete = vi.fn(async () => {
+      throw new Error("private delete response");
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options, {
+      progress: { report: (event) => events.push(event) },
+    }))
+      .rejects.toThrow("private detail response");
+
+    const receipt = await readFile(join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+      "failure-manifest.json",
+    ), "utf8");
+    expect(fixture.analyzer.delete).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(receipt).remoteFile.cleanup).toBe("unconfirmed");
+    expect(receipt).not.toContain("private detail response");
+    expect(receipt).not.toContain("private delete response");
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "warning",
+      message: expect.stringContaining("cleanup is unconfirmed"),
+    }));
+  });
+
+  it("publishes upload cleanup provenance when processing fails after a remote file is obtained", async () => {
+    const fixture = await createFixture();
+    fixture.analyzer.upload = vi.fn(async () => {
+      throw new GeminiFileError(
+        "Gemini upload processing failed and remote cleanup could not be confirmed.",
+        "files/upload-failure",
+        "unconfirmed",
+      );
+    });
+    const events: AnalysisProgressEvent[] = [];
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options, {
+      progress: { report: (event) => events.push(event) },
+    })).rejects.toThrow("remote cleanup could not be confirmed");
+
+    const receipt = JSON.parse(await readFile(join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+      "failure-manifest.json",
+    ), "utf8"));
+    expect(receipt).toMatchObject({
+      phase: "upload",
+      error: { code: "unexpected_failure" },
+      remoteFile: {
+        name: "files/upload-failure",
+        cleanup: "unconfirmed",
+      },
+    });
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "warning",
+      message: expect.stringContaining("cleanup is unconfirmed"),
+    }));
+  });
+
+  it("drops malformed upload identity without masking the original failure", async () => {
+    const fixture = await createFixture();
+    fixture.analyzer.upload = vi.fn(async () => {
+      throw new GeminiFileError(
+        "safe upload failure",
+        "../../private-provider-name",
+        "unconfirmed",
+      );
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options))
+      .rejects.toThrow("safe upload failure");
+
+    const receipt = JSON.parse(await readFile(join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+      "failure-manifest.json",
+    ), "utf8"));
+    expect(receipt.remoteFile).toEqual({ cleanup: "unconfirmed" });
+  });
+
+  it("does not promise exact recovery when unconfirmed cleanup has no file name", async () => {
+    const fixture = await createFixture();
+    const events: AnalysisProgressEvent[] = [];
+    fixture.analyzer.upload = vi.fn(async () => {
+      throw new GeminiFileError(
+        "upload finalization was ambiguous",
+        undefined,
+        "unconfirmed",
+      );
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options, {
+      progress: { report: (event) => events.push(event) },
+    })).rejects.toThrow("upload finalization was ambiguous");
+
+    const warning = events.find((event) => event.kind === "warning");
+    expect(warning).toEqual(expect.objectContaining({
+      message: expect.stringContaining("identity is unavailable"),
+    }));
+    expect(warning).not.toEqual(expect.objectContaining({
+      message: expect.stringContaining("exact-file recovery"),
+    }));
+  });
+
+  it("records intentionally retained cleanup when keep-upload is explicit", async () => {
+    const fixture = await createFixture();
+    fixture.options.keepUpload = true;
+    fixture.analyzer.interrogate = vi.fn(async () => {
+      throw new Error("private detail response");
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options))
+      .rejects.toThrow("private detail response");
+
+    const receipt = JSON.parse(await readFile(join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+      "failure-manifest.json",
+    ), "utf8"));
+    expect(fixture.analyzer.delete).not.toHaveBeenCalled();
+    expect(receipt.remoteFile.cleanup).toBe("intentionally_retained");
+  });
+
+  it("isolates one exhausted detail response and publishes valid candidates", async () => {
+    const fixture = await createFixture();
+    const privateProviderPayload = "private-provider-payload-must-not-persist";
+    fixture.options.maxIncidents = 4;
+    fixture.analyzer.index = vi.fn(async () => ({
+      ...indexResult(),
+      moments: [1, 2, 3, 4, 5].map((second) => ({
+        ...indexResult().moments[0]!,
+        start: `00:00:0${second}`,
+        end: `00:00:0${second + 1}`,
+      })),
+    }));
+    fixture.analyzer.interrogate = vi.fn(async (_file, candidate) => {
+      if (candidate.start === "00:00:02") {
+        throw new CandidateAnalysisError({
+          code: "schema_validation",
+          attempts: 2,
+          issues: [{ path: "where.surface", code: "too_big" }],
+          cause: new Error(privateProviderPayload),
+        });
+      }
+      return {
+        ...detailResult(),
+        accepted: candidate.start !== "00:00:03",
+        evidence: { timestamp: candidate.start },
+      };
+    });
+    const events: AnalysisProgressEvent[] = [];
+
+    const result = await createOrchestrator(fixture).analyze(fixture.options, {
+      progress: { report: (event) => events.push(event) },
+    });
+
+    expect(result.analysis.items).toHaveLength(3);
+    expect(result.outcome).toMatchObject({
+      status: "partial",
+      candidates: {
+        indexed: 5,
+        selected: 4,
+        omittedByLimit: 1,
+        validated: 3,
+        accepted: 2,
+        rejected: 1,
+        failed: 1,
+      },
+      failures: [{
+        candidateOrdinal: 2,
+        start: "00:00:02",
+        end: "00:00:03",
+        code: "schema_validation",
+        attempts: 2,
+        issues: [{ path: "where.surface", code: "too_big" }],
+      }],
+    });
+    expect(result.manifest.artifacts).toContain("analysis-outcome.json");
+    expect(result.manifest.remoteFile?.deleted).toBe(true);
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "warning",
+      stage: "interrogating",
+      message: "Candidate 2 could not be validated after 2 attempts; continuing with remaining candidates.",
+    }));
+    const persisted = await readFile(
+      join(result.directory, "analysis-outcome.json"),
+      "utf8",
+    );
+    expect(JSON.parse(persisted)).toEqual(result.outcome);
+    expect(persisted).not.toContain(privateProviderPayload);
+  });
+
+  it("publishes a failed sanitized outcome and cleanup receipt when every detail fails", async () => {
+    const fixture = await createFixture();
+    fixture.analyzer.interrogate = vi.fn(async () => {
+      throw new CandidateAnalysisError({
+        code: "invalid_json",
+        attempts: 2,
+      });
+    });
+
+    const result = await createOrchestrator(fixture).analyze(fixture.options);
+
+    expect(result.analysis.items).toEqual([]);
+    expect(result.outcome).toMatchObject({
+      status: "failed",
+      candidates: {
+        indexed: 1,
+        selected: 1,
+        omittedByLimit: 0,
+        validated: 0,
+        accepted: 0,
+        rejected: 0,
+        failed: 1,
+      },
+      failures: [{ code: "invalid_json", attempts: 2 }],
+    });
+    expect(result.manifest.remoteFile?.deleted).toBe(true);
+    await expect(stat(join(result.directory, "manifest.json"))).resolves.toBeDefined();
+    await expect(stat(join(result.directory, "analysis-outcome.json"))).resolves.toBeDefined();
   });
 
   it("freezes cleanup provenance at publication and warns when deletion fails", async () => {

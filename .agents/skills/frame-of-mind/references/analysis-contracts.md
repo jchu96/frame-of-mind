@@ -11,12 +11,14 @@ schemaVersion
 recipe
   id
   label
-meeting
+meeting? (schema v2)
   id
   provider
   title?
   createdAt?
   sourceUrl?
+context? (schema v3)
+  mode: none
 model
 matchNotes
 items[]
@@ -61,6 +63,26 @@ Run provenance:
 
 It must not contain credentials, signed URLs, raw provider payloads, full
 transcripts, remote file URI, or local input path.
+
+## `analysis-outcome.json`
+
+Strict auxiliary status receipt:
+
+- indexed, selected, limit-omitted, validated, accepted, rejected, and failed
+  candidate counts;
+- complete, partial, or failed detail outcome;
+- candidate ordinal/time window;
+- sanitized error code, bounded attempts, and schema path/code pairs.
+
+It never contains rejected values or provider/model payloads.
+
+## `failure-manifest.json`
+
+Whole-run failure receipt published after upload begins and before a normal
+bundle becomes authoritative. It records phase, sanitized error
+classification, hashes, and `not_obtained`, `confirmed_deleted`,
+`intentionally_retained`, or `unconfirmed` cleanup. It is not importable as an
+analysis run.
 
 ## `analysis.md`
 

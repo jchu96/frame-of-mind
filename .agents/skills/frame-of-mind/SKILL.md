@@ -1,6 +1,6 @@
 ---
 name: frame-of-mind
-description: Operate Frame of Mind, a local video-understanding CLI that combines Bluedot, Granola, or file context with screen recordings and Gemini 3.6 Flash. Use when analyzing a meeting video for decisions, requirements, action items, repository plans, grounded issue reviews, custom recipe outputs, transcript alignment, or portable HTML/Markdown/JSON artifacts.
+description: Operate Frame of Mind, a local video-understanding CLI that combines optional Bluedot, Granola, or file context with screen recordings and Gemini. Use for decisions, requirements, action items, repository plans, UX reviews, communication/self-review, technical or process walkthroughs, video Q&A, transcript alignment, or portable HTML/Markdown/JSON artifacts.
 ---
 
 # Frame of Mind
@@ -9,8 +9,9 @@ Video in. Understanding out.
 
 Use Frame of Mind to run a selected analysis recipe over an authorized meeting
 recording. Treat `analysis.json` as the durable result, `manifest.json` as
-provenance, and Markdown/HTML as review renderings. In v0.2/schema v2 the JSON
-files are one bound unit: both share `runId`, and the manifest stores the
+provenance, `analysis-outcome.json` as the auxiliary completeness receipt, and
+Markdown/HTML as review renderings. Meeting-backed schema v2 and explicit
+video-only schema v3 each bind analysis and manifest through `runId` and the
 canonical analysis SHA-256.
 
 ## Locate and Read
@@ -32,7 +33,11 @@ Before operating:
 2. Read the relevant part of `docs/RUNBOOK.md`.
 3. Read `docs/CREDENTIALS.md` for Gemini setup.
 4. Read `docs/RECIPES.md` when selecting or authoring a recipe.
-5. Read `references/meeting-to-issue.md` when producing a repository issue,
+5. Read `docs/VIDEO_UNDERSTANDING.md` for deep analysis, model choice, SOP,
+   technical explanation, coaching, or Q&A work.
+6. Read `docs/ARTIFACT_COMPOSITION.md` before composing an issue, SOP,
+   technical explainer, coaching report, or Q&A deliverable.
+7. Read `references/meeting-to-issue.md` when producing a repository issue,
    reporting specification, or implementation proposal.
 
 ## Safety
@@ -84,7 +89,7 @@ on their behalf. A Google Cloud project can be imported into AI Studio. Vertex
 AI ADC is not a drop-in replacement because the current Files API upload method
 is unavailable on a Vertex client. See `docs/CREDENTIALS.md`.
 
-Version 0.2.1 uses Google's documented resumable upload protocol and a
+Version 0.3.0 uses Google's documented resumable upload protocol and a
 provider-safe response schema with strict local Zod validation. Before the
 first sensitive analysis, and after changing Bun, `@google/genai`, the model,
 upload, or response schemas, run:
@@ -133,10 +138,14 @@ Built-ins:
 - `requirements`
 - `action-items`
 - `repo-plan`
+- `communication-coaching`
 
 Choose the output the user actually wants. Do not default to `issue-review`
 when the request is for decisions, requirements, actions, or implementation
-planning.
+planning. Use `communication-coaching` for self-review, teaching, facilitation,
+intent-versus-impact, or missed-cue analysis. Intent may be inferred when it is
+labeled as interpretation, grounded in observed behavior, and paired with a
+plausible alternative.
 
 ## Analyze
 
@@ -195,6 +204,32 @@ the transcript begins after the video.
 Use `--focus` only to prioritize a stated concern. Use `--max-moments 3` for a
 bounded trial. Avoid `--keep-upload`.
 
+For a video without meeting context:
+
+```bash
+frameofmind analyze "<stable-id>" \
+  --source none \
+  --video "<recording.mp4>" \
+  --recipe issue-review
+```
+
+For experimental in-depth review:
+
+```bash
+frameofmind analyze "<stable-id>" \
+  --source none \
+  --video "<recording.mp4>" \
+  --recipe communication-coaching \
+  --depth deep \
+  --model gemini-pro-latest \
+  --focus "Compare stated goal with audience response and identify missed cues"
+```
+
+`deep` currently means 1 FPS indexing plus layered prompting under the existing
+two-pass schema. The selected model runs both passes. `gemini-pro-latest` is a
+mutable alias; do not describe it as a reproducible resolved model or as the
+future mixed-model synthesis pipeline.
+
 For topic- or speaker-scoped work, fetch transcript context first and cut the
 smallest useful local derivatives before upload. Semantic scope includes all
 participants who clarify or complete the requirement. Preserve raw speaker
@@ -239,9 +274,10 @@ Report sanitized phase/status only. Do not expose raw provider or model payloads
 Open in this order:
 
 1. `manifest.json`
-2. `analysis.md` or `report.html`
-3. `moment-*.png`
-4. `analysis.json`, including rejected candidates
+2. `analysis-outcome.json`
+3. `analysis.md` or `report.html`
+4. `moment-*.png`
+5. `analysis.json`, including rejected candidates
 
 Verify:
 
@@ -253,7 +289,12 @@ Verify:
 - timestamp, quote, visible state, and speaker;
 - canonical `HH:MM:SS` ranges with evidence inside its candidate window;
 - explicit facts versus labeled inference;
+- indexed/selected/omitted/validated/accepted/rejected/failed counts;
 - `remoteFile.deleted: true` unless retention was intentional.
+
+If no normal bundle exists, inspect `failure-manifest.json`. It contains only
+sanitized phase/error metadata and remote cleanup provenance. Never ask for the
+raw provider response that caused it; reproduce useful shapes synthetically.
 
 ## Report
 

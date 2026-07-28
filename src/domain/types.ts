@@ -19,7 +19,8 @@ export type BuiltInRecipeId =
   | "decisions"
   | "requirements"
   | "action-items"
-  | "repo-plan";
+  | "repo-plan"
+  | "communication-coaching";
 
 export interface AnalysisRecipe {
   id: string;

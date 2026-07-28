@@ -235,7 +235,7 @@ For a clip that begins at full-meeting `00:12:40`, pass
 
 ## 5. Run bounded analysis
 
-> **Live preflight:** v0.2.1 ships the direct resumable upload and
+> **Live preflight:** v0.3.0 ships the direct resumable upload and
 > provider-safe schema fixes. Before using private media, run
 > `bun run smoke:gemini`. It must complete upload, both structured model
 > passes, and exact remote deletion using generated media.
@@ -264,7 +264,7 @@ accepted records during synthesis; do not concatenate arbitrary clips and then
 pretend they share one continuous timeline.
 
 Current production behavior uses the repository's Gemini adapter. Direct
-resumable upload is shipped and tested in v0.2.1. Beta Interactions remains a
+resumable upload is shipped and tested in v0.3.0. Beta Interactions remains a
 diagnostic path and is not a substitute for the stable production generation
 surface.
 
@@ -614,7 +614,7 @@ details, and generated analysis remain outside this public repository.
 | Analysis includes irrelevant meeting content | available media was mistaken for requested scope | reselect transcript windows and cut derivatives |
 | Useful collaborator detail was omitted | scope was reduced to a person's airtime | expand to the full relevant conversational turn |
 | Clip quotes come from meeting start | missing transcript offset | calculate and pass the full-meeting clip start |
-| Gemini upload returns empty 404 | old SDK wrapper or current transport failure | upgrade to v0.2.1, run `bun run smoke:gemini`, and diagnose the sanitized phase/status; do not assume invalid auth |
+| Gemini upload returns empty 404 | old SDK wrapper or current transport failure | upgrade to v0.3.0, run `bun run smoke:gemini`, and diagnose the sanitized phase/status; do not assume invalid auth |
 | Structured output returns `400 INVALID_ARGUMENT` | unsupported JSON Schema keyword | minimize provider schema and retain strict local Zod validation |
 | Provider-valid JSON fails local validation | provider subset omitted local bounds | fail closed; an adapter change may add at most one corrective retry, never a cast or truncation |
 | Automated screenshot upload fails | browser security or tool boundary | use the UI manually or an authorized artifact path |
