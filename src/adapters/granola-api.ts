@@ -52,7 +52,7 @@ export class GranolaApiClient implements MeetingContextSource {
       headers: {
         authorization: `Bearer ${this.apiKey}`,
         accept: "application/json",
-        "user-agent": "frameofmind/0.2.1",
+        "user-agent": "frameofmind/0.3.0",
       },
       redirect: "error",
       signal: AbortSignal.timeout(30_000),

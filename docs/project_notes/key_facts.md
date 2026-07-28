@@ -137,3 +137,15 @@
 - Local Studio uses an unauthenticated inert `/__studio/launch` page only for
   fragment exchange; every data-bearing Studio page and API requires the
   per-launch HttpOnly session.
+- Gemini detail failures are repaired once and isolated per candidate only when
+  they cross the typed provider-response boundary; strict Zod remains local
+  authority.
+- `analysis-outcome.json` separates indexed, selected, limit-omitted,
+  validated, accepted, rejected, and failed candidate counts.
+- A whole-run failure after remote upload publishes only a sanitized
+  `failure-manifest.json` with exact cleanup status.
+- `--depth deep` currently means denser indexing and layered prompting using
+  one selected model for both passes; role-separated Flash/Pro synthesis is a
+  proposed v4 architecture, not shipped behavior.
+- `communication-coaching` supports evidence-backed intent-versus-impact and
+  missed-cue review scoped to the recording.

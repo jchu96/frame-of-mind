@@ -31,6 +31,8 @@ decision may be made in place.
 | [0010](0010-resumable-gemini-upload-and-local-schema-authority.md) | Use resumable Gemini upload and keep Zod authoritative | Accepted | 2026-07-27 |
 | [0011](0011-ephemeral-local-context-staging.md) | Keep local context staging bounded and ephemeral | Accepted | 2026-07-27 |
 | [0012](0012-explicit-video-only-run-provenance.md) | Record video-only runs without fabricated meeting context | Accepted | 2026-07-28 |
+| [0013](0013-defensive-gemini-response-boundary.md) | Defend the Gemini response boundary per candidate | Accepted | 2026-07-28 |
+| [0014](0014-versioned-evidence-and-artifact-families.md) | Version evidence separately from composed artifact families | Proposed | 2026-07-28 |
 
 ## Adding An ADR
 

@@ -2,22 +2,56 @@
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
-import { analyzeMeeting, type AnalysisProgressEvent } from "./services/analyze.js";
+import { z } from "zod";
+import {
+  analyzeMeeting,
+  type AnalysisProgressEvent,
+  type AnalyzeOptions,
+} from "./services/analyze.js";
 import { BluedotClient, DEFAULT_BLUEDOT_MCP_URL } from "./adapters/bluedot-mcp.js";
 import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.js";
 import type { ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
 import { redactUrlForDisplay } from "./lib/http.js";
-import { listBuiltInRecipes, loadRecipe } from "./recipes/index.js";
+import {
+  analysisDepthSchema,
+  listBuiltInRecipes,
+  loadRecipe,
+  withAnalysisDepth,
+} from "./recipes/index.js";
 
 loadDotenv({ quiet: true });
 
 const program = new Command()
   .name("frameofmind")
   .description("Video in. Understanding out. Run structured analysis recipes over meeting recordings.")
-  .version("0.2.1");
+  .version("0.3.0");
+
+const geminiModelSchema = z.string()
+  .min(1)
+  .max(120)
+  .regex(/^gemini-[a-z0-9][a-z0-9.-]*$/, "expected a Gemini model ID");
+
+export interface AnalyzeCliFlags {
+  video?: string;
+  recordingUrl?: string;
+  source: string;
+  granolaTransport: string;
+  recipe: string;
+  recipeFile?: string;
+  contextFile?: string;
+  transcriptOffset?: string;
+  focus?: string;
+  depth: string;
+  model?: string;
+  output: string;
+  maxMoments: string;
+  screenshots: boolean;
+  keepUpload?: boolean;
+}
 
 program
   .command("auth")
@@ -63,9 +97,9 @@ program
 
 program
   .command("analyze")
-  .description("Analyze one meeting using Bluedot, Granola, or a local context file.")
-  .argument("<meeting-id>", "Provider meeting/note ID or a stable local identifier")
-  .requiredOption("--source <provider>", "Context provider: bluedot, granola, or file")
+  .description("Analyze one video with optional Bluedot, Granola, or local context.")
+  .argument("[meeting-id]", "Provider meeting/note ID; omit with --source none")
+  .requiredOption("--source <provider>", "Context provider: bluedot, granola, file, or none")
   .option("--granola-transport <transport>", "Granola context transport: mcp or api", "mcp")
   .option("--recipe <id>", "Built-in recipe", "issue-review")
   .option("--recipe-file <path>", "Custom JSON recipe; overrides --recipe")
@@ -74,82 +108,27 @@ program
   .option("--recording-url <url>", "Use an expiring signed Bluedot media URL")
   .option("--transcript-offset <timestamp>", "Transcript time corresponding to video 00:00, for example 01:02:47")
   .option("--focus <instruction>", "Prioritize a specific repository, workflow, or UX concern")
+  .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
+  .option("--model <id>", "Gemini model ID, for example gemini-3.6-flash or gemini-pro-latest")
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
   .option("--max-moments <count>", "Maximum candidate moments to interrogate", "10")
   .option("--no-screenshots", "Skip ffmpeg screenshots")
   .option("--keep-upload", "Leave the Gemini file until its provider expiration time")
   .action(
     async (
-      meetingId: string,
-      flags: {
-        video?: string;
-        recordingUrl?: string;
-        source: string;
-        granolaTransport: string;
-        recipe: string;
-        recipeFile?: string;
-        contextFile?: string;
-        transcriptOffset?: string;
-        focus?: string;
-        output: string;
-        maxMoments: string;
-        screenshots: boolean;
-        keepUpload?: boolean;
-      },
+      meetingId: string | undefined,
+      flags: AnalyzeCliFlags,
     ) => {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
-      const recipeResult = await loadRecipe(flags.recipe, flags.recipeFile);
-      const contextProvider = parseProvider(flags.source, true);
-      const granolaTransport = parseGranolaTransport(flags.granolaTransport);
-      if (contextProvider !== "granola" && granolaTransport !== "mcp") {
-        throw new Error("--granola-transport is only valid with --source granola.");
-      }
-      if (flags.video && flags.recordingUrl) throw new Error("Use either --video or --recording-url, not both.");
-      if (flags.recordingUrl && contextProvider !== "bluedot") {
-        throw new Error("--recording-url is only valid with --source bluedot.");
-      }
-      if (contextProvider === "file" && !flags.contextFile) {
-        throw new Error("--context-file is required with --source file.");
-      }
-      if (contextProvider !== "file" && flags.contextFile) {
-        throw new Error("--context-file is only valid with --source file.");
-      }
-      if (!/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
-      const maxIncidents = Number(flags.maxMoments);
-      if (!Number.isSafeInteger(maxIncidents) || maxIncidents > 1_000) {
-        throw new Error("--max-moments must be between 1 and 1000.");
-      }
-      if (flags.video) await access(resolve(flags.video));
+      const analyzeOptions = await buildAnalyzeOptions(meetingId, flags, apiKey);
       const cancellation = new AbortController();
       const cancel = () => cancellation.abort();
       process.on("SIGINT", cancel);
       let result;
       try {
         result = await analyzeMeeting(
-          {
-            meetingId,
-            recipe: recipeResult.recipe,
-            customRecipe: recipeResult.custom,
-            recipeSha256: recipeResult.sha256,
-            recipeRevision: recipeResult.revision,
-            contextProvider,
-            granolaTransport,
-            ...(flags.contextFile ? { contextFile: flags.contextFile } : {}),
-            apiKey,
-            ...(flags.video ? { video: flags.video } : {}),
-            ...(flags.recordingUrl ? { recordingUrl: flags.recordingUrl } : {}),
-            ...(flags.focus ? { focus: flags.focus } : {}),
-            outputRoot: flags.output,
-            maxIncidents,
-            screenshots: flags.screenshots,
-            keepUpload: Boolean(flags.keepUpload),
-            ...(flags.transcriptOffset
-              ? {
-                  transcriptOffsetSeconds: parseTranscriptOffset(flags.transcriptOffset),
-                }
-              : {}),
-          },
+          analyzeOptions,
           {
             signal: cancellation.signal,
             progress: CLI_ANALYSIS_PROGRESS,
@@ -159,9 +138,97 @@ program
         process.off("SIGINT", cancel);
       }
       const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
-      process.stdout.write(`Analysis: ${result.directory}\n${accepted} accepted record(s).\n`);
+      process.stdout.write(
+        `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
+          `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
+      );
     },
   );
+
+export async function buildAnalyzeOptions(
+  meetingId: string | undefined,
+  flags: AnalyzeCliFlags,
+  apiKey: string,
+): Promise<AnalyzeOptions> {
+  const recipeResult = await withAnalysisDepth(
+    await loadRecipe(flags.recipe, flags.recipeFile),
+    analysisDepthSchema.parse(flags.depth),
+  );
+  const modelResult = flags.model
+    ? geminiModelSchema.safeParse(flags.model)
+    : undefined;
+  if (modelResult && !modelResult.success) {
+    throw new Error(
+      "--model must be a Gemini model ID such as gemini-3.6-flash or gemini-pro-latest.",
+    );
+  }
+  const model = modelResult?.data;
+  const videoOnly = flags.source === "none";
+  const contextProvider = videoOnly
+    ? undefined
+    : parseProvider(flags.source, true);
+  if (!videoOnly && !meetingId) {
+    throw new Error("A provider meeting/note ID is required unless --source none is selected.");
+  }
+  const granolaTransport = parseGranolaTransport(flags.granolaTransport);
+  if (contextProvider !== "granola" && granolaTransport !== "mcp") {
+    throw new Error("--granola-transport is only valid with --source granola.");
+  }
+  if (flags.video && flags.recordingUrl) throw new Error("Use either --video or --recording-url, not both.");
+  if (flags.recordingUrl && contextProvider !== "bluedot") {
+    throw new Error("--recording-url is only valid with --source bluedot.");
+  }
+  if (contextProvider === "file" && !flags.contextFile) {
+    throw new Error("--context-file is required with --source file.");
+  }
+  if (contextProvider !== "file" && flags.contextFile) {
+    throw new Error("--context-file is only valid with --source file.");
+  }
+  if (videoOnly && !flags.video) {
+    throw new Error("--video is required with --source none.");
+  }
+  if (videoOnly && flags.transcriptOffset) {
+    throw new Error("--transcript-offset requires meeting or file context.");
+  }
+  if (!/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
+  const maxIncidents = Number(flags.maxMoments);
+  if (!Number.isSafeInteger(maxIncidents) || maxIncidents > 1_000) {
+    throw new Error("--max-moments must be between 1 and 1000.");
+  }
+  if (flags.video) await access(resolve(flags.video));
+  const common = {
+    recipe: recipeResult.recipe,
+    customRecipe: recipeResult.custom,
+    recipeSha256: recipeResult.sha256,
+    recipeRevision: recipeResult.revision,
+    apiKey,
+    ...(model ? { model } : {}),
+    ...(flags.focus ? { focus: flags.focus } : {}),
+    indexFps: recipeResult.indexFps,
+    outputRoot: flags.output,
+    maxIncidents,
+    screenshots: flags.screenshots,
+    keepUpload: Boolean(flags.keepUpload),
+  };
+  return videoOnly
+    ? {
+        ...common,
+        contextMode: "none",
+        video: flags.video!,
+      }
+    : {
+        ...common,
+        meetingId: meetingId!,
+        contextProvider: contextProvider!,
+        granolaTransport,
+        ...(flags.contextFile ? { contextFile: flags.contextFile } : {}),
+        ...(flags.video ? { video: flags.video } : {}),
+        ...(flags.recordingUrl ? { recordingUrl: flags.recordingUrl } : {}),
+        ...(flags.transcriptOffset
+          ? { transcriptOffsetSeconds: parseTranscriptOffset(flags.transcriptOffset) }
+          : {}),
+      };
+}
 
 const CLI_ANALYSIS_PROGRESS = {
   report(event: AnalysisProgressEvent) {
@@ -180,10 +247,12 @@ const CLI_ANALYSIS_PROGRESS = {
 } satisfies { report(event: AnalysisProgressEvent): void };
 
 program.showSuggestionAfterError();
-program.parseAsync().catch((error: unknown) => {
-  process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  program.parseAsync().catch((error: unknown) => {
+    process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}
 
 async function executableExists(command: string): Promise<boolean> {
   const paths = (process.env.PATH || "").split(process.platform === "win32" ? ";" : ":");

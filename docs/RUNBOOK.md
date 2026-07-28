@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository        | `jchu96/frame-of-mind`                      |
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
-| Current version   | `0.2.1`                                     |
+| Current version   | `0.3.0`                                     |
 | Default model     | `gemini-3.6-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
@@ -28,7 +28,7 @@ Context and video are sensitive inputs. The operator controls authorization,
 retention, review, and publishing. Frame of Mind produces drafts with
 provenance; it does not make product, personnel, or engineering decisions.
 
-Current release status: the v0.2.1 production adapter bypasses the failing SDK
+Current release status: the v0.3.0 production adapter bypasses the failing SDK
 upload wrapper with Google's documented resumable protocol and derives a
 provider-safe response schema from the authoritative local Zod contract. Run
 the synthetic canary in section 1.5 before the first sensitive analysis and
@@ -158,7 +158,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.2.1
+0.3.0
 ```
 
 ### 1.5 Configure Gemini
@@ -296,7 +296,9 @@ Choose:
 - decision log → `decisions`;
 - product/spec input → `requirements`;
 - follow-ups → `action-items`;
-- implementation planning → `repo-plan`.
+- implementation planning → `repo-plan`;
+- communication, teaching, facilitation, or self-review →
+  `communication-coaching`.
 
 Read [RECIPES.md](RECIPES.md) when uncertain.
 
@@ -419,12 +421,37 @@ frameofmind analyze "<meeting-id>" \
   --focus "Repository example-repo; distinguish requested UX from inferred implementation"
 ```
 
+In-depth self-review:
+
+```bash
+frameofmind analyze "<stable-id>" \
+  --source none \
+  --video "<recording.mp4>" \
+  --recipe communication-coaching \
+  --depth deep \
+  --model gemini-pro-latest \
+  --focus "Compare my stated goal with audience response and identify missed cues" \
+  --max-moments 5
+```
+
+State the speaker's role, audience, goal, and desired feedback in authorized
+context when possible. `deep` uses 1 FPS for the whole-video index and layered
+prompting under the current v2/v3 contract. The chosen model runs both passes.
+`gemini-pro-latest` is mutable; prefer a stable supported model ID when exact
+reproducibility matters.
+
+Video-only analysis:
+
+```bash
+frameofmind analyze \
+  --source none \
+  --video "<recording.mp4>" \
+  --recipe issue-review
+```
+
 The core orchestrator and Studio job/projection boundaries support explicit
-video-only schema-v3 runs. The current public CLI still creates meeting-backed
-v2 runs, and the Studio composer does not expose its final Run action until the
-Intent/readiness slice is complete. Do not supply an invalid meeting or
-disconnect a provider to force video-only behavior: a selected context source
-that fails must fail the run. See
+video-only schema-v3 runs. If a context source is selected, its failure must
+fail the run; it cannot silently downgrade to video-only. See
 [ADR 0012](adr/0012-explicit-video-only-run-provenance.md).
 
 ### 3.6 Align clips
@@ -652,7 +679,7 @@ Delete stale runs through a file manager or exact verified path. Never run a
 broad recursive delete against home, application-data root, or repository root.
 
 Hosted D1 projections need an explicit owner and retention period because they
-can contain meeting quotes and visible UI text. Version 0.2.1 does not automate
+can contain meeting quotes and visible UI text. Version 0.3.0 does not automate
 hosted expiry. Use the ID-validated preview, delete, and verification procedure
 in [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md#hosted-retention-and-exact-run-purge);
 never delete by a partial title or meeting-name search.
@@ -722,15 +749,15 @@ Check:
 On timeout, the CLI attempts remote deletion. Do not use `--keep-upload` as a
 troubleshooting shortcut.
 
-Version 0.2.1 deliberately does not call `@google/genai`
+Version 0.3.0 deliberately does not call `@google/genai`
 `files.upload()`. The production adapter uses Google's documented two-step
 resumable protocol, streams the local file, validates the exact Gemini upload
 host, keeps the API key in a header, and continues to use the SDK for status,
 generation, and deletion.
 
-If an older release returns an empty upload 404, upgrade to v0.2.1 and run
+If an older release returns an empty upload 404, upgrade to v0.3.0 and run
 `bun run smoke:gemini` with generated media before diagnosing credentials.
-If v0.2.1 fails, preserve only the sanitized phase/status error and open a
+If v0.3.0 fails, preserve only the sanitized phase/status error and open a
 maintainer follow-up.
 
 ### 6.5 Gemini model name rejected
@@ -756,14 +783,33 @@ Possible causes:
 - recipe text was too broad/adversarial;
 - SDK/schema conversion regression.
 
-The adapter automatically makes one corrective generation request only when
-the first JSON response reaches strict Zod validation and fails there. Its
+The adapter automatically makes one corrective generation request when the
+first response is missing, invalid JSON, or fails strict Zod validation. Its
 additional repair feedback contains only sanitized schema paths and issue
 codes; it never echoes the rejected value. The same full local schema validates
 the second response. There is no third request, coercion, truncation, or silent
 field deletion.
 
-Actions after the bounded retry also fails:
+A timestamp ending in `.000` is normalized to whole seconds because the change
+is lossless. A non-zero millisecond timestamp is regenerated, not rounded. An
+overlong optional field is regenerated or that candidate fails; it is never
+truncated into apparently valid evidence.
+
+If a detail still fails, the orchestrator records a sanitized per-candidate
+failure and continues. Review `analysis-outcome.json`:
+
+- `indexed`: all candidates returned by pass 1;
+- `selected`: candidates bounded by `--max-moments`;
+- `omittedByLimit`: indexed candidates deliberately not interrogated;
+- `validated`: schema-valid detail responses;
+- `accepted` and `rejected`: recipe disposition among validated responses;
+- `failed`: selected responses that exhausted bounded recovery.
+
+`partial` means at least one selected candidate failed and at least one
+validated. `failed` means no selected detail validated. Rejected candidates are
+valid results and do not make a run partial.
+
+If the bounded retry also fails:
 
 1. retry with `--max-moments 1`;
 2. use a built-in recipe;
@@ -778,13 +824,20 @@ validates it against the complete local contract. Sanitized errors identify
 only failing field paths and issue codes. The adapter fails closed; it does not
 truncate, cast, expose the response, or weaken the durable schema.
 
-On either pass's terminal failure, the orchestrator attempts exact Gemini file
-deletion up to three times and removes the private staging directory. A cleanup
-warning means deletion could not be confirmed. No warning means a delete call
-completed, although a failed run has no manifest in which to persist that
-provenance. Empty meeting containers from pre-fix releases are safe to remove
-after verifying they contain no run bundles; builds containing this fix remove
-them automatically when the failed attempt created no artifacts.
+On a terminal whole-run failure, the orchestrator attempts exact deletion up to
+three times whenever it has a Gemini file identity and atomically publishes
+only `failure-manifest.json`. The receipt contains sanitized phase/error fields
+and one cleanup state:
+
+- `not_obtained` when upload failed before a remote identity was returned;
+- `confirmed_deleted`;
+- `intentionally_retained` when `--keep-upload` was explicit;
+- `unconfirmed` when deletion did not complete.
+
+It contains no provider response, error message, transcript, focus text, signed
+URL, or local media path. Cancellation remains non-publishing but still attempts
+cleanup. If failure-receipt publication itself fails, the CLI emits a sanitized
+warning and removes staging without masking the original exception.
 
 ### 6.7 OAuth browser does not open
 
@@ -967,7 +1020,7 @@ If manifest says:
 The Gemini file normally expires automatically, but:
 
 1. record the run ID and expiration time;
-2. inspect only that run's private `manifest.json`;
+2. inspect only that run's private `manifest.json` or `failure-manifest.json`;
 3. retry cleanup through the exact `remoteFile.name`;
 4. never list, share, or broadly delete unrelated files;
 5. investigate auth/network errors;
@@ -976,14 +1029,14 @@ The Gemini file normally expires automatically, but:
 From the repository clone, with the same `GEMINI_API_KEY` available locally:
 
 ```bash
-FRAME_OF_MIND_MANIFEST="<absolute-run-directory>/manifest.json" \
+FRAME_OF_MIND_MANIFEST="<absolute-run-directory>/manifest.json-or-failure-manifest.json" \
 bun -e '
   import { GoogleGenAI } from "@google/genai";
   const manifestPath = process.env.FRAME_OF_MIND_MANIFEST;
   if (!manifestPath) throw new Error("FRAME_OF_MIND_MANIFEST is required.");
   const manifest = await Bun.file(manifestPath).json();
   const name = manifest.remoteFile?.name;
-  if (!name) throw new Error("The manifest has no exact Gemini file name.");
+  if (!name) throw new Error("The receipt has no exact Gemini file name.");
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is required.");
   const ai = new GoogleGenAI({ apiKey });

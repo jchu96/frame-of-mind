@@ -229,7 +229,7 @@ or the stable `content-addressed` marker.
 
 ### 4.5 Gemini analysis
 
-The current backend uses the Gemini Developer API. Version 0.2.1 uploads
+The current backend uses the Gemini Developer API. Version 0.3.0 uploads
 through Google's documented two-step resumable Files REST protocol, then uses
 the official `@google/genai` SDK for file status, generation, and deletion.
 
@@ -237,7 +237,7 @@ Pass 1:
 
 - uploads the selected video to Gemini Files;
 - samples the complete operator-selected video at low resolution and 0.5
-  frames per second;
+  frames per second for `standard`, or 1 FPS for experimental `deep`;
 - checks video/context relevance;
 - estimates transcript alignment;
 - returns recipe-relevant candidate moments.
@@ -252,6 +252,11 @@ Pass 2:
 
 This shape bounds cost while preserving close visual inspection.
 
+The selected `--model` is used for both current passes. `gemini-pro-latest` is
+allowed for an in-depth run, but it is a mutable alias. A future Flash index,
+Pro interpretation, and synthesis pipeline requires per-role requested and
+resolved model provenance before it can ship.
+
 The production adapter defines shipped API behavior. Direct resumable upload
 is the tested production transport. The adapter accepts only an exact HTTPS
 Gemini upload host, disables redirects, streams the video, and never places the
@@ -264,6 +269,14 @@ Gemini's provider schema is intentionally less expressive than the durable
 contract. It is derived from the same Zod schema using an explicit supported
 keyword allowlist. Every returned payload is still decoded as `unknown` and
 validated against the complete Zod contract before publication.
+
+Missing text, invalid JSON, and local schema failure receive at most one
+complete regeneration with sanitized path/code feedback. Only `.000`
+timestamp fractions are normalized because that transformation is lossless.
+Non-zero fractions, overlong fields, broken URLs, and other invalid values are
+regenerated rather than rounded, truncated, or coerced. A typed terminal detail
+failure is isolated to that candidate; unexpected programming errors still
+abort the run. See ADR 0013.
 
 ### 4.6 Evidence and inference
 
@@ -279,7 +292,15 @@ All recipes share one policy:
   distinguishable during downstream synthesis;
 - owners and due dates are absent unless explicitly stated;
 - rejected candidates remain in `analysis.json` for audit;
+- outcome counts distinguish rejected records, invalid responses, and
+  candidates intentionally omitted by the configured limit;
 - human review remains required.
+
+The current neutral `details[]` contract is intentionally not presented as a
+complete epistemic model. ADR 0014 proposes a versioned evidence/claim spine
+with discriminated findings, procedure, technical-explanation, coaching, and
+Q&A artifact families. Repository issues and other rich deliverables remain a
+downstream composition step that first verifies target-system context.
 
 ### 4.7 Artifact store
 
@@ -298,6 +319,7 @@ runs/
 └── <meeting-id-or-video-digest-namespace>/
     └── <run-id>/
         ├── analysis.json
+        ├── analysis-outcome.json
         ├── analysis.md
         ├── report.html
         ├── manifest.json
@@ -306,6 +328,11 @@ runs/
 
 Runs are built in a staging directory and renamed into place after every
 artifact is written.
+
+A whole-run failure after a Gemini file is obtained publishes a different,
+minimal directory containing only `failure-manifest.json`. It records bounded
+phase/error metadata and remote cleanup provenance, never provider error text
+or the rejected payload. Canceled work remains non-publishing.
 
 ### 4.8 Renderers and exporters
 
@@ -348,7 +375,7 @@ sequenceDiagram
         end
     end
     CLI->>Files: delete remote file
-    CLI->>Disk: write staged artifacts
+    CLI->>Disk: write analysis, outcome, manifest, renderings
     CLI->>Disk: atomic rename
     CLI-->>User: run path and accepted count
 ```
@@ -413,7 +440,30 @@ It intentionally excludes:
 - full local input paths;
 - remote file URI.
 
-### 6.3 Pair integrity
+### 6.3 `analysis-outcome.json`
+
+The strict auxiliary v1 outcome records:
+
+- `complete`, `partial`, or `failed` status for selected detail work;
+- indexed, selected, limit-omitted, validated, accepted, rejected, and failed
+  candidate counts;
+- per-candidate ordinal and bounded time range;
+- sanitized failure code, attempt count, and up to three schema path/code
+  pairs.
+
+It contains no model response, rejected value, transcript, focus text, or error
+message. A run with zero validated details can still publish a valid empty
+analysis pair plus outcome `failed`, preserving normal provenance and cleanup.
+
+### 6.4 `failure-manifest.json`
+
+This is published only when a whole run fails after a remote file has been
+obtained and before a normal bundle becomes authoritative. It records the
+failed phase and exact cleanup state as `not_obtained`, `confirmed_deleted`,
+`intentionally_retained`, or `unconfirmed`. It is not an analysis and cannot be
+imported into SQLite or D1.
+
+### 6.5 Pair integrity
 
 Schemas v2 and v3 each treat their two JSON files as one unit:
 
@@ -929,7 +979,8 @@ weaken the Nuxt UI boundary. See [MCP_ROADMAP.md](MCP_ROADMAP.md).
 | Upload processing and cleanup both fail | sanitized combined failure; remote cleanup is not claimed    |
 | Gemini HTTP request stalls              | per-operation deadline aborts locally so cleanup can proceed |
 | Index mismatch                          | remote cleanup, no published run                             |
-| One interrogation fails                 | current release fails the run; resumability is future work   |
+| Detail response fails local validation  | one repair, then isolate that candidate and retain valid work |
+| Gemini detail transport/provider fails  | abort run, clean up, and publish a sanitized failure receipt |
 | Screenshot fails                        | analysis can continue without screenshot                     |
 | Remote deletion fails                   | warning plus `deleted: false` in manifest                    |
 | Artifact write fails                    | staging directory removed; no partial final run              |

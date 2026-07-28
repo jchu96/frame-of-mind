@@ -6,6 +6,8 @@
 - `docs/ARCHITECTURE.md`: boundaries, contracts, trust model, and extension points.
 - `docs/CREDENTIALS.md`: Gemini Developer API and future Vertex authentication.
 - `docs/RECIPES.md`: built-in/custom analysis intent.
+- `docs/VIDEO_UNDERSTANDING.md`: Gemini video/prompt behavior and deep-analysis boundaries.
+- `docs/ARTIFACT_COMPOSITION.md`: evidence-to-issue/SOP/explainer/coaching/Q&A quality contract.
 - `docs/PROVIDERS.md`: Bluedot, Granola MCP/API, and local context contracts.
 - `docs/WEB_WORKSPACE.md`: local Nuxt/SQLite projection and import runbook.
 - `docs/TESTING.md`: test-layer ownership, browser isolation, and E2E roadmap.

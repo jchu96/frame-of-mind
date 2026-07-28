@@ -168,3 +168,19 @@ contract; it never fabricates a meeting, transcript, provider, or alignment,
 and a failed context source never silently changes the user's selected mode.
 The durable pair rules are canonical in
 [ADR 0012](../adr/0012-explicit-video-only-run-provenance.md).
+
+## 2026-07-28 — Provider response failures are bounded per candidate
+
+Missing, invalid-JSON, and schema-invalid Gemini responses regenerate once
+under unchanged Zod authority. Typed detail failures are isolated; valid
+candidates remain publishable with a sanitized outcome, and whole-run failures
+after upload receive a minimal cleanup-provenance receipt. See
+[ADR 0013](../adr/0013-defensive-gemini-response-boundary.md).
+
+## 2026-07-28 — Evidence and artifact families evolve together, not invisibly
+
+The proposed next analysis schema separates evidence and claims from composed
+findings, procedures, technical explanations, coaching reports, and Q&A.
+Current v2/v3 recipes remain compatible, and mixed Flash/Pro passes wait for
+per-role model provenance. See
+[ADR 0014](../adr/0014-versioned-evidence-and-artifact-families.md).

@@ -299,3 +299,28 @@
 - The post-iteration `bun run check` passed 109 core tests, 188 web tests,
   CLI and both Nuxt production builds, the local Studio HTTP contract,
   Cloudflare boundary audit, and the 32 MiB streaming spike.
+- Reproduced issue #30 entirely with synthetic fixtures and implemented strict
+  invalid-JSON/schema repair, lossless timestamp normalization, per-candidate
+  isolation, balanced outcome counts, and sanitized whole-run cleanup receipts.
+- Added explicit `--model`/`--depth` handling, video-only `--source none`, and
+  the evidence-backed `communication-coaching` recipe. Documented current deep
+  behavior separately from the proposed v4 claim-evidence and role-based
+  multi-model architecture.
+- Used an internal near-perfect implementation artifact only as a private
+  quality benchmark; public architecture and future golden fixtures retain its
+  structural rigor without copying meeting, repository, participant, URL, or
+  screenshot content.
+- Closed the issue #30 adversarial findings: provider transport failures abort
+  instead of masquerading as candidate validation failures; upload-processing
+  errors retain exact cleanup identity/provenance; outcome counts bind to the
+  published analysis; and index text plus failure metadata use the same local
+  bounds as durable contracts. `bun run check` passed with 138 core tests and
+  188 web tests, and `bun run smoke:gemini` passed upload, index, detail, and
+  exact deletion using generated media only.
+- PR #31 adversarial review reproduced six additional boundary cases with
+  synthetic fixtures: cancellation racing an upload error, malformed upload
+  identity, unnamed unconfirmed cleanup, historical offset-form expiration
+  metadata, omitted poll identity, and substituted poll identity. The iteration
+  pins finalized upload identity through polling and cleanup, keeps cancellation
+  non-publishing, sanitizes diagnostic metadata before Zod, makes recovery
+  warnings provenance-aware, and preserves existing manifest readers.

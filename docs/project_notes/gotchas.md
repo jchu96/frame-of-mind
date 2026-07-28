@@ -340,3 +340,53 @@
   dedicated inert `/__studio/launch` route for exchange and protect Home,
   review/import routes, run APIs, and every `/api/studio/*` route. Replayed
   links must remain inert instead of mounting Home and generating 401 retries.
+
+## Gemini response and video-understanding gotchas
+
+- Provider `responseJsonSchema` is a conformance aid, not the trust boundary.
+  Parse as unknown and keep the originating strict Zod schema authoritative.
+- Invalid JSON must enter the same bounded repair path as schema-invalid JSON;
+  catching only `ZodError` recreates the whole-run abort.
+- Removing `.000` from a timestamp is lossless. Rounding `.500` is not. Repair
+  the latter or isolate the candidate.
+- Never truncate overlong evidence to make it validate. Regenerate or fail the
+  candidate so the artifact cannot present altered evidence as provider output.
+- Schema-valid `accepted: false` is a rejected result, not a response failure.
+  Candidates beyond `--max-moments` are omitted by limit, not successes or
+  failures. Keep all three concepts separately counted.
+- Only typed provider-response failures are isolated per candidate. Unexpected
+  code errors and SDK/provider transport failures must still abort and leave a
+  sanitized failure manifest; otherwise an auth, quota, or outage can look like
+  a successful `outcome=failed` Studio job.
+- If upload processing fails after a Gemini file name is known, replacement
+  errors must preserve that exact sanitized name and cleanup state. The upload
+  call needs its own failure-receipt boundary because it occurs before index and
+  detail orchestration.
+- Pin the validated upload name and URI before polling. Gemini `files.get`
+  fields are optional, so replacing the upload receipt with a poll response can
+  lose the only cleanup identity; accepting a different returned name can delete
+  the wrong file while falsely recording the original recording as deleted.
+- Cancellation can race with a provider rejection. Recheck the abort signal in
+  provider catch paths before publishing a failure receipt so cancellation
+  remains non-publishing even when the provider throws first.
+- Sanitize provider identifiers before constructing a strict diagnostic
+  manifest. If cleanup claims deletion but no valid exact name survives,
+  downgrade provenance to `unconfirmed` instead of letting Zod mask the original
+  failure or asserting deletion that cannot be audited.
+- Durable readers must remain compatible with historical optional provider
+  metadata. Canonicalize and sanitize current writes at the adapter/orchestrator
+  boundary; do not silently narrow an existing schema version's reader.
+- A `*-latest` Gemini model name is mutable. Record the requested alias and do
+  not claim reproducibility or mixed-model provenance that the manifest cannot
+  represent.
+- Higher FPS improves temporal sampling, not reasoning. Deep analysis needs
+  narrower pass responsibilities and explicit evidence references, not merely
+  more frames or a larger response.
+- A downloaded community or old vendor skill can contain useful capability
+  ideas while contradicting current official Files/video guidance, cleanup,
+  prompt ordering, or privacy rules. Do not vendor it as authority.
+- AI Studio template URLs may be unavailable or stale. Treat current official
+  documentation and tested adapter behavior as authoritative.
+- Intent is useful for coaching and self-review. Label inferred intent as
+  interpretation, cite its observed basis, and include alternatives; do not
+  prohibit intent analysis or present hidden intent as observed fact.

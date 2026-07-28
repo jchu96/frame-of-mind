@@ -284,3 +284,19 @@
 - Prevention: deterministic scheduler tests cover non-overlap, sanitized
   failures, cleanup retry, active-writer exclusion, continued operation, and
   shutdown draining.
+
+## 2026-07-28 — One near-valid Gemini detail erased the run
+
+- Symptom: invalid JSON, a noncanonical timestamp, or an overlong optional
+  field in one detail response aborted the complete analysis and discarded
+  already validated candidates.
+- Cause: invalid JSON did not use the typed repair boundary, and the
+  orchestrator had no per-candidate boundary for exhausted response failures.
+- Fix: classify missing/invalid/schema responses, regenerate once, normalize
+  only `.000` losslessly, isolate typed candidate failures, publish balanced
+  outcome counts, and preserve a sanitized whole-run failure manifest after
+  remote upload.
+- Prevention: synthetic fixtures cover invalid JSON, zero/non-zero
+  milliseconds, overlong fields, partial and all-detail failure, unexpected
+  whole-run failure, provider-transport aborts, payload redaction, and cleanup
+  provenance when upload processing fails after an exact remote ID is known.

@@ -2,6 +2,7 @@ import { mkdtemp, rename, rm, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { File as GeminiFile } from "@google/genai";
+import { z } from "zod";
 import type {
   AnalysisDetail,
   AnalysisRecipe,
@@ -31,6 +32,7 @@ import { GranolaClient } from "../adapters/granola-mcp.js";
 import { GranolaApiClient } from "../adapters/granola-api.js";
 import { FileContextSource } from "../adapters/file-context.js";
 import { GeminiVideoAnalyzer } from "../adapters/gemini.js";
+import { GeminiFileError } from "../adapters/gemini-files.js";
 import {
   createRunId,
   downloadFile,
@@ -43,8 +45,19 @@ import {
 } from "../lib/files.js";
 import { nearbyTranscript } from "./transcript.js";
 import { extractScreenshot } from "./screenshots.js";
-import { writeArtifacts } from "./artifacts.js";
+import { writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
+import {
+  analysisOutcomeSchema,
+  CandidateAnalysisError,
+  type AnalysisOutcome,
+  type CandidateFailure,
+} from "../domain/analysis-outcome.js";
+import {
+  runFailureManifestSchema,
+  type AnalysisFailurePhase,
+  type RunFailureManifest,
+} from "../domain/run-failure.js";
 
 interface AnalyzeOptionsBase {
   recipe: AnalysisRecipe;
@@ -57,6 +70,7 @@ interface AnalyzeOptionsBase {
   expectedVideoSha256?: string;
   recordingUrl?: string;
   focus?: string;
+  indexFps?: number;
   outputRoot: string;
   maxIncidents: number;
   screenshots: boolean;
@@ -134,6 +148,7 @@ export type AnalysisProjectionInput =
 
 export type PublishedAnalysisRun = AnalysisProjectionInput & {
   readonly directory: string;
+  readonly outcome: AnalysisOutcome;
 };
 
 export interface AnalysisProjectionPublisher {
@@ -172,6 +187,7 @@ export interface AnalysisVideoAnalyzer {
     meeting: MeetingEvidence | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
+    indexFps?: number,
   ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
@@ -324,6 +340,7 @@ export class AnalysisOrchestrator {
       await ensureDirectory(stagingDirectory);
 
       const analyzer = this.createAnalyzer(options.apiKey, options);
+      const indexFps = requireIndexFps(options.indexFps ?? 0.5);
       if (options.model && analyzer.model !== options.model) {
         throw new Error(
           "Resolved Gemini analyzer does not match the requested model.",
@@ -335,9 +352,65 @@ export class AnalysisOrchestrator {
         message: "Uploading recording to Gemini Files API…",
       });
       assertNotCanceled(execution.signal);
-      const remote = await analyzer.upload(localVideo, mimeType);
+      let remote: GeminiFile;
+      try {
+        remote = await analyzer.upload(localVideo, mimeType);
+      } catch (error) {
+        if (error instanceof AnalysisCanceledError) throw error;
+        assertNotCanceled(execution.signal);
+        const reportedUploadCleanup = error instanceof GeminiFileError
+          ? error.uploadCleanup ?? "unconfirmed"
+          : "unconfirmed";
+        const uploadName = error instanceof GeminiFileError
+          ? sanitizedRemoteFileName(error.remoteFileName)
+          : undefined;
+        const uploadCleanup = reportedUploadCleanup === "confirmed_deleted" && !uploadName
+          ? "unconfirmed"
+          : reportedUploadCleanup;
+        const failure = runFailureManifestSchema.parse({
+          schemaVersion: 1,
+          toolVersion: "0.3.0",
+          runId,
+          status: "failed",
+          phase: "upload",
+          startedAt,
+          failedAt: this.now(),
+          recipe: {
+            id: options.recipe.id,
+            revision: options.recipeRevision,
+            sha256: options.recipeSha256,
+          },
+          model: analyzer.model,
+          recordingSha256,
+          error: sanitizedFailureError(error),
+          remoteFile: {
+            ...(uploadCleanup !== "not_obtained" && uploadName
+              ? { name: uploadName }
+              : {}),
+            cleanup: uploadCleanup,
+          },
+        });
+        try {
+          await rm(stagingDirectory, { recursive: true, force: true });
+          await ensureDirectory(stagingDirectory);
+          await writeFailureManifest(stagingDirectory, failure);
+          await rename(stagingDirectory, outputDirectory);
+          stagingDirectory = undefined;
+        } catch {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "cleaning_up",
+            message: "The sanitized failure manifest could not be published.",
+          });
+        }
+        if (uploadCleanup === "unconfirmed") {
+          await reportUnconfirmedCleanup(progress, uploadName);
+        }
+        throw error;
+      }
       let remoteDeleted = false;
       let cleanupFinalized = options.keepUpload;
+      let failurePhase: AnalysisFailurePhase = "index";
       try {
         assertNotCanceled(execution.signal);
         await report(progress, {
@@ -346,7 +419,13 @@ export class AnalysisOrchestrator {
           message: "Pass 1/2: indexing the whole recording…",
         });
         assertNotCanceled(execution.signal);
-        const index = await analyzer.index(remote, meeting, options.recipe, options.focus);
+        const index = await analyzer.index(
+          remote,
+          meeting,
+          options.recipe,
+          options.focus,
+          indexFps,
+        );
         assertNotCanceled(execution.signal);
         let alignment: RunManifest["transcriptAlignment"] | undefined;
         if (hasContext) {
@@ -373,7 +452,9 @@ export class AnalysisOrchestrator {
               };
         }
         const items: AnalysisItem[] = [];
+        const failures: CandidateFailure[] = [];
         const candidates = index.moments.slice(0, options.maxIncidents);
+        failurePhase = "detail";
         await report(progress, {
           kind: "stage",
           stage: "interrogating",
@@ -381,33 +462,55 @@ export class AnalysisOrchestrator {
         });
         for (const [indexNumber, candidate] of candidates.entries()) {
           assertNotCanceled(execution.signal);
-          const result = await analyzer.interrogate(
-            remote,
-            candidate,
-            meeting && alignment
-              ? nearbyTranscript(
-                  meeting.transcript,
-                  candidate.start,
-                  candidate.end,
-                  45,
-                  alignment.offsetSeconds,
-                )
-              : undefined,
-            options.recipe,
-            options.focus,
-          );
-          assertNotCanceled(execution.signal);
-          assertEvidenceWithinCandidate(result.evidence?.timestamp, candidate.start, candidate.end);
-          const item: AnalysisItem = { candidate, result };
-          if (options.screenshots && result.accepted) {
-            const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
-            const screenshotPath = join(stagingDirectory, screenshotName);
-            if (await this.screenshot(localVideo, result.evidence?.timestamp || candidate.start, screenshotPath)) {
-              item.screenshot = screenshotName;
-            }
+          try {
+            const result = await analyzer.interrogate(
+              remote,
+              candidate,
+              meeting && alignment
+                ? nearbyTranscript(
+                    meeting.transcript,
+                    candidate.start,
+                    candidate.end,
+                    45,
+                    alignment.offsetSeconds,
+                  )
+                : undefined,
+              options.recipe,
+              options.focus,
+            );
             assertNotCanceled(execution.signal);
+            assertEvidenceWithinCandidate(
+              result.evidence?.timestamp,
+              candidate.start,
+              candidate.end,
+            );
+            const item: AnalysisItem = { candidate, result };
+            if (options.screenshots && result.accepted) {
+              const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
+              const screenshotPath = join(stagingDirectory, screenshotName);
+              if (await this.screenshot(localVideo, result.evidence?.timestamp || candidate.start, screenshotPath)) {
+                item.screenshot = screenshotName;
+              }
+              assertNotCanceled(execution.signal);
+            }
+            items.push(item);
+          } catch (error) {
+            if (error instanceof AnalysisCanceledError) throw error;
+            if (!(error instanceof CandidateAnalysisError)) throw error;
+            failures.push({
+              candidateOrdinal: indexNumber + 1,
+              start: candidate.start,
+              end: candidate.end,
+              code: error.code,
+              attempts: error.attempts,
+              ...(error.issues.length ? { issues: [...error.issues] } : {}),
+            });
+            await reportWarning(progress, {
+              kind: "warning",
+              stage: "interrogating",
+              message: `Candidate ${indexNumber + 1} could not be validated after ${error.attempts} attempt${error.attempts === 1 ? "" : "s"}; continuing with remaining candidates.`,
+            });
           }
-          items.push(item);
           await report(progress, {
             kind: "progress",
             stage: "interrogating",
@@ -419,6 +522,26 @@ export class AnalysisOrchestrator {
             message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${candidate.start}`,
           });
         }
+
+        const outcome = analysisOutcomeSchema.parse({
+          schemaVersion: 1,
+          runId,
+          status: failures.length === 0
+            ? "complete"
+            : items.length === 0
+              ? "failed"
+              : "partial",
+          candidates: {
+            indexed: index.moments.length,
+            selected: candidates.length,
+            omittedByLimit: index.moments.length - candidates.length,
+            validated: items.length,
+            accepted: items.filter((item) => item.result.accepted).length,
+            rejected: items.filter((item) => !item.result.accepted).length,
+            failed: failures.length,
+          },
+          failures,
+        });
 
         let meetingRunContext: {
           meeting: MeetingEvidence;
@@ -468,12 +591,14 @@ export class AnalysisOrchestrator {
               matchNotes: index.matchNotes,
               items,
             };
+        failurePhase = "render";
         await report(progress, {
           kind: "stage",
           stage: "rendering",
           message: "Validating and rendering the analysis bundle.",
         });
         assertNotCanceled(execution.signal);
+        failurePhase = "cleanup";
         await report(progress, {
           kind: "stage",
           stage: "cleaning_up",
@@ -483,9 +608,10 @@ export class AnalysisOrchestrator {
           remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep);
           cleanupFinalized = remoteDeleted;
         }
+        failurePhase = "render";
         const analysisSha256 = await analysisDigest(analysis);
         const manifestBase = {
-          toolVersion: "0.2.1",
+          toolVersion: "0.3.0",
           runId,
           startedAt,
           completedAt: this.now(),
@@ -501,19 +627,19 @@ export class AnalysisOrchestrator {
           analysisSha256,
           recordingMimeType: mimeType,
           remoteFile: {
-            ...(remote.name ? { name: remote.name } : {}),
-            ...(remote.expirationTime ? { expirationTime: remote.expirationTime } : {}),
+            ...sanitizedRemoteFileMetadata(remote),
             deleted: remoteDeleted,
           },
           analysis: {
             ...(options.focus ? { focus: options.focus } : {}),
             maxIncidents: options.maxIncidents,
-            indexFps: 0.5,
+            indexFps,
             indexResolution: "low" as const,
             interrogationResolution: "medium" as const,
           },
           artifacts: [
             "analysis.json",
+            "analysis-outcome.json",
             "analysis.md",
             "report.html",
             "manifest.json",
@@ -524,7 +650,7 @@ export class AnalysisOrchestrator {
           ? {
               ...manifestBase,
               schemaVersion: 2,
-              promptRevision: "2026-07-27.2",
+              promptRevision: "2026-07-28.2",
               meetingId: meetingRunContext.meeting.id,
               transcriptSha256: sha256Text(meetingRunContext.meeting.transcript),
               contextProvider: meetingRunContext.meeting.provider,
@@ -535,13 +661,18 @@ export class AnalysisOrchestrator {
           : {
               ...manifestBase,
               schemaVersion: 3,
-              promptRevision: "2026-07-28.1",
+              promptRevision: "2026-07-28.2",
               context: { mode: "none" },
               mediaSource: "local-file",
             };
         const validated = await validateVersionedRunImport({ analysis, manifest });
         assertNotCanceled(execution.signal);
-        await writeArtifacts(stagingDirectory, validated.analysis, validated.manifest);
+        await writeArtifacts(
+          stagingDirectory,
+          validated.analysis,
+          validated.manifest,
+          outcome,
+        );
         assertNotCanceled(execution.signal);
         await rename(stagingDirectory, outputDirectory);
         stagingDirectory = undefined;
@@ -561,12 +692,14 @@ export class AnalysisOrchestrator {
               directory: outputDirectory,
               analysis: validated.analysis,
               manifest: validated.manifest,
+              outcome,
             }
           : isRunImportV3(validated)
             ? {
                 directory: outputDirectory,
                 analysis: validated.analysis,
                 manifest: validated.manifest,
+                outcome,
               }
             : (() => {
                 throw new Error("Run contract schema versions do not match.");
@@ -590,6 +723,59 @@ export class AnalysisOrchestrator {
           ...published,
           ...(projectionWarning ? { projectionWarning } : {}),
         };
+      } catch (error) {
+        if (error instanceof AnalysisCanceledError) throw error;
+        if (!options.keepUpload && !cleanupFinalized) {
+          remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep);
+          cleanupFinalized = true;
+        }
+        const failure = runFailureManifestSchema.parse({
+          schemaVersion: 1,
+          toolVersion: "0.3.0",
+          runId,
+          status: "failed",
+          phase: failurePhase,
+          startedAt,
+          failedAt: this.now(),
+          recipe: {
+            id: options.recipe.id,
+            revision: options.recipeRevision,
+            sha256: options.recipeSha256,
+          },
+          model: analyzer.model,
+          recordingSha256,
+          error: sanitizedFailureError(error),
+          remoteFile: {
+            ...sanitizedRemoteFileMetadata(remote),
+            cleanup: options.keepUpload
+              ? "intentionally_retained"
+              : remoteDeleted
+                ? "confirmed_deleted"
+                : "unconfirmed",
+          },
+        });
+        if (stagingDirectory) {
+          try {
+            await rm(stagingDirectory, { recursive: true, force: true });
+            await ensureDirectory(stagingDirectory);
+            await writeFailureManifest(stagingDirectory, failure);
+            await rename(stagingDirectory, outputDirectory);
+            stagingDirectory = undefined;
+          } catch {
+            await reportWarning(progress, {
+              kind: "warning",
+              stage: "cleaning_up",
+              message: "The sanitized failure manifest could not be published.",
+            });
+          }
+        }
+        if (!options.keepUpload && !remoteDeleted) {
+          await reportUnconfirmedCleanup(
+            progress,
+            sanitizedRemoteFileMetadata(remote).name,
+          );
+        }
+        throw error;
       } finally {
         if (!options.keepUpload && !cleanupFinalized) {
           const deleted = await deleteWithRetry(analyzer, remote, this.sleep);
@@ -677,6 +863,55 @@ async function reportWarning(
   }
 }
 
+function sanitizedFailureError(error: unknown): RunFailureManifest["error"] {
+  if (error instanceof CandidateAnalysisError) {
+    return {
+      code: error.code,
+      attempts: error.attempts,
+      ...(error.issues.length ? { issues: [...error.issues] } : {}),
+    };
+  }
+  return { code: "unexpected_failure" };
+}
+
+function sanitizedRemoteFileMetadata(
+  remote: GeminiFile,
+): Pick<RunFailureManifest["remoteFile"], "name" | "expirationTime"> {
+  const name = sanitizedRemoteFileName(remote.name);
+  return {
+    ...(name
+      ? { name }
+      : {}),
+    ...(remote.expirationTime && isUtcDateTime(remote.expirationTime)
+      ? { expirationTime: remote.expirationTime }
+      : {}),
+  };
+}
+
+function sanitizedRemoteFileName(value: string | undefined): string | undefined {
+  return value && value.length <= 1_000 && /^files\/[A-Za-z0-9_-]+$/.test(value)
+    ? value
+    : undefined;
+}
+
+function isUtcDateTime(value: string): boolean {
+  return value.length <= 120
+    && z.string().datetime({ offset: false }).safeParse(value).success;
+}
+
+async function reportUnconfirmedCleanup(
+  progress: AnalysisProgressReporter,
+  remoteFileName?: string,
+): Promise<void> {
+  await reportWarning(progress, {
+    kind: "warning",
+    stage: "cleaning_up",
+    message: remoteFileName
+      ? "Gemini file cleanup is unconfirmed; inspect the private failure-manifest.json for exact-file recovery."
+      : "Gemini file cleanup is unconfirmed and its remote identity is unavailable; review the provider account after the upload retention window.",
+  });
+}
+
 function assertNotCanceled(signal?: AbortSignal): void {
   if (signal?.aborted) throw new AnalysisCanceledError();
 }
@@ -687,6 +922,13 @@ function requireSafeRunId(value: string): string {
     safePathSegment(value) !== value
   ) {
     throw new Error("Generated run ID is not a safe path segment.");
+  }
+  return value;
+}
+
+function requireIndexFps(value: number): number {
+  if (!Number.isFinite(value) || value <= 0 || value > 60) {
+    throw new Error("Gemini index FPS must be greater than 0 and at most 60.");
   }
   return value;
 }
@@ -733,6 +975,9 @@ export function assertEvidenceWithinCandidate(
   if (!evidenceTimestamp) return;
   const evidence = timestampToSeconds(evidenceTimestamp);
   if (evidence < timestampToSeconds(candidateStart) || evidence > timestampToSeconds(candidateEnd)) {
-    throw new Error("Gemini returned an evidence timestamp outside the indexed candidate window.");
+    throw new CandidateAnalysisError({
+      code: "evidence_out_of_range",
+      attempts: 1,
+    });
   }
 }
