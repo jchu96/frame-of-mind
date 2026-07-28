@@ -5,7 +5,7 @@ import {
   MAX_D1_JSON_PARAMETER_BYTES,
 } from "../server/data/sql";
 import type { RunRow } from "../server/data/types";
-import { runFixture } from "./fixtures";
+import { runFixture, videoRunFixture } from "./fixtures";
 import { analysisDigest } from "../../../src/domain/integrity";
 
 class FakeStatement {
@@ -19,19 +19,36 @@ class FakeStatement {
   }
 
   async all<T>() {
-    return { results: [...this.database.runs.values()] as T[] };
+    return {
+      results: [
+        ...this.database.runs.values(),
+        ...this.database.videoRuns.values(),
+      ] as T[],
+    };
   }
 
   async first<T>() {
-    if (this.sql.startsWith("SELECT 1 AS found")) {
-      return (this.database.runs.has(String(this.values[0])) ? { found: 1 } : null) as T | null;
+    if (this.sql.startsWith("SELECT schema_version FROM analysis_run_registry")) {
+      const schemaVersion = this.database.registry.get(String(this.values[0]));
+      return (schemaVersion ? { schema_version: schemaVersion } : null) as T | null;
     }
-    return (this.database.runs.get(String(this.values[0])) || null) as T | null;
+    if (this.sql.startsWith("SELECT 1 AS found")) {
+      const rows = this.sql.includes("video_analysis_runs")
+        ? this.database.videoRuns
+        : this.database.runs;
+      return (rows.has(String(this.values[0])) ? { found: 1 } : null) as T | null;
+    }
+    const rows = this.sql.includes("video_analysis_runs")
+      ? this.database.videoRuns
+      : this.database.runs;
+    return (rows.get(String(this.values[0])) || null) as T | null;
   }
 }
 
 class FakeD1 {
   readonly runs = new Map<string, RunRow>();
+  readonly videoRuns = new Map<string, RunRow>();
+  readonly registry = new Map<string, 2 | 3>();
   readonly items = new Map<string, unknown[][]>();
   lastBatchLength = 0;
 
@@ -42,9 +59,17 @@ class FakeD1 {
   async batch(statements: FakeStatement[]) {
     this.lastBatchLength = statements.length;
     for (const statement of statements) {
-      if (statement.sql.includes("INSERT INTO analysis_runs")) {
+      if (statement.sql.startsWith("INSERT OR IGNORE INTO analysis_run_registry")) {
+        const runId = String(statement.values[0]);
+        if (!this.registry.has(runId)) {
+          this.registry.set(runId, statement.values[1] as 2 | 3);
+        }
+      } else if (statement.sql.includes("INSERT INTO analysis_runs")) {
         const value = statement.values;
+        if (this.registry.get(String(value[0])) !== 2) continue;
         this.runs.set(String(value[0]), {
+          schema_version: 2,
+          context_mode: "meeting",
           run_id: String(value[0]),
           meeting_id: String(value[1]),
           meeting_title: value[2] === null ? null : String(value[2]),
@@ -63,9 +88,39 @@ class FakeD1 {
           imported_at: String(value[15]),
           imported_by: value[16] === null ? null : String(value[16]),
         });
-      } else if (statement.sql.startsWith("DELETE FROM analysis_items")) {
+      } else if (statement.sql.includes("INSERT INTO video_analysis_runs")) {
+        const value = statement.values;
+        if (this.registry.get(String(value[0])) !== 3) continue;
+        this.videoRuns.set(String(value[0]), {
+          schema_version: 3,
+          context_mode: "none",
+          run_id: String(value[0]),
+          meeting_id: null,
+          meeting_title: null,
+          provider: null,
+          transport: null,
+          recipe_id: String(value[1]),
+          recipe_label: String(value[2]),
+          model: String(value[3]),
+          started_at: String(value[4]),
+          completed_at: String(value[5]),
+          match_notes: String(value[6]),
+          accepted_count: Number(value[7]),
+          rejected_count: Number(value[8]),
+          analysis_json: String(value[9]),
+          manifest_json: String(value[10]),
+          imported_at: String(value[11]),
+          imported_by: value[12] === null ? null : String(value[12]),
+        });
+      } else if (
+        statement.sql.startsWith("DELETE FROM analysis_items")
+        || statement.sql.startsWith("DELETE FROM video_analysis_items")
+      ) {
         this.items.set(String(statement.values[0]), []);
-      } else if (statement.sql.includes("INSERT INTO analysis_items")) {
+      } else if (
+        statement.sql.includes("INSERT INTO analysis_items")
+        || statement.sql.includes("INSERT INTO video_analysis_items")
+      ) {
         const rows = JSON.parse(String(statement.values[0])) as Array<Record<string, unknown>>;
         for (const row of rows) {
           const runId = String(row.runId);
@@ -98,6 +153,47 @@ describe("D1 projection contract", () => {
     expect(database.items.get(input.manifest.runId)).toHaveLength(1);
   });
 
+  test("keeps video-only v3 projection behavior in parity with SQLite", async () => {
+    const database = new FakeD1();
+    const store = createD1RunStore(database as unknown as D1Database);
+    const input = await videoRunFixture();
+
+    expect(await store.importRun(input, "tester@example.com")).toEqual({
+      runId: input.manifest.runId,
+      created: true,
+    });
+    expect((await store.listRuns({ limit: 50 })).runs[0]).toEqual(
+      expect.objectContaining({
+        schemaVersion: 3,
+        contextMode: "none",
+        acceptedCount: 1,
+      }),
+    );
+    expect((await store.listRuns({ limit: 50 })).runs[0])
+      .not.toHaveProperty("meetingId");
+    await expect(store.getRun(input.manifest.runId)).resolves.toMatchObject({
+      schemaVersion: 3,
+      contextMode: "none",
+      analysis: { context: { mode: "none" } },
+    });
+  });
+
+  test("rejects a run ID reused across v2 and v3 projection tables", async () => {
+    const database = new FakeD1();
+    const store = createD1RunStore(database as unknown as D1Database);
+    const meeting = runFixture();
+    const video = await videoRunFixture();
+    video.analysis.runId = meeting.analysis.runId;
+    video.manifest.runId = meeting.manifest.runId;
+    video.manifest.analysisSha256 = await analysisDigest(video.analysis);
+
+    await store.importRun(meeting);
+    await expect(store.importRun(video)).rejects.toThrow(
+      "another schema version",
+    );
+    expect(database.videoRuns.size).toBe(0);
+  });
+
   test("uses a bounded transactional batch for 1000 small analysis items", async () => {
     const database = new FakeD1();
     const store = createD1RunStore(database as unknown as D1Database);
@@ -105,7 +201,7 @@ describe("D1 projection contract", () => {
     input.analysis.items = Array.from({ length: 1_000 }, () => structuredClone(input.analysis.items[0]!));
     input.manifest.analysisSha256 = await analysisDigest(input.analysis);
     await store.importRun(input);
-    expect(database.lastBatchLength).toBe(3);
+    expect(database.lastBatchLength).toBe(4);
     expect(database.items.get(input.manifest.runId)).toHaveLength(1_000);
   });
 

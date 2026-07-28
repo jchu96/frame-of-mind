@@ -353,3 +353,17 @@ export const versionedRunImportSchema = z.union([
 export type RunImport = z.infer<typeof runImportSchema>;
 export type RunImportV3 = z.infer<typeof runImportV3Schema>;
 export type VersionedRunImport = z.infer<typeof versionedRunImportSchema>;
+
+export function isRunImportV2(
+  input: VersionedRunImport,
+): input is RunImport {
+  return input.analysis.schemaVersion === 2
+    && input.manifest.schemaVersion === 2;
+}
+
+export function isRunImportV3(
+  input: VersionedRunImport,
+): input is RunImportV3 {
+  return input.analysis.schemaVersion === 3
+    && input.manifest.schemaVersion === 3;
+}

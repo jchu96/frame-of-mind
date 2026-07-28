@@ -433,10 +433,11 @@ flowchart LR
 
 Validation always checks matching schema versions, shared run ID, recipe,
 model, and digest. V2 also checks meeting and provider/transport provenance;
-v3 rejects meeting-shaped fields and remote meeting media. The current
-SQLite/D1 projection remains v2-only and rejects v3 until its additive schema
-migration is complete. A copied, swapped, hand-edited, partially corrupted, or
-unsupported pair therefore fails closed.
+v3 rejects meeting-shaped fields and remote meeting media. SQLite and D1 keep
+v2 meeting runs and v3 video-only runs in separate projection table families;
+a shared schema-version registry prevents one run ID from occupying both. A
+copied, swapped, hand-edited, partially corrupted, or unsupported pair
+therefore fails closed.
 
 ## 7. Trust boundaries
 

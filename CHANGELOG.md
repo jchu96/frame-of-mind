@@ -23,8 +23,8 @@ Semantic Versioning.
 ### Changed
 
 - Updated Cloudflare Workers development types to `5.20260727.1`.
-- Core versioned readers accept v2 and v3. The current Studio projection stays
-  v2-only and fails closed until its additive migration is implemented.
+- Studio immutable jobs and SQLite/D1 projections now accept v2 and v3 while
+  requiring meeting-provider credentials only for context-enriched runs.
 
 ### Planned
 

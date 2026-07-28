@@ -63,7 +63,10 @@ describe("AnalysisOrchestrator", () => {
     expect(fixture.context.connect).not.toHaveBeenCalled();
     expect(fixture.context.meeting).not.toHaveBeenCalled();
     expect(fixture.context.close).not.toHaveBeenCalled();
-    expect(publishProjection).not.toHaveBeenCalled();
+    expect(publishProjection).toHaveBeenCalledWith(expect.objectContaining({
+      analysis: expect.objectContaining({ schemaVersion: 3 }),
+      manifest: expect.objectContaining({ schemaVersion: 3 }),
+    }));
     expect(events[0]).toMatchObject({
       kind: "stage",
       stage: "fetching_context",
@@ -94,9 +97,7 @@ describe("AnalysisOrchestrator", () => {
     expect(result.manifest).not.toHaveProperty("meetingId");
     expect(result.manifest).not.toHaveProperty("transcriptSha256");
     expect(result.manifest).not.toHaveProperty("transcriptAlignment");
-    expect(result.projectionWarning).toBe(
-      "Published video-only run could not be added until the review projection supports schema v3.",
-    );
+    expect(result.projectionWarning).toBeUndefined();
   });
 
   it("publishes a valid run and reports structured progress", async () => {

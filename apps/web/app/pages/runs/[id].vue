@@ -10,8 +10,24 @@ if (error.value?.statusCode === 404) {
 }
 
 useSeoMeta({
-  title: () => `${run.value?.meetingTitle || "Run"} · Frame of Mind`,
+  title: () => `${run.value
+    ? run.value.schemaVersion === 2
+      ? run.value.meetingTitle || run.value.meetingId
+      : "Video analysis"
+    : "Run"} · Frame of Mind`,
 });
+
+function runTitle(value: StoredRun): string {
+  return value.schemaVersion === 2
+    ? value.meetingTitle || value.meetingId
+    : "Video analysis";
+}
+
+function runContext(value: StoredRun): string {
+  return value.schemaVersion === 2
+    ? `${value.provider} · ${value.transport}`
+    : "video only · no external context";
+}
 
 function importanceColor(value?: "high" | "medium" | "low") {
   if (value === "high") return "error";
@@ -39,10 +55,10 @@ function importanceColor(value?: "high" | "medium" | "low") {
         <div>
           <div class="flex flex-wrap items-center gap-2">
             <UBadge color="primary" variant="soft">{{ run.recipeLabel }}</UBadge>
-            <UBadge color="neutral" variant="outline" class="capitalize">{{ run.provider }} · {{ run.transport }}</UBadge>
+            <UBadge color="neutral" variant="outline" class="capitalize">{{ runContext(run) }}</UBadge>
           </div>
           <h1 class="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
-            {{ run.meetingTitle || run.meetingId }}
+            {{ runTitle(run) }}
           </h1>
           <p class="mt-5 max-w-3xl leading-7 text-zinc-600">{{ run.matchNotes }}</p>
         </div>

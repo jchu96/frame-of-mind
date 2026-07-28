@@ -1,9 +1,12 @@
-export interface RunSummary {
+import type {
+  AnalysisRun,
+  AnalysisRunV3,
+  RunManifest,
+  RunManifestV3,
+} from "../../../src/domain/types";
+
+interface RunSummaryBase {
   runId: string;
-  meetingId: string;
-  meetingTitle?: string;
-  provider: "bluedot" | "granola" | "file";
-  transport: "mcp" | "api" | "file";
   recipeId: string;
   recipeLabel: string;
   model: string;
@@ -15,11 +18,38 @@ export interface RunSummary {
   importedBy?: string;
 }
 
-export interface StoredRun extends RunSummary {
+export type RunSummary = RunSummaryBase & (
+  | {
+      schemaVersion: 2;
+      contextMode: "meeting";
+      meetingId: string;
+      meetingTitle?: string;
+      provider: "bluedot" | "granola" | "file";
+      transport: "mcp" | "api" | "file";
+    }
+  | {
+      schemaVersion: 3;
+      contextMode: "none";
+    }
+);
+
+export type StoredRun = RunSummaryBase & ({
+  schemaVersion: 2;
+  contextMode: "meeting";
+  meetingId: string;
+  meetingTitle?: string;
+  provider: "bluedot" | "granola" | "file";
+  transport: "mcp" | "api" | "file";
   matchNotes: string;
   analysis: AnalysisRun;
   manifest: RunManifest;
-}
+} | {
+  schemaVersion: 3;
+  contextMode: "none";
+  matchNotes: string;
+  analysis: AnalysisRunV3;
+  manifest: RunManifestV3;
+});
 
 export interface RunPage {
   runs: RunSummary[];
@@ -30,4 +60,3 @@ export interface SessionInfo {
   authMode: "off" | "cloudflare-access";
   email?: string;
 }
-import type { AnalysisRun, RunManifest } from "../../../src/domain/types";
