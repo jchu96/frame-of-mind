@@ -138,6 +138,12 @@ export const versionedAnalysisRunSchema = z.union([
 
 const utcDateTimeSchema = z.string().datetime({ offset: false });
 
+const derivedTranscriptProvenanceSchema = z.object({
+  origin: z.literal("gemini-audio"),
+  model: z.string().min(1).max(240),
+  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
+}).strict();
+
 export const runManifestSchema = z.object({
   schemaVersion: z.literal(2),
   toolVersion: z.string().min(1).max(120),
@@ -182,6 +188,7 @@ export const runManifestSchema = z.object({
     indexResolution: z.literal("low"),
     interrogationResolution: z.literal("medium"),
   }).strict(),
+  derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
   artifacts: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255)).max(1_100),
 }).strict().superRefine((value, context) => {
   if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
@@ -230,6 +237,7 @@ export const runManifestV3Schema = z.object({
     indexResolution: z.literal("low"),
     interrogationResolution: z.literal("medium"),
   }).strict(),
+  derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
   artifacts: z.array(
     z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255),
   ).max(1_100),

@@ -149,3 +149,24 @@
   proposed v4 architecture, not shipped behavior.
 - `communication-coaching` supports evidence-backed intent-versus-impact and
   missed-cue review scoped to the recording.
+- Gemini bills audio input at roughly 32 tokens per second against roughly 300
+  tokens per second for video at the default media resolution, so transcribing
+  a recording's audio before the video passes adds about ten percent to media
+  cost. The local ffmpeg extraction itself costs nothing.
+- Gemini's audio MIME allowlist excludes `audio/mp4`, so an `.m4a` derivative
+  is rejected. Frame of Mind extracts an ADTS `.aac` file and uploads it as
+  `audio/aac`.
+- A derived transcript is never persisted to the run bundle. The manifest
+  records only its `origin`, transcribing model, and the SHA-256 of the
+  formatted transcript text.
+- A 2026-07-28 three-run comparison on one 29m42s teaching recording found
+  recipe design moved results more than model choice: Flash 3.6 with the
+  improved recipe matched Pro on validation (8/8) in about a third of the wall
+  time, while Pro's edges were importance calibration and friction-moment
+  coverage. Pricing snapshot: Pro roughly $2/M input and $12/M output under
+  200K-token prompts versus Flash $1.50/M and $7.50/M — Pro costs ~1.3-1.6x
+  per token, not multiples. See
+  `docs/spikes/recipe-model-evaluation-runbook-2026-07-28.md`.
+- Evaluation fixtures must be genuinely public or self-produced recordings.
+  Hosted-online does not mean public; an authorized restricted recording can
+  be analyzed but never becomes a shared test fixture.

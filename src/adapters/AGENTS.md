@@ -12,6 +12,13 @@
 - Preserve the raw speaker tag even when diarization appears wrong. Any derived
   correction must use audio/video plus adjacent-turn evidence and remain
   explicit.
+- The `transcribe` pass returns diarized segments with generic voice-based
+  speaker labels (never guessed names) for the services formatter to render as
+  canonical `[HH:MM:SS] Speaker N: text` lines. It reuses the resumable
+  upload, structured-output, one-regeneration, and cleanup machinery, and
+  uploads only ADTS AAC as `audio/aac` — Gemini does not accept
+  `audio/mp4`/`.m4a`. Normalize a bare `MM:SS` to `00:MM:SS` only; that is the
+  sole lossless timestamp variant.
 - Validate signed Bluedot URLs against the exact HTTPS host and every redirect.
 - Normalize Granola absolute transcript times to meeting-relative timestamps.
 - Use Gemini Developer API mode; the Files API is not available through Vertex mode here.

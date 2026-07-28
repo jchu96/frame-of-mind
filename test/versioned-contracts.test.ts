@@ -51,6 +51,51 @@ describe("versioned run contracts", () => {
     await expect(validateVersionedRunImport(pair)).resolves.toEqual(parsed);
   });
 
+  it("accepts derived transcript provenance and rejects unknown transcript keys", async () => {
+    const pair = await videoOnlyPair();
+    const withDerived = {
+      analysis: pair.analysis,
+      manifest: {
+        ...pair.manifest,
+        derivedTranscript: {
+          origin: "gemini-audio" as const,
+          model: "gemini-3.6-flash",
+          sha256: "a".repeat(64),
+        },
+      },
+    };
+
+    expect(versionedRunImportSchema.parse(withDerived).manifest)
+      .toMatchObject({ derivedTranscript: { origin: "gemini-audio" } });
+
+    const unknownOrigin = {
+      analysis: pair.analysis,
+      manifest: {
+        ...pair.manifest,
+        derivedTranscript: {
+          origin: "whisper-local",
+          model: "gemini-3.6-flash",
+          sha256: "a".repeat(64),
+        },
+      },
+    };
+    expect(versionedRunImportSchema.safeParse(unknownOrigin).success).toBe(false);
+
+    const extraKey = {
+      analysis: pair.analysis,
+      manifest: {
+        ...pair.manifest,
+        derivedTranscript: {
+          origin: "gemini-audio",
+          model: "gemini-3.6-flash",
+          sha256: "a".repeat(64),
+          transcriptText: "never store transcript bodies",
+        },
+      },
+    };
+    expect(versionedRunImportSchema.safeParse(extraKey).success).toBe(false);
+  });
+
   it("rejects fabricated meeting provenance on video-only v3 pairs", async () => {
     const pair = await videoOnlyPair();
     const fabricated = {

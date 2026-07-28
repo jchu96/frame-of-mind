@@ -207,7 +207,9 @@ async function renderHtmlArtifact(
       : "No external context supplied";
   const alignment = manifest.schemaVersion === 2
     ? `Transcript alignment: ${manifest.transcriptAlignment.offsetSeconds >= 0 ? "+" : ""}${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).`
-    : "Transcript alignment: not applicable to a video-only run.";
+    : manifest.derivedTranscript
+      ? "Transcript alignment: transcript derived from this recording's audio (offset 0)."
+      : "Transcript alignment: not applicable to a video-only run.";
   const outcomeNotice = outcome.status === "complete"
     ? ""
     : `<aside><strong>${html(outcome.status === "partial" ? "Partial analysis" : "Analysis failed")}</strong>: ${outcome.candidates.failed} candidate response(s) failed validation and were excluded. Sanitized diagnostics are available in <code>analysis-outcome.json</code>.</aside>`;

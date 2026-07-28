@@ -10,6 +10,8 @@ import type {
   AnalysisRunV3,
   AnalysisItem,
   ContextProvider,
+  DerivedTranscriptProvenance,
+  DerivedTranscriptionSegment,
   IndexedMoment,
   MeetingContextSource,
   MeetingEvidence,
@@ -43,7 +45,8 @@ import {
   sha256File,
   sha256Text,
 } from "../lib/files.js";
-import { nearbyTranscript } from "./transcript.js";
+import { formatDerivedTranscript, nearbyTranscript } from "./transcript.js";
+import { extractAudioTrack } from "./audio.js";
 import { extractScreenshot } from "./screenshots.js";
 import { writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
@@ -75,6 +78,7 @@ interface AnalyzeOptionsBase {
   maxIncidents: number;
   screenshots: boolean;
   keepUpload: boolean;
+  derivedTranscript?: boolean;
 }
 
 export type ContextEnrichedAnalyzeOptions = AnalyzeOptionsBase & {
@@ -188,6 +192,7 @@ export interface AnalysisVideoAnalyzer {
     recipe: AnalysisRecipe,
     focus?: string,
     indexFps?: number,
+    derivedTranscript?: string,
   ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
@@ -196,6 +201,7 @@ export interface AnalysisVideoAnalyzer {
     recipe: AnalysisRecipe,
     focus?: string,
   ): Promise<AnalysisDetail>;
+  transcribe?(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
 }
 
@@ -213,6 +219,7 @@ export interface AnalysisOrchestratorDependencies {
   now?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
   extractScreenshot?: typeof extractScreenshot;
+  extractAudioTrack?: typeof extractAudioTrack;
 }
 
 export type AnalyzeResult = PublishedAnalysisRun & {
@@ -233,6 +240,7 @@ export class AnalysisOrchestrator {
   private readonly now: () => string;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly screenshot: typeof extractScreenshot;
+  private readonly extractAudio: typeof extractAudioTrack;
 
   constructor(dependencies: AnalysisOrchestratorDependencies) {
     this.createContextSource = dependencies.createContextSource;
@@ -241,6 +249,7 @@ export class AnalysisOrchestrator {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.screenshot = dependencies.extractScreenshot ?? extractScreenshot;
+    this.extractAudio = dependencies.extractAudioTrack ?? extractAudioTrack;
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
@@ -346,6 +355,75 @@ export class AnalysisOrchestrator {
           "Resolved Gemini analyzer does not match the requested model.",
         );
       }
+
+      let derivedTranscript: string | undefined;
+      let derivedTranscriptProvenance: DerivedTranscriptProvenance | undefined;
+      if (
+        options.derivedTranscript !== false
+        && !meeting?.transcript
+        && typeof analyzer.transcribe === "function"
+      ) {
+        await report(progress, {
+          kind: "stage",
+          stage: "fetching_context",
+          message: "Deriving a transcript from the recording audio…",
+        });
+        const audioPath = join(temp, "derived-audio.aac");
+        if (!(await this.extractAudio(localVideo, audioPath))) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "fetching_context",
+            message: "No audio track could be extracted; continuing without a transcript.",
+          });
+        } else {
+          assertNotCanceled(execution.signal);
+          let audioRemote: GeminiFile | undefined;
+          try {
+            audioRemote = await analyzer.upload(audioPath, "audio/aac");
+            assertNotCanceled(execution.signal);
+            const segments = await analyzer.transcribe(audioRemote);
+            const formatted = formatDerivedTranscript(segments);
+            if (formatted) {
+              derivedTranscript = formatted;
+              derivedTranscriptProvenance = {
+                origin: "gemini-audio",
+                model: analyzer.model,
+                sha256: sha256Text(formatted),
+              };
+            }
+          } catch (error) {
+            if (error instanceof AnalysisCanceledError) throw error;
+            await reportWarning(progress, {
+              kind: "warning",
+              stage: "fetching_context",
+              message: "Derived transcription failed; continuing without a transcript.",
+            });
+            if (error instanceof GeminiFileError && error.uploadCleanup === "unconfirmed") {
+              await reportUnconfirmedCleanup(
+                progress,
+                sanitizedRemoteFileName(error.remoteFileName),
+              );
+            }
+          } finally {
+            if (audioRemote) {
+              try {
+                await analyzer.delete(audioRemote);
+              } catch {
+                await reportUnconfirmedCleanup(
+                  progress,
+                  sanitizedRemoteFileName(audioRemote.name),
+                );
+              }
+            }
+            await rm(audioPath, { force: true });
+          }
+          assertNotCanceled(execution.signal);
+        }
+      }
+      if (meeting && !meeting.transcript && derivedTranscript) {
+        meeting = { ...meeting, transcript: derivedTranscript };
+      }
+
       await report(progress, {
         kind: "stage",
         stage: "uploading_to_gemini",
@@ -425,6 +503,7 @@ export class AnalysisOrchestrator {
           options.recipe,
           options.focus,
           indexFps,
+          derivedTranscript,
         );
         assertNotCanceled(execution.signal);
         let alignment: RunManifest["transcriptAlignment"] | undefined;
@@ -437,19 +516,26 @@ export class AnalysisOrchestrator {
               "Recording/transcript mismatch. Verify that the provider meeting ID and local recording refer to the same call.",
             );
           }
-          alignment = options.transcriptOffsetSeconds === undefined
+          alignment = derivedTranscriptProvenance && options.transcriptOffsetSeconds === undefined
             ? {
-                offsetSeconds: index.transcriptAlignment.offsetSeconds,
-                method: index.transcriptAlignment.confidence === "none" ? "none" : "model",
-                confidence: index.transcriptAlignment.confidence,
-                rationale: index.transcriptAlignment.rationale,
-              }
-            : {
-                offsetSeconds: options.transcriptOffsetSeconds,
+                offsetSeconds: 0,
                 method: "explicit",
                 confidence: "high",
-                rationale: "Operator supplied --transcript-offset.",
-              };
+                rationale: "Transcript derived from this recording's audio; offset is 0 by construction.",
+              }
+            : options.transcriptOffsetSeconds === undefined
+              ? {
+                  offsetSeconds: index.transcriptAlignment.offsetSeconds,
+                  method: index.transcriptAlignment.confidence === "none" ? "none" : "model",
+                  confidence: index.transcriptAlignment.confidence,
+                  rationale: index.transcriptAlignment.rationale,
+                }
+              : {
+                  offsetSeconds: options.transcriptOffsetSeconds,
+                  method: "explicit",
+                  confidence: "high",
+                  rationale: "Operator supplied --transcript-offset.",
+                };
         }
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
@@ -474,7 +560,9 @@ export class AnalysisOrchestrator {
                     45,
                     alignment.offsetSeconds,
                   )
-                : undefined,
+                : derivedTranscript
+                  ? nearbyTranscript(derivedTranscript, candidate.start, candidate.end, 45, 0)
+                  : undefined,
               options.recipe,
               options.focus,
             );
@@ -637,6 +725,9 @@ export class AnalysisOrchestrator {
             indexResolution: "low" as const,
             interrogationResolution: "medium" as const,
           },
+          ...(derivedTranscriptProvenance
+            ? { derivedTranscript: derivedTranscriptProvenance }
+            : {}),
           artifacts: [
             "analysis.json",
             "analysis-outcome.json",
@@ -650,7 +741,7 @@ export class AnalysisOrchestrator {
           ? {
               ...manifestBase,
               schemaVersion: 2,
-              promptRevision: "2026-07-28.2",
+              promptRevision: "2026-07-28.3",
               meetingId: meetingRunContext.meeting.id,
               transcriptSha256: sha256Text(meetingRunContext.meeting.transcript),
               contextProvider: meetingRunContext.meeting.provider,
@@ -661,7 +752,7 @@ export class AnalysisOrchestrator {
           : {
               ...manifestBase,
               schemaVersion: 3,
-              promptRevision: "2026-07-28.2",
+              promptRevision: "2026-07-28.3",
               context: { mode: "none" },
               mediaSource: "local-file",
             };

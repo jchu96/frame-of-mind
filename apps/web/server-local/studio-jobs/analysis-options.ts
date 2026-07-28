@@ -151,6 +151,7 @@ export class LocalStudioAnalyzeOptionsResolver {
       maxIncidents: this.#maxIncidents,
       screenshots: this.#screenshots,
       keepUpload: false,
+      derivedTranscript: true,
     } as const;
     if (!("provider" in context)) {
       return {

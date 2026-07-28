@@ -324,3 +324,28 @@
   pins finalized upload identity through polling and cleanup, keeps cancellation
   non-publishing, sanitizes diagnostic metadata before Zod, makes recovery
   warnings provenance-aware, and preserves existing manifest readers.
+- Implemented the derived-transcript ladder: provider transcript, operator
+  context file, transcript derived from the recording's audio, none. The new
+  rung strips the first audio stream with ffmpeg into a private ADTS `.aac`
+  derivative, uploads it as `audio/aac` through the existing resumable Files
+  path, transcribes it on the run's own model under strict local Zod with the
+  existing single repair, and deletes the remote audio immediately on success
+  and failure. `--no-derived-transcript` opts out; a missing ffmpeg or audio
+  track is a warning. Prompt revision moved to `2026-07-28.3`. Validated by the
+  `test/analysis-orchestrator.test.ts` ladder cases,
+  `test/gemini.test.ts` transcribe cases, `test/audio.test.ts`, and
+  `test/versioned-contracts.test.ts` coverage of the optional
+  `derivedTranscript` manifest field on schema 2 and 3. See ADR 0015.
+- Deliberately out of scope and still open after that change: persisting the
+  derived transcript as a run artifact and surfacing it in Studio, a
+  `frameofmind suggest` recipe-preparation pass, a scene-detect pre-pass,
+  duration-adaptive sampling, and automated pre-clipping of source media.
+- 2026-07-28: Validated the derived-transcript ladder live and ran the first
+  controlled recipe/model evaluation: three runs over one authorized 29m42s
+  teaching recording (Pro+recipe v1 standard, Pro+recipe v2 deep, Flash+recipe
+  v2 deep). All runs validated 100% of selected candidates with derived
+  transcripts and confirmed remote cleanup. Outcome: Flash default confirmed;
+  recipe v2 (friction/recovery, learner signals, alternative readings, pattern
+  names) outperformed v1 regardless of model. Method captured in
+  `docs/spikes/recipe-model-evaluation-runbook-2026-07-28.md`; automating it is
+  the top follow-up.

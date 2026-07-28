@@ -4,6 +4,18 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-07-28 — A recording may supply its own transcript
+
+Transcript resolution is a ladder: provider transcript, operator context file,
+transcript derived from the recording's audio, none. Deriving one is first-party
+evidence support, not fabricated meeting context; the audio being transcribed is
+the same media the run already analyzes, so the result adds no claim the
+recording does not already carry, and its alignment offset is zero by
+construction. That is why it is allowed where inventing meeting context is not.
+The rung runs only when the ladder above it produced nothing and the operator did
+not opt out, its failure is nonfatal, and the manifest labels the provenance so a
+reviewer can tell a derived transcript from a provider one. See ADR 0015.
+
 ## 2026-07-27 — Local context staging is bounded and single-use
 
 Studio accepts only five text-oriented formats through an 8 MiB private upload.
@@ -184,3 +196,13 @@ findings, procedures, technical explanations, coaching reports, and Q&A.
 Current v2/v3 recipes remain compatible, and mixed Flash/Pro passes wait for
 per-role model provenance. See
 [ADR 0014](../adr/0014-versioned-evidence-and-artifact-families.md).
+
+## 2026-07-28 — Flash stays the default model; Pro is a deliberate upgrade
+
+A controlled three-run comparison (same recording, recipe, depth, and moment
+budget) showed gemini-3.6-flash matching gemini-pro-latest on validation and
+core findings at about a third of the wall time. Pro remains available via
+`--model` for deliverable coaching passes where importance calibration and
+friction coverage matter. Model comparisons must follow
+`docs/spikes/recipe-model-evaluation-runbook-2026-07-28.md`, and its golden
+fixture must be a genuinely public or self-produced recording.

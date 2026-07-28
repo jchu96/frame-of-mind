@@ -185,6 +185,9 @@ for deterministic runs. Nearby transcript windows apply:
 transcript time = video candidate time + offset
 ```
 
+A transcript derived from the recording's own audio is pinned to offset zero
+with method `explicit` because both timelines come from the same media.
+
 Alignment affects transcript corroboration, not the video's own timestamp.
 Offsets are signed: a negative value means the transcript begins after the
 video. Model timestamps use canonical `HH:MM:SS`; invalid minute/second fields,
@@ -232,6 +235,28 @@ or the stable `content-addressed` marker.
 The current backend uses the Gemini Developer API. Version 0.3.0 uploads
 through Google's documented two-step resumable Files REST protocol, then uses
 the official `@google/genai` SDK for file status, generation, and deletion.
+
+Pass 0 (conditional):
+
+- runs after context resolution and before the video upload, only when the
+  effective transcript is empty and the operator did not pass
+  `--no-derived-transcript`;
+- strips the recording's first audio stream locally with ffmpeg into a private
+  ADTS `.aac` derivative in the run's temporary directory;
+- uploads that derivative as `audio/aac` through the same resumable Files
+  transport;
+- transcribes it on the run's own model into schema-validated diarized
+  segments carrying generic `Speaker N` labels, never guessed names;
+- deletes the remote audio file immediately on success and failure;
+- formats the segments locally into canonical `[HH:MM:SS] Speaker N: text`
+  lines.
+
+The result is untrusted corroborating context on the same footing as a provider
+transcript: it is escaped into the pass-1 prompt inside a section that states it
+was derived from the recording's audio, and pass 2 receives nearby slices at
+offset zero. It is never written to the run bundle; only its provenance reaches
+the manifest. Missing ffmpeg, a recording with no audio track, and a failed
+transcription are all warnings, and the run continues transcript-less.
 
 Pass 1:
 
@@ -362,6 +387,15 @@ sequenceDiagram
     CLI->>Context: connect and fetch
     Context-->>CLI: normalized context
     CLI->>CLI: validate media and compute hash
+    opt no transcript and derivation enabled
+        CLI->>FF: strip first audio stream
+        FF-->>CLI: AAC derivative
+        CLI->>Files: upload audio
+        Files-->>CLI: active remote file
+        CLI->>Model: transcribe audio
+        Model-->>CLI: diarized segments
+        CLI->>Files: delete audio file
+    end
     CLI->>Files: upload video
     Files-->>CLI: active remote file
     CLI->>Model: index operator-selected video
@@ -423,12 +457,20 @@ Contains:
 - media source class;
 - remote file identity/expiration/deletion state;
 - analysis bounds/resolution;
+- optional derived-transcript provenance;
 - artifact inventory.
 
 Meeting-backed schema v2 additionally records the meeting ID, context
 provider and transport, transcript SHA-256, and transcript alignment.
 Video-only schema v3 instead records `context.mode: "none"`, restricts media
 provenance to a local file, and omits every meeting/transcript/alignment field.
+
+Both schema versions may carry the optional `derivedTranscript` object when the
+run transcribed the recording's own audio. It records `origin: "gemini-audio"`,
+the transcribing model, and the SHA-256 of the formatted transcript text. A v2
+run built on a derived transcript sets `transcriptSha256` to that same digest
+and pins alignment to offset zero with method `explicit`. The transcript text
+itself is never persisted; the exclusion list below still applies.
 
 It intentionally excludes:
 
@@ -975,6 +1017,7 @@ weaken the Nuxt UI boundary. See [MCP_ROADMAP.md](MCP_ROADMAP.md).
 | Provider OAuth fails                    | no Gemini upload starts                                      |
 | Context unavailable                     | run stops before media upload                                |
 | Media validation fails                  | no provider/model processing                                 |
+| Derived transcription fails             | warning; run continues without a transcript                  |
 | Gemini upload fails                     | partial remote file deletion attempted                       |
 | Upload processing and cleanup both fail | sanitized combined failure; remote cleanup is not claimed    |
 | Gemini HTTP request stalls              | per-operation deadline aborts locally so cleanup can proceed |

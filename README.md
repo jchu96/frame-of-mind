@@ -99,6 +99,12 @@ moments are then re-examined in bounded higher-resolution clips with an aligned
 transcript window. Ambiguous candidates are retained as rejected records for
 review.
 
+When no provider or context-file transcript is available, Frame of Mind first
+strips the recording's audio with `ffmpeg` and transcribes it on the same model,
+so a video-only run still gets spoken corroboration at zero alignment offset.
+Speakers are labeled generically, the transcript itself is never stored, and
+`--no-derived-transcript` turns the step off.
+
 The durable source is local:
 
 ```text
@@ -120,7 +126,8 @@ sensitive because screenshots are embedded.
 - Bun 1.3.14+
 - Node.js 22+ for the linked `frameofmind` executable
 - Git; GitHub CLI is optional but used by the examples
-- `ffmpeg` for `bun run smoke:gemini`, derivative clips, and screenshots
+- `ffmpeg` for `bun run smoke:gemini`, derivative clips, screenshots, and
+  derived transcripts
 - Gemini Developer API auth key
 - Bluedot, Granola, or local context
 - local MP4/MOV/M4V/WebM screen recording
@@ -463,7 +470,8 @@ Analysis options:
 | `--depth <standard\|deep>`       | sampling/prompt rigor, default `standard`       |
 | `--model <id>`                   | Gemini model for both current passes            |
 | `--max-moments <n>`              | cap close interrogation, default `10`          |
-| `--no-screenshots`               | run without ffmpeg                             |
+| `--no-screenshots`               | run without ffmpeg screenshots                 |
+| `--no-derived-transcript`        | skip transcribing the recording's own audio    |
 | `--keep-upload`                  | retain Gemini upload until provider expiration |
 | `-o, --output <path>`            | override private application-data root         |
 
