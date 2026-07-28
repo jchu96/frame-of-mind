@@ -12,9 +12,10 @@
 ## Progress
 
 - Phases: 5/9 complete
-- Tasks: 33/51 complete
-- Current focus: Task 6.6, adopting the versioned context-optional contract in
-  Studio immutable input, readiness, execution, and completed-run projection.
+- Tasks: 34/51 complete
+- Current focus: Task 6.7, building the Intent step and shared readiness
+  coordinator so Recording and Intent are required while Context remains an
+  explicit optional enrichment.
 
 ## Decision
 

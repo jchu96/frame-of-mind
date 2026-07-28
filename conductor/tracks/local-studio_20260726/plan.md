@@ -231,7 +231,7 @@ separate proposed track.
       and alignment provenance conditional on real context, teach orchestration
       and renderers to skip context honestly, and never encode a pseudo-meeting,
       empty transcript, provider fallback, or fake alignment.
-- [~] Task 6.6: Adopt that contract in Studio immutable job input, readiness,
+- [x] Task 6.6: Adopt that contract in Studio immutable job input, readiness,
       execution, and completed-run projection. Add any required additive
       SQLite/D1 migration and shared projection changes, keep existing v2 rows
       readable, require provider credentials only for enriched runs, and prove
