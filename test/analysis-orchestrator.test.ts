@@ -317,6 +317,28 @@ describe("AnalysisOrchestrator", () => {
     expect(fixture.analyzer.delete).toHaveBeenCalledTimes(1);
   });
 
+  it("does not publish when cancellation coincides with an upload failure", async () => {
+    const fixture = await createFixture();
+    const controller = new AbortController();
+    fixture.analyzer.upload = vi.fn(async () => {
+      controller.abort();
+      throw new GeminiFileError(
+        "Gemini upload failed after cancellation.",
+        "files/canceled-upload",
+        "confirmed_deleted",
+      );
+    });
+
+    await expect(
+      createOrchestrator(fixture).analyze(fixture.options, {
+        signal: controller.signal,
+      }),
+    ).rejects.toBeInstanceOf(AnalysisCanceledError);
+
+    await expect(stat(join(fixture.outputRoot, fixture.meeting.id)))
+      .rejects.toThrow();
+  });
+
   it("deletes the remote upload and publishes a sanitized failure manifest after an unexpected analysis failure", async () => {
     const fixture = await createFixture();
     const privateProviderPayload = "private-provider-payload-must-not-persist";
@@ -475,6 +497,52 @@ describe("AnalysisOrchestrator", () => {
     expect(events).toContainEqual(expect.objectContaining({
       kind: "warning",
       message: expect.stringContaining("cleanup is unconfirmed"),
+    }));
+  });
+
+  it("drops malformed upload identity without masking the original failure", async () => {
+    const fixture = await createFixture();
+    fixture.analyzer.upload = vi.fn(async () => {
+      throw new GeminiFileError(
+        "safe upload failure",
+        "../../private-provider-name",
+        "unconfirmed",
+      );
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options))
+      .rejects.toThrow("safe upload failure");
+
+    const receipt = JSON.parse(await readFile(join(
+      fixture.outputRoot,
+      fixture.meeting.id,
+      "run-test",
+      "failure-manifest.json",
+    ), "utf8"));
+    expect(receipt.remoteFile).toEqual({ cleanup: "unconfirmed" });
+  });
+
+  it("does not promise exact recovery when unconfirmed cleanup has no file name", async () => {
+    const fixture = await createFixture();
+    const events: AnalysisProgressEvent[] = [];
+    fixture.analyzer.upload = vi.fn(async () => {
+      throw new GeminiFileError(
+        "upload finalization was ambiguous",
+        undefined,
+        "unconfirmed",
+      );
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options, {
+      progress: { report: (event) => events.push(event) },
+    })).rejects.toThrow("upload finalization was ambiguous");
+
+    const warning = events.find((event) => event.kind === "warning");
+    expect(warning).toEqual(expect.objectContaining({
+      message: expect.stringContaining("identity is unavailable"),
+    }));
+    expect(warning).not.toEqual(expect.objectContaining({
+      message: expect.stringContaining("exact-file recovery"),
     }));
   });
 

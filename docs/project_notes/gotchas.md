@@ -362,6 +362,20 @@
   errors must preserve that exact sanitized name and cleanup state. The upload
   call needs its own failure-receipt boundary because it occurs before index and
   detail orchestration.
+- Pin the validated upload name and URI before polling. Gemini `files.get`
+  fields are optional, so replacing the upload receipt with a poll response can
+  lose the only cleanup identity; accepting a different returned name can delete
+  the wrong file while falsely recording the original recording as deleted.
+- Cancellation can race with a provider rejection. Recheck the abort signal in
+  provider catch paths before publishing a failure receipt so cancellation
+  remains non-publishing even when the provider throws first.
+- Sanitize provider identifiers before constructing a strict diagnostic
+  manifest. If cleanup claims deletion but no valid exact name survives,
+  downgrade provenance to `unconfirmed` instead of letting Zod mask the original
+  failure or asserting deletion that cannot be audited.
+- Durable readers must remain compatible with historical optional provider
+  metadata. Canonicalize and sanitize current writes at the adapter/orchestrator
+  boundary; do not silently narrow an existing schema version's reader.
 - A `*-latest` Gemini model name is mutable. Record the requested alias and do
   not claim reproducibility or mixed-model provenance that the manifest cannot
   represent.

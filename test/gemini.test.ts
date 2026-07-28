@@ -812,6 +812,59 @@ describe("GeminiVideoAnalyzer", () => {
     expect(deletes).toBe(1);
   });
 
+  it("retains the finalized upload identity when polling omits it", async () => {
+    const processingFile: GeminiFile = {
+      ...activeFile,
+      state: FileState.PROCESSING,
+    };
+    const analyzer = new GeminiVideoAnalyzer(
+      "test-api-key",
+      "gemini-3.6-flash",
+      {
+        fileUploader: { upload: async () => processingFile },
+        getFile: async () => ({ state: FileState.ACTIVE }),
+        sleep: async () => {},
+        now: () => 0,
+      },
+    );
+
+    await expect(analyzer.upload("/private/test.mp4", "video/mp4"))
+      .resolves.toMatchObject({
+        name: processingFile.name,
+        uri: processingFile.uri,
+        state: FileState.ACTIVE,
+      });
+  });
+
+  it("deletes the finalized upload when polling substitutes another identity", async () => {
+    const processingFile: GeminiFile = {
+      ...activeFile,
+      state: FileState.PROCESSING,
+    };
+    const deletedNames: string[] = [];
+    const analyzer = new GeminiVideoAnalyzer(
+      "test-api-key",
+      "gemini-3.6-flash",
+      {
+        fileUploader: { upload: async () => processingFile },
+        getFile: async () => ({
+          ...processingFile,
+          name: "files/substituted",
+          state: FileState.ACTIVE,
+        }),
+        deleteFile: async ({ name }) => {
+          deletedNames.push(name);
+        },
+        sleep: async () => {},
+        now: () => 0,
+      },
+    );
+
+    await expect(analyzer.upload("/private/test.mp4", "video/mp4"))
+      .rejects.toBeInstanceOf(GeminiFileError);
+    expect(deletedNames).toEqual([processingFile.name]);
+  });
+
   it("deletes a safely named file when its finalized record is invalid", async () => {
     let deletes = 0;
     const uploader = createGeminiFileUploader("test-api-key", {

@@ -172,7 +172,7 @@ export const runManifestSchema = z.object({
   }).strict(),
   remoteFile: z.object({
     name: z.string().max(1_000).optional(),
-    expirationTime: utcDateTimeSchema.max(120).optional(),
+    expirationTime: z.string().max(120).optional(),
     deleted: z.boolean(),
   }).strict().optional(),
   analysis: z.object({
@@ -220,7 +220,7 @@ export const runManifestV3Schema = z.object({
   mediaSource: z.literal("local-file"),
   remoteFile: z.object({
     name: z.string().max(1_000).optional(),
-    expirationTime: utcDateTimeSchema.max(120).optional(),
+    expirationTime: z.string().max(120).optional(),
     deleted: z.boolean(),
   }).strict().optional(),
   analysis: z.object({

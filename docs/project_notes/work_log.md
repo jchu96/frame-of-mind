@@ -317,3 +317,10 @@
   bounds as durable contracts. `bun run check` passed with 138 core tests and
   188 web tests, and `bun run smoke:gemini` passed upload, index, detail, and
   exact deletion using generated media only.
+- PR #31 adversarial review reproduced six additional boundary cases with
+  synthetic fixtures: cancellation racing an upload error, malformed upload
+  identity, unnamed unconfirmed cleanup, historical offset-form expiration
+  metadata, omitted poll identity, and substituted poll identity. The iteration
+  pins finalized upload identity through polling and cleanup, keeps cancellation
+  non-publishing, sanitizes diagnostic metadata before Zod, makes recovery
+  warnings provenance-aware, and preserves existing manifest readers.
