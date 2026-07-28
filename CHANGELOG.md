@@ -20,6 +20,16 @@ Semantic Versioning.
 ### Changed
 
 - Bumped the prompt revision to `2026-07-28.3`.
+- On schema-2 manifests a derived transcript changes the referent of two
+  existing fields: `transcriptSha256` records the derived text's digest and
+  `transcriptAlignment` is pinned to explicit offset 0; a schema refinement
+  enforces both whenever `derivedTranscript` is present. Consumers must check
+  `derivedTranscript` before attributing transcript provenance.
+- Derived transcription defaults to on for programmatic
+  `AnalysisOrchestrator`/`analyzeMeeting` embedders as well as the CLI; pass
+  `derivedTranscript: false` to keep prior behavior. `--transcript-offset` is
+  ignored (with a warning) when the transcript is derived, because a derived
+  transcript is zero-aligned by construction.
 - The `doctor` ffmpeg check now reports that it serves screenshots and derived
   transcription; both remain optional and nonfatal.
 

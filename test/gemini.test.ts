@@ -410,6 +410,32 @@ describe("GeminiVideoAnalyzer", () => {
       .not.toContain("transcriptAlignment");
   });
 
+  it("labels derived nearby slices and keeps the guard when no slice exists", async () => {
+    const requests: GenerateContentParameters[] = [];
+    const analyzer = new GeminiVideoAnalyzer(
+      "test-api-key",
+      "gemini-3.6-flash",
+      {
+        generateContent: async (parameters) => {
+          requests.push(parameters);
+          return { text: JSON.stringify(validDetailResponse) };
+        },
+      },
+    );
+    const candidate = { ...validVideoOnlyIndexResponse.moments[0]!, importance: "low" as const };
+
+    await analyzer.interrogate(activeFile, candidate, "[00:00:01] Speaker 1: Hi.", recipe, undefined, true);
+    await analyzer.interrogate(activeFile, candidate, "", recipe, undefined, true);
+
+    const derivedText = JSON.stringify(requests[0]?.contents);
+    expect(derivedText).toContain("derived from this recording&#39;s own audio".replace("&#39;", "'"));
+    expect(derivedText).toContain("<nearby-transcript>");
+    const emptyText = JSON.stringify(requests[1]?.contents);
+    expect(emptyText).toContain("No aligned transcript is available for this clip");
+    expect(emptyText).toContain("do not infer off-screen discussion");
+    expect(emptyText).not.toContain("<nearby-transcript>");
+  });
+
   it("transcribes audio into diarized segments and normalizes short timestamps", async () => {
     const requests: GenerateContentParameters[] = [];
     const analyzer = new GeminiVideoAnalyzer(
@@ -423,6 +449,7 @@ describe("GeminiVideoAnalyzer", () => {
               segments: [
                 { start: "00:12", end: "01:05", speaker: "Speaker 1", text: "Hello there." },
                 { start: "00:01:06", end: "00:01:09", speaker: "Speaker 2", text: "[inaudible]" },
+                { start: "1:02:03", end: "1:02:08", speaker: "Speaker 1", text: "Hour-crossing segment." },
               ],
             }),
           };
@@ -435,6 +462,7 @@ describe("GeminiVideoAnalyzer", () => {
     expect(segments).toEqual([
       { start: "00:00:12", end: "00:01:05", speaker: "Speaker 1", text: "Hello there." },
       { start: "00:01:06", end: "00:01:09", speaker: "Speaker 2", text: "[inaudible]" },
+      { start: "01:02:03", end: "01:02:08", speaker: "Speaker 1", text: "Hour-crossing segment." },
     ]);
     const promptText = JSON.stringify(requests[0]?.contents);
     expect(promptText).toContain("Transcribe the complete audio verbatim");

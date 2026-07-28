@@ -33,8 +33,8 @@ describe("extractAudioTrack", () => {
     await expect(stat(destination)).rejects.toThrow();
   });
 
-  it("extracts a private audio derivative from a real recording when ffmpeg exists", async () => {
-    if (!(await ffmpegAvailable())) return;
+  it("extracts a private audio derivative from a real recording when ffmpeg exists", async (context) => {
+    if (!(await ffmpegAvailable())) return context.skip();
     const root = await mkdtemp(join(tmpdir(), "frame-of-mind-audio-test-"));
     temporaryDirectories.push(root);
     const video = join(root, "synthetic.mp4");
@@ -48,7 +48,7 @@ describe("extractAudioTrack", () => {
       child.once("error", () => resolve(null));
       child.once("close", resolve);
     });
-    if (generated !== 0) return;
+    if (generated !== 0) return context.skip();
     const destination = join(root, "derived-audio.aac");
 
     await expect(extractAudioTrack(video, destination)).resolves.toBe(true);
