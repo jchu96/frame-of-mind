@@ -266,3 +266,36 @@
 - Browser review exposed Nuxt UI 4.10 radio labels that retained machine-value
   accessible names. Replaced that selector with a native labeled fieldset and
   retained Nuxt UI for the surrounding workflow.
+
+## 2026-07-28
+
+- Revised the Local Studio contract and plan so users may begin with Intent,
+  optional Context, or Recording and complete those sections in any order.
+  Added focused core-contract and Studio-adoption tasks for honest video-only
+  provenance, v2 import/projection compatibility, and fail-closed context
+  selection before the remaining composer UI and Run receipt work.
+- Implemented the core schema-v3 video-only pair without changing v2: strict
+  versioned Zod validation/digests, recording-only Gemini schemas and prompts,
+  context-free orchestration/rendering, and a v2-only Studio projection guard.
+  Adversarial review closed a possible missing-provider-evidence downgrade.
+  `bun run check` passed with 109 CLI tests, 175 web tests, both production
+  builds, the Studio HTTP probe, Cloudflare boundary check, and 32 MiB stream
+  spike.
+- Adopted v3 in Studio immutable input, readiness, execution receipts, shared
+  import DTOs, and SQLite/D1 projections. Video-only jobs require Gemini and
+  sealed media but no meeting credential; immutable mode mismatches fail
+  before orchestration. The additive projection uses separate v2/v3 table
+  families plus a shared run-version registry, and run pages render both.
+- Task 6.6 verification passed `bun run check` with 109 core tests, 183 web
+  tests, both production builds, the Studio HTTP probe, Cloudflare boundary
+  audit, and the 32 MiB stream spike. All eight existing browser smoke journeys
+  passed; a focused ninth journey then proved v3 import, detail provenance, and
+  Local Studio home rendering end to end.
+- PR #29 adversarial iteration bound returned schema versions to immutable job
+  context, made every D1 run/item mutation registry-version conditional,
+  restored full v2 and v3 runtime coverage, and added populated SQLite-upgrade
+  plus real Miniflare/D1 tests. Cross-version API imports now return a
+  sanitized 409, and the v2/v3 operator review guidance is explicit.
+- The post-iteration `bun run check` passed 109 core tests, 188 web tests,
+  CLI and both Nuxt production builds, the local Studio HTTP contract,
+  Cloudflare boundary audit, and the 32 MiB streaming spike.

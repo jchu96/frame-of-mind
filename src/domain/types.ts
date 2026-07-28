@@ -84,13 +84,19 @@ export interface AnalysisItem {
   screenshot?: string;
 }
 
-export interface AnalysisRun {
-  schemaVersion: 2;
+interface AnalysisRunBase {
   runId: string;
   recipe: {
     id: string;
     label: string;
   };
+  model: string;
+  matchNotes: string;
+  items: AnalysisItem[];
+}
+
+export interface AnalysisRun extends AnalysisRunBase {
+  schemaVersion: 2;
   meeting: {
     id: string;
     provider: ContextProvider;
@@ -98,19 +104,23 @@ export interface AnalysisRun {
     createdAt?: string;
     sourceUrl?: string;
   };
-  model: string;
-  matchNotes: string;
-  items: AnalysisItem[];
 }
 
-export interface RunManifest {
-  schemaVersion: 2;
+export interface AnalysisRunV3 extends AnalysisRunBase {
+  schemaVersion: 3;
+  context: {
+    mode: "none";
+  };
+}
+
+export type VersionedAnalysisRun = AnalysisRun | AnalysisRunV3;
+
+interface RunManifestBase {
   toolVersion: string;
   promptRevision: string;
   runId: string;
   startedAt: string;
   completedAt: string;
-  meetingId: string;
   recipe: {
     id: string;
     label: string;
@@ -120,18 +130,9 @@ export interface RunManifest {
   };
   model: string;
   recordingSha256: string;
-  transcriptSha256: string;
   analysisSha256: string;
   recordingMimeType: string;
-  contextProvider: ContextProvider;
-  contextTransport: "mcp" | "api" | "file";
   mediaSource: "bluedot-mcp" | "signed-url" | "local-file";
-  transcriptAlignment: {
-    offsetSeconds: number;
-    method: "explicit" | "model" | "none";
-    confidence: "high" | "medium" | "low" | "none";
-    rationale?: string;
-  };
   remoteFile?: {
     name?: string;
     expirationTime?: string;
@@ -146,3 +147,27 @@ export interface RunManifest {
   };
   artifacts: string[];
 }
+
+export interface RunManifest extends RunManifestBase {
+  schemaVersion: 2;
+  meetingId: string;
+  transcriptSha256: string;
+  contextProvider: ContextProvider;
+  contextTransport: "mcp" | "api" | "file";
+  transcriptAlignment: {
+    offsetSeconds: number;
+    method: "explicit" | "model" | "none";
+    confidence: "high" | "medium" | "low" | "none";
+    rationale?: string;
+  };
+}
+
+export interface RunManifestV3 extends RunManifestBase {
+  schemaVersion: 3;
+  context: {
+    mode: "none";
+  };
+  mediaSource: "local-file";
+}
+
+export type VersionedRunManifest = RunManifest | RunManifestV3;

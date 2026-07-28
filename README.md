@@ -2,10 +2,11 @@
 
 **Video in. Understanding out.**
 
-Frame of Mind combines a meeting recording with context from Bluedot, Granola,
-or a local transcript, then runs a structured Gemini analysis recipe. Use it to
-extract decisions, requirements, action items, repository plans, or grounded
-issue reviews into private JSON, Markdown, self-contained HTML, and screenshots.
+Frame of Mind runs structured Gemini analysis recipes over an
+operator-selected recording, optionally enriched with context from Bluedot,
+Granola, or a local transcript. Use it to extract decisions, requirements,
+action items, repository plans, or grounded issue reviews into private JSON,
+Markdown, self-contained HTML, and screenshots.
 
 Version 0.2.1 uses Google's documented resumable Files upload protocol and a
 Gemini-safe response schema while retaining the complete Zod contract as the
@@ -501,11 +502,17 @@ Only the two JSON contracts are stored. Recordings, screenshots, full
 transcripts, provider payloads, and API credentials are not copied into
 SQLite or D1.
 
-Version 2 bundles are cryptographically paired: `analysis.json` carries the
-run ID and `manifest.json` carries the SHA-256 of the exact canonical analysis
-JSON. Imports reject mismatched IDs, modified analyses, malformed timestamps,
-and contradictory normalized provenance. Version 1 bundles are intentionally
-not accepted by the v0.2 workspace; rerun the source analysis to migrate.
+Version 2 meeting-backed bundles are cryptographically paired:
+`analysis.json` carries the run ID and `manifest.json` carries the SHA-256 of
+the exact canonical analysis JSON. The core contract also defines schema v3
+for explicit video-only runs; it records `context.mode: "none"` and omits
+meeting, transcript, provider, and alignment provenance. The review workspace
+imports and renders both versions through separate rebuildable projection
+tables; one schema-version registry prevents a run ID from crossing versions.
+Imports reject mismatched IDs, modified analyses, malformed timestamps, and
+contradictory normalized provenance.
+Version 1 bundles are intentionally unsupported; rerun the source analysis to
+migrate.
 
 Hosted mode builds for Cloudflare Workers, uses D1, and fails closed behind
 Cloudflare Access JWT validation:

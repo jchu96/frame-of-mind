@@ -27,7 +27,7 @@ import type {
   LocalInitialMediaGuard,
   LocalMediaReuseGuard,
 } from "../server-local/studio-jobs/media-reuse-guard";
-import { runFixture } from "./fixtures";
+import { runFixture, videoRunFixture } from "./fixtures";
 
 const recipe: AnalysisRecipe = {
   id: "issue-review",
@@ -160,6 +160,167 @@ describe("OrchestratedAnalysisJobExecutor", () => {
         progress: collect([]),
       }),
     ).rejects.toThrow("immutable job receipt");
+    expect(called).toBe(false);
+  });
+
+  test("binds explicit video-only input and accepts a v3 publication receipt", async () => {
+    const job = await claimedVideoOnlyJob();
+    const published = await videoRunFixture();
+    let captured: AnalyzeOptions | undefined;
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze(options) {
+          captured = options;
+          return {
+            directory: "/private/not-persisted",
+            analysis: published.analysis,
+            manifest: published.manifest,
+          };
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      async resolveAnalyzeOptions() {
+        return {
+          contextMode: "none",
+          recipe,
+          customRecipe: false,
+          recipeSha256: job.input.recipe.sha256,
+          recipeRevision: job.input.recipe.revision,
+          apiKey: "test-key",
+          model: job.input.model,
+          video: "/private/media.mp4",
+          outputRoot: "/private/runs",
+          maxIncidents: 10,
+          screenshots: true,
+          keepUpload: false,
+        };
+      },
+    });
+
+    await expect(executor.execute(job, {
+      signal: new AbortController().signal,
+      progress: collect([]),
+    })).resolves.toEqual({ runId: published.analysis.runId });
+    expect(captured).toMatchObject({
+      contextMode: "none",
+      model: job.input.model,
+      recipeSha256: job.input.recipe.sha256,
+    });
+    expect(captured).not.toHaveProperty("meetingId");
+    expect(captured).not.toHaveProperty("contextProvider");
+  });
+
+  test("rejects a v3 receipt for immutable meeting context", async () => {
+    const job = await claimedJob();
+    const published = await videoRunFixture();
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze() {
+          return { directory: "/private/not-persisted", ...published };
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      resolveAnalyzeOptions: async () => resolvedOptions(),
+    });
+
+    await expect(executor.execute(job, {
+      signal: new AbortController().signal,
+      progress: collect([]),
+    })).rejects.toBeInstanceOf(AnalysisExecutionIndeterminateError);
+  });
+
+  test("rejects a v2 receipt for immutable video-only context", async () => {
+    const job = await claimedVideoOnlyJob();
+    const published = runFixture();
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze() {
+          return { directory: "/private/not-persisted", ...published };
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      async resolveAnalyzeOptions() {
+        return {
+          contextMode: "none",
+          recipe,
+          customRecipe: false,
+          recipeSha256: job.input.recipe.sha256,
+          recipeRevision: job.input.recipe.revision,
+          apiKey: "test-key",
+          model: job.input.model,
+          video: "/private/media.mp4",
+          outputRoot: "/private/runs",
+          maxIncidents: 10,
+          screenshots: true,
+          keepUpload: false,
+        };
+      },
+    });
+
+    await expect(executor.execute(job, {
+      signal: new AbortController().signal,
+      progress: collect([]),
+    })).rejects.toBeInstanceOf(AnalysisExecutionIndeterminateError);
+  });
+
+  test("does not let resolved video-only mode override committed meeting context", async () => {
+    const job = await claimedJob();
+    let called = false;
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze() {
+          called = true;
+          throw new Error("unreachable");
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      async resolveAnalyzeOptions() {
+        return {
+          contextMode: "none",
+          recipe,
+          customRecipe: false,
+          recipeSha256: job.input.recipe.sha256,
+          recipeRevision: job.input.recipe.revision,
+          apiKey: "test-key",
+          model: job.input.model,
+          video: "/private/media.mp4",
+          outputRoot: "/private/runs",
+          maxIncidents: 10,
+          screenshots: true,
+          keepUpload: false,
+        };
+      },
+    });
+
+    await expect(executor.execute(job, {
+      signal: new AbortController().signal,
+      progress: collect([]),
+    })).rejects.toThrow(
+      "Resolved context mode does not match the immutable job receipt.",
+    );
+    expect(called).toBe(false);
+  });
+
+  test("does not attach resolved meeting context to committed video-only input", async () => {
+    const job = await claimedVideoOnlyJob();
+    let called = false;
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze() {
+          called = true;
+          throw new Error("unreachable");
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      resolveAnalyzeOptions: async () => resolvedOptions(),
+    });
+
+    await expect(executor.execute(job, {
+      signal: new AbortController().signal,
+      progress: collect([]),
+    })).rejects.toThrow(
+      "Resolved context mode does not match the immutable job receipt.",
+    );
     expect(called).toBe(false);
   });
 
@@ -369,6 +530,37 @@ async function claimedJob(): Promise<AnalysisJob> {
     rootJobId: "job_01K123456789ABC",
     attempt: 1,
     idempotencyKey: "orchestrated-job-0001",
+    inputDigest: verified.inputDigest,
+    input: verified.input,
+    stage: "fetching_context",
+    createdAt,
+    updatedAt: createdAt,
+  });
+}
+
+async function claimedVideoOnlyJob(): Promise<AnalysisJob> {
+  const verified = await verifyImmutableJobInput({
+    mediaSessionId: "media_01K123456789ABC",
+    mediaSha256: "a".repeat(64),
+    context: { mode: "none" },
+    recipe: {
+      id: recipe.id,
+      custom: false,
+      revision: "builtin-v1",
+      sha256: await digestRecipe(recipe),
+    },
+    model: "gemini-3.6-flash",
+    focus: "Only the visible failure.",
+    retention: {
+      mode: "ephemeral",
+      expiresAt: "2026-07-28T12:00:00.000Z",
+    },
+  });
+  return analysisJobSchema.parse({
+    id: "job_01K123456789VIDEO1",
+    rootJobId: "job_01K123456789VIDEO1",
+    attempt: 1,
+    idempotencyKey: "orchestrated-video-job-0001",
     inputDigest: verified.inputDigest,
     input: verified.input,
     stage: "fetching_context",

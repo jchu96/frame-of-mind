@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { RunPage } from "../../shared/types";
+import type { RunPage, RunSummary } from "../../shared/types";
 
 useSeoMeta({
   title: "Runs · Frame of Mind",
@@ -14,7 +14,21 @@ const runs = computed(() => page.value.runs);
 const loadingMore = ref(false);
 
 const accepted = computed(() => runs.value.reduce((sum, run) => sum + run.acceptedCount, 0));
-const meetings = computed(() => new Set(runs.value.map((run) => run.meetingId)).size);
+const meetings = computed(() => new Set(
+  runs.value.flatMap((run) => run.schemaVersion === 2 ? [run.meetingId] : []),
+).size);
+
+function runTitle(run: RunSummary): string {
+  return run.schemaVersion === 2
+    ? run.meetingTitle || run.meetingId
+    : "Video analysis";
+}
+
+function runContext(run: RunSummary): string {
+  return run.schemaVersion === 2
+    ? `${run.provider} · ${run.transport}`
+    : "video only";
+}
 
 async function loadMore() {
   if (!page.value.nextCursor || loadingMore.value) return;
@@ -107,7 +121,7 @@ function formatDate(value: string) {
           <table class="w-full min-w-220 text-left text-sm">
             <thead class="border-b border-zinc-200 bg-zinc-50/90 text-xs uppercase tracking-wider text-zinc-500">
               <tr>
-                <th class="px-5 py-3 font-semibold">Meeting</th>
+                <th class="px-5 py-3 font-semibold">Source</th>
                 <th class="px-5 py-3 font-semibold">Recipe</th>
                 <th class="px-5 py-3 font-semibold">Context</th>
                 <th class="px-5 py-3 font-semibold">Results</th>
@@ -118,7 +132,7 @@ function formatDate(value: string) {
               <tr v-for="run in runs" :key="run.runId" class="transition-colors hover:bg-emerald-50/50">
                 <td class="px-5 py-4">
                   <NuxtLink :to="`/runs/${encodeURIComponent(run.runId)}`" class="font-bold hover:underline">
-                    {{ run.meetingTitle || run.meetingId }}
+                    {{ runTitle(run) }}
                   </NuxtLink>
                   <p class="mt-1 max-w-80 truncate font-mono text-xs text-zinc-500">{{ run.runId }}</p>
                 </td>
@@ -126,7 +140,7 @@ function formatDate(value: string) {
                   <UBadge color="primary" variant="soft">{{ run.recipeLabel }}</UBadge>
                 </td>
                 <td class="px-5 py-4 capitalize text-zinc-600">
-                  {{ run.provider }} · {{ run.transport }}
+                  {{ runContext(run) }}
                 </td>
                 <td class="px-5 py-4">
                   <span class="font-bold text-emerald-700">{{ run.acceptedCount }}</span>

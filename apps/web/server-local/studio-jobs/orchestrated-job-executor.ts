@@ -18,7 +18,7 @@ import type {
   AnalyzeOptions,
 } from "../../../../src/services/analyze";
 import { digestRecipe } from "../../../../src/recipes/index";
-import { validateRunImport } from "../../../../src/domain/integrity";
+import { validateVersionedRunImport } from "../../../../src/domain/integrity";
 import {
   LocalInitialMediaGuard,
   LocalMediaReuseGuard,
@@ -101,12 +101,16 @@ export class OrchestratedAnalysisJobExecutor implements AnalysisJobExecutor {
           },
         },
       });
-      const validated = await validateRunImport({
+      const validated = await validateVersionedRunImport({
         analysis: result.analysis,
         manifest: result.manifest,
       }).catch(() => {
         throw new AnalysisExecutionIndeterminateError();
       });
+      const expectedSchemaVersion = "provider" in job.input.context ? 2 : 3;
+      if (validated.analysis.schemaVersion !== expectedSchemaVersion) {
+        throw new AnalysisExecutionIndeterminateError();
+      }
       return {
         runId: validated.analysis.runId,
         ...(result.projectionWarning
@@ -203,6 +207,26 @@ async function bindImmutableOptions(
     );
   }
   const context = job.input.context;
+  if (!("provider" in context)) {
+    if (resolved.contextMode !== "none") {
+      throw new Error(
+        "Resolved context mode does not match the immutable job receipt.",
+      );
+    }
+    return {
+      ...resolved,
+      model: job.input.model,
+      focus: job.input.focus,
+      customRecipe: job.input.recipe.custom ?? resolved.customRecipe,
+      recipeRevision: job.input.recipe.revision,
+      recipeSha256: job.input.recipe.sha256,
+    };
+  }
+  if (resolved.contextMode === "none") {
+    throw new Error(
+      "Resolved context mode does not match the immutable job receipt.",
+    );
+  }
   return {
     ...resolved,
     model: job.input.model,

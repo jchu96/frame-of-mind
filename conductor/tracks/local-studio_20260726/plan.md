@@ -225,10 +225,26 @@ separate proposed track.
 - [x] Task 6.4: Build the Context step with explicit provider/transport
       selection, optional paginated meeting catalog or exact-ID fallback,
       bounded local context upload, preview, and advanced alignment.
-- [ ] Task 6.5: Build the Intent step with recipe cards, focus, strict custom
-      recipe validation, and advanced model details.
-- [ ] Task 6.6: Build the Run receipt with privacy, retention, Gemini transfer,
-      cleanup, and final validated job creation.
+- [x] Task 6.5: Define and test the core context-optional analysis contract
+      before changing the composer: add explicit video-only provenance to a
+      new versioned run pair, preserve v2 import compatibility, make transcript
+      and alignment provenance conditional on real context, teach orchestration
+      and renderers to skip context honestly, and never encode a pseudo-meeting,
+      empty transcript, provider fallback, or fake alignment.
+- [x] Task 6.6: Adopt that contract in Studio immutable job input, readiness,
+      execution, and completed-run projection. Add any required additive
+      SQLite/D1 migration and shared projection changes, keep existing v2 rows
+      readable, require provider credentials only for enriched runs, and prove
+      context is skipped only by committed user intent rather than failure.
+- [ ] Task 6.7: Build the Intent step and shared composer-readiness coordinator
+      with recipe cards, focus, strict custom recipe validation, advanced model
+      details, and entry through Intent, Context, or Recording. Recording and
+      Intent are required; Context is optional; sections can be completed in
+      any order without coupling context drafts to a media receipt.
+- [ ] Task 6.8: Build the Run receipt with privacy, retention, Gemini transfer,
+      explicit video-only or context-enriched provenance, cleanup, and final
+      validated job creation. Enriched jobs fetch and normalize context before
+      Gemini upload; failed context cannot silently become video-only.
 
 Task 6.4 is complete: the authenticated `/context` route preserves exact
 provider/transport identity, offers bounded Bluedot MCP catalog browsing with
@@ -238,12 +254,18 @@ transcript, path, filename, or preview; staged and committed state remain
 distinct. Signed transcript alignment is now immutable job input. Component,
 production HTTP, Cloudflare exclusion, and browser tests cover provider
 isolation, staging, refresh recovery, explicit save, alignment, and deletion.
-Task 6.5 Intent is next.
+The shipped route currently requires sealed media and committed context; Tasks
+6.5-6.8 deliberately generalize that flow without reopening the provider,
+staging, or isolation contracts. Task 6.5's versioned context-optional contract
+is next.
 
 ### Verification
 
-- [ ] Component and browser tests cover keyboard navigation, field errors,
-      refresh-safe draft state, provider isolation, and the complete composer.
+- [ ] Contract, component, HTTP, and browser tests cover video-only and
+      context-enriched runs, entry through each composer section, completion in
+      different orders, keyboard navigation, field errors, refresh-safe draft
+      state, provider isolation, context-before-upload ordering, and the rule
+      that context failure never silently downgrades a run.
 
 ## Phase 7: Activity, Recovery, And Operations
 
@@ -338,6 +360,8 @@ Each phase can become a public GitHub issue after the specification is approved:
 | Local Bun code leaks into Worker               | Per-phase artifact inspection and route-absence tests                       | Cloudflare build fails                             |
 | Local operational tables leak into D1          | Separate local migrations; parity stays scoped to completed-run projections | D1 migration diff fails                            |
 | Track scope hides an unusable middle           | Three delivery slices with stop/go gates                                    | Do not expose beta before synthetic end-to-end run |
+| Optional context becomes fabricated provenance | Versioned explicit video-only contract plus v2 import tests                  | No pseudo-meeting, transcript, provider, or alignment |
+| Context failure silently changes user intent   | Committed mode plus fail-closed execution and browser tests                  | Never downgrade an enriched run to video-only      |
 
 ## Rollback And Compatibility
 
@@ -348,6 +372,9 @@ Each phase can become a public GitHub issue after the specification is approved:
 - Keep Studio creation/control routes disabled by default through Slice 1.
 - A failed beta can disable Studio routes without invalidating published v2 run
   bundles or the existing viewer.
+- Keep existing v2 bundles importable. Video-only execution requires an
+  explicit versioned artifact contract; it must not overload v2 meeting fields
+  with sentinel or fabricated values.
 - Revert implementation by phase through Conductor commit history; never alter
   existing run bundles to roll back the UI.
 
@@ -360,3 +387,5 @@ Each phase can become a public GitHub issue after the specification is approved:
 - [ ] Public documentation and `.gitignore` match actual runtime behavior.
 - [ ] No sensitive test or runtime material is tracked.
 - [ ] Phase B remains an explicit roadmap, not a partially secured deployment.
+- [ ] Both video-only and context-enriched synthetic runs preserve honest,
+      versioned provenance and pass their mapped end-to-end checks.

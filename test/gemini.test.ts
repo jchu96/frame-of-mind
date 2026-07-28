@@ -61,6 +61,11 @@ const validIndexResponse = {
   }],
 };
 
+const validVideoOnlyIndexResponse = {
+  matchNotes: "Indexed from recording evidence only.",
+  moments: validIndexResponse.moments,
+};
+
 const validDetailResponse = {
   accepted: true,
   kind: "compatibility-smoke",
@@ -336,6 +341,41 @@ describe("Gemini provider schema", () => {
 });
 
 describe("GeminiVideoAnalyzer", () => {
+  it("uses a video-only prompt and schema when no context was supplied", async () => {
+    const requests: GenerateContentParameters[] = [];
+    const analyzer = new GeminiVideoAnalyzer(
+      "test-api-key",
+      "gemini-3.6-flash",
+      {
+        generateContent: async (parameters) => {
+          requests.push(parameters);
+          return requests.length === 1
+            ? { text: JSON.stringify(validVideoOnlyIndexResponse) }
+            : { text: JSON.stringify(validDetailResponse) };
+        },
+      },
+    );
+
+    const index = await analyzer.index(activeFile, undefined, recipe);
+    await analyzer.interrogate(
+      activeFile,
+      { ...index.moments[0]!, importance: "low" },
+      undefined,
+      recipe,
+    );
+
+    expect(index).toEqual(validVideoOnlyIndexResponse);
+    const indexText = JSON.stringify(requests[0]?.contents);
+    expect(indexText).toContain("No external meeting context or transcript was supplied");
+    expect(indexText).not.toContain("<transcript>");
+    expect(indexText).not.toContain("transcriptAlignment");
+    expect(JSON.stringify(requests[0]?.config?.responseJsonSchema))
+      .not.toContain("transcriptAlignment");
+    const detailText = JSON.stringify(requests[1]?.contents);
+    expect(detailText).toContain("Base every claim on recording evidence");
+    expect(detailText).not.toContain("<nearby-transcript>");
+  });
+
   it("sends only the provider-safe schema and validates the response locally", async () => {
     let request: GenerateContentParameters | undefined;
     const analyzer = new GeminiVideoAnalyzer(
