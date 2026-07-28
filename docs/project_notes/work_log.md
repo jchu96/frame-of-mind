@@ -266,3 +266,11 @@
 - Browser review exposed Nuxt UI 4.10 radio labels that retained machine-value
   accessible names. Replaced that selector with a native labeled fieldset and
   retained Nuxt UI for the surrounding workflow.
+
+## 2026-07-28
+
+- Revised the Local Studio contract and plan so users may begin with Intent,
+  optional Context, or Recording and complete those sections in any order.
+  Added focused core-contract and Studio-adoption tasks for honest video-only
+  provenance, v2 import/projection compatibility, and fail-closed context
+  selection before the remaining composer UI and Run receipt work.

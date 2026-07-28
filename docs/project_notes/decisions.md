@@ -158,3 +158,11 @@ worker, control service, typed orchestrator adapter, and completed-run
 projection. Private media paths resolve only during an exact `in_use` lease.
 Job execution never opens an interactive OAuth callback; missing or expired
 provider authorization requires explicit reconnection.
+
+## 2026-07-28 — Context enrichment is optional and explicit
+
+Studio supports both video-only and context-enriched analysis. Recording and
+Intent are required, while Context may be completed before or after them. A
+video-only run records the absence of external context through a versioned
+contract; it never fabricates a meeting, transcript, provider, or alignment,
+and a failed context source never silently changes the user's selected mode.
