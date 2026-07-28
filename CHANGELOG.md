@@ -5,6 +5,24 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Added a derived transcript rung to the analyze pipeline. When neither a
+  provider nor a context file supplies a transcript, ffmpeg strips the
+  recording's first audio stream into a private AAC derivative, the run's own
+  model transcribes it into diarized segments with generic speaker labels, and
+  the remote audio upload is deleted immediately. The transcript corroborates
+  both model passes at zero alignment offset and is never persisted.
+- Added `--no-derived-transcript` to opt out of that step.
+- Added optional `derivedTranscript` manifest provenance (`origin`, model, and
+  SHA-256 of the formatted transcript) to schema 2 and schema 3.
+
+### Changed
+
+- Bumped the prompt revision to `2026-07-28.3`.
+- The `doctor` ffmpeg check now reports that it serves screenshots and derived
+  transcription; both remain optional and nonfatal.
+
 ## [0.3.0] - 2026-07-28
 
 ### Added

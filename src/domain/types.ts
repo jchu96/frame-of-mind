@@ -85,6 +85,19 @@ export interface AnalysisItem {
   screenshot?: string;
 }
 
+export interface DerivedTranscriptionSegment {
+  start: string;
+  end: string;
+  speaker: string;
+  text: string;
+}
+
+export interface DerivedTranscriptProvenance {
+  origin: "gemini-audio";
+  model: string;
+  sha256: string;
+}
+
 interface AnalysisRunBase {
   runId: string;
   recipe: {
@@ -146,6 +159,7 @@ interface RunManifestBase {
     indexResolution: "low";
     interrogationResolution: "medium";
   };
+  derivedTranscript?: DerivedTranscriptProvenance;
   artifacts: string[];
 }
 
