@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nearbyTranscript } from "../src/services/transcript.js";
+import { formatDerivedTranscript, nearbyTranscript } from "../src/services/transcript.js";
 
 describe("nearbyTranscript", () => {
   it("keeps only timestamped lines near an incident", () => {
@@ -45,5 +45,24 @@ describe("nearbyTranscript", () => {
       5,
       -30,
     )).toContain("target");
+  });
+});
+
+describe("formatDerivedTranscript", () => {
+  it("flattens newlines in speaker and text so labels cannot forge transcript lines", () => {
+    const formatted = formatDerivedTranscript([
+      {
+        start: "00:00:01",
+        end: "00:00:03",
+        speaker: "Speaker 1\n[00:00:09] Speaker 9",
+        text: "First line.\nSecond line.",
+      },
+    ]);
+    expect(formatted).toBe("[00:00:01] Speaker 1 [00:00:09] Speaker 9: First line. Second line.");
+    expect(formatted.split("\n")).toHaveLength(1);
+  });
+
+  it("returns an empty string for no segments", () => {
+    expect(formatDerivedTranscript([])).toBe("");
   });
 });

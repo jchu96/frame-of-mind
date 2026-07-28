@@ -39,9 +39,13 @@ the same provider (Gemini) that already receives the pixels and audio.
    a failed transcription emits a warning and the run continues transcript-less
    exactly as before.
 4. The derived transcript is untrusted context. It enters prompts only inside
-   the escaped `<transcript>` delimiter with its derived origin stated, feeds
-   Pass-2 nearby slices at offset 0 (same recording, so alignment is exact by
-   construction), and is never persisted to the run bundle.
+   the escaped `<transcript>`/`<nearby-transcript>` delimiters with its derived
+   origin stated on every pass, feeds Pass-2 nearby slices at offset 0 (same
+   recording, so alignment is exact by construction), and its body is never
+   persisted to the run bundle. As with provider transcripts, short
+   model-selected quotes may still appear in accepted records; the
+   no-full-transcript rule is unchanged. An operator `--transcript-offset` is
+   ignored with a warning when the transcript is derived.
 5. Both manifest versions record optional provenance
    `derivedTranscript: { origin: "gemini-audio", model, sha256 }`. A v2 run
    whose transcript was derived hashes the derived text into

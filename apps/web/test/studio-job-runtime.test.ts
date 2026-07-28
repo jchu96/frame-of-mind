@@ -88,6 +88,7 @@ describe("Local Studio job runtime", () => {
       outputRoot: "/private/synthetic/runs",
       maxIncidents: 7,
       screenshots: false,
+      derivedTranscript: true,
       keepUpload: false,
       transcriptOffsetSeconds: -3_723,
     });

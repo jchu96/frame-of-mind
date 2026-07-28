@@ -17,8 +17,8 @@
   canonical `[HH:MM:SS] Speaker N: text` lines. It reuses the resumable
   upload, structured-output, one-regeneration, and cleanup machinery, and
   uploads only ADTS AAC as `audio/aac` — Gemini does not accept
-  `audio/mp4`/`.m4a`. Normalize a bare `MM:SS` to `00:MM:SS` only; that is the
-  sole lossless timestamp variant.
+  `audio/mp4`/`.m4a`. Normalize only the lossless short timestamp variants:
+  bare `MM:SS` to `00:MM:SS` and single-digit-hour `H:MM:SS` to `0H:MM:SS`.
 - Validate signed Bluedot URLs against the exact HTTPS host and every redirect.
 - Normalize Granola absolute transcript times to meeting-relative timestamps.
 - Use Gemini Developer API mode; the Files API is not available through Vertex mode here.

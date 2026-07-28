@@ -232,8 +232,20 @@ describe("analysis Markdown rendering", () => {
     };
 
     await writeArtifacts(directory, analysis, manifest, outcome);
+    const failedHtml = await readFile(join(directory, "report.html"), "utf8");
+    expect(failedHtml).toContain("Analysis failed");
+    expect(failedHtml).toContain("Transcript alignment: not applicable to a video-only run.");
+
+    await writeArtifacts(directory, analysis, {
+      ...manifest,
+      derivedTranscript: {
+        origin: "gemini-audio",
+        model: "gemini-test",
+        sha256: "f".repeat(64),
+      },
+    }, outcome);
     expect(await readFile(join(directory, "report.html"), "utf8"))
-      .toContain("Analysis failed");
+      .toContain("derived from this recording");
 
     await expect(writeArtifacts(directory, analysis, manifest, {
       ...outcome,

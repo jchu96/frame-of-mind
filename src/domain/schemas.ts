@@ -198,6 +198,25 @@ export const runManifestSchema = z.object({
       path: ["completedAt"],
     });
   }
+  if (value.derivedTranscript) {
+    if (value.transcriptSha256.toLowerCase() !== value.derivedTranscript.sha256.toLowerCase()) {
+      context.addIssue({
+        code: "custom",
+        message: "a derived-transcript run must record the derived transcript digest as transcriptSha256",
+        path: ["transcriptSha256"],
+      });
+    }
+    if (
+      value.transcriptAlignment.offsetSeconds !== 0
+      || value.transcriptAlignment.method !== "explicit"
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "a derived transcript is aligned at explicit offset 0 by construction",
+        path: ["transcriptAlignment"],
+      });
+    }
+  }
 });
 
 export const runManifestV3Schema = z.object({

@@ -205,10 +205,10 @@ async function renderHtmlArtifact(
     : analysis.schemaVersion === 2
       ? "No provider URL retained"
       : "No external context supplied";
-  const alignment = manifest.schemaVersion === 2
-    ? `Transcript alignment: ${manifest.transcriptAlignment.offsetSeconds >= 0 ? "+" : ""}${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).`
-    : manifest.derivedTranscript
-      ? "Transcript alignment: transcript derived from this recording's audio (offset 0)."
+  const alignment = manifest.derivedTranscript
+    ? "Transcript: derived from this recording's own audio by the analysis model (offset 0); no provider or operator transcript was supplied."
+    : manifest.schemaVersion === 2
+      ? `Transcript alignment: ${manifest.transcriptAlignment.offsetSeconds >= 0 ? "+" : ""}${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).`
       : "Transcript alignment: not applicable to a video-only run.";
   const outcomeNotice = outcome.status === "complete"
     ? ""

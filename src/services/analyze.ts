@@ -200,6 +200,7 @@ export interface AnalysisVideoAnalyzer {
     nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
+    transcriptDerived?: boolean,
   ): Promise<AnalysisDetail>;
   transcribe?(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
@@ -360,7 +361,7 @@ export class AnalysisOrchestrator {
       let derivedTranscriptProvenance: DerivedTranscriptProvenance | undefined;
       if (
         options.derivedTranscript !== false
-        && !meeting?.transcript
+        && !meeting?.transcript?.trim()
         && typeof analyzer.transcribe === "function"
       ) {
         await report(progress, {
@@ -369,7 +370,7 @@ export class AnalysisOrchestrator {
           message: "Deriving a transcript from the recording audio…",
         });
         const audioPath = join(temp, "derived-audio.aac");
-        if (!(await this.extractAudio(localVideo, audioPath))) {
+        if (!(await this.extractAudio(localVideo, audioPath, { signal: execution.signal }))) {
           await reportWarning(progress, {
             kind: "warning",
             stage: "fetching_context",
@@ -399,29 +400,26 @@ export class AnalysisOrchestrator {
               message: "Derived transcription failed; continuing without a transcript.",
             });
             if (error instanceof GeminiFileError && error.uploadCleanup === "unconfirmed") {
-              await reportUnconfirmedCleanup(
-                progress,
-                sanitizedRemoteFileName(error.remoteFileName),
-              );
+              await reportWarning(progress, {
+                kind: "warning",
+                stage: "cleaning_up",
+                message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
+              });
             }
           } finally {
             if (audioRemote) {
-              try {
-                await analyzer.delete(audioRemote);
-              } catch {
-                await reportUnconfirmedCleanup(
-                  progress,
-                  sanitizedRemoteFileName(audioRemote.name),
-                );
+              if (!(await deleteWithRetry(analyzer, audioRemote, this.sleep))) {
+                await reportWarning(progress, {
+                  kind: "warning",
+                  stage: "cleaning_up",
+                  message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
+                });
               }
             }
             await rm(audioPath, { force: true });
           }
           assertNotCanceled(execution.signal);
         }
-      }
-      if (meeting && !meeting.transcript && derivedTranscript) {
-        meeting = { ...meeting, transcript: derivedTranscript };
       }
 
       await report(progress, {
@@ -516,7 +514,14 @@ export class AnalysisOrchestrator {
               "Recording/transcript mismatch. Verify that the provider meeting ID and local recording refer to the same call.",
             );
           }
-          alignment = derivedTranscriptProvenance && options.transcriptOffsetSeconds === undefined
+          if (derivedTranscriptProvenance && options.transcriptOffsetSeconds !== undefined) {
+            await reportWarning(progress, {
+              kind: "warning",
+              stage: "indexing",
+              message: "--transcript-offset was ignored: the derived transcript comes from this recording's audio and is aligned at offset 0 by construction.",
+            });
+          }
+          alignment = derivedTranscriptProvenance
             ? {
                 offsetSeconds: 0,
                 method: "explicit",
@@ -537,6 +542,9 @@ export class AnalysisOrchestrator {
                   rationale: "Operator supplied --transcript-offset.",
                 };
         }
+        const providerTranscript = meeting?.transcript?.trim() ? meeting.transcript : undefined;
+        const effectiveTranscript = providerTranscript ?? derivedTranscript;
+        const transcriptIsDerived = Boolean(derivedTranscript) && !providerTranscript;
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
         const candidates = index.moments.slice(0, options.maxIncidents);
@@ -552,19 +560,18 @@ export class AnalysisOrchestrator {
             const result = await analyzer.interrogate(
               remote,
               candidate,
-              meeting && alignment
+              effectiveTranscript && (alignment || transcriptIsDerived)
                 ? nearbyTranscript(
-                    meeting.transcript,
+                    effectiveTranscript,
                     candidate.start,
                     candidate.end,
                     45,
-                    alignment.offsetSeconds,
+                    transcriptIsDerived ? 0 : alignment?.offsetSeconds ?? 0,
                   )
-                : derivedTranscript
-                  ? nearbyTranscript(derivedTranscript, candidate.start, candidate.end, 45, 0)
-                  : undefined,
+                : undefined,
               options.recipe,
               options.focus,
+              transcriptIsDerived,
             );
             assertNotCanceled(execution.signal);
             assertEvidenceWithinCandidate(
@@ -743,7 +750,9 @@ export class AnalysisOrchestrator {
               schemaVersion: 2,
               promptRevision: "2026-07-28.3",
               meetingId: meetingRunContext.meeting.id,
-              transcriptSha256: sha256Text(meetingRunContext.meeting.transcript),
+              transcriptSha256: derivedTranscriptProvenance
+                ? derivedTranscriptProvenance.sha256
+                : sha256Text(meetingRunContext.meeting.transcript),
               contextProvider: meetingRunContext.meeting.provider,
               contextTransport: meetingRunContext.meeting.transport,
               mediaSource,

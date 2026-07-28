@@ -74,7 +74,15 @@ satisfy explicitly. Because both manifest validators are strict, an unknown key
 is a hard rejection, so the additive field only stays compatible when every
 validator that will read it is updated in lockstep in the same release. That is
 what shipped here; do not backport a bundle carrying the field to a release
-whose validators predate it.
+whose validators predate it. Two additional caveats: on schema 2 the addition
+also changes what two pre-existing fields refer to — `transcriptSha256` may now
+digest derived text rather than provider text, and `transcriptAlignment` is
+pinned to explicit offset 0 — so a v2 consumer must check `derivedTranscript`
+before attributing the transcript to the context provider (a cross-field schema
+refinement now enforces the pinned relationship). And because SQLite/D1 run
+reads re-validate stored manifests, rolling a deployed projection back to a
+pre-`derivedTranscript` release makes previously stored derived runs unreadable
+at detail-view time; roll the reader forward, not the bundles back.
 
 Schema 2 is intentionally incompatible with schema 1 imports. It adds a shared
 run ID, an analysis digest in the manifest, strict canonical timestamps, and

@@ -241,7 +241,7 @@ const CLI_ANALYSIS_PROGRESS = {
     }
     const showMessage =
       (event.kind === "stage" &&
-        ["uploading_to_gemini", "indexing", "interrogating"].includes(event.stage)) ||
+        ["fetching_context", "uploading_to_gemini", "indexing", "interrogating"].includes(event.stage)) ||
       (event.kind === "progress" && ["fetching_context", "interrogating"].includes(event.stage));
     if (showMessage && event.message) {
       process.stderr.write(`${event.message}\n`);
