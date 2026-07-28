@@ -17,6 +17,7 @@
 
 | Status | Proposed Track | Depends On | Scope |
 | ------ | -------------- | ---------- | ----- |
+| `[ ]` | [`analysis-quality_20260728`](./tracks/analysis-quality_20260728/) | — (needs a public golden recording) | Evaluation harness (golden fixture + timestamp-tolerant scoring), pre-run cost estimate/--dry-run, transcript-led pre-clip automation, duration-adaptive sampling, scene-detect/contact-sheet tail |
 | `[ ]` | `hosted-studio` | `local-studio_20260726` | Cloudflare Access, R2 multipart staging, D1 job state, and durable hosted execution |
 
 ## Archived Tracks
