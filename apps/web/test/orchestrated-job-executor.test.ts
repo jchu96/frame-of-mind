@@ -210,6 +210,59 @@ describe("OrchestratedAnalysisJobExecutor", () => {
     expect(captured).not.toHaveProperty("contextProvider");
   });
 
+  test("rejects a v3 receipt for immutable meeting context", async () => {
+    const job = await claimedJob();
+    const published = await videoRunFixture();
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze() {
+          return { directory: "/private/not-persisted", ...published };
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      resolveAnalyzeOptions: async () => resolvedOptions(),
+    });
+
+    await expect(executor.execute(job, {
+      signal: new AbortController().signal,
+      progress: collect([]),
+    })).rejects.toBeInstanceOf(AnalysisExecutionIndeterminateError);
+  });
+
+  test("rejects a v2 receipt for immutable video-only context", async () => {
+    const job = await claimedVideoOnlyJob();
+    const published = runFixture();
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze() {
+          return { directory: "/private/not-persisted", ...published };
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      async resolveAnalyzeOptions() {
+        return {
+          contextMode: "none",
+          recipe,
+          customRecipe: false,
+          recipeSha256: job.input.recipe.sha256,
+          recipeRevision: job.input.recipe.revision,
+          apiKey: "test-key",
+          model: job.input.model,
+          video: "/private/media.mp4",
+          outputRoot: "/private/runs",
+          maxIncidents: 10,
+          screenshots: true,
+          keepUpload: false,
+        };
+      },
+    });
+
+    await expect(executor.execute(job, {
+      signal: new AbortController().signal,
+      progress: collect([]),
+    })).rejects.toBeInstanceOf(AnalysisExecutionIndeterminateError);
+  });
+
   test("does not let resolved video-only mode override committed meeting context", async () => {
     const job = await claimedJob();
     let called = false;

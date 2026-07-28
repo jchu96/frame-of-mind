@@ -178,12 +178,28 @@ SELECT
   json(json_extract(value, '$.candidate')),
   json(json_extract(value, '$.result'))
 FROM json_each(?)
+WHERE EXISTS (
+  SELECT 1 FROM analysis_run_registry
+  WHERE run_id = json_extract(value, '$.runId') AND schema_version = 2
+)
 `;
 
-export const insertVideoItemsFromJsonSql = insertItemsFromJsonSql.replace(
-  "INSERT INTO analysis_items",
-  "INSERT INTO video_analysis_items",
-);
+export const insertVideoItemsFromJsonSql = insertItemsFromJsonSql
+  .replace("INSERT INTO analysis_items", "INSERT INTO video_analysis_items")
+  .replace("schema_version = 2", "schema_version = 3");
+
+export const deleteItemsForRunSql = `
+DELETE FROM analysis_items
+WHERE run_id = ? AND EXISTS (
+  SELECT 1 FROM analysis_run_registry
+  WHERE analysis_run_registry.run_id = analysis_items.run_id
+    AND schema_version = 2
+)
+`;
+
+export const deleteVideoItemsForRunSql = deleteItemsForRunSql
+  .replaceAll("analysis_items", "video_analysis_items")
+  .replace("schema_version = 2", "schema_version = 3");
 
 export const runSummaryColumns = `
   schema_version, context_mode, run_id, meeting_id, meeting_title, provider, transport, recipe_id,

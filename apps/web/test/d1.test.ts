@@ -1,10 +1,13 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
+import { Miniflare } from "miniflare";
 import { createD1RunStore } from "../server/data/d1";
 import {
   itemJsonBatches,
   MAX_D1_JSON_PARAMETER_BYTES,
 } from "../server/data/sql";
 import type { RunRow } from "../server/data/types";
+import { RunProjectionVersionConflictError } from "../server/data/types";
 import { runFixture, videoRunFixture } from "./fixtures";
 import { analysisDigest } from "../../../src/domain/integrity";
 
@@ -113,17 +116,23 @@ class FakeD1 {
           imported_by: value[12] === null ? null : String(value[12]),
         });
       } else if (
-        statement.sql.startsWith("DELETE FROM analysis_items")
-        || statement.sql.startsWith("DELETE FROM video_analysis_items")
+        statement.sql.includes("DELETE FROM analysis_items")
+        || statement.sql.includes("DELETE FROM video_analysis_items")
       ) {
-        this.items.set(String(statement.values[0]), []);
+        const runId = String(statement.values[0]);
+        const expectedVersion = statement.sql.includes("video_analysis_items") ? 3 : 2;
+        if (this.registry.get(runId) === expectedVersion) {
+          this.items.set(runId, []);
+        }
       } else if (
         statement.sql.includes("INSERT INTO analysis_items")
         || statement.sql.includes("INSERT INTO video_analysis_items")
       ) {
         const rows = JSON.parse(String(statement.values[0])) as Array<Record<string, unknown>>;
+        const expectedVersion = statement.sql.includes("video_analysis_items") ? 3 : 2;
         for (const row of rows) {
           const runId = String(row.runId);
+          if (this.registry.get(runId) !== expectedVersion) continue;
           this.items.set(runId, [...(this.items.get(runId) || []), Object.values(row)]);
         }
       }
@@ -246,4 +255,86 @@ describe("D1 projection contract", () => {
     database.runs.get(input.manifest.runId)!.model = "tampered-projection";
     expect(store.getRun(input.manifest.runId)).rejects.toThrow(/projection/);
   });
+
+  test("uses real local D1 semantics for migrations, mixed versions, and collisions", async () => {
+    const miniflare = new Miniflare({
+      modules: true,
+      script: "export default { fetch() { return new Response('ok'); } }",
+      d1Databases: { DB: "frame-of-mind-projection-test" },
+    });
+    try {
+      const database = await miniflare.getD1Database("DB");
+      const migrations = await Promise.all([
+        "0001_initial.sql",
+        "0002_video_only_projection.sql",
+      ].map((name) => readFile(
+        new URL(`../db/migrations/${name}`, import.meta.url),
+        "utf8",
+      )));
+      for (const migration of migrations) {
+        await applyD1Migration(database, migration);
+      }
+      const store = createD1RunStore(database as unknown as D1Database);
+      const meeting = runFixture();
+      const video = await videoRunFixture();
+
+      await store.importRun(meeting, "tester@example.com");
+      await store.importRun(video, "tester@example.com");
+      const listed = await store.listRuns({ limit: 10 });
+      expect(listed.runs.map((run) => run.schemaVersion).sort()).toEqual([2, 3]);
+      await expect(store.getRun(meeting.manifest.runId)).resolves.toMatchObject({
+        schemaVersion: 2,
+        contextMode: "meeting",
+      });
+      await expect(store.getRun(video.manifest.runId)).resolves.toMatchObject({
+        schemaVersion: 3,
+        contextMode: "none",
+      });
+
+      const collision = await videoRunFixture();
+      collision.analysis.runId = meeting.analysis.runId;
+      collision.manifest.runId = meeting.manifest.runId;
+      collision.manifest.analysisSha256 = await analysisDigest(collision.analysis);
+      await expect(store.importRun(collision)).rejects.toBeInstanceOf(
+        RunProjectionVersionConflictError,
+      );
+
+      const itemsBefore = await database.prepare(
+        "SELECT candidate_json, result_json FROM analysis_items WHERE run_id = ? ORDER BY item_index",
+      ).bind(meeting.manifest.runId).all();
+      const runBefore = await database.prepare(
+        "SELECT analysis_json FROM analysis_runs WHERE run_id = ?",
+      ).bind(meeting.manifest.runId).first<{ analysis_json: string }>();
+      await database.prepare(
+        "UPDATE analysis_run_registry SET schema_version = 3 WHERE run_id = ?",
+      ).bind(meeting.manifest.runId).run();
+      meeting.analysis.items[0]!.result.summary = "must not be projected";
+      meeting.manifest.analysisSha256 = await analysisDigest(meeting.analysis);
+      await expect(store.importRun(meeting)).rejects.toBeInstanceOf(
+        RunProjectionVersionConflictError,
+      );
+      const itemsAfter = await database.prepare(
+        "SELECT candidate_json, result_json FROM analysis_items WHERE run_id = ? ORDER BY item_index",
+      ).bind(meeting.manifest.runId).all();
+      const runAfter = await database.prepare(
+        "SELECT analysis_json FROM analysis_runs WHERE run_id = ?",
+      ).bind(meeting.manifest.runId).first<{ analysis_json: string }>();
+      expect(itemsAfter.results).toEqual(itemsBefore.results);
+      expect(runAfter?.analysis_json).toBe(runBefore?.analysis_json);
+    } finally {
+      await miniflare.dispose();
+    }
+  });
 });
+
+async function applyD1Migration(
+  database: Awaited<ReturnType<Miniflare["getD1Database"]>>,
+  sql: string,
+): Promise<void> {
+  const statements = sql
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter(Boolean)
+    .map((statement) => database.prepare(statement));
+  await database.batch(statements);
+}

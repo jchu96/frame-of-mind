@@ -581,19 +581,20 @@ composer UI lands.
 
 ### 4.1 Open manifest first
 
-Verify:
+For every run, verify:
 
-- meeting ID;
-- recipe ID and custom flag;
-- model;
-- context provider;
-- media source;
-- recording/transcript hashes;
+- schema version and context mode;
+- recipe ID, custom flag, revision, and SHA-256;
+- model and media source;
+- recording hash;
 - analysis SHA-256 and shared run ID;
-- recipe revision and SHA-256;
-- transcript alignment;
 - remote deletion state;
 - artifact inventory.
+
+For a meeting-backed schema-v2 run, also verify the meeting ID, context
+provider and transport, transcript hash, and transcript alignment. For an
+explicit video-only schema-v3 run, verify `context.mode` is `none` and that no
+meeting, provider, transcript, or alignment provenance appears.
 
 ### 4.2 Review analysis
 
@@ -606,12 +607,12 @@ Open:
 
 ### 4.3 Human checks
 
-- Is the recording the intended meeting?
+- Is this the intended recording and, for v2, the intended meeting?
 - Does the recipe match the desired output?
-- Is the transcript offset plausible?
+- For v2, is the transcript offset plausible?
 - Is the timestamp supported by video?
 - Is every timestamp canonical `HH:MM:SS` and inside the indexed candidate?
-- Is the quote exact?
+- For v2, is the quote exact and owned by the correct speaker?
 - Is a URL actually visible?
 - Are owner/date/decision status explicit?
 - Are implementation implications labeled as inference?

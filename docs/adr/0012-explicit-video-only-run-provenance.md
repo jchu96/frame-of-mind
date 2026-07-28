@@ -37,9 +37,10 @@ make a formally valid bundle misrepresent its evidence.
 6. Select v3 only through explicit `contextMode: "none"` input. A selected
    provider that fails or returns incomplete evidence causes the run to fail;
    it never downgrades to video-only.
-7. Keep v2-only importers and projections fail-closed until they deliberately
-   adopt the versioned pair. The core orchestrator may publish a v3 bundle to
-   disk, but it does not send that bundle to the current v2 projection port.
+7. Keep legacy v2-only importers and projections fail-closed until they
+   deliberately adopt the versioned pair. The Studio projection publisher is
+   version-aware and may receive v2 or v3; any remaining v2-only consumer must
+   reject v3 visibly.
 8. Use a recording-digest-derived directory segment only as a local storage
    namespace. It is not a meeting identity and does not enter artifact
    provenance.

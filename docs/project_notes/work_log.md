@@ -291,3 +291,11 @@
   audit, and the 32 MiB stream spike. All eight existing browser smoke journeys
   passed; a focused ninth journey then proved v3 import, detail provenance, and
   Local Studio home rendering end to end.
+- PR #29 adversarial iteration bound returned schema versions to immutable job
+  context, made every D1 run/item mutation registry-version conditional,
+  restored full v2 and v3 runtime coverage, and added populated SQLite-upgrade
+  plus real Miniflare/D1 tests. Cross-version API imports now return a
+  sanitized 409, and the v2/v3 operator review guidance is explicit.
+- The post-iteration `bun run check` passed 109 core tests, 188 web tests,
+  CLI and both Nuxt production builds, the local Studio HTTP contract,
+  Cloudflare boundary audit, and the 32 MiB streaming spike.
