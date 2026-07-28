@@ -225,7 +225,7 @@ separate proposed track.
 - [x] Task 6.4: Build the Context step with explicit provider/transport
       selection, optional paginated meeting catalog or exact-ID fallback,
       bounded local context upload, preview, and advanced alignment.
-- [~] Task 6.5: Define and test the core context-optional analysis contract
+- [x] Task 6.5: Define and test the core context-optional analysis contract
       before changing the composer: add explicit video-only provenance to a
       new versioned run pair, preserve v2 import compatibility, make transcript
       and alignment provenance conditional on real context, teach orchestration

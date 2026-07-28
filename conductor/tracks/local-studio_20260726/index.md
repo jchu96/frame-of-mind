@@ -12,8 +12,9 @@
 ## Progress
 
 - Phases: 5/9 complete
-- Tasks: 32/51 complete
-- Current focus: Task 6.5, the context-optional execution contract.
+- Tasks: 33/51 complete
+- Current focus: Task 6.6, adopting the versioned context-optional contract in
+  Studio immutable input, readiness, execution, and completed-run projection.
 
 ## Decision
 
