@@ -17,6 +17,15 @@ export interface RunStore {
   importRun(input: VersionedRunImport, actor?: string): Promise<{ runId: string; created: boolean }>;
 }
 
+export class RunProjectionVersionConflictError extends Error {
+  readonly code = "run_projection_version_conflict";
+
+  constructor() {
+    super("Run ID is already projected under another schema version.");
+    this.name = "RunProjectionVersionConflictError";
+  }
+}
+
 export function encodeRunCursor(row: RunSummaryRow): string {
   return encodeURIComponent(JSON.stringify([row.completed_at, row.imported_at, row.run_id]));
 }

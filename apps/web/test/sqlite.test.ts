@@ -10,7 +10,7 @@ import {
   createLocalRunStore,
   getRunStore,
 } from "../server/data/sqlite";
-import { schemaSql } from "../server/data/sql";
+import { importValues, schemaSql } from "../server/data/sql";
 import type { RunStore } from "../server/data/types";
 import { runFixture, videoRunFixture } from "./fixtures";
 import { analysisDigest } from "../../../src/domain/integrity";
@@ -135,6 +135,43 @@ describe("local SQLite projection", () => {
     expect(normalize(migrations.join("\n"))).toBe(normalize(schemaSql));
   });
 
+  test("upgrades a populated 0001 database without changing v2 projections", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "runs.sqlite");
+    const [initialMigration, videoMigration] = await Promise.all([
+      "0001_initial.sql",
+      "0002_video_only_projection.sql",
+    ].map((name) => readFile(
+      new URL(`../db/migrations/${name}`, import.meta.url),
+      "utf8",
+    )));
+    const meeting = runFixture();
+    const database = new Database(path);
+    database.exec(initialMigration!);
+    insertLegacyV2Projection(database, meeting);
+    database.exec(videoMigration!);
+    database.exec(videoMigration!);
+    expect(database.query<{ schema_version: number }, [string]>(
+      "SELECT schema_version FROM analysis_run_registry WHERE run_id = ?",
+    ).get(meeting.manifest.runId)?.schema_version).toBe(2);
+    expect(database.query<{ count: number }, [string]>(
+      "SELECT count(*) AS count FROM analysis_items WHERE run_id = ?",
+    ).get(meeting.manifest.runId)?.count).toBe(1);
+    database.close();
+
+    const store = createLocalRunStore(path);
+    await expect(store.getRun(meeting.manifest.runId)).resolves.toMatchObject({
+      schemaVersion: 2,
+      contextMode: "meeting",
+      analysis: { runId: meeting.analysis.runId },
+    });
+    expect((await store.listRuns({ limit: 10 })).runs).toHaveLength(1);
+    const video = await videoRunFixture();
+    await expect(store.importRun(video)).resolves.toMatchObject({ created: true });
+    expect((await store.listRuns({ limit: 10 })).runs).toHaveLength(2);
+  });
+
   test("keyset-paginates stable summary rows", async () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
@@ -205,6 +242,41 @@ describe("local SQLite projection", () => {
     expect(await store.getRun(input.manifest.runId)).toBeNull();
   });
 });
+
+function insertLegacyV2Projection(
+  database: Database,
+  input: ReturnType<typeof runFixture>,
+): void {
+  const values = importValues(input, "legacy@example.com").slice(0, -1);
+  database.query(`
+    INSERT INTO analysis_runs (
+      run_id, meeting_id, meeting_title, provider, transport, recipe_id,
+      recipe_label, model, started_at, completed_at, match_notes,
+      accepted_count, rejected_count, analysis_json, manifest_json,
+      imported_at, imported_by
+    ) VALUES (${Array.from({ length: 17 }, () => "?").join(", ")})
+  `).run(...values);
+  const item = input.analysis.items[0]!;
+  database.query(`
+    INSERT INTO analysis_items (
+      run_id, item_index, accepted, kind, title, summary, importance,
+      start_time, end_time, screenshot, candidate_json, result_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.manifest.runId,
+    0,
+    item.result.accepted ? 1 : 0,
+    item.result.kind,
+    item.result.title,
+    item.result.summary,
+    item.result.importance ?? item.candidate.importance,
+    item.candidate.start,
+    item.candidate.end,
+    item.screenshot ?? null,
+    JSON.stringify(item.candidate),
+    JSON.stringify(item.result),
+  );
+}
 
 function emptyRunStore(): RunStore {
   return {

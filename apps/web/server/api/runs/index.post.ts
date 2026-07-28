@@ -4,6 +4,7 @@ import { readLimitedText, RequestBodyTooLargeError } from "../../utils/request-b
 import { assertTrustedJsonMutation } from "../../utils/request-security";
 import { getRunStore } from "../../utils/store";
 import { D1ProjectionLimitError } from "../../data/sql";
+import { RunProjectionVersionConflictError } from "../../data/types";
 
 const maximumImportBytes = 2 * 1024 * 1024;
 
@@ -49,6 +50,12 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     if (error instanceof D1ProjectionLimitError) {
       throw createError({ statusCode: 422, statusMessage: error.message });
+    }
+    if (error instanceof RunProjectionVersionConflictError) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: "Run ID already exists under another schema version.",
+      });
     }
     throw error;
   }

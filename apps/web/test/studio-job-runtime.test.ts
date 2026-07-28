@@ -294,87 +294,102 @@ describe("Local Studio job runtime", () => {
     expect(releases).toEqual([contextFileId]);
   });
 
-  test("starts one durable worker and executes API-created video-only work", async () => {
-    const root = await mkdtemp(join(tmpdir(), "frame-of-mind-runtime-test-"));
-    temporaryRoots.push(root);
-    const database = new Database(":memory:");
-    databases.push(database);
-    const media = new LocalMediaStagingAdapter({
-      rootDirectory: join(root, "media"),
-      checkoutRoot: process.cwd(),
-      partSizeBytes: 20,
-      minimumFreeBytes: 0,
-      availableBytes: async () => 1_000_000,
-      createId: () => "media_01K123456789ABC",
-    });
-    const fixture = mp4Fixture(20);
-    const session = await media.create({
-      idempotencyKey: "runtime-media-create-0001",
-      expectedBytes: fixture.byteLength,
-      mimeType: "video/mp4",
-      retention: { mode: "retained", ttlSeconds: 3_600 },
-    });
-    await media.writePart(session.id, {
-      part: 0,
-      offset: 0,
-      contentLength: fixture.byteLength,
-      bytes: oneChunk(fixture),
-    });
-    const sealed = await media.seal(session.id, {
-      expectedSha256: digest(fixture),
-    });
-    const recipe = await loadRecipe("issue-review");
-    const executor: AnalysisJobExecutor = {
-      async execute() {
-        return { runId: "run_runtime_01" };
+  test("starts one durable worker and executes API-created enriched work", async () => {
+    await exerciseApiCreatedWork({
+      context: {
+        provider: "bluedot",
+        transport: "mcp",
+        meetingId: "meeting-runtime",
       },
-    };
-    const runtime = await createLocalStudioJobRuntime({
-      database,
-      media,
-      secrets: secrets({
-        "gemini-api-key": "synthetic-gemini-key",
-      }),
-      oauthCredentialPresent: () => false,
-      executor,
-      outputRoot: join(root, "runs"),
+      hasProviderCredentials: true,
     });
-    const createdAt = new Date().toISOString();
-    const result = await runtime.api.create({
-      idempotencyKey: "runtime-job-create-0001",
-      input: {
-        mediaSessionId: session.id,
-        mediaSha256: sealed.sha256,
-        context: { mode: "none" },
-        recipe: {
-          id: recipe.recipe.id,
-          custom: false,
-          revision: recipe.revision,
-          sha256: recipe.sha256,
-        },
-        model: "gemini-3.6-flash",
-        retention: session.retention,
-      },
-    }, createdAt);
+  });
 
-    await runtime.worker.whenIdle();
-    await expect(runtime.api.detail(result.job.id, {
-      afterSequence: 0,
-      limit: 100,
-    })).resolves.toMatchObject({
-      job: {
-        stage: "succeeded",
-        runId: "run_runtime_01",
-      },
-      events: [
-        { kind: "transition", stage: "fetching_context" },
-        { kind: "transition", stage: "cleaning_up" },
-        { kind: "transition", stage: "succeeded" },
-      ],
+  test("starts one durable worker and executes API-created video-only work", async () => {
+    await exerciseApiCreatedWork({
+      context: { mode: "none" },
+      hasProviderCredentials: false,
     });
-    await runtime.shutdown();
   });
 });
+
+async function exerciseApiCreatedWork(options: {
+  context: ImmutableJobInput["context"];
+  hasProviderCredentials: boolean;
+}): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), "frame-of-mind-runtime-test-"));
+  temporaryRoots.push(root);
+  const database = new Database(":memory:");
+  databases.push(database);
+  const media = new LocalMediaStagingAdapter({
+    rootDirectory: join(root, "media"),
+    checkoutRoot: process.cwd(),
+    partSizeBytes: 20,
+    minimumFreeBytes: 0,
+    availableBytes: async () => 1_000_000,
+    createId: () => "media_01K123456789ABC",
+  });
+  const fixture = mp4Fixture(20);
+  const session = await media.create({
+    idempotencyKey: "runtime-media-create-0001",
+    expectedBytes: fixture.byteLength,
+    mimeType: "video/mp4",
+    retention: { mode: "retained", ttlSeconds: 3_600 },
+  });
+  await media.writePart(session.id, {
+    part: 0,
+    offset: 0,
+    contentLength: fixture.byteLength,
+    bytes: oneChunk(fixture),
+  });
+  const sealed = await media.seal(session.id, {
+    expectedSha256: digest(fixture),
+  });
+  const recipe = await loadRecipe("issue-review");
+  const executor: AnalysisJobExecutor = {
+    async execute() {
+      return { runId: "run_runtime_01" };
+    },
+  };
+  const runtime = await createLocalStudioJobRuntime({
+    database,
+    media,
+    secrets: secrets({ "gemini-api-key": "synthetic-gemini-key" }),
+    oauthCredentialPresent: () => options.hasProviderCredentials,
+    executor,
+    outputRoot: join(root, "runs"),
+  });
+  const result = await runtime.api.create({
+    idempotencyKey: "runtime-job-create-0001",
+    input: {
+      mediaSessionId: session.id,
+      mediaSha256: sealed.sha256,
+      context: options.context,
+      recipe: {
+        id: recipe.recipe.id,
+        custom: false,
+        revision: recipe.revision,
+        sha256: recipe.sha256,
+      },
+      model: "gemini-3.6-flash",
+      retention: session.retention,
+    },
+  }, new Date().toISOString());
+
+  await runtime.worker.whenIdle();
+  await expect(runtime.api.detail(result.job.id, {
+    afterSequence: 0,
+    limit: 100,
+  })).resolves.toMatchObject({
+    job: { stage: "succeeded", runId: "run_runtime_01" },
+    events: [
+      { kind: "transition", stage: "fetching_context" },
+      { kind: "transition", stage: "cleaning_up" },
+      { kind: "transition", stage: "succeeded" },
+    ],
+  });
+  await runtime.shutdown();
+}
 
 function secrets(
   values: Partial<Record<RuntimeSecretName, string>>,

@@ -11,6 +11,8 @@ import { validateVersionedRunImport } from "../../../../src/domain/integrity";
 import {
   importValues,
   importVideoValues,
+  deleteItemsForRunSql,
+  deleteVideoItemsForRunSql,
   insertItemsFromJsonSql,
   insertVideoItemsFromJsonSql,
   itemJsonBatches,
@@ -28,6 +30,7 @@ import {
   type RunRow,
   type RunSummaryRow,
   type RunStore,
+  RunProjectionVersionConflictError,
 } from "./types";
 
 const stores = new Map<string, RunStore>();
@@ -144,7 +147,7 @@ export function createLocalRunStoreFromDatabase(
         (validated.analysis.schemaVersion === 2 && existingVideo)
         || (validated.analysis.schemaVersion === 3 && existingMeeting)
       ) {
-        throw new Error("Run ID is already projected under another schema version.");
+        throw new RunProjectionVersionConflictError();
       }
       const write = database.transaction((payload: VersionedRunImport, importedBy?: string) => {
         database.query(
@@ -154,11 +157,11 @@ export function createLocalRunStoreFromDatabase(
           "SELECT schema_version FROM analysis_run_registry WHERE run_id = ?",
         ).get(payload.manifest.runId);
         if (registration?.schema_version !== payload.analysis.schemaVersion) {
-          throw new Error("Run ID is already projected under another schema version.");
+          throw new RunProjectionVersionConflictError();
         }
         if (isRunImportV2(payload)) {
           database.query(upsertRunSql).run(...importValues(payload, importedBy));
-          database.query("DELETE FROM analysis_items WHERE run_id = ?").run(payload.manifest.runId);
+          database.query(deleteItemsForRunSql).run(payload.manifest.runId);
           for (const batch of itemJsonBatches(payload.manifest.runId, payload.analysis.items)) {
             database.query(insertItemsFromJsonSql).run(batch);
           }
@@ -166,7 +169,7 @@ export function createLocalRunStoreFromDatabase(
         }
         if (isRunImportV3(payload)) {
           database.query(upsertVideoRunSql).run(...importVideoValues(payload, importedBy));
-          database.query("DELETE FROM video_analysis_items WHERE run_id = ?")
+          database.query(deleteVideoItemsForRunSql)
             .run(payload.manifest.runId);
           for (const batch of itemJsonBatches(payload.manifest.runId, payload.analysis.items)) {
             database.query(insertVideoItemsFromJsonSql).run(batch);

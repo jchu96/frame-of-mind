@@ -7,6 +7,8 @@ import { validateVersionedRunImport } from "../../../../src/domain/integrity";
 import {
   importValues,
   importVideoValues,
+  deleteItemsForRunSql,
+  deleteVideoItemsForRunSql,
   assertD1RunRowSize,
   insertItemsFromJsonSql,
   insertVideoItemsFromJsonSql,
@@ -24,6 +26,7 @@ import {
   type RunRow,
   type RunSummaryRow,
   type RunStore,
+  RunProjectionVersionConflictError,
 } from "./types";
 
 export async function getRunStore(event: H3Event): Promise<RunStore> {
@@ -110,7 +113,7 @@ export function createD1RunStore(database: D1Database): RunStore {
         (validated.analysis.schemaVersion === 2 && existingVideo)
         || (validated.analysis.schemaVersion === 3 && existingMeeting)
       ) {
-        throw new Error("Run ID is already projected under another schema version.");
+        throw new RunProjectionVersionConflictError();
       }
       const statements: D1PreparedStatement[] = [
         database.prepare(
@@ -120,7 +123,7 @@ export function createD1RunStore(database: D1Database): RunStore {
       if (isRunImportV2(validated)) {
         statements.push(
           database.prepare(upsertRunSql).bind(...importValues(validated, actor)),
-          database.prepare("DELETE FROM analysis_items WHERE run_id = ?")
+          database.prepare(deleteItemsForRunSql)
             .bind(validated.manifest.runId),
         );
         for (const batch of itemJsonBatches(validated.manifest.runId, validated.analysis.items)) {
@@ -129,7 +132,7 @@ export function createD1RunStore(database: D1Database): RunStore {
       } else if (isRunImportV3(validated)) {
         statements.push(
           database.prepare(upsertVideoRunSql).bind(...importVideoValues(validated, actor)),
-          database.prepare("DELETE FROM video_analysis_items WHERE run_id = ?")
+          database.prepare(deleteVideoItemsForRunSql)
             .bind(validated.manifest.runId),
         );
         for (const batch of itemJsonBatches(validated.manifest.runId, validated.analysis.items)) {
@@ -143,7 +146,7 @@ export function createD1RunStore(database: D1Database): RunStore {
         "SELECT schema_version FROM analysis_run_registry WHERE run_id = ?",
       ).bind(validated.manifest.runId).first<{ schema_version: number }>();
       if (registration?.schema_version !== validated.analysis.schemaVersion) {
-        throw new Error("Run ID is already projected under another schema version.");
+        throw new RunProjectionVersionConflictError();
       }
       return {
         runId: validated.manifest.runId,

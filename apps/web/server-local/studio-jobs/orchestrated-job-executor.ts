@@ -107,6 +107,10 @@ export class OrchestratedAnalysisJobExecutor implements AnalysisJobExecutor {
       }).catch(() => {
         throw new AnalysisExecutionIndeterminateError();
       });
+      const expectedSchemaVersion = "provider" in job.input.context ? 2 : 3;
+      if (validated.analysis.schemaVersion !== expectedSchemaVersion) {
+        throw new AnalysisExecutionIndeterminateError();
+      }
       return {
         runId: validated.analysis.runId,
         ...(result.projectionWarning
