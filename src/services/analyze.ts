@@ -10,6 +10,8 @@ import type {
   AnalysisRunV3,
   AnalysisItem,
   ContextProvider,
+  DerivedTranscriptProvenance,
+  DerivedTranscriptionSegment,
   IndexedMoment,
   MeetingContextSource,
   MeetingEvidence,
@@ -43,7 +45,8 @@ import {
   sha256File,
   sha256Text,
 } from "../lib/files.js";
-import { nearbyTranscript } from "./transcript.js";
+import { formatDerivedTranscript, nearbyTranscript } from "./transcript.js";
+import { extractAudioTrack } from "./audio.js";
 import { extractScreenshot } from "./screenshots.js";
 import { writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
@@ -75,6 +78,7 @@ interface AnalyzeOptionsBase {
   maxIncidents: number;
   screenshots: boolean;
   keepUpload: boolean;
+  derivedTranscript?: boolean;
 }
 
 export type ContextEnrichedAnalyzeOptions = AnalyzeOptionsBase & {
@@ -188,6 +192,7 @@ export interface AnalysisVideoAnalyzer {
     recipe: AnalysisRecipe,
     focus?: string,
     indexFps?: number,
+    derivedTranscript?: string,
   ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
@@ -195,7 +200,9 @@ export interface AnalysisVideoAnalyzer {
     nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
+    transcriptDerived?: boolean,
   ): Promise<AnalysisDetail>;
+  transcribe?(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
 }
 
@@ -213,6 +220,7 @@ export interface AnalysisOrchestratorDependencies {
   now?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
   extractScreenshot?: typeof extractScreenshot;
+  extractAudioTrack?: typeof extractAudioTrack;
 }
 
 export type AnalyzeResult = PublishedAnalysisRun & {
@@ -233,6 +241,7 @@ export class AnalysisOrchestrator {
   private readonly now: () => string;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly screenshot: typeof extractScreenshot;
+  private readonly extractAudio: typeof extractAudioTrack;
 
   constructor(dependencies: AnalysisOrchestratorDependencies) {
     this.createContextSource = dependencies.createContextSource;
@@ -241,6 +250,7 @@ export class AnalysisOrchestrator {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.screenshot = dependencies.extractScreenshot ?? extractScreenshot;
+    this.extractAudio = dependencies.extractAudioTrack ?? extractAudioTrack;
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
@@ -346,6 +356,72 @@ export class AnalysisOrchestrator {
           "Resolved Gemini analyzer does not match the requested model.",
         );
       }
+
+      let derivedTranscript: string | undefined;
+      let derivedTranscriptProvenance: DerivedTranscriptProvenance | undefined;
+      if (
+        options.derivedTranscript !== false
+        && !meeting?.transcript?.trim()
+        && typeof analyzer.transcribe === "function"
+      ) {
+        await report(progress, {
+          kind: "stage",
+          stage: "fetching_context",
+          message: "Deriving a transcript from the recording audio…",
+        });
+        const audioPath = join(temp, "derived-audio.aac");
+        if (!(await this.extractAudio(localVideo, audioPath, { signal: execution.signal }))) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "fetching_context",
+            message: "No audio track could be extracted; continuing without a transcript.",
+          });
+        } else {
+          assertNotCanceled(execution.signal);
+          let audioRemote: GeminiFile | undefined;
+          try {
+            audioRemote = await analyzer.upload(audioPath, "audio/aac");
+            assertNotCanceled(execution.signal);
+            const segments = await analyzer.transcribe(audioRemote);
+            const formatted = formatDerivedTranscript(segments);
+            if (formatted) {
+              derivedTranscript = formatted;
+              derivedTranscriptProvenance = {
+                origin: "gemini-audio",
+                model: analyzer.model,
+                sha256: sha256Text(formatted),
+              };
+            }
+          } catch (error) {
+            if (error instanceof AnalysisCanceledError) throw error;
+            await reportWarning(progress, {
+              kind: "warning",
+              stage: "fetching_context",
+              message: "Derived transcription failed; continuing without a transcript.",
+            });
+            if (error instanceof GeminiFileError && error.uploadCleanup === "unconfirmed") {
+              await reportWarning(progress, {
+                kind: "warning",
+                stage: "cleaning_up",
+                message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
+              });
+            }
+          } finally {
+            if (audioRemote) {
+              if (!(await deleteWithRetry(analyzer, audioRemote, this.sleep))) {
+                await reportWarning(progress, {
+                  kind: "warning",
+                  stage: "cleaning_up",
+                  message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
+                });
+              }
+            }
+            await rm(audioPath, { force: true });
+          }
+          assertNotCanceled(execution.signal);
+        }
+      }
+
       await report(progress, {
         kind: "stage",
         stage: "uploading_to_gemini",
@@ -425,6 +501,7 @@ export class AnalysisOrchestrator {
           options.recipe,
           options.focus,
           indexFps,
+          derivedTranscript,
         );
         assertNotCanceled(execution.signal);
         let alignment: RunManifest["transcriptAlignment"] | undefined;
@@ -437,20 +514,37 @@ export class AnalysisOrchestrator {
               "Recording/transcript mismatch. Verify that the provider meeting ID and local recording refer to the same call.",
             );
           }
-          alignment = options.transcriptOffsetSeconds === undefined
+          if (derivedTranscriptProvenance && options.transcriptOffsetSeconds !== undefined) {
+            await reportWarning(progress, {
+              kind: "warning",
+              stage: "indexing",
+              message: "--transcript-offset was ignored: the derived transcript comes from this recording's audio and is aligned at offset 0 by construction.",
+            });
+          }
+          alignment = derivedTranscriptProvenance
             ? {
-                offsetSeconds: index.transcriptAlignment.offsetSeconds,
-                method: index.transcriptAlignment.confidence === "none" ? "none" : "model",
-                confidence: index.transcriptAlignment.confidence,
-                rationale: index.transcriptAlignment.rationale,
-              }
-            : {
-                offsetSeconds: options.transcriptOffsetSeconds,
+                offsetSeconds: 0,
                 method: "explicit",
                 confidence: "high",
-                rationale: "Operator supplied --transcript-offset.",
-              };
+                rationale: "Transcript derived from this recording's audio; offset is 0 by construction.",
+              }
+            : options.transcriptOffsetSeconds === undefined
+              ? {
+                  offsetSeconds: index.transcriptAlignment.offsetSeconds,
+                  method: index.transcriptAlignment.confidence === "none" ? "none" : "model",
+                  confidence: index.transcriptAlignment.confidence,
+                  rationale: index.transcriptAlignment.rationale,
+                }
+              : {
+                  offsetSeconds: options.transcriptOffsetSeconds,
+                  method: "explicit",
+                  confidence: "high",
+                  rationale: "Operator supplied --transcript-offset.",
+                };
         }
+        const providerTranscript = meeting?.transcript?.trim() ? meeting.transcript : undefined;
+        const effectiveTranscript = providerTranscript ?? derivedTranscript;
+        const transcriptIsDerived = Boolean(derivedTranscript) && !providerTranscript;
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
         const candidates = index.moments.slice(0, options.maxIncidents);
@@ -466,17 +560,18 @@ export class AnalysisOrchestrator {
             const result = await analyzer.interrogate(
               remote,
               candidate,
-              meeting && alignment
+              effectiveTranscript && (alignment || transcriptIsDerived)
                 ? nearbyTranscript(
-                    meeting.transcript,
+                    effectiveTranscript,
                     candidate.start,
                     candidate.end,
                     45,
-                    alignment.offsetSeconds,
+                    transcriptIsDerived ? 0 : alignment?.offsetSeconds ?? 0,
                   )
                 : undefined,
               options.recipe,
               options.focus,
+              transcriptIsDerived,
             );
             assertNotCanceled(execution.signal);
             assertEvidenceWithinCandidate(
@@ -637,6 +732,9 @@ export class AnalysisOrchestrator {
             indexResolution: "low" as const,
             interrogationResolution: "medium" as const,
           },
+          ...(derivedTranscriptProvenance
+            ? { derivedTranscript: derivedTranscriptProvenance }
+            : {}),
           artifacts: [
             "analysis.json",
             "analysis-outcome.json",
@@ -650,9 +748,11 @@ export class AnalysisOrchestrator {
           ? {
               ...manifestBase,
               schemaVersion: 2,
-              promptRevision: "2026-07-28.2",
+              promptRevision: "2026-07-28.3",
               meetingId: meetingRunContext.meeting.id,
-              transcriptSha256: sha256Text(meetingRunContext.meeting.transcript),
+              transcriptSha256: derivedTranscriptProvenance
+                ? derivedTranscriptProvenance.sha256
+                : sha256Text(meetingRunContext.meeting.transcript),
               contextProvider: meetingRunContext.meeting.provider,
               contextTransport: meetingRunContext.meeting.transport,
               mediaSource,
@@ -661,7 +761,7 @@ export class AnalysisOrchestrator {
           : {
               ...manifestBase,
               schemaVersion: 3,
-              promptRevision: "2026-07-28.2",
+              promptRevision: "2026-07-28.3",
               context: { mode: "none" },
               mediaSource: "local-file",
             };

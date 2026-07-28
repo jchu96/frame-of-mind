@@ -33,6 +33,7 @@ decision may be made in place.
 | [0012](0012-explicit-video-only-run-provenance.md) | Record video-only runs without fabricated meeting context | Accepted | 2026-07-28 |
 | [0013](0013-defensive-gemini-response-boundary.md) | Defend the Gemini response boundary per candidate | Accepted | 2026-07-28 |
 | [0014](0014-versioned-evidence-and-artifact-families.md) | Version evidence separately from composed artifact families | Proposed | 2026-07-28 |
+| [0015](0015-derived-transcript-from-recording-audio.md) | Derive a transcript from the recording's own audio | Accepted | 2026-07-28 |
 
 ## Adding An ADR
 

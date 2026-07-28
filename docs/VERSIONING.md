@@ -10,7 +10,7 @@ versions for durable schemas and prompts.
 | CLI/package | `0.3.0` | Semantic Versioning |
 | `analysis.json` schema | `2` | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` | increment for breaking provenance changes |
-| prompt revision | `2026-07-28.2` | increment for material instruction changes |
+| prompt revision | `2026-07-28.3` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
 ## Before 1.0
@@ -65,6 +65,24 @@ Provider SDK updates require OAuth, tool discovery, schema, and cleanup tests.
 Renderers must reject unsupported future major schema versions instead of
 guessing. Compatible optional fields may be added without incrementing schema
 version only when old consumers safely ignore them.
+
+Optional `derivedTranscript` manifest provenance was added to schema 2 and
+schema 3 under that additive-field rule, without a schema bump: it appears only
+when a run transcribed the recording's own audio, and a consumer that ignores it
+still reads a correct run. The rule carries a condition that this release had to
+satisfy explicitly. Because both manifest validators are strict, an unknown key
+is a hard rejection, so the additive field only stays compatible when every
+validator that will read it is updated in lockstep in the same release. That is
+what shipped here; do not backport a bundle carrying the field to a release
+whose validators predate it. Two additional caveats: on schema 2 the addition
+also changes what two pre-existing fields refer to — `transcriptSha256` may now
+digest derived text rather than provider text, and `transcriptAlignment` is
+pinned to explicit offset 0 — so a v2 consumer must check `derivedTranscript`
+before attributing the transcript to the context provider (a cross-field schema
+refinement now enforces the pinned relationship). And because SQLite/D1 run
+reads re-validate stored manifests, rolling a deployed projection back to a
+pre-`derivedTranscript` release makes previously stored derived runs unreadable
+at detail-view time; roll the reader forward, not the bundles back.
 
 Schema 2 is intentionally incompatible with schema 1 imports. It adds a shared
 run ID, an analysis digest in the manifest, strict canonical timestamps, and

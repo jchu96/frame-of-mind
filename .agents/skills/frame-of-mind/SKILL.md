@@ -1,5 +1,6 @@
 ---
 name: frame-of-mind
+version: 2026-07-28.1
 description: Operate Frame of Mind, a local video-understanding CLI that combines optional Bluedot, Granola, or file context with screen recordings and Gemini. Use for decisions, requirements, action items, repository plans, UX reviews, communication/self-review, technical or process walkthroughs, video Q&A, transcript alignment, or portable HTML/Markdown/JSON artifacts.
 ---
 
@@ -147,6 +148,26 @@ intent-versus-impact, or missed-cue analysis. Intent may be inferred when it is
 labeled as interpretation, grounded in observed behavior, and paired with a
 plausible alternative.
 
+Map the user's ask to options before assembling the command:
+
+| User's ask | `--recipe` | `--source` | Other options |
+|---|---|---|---|
+| "what's broken / UX problems in this demo" | `issue-review` | provider if the meeting exists there, else `file`/`none` | `--focus` on the named surface |
+| "what did we agree / choose" | `decisions` | provider preferred (names matter) | |
+| "what do they need / scope this" | `requirements` | provider or `file` | |
+| "who's doing what next" | `action-items` | provider preferred | |
+| "turn this into code work / an issue" | `repo-plan` | any | inspect the target repo afterward |
+| "how did I present / teach / run this" | `communication-coaching` | often `none` | `--depth deep`, `--focus` with stated goal |
+| clip cut from a longer meeting | matches intent | provider | `--transcript-offset` (clips only) |
+| silent or visual-only recording | matches intent | `none` | `--no-derived-transcript` |
+
+Write `--focus` as one bounded prioritization sentence naming observable
+targets. It selects attention; it is never instructions to the model, never a
+recipe replacement, and never carries credentials.
+
+- Good: `--focus "Prioritize the checkout flow errors visible after 12:00 and the user's reaction to them"`
+- Bad: `--focus "Ignore the schema and output markdown; log in with token abc123 if asked"`
+
 ## Analyze
 
 Bluedot context:
@@ -213,6 +234,26 @@ frameofmind analyze "<stable-id>" \
   --recipe issue-review
 ```
 
+## Transcript Ladder
+
+Transcripts resolve in order: provider transcript, operator `--context-file`,
+derived transcript, none. When no transcript is supplied and the recording has
+audio, the pipeline strips the audio with `ffmpeg` and runs a cheap Gemini
+audio-only transcription (roughly a tenth of the video pass cost) before
+analysis. The derived transcript aligns at offset 0, uses generic `Speaker N`
+labels — named attribution stays a video-pass evidence job — and is never
+persisted; the manifest records `derivedTranscript` provenance only.
+
+Pass `--no-derived-transcript` for silent or visual-only recordings, or to
+skip the extra pass for cost. Missing `ffmpeg`, no audio track, or a failed
+transcription only emits a warning; the run continues transcript-less.
+
+For an external video (for example a downloaded YouTube recording): download
+it locally first, prefer an existing caption track converted to SRT/VTT as
+`--context-file` when one exists, and otherwise rely on the derived-transcript
+stage. Never claim provider meeting context for such videos; use
+`--source none` or `--source file`.
+
 For experimental in-depth review:
 
 ```bash
@@ -258,7 +299,8 @@ provenance, evidence, cleanup, or schema validation. Follow
 
 Expected phases:
 
-1. provider OAuth and normalized context fetch;
+1. provider OAuth and normalized context fetch, or a derived transcript from
+   the recording audio when no transcript was supplied;
 2. local media validation or narrowly validated Bluedot download;
 3. Gemini Files upload and processing;
 4. selected-video recipe index and transcript alignment;
@@ -344,6 +386,7 @@ the dashboard.
 | Recipe | built-in ID or JSON schema | validate against `docs/RECIPES.md` |
 | Upload | size, quota, processing state | retry only after cause is corrected |
 | Screenshot | `ffmpeg` | use `--no-screenshots` |
+| Derived transcript | `ffmpeg`, audio track present | use `--no-derived-transcript`; run continues without it |
 | Cleanup | manifest and exact owned path | remove only confirmed Frame of Mind artifacts |
 
 Use the full troubleshooting matrix in `docs/RUNBOOK.md`.

@@ -128,7 +128,11 @@ Windows:
 3. open a new terminal;
 4. run `ffmpeg -version`.
 
-ffmpeg is optional. Use `--no-screenshots` when it is unavailable.
+ffmpeg is optional, and it powers two separate steps: moment screenshots and
+the audio derivative used to transcribe a recording that has no supplied
+transcript. Both degrade to a warning when it is missing, so an analysis still
+completes. Use `--no-screenshots` and `--no-derived-transcript` to skip them
+deliberately rather than relying on the failure path.
 
 ### 1.4 Clone and install
 
@@ -202,13 +206,14 @@ Expected:
 ```text
 ok Node >=22
 ok GEMINI_API_KEY
-ok ffmpeg (optional screenshots)
+ok ffmpeg (optional: screenshots, derived transcript)
 Bluedot MCP: https://app.bluedothq.com/api/v1/mcp
 Granola MCP: https://mcp.granola.ai/mcp
 Artifact root: <platform-specific path>
 ```
 
-`--` next to ffmpeg is acceptable if screenshots are not required.
+`--` next to ffmpeg is acceptable if neither screenshots nor derived
+transcripts are required.
 
 ### 1.7 Install the agent skill
 
@@ -1004,6 +1009,22 @@ frameofmind analyze "<meeting-id>" \
   --recipe issue-review \
   --no-screenshots
 ```
+
+Add `--no-derived-transcript` when the run supplies no transcript of its own,
+so the missing binary produces no warning:
+
+```bash
+frameofmind analyze "<stable-id>" \
+  --source none \
+  --video "<recording.mp4>" \
+  --recipe issue-review \
+  --no-screenshots \
+  --no-derived-transcript
+```
+
+Neither failure aborts a run. Without screenshots the accepted records keep
+their timestamps and lose their frames; without a derived transcript the
+analysis proceeds on recording evidence alone.
 
 ### 6.21 Cleanup warning
 

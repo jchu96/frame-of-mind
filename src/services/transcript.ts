@@ -1,6 +1,14 @@
+import type { DerivedTranscriptionSegment } from "../domain/types.js";
 import { timestampToSeconds } from "../lib/time.js";
 
 const LINE_TIME = /^\[(\d{2,}:[0-5]\d:[0-5]\d)\]\s/;
+
+export function formatDerivedTranscript(segments: DerivedTranscriptionSegment[]): string {
+  const flatten = (value: string) => value.replace(/\s*[\r\n]+\s*/g, " ").trim();
+  return segments
+    .map((segment) => `[${segment.start}] ${flatten(segment.speaker)}: ${flatten(segment.text)}`)
+    .join("\n");
+}
 
 export function nearbyTranscript(
   transcript: string,
