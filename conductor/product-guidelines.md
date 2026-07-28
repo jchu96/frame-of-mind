@@ -13,15 +13,18 @@ Avoid surveillance language, inflated claims, and generic AI phrasing. Prefer
 
 ## Design Principles
 
-### Recording First
+### Recording Anchored, Entry Flexible
 
-The recording is the primary interaction object. Provider context, transcript,
-recipe, and focus enrich it; they do not obscure which media is being analyzed.
+The recording is the required evidence object, but the user may begin with the
+question, optional context, or recording. Provider context, transcript, recipe,
+and focus enrich the recording; they do not obscure which media is analyzed or
+pretend that missing context exists.
 
 ### Progressive Disclosure
 
-The default path should require four understandable decisions: recording,
-context, intent, and run. Alignment, model, sampling, retention, and transport
+The default path should require a recording and intent, offer context as an
+explicit enrichment, and end with a run receipt. These sections may be
+completed in any order. Alignment, model, sampling, retention, and transport
 details belong in advanced controls.
 
 ### Visible Trust Boundaries
@@ -59,7 +62,7 @@ processor until a local model backend exists.
 |---|---|
 | Studio | The Nuxt user interface for creating, monitoring, and reviewing runs |
 | Recording | The selected local video input |
-| Context | Bluedot, Granola, or local meeting/transcript information |
+| Context | Optional Bluedot, Granola, or local meeting/transcript information |
 | Intent | A built-in or custom analysis recipe plus optional focus |
 | Run | One immutable analysis attempt and its portable output bundle |
 | Job | The durable execution state that produces a run |

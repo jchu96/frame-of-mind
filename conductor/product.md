@@ -3,8 +3,9 @@
 ## Summary
 
 Frame of Mind is a local-first video-understanding workbench. It combines an
-authorized recording with meeting context and a structured analysis recipe,
-then produces portable, reviewable outputs grounded in exact video moments.
+authorized recording with a structured analysis recipe, optionally enriches
+the run with meeting context, and produces portable, reviewable outputs
+grounded in exact video moments.
 
 Positioning: **Video in. Understanding out.**
 
@@ -18,9 +19,9 @@ research artifacts.
 
 The v0.2 CLI performs the analysis and the Nuxt workspace reviews completed
 bundles. The missing product surface is a cohesive Studio that lets a user
-configure authorized providers, select or drop a recording, choose the desired
-kind of understanding, observe a durable job, and review timestamp-linked
-results without composing command-line arguments.
+begin with a question, optional context, or a recording; complete an explicit
+analysis brief; observe a durable job; and review timestamp-linked results
+without composing command-line arguments.
 
 ## Target Users
 
@@ -42,6 +43,7 @@ is a later deployment mode.
 5. Provide a high-quality evidence review surface linked to the recording.
 6. Keep local and future cloud execution behind explicit adapter contracts.
 7. Keep the public repository safe to clone, inspect, and contribute to.
+8. Support honest video-only analysis as well as context-enriched analysis.
 
 ## Constraints
 
