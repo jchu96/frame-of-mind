@@ -110,6 +110,9 @@
   compare metric definitions, filters, acceptance criteria, and phase
   boundaries instead of judging completeness by length.
 - Bluedot and Granola are context sources. A local screen recording is still required for visual evidence.
+- Video-only is an explicit mode, never a provider-failure fallback. Until the
+  Studio v3 migration lands, only the core orchestrator can create the v3 pair
+  and the review projection must reject it.
 - Granola MCP transcript access can depend on plan and workspace policy; switch the active Granola workspace before authenticating or querying.
 - Granola's public API is a separate automation surface and requires an eligible plan/API key. Do not silently fall back from user OAuth to a shared key.
 - A clip can begin hours into a provider transcript. Inspect `manifest.json` alignment before trusting nearby quotes.

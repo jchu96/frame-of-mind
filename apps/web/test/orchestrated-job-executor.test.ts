@@ -163,6 +163,46 @@ describe("OrchestratedAnalysisJobExecutor", () => {
     expect(called).toBe(false);
   });
 
+  test("fails closed until immutable Studio input supports video-only runs", async () => {
+    const job = await claimedJob();
+    let called = false;
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze() {
+          called = true;
+          throw new Error("unreachable");
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      async resolveAnalyzeOptions() {
+        return {
+          contextMode: "none",
+          recipe,
+          customRecipe: false,
+          recipeSha256: job.input.recipe.sha256,
+          recipeRevision: job.input.recipe.revision,
+          apiKey: "test-key",
+          model: job.input.model,
+          video: "/private/media.mp4",
+          outputRoot: "/private/runs",
+          maxIncidents: 10,
+          screenshots: true,
+          keepUpload: false,
+        };
+      },
+    });
+
+    await expect(
+      executor.execute(job, {
+        signal: new AbortController().signal,
+        progress: collect([]),
+      }),
+    ).rejects.toThrow(
+      "Studio immutable job input does not yet support video-only analysis.",
+    );
+    expect(called).toBe(false);
+  });
+
   test("rejects an orchestration result whose durable contracts diverge", async () => {
     const job = await claimedJob();
     const published = runFixture();

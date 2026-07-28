@@ -28,6 +28,77 @@ afterEach(async () => {
 });
 
 describe("AnalysisOrchestrator", () => {
+  it("publishes video-only v3 provenance without touching a context provider", async () => {
+    const fixture = await createFixture();
+    const createContextSource = vi.fn(() => fixture.context);
+    const publishProjection = vi.fn(async () => undefined);
+    const events: AnalysisProgressEvent[] = [];
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource,
+      createAnalyzer: () => fixture.analyzer,
+      createRunId: () => "video-only-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      model: fixture.options.model,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    }, {
+      progress: { report: (event) => events.push(event) },
+      projection: { publish: publishProjection },
+    });
+
+    expect(createContextSource).not.toHaveBeenCalled();
+    expect(fixture.context.connect).not.toHaveBeenCalled();
+    expect(fixture.context.meeting).not.toHaveBeenCalled();
+    expect(fixture.context.close).not.toHaveBeenCalled();
+    expect(publishProjection).not.toHaveBeenCalled();
+    expect(events[0]).toMatchObject({
+      kind: "stage",
+      stage: "fetching_context",
+      message: "No external context selected.",
+    });
+    expect(fixture.analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      fixture.options.recipe,
+      undefined,
+    );
+    expect(fixture.analyzer.interrogate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      undefined,
+      fixture.options.recipe,
+      undefined,
+    );
+    expect(result.analysis).toMatchObject({
+      schemaVersion: 3,
+      context: { mode: "none" },
+    });
+    expect(result.manifest).toMatchObject({
+      schemaVersion: 3,
+      context: { mode: "none" },
+      mediaSource: "local-file",
+    });
+    expect(result.manifest).not.toHaveProperty("meetingId");
+    expect(result.manifest).not.toHaveProperty("transcriptSha256");
+    expect(result.manifest).not.toHaveProperty("transcriptAlignment");
+    expect(result.projectionWarning).toBe(
+      "Published video-only run could not be added until the review projection supports schema v3.",
+    );
+  });
+
   it("publishes a valid run and reports structured progress", async () => {
     const fixture = await createFixture();
     const events: AnalysisProgressEvent[] = [];
@@ -107,6 +178,17 @@ describe("AnalysisOrchestrator", () => {
     })).rejects.toThrow(
       "Selected recording no longer matches its staged media receipt.",
     );
+    expect(fixture.analyzer.upload).not.toHaveBeenCalled();
+  });
+
+  it("does not downgrade a failed meeting context request to video-only", async () => {
+    const fixture = await createFixture();
+    fixture.context.meeting = vi.fn(
+      async () => undefined as unknown as MeetingEvidence,
+    );
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options))
+      .rejects.toThrow("Meeting context provider returned no meeting evidence.");
     expect(fixture.analyzer.upload).not.toHaveBeenCalled();
   });
 

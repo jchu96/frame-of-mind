@@ -202,6 +202,11 @@ async function bindImmutableOptions(
       "Resolved recipe does not match the immutable job receipt.",
     );
   }
+  if (resolved.contextMode === "none") {
+    throw new Error(
+      "Studio immutable job input does not yet support video-only analysis.",
+    );
+  }
   const context = job.input.context;
   return {
     ...resolved,

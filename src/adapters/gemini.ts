@@ -36,7 +36,7 @@ const FILE_PROCESSING_LIMIT_MS = 30 * 60_000;
 const MODEL_REQUEST_TIMEOUT_MS = 10 * 60_000;
 const FILE_REQUEST_TIMEOUT_MS = 30_000;
 
-const indexSchema = z.object({
+const meetingIndexSchema = z.object({
   isRelevantCall: z.boolean(),
   matchNotes: z.string(),
   transcriptAlignment: z.object({
@@ -44,6 +44,11 @@ const indexSchema = z.object({
     confidence: z.enum(["high", "medium", "low", "none"]),
     rationale: z.string(),
   }),
+  moments: z.array(indexedMomentSchema).max(1_000),
+}).strict();
+
+const videoOnlyIndexSchema = z.object({
+  matchNotes: z.string(),
   moments: z.array(indexedMomentSchema).max(1_000),
 }).strict();
 
@@ -127,7 +132,12 @@ export class GeminiVideoAnalyzer {
     }
   }
 
-  async index(file: GeminiFile, meeting: MeetingEvidence, recipe: AnalysisRecipe, focus?: string): Promise<{
+  async index(
+    file: GeminiFile,
+    meeting: MeetingEvidence | undefined,
+    recipe: AnalysisRecipe,
+    focus?: string,
+  ): Promise<{
     isRelevantCall: boolean;
     matchNotes: string;
     transcriptAlignment: {
@@ -136,7 +146,48 @@ export class GeminiVideoAnalyzer {
       rationale: string;
     };
     moments: IndexedMoment[];
+  } | {
+    matchNotes: string;
+    moments: IndexedMoment[];
   }> {
+    if (!meeting) {
+      return this.generateStructured({
+        model: this.model,
+        contents: [{
+          role: "user",
+          parts: [
+            {
+              fileData: {
+                fileUri: requireString(file.uri, "Gemini file URI"),
+                mimeType: file.mimeType,
+              },
+              videoMetadata: { fps: 0.5 },
+            },
+            {
+              text: [
+                `Run the "${recipe.label}" recipe: ${recipe.description}`,
+                recipe.indexInstruction,
+                "Watch the entire screen recording and build an index of every potentially relevant moment.",
+                "For each candidate give precise start/end timestamps, speaker only when directly audible or visible, UI surface, kind, one-line summary, and importance.",
+                "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
+                "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
+                "No external meeting context or transcript was supplied. Base relevance and every claim on recording evidence only. Do not infer a meeting identity, participant identity, or off-screen discussion.",
+                focus
+                  ? `Prioritize this operator-supplied review focus, while still requiring direct recording evidence: ${focus}`
+                  : "Apply the selected recipe broadly while requiring direct recording evidence.",
+              ].join("\n\n"),
+            },
+          ],
+        }],
+        config: {
+          systemInstruction: guard,
+          httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS },
+          mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW,
+          responseMimeType: "application/json",
+          responseJsonSchema: toGeminiProviderSchema(videoOnlyIndexSchema),
+        },
+      }, "index", videoOnlyIndexSchema, "Gemini video-only index response");
+    }
     return this.generateStructured({
       model: this.model,
       contents: [{
@@ -170,15 +221,15 @@ export class GeminiVideoAnalyzer {
         httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS },
         mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW,
         responseMimeType: "application/json",
-        responseJsonSchema: toGeminiProviderSchema(indexSchema),
+        responseJsonSchema: toGeminiProviderSchema(meetingIndexSchema),
       },
-    }, "index", indexSchema, "Gemini index response");
+    }, "index", meetingIndexSchema, "Gemini index response");
   }
 
   async interrogate(
     file: GeminiFile,
     candidate: IndexedMoment,
-    nearbyTranscript: string,
+    nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
   ): Promise<AnalysisDetail> {
@@ -208,7 +259,9 @@ export class GeminiVideoAnalyzer {
               `If evidence.timestamp is present, use canonical HH:MM:SS within the indexed candidate range ${candidate.start} through ${candidate.end}.`,
               "Keep output concise: title at most 500 characters; kind at most 120; at most 100 details and 100 steps; where.step and where.surface at most 2,000 each. Do not add keys outside the response schema.",
               "If the candidate is ambiguous, outside the recipe, or unsupported on closer inspection, set accepted=false and explain why.",
-              `<nearby-transcript>\n${nearbyTranscript || "(No aligned transcript slice available.)"}\n</nearby-transcript>`,
+              nearbyTranscript === undefined
+                ? "No external meeting context or transcript was supplied. Base every claim on recording evidence and do not infer off-screen discussion."
+                : `<nearby-transcript>\n${nearbyTranscript || "(No aligned transcript slice available.)"}\n</nearby-transcript>`,
             ].join("\n\n"),
           },
         ],
