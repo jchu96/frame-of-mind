@@ -1,12 +1,26 @@
 import { describe, expect, test } from "bun:test";
-import { runImportSchema } from "../../../src/domain/schemas";
-import { analysisDigest, validateRunImport } from "../../../src/domain/integrity";
+import {
+  runImportSchema,
+  versionedRunImportSchema,
+} from "../../../src/domain/schemas";
+import {
+  analysisDigest,
+  validateRunImport,
+  validateVersionedRunImport,
+} from "../../../src/domain/integrity";
 import type { AnalysisRun } from "../../../src/domain/types";
-import { runFixture } from "./fixtures";
+import { runFixture, videoRunFixture } from "./fixtures";
 
 describe("run import contract", () => {
   test("accepts a matching analysis and manifest", () => {
     expect(runImportSchema.parse(runFixture()).manifest.runId).toContain("test");
+  });
+
+  test("accepts an explicit video-only v3 pair through the web boundary", async () => {
+    const input = await videoRunFixture();
+    expect(versionedRunImportSchema.parse(input).analysis.schemaVersion).toBe(3);
+    await expect(validateVersionedRunImport(input)).resolves.toEqual(input);
+    expect(runImportSchema.safeParse(input).success).toBe(false);
   });
 
   test("binds analysis to the manifest run ID and digest", async () => {

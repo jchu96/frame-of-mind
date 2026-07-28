@@ -295,7 +295,7 @@ Layout:
 
 ```text
 runs/
-└── <meeting-id>/
+└── <meeting-id-or-video-digest-namespace>/
     └── <run-id>/
         ├── analysis.json
         ├── analysis.md
@@ -362,7 +362,8 @@ Contains:
 - schema version;
 - run ID shared with the manifest;
 - recipe identity;
-- normalized meeting identity;
+- real meeting identity for schema v2, or explicit no-context provenance for
+  schema v3;
 - model identity;
 - context/video match notes;
 - accepted and rejected records;
@@ -387,17 +388,20 @@ Contains:
 - schema and tool version;
 - prompt revision;
 - run ID and timestamps;
-- meeting ID;
 - recipe ID/label/custom flag, revision, and content SHA-256;
 - model;
-- recording/transcript SHA-256 hashes;
+- recording SHA-256 hash;
 - SHA-256 of the exact canonical `analysis.json` bytes;
 - media MIME type;
-- context and media source classes;
-- transcript alignment;
+- media source class;
 - remote file identity/expiration/deletion state;
 - analysis bounds/resolution;
 - artifact inventory.
+
+Meeting-backed schema v2 additionally records the meeting ID, context
+provider and transport, transcript SHA-256, and transcript alignment.
+Video-only schema v3 instead records `context.mode: "none"`, restricts media
+provenance to a local file, and omits every meeting/transcript/alignment field.
 
 It intentionally excludes:
 
@@ -411,14 +415,14 @@ It intentionally excludes:
 
 ### 6.3 Pair integrity
 
-Schema v2 treats both JSON files as one unit:
+Schemas v2 and v3 each treat their two JSON files as one unit:
 
 ```mermaid
 flowchart LR
-    A[analysis.json v2]
+    A[analysis.json v2 or v3]
     Canon[Canonical UTF-8 JSON plus final newline]
     Hash[SHA-256]
-    M[manifest.json v2]
+    M[manifest.json same schema version]
     Import[Importer or RunStore hydration]
 
     A --> Canon --> Hash
@@ -427,10 +431,13 @@ flowchart LR
     M -->|runId and digest| Import
 ```
 
-Validation checks the shared run ID, meeting, provider/transport, recipe,
-model, and digest. Database hydration repeats the check and also verifies the
-normalized projection columns/counts against the authoritative pair. A copied,
-swapped, hand-edited, or partially corrupted pair therefore fails closed.
+Validation always checks matching schema versions, shared run ID, recipe,
+model, and digest. V2 also checks meeting and provider/transport provenance;
+v3 rejects meeting-shaped fields and remote meeting media. SQLite and D1 keep
+v2 meeting runs and v3 video-only runs in separate projection table families;
+a shared schema-version registry prevents one run ID from occupying both. A
+copied, swapped, hand-edited, partially corrupted, or unsupported pair
+therefore fails closed.
 
 ## 7. Trust boundaries
 
@@ -959,6 +966,8 @@ Live tests are manual, opt-in, and must use authorized non-sensitive fixtures.
 - CLI/package versions follow Semantic Versioning.
 - `analysis.json` and `manifest.json` carry explicit schema versions and are
   cryptographically paired beginning with schema v2.
+- Schema v2 is meeting-backed. Schema v3 represents an explicit video-only
+  run and never overloads v2 meeting provenance.
 - prompt revisions change when model instructions materially change.
 - recipe IDs are stable; recipe behavior changes are called out in changelog.
 - model defaults are operational configuration and must be recorded per run.

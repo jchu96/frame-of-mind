@@ -110,6 +110,15 @@
   compare metric definitions, filters, acceptance criteria, and phase
   boundaries instead of judging completeness by length.
 - Bluedot and Granola are context sources. A local screen recording is still required for visual evidence.
+- Video-only is an explicit mode, never a provider-failure fallback. Until the
+  Intent/readiness UI lands, the Studio backend can execute/project v3 but the
+  composer does not yet expose the final video-only Run action.
+- Never reuse `analysis_runs` meeting columns for video-only placeholders.
+  V3 belongs in `video_analysis_runs`; register the run ID before either
+  upsert so concurrent cross-version imports fail closed.
+- Nuxt UI run-card metadata is one accessible paragraph. In Playwright, scope
+  the provenance assertion to the run link and use `toContainText`; an exact
+  standalone `video only` text locator does not match the combined label.
 - Granola MCP transcript access can depend on plan and workspace policy; switch the active Granola workspace before authenticating or querying.
 - Granola's public API is a separate automation surface and requires an eligible plan/API key. Do not silently fall back from user OAuth to a shared key.
 - A clip can begin hours into a provider transcript. Inspect `manifest.json` alignment before trusting nearby quotes.
@@ -249,6 +258,9 @@
 - Revalidate the orchestrator's returned analysis/manifest pair at the Studio
   adapter boundary. If its publication receipt is invalid, classify the
   outcome as interrupted/indeterminate rather than claiming a failed run.
+- Internal pair validity is not enough at that boundary: bind schema v2 back
+  to immutable provider context and schema v3 back to explicit `mode: none`.
+  A valid pair for the wrong committed context is also indeterminate.
 - Recipe `custom` provenance is optional only when reading pre-executor local
   rows whose digest predates that field. New initial jobs fail closed unless
   they record the boolean explicitly; linked legacy retries preserve their
@@ -315,6 +327,14 @@
   Studio Home. Revalidate jobs, runs, and connection presence on mount so an
   import or job transition cannot leave the dashboard showing an old empty
   projection.
+- In D1, guarding only the parent-row upsert does not make a version collision
+  harmless. Guard the child delete and every JSON-expanded item insert with
+  the same registry version inside the batch; a post-batch check cannot undo
+  earlier mutations.
+- A hand-written D1 fake can verify batch shape but cannot prove UNION,
+  pagination, affected-row, or transactional SQL semantics. Keep one
+  Miniflare-backed mixed-version migration/import/collision test, and execute a
+  populated 0001 -> 0002 SQLite upgrade instead of relying on SQL-text parity.
 - A URL fragment is invisible to the initial HTTP request, so protecting `/`
   while also using it as the fragment landing page is impossible. Use the
   dedicated inert `/__studio/launch` route for exchange and protect Home,

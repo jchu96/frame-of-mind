@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { validateRunImport } from "../../../src/domain/integrity";
+import { validateVersionedRunImport } from "../../../src/domain/integrity";
 import { createLocalRunStore } from "../server/data/sqlite";
 
 const runDirectory = process.argv[2];
@@ -13,7 +13,7 @@ if (!runDirectory) {
     readFile(resolve(directory, "analysis.json"), "utf8").then(JSON.parse),
     readFile(resolve(directory, "manifest.json"), "utf8").then(JSON.parse),
   ]);
-  const input = await validateRunImport({ analysis, manifest });
+  const input = await validateVersionedRunImport({ analysis, manifest });
   const databasePath = resolve(process.env.NUXT_SQLITE_PATH || ".data/frame-of-mind.sqlite");
   const store = createLocalRunStore(databasePath);
   const result = await store.importRun(input, "local-cli");

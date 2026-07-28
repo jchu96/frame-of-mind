@@ -12,13 +12,18 @@
 ## Progress
 
 - Phases: 5/9 complete
-- Tasks: 32/49 complete
-- Current focus: Task 6.5, the Intent step.
+- Tasks: 34/51 complete
+- Current focus: Task 6.7, building the Intent step and shared readiness
+  coordinator so Recording and Intent are required while Context remains an
+  explicit optional enrichment.
 
 ## Decision
 
 Phase A runs analysis on the user's machine through Bun. The browser provides
 the Studio experience; it does not become the durable execution boundary.
+Recording and Intent are required, Context is an optional explicit enrichment,
+and the composer may begin with any of those sections. Execution resolves
+committed context before media analysis and never fabricates missing context.
 Phase B hosted execution is represented through adapter contracts and a
 roadmap entry, but is not implemented in this track.
 

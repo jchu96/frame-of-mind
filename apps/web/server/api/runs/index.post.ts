@@ -1,9 +1,10 @@
-import { runImportSchema } from "../../../../../src/domain/schemas";
+import { versionedRunImportSchema } from "../../../../../src/domain/schemas";
 import { analysisDigest } from "../../../../../src/domain/integrity";
 import { readLimitedText, RequestBodyTooLargeError } from "../../utils/request-body";
 import { assertTrustedJsonMutation } from "../../utils/request-security";
 import { getRunStore } from "../../utils/store";
 import { D1ProjectionLimitError } from "../../data/sql";
+import { RunProjectionVersionConflictError } from "../../data/types";
 
 const maximumImportBytes = 2 * 1024 * 1024;
 
@@ -24,7 +25,7 @@ export default defineEventHandler(async (event) => {
     }
     throw createError({ statusCode: 400, statusMessage: "Run import must be valid UTF-8 JSON." });
   }
-  const parsed = runImportSchema.safeParse(body);
+  const parsed = versionedRunImportSchema.safeParse(body);
   if (!parsed.success) {
     throw createError({
       statusCode: 422,
@@ -49,6 +50,12 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     if (error instanceof D1ProjectionLimitError) {
       throw createError({ statusCode: 422, statusMessage: error.message });
+    }
+    if (error instanceof RunProjectionVersionConflictError) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: "Run ID already exists under another schema version.",
+      });
     }
     throw error;
   }

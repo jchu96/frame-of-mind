@@ -3,15 +3,15 @@
 **Track ID:** `local-studio_20260726`
 **Type:** feature
 **Created:** 2026-07-26
-**Status:** Approved and in progress; Phases 1-2 complete
+**Status:** Approved and in progress; Phases 1-5 complete
 
 ## Summary
 
 Transform the existing Nuxt review workspace into Frame of Mind Studio: a
-local-first application that accepts a dropped recording, pairs it with
-Bluedot, Granola, or local context, configures analysis intent, runs the
-existing pipeline through a durable local Bun job, and presents a
-timestamp-linked review workspace.
+local-first application that accepts a dropped recording, optionally enriches
+it with Bluedot, Granola, or local context, configures analysis intent, runs
+the pipeline through a durable local Bun job, and presents a timestamp-linked
+review workspace.
 
 This track implements local execution only. It must establish media-staging and
 job-execution seams that can support a later Cloudflare-hosted implementation
@@ -53,10 +53,10 @@ Implications:
 
 ## User Story
 
-As a user with an authorized meeting recording, I want to drop the video into
-Frame of Mind, attach available context, choose what I want to understand, and
-watch a recoverable analysis run so that I can review grounded findings without
-constructing CLI commands or exposing the recording to an unplanned service.
+As a user with an authorized recording, I want to begin with my question,
+available context, or the video, complete an explicit analysis brief, and watch
+a recoverable run so that I can review grounded findings without constructing
+CLI commands or pretending that unavailable meeting context exists.
 
 ## Primary Experience
 
@@ -65,26 +65,33 @@ constructing CLI commands or exposing the recording to an unplanned service.
 - Recent runs and active jobs
 - One primary "New analysis" action
 - Connection health without displaying credentials
-- Empty state that directs the user to drop a recording
+- Empty state that lets the user define intent, add optional context, or drop a
+  recording
 
 ### New Analysis Composer
 
-1. **Recording**
-   - drag and drop or file picker;
-   - supported-type and size validation;
-   - name, size, advisory browser-derived duration, and local-staging
-     disclosure.
-2. **Context**
-   - Bluedot, Granola MCP/API, local file, or intentionally minimal local
-     context;
-   - recent-meeting search where the provider supports it;
-   - selected-meeting preview;
-   - transcript alignment override in advanced controls.
-3. **Intent**
+The composer is a readiness model, not a locked wizard. A user may enter through
+Intent, Context, or Recording and move among them without discarding valid
+work. Recording and Intent are required to run; Context is an optional,
+explicit enrichment. Missing, expired, or failed context is never silently
+treated as an intentional video-only choice.
+
+1. **Intent**
    - human-readable cards for built-in recipes;
    - optional focus;
    - strict custom-recipe import;
    - model and sampling details under advanced controls.
+2. **Context (optional)**
+   - explicit video-only or context-enriched choice;
+   - Bluedot, Granola MCP/API, or local file when enriched;
+   - recent-meeting search where the provider supports it;
+   - selected-meeting preview;
+   - transcript alignment override in advanced controls.
+3. **Recording**
+   - drag and drop or file picker;
+   - supported-type and size validation;
+   - name, size, advisory browser-derived duration, and local-staging
+     disclosure.
 4. **Run**
    - final receipt showing recording, context, intent, local storage, remote
      Gemini transfer, and cleanup policy;
@@ -157,14 +164,20 @@ directory outside the repository:
 
 ### FR-04 - Context Selection
 
-The Studio exposes the same provider/transport boundaries as the CLI. It must
-not silently fall back between OAuth identities, API credentials, providers, or
-meeting IDs. Provider payload and error content are private untrusted input.
-Providers may optionally implement a bounded, paginated `MeetingCatalogSource`.
-When unavailable, the UI requests an exact meeting ID. Local context files use
-a distinct bounded private upload (JSON, text, Markdown, SRT, or VTT), are
-normalized through the existing adapter, and are deleted after context
-normalization/job cleanup.
+Context enrichment is optional. The user must explicitly select video-only or
+commit one context source; an unavailable, expired, or failed source must block
+or ask for correction rather than silently downgrade the run. Video-only runs
+record the absence of external context directly and do not manufacture an
+empty meeting, transcript, provider, or alignment receipt.
+
+When context is enabled, Studio exposes the same provider/transport boundaries
+as the CLI. It must not silently fall back between OAuth identities, API
+credentials, providers, or meeting IDs. Provider payload and error content are
+private untrusted input. Providers may optionally implement a bounded,
+paginated `MeetingCatalogSource`. When unavailable, the UI requests an exact
+meeting ID. Local context files use a distinct bounded private upload (JSON,
+text, Markdown, SRT, or VTT), are normalized through the existing adapter, and
+are deleted after context normalization/job cleanup.
 
 ### FR-05 - Recipe Selection
 
@@ -177,6 +190,10 @@ instructions.
 
 Media sessions and analysis jobs have separate state machines. A job can be
 created only from sealed media plus a validated immutable input receipt.
+That receipt records either explicit video-only provenance or one exact context
+source. Context-enriched execution retrieves and normalizes context before the
+Gemini media upload; video-only execution records that the context stage was
+intentionally skipped. Provider failure never authorizes a downgrade.
 Allowed job stages are:
 
 ```text
@@ -404,12 +421,19 @@ model, retention ADR, cost model, and operational runbook.
 - [ ] A user can configure Gemini and provider authorization without a secret
       ever being persisted in Studio storage, returned to browser state, or
       written to logs.
-- [ ] A user can select context and a recipe, start a durable job, navigate
-      away, return, and observe the same job.
+- [ ] A user can begin with Intent, optional Context, or Recording, complete
+      those sections in any order, and retain valid draft state while moving
+      among them.
+- [ ] A user can explicitly choose video-only or one exact context source,
+      select a recipe, start a durable job, navigate away, return, and observe
+      the same job.
+- [ ] Video-only run artifacts record that no external context was supplied;
+      context failures never masquerade as that intentional choice, and
+      existing v2 run imports remain supported.
 - [ ] The UI reports structured analysis stages, cancellation, retry, cleanup,
       and distinct actionable failure classes.
-- [ ] Completing a job publishes a valid v2 run bundle and imports its
-      rebuildable SQLite projection.
+- [ ] Completing a job publishes a valid current-version run bundle and imports
+      its rebuildable SQLite projection; existing v2 bundles remain importable.
 - [ ] Selecting a finding seeks retained local video to its canonical evidence
       timestamp; deleted media requires digest-verified reattachment.
 - [ ] The local app remains inaccessible through hostile Host, nonloopback, or

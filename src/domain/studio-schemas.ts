@@ -116,6 +116,15 @@ export const providerContextSchema = z.discriminatedUnion("provider", [
   }).strict(),
 ]);
 
+export const videoOnlyContextSchema = z.object({
+  mode: z.literal("none"),
+}).strict();
+
+export const analysisContextSchema = z.union([
+  providerContextSchema,
+  videoOnlyContextSchema,
+]);
+
 export const transcriptOffsetSecondsSchema = z.number()
   .int()
   .min(-31_536_000)
@@ -140,10 +149,10 @@ const composerRecipeSchema = z.union([
   z.object({ custom: customRecipeSchema }).strict(),
 ]);
 
-export const immutableJobInputSchema = z.object({
+const immutableJobInputBaseSchema = z.object({
   mediaSessionId: opaqueIdSchema,
   mediaSha256: sha256Schema,
-  context: providerContextSchema,
+  context: analysisContextSchema,
   recipe: z.object({
     id: recipeIdSchema,
     // Optional only for compatibility with pre-executor local rows. New job
@@ -158,14 +167,35 @@ export const immutableJobInputSchema = z.object({
   retention: mediaRetentionSchema,
 }).strict();
 
-const newImmutableJobInputSchema = immutableJobInputSchema.extend({
+function rejectVideoOnlyTranscriptOffset(
+  input: z.infer<typeof immutableJobInputBaseSchema>,
+  context: z.RefinementCtx,
+): void {
+  if (
+    "mode" in input.context
+    && input.context.mode === "none"
+    && input.transcriptOffsetSeconds !== undefined
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["transcriptOffsetSeconds"],
+      message: "video-only input cannot include transcript alignment",
+    });
+  }
+}
+
+export const immutableJobInputSchema = immutableJobInputBaseSchema.superRefine(
+  rejectVideoOnlyTranscriptOffset,
+);
+
+const newImmutableJobInputSchema = immutableJobInputBaseSchema.extend({
   recipe: z.object({
     id: recipeIdSchema,
     custom: z.boolean(),
     revision: z.string().min(1).max(120),
     sha256: sha256Schema,
   }).strict(),
-}).strict();
+}).strict().superRefine(rejectVideoOnlyTranscriptOffset);
 
 export type ImmutableJobInput = z.infer<typeof immutableJobInputSchema>;
 

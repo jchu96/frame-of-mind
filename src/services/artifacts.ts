@@ -1,10 +1,20 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { AnalysisRun, RunManifest } from "../domain/types.js";
+import type {
+  VersionedAnalysisRun,
+  VersionedRunManifest,
+} from "../domain/types.js";
 import { ensureDirectory } from "../lib/files.js";
 import { canonicalAnalysisJson } from "../domain/integrity.js";
 
-export async function writeArtifacts(directory: string, analysis: AnalysisRun, manifest: RunManifest): Promise<string[]> {
+export async function writeArtifacts(
+  directory: string,
+  analysis: VersionedAnalysisRun,
+  manifest: VersionedRunManifest,
+): Promise<string[]> {
+  if (analysis.schemaVersion !== manifest.schemaVersion) {
+    throw new Error("Analysis and manifest schema versions must match.");
+  }
   await ensureDirectory(directory);
   const analysisJson = join(directory, "analysis.json");
   const analysisMarkdown = join(directory, "analysis.md");
@@ -17,12 +27,18 @@ export async function writeArtifacts(directory: string, analysis: AnalysisRun, m
   return [analysisJson, analysisMarkdown, reportHtml, manifestJson];
 }
 
-export function renderAnalysis(analysis: AnalysisRun): string {
+export function renderAnalysis(analysis: VersionedAnalysisRun): string {
   const accepted = analysis.items.filter((item) => item.result.accepted);
+  const heading = analysis.schemaVersion === 2
+    ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
+    : "Video analysis";
+  const contextLine = analysis.schemaVersion === 2
+    ? `- Meeting: \`${escapeInline(analysis.meeting.id)}\``
+    : "- Context: Video only (no external context)";
   const lines = [
-    `# ${escapeInline(analysis.meeting.title || `Meeting ${analysis.meeting.id}`)}`,
+    `# ${escapeInline(heading)}`,
     "",
-    `- Meeting: \`${escapeInline(analysis.meeting.id)}\``,
+    contextLine,
     `- Recipe: \`${escapeInline(analysis.recipe.id)}\``,
     `- Model: \`${escapeInline(analysis.model)}\``,
     `- Accepted records: ${accepted.length}`,
@@ -59,7 +75,12 @@ export function renderAnalysis(analysis: AnalysisRun): string {
       lines.push("### Verbatim UI evidence", "", renderBlock(result.evidence.verbatimUiText), "");
     }
     if (result.evidence?.reporterQuote) {
-      lines.push("### Meeting quote", "", renderBlock(result.evidence.reporterQuote), "");
+      lines.push(
+        analysis.schemaVersion === 2 ? "### Meeting quote" : "### Recording quote",
+        "",
+        renderBlock(result.evidence.reporterQuote),
+        "",
+      );
     }
     if (result.steps?.length) {
       lines.push(
@@ -70,7 +91,7 @@ export function renderAnalysis(analysis: AnalysisRun): string {
       );
     }
     if (item.screenshot && /^moment-\d+\.png$/.test(basename(item.screenshot))) {
-      lines.push(`![Meeting evidence](./${basename(item.screenshot)})`, "");
+      lines.push(`![Screen evidence](./${basename(item.screenshot)})`, "");
     }
     if (result.confidenceNotes) lines.push(`_Confidence: ${escapeInline(result.confidenceNotes)}_`, "");
   }
@@ -78,7 +99,11 @@ export function renderAnalysis(analysis: AnalysisRun): string {
   return `${lines.filter((line, index) => line || lines[index - 1]).join("\n").trim()}\n`;
 }
 
-async function renderHtmlArtifact(directory: string, analysis: AnalysisRun, manifest: RunManifest): Promise<string> {
+async function renderHtmlArtifact(
+  directory: string,
+  analysis: VersionedAnalysisRun,
+  manifest: VersionedRunManifest,
+): Promise<string> {
   const accepted = analysis.items.filter((item) => item.result.accepted);
   const cards = await Promise.all(accepted.map(async (item, index) => {
     const result = item.result;
@@ -108,16 +133,29 @@ async function renderHtmlArtifact(directory: string, analysis: AnalysisRun, mani
       ${result.confidenceNotes ? `<p class="muted">Confidence: ${html(result.confidenceNotes)}</p>` : ""}
     </article>`;
   }));
-  const safeSourceUrl = safeHref(analysis.meeting.sourceUrl);
+  const heading = analysis.schemaVersion === 2
+    ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
+    : "Video analysis";
+  const providerLabel = analysis.schemaVersion === 2
+    ? analysis.meeting.provider
+    : "video only";
+  const safeSourceUrl = analysis.schemaVersion === 2
+    ? safeHref(analysis.meeting.sourceUrl)
+    : undefined;
   const source = safeSourceUrl
     ? `<a href="${htmlAttribute(safeSourceUrl)}" rel="noreferrer">Open source meeting</a>`
-    : "No provider URL retained";
+    : analysis.schemaVersion === 2
+      ? "No provider URL retained"
+      : "No external context supplied";
+  const alignment = manifest.schemaVersion === 2
+    ? `Transcript alignment: ${manifest.transcriptAlignment.offsetSeconds >= 0 ? "+" : ""}${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).`
+    : "Transcript alignment: not applicable to a video-only run.";
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${html(analysis.meeting.title || `Meeting ${analysis.meeting.id}`)} — Frame of Mind</title>
+  <title>${html(heading)} — Frame of Mind</title>
   <style>
     :root{color-scheme:light dark;--bg:#f5f3ee;--card:#fff;--ink:#1d2524;--muted:#67716e;--line:#d9ddd9;--accent:#0e766e}
     @media(prefers-color-scheme:dark){:root{--bg:#111615;--card:#19201f;--ink:#edf3f1;--muted:#9aaba7;--line:#34403d;--accent:#68d4c6}}
@@ -132,12 +170,12 @@ async function renderHtmlArtifact(directory: string, analysis: AnalysisRun, mani
 </head>
 <body><main>
   <header>
-    <div class="eyebrow">Frame of Mind · ${html(analysis.meeting.provider)} · ${html(analysis.recipe.label)}</div>
-    <h1>${html(analysis.meeting.title || `Meeting ${analysis.meeting.id}`)}</h1>
+    <div class="eyebrow">Frame of Mind · ${html(providerLabel)} · ${html(analysis.recipe.label)}</div>
+    <h1>${html(heading)}</h1>
     <div class="meta"><span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
   </header>
   <section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>
-    <p class="muted">Transcript alignment: +${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).</p>
+    <p class="muted">${alignment}</p>
   </section>
   ${cards.join("\n") || "<article><h2>No accepted records</h2><p>No candidate survived the recipe interrogation pass.</p></article>"}
   <footer class="muted"><p>Portable review rendering. The versioned source of truth is <code>analysis.json</code>; run provenance is in <code>manifest.json</code>.</p></footer>
