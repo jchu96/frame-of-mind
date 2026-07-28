@@ -11,6 +11,7 @@ const baseFlags = {
   output: ".frame-of-mind/test-runs",
   maxMoments: "5",
   screenshots: false,
+  derivedTranscript: true,
 };
 
 describe("analyze CLI option assembly", () => {
@@ -26,6 +27,17 @@ describe("analyze CLI option assembly", () => {
       recipe: { id: "communication-coaching" },
     });
     expect(options.recipeRevision).toContain("deep-understanding-v1");
+  });
+
+  it("keeps derived transcription on by default and honors the opt-out", async () => {
+    const defaulted = await buildAnalyzeOptions(undefined, baseFlags, "synthetic-key");
+    expect(defaulted.derivedTranscript).toBe(true);
+
+    const disabled = await buildAnalyzeOptions(undefined, {
+      ...baseFlags,
+      derivedTranscript: false,
+    }, "synthetic-key");
+    expect(disabled.derivedTranscript).toBe(false);
   });
 
   it("requires a meeting ID when context is selected", async () => {

@@ -71,6 +71,36 @@ plausible alternative.
 
 Do not put credentials, signed URLs, or instructions to publish into context.
 
+## Transcript ladder
+
+A run resolves its transcript from the first rung that produces one:
+
+1. a provider transcript from Bluedot or Granola;
+2. a transcript inside the operator's `--context-file`;
+3. a transcript derived from the recording's own audio;
+4. none, for a silent recording or a deliberate opt-out.
+
+Rung three runs only when the first two produced nothing, which in practice
+means `--source none` or a context file that carried no transcript. `ffmpeg`
+strips the recording's first audio stream into a private AAC derivative, the
+run's own model transcribes it, and the remote audio upload is deleted
+immediately. Pass `--no-derived-transcript` to skip the rung and analyze the
+recording alone; a missing ffmpeg, a silent recording, or a failed
+transcription produces a warning and the same transcript-less run.
+
+Because the transcript comes from the recording being analyzed, its alignment
+offset is zero by construction rather than model-estimated. Speakers carry
+generic `Speaker N` labels derived from voice alone. Attributing a name to a
+speaker stays an evidence job for the video passes, which can see a roster,
+a shared screen, or a self-introduction; a diarizer guessing names from audio
+would be inference presented as transcript.
+
+Gemini bills audio at roughly 32 tokens per second against roughly 300 tokens
+per second for video at the default resolution, so the pre-pass adds on the
+order of ten percent to media cost. The local ffmpeg step is free. The derived
+transcript is untrusted data like any other transcript, and it never enters the
+run bundle: only its origin, model, and SHA-256 reach the manifest.
+
 ## Current two-pass pipeline
 
 ```mermaid

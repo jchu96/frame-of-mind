@@ -51,6 +51,7 @@ export interface AnalyzeCliFlags {
   maxMoments: string;
   screenshots: boolean;
   keepUpload?: boolean;
+  derivedTranscript: boolean;
 }
 
 program
@@ -73,7 +74,7 @@ program
       ["Node >=22", Number(process.versions.node.split(".")[0]) >= 22],
       ["GEMINI_API_KEY", Boolean(process.env.GEMINI_API_KEY)],
       ["GRANOLA_API_KEY (optional)", Boolean(process.env.GRANOLA_API_KEY)],
-      ["ffmpeg (optional screenshots)", await executableExists("ffmpeg")],
+      ["ffmpeg (optional: screenshots, derived transcript)", await executableExists("ffmpeg")],
     ] as const;
     for (const [name, ready] of checks) process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
     process.stdout.write(
@@ -113,6 +114,7 @@ program
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
   .option("--max-moments <count>", "Maximum candidate moments to interrogate", "10")
   .option("--no-screenshots", "Skip ffmpeg screenshots")
+  .option("--no-derived-transcript", "Skip deriving a transcript from the recording audio when no transcript is supplied")
   .option("--keep-upload", "Leave the Gemini file until its provider expiration time")
   .action(
     async (
@@ -209,6 +211,7 @@ export async function buildAnalyzeOptions(
     maxIncidents,
     screenshots: flags.screenshots,
     keepUpload: Boolean(flags.keepUpload),
+    derivedTranscript: flags.derivedTranscript !== false,
   };
   return videoOnly
     ? {
@@ -238,7 +241,7 @@ const CLI_ANALYSIS_PROGRESS = {
     }
     const showMessage =
       (event.kind === "stage" &&
-        ["uploading_to_gemini", "indexing", "interrogating"].includes(event.stage)) ||
+        ["fetching_context", "uploading_to_gemini", "indexing", "interrogating"].includes(event.stage)) ||
       (event.kind === "progress" && ["fetching_context", "interrogating"].includes(event.stage));
     if (showMessage && event.message) {
       process.stderr.write(`${event.message}\n`);

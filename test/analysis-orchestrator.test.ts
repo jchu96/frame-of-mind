@@ -80,6 +80,7 @@ describe("AnalysisOrchestrator", () => {
       fixture.options.recipe,
       undefined,
       0.5,
+      undefined,
     );
     expect(fixture.analyzer.interrogate).toHaveBeenCalledWith(
       expect.any(Object),
@@ -87,6 +88,7 @@ describe("AnalysisOrchestrator", () => {
       undefined,
       fixture.options.recipe,
       undefined,
+      false,
     );
     expect(result.analysis).toMatchObject({
       schemaVersion: 3,
@@ -100,7 +102,399 @@ describe("AnalysisOrchestrator", () => {
     expect(result.manifest).not.toHaveProperty("meetingId");
     expect(result.manifest).not.toHaveProperty("transcriptSha256");
     expect(result.manifest).not.toHaveProperty("transcriptAlignment");
+    expect(result.manifest).not.toHaveProperty("derivedTranscript");
     expect(result.projectionWarning).toBeUndefined();
+  });
+
+  it("derives a transcript for a video-only run and records provenance", async () => {
+    const fixture = await createFixture();
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => [
+        { start: "00:00:02", end: "00:00:04", speaker: "Speaker 1", text: "Please add the report." },
+      ]),
+    };
+    const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "derived-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    });
+
+    const derivedLine = "[00:00:02] Speaker 1: Please add the report.";
+    expect(extractAudioTrack).toHaveBeenCalledTimes(1);
+    expect(analyzer.upload).toHaveBeenCalledWith(
+      expect.stringContaining("derived-audio.aac"),
+      "audio/aac",
+    );
+    expect(analyzer.transcribe).toHaveBeenCalledTimes(1);
+    // Audio remote cleanup plus final recording cleanup.
+    expect(analyzer.delete).toHaveBeenCalledTimes(2);
+    expect(analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      fixture.options.recipe,
+      undefined,
+      0.5,
+      derivedLine,
+    );
+    expect(analyzer.interrogate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      derivedLine,
+      fixture.options.recipe,
+      undefined,
+      true,
+    );
+    expect(result.manifest.schemaVersion).toBe(3);
+    expect(result.manifest.derivedTranscript).toMatchObject({
+      origin: "gemini-audio",
+      model: "gemini-test",
+      sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+  });
+
+  it("skips derived transcription when the operator disables it", async () => {
+    const fixture = await createFixture();
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => []),
+    };
+    const extractAudioTrack = vi.fn(async () => true);
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "derived-off-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      derivedTranscript: false,
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    });
+
+    expect(extractAudioTrack).not.toHaveBeenCalled();
+    expect(analyzer.transcribe).not.toHaveBeenCalled();
+    expect(result.manifest).not.toHaveProperty("derivedTranscript");
+  });
+
+  it("continues without a transcript when derived transcription fails", async () => {
+    const fixture = await createFixture();
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => {
+        throw new Error("synthetic transcription failure");
+      }),
+    };
+    const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const events: AnalysisProgressEvent[] = [];
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "derived-failure-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    }, {
+      progress: { report: (event) => events.push(event) },
+    });
+
+    expect(events.some((event) =>
+      event.kind === "warning"
+      && event.message.includes("Derived transcription failed"))).toBe(true);
+    // Audio remote cleanup on the failure path plus final recording cleanup.
+    expect(analyzer.delete).toHaveBeenCalledTimes(2);
+    expect(result.manifest).not.toHaveProperty("derivedTranscript");
+    expect(analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      fixture.options.recipe,
+      undefined,
+      0.5,
+      undefined,
+    );
+  });
+
+  it("fills an empty file-context transcript and pins alignment at zero", async () => {
+    const fixture = await createFixture();
+    fixture.meeting.transcript = "";
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => [
+        { start: "00:00:02", end: "00:00:04", speaker: "Speaker 1", text: "Please add the report." },
+      ]),
+    };
+    const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "derived-fill-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+    });
+
+    const result = await orchestrator.analyze(fixture.options);
+
+    const derivedLine = "[00:00:02] Speaker 1: Please add the report.";
+    expect(analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({ transcript: "" }),
+      fixture.options.recipe,
+      undefined,
+      0.5,
+      derivedLine,
+    );
+    expect(analyzer.interrogate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      derivedLine,
+      fixture.options.recipe,
+      undefined,
+      true,
+    );
+    expect(result.manifest.schemaVersion).toBe(2);
+    if (result.manifest.schemaVersion !== 2) throw new Error("expected v2 manifest");
+    expect(result.manifest.transcriptAlignment).toMatchObject({
+      offsetSeconds: 0,
+      method: "explicit",
+      confidence: "high",
+    });
+    expect(result.manifest.derivedTranscript).toMatchObject({ origin: "gemini-audio" });
+    expect(result.manifest.transcriptSha256).toBe(result.manifest.derivedTranscript!.sha256);
+  });
+
+  it("never re-derives over a real provider transcript", async () => {
+    const fixture = await createFixture();
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => [
+        { start: "00:00:02", end: "00:00:04", speaker: "Speaker 9", text: "Should never be used." },
+      ]),
+    };
+    const extractAudioTrack = vi.fn(async () => true);
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "gate-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+    });
+
+    const result = await orchestrator.analyze(fixture.options);
+
+    expect(extractAudioTrack).not.toHaveBeenCalled();
+    expect(analyzer.transcribe).not.toHaveBeenCalled();
+    expect(result.manifest).not.toHaveProperty("derivedTranscript");
+    if (result.manifest.schemaVersion !== 2) throw new Error("expected v2 manifest");
+    expect(result.manifest.transcriptAlignment.method).toBe("model");
+    expect(analyzer.interrogate).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      expect.any(String),
+      fixture.options.recipe,
+      undefined,
+      false,
+    );
+  });
+
+  it("continues to the video passes when the audio upload fails", async () => {
+    const fixture = await createFixture();
+    const remote = fixture.analyzer.upload;
+    let uploadCalls = 0;
+    const analyzer = {
+      ...fixture.analyzer,
+      upload: vi.fn(async (path: string, mimeType: string) => {
+        uploadCalls += 1;
+        if (mimeType === "audio/aac") {
+          throw new GeminiFileError("Gemini file upload or processing failed.", undefined, "unconfirmed");
+        }
+        return remote.getMockImplementation()!(path, mimeType);
+      }),
+      transcribe: vi.fn(async () => []),
+    };
+    const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const events: AnalysisProgressEvent[] = [];
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "audio-upload-failure-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    }, {
+      progress: { report: (event) => events.push(event) },
+    });
+
+    expect(uploadCalls).toBe(2);
+    expect(analyzer.transcribe).not.toHaveBeenCalled();
+    expect(events.some((event) =>
+      event.kind === "warning" && event.message.includes("Derived transcription failed"))).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "warning" && event.message.includes("retention window"))).toBe(true);
+    expect(result.manifest).not.toHaveProperty("derivedTranscript");
+    expect(result.manifest.schemaVersion).toBe(3);
+  });
+
+  it("propagates cancellation during derived transcription and cleans up the audio upload", async () => {
+    const fixture = await createFixture();
+    const controller = new AbortController();
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => {
+        controller.abort();
+        throw new AnalysisCanceledError();
+      }),
+    };
+    const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "derived-cancel-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+    });
+
+    await expect(orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    }, {
+      signal: controller.signal,
+    })).rejects.toBeInstanceOf(AnalysisCanceledError);
+
+    // The audio remote is still cleaned up in the finally path.
+    expect(analyzer.delete).toHaveBeenCalledTimes(1);
+    expect(analyzer.index).not.toHaveBeenCalled();
+  });
+
+  it("records no provenance when transcription returns no segments", async () => {
+    const fixture = await createFixture();
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => []),
+    };
+    const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "derived-empty-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    });
+
+    expect(analyzer.transcribe).toHaveBeenCalledTimes(1);
+    // Audio remote cleanup plus final recording cleanup still happen.
+    expect(analyzer.delete).toHaveBeenCalledTimes(2);
+    expect(result.manifest).not.toHaveProperty("derivedTranscript");
+    expect(analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      fixture.options.recipe,
+      undefined,
+      0.5,
+      undefined,
+    );
   });
 
   it("publishes a valid run and reports structured progress", async () => {
@@ -186,6 +580,7 @@ describe("AnalysisOrchestrator", () => {
       fixture.options.recipe,
       undefined,
       1,
+      undefined,
     );
     expect(result.manifest.analysis.indexFps).toBe(1);
   });

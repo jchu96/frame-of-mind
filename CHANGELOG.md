@@ -5,6 +5,34 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Added a derived transcript rung to the analyze pipeline. When neither a
+  provider nor a context file supplies a transcript, ffmpeg strips the
+  recording's first audio stream into a private AAC derivative, the run's own
+  model transcribes it into diarized segments with generic speaker labels, and
+  the remote audio upload is deleted immediately. The transcript corroborates
+  both model passes at zero alignment offset and is never persisted.
+- Added `--no-derived-transcript` to opt out of that step.
+- Added optional `derivedTranscript` manifest provenance (`origin`, model, and
+  SHA-256 of the formatted transcript) to schema 2 and schema 3.
+
+### Changed
+
+- Bumped the prompt revision to `2026-07-28.3`.
+- On schema-2 manifests a derived transcript changes the referent of two
+  existing fields: `transcriptSha256` records the derived text's digest and
+  `transcriptAlignment` is pinned to explicit offset 0; a schema refinement
+  enforces both whenever `derivedTranscript` is present. Consumers must check
+  `derivedTranscript` before attributing transcript provenance.
+- Derived transcription defaults to on for programmatic
+  `AnalysisOrchestrator`/`analyzeMeeting` embedders as well as the CLI; pass
+  `derivedTranscript: false` to keep prior behavior. `--transcript-offset` is
+  ignored (with a warning) when the transcript is derived, because a derived
+  transcript is zero-aligned by construction.
+- The `doctor` ffmpeg check now reports that it serves screenshots and derived
+  transcription; both remain optional and nonfatal.
+
 ## [0.3.0] - 2026-07-28
 
 ### Added

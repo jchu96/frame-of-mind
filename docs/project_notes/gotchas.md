@@ -390,3 +390,9 @@
 - Intent is useful for coaching and self-review. Label inferred intent as
   interpretation, cite its observed basis, and include alternatives; do not
   prohibit intent analysis or present hidden intent as observed fact.
+- Hosted online does not mean public. Verify a recording's actual restriction
+  status before describing it as public in any artifact, quoting it in a
+  shareable document, or nominating it as an evaluation fixture. A restricted
+  recording analyzed with authorization stays link-free and non-redistributable
+  (2026-07-28: a class recording was initially mislabeled public in an
+  evaluation write-up and had to be corrected).

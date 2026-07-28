@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-28
+- Amended by: ADR 0015 (clause 5 — a video-only prompt may carry a transcript
+  derived from the selected recording's own audio, labeled as derived)
 
 ## Invariant
 

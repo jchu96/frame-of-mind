@@ -8,7 +8,15 @@
   provider payloads, URLs, and credentials do not belong in durable job events.
 - Check cancellation between provider/model/render boundaries, but retain an
   exact Gemini file identity long enough to attempt cleanup.
-- Fetch transcript context before video analysis.
+- Fetch transcript context before video analysis. Resolve transcripts through
+  the ladder: provider, operator context file, derived from recording audio,
+  none. Derive only when the effective transcript is empty and the operator
+  has not opted out; the stage is nonfatal and never fabricates meeting
+  context (ADR 0015).
+- A derived transcript aligns at offset 0 by construction; record
+  `derivedTranscript` provenance in the manifest and never persist the
+  transcript body. Delete the remote audio upload in success and failure
+  paths; the local `.aac` derivative lives in the run temp dir.
 - CLI provider authorization may be interactive; durable Studio jobs must set
   noninteractive provider auth and fail with reconnect guidance instead of
   opening an OAuth callback from the worker.
