@@ -1,0 +1,17 @@
+{
+  "id": "analysis-quality_20260728",
+  "title": "Analysis Quality and Cost Layer",
+  "type": "feature",
+  "status": "proposed",
+  "created": "2026-07-28T14:30:00Z",
+  "updated": "2026-07-28T14:30:00Z",
+  "phases": {
+    "total": 5,
+    "completed": 0
+  },
+  "tasks": {
+    "total": 0,
+    "completed": 0
+  },
+  "commits": []
+}
