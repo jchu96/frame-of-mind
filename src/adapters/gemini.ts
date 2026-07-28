@@ -97,8 +97,15 @@ export class GeminiVideoAnalyzer {
 
   async upload(path: string, mimeType: string): Promise<GeminiFile> {
     let file: GeminiFile | undefined;
+    let uploadName: string | undefined;
     try {
       file = await this.fileUploader.upload(path, mimeType);
+      uploadName = safeRemoteFileName(file.name);
+      if (!uploadName) {
+        throw new Error("Gemini upload did not return a valid file name.");
+      }
+      const uploadUri = requireString(file.uri, "Gemini file URI");
+      const uploadMimeType = file.mimeType;
       const processingDeadline = this.now() + FILE_PROCESSING_LIMIT_MS;
       while (String(file.state) === "PROCESSING") {
         const remaining = processingDeadline - this.now();
@@ -106,26 +113,38 @@ export class GeminiVideoAnalyzer {
           throw new Error("Gemini file processing exceeded the 30 minute limit.");
         }
         await this.sleep(Math.min(5_000, remaining));
-        if (!file.name) throw new Error("Gemini upload did not return a file name.");
         const requestRemaining = processingDeadline - this.now();
         if (requestRemaining <= 0) {
           throw new Error("Gemini file processing exceeded the 30 minute limit.");
         }
-        file = await this.getFile({
-          name: file.name,
+        const polled = await this.getFile({
+          name: uploadName,
           config: {
             httpOptions: { timeout: Math.min(FILE_REQUEST_TIMEOUT_MS, requestRemaining) },
           },
         });
+        if (polled.name !== undefined && polled.name !== uploadName) {
+          throw new Error("Gemini file polling returned a different file identity.");
+        }
+        if (polled.uri !== undefined && polled.uri !== uploadUri) {
+          throw new Error("Gemini file polling returned a different file URI.");
+        }
+        file = {
+          ...file,
+          ...polled,
+          name: uploadName,
+          uri: uploadUri,
+          ...(uploadMimeType ? { mimeType: uploadMimeType } : {}),
+        };
       }
       if (String(file.state) !== "ACTIVE") {
         throw new Error(`Gemini could not process the recording (state: ${String(file.state)}).`);
       }
       return file;
     } catch (error) {
-      const cleanupName = file?.name ??
+      const cleanupName = uploadName ?? safeRemoteFileName(file?.name) ??
         (error instanceof GeminiFileError
-          ? error.remoteFileName
+          ? safeRemoteFileName(error.remoteFileName)
           : undefined);
       if (cleanupName) {
         const deleted = await this.deleteByNameWithRetry(cleanupName);
@@ -513,4 +532,10 @@ export interface GeminiAnalyzerDependencies {
 function requireString(value: string | undefined, label: string): string {
   if (!value) throw new Error(`${label} is missing.`);
   return value;
+}
+
+function safeRemoteFileName(value: string | undefined): string | undefined {
+  return value && value.length <= 1_000 && /^files\/[A-Za-z0-9_-]+$/.test(value)
+    ? value
+    : undefined;
 }

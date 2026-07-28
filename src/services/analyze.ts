@@ -357,9 +357,16 @@ export class AnalysisOrchestrator {
         remote = await analyzer.upload(localVideo, mimeType);
       } catch (error) {
         if (error instanceof AnalysisCanceledError) throw error;
-        const uploadCleanup = error instanceof GeminiFileError
+        assertNotCanceled(execution.signal);
+        const reportedUploadCleanup = error instanceof GeminiFileError
           ? error.uploadCleanup ?? "unconfirmed"
           : "unconfirmed";
+        const uploadName = error instanceof GeminiFileError
+          ? sanitizedRemoteFileName(error.remoteFileName)
+          : undefined;
+        const uploadCleanup = reportedUploadCleanup === "confirmed_deleted" && !uploadName
+          ? "unconfirmed"
+          : reportedUploadCleanup;
         const failure = runFailureManifestSchema.parse({
           schemaVersion: 1,
           toolVersion: "0.3.0",
@@ -377,8 +384,8 @@ export class AnalysisOrchestrator {
           recordingSha256,
           error: sanitizedFailureError(error),
           remoteFile: {
-            ...(error instanceof GeminiFileError && error.remoteFileName
-              ? { name: error.remoteFileName }
+            ...(uploadCleanup !== "not_obtained" && uploadName
+              ? { name: uploadName }
               : {}),
             cleanup: uploadCleanup,
           },
@@ -397,7 +404,7 @@ export class AnalysisOrchestrator {
           });
         }
         if (uploadCleanup === "unconfirmed") {
-          await reportUnconfirmedCleanup(progress);
+          await reportUnconfirmedCleanup(progress, uploadName);
         }
         throw error;
       }
@@ -763,7 +770,10 @@ export class AnalysisOrchestrator {
           }
         }
         if (!options.keepUpload && !remoteDeleted) {
-          await reportUnconfirmedCleanup(progress);
+          await reportUnconfirmedCleanup(
+            progress,
+            sanitizedRemoteFileMetadata(remote).name,
+          );
         }
         throw error;
       } finally {
@@ -867,14 +877,21 @@ function sanitizedFailureError(error: unknown): RunFailureManifest["error"] {
 function sanitizedRemoteFileMetadata(
   remote: GeminiFile,
 ): Pick<RunFailureManifest["remoteFile"], "name" | "expirationTime"> {
+  const name = sanitizedRemoteFileName(remote.name);
   return {
-    ...(remote.name && /^files\/[A-Za-z0-9_-]+$/.test(remote.name)
-      ? { name: remote.name }
+    ...(name
+      ? { name }
       : {}),
     ...(remote.expirationTime && isUtcDateTime(remote.expirationTime)
       ? { expirationTime: remote.expirationTime }
       : {}),
   };
+}
+
+function sanitizedRemoteFileName(value: string | undefined): string | undefined {
+  return value && value.length <= 1_000 && /^files\/[A-Za-z0-9_-]+$/.test(value)
+    ? value
+    : undefined;
 }
 
 function isUtcDateTime(value: string): boolean {
@@ -884,11 +901,14 @@ function isUtcDateTime(value: string): boolean {
 
 async function reportUnconfirmedCleanup(
   progress: AnalysisProgressReporter,
+  remoteFileName?: string,
 ): Promise<void> {
   await reportWarning(progress, {
     kind: "warning",
     stage: "cleaning_up",
-    message: "Gemini file cleanup is unconfirmed; inspect the private failure-manifest.json for exact-file recovery.",
+    message: remoteFileName
+      ? "Gemini file cleanup is unconfirmed; inspect the private failure-manifest.json for exact-file recovery."
+      : "Gemini file cleanup is unconfirmed and its remote identity is unavailable; review the provider account after the upload retention window.",
   });
 }
 

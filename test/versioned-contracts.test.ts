@@ -20,6 +20,18 @@ describe("versioned run contracts", () => {
     expect(versionedRunImportSchema.parse(pair).analysis.schemaVersion).toBe(2);
   });
 
+  it("keeps historical v2 remote expiration metadata readable", () => {
+    const pair = v2Pair();
+    pair.manifest.remoteFile = {
+      name: "files/historical-test",
+      expirationTime: "2026-07-28T01:00:00+00:00",
+      deleted: true,
+    };
+
+    expect(versionedRunImportSchema.parse(pair).manifest.remoteFile)
+      .toEqual(pair.manifest.remoteFile);
+  });
+
   it("accepts an honestly video-only v3 pair", async () => {
     const pair = await videoOnlyPair();
     const parsed = versionedRunImportSchema.parse(pair);
