@@ -166,3 +166,5 @@ Intent are required, while Context may be completed before or after them. A
 video-only run records the absence of external context through a versioned
 contract; it never fabricates a meeting, transcript, provider, or alignment,
 and a failed context source never silently changes the user's selected mode.
+The durable pair rules are canonical in
+[ADR 0012](../adr/0012-explicit-video-only-run-provenance.md).

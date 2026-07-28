@@ -9,6 +9,9 @@ Semantic Versioning.
 
 - Added the reusable local analysis orchestrator, durable single-concurrency
   Studio job runtime, Home dashboard, and bounded local context-file staging.
+- Added a versioned schema-v3 video-only run pair, recording-only Gemini
+  prompts, and provenance-aware Markdown/HTML rendering while preserving the
+  existing meeting-backed v2 contract.
 
 ### Fixed
 
@@ -20,6 +23,8 @@ Semantic Versioning.
 ### Changed
 
 - Updated Cloudflare Workers development types to `5.20260727.1`.
+- Core versioned readers accept v2 and v3. The current Studio projection stays
+  v2-only and fails closed until its additive migration is implemented.
 
 ### Planned
 

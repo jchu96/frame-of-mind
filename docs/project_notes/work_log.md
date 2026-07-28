@@ -274,3 +274,10 @@
   Added focused core-contract and Studio-adoption tasks for honest video-only
   provenance, v2 import/projection compatibility, and fail-closed context
   selection before the remaining composer UI and Run receipt work.
+- Implemented the core schema-v3 video-only pair without changing v2: strict
+  versioned Zod validation/digests, recording-only Gemini schemas and prompts,
+  context-free orchestration/rendering, and a v2-only Studio projection guard.
+  Adversarial review closed a possible missing-provider-evidence downgrade.
+  `bun run check` passed with 109 CLI tests, 175 web tests, both production
+  builds, the Studio HTTP probe, Cloudflare boundary check, and 32 MiB stream
+  spike.

@@ -13,9 +13,13 @@ import type {
   MeetingEvidence,
   MediaSource,
   RunManifest,
+  VersionedAnalysisRun,
+  VersionedRunManifest,
 } from "../domain/types.js";
-import { runImportSchema } from "../domain/schemas.js";
-import { analysisDigest } from "../domain/integrity.js";
+import {
+  analysisDigest,
+  validateVersionedRunImport,
+} from "../domain/integrity.js";
 import { BluedotClient } from "../adapters/bluedot-mcp.js";
 import { GranolaClient } from "../adapters/granola-mcp.js";
 import { GranolaApiClient } from "../adapters/granola-api.js";
@@ -36,17 +40,11 @@ import { extractScreenshot } from "./screenshots.js";
 import { writeArtifacts } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
 
-export interface AnalyzeOptions {
-  meetingId: string;
+interface AnalyzeOptionsBase {
   recipe: AnalysisRecipe;
   customRecipe: boolean;
   recipeSha256: string;
   recipeRevision: string;
-  contextProvider: ContextProvider;
-  granolaTransport: "mcp" | "api";
-  granolaApiKey?: string;
-  interactiveProviderAuth?: boolean;
-  contextFile?: string;
   apiKey: string;
   model?: string;
   video?: string;
@@ -57,8 +55,35 @@ export interface AnalyzeOptions {
   maxIncidents: number;
   screenshots: boolean;
   keepUpload: boolean;
-  transcriptOffsetSeconds?: number;
 }
+
+export type ContextEnrichedAnalyzeOptions = AnalyzeOptionsBase & {
+  contextMode?: "meeting";
+  meetingId: string;
+  contextProvider: ContextProvider;
+  granolaTransport: "mcp" | "api";
+  granolaApiKey?: string;
+  interactiveProviderAuth?: boolean;
+  contextFile?: string;
+  transcriptOffsetSeconds?: number;
+};
+
+export type VideoOnlyAnalyzeOptions = AnalyzeOptionsBase & {
+  contextMode: "none";
+  video: string;
+  meetingId?: never;
+  contextProvider?: never;
+  granolaTransport?: never;
+  granolaApiKey?: never;
+  interactiveProviderAuth?: never;
+  contextFile?: never;
+  recordingUrl?: never;
+  transcriptOffsetSeconds?: never;
+};
+
+export type AnalyzeOptions =
+  | ContextEnrichedAnalyzeOptions
+  | VideoOnlyAnalyzeOptions;
 
 export const ANALYSIS_PROGRESS_STAGES = [
   "fetching_context",
@@ -99,11 +124,14 @@ export interface AnalysisProgressReporter {
 
 export interface PublishedAnalysisRun {
   readonly directory: string;
-  readonly analysis: AnalysisRun;
-  readonly manifest: RunManifest;
+  readonly analysis: VersionedAnalysisRun;
+  readonly manifest: VersionedRunManifest;
 }
 
-export type AnalysisProjectionInput = Omit<PublishedAnalysisRun, "directory">;
+export interface AnalysisProjectionInput {
+  analysis: AnalysisRun;
+  manifest: RunManifest;
+}
 
 export interface AnalysisProjectionPublisher {
   publish(run: AnalysisProjectionInput): Promise<void>;
@@ -115,7 +143,7 @@ export interface AnalyzeExecutionOptions {
   projection?: AnalysisProjectionPublisher;
 }
 
-interface AnalysisIndex {
+interface MeetingAnalysisIndex {
   isRelevantCall: boolean;
   matchNotes: string;
   transcriptAlignment: {
@@ -126,14 +154,26 @@ interface AnalysisIndex {
   moments: IndexedMoment[];
 }
 
+interface VideoOnlyAnalysisIndex {
+  matchNotes: string;
+  moments: IndexedMoment[];
+}
+
+type AnalysisIndex = MeetingAnalysisIndex | VideoOnlyAnalysisIndex;
+
 export interface AnalysisVideoAnalyzer {
   readonly model: string;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
-  index(file: GeminiFile, meeting: MeetingEvidence, recipe: AnalysisRecipe, focus?: string): Promise<AnalysisIndex>;
+  index(
+    file: GeminiFile,
+    meeting: MeetingEvidence | undefined,
+    recipe: AnalysisRecipe,
+    focus?: string,
+  ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
     candidate: IndexedMoment,
-    nearbyTranscript: string,
+    nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
   ): Promise<AnalysisDetail>;
@@ -145,7 +185,7 @@ interface BluedotMediaContextSource extends MeetingContextSource {
 }
 
 export interface AnalysisOrchestratorDependencies {
-  createContextSource(options: AnalyzeOptions): MeetingContextSource;
+  createContextSource(options: ContextEnrichedAnalyzeOptions): MeetingContextSource;
   createAnalyzer(
     apiKey: string,
     options: AnalyzeOptions,
@@ -187,63 +227,70 @@ export class AnalysisOrchestrator {
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
     const runId = requireSafeRunId(this.nextRunId());
     const startedAt = this.now();
-    const context = this.createContextSource(options);
+    const hasContext = hasMeetingContext(options);
+    const context = hasContext ? this.createContextSource(options) : undefined;
     const progress = execution.progress ?? NOOP_PROGRESS_REPORTER;
     const temp = await mkdtemp(join(tmpdir(), "frame-of-mind-"));
-    let meeting: MeetingEvidence = {
-      id: options.meetingId,
-      provider: options.contextProvider,
-      transport: options.contextProvider === "file" ? "file" : "mcp",
-      transcript: "",
-      raw: {},
-    };
+    let meeting: MeetingEvidence | undefined;
     let localVideo = options.video ? resolve(options.video) : "";
     let downloadedMimeType: string | undefined;
     let mediaSource: RunManifest["mediaSource"] = "local-file";
     let stagingDirectory: string | undefined;
-    let meetingDirectory: string | undefined;
+    let runContainerDirectory: string | undefined;
 
     try {
       assertNotCanceled(execution.signal);
       await report(progress, {
         kind: "stage",
         stage: "fetching_context",
-        message: "Fetching meeting context.",
+        message: hasContext
+          ? "Fetching meeting context."
+          : "No external context selected.",
       });
-      await context.connect();
-      assertNotCanceled(execution.signal);
-      meeting = await context.meeting(options.meetingId);
-      assertNotCanceled(execution.signal);
-      if (!localVideo) {
-        if (options.contextProvider !== "bluedot") {
-          throw new Error(
-            `${options.contextProvider} supplies meeting context, not a screen recording. ` +
-              "Provide --video with a local recording.",
-          );
+      if (hasContext) {
+        if (!context) {
+          throw new Error("Meeting context initialization failed.");
         }
-        if (!isBluedotMediaContextSource(context)) {
-          throw new Error("Bluedot context source cannot resolve recording media.");
-        }
-        const media = context.mediaFromMeeting(meeting, options.recordingUrl);
-        const extension = new URL(media.url).pathname.match(/\.(webm|mp4|m4v|mov|mp3)$/i)?.[0] || ".webm";
-        localVideo = join(temp, `recording${extension}`);
-        const download = await downloadFile(media.url, localVideo);
+        await context.connect();
         assertNotCanceled(execution.signal);
-        if (download.bytes === 0) {
-          throw new Error("Downloaded recording is empty.");
+        meeting = await context.meeting(options.meetingId);
+        if (!meeting) {
+          throw new Error("Meeting context provider returned no meeting evidence.");
         }
-        downloadedMimeType = download.mimeType;
-        mediaSource = media.source === "mcp" ? "bluedot-mcp" : "signed-url";
-        await report(progress, {
-          kind: "progress",
-          stage: "fetching_context",
-          progress: {
-            completed: download.bytes,
-            total: download.bytes,
-            unit: "bytes",
-          },
-          message: `Downloaded ${(download.bytes / 1_000_000).toFixed(1)} MB recording.`,
-        });
+        assertNotCanceled(execution.signal);
+        if (!localVideo) {
+          if (options.contextProvider !== "bluedot") {
+            throw new Error(
+              `${options.contextProvider} supplies meeting context, not a screen recording. ` +
+                "Provide --video with a local recording.",
+            );
+          }
+          if (!isBluedotMediaContextSource(context)) {
+            throw new Error("Bluedot context source cannot resolve recording media.");
+          }
+          const media = context.mediaFromMeeting(meeting, options.recordingUrl);
+          const extension = new URL(media.url).pathname.match(/\.(webm|mp4|m4v|mov|mp3)$/i)?.[0] || ".webm";
+          localVideo = join(temp, `recording${extension}`);
+          const download = await downloadFile(media.url, localVideo);
+          assertNotCanceled(execution.signal);
+          if (download.bytes === 0) {
+            throw new Error("Downloaded recording is empty.");
+          }
+          downloadedMimeType = download.mimeType;
+          mediaSource = media.source === "mcp" ? "bluedot-mcp" : "signed-url";
+          await report(progress, {
+            kind: "progress",
+            stage: "fetching_context",
+            progress: {
+              completed: download.bytes,
+              total: download.bytes,
+              unit: "bytes",
+            },
+            message: `Downloaded ${(download.bytes / 1_000_000).toFixed(1)} MB recording.`,
+          });
+        }
+      } else if (!localVideo) {
+        throw new Error("A local recording is required when no external context is selected.");
       }
 
       const mimeType = mimeForPath(localVideo, downloadedMimeType);
@@ -266,10 +313,11 @@ export class AnalysisOrchestrator {
         );
       }
       assertNotCanceled(execution.signal);
-      meetingDirectory = join(resolve(options.outputRoot), safePathSegment(meeting.id));
-      const outputDirectory = join(meetingDirectory, runId);
-      stagingDirectory = join(meetingDirectory, `.${runId}.staging`);
-      await ensureDirectory(meetingDirectory);
+      const containerId = meeting?.id ?? `video-${recordingSha256.slice(0, 16)}`;
+      runContainerDirectory = join(resolve(options.outputRoot), safePathSegment(containerId));
+      const outputDirectory = join(runContainerDirectory, runId);
+      stagingDirectory = join(runContainerDirectory, `.${runId}.staging`);
+      await ensureDirectory(runContainerDirectory);
       await ensureDirectory(stagingDirectory);
 
       const analyzer = this.createAnalyzer(options.apiKey, options);
@@ -297,25 +345,30 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
         const index = await analyzer.index(remote, meeting, options.recipe, options.focus);
         assertNotCanceled(execution.signal);
-        if (!index.isRelevantCall) {
-          throw new Error(
-            "Recording/transcript mismatch. Verify that the provider meeting ID and local recording refer to the same call.",
-          );
-        }
-        const alignment =
-          options.transcriptOffsetSeconds === undefined
+        let alignment: RunManifest["transcriptAlignment"] | undefined;
+        if (hasContext) {
+          if (!isMeetingAnalysisIndex(index)) {
+            throw new Error("Gemini meeting analysis omitted transcript alignment metadata.");
+          }
+          if (!index.isRelevantCall) {
+            throw new Error(
+              "Recording/transcript mismatch. Verify that the provider meeting ID and local recording refer to the same call.",
+            );
+          }
+          alignment = options.transcriptOffsetSeconds === undefined
             ? {
                 offsetSeconds: index.transcriptAlignment.offsetSeconds,
-                method: index.transcriptAlignment.confidence === "none" ? ("none" as const) : ("model" as const),
+                method: index.transcriptAlignment.confidence === "none" ? "none" : "model",
                 confidence: index.transcriptAlignment.confidence,
                 rationale: index.transcriptAlignment.rationale,
               }
             : {
                 offsetSeconds: options.transcriptOffsetSeconds,
-                method: "explicit" as const,
-                confidence: "high" as const,
+                method: "explicit",
+                confidence: "high",
                 rationale: "Operator supplied --transcript-offset.",
               };
+        }
         const items: AnalysisItem[] = [];
         const candidates = index.moments.slice(0, options.maxIncidents);
         await report(progress, {
@@ -328,7 +381,15 @@ export class AnalysisOrchestrator {
           const result = await analyzer.interrogate(
             remote,
             candidate,
-            nearbyTranscript(meeting.transcript, candidate.start, candidate.end, 45, alignment.offsetSeconds),
+            meeting && alignment
+              ? nearbyTranscript(
+                  meeting.transcript,
+                  candidate.start,
+                  candidate.end,
+                  45,
+                  alignment.offsetSeconds,
+                )
+              : undefined,
             options.recipe,
             options.focus,
           );
@@ -356,24 +417,54 @@ export class AnalysisOrchestrator {
           });
         }
 
-        const analysis: AnalysisRun = {
-          schemaVersion: 2,
-          runId,
-          recipe: {
-            id: options.recipe.id,
-            label: options.recipe.label,
-          },
-          meeting: {
-            id: meeting.id,
-            provider: meeting.provider,
-            ...(meeting.title ? { title: meeting.title } : {}),
-            ...(meeting.createdAt ? { createdAt: meeting.createdAt } : {}),
-            ...(meeting.sourceUrl ? { sourceUrl: meeting.sourceUrl } : {}),
-          },
-          model: analyzer.model,
-          matchNotes: index.matchNotes,
-          items,
-        };
+        let meetingRunContext: {
+          meeting: MeetingEvidence;
+          alignment: RunManifest["transcriptAlignment"];
+        } | undefined;
+        if (hasContext) {
+          if (!meeting || !alignment) {
+            throw new Error("Meeting context analysis did not produce complete provenance.");
+          }
+          meetingRunContext = { meeting, alignment };
+        }
+
+        const analysis: VersionedAnalysisRun = meetingRunContext
+          ? {
+              schemaVersion: 2,
+              runId,
+              recipe: {
+                id: options.recipe.id,
+                label: options.recipe.label,
+              },
+              meeting: {
+                id: meetingRunContext.meeting.id,
+                provider: meetingRunContext.meeting.provider,
+                ...(meetingRunContext.meeting.title
+                  ? { title: meetingRunContext.meeting.title }
+                  : {}),
+                ...(meetingRunContext.meeting.createdAt
+                  ? { createdAt: meetingRunContext.meeting.createdAt }
+                  : {}),
+                ...(meetingRunContext.meeting.sourceUrl
+                  ? { sourceUrl: meetingRunContext.meeting.sourceUrl }
+                  : {}),
+              },
+              model: analyzer.model,
+              matchNotes: index.matchNotes,
+              items,
+            }
+          : {
+              schemaVersion: 3,
+              runId,
+              recipe: {
+                id: options.recipe.id,
+                label: options.recipe.label,
+              },
+              context: { mode: "none" },
+              model: analyzer.model,
+              matchNotes: index.matchNotes,
+              items,
+            };
         await report(progress, {
           kind: "stage",
           stage: "rendering",
@@ -390,14 +481,11 @@ export class AnalysisOrchestrator {
           cleanupFinalized = remoteDeleted;
         }
         const analysisSha256 = await analysisDigest(analysis);
-        const manifest: RunManifest = {
-          schemaVersion: 2,
+        const manifestBase = {
           toolVersion: "0.2.1",
-          promptRevision: "2026-07-27.2",
           runId,
           startedAt,
           completedAt: this.now(),
-          meetingId: meeting.id,
           recipe: {
             id: options.recipe.id,
             label: options.recipe.label,
@@ -407,13 +495,8 @@ export class AnalysisOrchestrator {
           },
           model: analyzer.model,
           recordingSha256,
-          transcriptSha256: sha256Text(meeting.transcript),
           analysisSha256,
           recordingMimeType: mimeType,
-          contextProvider: meeting.provider,
-          contextTransport: meeting.transport,
-          mediaSource,
-          transcriptAlignment: alignment,
           remoteFile: {
             ...(remote.name ? { name: remote.name } : {}),
             ...(remote.expirationTime ? { expirationTime: remote.expirationTime } : {}),
@@ -423,8 +506,8 @@ export class AnalysisOrchestrator {
             ...(options.focus ? { focus: options.focus } : {}),
             maxIncidents: options.maxIncidents,
             indexFps: 0.5,
-            indexResolution: "low",
-            interrogationResolution: "medium",
+            indexResolution: "low" as const,
+            interrogationResolution: "medium" as const,
           },
           artifacts: [
             "analysis.json",
@@ -434,7 +517,26 @@ export class AnalysisOrchestrator {
             ...items.flatMap((item) => (item.screenshot ? [item.screenshot] : [])),
           ],
         };
-        const validated = runImportSchema.parse({ analysis, manifest });
+        const manifest: VersionedRunManifest = meetingRunContext
+          ? {
+              ...manifestBase,
+              schemaVersion: 2,
+              promptRevision: "2026-07-27.2",
+              meetingId: meetingRunContext.meeting.id,
+              transcriptSha256: sha256Text(meetingRunContext.meeting.transcript),
+              contextProvider: meetingRunContext.meeting.provider,
+              contextTransport: meetingRunContext.meeting.transport,
+              mediaSource,
+              transcriptAlignment: meetingRunContext.alignment,
+            }
+          : {
+              ...manifestBase,
+              schemaVersion: 3,
+              promptRevision: "2026-07-28.1",
+              context: { mode: "none" },
+              mediaSource: "local-file",
+            };
+        const validated = await validateVersionedRunImport({ analysis, manifest });
         assertNotCanceled(execution.signal);
         await writeArtifacts(stagingDirectory, validated.analysis, validated.manifest);
         assertNotCanceled(execution.signal);
@@ -458,18 +560,28 @@ export class AnalysisOrchestrator {
         };
         let projectionWarning: string | undefined;
         if (execution.projection) {
-          try {
-            await execution.projection.publish(structuredClone({
-              analysis: published.analysis,
-              manifest: published.manifest,
-            }));
-          } catch {
-            projectionWarning = "Published run could not be added to the review projection.";
+          if (published.analysis.schemaVersion === 3) {
+            projectionWarning =
+              "Published video-only run could not be added until the review projection supports schema v3.";
             await reportWarning(progress, {
               kind: "warning",
               stage: "cleaning_up",
               message: projectionWarning,
             });
+          } else if (published.manifest.schemaVersion === 2) {
+            try {
+              await execution.projection.publish(structuredClone({
+                analysis: published.analysis,
+                manifest: published.manifest,
+              }));
+            } catch {
+              projectionWarning = "Published run could not be added to the review projection.";
+              await reportWarning(progress, {
+                kind: "warning",
+                stage: "cleaning_up",
+                message: projectionWarning,
+              });
+            }
           }
         }
         return {
@@ -489,9 +601,9 @@ export class AnalysisOrchestrator {
         }
       }
     } finally {
-      await context.close().catch(() => undefined);
+      await context?.close().catch(() => undefined);
       if (stagingDirectory) await rm(stagingDirectory, { recursive: true, force: true });
-      if (meetingDirectory) await rmdir(meetingDirectory).catch(() => undefined);
+      if (runContainerDirectory) await rmdir(runContainerDirectory).catch(() => undefined);
       await rm(temp, { recursive: true, force: true });
     }
   }
@@ -512,7 +624,7 @@ export function createDefaultAnalysisOrchestrator(): AnalysisOrchestrator {
   });
 }
 
-function defaultCreateContextSource(options: AnalyzeOptions): MeetingContextSource {
+function defaultCreateContextSource(options: ContextEnrichedAnalyzeOptions): MeetingContextSource {
   const interactive = options.interactiveProviderAuth ?? true;
   if (options.contextProvider === "bluedot") {
     return new BluedotClient(undefined, interactive, interactive);
@@ -579,6 +691,18 @@ function requireSafeRunId(value: string): string {
 
 function isBluedotMediaContextSource(context: MeetingContextSource): context is BluedotMediaContextSource {
   return "mediaFromMeeting" in context && typeof context.mediaFromMeeting === "function";
+}
+
+function hasMeetingContext(
+  options: AnalyzeOptions,
+): options is ContextEnrichedAnalyzeOptions {
+  return options.contextMode !== "none";
+}
+
+function isMeetingAnalysisIndex(
+  index: AnalysisIndex,
+): index is MeetingAnalysisIndex {
+  return "isRelevantCall" in index && "transcriptAlignment" in index;
 }
 
 export function assertEvidenceWithinCandidate(

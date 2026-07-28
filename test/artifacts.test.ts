@@ -1,8 +1,28 @@
 import { describe, expect, it } from "vitest";
-import type { AnalysisRun } from "../src/domain/types.js";
+import type {
+  AnalysisRun,
+  AnalysisRunV3,
+} from "../src/domain/types.js";
 import { renderAnalysis } from "../src/services/artifacts.js";
 
 describe("analysis Markdown rendering", () => {
+  it("labels video-only provenance without inventing a meeting", () => {
+    const analysis: AnalysisRunV3 = {
+      schemaVersion: 3,
+      runId: "video-only",
+      recipe: { id: "issue-review", label: "Issue review" },
+      context: { mode: "none" },
+      model: "gemini-test",
+      matchNotes: "Recording-only analysis.",
+      items: [],
+    };
+
+    const markdown = renderAnalysis(analysis);
+    expect(markdown).toContain("# Video analysis");
+    expect(markdown).toContain("Context: Video only (no external context)");
+    expect(markdown).not.toContain("Meeting:");
+  });
+
   it("renders recipe-neutral details and escapes untrusted Markdown", () => {
     const analysis: AnalysisRun = {
       schemaVersion: 2,
