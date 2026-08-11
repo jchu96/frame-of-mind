@@ -34,6 +34,7 @@ decision may be made in place.
 | [0013](0013-defensive-gemini-response-boundary.md) | Defend the Gemini response boundary per candidate | Accepted | 2026-07-28 |
 | [0014](0014-versioned-evidence-and-artifact-families.md) | Version evidence separately from composed artifact families | Proposed | 2026-07-28 |
 | [0015](0015-derived-transcript-from-recording-audio.md) | Derive a transcript from the recording's own audio | Accepted | 2026-07-28 |
+| [0016](0016-recipe-charters-and-executor-owned-prompt-policy.md) | Decompose recipes into charters under executor-owned prompt policy | Accepted | 2026-08-11 |
 
 ## Adding An ADR
 

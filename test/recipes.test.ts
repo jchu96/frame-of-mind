@@ -6,6 +6,7 @@ import {
   builtInRecipe,
   listBuiltInRecipes,
   loadRecipe,
+  renderCharterInstruction,
   withAnalysisDepth,
 } from "../src/recipes/index.js";
 
@@ -79,6 +80,100 @@ describe("analysis recipes", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("compiles the issue-review charter positive-before-negative in both phases", () => {
+    const recipe = builtInRecipe("issue-review");
+    expect(recipe.charter).toBeDefined();
+    for (const instruction of [recipe.indexInstruction, recipe.interrogationInstruction]) {
+      const order = [
+        instruction.indexOf("Stance:"),
+        instruction.indexOf("answers only these questions"),
+        instruction.search(/qualif|satisfies/),
+        instruction.indexOf("detail labels"),
+        instruction.indexOf("Accepted example"),
+        instruction.indexOf("Rejected example"),
+        instruction.search(/Reject (only clear misses|strictly)/),
+        instruction.indexOf("Boundaries:"),
+      ];
+      expect(order.every((position) => position >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+    }
+  });
+
+  it("binds charter phases asymmetrically", () => {
+    const charter = builtInRecipe("issue-review").charter!;
+    const index = renderCharterInstruction(charter, "index");
+    const interrogation = renderCharterInstruction(charter, "interrogation");
+    expect(index).toContain("Treat acceptance loosely at this stage");
+    expect(index).toContain("Reject only clear misses");
+    expect(interrogation).toContain("Accept the candidate only when it satisfies");
+    expect(interrogation).toContain("Reject strictly");
+    for (const instruction of [index, interrogation]) {
+      expect(instruction).toContain("Boundaries: Never present an inference as an observed fact.");
+      expect(instruction).toContain("Actual, Expected, Impact, Affected surface");
+    }
+  });
+
+  it("loads a custom charter recipe and rejects an oversized question list", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-charter-"));
+    try {
+      const path = join(directory, "recipe.json");
+      const charter = {
+        stance: "You review synthetic walkthroughs for missed steps.",
+        allowedQuestions: ["Which documented step was skipped?"],
+        acceptance: "A moment qualifies only when a documented step is visibly skipped.",
+        labelVocabulary: ["Step", "Skipped", "Impact"],
+        exemplars: [{
+          verdict: "accepted" as const,
+          candidate: "The operator jumps from step two to step four on screen.",
+          reason: "The skipped step is directly visible.",
+        }],
+        rejection: "Reject commentary about steps that were performed correctly.",
+        boundaries: "Never invent steps that are not on screen.",
+      };
+      const definition = {
+        id: "step-audit",
+        label: "Step audit",
+        description: "Find skipped documented steps.",
+        charter,
+        revision: "c1",
+      };
+      await writeFile(path, JSON.stringify(definition));
+      const loaded = await loadRecipe("ignored", path);
+      expect(loaded.recipe.charter).toEqual(charter);
+      expect(loaded.recipe.indexInstruction).toContain("Which documented step was skipped?");
+      expect(loaded.revision).toBe("c1");
+      expect(loaded.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect((await loadRecipe("ignored", path)).sha256).toBe(loaded.sha256);
+
+      await writeFile(path, JSON.stringify({
+        ...definition,
+        charter: {
+          ...charter,
+          allowedQuestions: ["q1?", "q2?", "q3?", "q4?", "q5?"],
+        },
+      }));
+      await expect(loadRecipe("ignored", path)).rejects.toThrow();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("scopes the revision bump to the migrated recipe only", async () => {
+    expect((await loadRecipe("issue-review")).revision).toBe("builtin-2026-08-11.1");
+    for (const id of ["decisions", "requirements", "action-items", "repo-plan", "communication-coaching"]) {
+      expect((await loadRecipe(id)).revision).toBe("builtin-2026-07-27.1");
+    }
+  });
+
+  it("applies the deep profile on top of a charter recipe without dropping the charter", async () => {
+    const loaded = await loadRecipe("issue-review");
+    const deep = await withAnalysisDepth(loaded, "deep");
+    expect(deep.recipe.charter).toEqual(loaded.recipe.charter);
+    expect(deep.recipe.indexInstruction).toContain("Stance:");
+    expect(deep.recipe.indexInstruction).toContain("Deep-understanding profile:");
+    expect(deep.sha256).not.toBe(loaded.sha256);
   });
 
   it("rejects unknown custom fields and records exact recipe provenance", async () => {

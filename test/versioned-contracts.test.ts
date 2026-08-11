@@ -96,6 +96,40 @@ describe("versioned run contracts", () => {
     expect(versionedRunImportSchema.safeParse(extraKey).success).toBe(false);
   });
 
+  it("accepts optional prompt provenance and rejects an unknown routing reason", async () => {
+    const pair = await videoOnlyPair();
+    const promptProvenance = {
+      indexPrefixSha256: "e".repeat(64),
+      interrogationPrefixSha256: "f".repeat(64),
+      modelRouting: {
+        requestedModel: "gemini-3.6-flash",
+        reason: "default-flash" as const,
+      },
+    };
+
+    expect(versionedRunImportSchema.parse({
+      analysis: pair.analysis,
+      manifest: { ...pair.manifest, promptProvenance },
+    }).manifest).toMatchObject({ promptProvenance });
+
+    const v2 = v2Pair();
+    expect(versionedRunImportSchema.parse({
+      analysis: v2.analysis,
+      manifest: { ...v2.manifest, promptProvenance },
+    }).manifest).toMatchObject({ promptProvenance });
+
+    expect(versionedRunImportSchema.safeParse({
+      analysis: pair.analysis,
+      manifest: {
+        ...pair.manifest,
+        promptProvenance: {
+          ...promptProvenance,
+          modelRouting: { requestedModel: "gemini-3.6-flash", reason: "vibes" },
+        },
+      },
+    }).success).toBe(false);
+  });
+
   it("fail-closes v2 derived provenance that drifts from its sibling fields", () => {
     const derived = {
       origin: "gemini-audio" as const,

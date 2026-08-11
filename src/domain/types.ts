@@ -22,6 +22,26 @@ export type BuiltInRecipeId =
   | "repo-plan"
   | "communication-coaching";
 
+export interface RecipeExemplar {
+  verdict: "accepted" | "rejected";
+  candidate: string;
+  reason: string;
+}
+
+export interface RecipeCharter {
+  stance: string;
+  allowedQuestions: string[];
+  acceptance: string;
+  labelVocabulary: string[];
+  exemplars: RecipeExemplar[];
+  rejection: string;
+  boundaries: string;
+  phaseFocus?: {
+    index?: string;
+    interrogation?: string;
+  };
+}
+
 export interface AnalysisRecipe {
   id: string;
   label: string;
@@ -29,6 +49,7 @@ export interface AnalysisRecipe {
   indexInstruction: string;
   interrogationInstruction: string;
   revision?: string;
+  charter?: RecipeCharter;
 }
 
 export interface MeetingContextSource {
@@ -160,7 +181,17 @@ interface RunManifestBase {
     interrogationResolution: "medium";
   };
   derivedTranscript?: DerivedTranscriptProvenance;
+  promptProvenance?: PromptProvenance;
   artifacts: string[];
+}
+
+export interface PromptProvenance {
+  indexPrefixSha256: string;
+  interrogationPrefixSha256: string;
+  modelRouting: {
+    requestedModel: string;
+    reason: "operator-selected" | "default-flash" | "environment-or-dependency-override";
+  };
 }
 
 export interface RunManifest extends RunManifestBase {
