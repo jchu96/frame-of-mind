@@ -444,7 +444,11 @@ frameofmind analyze "MEETING_ID" \
   --recipe-file "./customer-objections.json"
 ```
 
-See [docs/RECIPES.md](docs/RECIPES.md).
+A recipe may instead declare a structured charter — stance, allowed
+questions, acceptance, label vocabulary, worked exemplars, rejection, and
+boundaries — rendered deterministically by the executor under the
+untrusted-data guard (ADR 0016). The built-in `issue-review` recipe is a
+charter. See [docs/RECIPES.md](docs/RECIPES.md).
 
 ## Command reference
 

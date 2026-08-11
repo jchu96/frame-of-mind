@@ -144,6 +144,19 @@ const derivedTranscriptProvenanceSchema = z.object({
   sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
 }).strict();
 
+const promptProvenanceSchema = z.object({
+  indexPrefixSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  interrogationPrefixSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  modelRouting: z.object({
+    requestedModel: z.string().min(1).max(240),
+    reason: z.enum([
+      "operator-selected",
+      "default-flash",
+      "environment-or-dependency-override",
+    ]),
+  }).strict(),
+}).strict();
+
 export const runManifestSchema = z.object({
   schemaVersion: z.literal(2),
   toolVersion: z.string().min(1).max(120),
@@ -189,6 +202,7 @@ export const runManifestSchema = z.object({
     interrogationResolution: z.literal("medium"),
   }).strict(),
   derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
+  promptProvenance: promptProvenanceSchema.optional(),
   artifacts: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255)).max(1_100),
 }).strict().superRefine((value, context) => {
   if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
@@ -257,6 +271,7 @@ export const runManifestV3Schema = z.object({
     interrogationResolution: z.literal("medium"),
   }).strict(),
   derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
+  promptProvenance: promptProvenanceSchema.optional(),
   artifacts: z.array(
     z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255),
   ).max(1_100),
