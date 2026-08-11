@@ -4,6 +4,22 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-08-11 — Recipes become charters; the executor owns prompt policy
+
+Proposed: recipe intent decomposes into named, bounded slots (stance, allowed
+questions, acceptance, label vocabulary, exemplars, rejection, boundaries)
+rendered by the executor positive-before-negative, after the media and
+context blocks, under a sandwiched untrusted-data guard, so no recipe origin
+can occupy a policy position in the prompt. Slots bind the passes
+asymmetrically: acceptance loose at index recall, rejection strict at
+interrogation precision. One trust ladder — runtime policy, operator
+intent, operator context, provider context, derived transcript, recording
+content — becomes a stated contract instead of fragments. Manifests gain a
+per-phase assembled-prompt digest and a model-routing reason. ADR 0014 was
+refined the same day: `insufficient-evidence` disposition, fail-closed claim
+citations under the ADR 0013 blast radius, and run-level unresolved questions
+and residual risks. See ADR 0016.
+
 ## 2026-07-28 — A recording may supply its own transcript
 
 Transcript resolution is a ladder: provider transcript, operator context file,

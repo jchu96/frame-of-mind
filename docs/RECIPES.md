@@ -302,6 +302,58 @@ frameofmind analyze "<meeting-id>" \
 
 Unknown/missing fields fail validation.
 
+## Charter recipe format
+
+A recipe may replace the two instruction strings with a structured charter
+(ADR 0016). The executor renders charter slots deterministically —
+positive-before-negative, after the media and context blocks, under the
+untrusted-data guard — so charter content selects intent but can never occupy
+a policy position in the prompt. The built-in `issue-review` recipe ships as a
+charter.
+
+```json
+{
+  "id": "customer-objections",
+  "label": "Customer objections",
+  "description": "Extract explicit objections, context, responses, and unresolved risk.",
+  "charter": {
+    "stance": "You listen for explicit customer objections a team must answer.",
+    "allowedQuestions": [
+      "What objection did a participant state?",
+      "How was the objection answered, if at all?",
+      "What objection remains unresolved?"
+    ],
+    "acceptance": "A moment qualifies only when a participant clearly states a concern, blocker, value question, or named risk.",
+    "labelVocabulary": ["Objection", "Context", "Response", "Resolved"],
+    "exemplars": [
+      {
+        "verdict": "accepted",
+        "candidate": "A participant says the rollout cannot start until pricing questions are answered.",
+        "reason": "An explicit stated blocker with an owner-facing consequence."
+      }
+    ],
+    "rejection": "Reject neutral questions, brainstorming, and concerns nobody voiced.",
+    "boundaries": "Never attribute an objection to someone who did not state it."
+  }
+}
+```
+
+| Charter slot | Rule |
+|---|---|
+| `stance` | analyst perspective, 1–500 characters |
+| `allowedQuestions` | 1–4 questions, 300 characters each |
+| `acceptance` | what qualifies, 1–1,000 characters |
+| `labelVocabulary` | 1–12 detail labels, 80 characters each |
+| `exemplars` | 1–2 worked examples, `verdict` `accepted`/`rejected`, `candidate` and `reason` 500 characters each |
+| `rejection` | what must be rejected, 1–1,000 characters |
+| `boundaries` | unconditional prohibitions, 1–1,000 characters |
+| `phaseFocus` | optional `index`/`interrogation` emphasis, 1,500 characters each |
+
+Charter slots bind the passes asymmetrically: acceptance is applied loosely
+while indexing (candidate-worthy) and strictly at interrogation; rejection
+binds strictly only at interrogation; boundaries bind both passes. A charter
+whose rendered instructions exceed 8,000 characters fails validation.
+
 The manifest stores both the resolved revision and a SHA-256 of the validated
 recipe object. Built-ins use a release-controlled revision. Custom recipes
 without `revision` use `content-addressed`; their hash is still exact. This
