@@ -396,3 +396,14 @@
   docs/RECIPES.md and README document the charter format. Still open: the
   five remaining migrations behind an eval-runbook A/B (coaching last), and
   the issue-review live A/B itself.
+- PR #39 (recipe charters, ADR 0016 first slice) went through adversarial
+  review and merged as a561869. The independent review pass surfaced two real
+  blockers the author pass missed: the enumerated prompt caps are the only
+  channel carrying numeric output bounds because the sanitized provider
+  schema strips maxLength/maxItems (schema-redundancy premise falsified; ADR
+  0016 corrected), and a blanket built-in revision bump would have failed
+  Studio's immutable recipe receipts for queued jobs naming the five
+  unchanged recipes (bump now scoped per recipe). Also fixed: charter-gated
+  index binding across both index variants, charter-aware promptPrefix,
+  honest GEMINI_MODEL routing reason, VERSIONING.md row. Fixes in e78658b;
+  gate 21 files / 173 tests.
