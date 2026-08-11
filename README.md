@@ -2,110 +2,123 @@
 
 **Video in. Understanding out.**
 
-Frame of Mind runs structured Gemini analysis recipes over an
-operator-selected recording, optionally enriched with context from Bluedot,
-Granola, or a local transcript. Use it to extract decisions, requirements,
-action items, repository plans, grounded issue reviews, or communication
-coaching into private JSON, Markdown, self-contained HTML, and screenshots.
+Frame of Mind is a local-first AI analyst for screen recordings. Point it at
+a recorded meeting, user call, demo, or teaching session; pick a **recipe**
+for what you want out of it; and it watches the video with Gemini — the
+pixels, not just the words — and returns structured, evidence-cited findings
+you can act on. Every claim is anchored to a timestamp, validated against a
+strict local schema, and stored privately on your machine.
 
-Version 0.3.0 uses Google's documented resumable Files upload protocol and a
-Gemini-safe response schema while retaining the complete Zod contract as the
-local authority. A locally invalid structured response gets one regeneration
-attempt with sanitized corrective feedback. A terminal detail failure is
-isolated to its candidate, valid candidates are retained, and sanitized outcome
-or whole-run failure receipts prove what completed without storing provider
-payloads. Maintainers can verify upload, both structured model passes, and exact
-cleanup with generated media before processing a meeting:
+One run produces:
 
-```bash
-bun run smoke:gemini
-```
+- **findings that match your intent** — issues, decisions, requirements,
+  action items, a repository change plan, or communication coaching;
+- **proof for each finding** — timestamps, verbatim UI text, reporter
+  quotes, and screenshots of the exact moment;
+- **a portable private bundle** — JSON contracts, Markdown, and a
+  self-contained HTML report, with SHA-256 provenance in a manifest.
 
-Analysis command:
+Meeting context from Bluedot or Granola (or a local transcript file) enriches
+the analysis when available; a bare recording works too — Frame of Mind can
+even derive its own transcript from the recording's audio.
 
-```bash
-frameofmind analyze "MEETING_ID" \
-  --source bluedot \
-  --video "./recording.mp4" \
-  --recipe requirements
-```
+[Install](#install) ·
+[Quickstart](#analyze) ·
+[Recipes](#recipes) ·
+[Studio preview](#launch-the-local-studio-preview) ·
+[Documentation](#documentation)
 
-> Early public release: `v0.3.0`. Review generated work before using or
-> publishing it.
+> [!IMPORTANT]
+> Early public release (`v0.3.0`). Review generated work before using or
+> publishing it. Generated output always requires human review.
 
-## Product roadmap
-
-Frame of Mind is evolving from a CLI plus review workspace into **Frame of
-Mind Studio**: a local-first Nuxt application for configuring providers,
-dropping in a recording, running an analysis through a local Bun process, and
-reviewing timestamp-linked results. Hosted execution is a later roadmap phase,
-not a requirement for the local product.
-
-The public product context, specification, and implementation plan live in
-[conductor/](conductor/). Canonical architecture decisions live in the
-[ADR log](docs/adr/README.md). Both are intentionally versioned.
-Credentials, OAuth state, recordings, transcripts, generated runs, upload
-staging, and local databases remain ignored.
-
-## Why Frame of Mind
+## Why watch the video at all?
 
 Transcripts capture words. Recordings also capture the interface, the user's
-hesitation, the exact state before a problem, and the examples people point at
-instead of naming. Frame of Mind reasons over both.
+hesitation, the exact state before a problem, and the examples people point
+at instead of naming. Frame of Mind reasons over both — and every finding
+must cite visible or spoken evidence, or it is rejected.
 
-It is not limited to “evidence dossiers.” Analysis intent is a recipe:
+Under the hood, v0.3.0 uses Google's documented resumable Files upload
+protocol and a Gemini-safe response schema while the complete Zod contract
+stays authoritative locally. An invalid structured response gets one
+regeneration attempt with sanitized feedback; a terminal failure is isolated
+to its candidate, valid candidates are retained, and sanitized receipts prove
+what completed without storing provider payloads.
 
-| Recipe         | Produces                                                    |
+## Recipes
+
+Analysis intent is a recipe:
+
+| Recipe | Produces |
 |---|---|
-| `issue-review` | bugs, wrong states, UX friction, issue inputs               |
-| `decisions`    | choices, rationale, alternatives, revisit triggers          |
-| `requirements` | needs, constraints, acceptance criteria, edge cases         |
-| `action-items` | commitments, owners, dates, dependencies                    |
-| `repo-plan`    | grounded change requests, risks, validation, open questions |
+| `issue-review` | bugs, wrong states, UX friction, issue inputs |
+| `decisions` | choices, rationale, alternatives, revisit triggers |
+| `requirements` | needs, constraints, acceptance criteria, edge cases |
+| `action-items` | commitments, owners, dates, dependencies |
+| `repo-plan` | grounded change requests, risks, validation, open questions |
 | `communication-coaching` | observed delivery, intent/impact, missed cues, guidance |
 
-Custom JSON recipes are supported.
+Custom JSON recipes are supported, either as two instruction strings or as a
+structured **charter** — stance, allowed questions, acceptance, label
+vocabulary, worked exemplars, rejection, and boundaries — rendered
+deterministically by the executor under the untrusted-data guard (ADR 0016).
+The built-in `issue-review` recipe is a charter. See
+[docs/RECIPES.md](docs/RECIPES.md).
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    B[Bluedot MCP]
-    G[Granola MCP]
-    F[Local context]
-    V[Screen recording]
-    A[Align context and video]
-    R[Analysis recipe]
-    M[Gemini 3.6 Flash]
-    J[analysis.json]
-    O[analysis-outcome.json]
-    P[manifest.json]
-    H[Markdown and HTML]
+    subgraph inputs["Operator inputs"]
+        V["Screen recording"]
+        B["Bluedot MCP"]
+        G["Granola MCP / API"]
+        F["Local context file"]
+    end
 
+    subgraph pipeline["Two-pass Gemini analysis"]
+        A["Align context and video"]
+        IX["Index pass<br/>whole video, low resolution"]
+        IN["Interrogate pass<br/>candidate clips, higher resolution"]
+    end
+
+    subgraph bundle["Private local run bundle"]
+        J["analysis.json"]
+        O["analysis-outcome.json"]
+        P["manifest.json"]
+        H["Markdown + HTML report"]
+    end
+
+    V --> A
     B --> A
     G --> A
     F --> A
-    V --> A
-    A --> M
-    R --> M
-    M --> J
-    M --> O
-    J -->|runId plus SHA-256| P
+    A --> IX --> IN
+    IN --> J
+    IN --> O
+    J -- "runId + SHA-256" --> P
     J --> H
 ```
 
 The complete operator-selected video is indexed at low resolution. Candidate
-moments are then re-examined in bounded higher-resolution clips with an aligned
-transcript window. Ambiguous candidates are retained as rejected records for
-review.
+moments are then re-examined in bounded higher-resolution clips with an
+aligned transcript window. Ambiguous candidates are retained as rejected
+records for review.
 
-When no provider or context-file transcript is available, Frame of Mind first
-strips the recording's audio with `ffmpeg` and transcribes it on the same model,
-so a video-only run still gets spoken corroboration at zero alignment offset.
-Speakers are labeled generically, the transcript itself is never stored, and
-`--no-derived-transcript` turns the step off.
+When no transcript is supplied, resolution walks a ladder before giving up:
 
-The durable source is local:
+```mermaid
+flowchart LR
+    A["1 · Provider transcript"] -->|missing| B["2 · Operator context file"]
+    B -->|missing| C["3 · Derived from the recording's own audio<br/>ffmpeg + same model, offset 0"]
+    C -->|"no ffmpeg or no audio"| D["4 · None — video evidence only"]
+```
+
+A derived transcript uses generic speaker labels, is never stored, and can be
+disabled with `--no-derived-transcript`.
+
+The durable source of truth is local:
 
 ```text
 <application-data>/frame-of-mind/runs/<meeting-id>/<run-id>/
@@ -117,41 +130,22 @@ The durable source is local:
 └── moment-01.png
 ```
 
-`report.html` is an artifact-like renderer, not the source of truth. It is safe
-to open locally and easy to hand to Claude or another reviewer, but it is
-sensitive because screenshots are embedded.
+> [!WARNING]
+> `report.html` is a rendered artifact, not the source of truth. It is safe
+> to open locally and easy to hand to a reviewer, but it is sensitive:
+> screenshots are embedded.
 
 ## Requirements
 
-- Bun 1.3.14+
-- Node.js 22+ for the linked `frameofmind` executable
-- Git; GitHub CLI is optional but used by the examples
-- `ffmpeg` for `bun run smoke:gemini`, derivative clips, screenshots, and
-  derived transcripts
-- Gemini Developer API auth key
-- Bluedot, Granola, or local context
-- local MP4/MOV/M4V/WebM screen recording
+- Bun 1.3.14+ (Node.js 22+ for the linked `frameofmind` executable)
+- `ffmpeg` for smoke tests, derivative clips, screenshots, and derived transcripts
+- A Gemini Developer API key
+- Bluedot, Granola, or local context (optional — video-only runs are supported)
+- A local MP4/MOV/M4V/WebM screen recording within the Files API 2 GB limit
 
-The current pipeline uses the official `@google/genai` `2.13.0` Files API and
-defaults to `gemini-3.6-flash`. `gemini-pro-latest` is accepted for an in-depth
-run, but it is a mutable alias and therefore less reproducible than a stable
-supported model ID. Recordings must use a supported video extension and stay
-within the Files API's 2 GB per-file limit.
-
-This repository also vendors Google's official `gemini-api-dev` and
-`gemini-interactions-api` agent skills at a pinned upstream commit. They give
-Codex and Claude current model, multimodal, Files API, structured-output, and
-migration guidance while keeping the Frame of Mind workflow in its own skill.
-The project skill itself has one real directory in this repository; local
-maintainers may link discovery paths directly to it without an activation shim.
-Portable colleague and Windows installs use the copy installer. See
-[skill installation](docs/SKILL_INSTALLATION.md).
-
-For an end-to-end meeting-to-GitHub workflow—including transcript-first clip
-selection, speaker verification, BI synthesis, repository grounding, issue
-review, screenshots, publication, and cleanup—use the
-[meeting-to-issue runbook](docs/MEETING_TO_ISSUE_RUNBOOK.md). Topic scope
-includes every relevant clarification, not only a named speaker's airtime.
+The pipeline uses the official `@google/genai` `2.13.0` Files API and
+defaults to `gemini-3.6-flash`. `gemini-pro-latest` is accepted for in-depth
+runs but is a mutable alias, so it is less reproducible than a pinned model.
 
 ## Install
 
@@ -164,13 +158,6 @@ bun run build
 bun link
 ```
 
-Without GitHub CLI:
-
-```bash
-git clone https://github.com/jchu96/frame-of-mind.git
-cd frame-of-mind
-```
-
 Verify:
 
 ```bash
@@ -179,234 +166,98 @@ frameofmind recipes
 frameofmind doctor
 ```
 
-## Launch the local Studio preview
-
-The local Connections and Recording workspaces are available behind a
-per-launch browser session:
+Maintainers can verify upload, both structured model passes, and exact remote
+cleanup with generated media before processing a real meeting:
 
 ```bash
-cp .env.example .env
-# Add GEMINI_API_KEY and, optionally, GRANOLA_API_KEY.
-bun run studio
-```
-
-Studio opens its one-time URL in the default browser. The bootstrap capability
-stays in the fragment of a dedicated inert launch page, is removed before the
-browser makes the exchange request, and becomes an HttpOnly, SameSite=Strict
-session cookie. Every data-bearing page and API then requires that cookie.
-Restarting Bun invalidates the browser session and creates a new capability;
-a replayed or invalid link remains on the inert launch page.
-
-When Studio is enabled, Home, Recording, Context, Connections, Import, and run
-detail share a responsive Nuxt UI dashboard shell with persistent desktop
-navigation and a mobile sidebar. This frame is selected at build time: normal
-local review and Cloudflare builds retain the existing SSR review header and
-do not bundle the local Studio shell.
-
-Studio Home is the local launch surface. It reads the durable job queue,
-completed-run projection, and credential-presence API independently; shows
-active work, five recent runs, and sanitized Gemini/Bluedot/Granola health;
-and provides one primary New analysis action. Empty Studio state directs the
-user to choose or drop a recording without implying that selection transfers
-anything to Gemini.
-
-If the browser cannot be opened, stop Studio and explicitly opt into terminal
-output for that launch:
-
-```bash
-FRAME_OF_MIND_STUDIO_PRINT_URL=1 bun run studio
-```
-
-That URL is a temporary local bearer credential. Do not paste it into chat,
-issues, recordings, or shared logs.
-
-The Connections page shows only credential presence, source, lifetime, and
-sanitized provider status:
-
-- `.env` or exported environment values are recommended for repeat use;
-- keys pasted into Studio live only in the current Bun process;
-- Bluedot and Granola OAuth use the CLI's existing private, exact-resource
-  token files;
-- no key is stored in SQLite or returned to the browser after submission.
-
-The Recording page accepts one MP4, MOV, M4V, or WebM through an accessible
-picker/drop zone. Selection alone does not upload to Gemini or start local
-staging. After the user confirms retention, Studio streams server-advertised
-parts to private local application data, reports only receipt-confirmed
-progress, and supports pause, retry, verified resume, restart, and deletion.
-Only the opaque upload ID survives a refresh; the browser requires the same
-file to be reselected and verifies a bounded-memory complete-file fingerprint
-before continuing. Every staged copy has a visible server-owned expiry, so
-closing the tab cannot turn browser session storage into cleanup authority.
-
-The Context page requires one exact source: Bluedot MCP, Granola MCP, Granola
-API, or a local file. Bluedot can browse or search a bounded meeting catalog;
-catalog failure retains exact-ID entry for that same transport and never
-switches accounts or providers. Granola uses exact-ID entry until a verified
-catalog capability ships. Draft storage contains only the sealed media ID,
-typed provider/meeting identifier or content-bound local receipt, and an
-optional signed transcript offset.
-
-Local JSON, text, Markdown, SRT, or VTT context uses a separate 8 MiB request.
-The page previews at most 4 KiB in component memory and the server returns only
-an opaque content-bound receipt—never a filename, path, or body. Studio
-refresh-verifies that receipt, normalizes it through the same
-`FileContextSource` used by the CLI, and deletes the private staged copy when
-execution ends. Unused context expires after one hour.
-
-The Intent and final Run-receipt composer steps plus job-detail activity arrive
-in later implementation phases, so `frameofmind analyze` remains the supported
-end-user execution path today.
-The local-only SQLite job/event repository, single-concurrency Bun worker, and
-shared typed orchestrator are now in place. Studio binds the immutable model
-and recipe receipt into that orchestrator; it does not scrape terminal output
-or fork a second analysis pipeline. The authenticated `/api/studio/jobs`
-surface now starts one process runtime that shares SQLite job state and
-completed-run projection, executes one job at a time, and shuts down
-cooperatively with Nitro. Durable cancellation and linked retries require an
-exact, unexpired retained-media receipt leased for execution. Private staged
-paths exist only inside the leased local executor and never enter SQLite or an
-HTTP response. Until the composer ships, the create API accepts supported
-built-in recipes with configured Gemini plus exact provider credentials or an
-exact unexpired local context receipt; custom recipe staging remains later
-composer work. See the
-[web workspace guide](docs/WEB_WORKSPACE.md) and [runbook](docs/RUNBOOK.md)
-for the browser workflow, backend contract, and private storage location.
-
-## Get a Gemini API key
-
-1. Open [Google AI Studio API Keys](https://aistudio.google.com/apikey).
-2. Create a new authorization key.
-3. Use the default project or import an approved Google Cloud project.
-4. Confirm project and billing ownership.
-5. Copy the key into your local secret workflow.
-6. Export it without printing or committing it:
-
-```bash
-export GEMINI_API_KEY="your-key"
-frameofmind doctor
 bun run smoke:gemini
 ```
 
-For a private local clone, copying `.env.example` to `.env` is also supported:
+### Get a Gemini API key
+
+1. Open [Google AI Studio API keys](https://aistudio.google.com/apikey) and
+   create a key (the default project works; billing is owned by the
+   associated Google Cloud project).
+2. Export it without printing or committing it:
 
 ```bash
-cp .env.example .env
+export GEMINI_API_KEY="<your-key>"
+frameofmind doctor
 ```
 
-Populate it locally. `.env` is ignored; never commit or share it.
+For repeat use, `cp .env.example .env` and populate it locally — `.env` is
+ignored and must never be committed. Organization projects, key restrictions,
+rotation, and Windows setup live in [docs/CREDENTIALS.md](docs/CREDENTIALS.md).
 
-Google Workspace is an identity/account layer; it does not create the key.
-Google AI Studio and the associated Google Cloud project own keys, billing, and
-quota.
+> [!NOTE]
+> Vertex AI is not a drop-in backend: `files.upload` is unavailable on a
+> Vertex client, so the large-video pipeline requires a Developer API key. A
+> future Vertex backend needs private Cloud Storage staging and explicit
+> cleanup.
 
-For organization projects, billing, restrictions, rotation, Windows setup, and
-the difference between Developer API keys and Vertex AI ADC, read
-[docs/CREDENTIALS.md](docs/CREDENTIALS.md).
-
-Important: Vertex AI is not a drop-in setting for the current large-video
-pipeline because `files.upload` is unavailable on a Vertex client. A future
-Vertex backend needs private Cloud Storage staging and explicit cleanup.
-
-## Authorize meeting context
-
-Bluedot:
+### Authorize meeting context
 
 ```bash
 frameofmind auth bluedot
-```
-
-Granola:
-
-```bash
 frameofmind auth granola
 ```
 
-Both use browser OAuth with separate local token files. Credentials are bound
-to the exact HTTPS MCP resource URL. A noncanonical `BLUEDOT_MCP_URL` or
-`GRANOLA_MCP_URL` receives a separate origin-hashed credential file and can
-never inherit the canonical provider token. Granola transcript availability
-can depend on plan and workspace policy.
-
-If you have an official Granola API key, you may use the explicit REST
-transport instead of OAuth:
-
-```bash
-export GRANOLA_API_KEY="your-key"
-```
+Both use browser OAuth with separate local token files bound to the exact
+HTTPS MCP resource URL; a noncanonical endpoint URL gets its own
+origin-hashed credential file and can never inherit the canonical token.
+With an official Granola API key, the explicit REST transport is available
+instead: `export GRANOLA_API_KEY="<your-key>"`.
 
 ## Analyze
 
-### Bluedot
+Bluedot context plus a local recording:
 
 ```bash
-frameofmind analyze "BLUEDOT_MEETING_ID" \
+frameofmind analyze "<bluedot-meeting-id>" \
   --source bluedot \
   --video "/path/to/recording.mp4" \
   --recipe issue-review
 ```
 
-### Granola
+Granola (MCP transport by default; `--granola-transport api` for REST):
 
 ```bash
-frameofmind analyze "GRANOLA_MEETING_ID" \
+frameofmind analyze "<granola-meeting-id>" \
   --source granola \
-  --granola-transport mcp \
   --video "/path/to/recording.mp4" \
   --recipe decisions
 ```
 
-Granola API transport:
+A local transcript or export:
 
 ```bash
-frameofmind analyze "not_XXXXXXXXXXXXXX" \
-  --source granola \
-  --granola-transport api \
-  --video "/path/to/recording.mp4" \
-  --recipe decisions
-```
-
-### Local transcript/export
-
-```bash
-frameofmind analyze "local-review-2026-07-25" \
+frameofmind analyze "<stable-id>" \
   --source file \
   --context-file "/path/to/transcript.vtt" \
   --video "/path/to/recording.mp4" \
   --recipe action-items
 ```
 
-### A clip from a longer meeting
-
-If clip time `00:00` corresponds to full transcript time `01:02:47`:
+A clip from a longer meeting — if clip time `00:00` corresponds to full
+transcript time `01:02:47`:
 
 ```bash
-frameofmind analyze "MEETING_ID" \
+frameofmind analyze "<meeting-id>" \
   --source bluedot \
   --video "/path/to/clip.mp4" \
   --recipe requirements \
   --transcript-offset "01:02:47"
 ```
 
-Without the flag, Gemini estimates alignment. Inspect `manifest.json` before
-trusting transcript-correlated output.
+Offsets are signed transcript-time minus video-time
+(`--transcript-offset "-00:30"` means the transcript starts 30 seconds after
+the video). Without the flag, Gemini estimates alignment — inspect
+`manifest.json` before trusting transcript-correlated output.
 
-Offsets are signed transcript-time minus video-time. For example,
-`--transcript-offset "-00:30"` means the transcript begins 30 seconds after
-the video.
-
-### Bounded trial
-
-```bash
-frameofmind analyze "MEETING_ID" \
-  --source granola \
-  --video "/path/to/recording.mp4" \
-  --recipe repo-plan \
-  --focus "Repository my-repo; label implementation inferences" \
-  --max-moments 3
-```
-
-### In-depth communication or self-review
+> [!TIP]
+> For a fast bounded trial, add `--max-moments 3` and a `--focus` string.
+> For an in-depth pass (denser sampling, layered observation/inference
+> prompts), add `--depth deep`, optionally with `--model gemini-pro-latest`:
 
 ```bash
 frameofmind analyze "<stable-id>" \
@@ -418,13 +269,11 @@ frameofmind analyze "<stable-id>" \
   --focus "Compare my stated goal with audience response and identify missed cues"
 ```
 
-`deep` currently increases whole-video sampling and adds layered prompts for
-observation, interpreted intent, implication, alternatives, uncertainty, and
-verification. The selected model runs both existing passes. It is not yet the
-future role-separated Flash discovery, Pro interpretation, and synthesis
-pipeline described in ADR 0014.
+`deep` increases whole-video sampling and adds layered prompts under the
+current two-pass schema; the role-separated Flash-discovery / Pro-reasoning
+pipeline remains future work under ADR 0014.
 
-## Custom recipes
+### Custom recipes
 
 ```json
 {
@@ -438,19 +287,16 @@ pipeline described in ADR 0014.
 ```
 
 ```bash
-frameofmind analyze "MEETING_ID" \
+frameofmind analyze "<meeting-id>" \
   --source granola \
   --video "./recording.mp4" \
   --recipe-file "./customer-objections.json"
 ```
 
-A recipe may instead declare a structured charter — stance, allowed
-questions, acceptance, label vocabulary, worked exemplars, rejection, and
-boundaries — rendered deterministically by the executor under the
-untrusted-data guard (ADR 0016). The built-in `issue-review` recipe is a
-charter. See [docs/RECIPES.md](docs/RECIPES.md).
+The charter format (recommended for new recipes) and its slot rules are
+documented in [docs/RECIPES.md](docs/RECIPES.md).
 
-## Command reference
+### Command reference
 
 ```text
 frameofmind auth <bluedot|granola>
@@ -459,164 +305,146 @@ frameofmind recipes
 frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|none> [options]
 ```
 
-Analysis options:
-
-| Option                           | Purpose                                        |
+| Option | Purpose |
 |---|---|
-| `--recipe <id>`                  | built-in recipe, default `issue-review`        |
-| `--recipe-file <path>`           | validated custom recipe                        |
+| `--recipe <id>` | built-in recipe, default `issue-review` |
+| `--recipe-file <path>` | validated custom recipe |
 | `--granola-transport <mcp\|api>` | explicit Granola data/auth path, default `mcp` |
-| `--context-file <path>`          | required for `--source file`                   |
-| `--video <path>`                 | preferred local recording                      |
-| `--recording-url <url>`          | validated Bluedot signed URL fallback          |
-| `--transcript-offset <time>`     | full transcript time at video `00:00`          |
-| `--focus <text>`                 | prioritize a repository/workflow/concern       |
-| `--depth <standard\|deep>`       | sampling/prompt rigor, default `standard`       |
-| `--model <id>`                   | Gemini model for both current passes            |
-| `--max-moments <n>`              | cap close interrogation, default `10`          |
-| `--no-screenshots`               | run without ffmpeg screenshots                 |
-| `--no-derived-transcript`        | skip transcribing the recording's own audio    |
-| `--keep-upload`                  | retain Gemini upload until provider expiration |
-| `-o, --output <path>`            | override private application-data root         |
+| `--context-file <path>` | required for `--source file` |
+| `--video <path>` | preferred local recording |
+| `--recording-url <url>` | validated Bluedot signed URL fallback |
+| `--transcript-offset <time>` | full transcript time at video `00:00` |
+| `--focus <text>` | prioritize a repository/workflow/concern |
+| `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
+| `--model <id>` | Gemini model for both current passes |
+| `--max-moments <n>` | cap close interrogation, default `10` |
+| `--no-screenshots` | run without ffmpeg screenshots |
+| `--no-derived-transcript` | skip transcribing the recording's own audio |
+| `--keep-upload` | retain Gemini upload until provider expiration |
+| `-o, --output <path>` | override private application-data root |
 
 Avoid `--keep-upload` during normal operation.
 
-## Install as a Codex and Claude skill
+## Launch the local Studio preview
+
+Frame of Mind is evolving from a CLI plus review workspace into **Frame of
+Mind Studio**: a local-first Nuxt application for configuring providers,
+dropping in a recording, running an analysis through a local Bun process, and
+reviewing timestamp-linked results. The public product context, spec, and
+plan live in [conductor/](conductor/).
 
 ```bash
-bun run install:skill -- --target all
+cp .env.example .env
+# Add GEMINI_API_KEY and, optionally, GRANOLA_API_KEY.
+bun run studio
 ```
 
-Or one target:
+Studio opens a one-time URL in your default browser and exchanges it for an
+HttpOnly, SameSite=Strict session cookie; every data-bearing page and API
+requires that cookie, and restarting Bun invalidates the session. If the
+browser cannot open, opt into terminal output for that launch with
+`FRAME_OF_MIND_STUDIO_PRINT_URL=1 bun run studio`.
 
-```bash
-bun run install:skill -- --target codex
-bun run install:skill -- --target claude
-```
+> [!WARNING]
+> The printed Studio URL is a temporary local bearer credential. Do not paste
+> it into chat, issues, recordings, or shared logs.
 
-Restart the agent session after installation. The installer refuses to
-overwrite unmanaged skills unless `--force` is explicit.
+What works today:
 
-See [docs/SKILL_INSTALLATION.md](docs/SKILL_INSTALLATION.md).
+- **Home** — durable job queue, five recent runs, sanitized provider health,
+  one primary New analysis action.
+- **Connections** — credential presence/source/lifetime only; keys pasted
+  into Studio live in process memory, are never stored in SQLite, and are
+  never returned to the browser.
+- **Recording** — one MP4/MOV/M4V/WebM through an accessible picker/drop
+  zone. Selection alone uploads nothing; after explicit retention consent,
+  Studio streams parts to private local storage with pause, retry, verified
+  resume, and a server-owned expiry on every staged copy.
+- **Context** — exactly one source (Bluedot MCP, Granola MCP, Granola API,
+  or a local file up to 8 MiB in five text formats), stored as an opaque
+  content-bound receipt that expires after one hour, never a filename or body.
+- **Jobs** — a local-only SQLite job/event repository and single-concurrency
+  Bun worker share the CLI's typed orchestrator; immutable model and recipe
+  receipts bind each job, and staged paths never enter SQLite or an HTTP
+  response.
+
+The Intent and Run-receipt composer steps arrive in later phases, so
+`frameofmind analyze` remains the supported end-user execution path today.
+Details: [docs/WEB_WORKSPACE.md](docs/WEB_WORKSPACE.md),
+[docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), and
+[docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## Optional review workspace
 
-Frame of Mind includes a small Nuxt 4 SSR workspace built with Bun and Nuxt UI.
-It imports reviewed `analysis.json` + `manifest.json` pairs and provides a
-run list, provenance, and record-detail view.
-
-The database is a projection, not a replacement for the run bundle:
+A small Nuxt 4 SSR workspace imports reviewed `analysis.json` +
+`manifest.json` pairs and provides a run list, provenance, and record detail.
+The database is a disposable projection — the run bundle stays authoritative:
 
 ```mermaid
 flowchart LR
-    CLI[frameofmind CLI]
-    Core[Shared analysis orchestrator]
-    Bundle[Portable run bundle]
-    Import[Explicit validated import]
-    Local[Local Nuxt SSR and SQLite]
-    Cloud[Cloudflare Worker and D1]
-
-    CLI --> Core --> Bundle
-    Bundle --> Import
-    Import --> Local
-    Import --> Cloud
+    CLI["frameofmind CLI"] --> Core["Shared analysis orchestrator"]
+    Core --> Bundle["Portable run bundle<br/>(source of truth)"]
+    Bundle --> Import["Explicit validated import"]
+    Import --> Local["Local Nuxt SSR + SQLite<br/>(projection)"]
+    Import --> Cloud["Cloudflare Worker + D1<br/>(projection)"]
 ```
 
-Run it locally:
-
 ```bash
-bun run web
-```
-
-The server binds to `127.0.0.1`. Unauthenticated mode rejects non-loopback
-hosts unless an operator deliberately overrides that guard.
-
-Import a run from the browser or from a terminal:
-
-```bash
+bun run web                                  # binds to 127.0.0.1
 bun run web:import -- "/path/to/run-directory"
 ```
 
-Only the two JSON contracts are stored. Recordings, screenshots, full
-transcripts, provider payloads, and API credentials are not copied into
-SQLite or D1.
+Only the two JSON contracts are stored — never recordings, screenshots, full
+transcripts, provider payloads, or credentials. Meeting-backed v2 bundles are
+cryptographically paired (`manifest.json` carries the SHA-256 of the exact
+canonical analysis JSON); v3 records explicit video-only runs with
+`context.mode: "none"` and no fabricated meeting provenance. Imports reject
+mismatched IDs, modified analyses, malformed timestamps, and contradictory
+provenance. `analysis-outcome.json` separates indexed, selected,
+limit-omitted, validated, accepted, rejected, and failed candidates; a
+whole-run failure after upload publishes only a sanitized
+`failure-manifest.json`. Version 1 bundles are unsupported — rerun the
+analysis to migrate.
 
-Version 2 meeting-backed bundles are cryptographically paired:
-`analysis.json` carries the run ID and `manifest.json` carries the SHA-256 of
-the exact canonical analysis JSON. The core contract also defines schema v3
-for explicit video-only runs; it records `context.mode: "none"` and omits
-meeting, transcript, provider, and alignment provenance. The review workspace
-imports and renders both versions through separate rebuildable projection
-tables; one schema-version registry prevents a run ID from crossing versions.
-Imports reject mismatched IDs, modified analyses, malformed timestamps, and
-contradictory normalized provenance.
-`analysis-outcome.json` is a versioned auxiliary receipt. It separates indexed,
-selected, limit-omitted, validated, accepted, rejected, and failed candidates.
-A whole-run failure after upload publishes only a sanitized
-`failure-manifest.json` with phase and cleanup provenance. Neither diagnostic
-artifact contains the rejected model response.
-
-Version 1 bundles are intentionally unsupported; rerun the source analysis to
-migrate.
-
-Hosted mode builds for Cloudflare Workers, uses D1, and fails closed behind
+Hosted mode builds for Cloudflare Workers with D1 and fails closed behind
 Cloudflare Access JWT validation:
 
 ```bash
 bun run build:web:cloudflare
 ```
 
-Do not deploy from this command alone. Follow the database, custom-domain,
-Access-policy, audience, migration, verification, and rollback procedure in
-[docs/CLOUDFLARE_DEPLOYMENT.md](docs/CLOUDFLARE_DEPLOYMENT.md).
-
-See [docs/WEB_WORKSPACE.md](docs/WEB_WORKSPACE.md) for the local data model,
-import boundary, backups, and troubleshooting.
+> [!CAUTION]
+> Do not deploy from that command alone. Follow the database, custom-domain,
+> Access-policy, audience, migration, verification, and rollback procedure in
+> [docs/CLOUDFLARE_DEPLOYMENT.md](docs/CLOUDFLARE_DEPLOYMENT.md).
 
 ## Provider behavior
 
-### Bluedot behavior
-
-- MCP: `https://app.bluedothq.com/api/v1/mcp`
-- context: metadata, summary, transcript
-- observed limitation: recording URL may be absent
-- observed quirk: duration output schema can reject the server's own ISO value
-- normal media path: download locally in Bluedot and use `--video`
-
-### Granola behavior
-
-- MCP: `https://mcp.granola.ai/mcp`
-- API: `https://public-api.granola.ai/v1`
-- tools: meeting notes and plan-dependent transcript access
-- API keys: explicit `--granola-transport api`, never an automatic fallback
-- follows the active workspace
-- media path: separate local screen recording
-- fallback: local exported/copied context
+| | Bluedot | Granola |
+|---|---|---|
+| Endpoint | `https://app.bluedothq.com/api/v1/mcp` | MCP `https://mcp.granola.ai/mcp` · API `https://public-api.granola.ai/v1` |
+| Context | metadata, summary, transcript | meeting notes; transcript access is plan-dependent |
+| Media | recording URL may be absent — download locally and use `--video` | separate local screen recording |
+| Notes | duration schema can reject the server's own ISO value | API transport is explicit (`--granola-transport api`), never an automatic fallback; follows the active workspace |
 
 ## Privacy and security
 
-- Meeting content is untrusted data, never instructions.
-- The immutable content-safety guard is a Gemini system instruction; recipes
-  and transcript text remain untrusted user content.
+- Meeting content is untrusted data, never instructions. The immutable
+  content-safety guard is a Gemini system instruction; recipes and transcript
+  text remain untrusted user content.
 - Gemini receives the selected video and, in the current index pass, the full
   normalized meeting transcript. Video clipping does not automatically reduce
   transcript transfer.
-- Gemini upload deletion is attempted on success and failure by default. A
-  failed attempt is recorded honestly; provider expiration is the backstop.
-- Invalid JSON, schema mismatch, and overlong fields receive one bounded repair
-  attempt. Only a zero millisecond suffix is normalized losslessly. One bad
-  detail does not erase other validated candidates.
+- Gemini upload deletion is attempted on success and failure by default; a
+  failed attempt is recorded honestly, with provider expiration as backstop.
+- Invalid JSON, schema mismatches, and overlong fields get one bounded repair
+  attempt. One bad detail does not erase other validated candidates.
 - Raw MCP payloads and full transcripts are not persisted in a normal run.
-- Signed URLs are treated as bearer secrets and never written to artifacts.
-- Evidence app URLs retain only credential-free HTTPS origin/path values;
-  query strings, fragments, and userinfo are rejected.
+- Signed URLs are bearer secrets and never written to artifacts. Evidence app
+  URLs retain only credential-free HTTPS origin/path values.
 - Downloads enforce host, TLS, redirect, time, size, and media-type controls.
 - Outputs use user-only POSIX modes and publish atomically.
-- Browser imports require JSON and reject cross-site/foreign-origin mutations.
-- Run lists use bounded keyset pagination; D1 item writes use transactional
-  JSON expansion rather than one query per finding.
 - The tool never creates tickets or messages without separate authorization.
-- Generated output requires human review.
 
 Read [docs/RUNBOOK.md](docs/RUNBOOK.md) before processing sensitive meetings.
 
@@ -625,33 +453,28 @@ Read [docs/RUNBOOK.md](docs/RUNBOOK.md) before processing sensitive meetings.
 ```text
 src/
 ├── adapters/       Bluedot, Granola, local context, OAuth, Gemini
-├── domain/         durable types
+├── domain/         durable types and versioned contracts
 ├── recipes/        built-in and custom recipe validation
 ├── services/       orchestration, alignment, artifacts, screenshots
 └── lib/            file, object, and time helpers
 test/               deterministic offline tests
-apps/web/            Nuxt SSR review workspace, SQLite/D1 adapters, migrations
-apps/web/e2e/        Playwright Studio journeys with synthetic fixtures
+apps/web/           Nuxt SSR review workspace, SQLite/D1 adapters, migrations
+apps/web/e2e/       Playwright Studio journeys with synthetic fixtures
 scripts/            safe cross-platform skill installer
-docs/
-├── ARCHITECTURE.md
-├── CREDENTIALS.md
-├── MEETING_TO_ISSUE_RUNBOOK.md
-├── RECIPES.md
-├── RUNBOOK.md
-├── SKILL_INSTALLATION.md
-├── VERSIONING.md
-├── adr/
-└── project_notes/
-.agents/skills/
-├── frame-of-mind/  canonical portable product skill
-├── gemini-api-dev/ pinned official Google companion skill
-└── gemini-interactions-api/
-                    pinned official Google companion skill
+conductor/          product context, spec, and implementation plan
+docs/               guides, runbooks, adr/, project_notes/
+.agents/skills/     canonical product skill + pinned official Google skills
 ```
 
-Scoped `AGENTS.md` files guide future agents. Adjacent `CLAUDE.md` files are
-relative symlinks so Codex and Claude share the same repository rules.
+Scoped `AGENTS.md` files guide future agents; adjacent `CLAUDE.md` files are
+relative symlinks so Codex and Claude share the same rules. To install the
+product skill for Codex and Claude:
+
+```bash
+bun run install:skill -- --target all
+```
+
+See [docs/SKILL_INSTALLATION.md](docs/SKILL_INSTALLATION.md).
 
 ## Development
 
@@ -666,53 +489,38 @@ bun run build:web:cloudflare
 bun run check
 ```
 
-Check current SDK versions:
-
-```bash
-bun pm ls @google/genai @modelcontextprotocol/sdk
-npm view @google/genai version
-npm view @modelcontextprotocol/sdk version
-```
-
-Do not upgrade without verifying official authentication, Files upload,
-structured output, video metadata, OAuth, and cleanup contracts.
+Do not upgrade `@google/genai` or `@modelcontextprotocol/sdk` without
+verifying official authentication, Files upload, structured output, video
+metadata, OAuth, and cleanup contracts.
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Local Studio threat model](docs/THREAT_MODEL.md)
-- [Local Studio streaming spike](docs/spikes/local-studio-streaming-20260726.md)
-- [Gemini credentials](docs/CREDENTIALS.md)
-- [Recipes](docs/RECIPES.md)
-- [Video understanding and deep-analysis guide](docs/VIDEO_UNDERSTANDING.md)
-- [Artifact composition quality guide](docs/ARTIFACT_COMPOSITION.md)
-- [Provider contracts](docs/PROVIDERS.md)
-- [Nuxt review workspace](docs/WEB_WORKSPACE.md)
-- [Testing strategy](docs/TESTING.md)
-- [Cloudflare deployment and Access runbook](docs/CLOUDFLARE_DEPLOYMENT.md)
-- [Future local and hosted MCP architecture](docs/MCP_ROADMAP.md)
-- [Operations runbook](docs/RUNBOOK.md)
-- [Codex and Claude skill installation](docs/SKILL_INSTALLATION.md)
-- [Versioning and releases](docs/VERSIONING.md)
-- [Colleague announcement](docs/ANNOUNCEMENT.md)
-- [Changelog](CHANGELOG.md)
-- [Architecture decisions](docs/adr/)
-- [Gotchas and failure history](docs/project_notes/)
+| Guide | Purpose |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | boundaries, contracts, trust model |
+| [Recipes](docs/RECIPES.md) | built-in intent, charters, custom recipe schema |
+| [Meeting-to-issue runbook](docs/MEETING_TO_ISSUE_RUNBOOK.md) | end-to-end meeting → GitHub workflow |
+| [Video understanding](docs/VIDEO_UNDERSTANDING.md) | Gemini video/prompt behavior, deep analysis |
+| [Artifact composition](docs/ARTIFACT_COMPOSITION.md) | evidence-to-deliverable quality contract |
+| [Gemini credentials](docs/CREDENTIALS.md) | keys, restrictions, rotation, Vertex differences |
+| [Provider contracts](docs/PROVIDERS.md) | Bluedot, Granola MCP/API, local context |
+| [Web workspace](docs/WEB_WORKSPACE.md) | local data model, import boundary, backups |
+| [Local Studio threat model](docs/THREAT_MODEL.md) | session, staging, and credential boundaries |
+| [Cloudflare deployment](docs/CLOUDFLARE_DEPLOYMENT.md) | Workers, D1, Access, verification, rollback |
+| [Testing strategy](docs/TESTING.md) | test-layer ownership, browser isolation |
+| [Operations runbook](docs/RUNBOOK.md) | installation, operations, incident response |
+| [Versioning](docs/VERSIONING.md) | release and compatibility policy |
+| [Skill installation](docs/SKILL_INSTALLATION.md) | Codex and Claude skill setup |
+| [MCP roadmap](docs/MCP_ROADMAP.md) | deferred local/hosted read-only MCP boundary |
+| [ADR log](docs/adr/) | durable architecture decisions |
+| [Project notes](docs/project_notes/) | gotchas and failure history |
+| [Changelog](CHANGELOG.md) | release history |
 
 ## Known limitations
 
 - Screen recording required; context-only recipes are future work.
-- Current backend requires Gemini Developer API key, not Vertex ADC.
+- Current backend requires a Gemini Developer API key, not Vertex ADC.
 - Granola MCP/API access varies by plan/workspace and key scope.
 - Bluedot MCP may not return media.
-- Automatic transcript alignment is model-derived.
+- Automatic transcript alignment is model-derived — verify via `manifest.json`.
 - No built-in external publishing yet.
-- No centralized/encrypted evidence vault.
-- No cross-run vector index in `v0.3.0`.
-- Review-workspace imports are manual in `v0.3.0`.
-- The local/Cloudflare MCP server is designed but intentionally deferred to the
-  next iteration.
-
-## License
-
-MIT
