@@ -10,7 +10,7 @@ versions for durable schemas and prompts.
 | CLI/package | `0.3.0` | Semantic Versioning |
 | `analysis.json` schema | `2` | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` | increment for breaking provenance changes |
-| prompt revision | `2026-07-28.3` | increment for material instruction changes |
+| prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
 ## Before 1.0

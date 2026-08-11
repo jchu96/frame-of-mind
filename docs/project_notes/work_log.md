@@ -349,3 +349,50 @@
   names) outperformed v1 regardless of model. Method captured in
   `docs/spikes/recipe-model-evaluation-runbook-2026-07-28.md`; automating it is
   the top follow-up.
+
+## 2026-08-11
+
+- Authored ADR 0016 (Proposed): decompose recipes into charter slots (stance,
+  allowed questions, acceptance, rejection, boundaries, optional phase focus)
+  assembled deterministically by the executor under the untrusted-data guard,
+  with a single documented trust-precedence ladder and per-phase assembled
+  prompt-prefix digests plus model-routing reasons in the manifest.
+  Documentation only; no recipe, prompt, or schema code changed.
+- Refined ADR 0014 in place (still Proposed): the disposition set gains
+  `insufficient-evidence`, claim citations validate fail-closed under the
+  ADR 0013 per-candidate blast radius, and v4 runs must report run-level
+  unresolved questions and residual risks. Updated the ADR index and
+  decisions.md. Implementation of ADR 0016 awaits acceptance; the natural
+  first slice is charter schema + assembly with `issue-review` migrated and
+  registry tests asserting slot budgets and required boundaries.
+- Refined ADR 0016 same day after a prompt-engineering review of the charter
+  design against the live prompt code: added label-vocabulary and exemplar
+  slots (v2/v3 details[] labels are prompt-enforced only, so they need a
+  dedicated slot; recipe-specific accept/reject pairs replace the single
+  generic detail-pass example), phase-asymmetric binding (acceptance loose at
+  index recall, rejection strict at interrogation precision), data-relative
+  charter placement preserving the instructions-after-media recency shape, a
+  guard sandwich sentence after the data blocks, positive-before-negative
+  slot rendering, a minimal schema-constraint constant replacing enumerated
+  caps the enforced schema already guarantees, and risk-ordered migration
+  with communication coaching last behind an eval-runbook comparison.
+- Implemented the ADR 0016 first slice (charter schema + assembly). Recipes
+  may now declare a structured charter (stance, allowed questions max 4,
+  acceptance, label vocabulary 1-12, exemplars 1-2, rejection, boundaries,
+  optional phase focus), compiled deterministically in recipes/index.ts with
+  phase-asymmetric binding and an 8,000-character rendered-instruction guard;
+  issue-review migrated with synthetic exemplars while the other five
+  built-ins stay on the v1 instruction pair. gemini.ts gained the
+  data-boundary sandwich line after the context blocks, a single
+  schema-constraint constant replacing enumerated caps in all three phases, a
+  softer index-pass rejection line, charter-exemplar suppression of the
+  generic evidence example, and an exported promptPrefix. Manifests (schemas
+  2 and 3) gained optional promptProvenance (per-phase prefix digests plus a
+  model-routing reason derived without env reads); promptRevision moved to
+  2026-08-11.1; built-in revision moved to builtin-2026-08-11.1. Charter
+  digests use deep canonicalization; v1 recipe hashes are unchanged.
+  Validated by recipes/gemini/versioned-contracts vitest additions and the
+  full check gate (21 files, 171 tests). ADR 0016 flipped to Accepted.
+  docs/RECIPES.md and README document the charter format. Still open: the
+  five remaining migrations behind an eval-runbook A/B (coaching last), and
+  the issue-review live A/B itself.

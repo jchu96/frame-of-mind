@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
-import type { AnalysisRecipe, BuiltInRecipeId } from "../domain/types.js";
+import type { AnalysisRecipe, BuiltInRecipeId, RecipeCharter } from "../domain/types.js";
 import { sha256Utf8 } from "../domain/integrity.js";
 
-const recipeSchema = z.object({
+const instructionRecipeSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/),
   label: z.string().min(1).max(100),
   description: z.string().min(1).max(500),
@@ -12,6 +12,36 @@ const recipeSchema = z.object({
   interrogationInstruction: z.string().min(1).max(8_000),
   revision: z.string().min(1).max(120).optional(),
 }).strict();
+
+const exemplarSchema = z.object({
+  verdict: z.enum(["accepted", "rejected"]),
+  candidate: z.string().min(1).max(500),
+  reason: z.string().min(1).max(500),
+}).strict();
+
+const charterSchema = z.object({
+  stance: z.string().min(1).max(500),
+  allowedQuestions: z.array(z.string().min(1).max(300)).min(1).max(4),
+  acceptance: z.string().min(1).max(1_000),
+  labelVocabulary: z.array(z.string().min(1).max(80)).min(1).max(12),
+  exemplars: z.array(exemplarSchema).min(1).max(2),
+  rejection: z.string().min(1).max(1_000),
+  boundaries: z.string().min(1).max(1_000),
+  phaseFocus: z.object({
+    index: z.string().min(1).max(1_500).optional(),
+    interrogation: z.string().min(1).max(1_500).optional(),
+  }).strict().optional(),
+}).strict();
+
+const charterRecipeSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/),
+  label: z.string().min(1).max(100),
+  description: z.string().min(1).max(500),
+  charter: charterSchema,
+  revision: z.string().min(1).max(120).optional(),
+}).strict();
+
+const recipeFileSchema = z.union([charterRecipeSchema, instructionRecipeSchema]);
 
 export const analysisDepthSchema = z.enum(["standard", "deep"]);
 export type AnalysisDepth = z.infer<typeof analysisDepthSchema>;
@@ -29,16 +59,117 @@ const DEEP_INTERROGATION_INSTRUCTION = [
   "Do not expose hidden reasoning or invent off-screen state; return only concise conclusions and evidence through the structured fields.",
 ].join(" ");
 
+function renderExemplars(charter: RecipeCharter): string {
+  return charter.exemplars
+    .map((exemplar) =>
+      `${exemplar.verdict === "accepted" ? "Accepted" : "Rejected"} example — candidate: ${exemplar.candidate} Why: ${exemplar.reason}`
+    )
+    .join("\n");
+}
+
+// Slots render positive-before-negative in the ADR 0016 fixed order. The
+// passes bind asymmetrically: acceptance is loose at index (candidate-worthy)
+// and strict at interrogation; rejection binds strictly only at
+// interrogation; boundaries bind both without qualification.
+export function renderCharterInstruction(
+  charter: RecipeCharter,
+  phase: "index" | "interrogation",
+): string {
+  if (phase === "index") {
+    return [
+      `Stance: ${charter.stance}`,
+      `This recipe answers only these questions: ${charter.allowedQuestions.join(" ")}`,
+      ...(charter.phaseFocus?.index ? [charter.phaseFocus.index] : []),
+      `Find every moment that could plausibly qualify: ${charter.acceptance} Treat acceptance loosely at this stage; final acceptance happens during interrogation.`,
+      `Use detail labels such as ${charter.labelVocabulary.join(", ")}.`,
+      renderExemplars(charter),
+      `Reject only clear misses: ${charter.rejection}`,
+      `Boundaries: ${charter.boundaries}`,
+    ].join("\n");
+  }
+  return [
+    `Stance: ${charter.stance}`,
+    `This recipe answers only these questions: ${charter.allowedQuestions.join(" ")}`,
+    ...(charter.phaseFocus?.interrogation ? [charter.phaseFocus.interrogation] : []),
+    `Accept the candidate only when it satisfies: ${charter.acceptance}`,
+    `Use detail labels from this vocabulary: ${charter.labelVocabulary.join(", ")}.`,
+    renderExemplars(charter),
+    `Reject strictly: ${charter.rejection}`,
+    `Boundaries: ${charter.boundaries}`,
+  ].join("\n");
+}
+
+const MAX_INSTRUCTION_LENGTH = 8_000;
+
+function compileCharterRecipe(
+  parsed: z.infer<typeof charterRecipeSchema>,
+): AnalysisRecipe {
+  const indexInstruction = renderCharterInstruction(parsed.charter, "index");
+  const interrogationInstruction = renderCharterInstruction(parsed.charter, "interrogation");
+  if (
+    indexInstruction.length > MAX_INSTRUCTION_LENGTH
+    || interrogationInstruction.length > MAX_INSTRUCTION_LENGTH
+  ) {
+    throw new Error(
+      `Recipe '${parsed.id}' renders past the ${MAX_INSTRUCTION_LENGTH}-character instruction limit; shorten its charter slots.`,
+    );
+  }
+  return {
+    id: parsed.id,
+    label: parsed.label,
+    description: parsed.description,
+    indexInstruction,
+    interrogationInstruction,
+    ...(parsed.revision ? { revision: parsed.revision } : {}),
+    charter: parsed.charter,
+  };
+}
+
+const issueReviewCharter: RecipeCharter = {
+  stance:
+    "You are a meticulous QA reviewer looking for defects and friction a product or engineering team should act on.",
+  allowedQuestions: [
+    "What visibly went wrong, rendered incorrectly, or showed a wrong value or error?",
+    "Where does observed behavior contradict an expectation the recording itself establishes?",
+    "What concrete workflow friction did a participant encounter?",
+  ],
+  acceptance:
+    "A moment qualifies only with visible or spoken evidence of a bug, wrong value, error, mis-render, or concrete workflow friction.",
+  labelVocabulary: ["Actual", "Expected", "Impact", "Affected surface"],
+  exemplars: [
+    {
+      verdict: "accepted",
+      candidate:
+        "A save control stays disabled after every required field is filled and the reporter says it will not let them save.",
+      reason:
+        "Visible control state plus the reporter's statement establish actual behavior, expectation, and impact.",
+    },
+    {
+      verdict: "rejected",
+      candidate:
+        "Participants discuss whether a future export option might be useful.",
+      reason:
+        "Ordinary product discussion with no observed defect, wrong value, or friction.",
+    },
+  ],
+  rejection:
+    "Reject ordinary discussion, speculation about unobserved behavior, and expectations nobody established.",
+  boundaries:
+    "Never present an inference as an observed fact. Never invent reproduction steps, URLs, or off-screen state. Record only steps actually observed.",
+};
+
 const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
-  "issue-review": {
+  // Per-recipe revision: only issue-review changed content in the charter
+  // migration. The five untouched recipes keep the historical fallback so
+  // Studio's immutable recipe receipts (sha256 + revision) stay valid for
+  // jobs queued before this release.
+  "issue-review": compileCharterRecipe({
     id: "issue-review",
     label: "Issue review",
     description: "Find visible bugs, wrong values, errors, mis-renders, and concrete workflow friction.",
-    indexInstruction:
-      "Find every moment plausibly worth a product or engineering issue. Require visible or spoken evidence and reject ordinary discussion. Use detail labels such as Actual, Expected, Impact, and Affected surface.",
-    interrogationInstruction:
-      "Decide whether the candidate is a real, supportable issue. Capture exact observed behavior, expected behavior only when established, verbatim UI text, reporter quote, and only the steps actually observed.",
-  },
+    charter: issueReviewCharter,
+    revision: "builtin-2026-08-11.1",
+  }),
   decisions: {
     id: "decisions",
     label: "Decisions",
@@ -99,8 +230,25 @@ export function listBuiltInRecipes(): AnalysisRecipe[] {
   return Object.values(recipes);
 }
 
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value as Record<string, unknown>).sort().map((key) => [
+        key,
+        canonicalize((value as Record<string, unknown>)[key]),
+      ]),
+    );
+  }
+  return value;
+}
+
 export function digestRecipe(recipe: AnalysisRecipe): Promise<string> {
-  const canonical = JSON.stringify(recipe, Object.keys(recipe).sort());
+  // A charter recipe digests its full nested source; the historical shallow
+  // replacer is preserved for instruction recipes so their hashes are stable.
+  const canonical = recipe.charter
+    ? JSON.stringify(canonicalize(recipe))
+    : JSON.stringify(recipe, Object.keys(recipe).sort());
   return sha256Utf8(canonical);
 }
 
@@ -110,9 +258,15 @@ export async function loadRecipe(id: string, recipeFile?: string): Promise<{
   sha256: string;
   revision: string;
 }> {
-  const recipe = recipeFile
-    ? recipeSchema.parse(JSON.parse(await readFile(resolve(recipeFile), "utf8")))
-    : builtInRecipe(id);
+  let recipe: AnalysisRecipe;
+  if (recipeFile) {
+    const parsed = recipeFileSchema.parse(
+      JSON.parse(await readFile(resolve(recipeFile), "utf8")),
+    );
+    recipe = "charter" in parsed ? compileCharterRecipe(parsed) : parsed;
+  } else {
+    recipe = builtInRecipe(id);
+  }
   return {
     recipe,
     custom: Boolean(recipeFile),

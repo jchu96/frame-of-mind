@@ -1,7 +1,9 @@
 # ADR 0014: Version evidence separately from composed artifact families
 
 - Status: Proposed
-- Date: 2026-07-28
+- Date: 2026-07-28 (refined 2026-08-11: insufficient-evidence disposition,
+  fail-closed citation validation, run-level unresolved questions and residual
+  risks)
 
 ## Invariant
 
@@ -32,7 +34,17 @@ Introduce a future `analysis.json` v4 with a small shared claim-evidence spine:
   modality, observation text, verbatim/paraphrase status, and speaker basis;
 - claims have stable IDs, epistemic kind, support level, evidence references,
   alternatives, and verification needs;
-- findings use an explicit disposition instead of only `accepted: boolean`;
+- findings use an explicit disposition instead of only `accepted: boolean`,
+  and the disposition set includes `insufficient-evidence` so honest
+  incompleteness is a first-class outcome rather than degraded prose;
+- claim citations validate fail-closed: a claim referencing an unknown
+  evidence-anchor ID, an anchor outside the recording's duration, or a
+  verbatim quote absent from an available transcript invalidates that claim
+  under the per-candidate blast radius of ADR 0013 — it is never repaired
+  into compliance;
+- every run reports unresolved questions and residual risks at run level,
+  alongside findings, so what the analysis could not determine is part of the
+  contract;
 - numeric model confidence is not treated as calibrated probability;
 - recipes select bounded typed extensions and a composed artifact family.
 

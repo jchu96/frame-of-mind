@@ -23,6 +23,7 @@ import type {
 } from "../domain/types.js";
 import {
   analysisDigest,
+  sha256Utf8,
   validateVersionedRunImport,
 } from "../domain/integrity.js";
 import {
@@ -33,7 +34,7 @@ import { BluedotClient } from "../adapters/bluedot-mcp.js";
 import { GranolaClient } from "../adapters/granola-mcp.js";
 import { GranolaApiClient } from "../adapters/granola-api.js";
 import { FileContextSource } from "../adapters/file-context.js";
-import { GeminiVideoAnalyzer } from "../adapters/gemini.js";
+import { DEFAULT_GEMINI_MODEL, GeminiVideoAnalyzer, promptPrefix } from "../adapters/gemini.js";
 import { GeminiFileError } from "../adapters/gemini-files.js";
 import {
   createRunId,
@@ -705,6 +706,20 @@ export class AnalysisOrchestrator {
         }
         failurePhase = "render";
         const analysisSha256 = await analysisDigest(analysis);
+        const promptProvenance = {
+          indexPrefixSha256: await sha256Utf8(promptPrefix(options.recipe, "index")),
+          interrogationPrefixSha256: await sha256Utf8(promptPrefix(options.recipe, "detail")),
+          modelRouting: {
+            requestedModel: analyzer.model,
+            // GEMINI_MODEL set to the default value is still an explicit
+            // choice; only env-absent default-model runs report default-flash.
+            reason: options.model
+              ? "operator-selected" as const
+              : process.env.GEMINI_MODEL || analyzer.model !== DEFAULT_GEMINI_MODEL
+                ? "environment-or-dependency-override" as const
+                : "default-flash" as const,
+          },
+        };
         const manifestBase = {
           toolVersion: "0.3.0",
           runId,
@@ -735,6 +750,7 @@ export class AnalysisOrchestrator {
           ...(derivedTranscriptProvenance
             ? { derivedTranscript: derivedTranscriptProvenance }
             : {}),
+          promptProvenance,
           artifacts: [
             "analysis.json",
             "analysis-outcome.json",
@@ -748,7 +764,7 @@ export class AnalysisOrchestrator {
           ? {
               ...manifestBase,
               schemaVersion: 2,
-              promptRevision: "2026-07-28.3",
+              promptRevision: "2026-08-11.1",
               meetingId: meetingRunContext.meeting.id,
               transcriptSha256: derivedTranscriptProvenance
                 ? derivedTranscriptProvenance.sha256
@@ -761,7 +777,7 @@ export class AnalysisOrchestrator {
           : {
               ...manifestBase,
               schemaVersion: 3,
-              promptRevision: "2026-07-28.3",
+              promptRevision: "2026-08-11.1",
               context: { mode: "none" },
               mediaSource: "local-file",
             };
