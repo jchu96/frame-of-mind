@@ -135,6 +135,10 @@ const recipeIdSchema = z.string()
   .max(64)
   .regex(/^[a-z0-9][a-z0-9-]+$/);
 
+// Deliberately instruction-only: Studio rejects every custom recipe before
+// queue insertion (custom_recipe_staging_unavailable), so ADR 0016 charter
+// support here waits for the custom-recipe staging contract rather than
+// accepting a shape the executor cannot run yet.
 const customRecipeSchema = z.object({
   id: recipeIdSchema,
   label: z.string().min(1).max(100),

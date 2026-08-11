@@ -159,11 +159,16 @@ const issueReviewCharter: RecipeCharter = {
 };
 
 const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
+  // Per-recipe revision: only issue-review changed content in the charter
+  // migration. The five untouched recipes keep the historical fallback so
+  // Studio's immutable recipe receipts (sha256 + revision) stay valid for
+  // jobs queued before this release.
   "issue-review": compileCharterRecipe({
     id: "issue-review",
     label: "Issue review",
     description: "Find visible bugs, wrong values, errors, mis-renders, and concrete workflow friction.",
     charter: issueReviewCharter,
+    revision: "builtin-2026-08-11.1",
   }),
   decisions: {
     id: "decisions",
@@ -266,7 +271,7 @@ export async function loadRecipe(id: string, recipeFile?: string): Promise<{
     recipe,
     custom: Boolean(recipeFile),
     sha256: await digestRecipe(recipe),
-    revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-08-11.1"),
+    revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-07-27.1"),
   };
 }
 

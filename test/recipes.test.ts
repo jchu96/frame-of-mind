@@ -160,6 +160,13 @@ describe("analysis recipes", () => {
     }
   });
 
+  it("scopes the revision bump to the migrated recipe only", async () => {
+    expect((await loadRecipe("issue-review")).revision).toBe("builtin-2026-08-11.1");
+    for (const id of ["decisions", "requirements", "action-items", "repo-plan", "communication-coaching"]) {
+      expect((await loadRecipe(id)).revision).toBe("builtin-2026-07-27.1");
+    }
+  });
+
   it("applies the deep profile on top of a charter recipe without dropping the charter", async () => {
     const loaded = await loadRecipe("issue-review");
     const deep = await withAnalysisDepth(loaded, "deep");

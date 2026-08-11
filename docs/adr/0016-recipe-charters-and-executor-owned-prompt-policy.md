@@ -108,10 +108,13 @@ alone does not.
 Within the charter, slots render positive-before-negative in a fixed order:
 stance, allowed questions, acceptance criteria, label vocabulary, exemplars,
 rejection criteria, boundaries. Recipe authors cannot invert this framing.
-Schema constraints are a minimal executor-owned constant: one line directing
-the model to stay within the response schema's limits. Instruction text that
-enumerates length caps or key restrictions the enforced provider schema and
-strict local Zod contract already guarantee is redundant and is not emitted.
+The executor-owned enumerated output caps stay in every task section:
+adversarial review of the first implementation established that the
+sanitized provider schema strips `maxLength`/`maxItems`, and sanitized
+repair feedback strips numbers, so the prompt text is the only channel
+through which the model can learn a numeric bound. Collapsing the caps to a
+generic stay-within-schema line becomes safe only if a separately verified
+change propagates numeric constraints into the provider schema.
 
 ### Trust precedence
 

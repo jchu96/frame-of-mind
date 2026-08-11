@@ -602,12 +602,49 @@ describe("GeminiVideoAnalyzer", () => {
       const recipeSection = text.indexOf("<recipe>");
       expect(reminder).toBeGreaterThan(text.indexOf("</context>"));
       expect(reminder).toBeLessThan(recipeSection);
-      expect(text).toContain("Stay within the response schema's field and length limits");
-      expect(text).not.toContain("Keep output concise:");
+      // The enumerated caps are the only channel carrying numeric limits;
+      // the sanitized provider schema drops maxLength/maxItems.
+      expect(text).toContain("Keep output concise:");
     }
   });
 
-  it("exposes a deterministic per-phase prompt prefix for provenance", () => {
+  it("keeps strict index rejection for v1 recipes and loosens only charters", async () => {
+    const requests: GenerateContentParameters[] = [];
+    const analyzer = new GeminiVideoAnalyzer(
+      "test-api-key",
+      "gemini-3.6-flash",
+      {
+        generateContent: async (parameters) => {
+          requests.push(parameters);
+          return { text: JSON.stringify(validVideoOnlyIndexResponse) };
+        },
+      },
+    );
+    const charterRecipe: AnalysisRecipe = {
+      ...recipe,
+      charter: {
+        stance: "Synthetic stance.",
+        allowedQuestions: ["What changed?"],
+        acceptance: "Visible change.",
+        labelVocabulary: ["Actual"],
+        exemplars: [{ verdict: "accepted", candidate: "synthetic", reason: "shown on screen" }],
+        rejection: "Reject discussion.",
+        boundaries: "Never invent state.",
+      },
+    };
+
+    await analyzer.index(activeFile, undefined, recipe);
+    await analyzer.index(activeFile, undefined, charterRecipe);
+
+    const v1Text = JSON.stringify(requests[0]?.contents);
+    const charterText = JSON.stringify(requests[1]?.contents);
+    expect(v1Text).toContain("Reject material outside the recipe.");
+    expect(v1Text).not.toContain("strict acceptance happens during interrogation");
+    expect(charterText).toContain("strict acceptance happens during interrogation");
+    expect(charterText).not.toContain("Reject material outside the recipe.");
+  });
+
+  it("exposes a deterministic per-phase prompt prefix that reflects charter presence", () => {
     const index = promptPrefix(recipe, "index");
     const detail = promptPrefix(recipe, "detail");
     expect(index).toBe(promptPrefix(recipe, "index"));
@@ -619,6 +656,23 @@ describe("GeminiVideoAnalyzer", () => {
     }
     expect(index).toContain(recipe.indexInstruction);
     expect(detail).toContain(recipe.interrogationInstruction);
+
+    // Charter presence changes the emitted prompt (evidence-example
+    // suppression, index binding), so it must change the digested prefix too.
+    const charterTwin: AnalysisRecipe = {
+      ...recipe,
+      charter: {
+        stance: "Synthetic stance.",
+        allowedQuestions: ["What changed?"],
+        acceptance: "Visible change.",
+        labelVocabulary: ["Actual"],
+        exemplars: [{ verdict: "accepted", candidate: "synthetic", reason: "shown on screen" }],
+        rejection: "Reject discussion.",
+        boundaries: "Never invent state.",
+      },
+    };
+    expect(promptPrefix(charterTwin, "detail")).not.toBe(detail);
+    expect(promptPrefix(charterTwin, "index")).not.toBe(index);
   });
 
   it("suppresses the generic evidence example when the recipe carries charter exemplars", async () => {

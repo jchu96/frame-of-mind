@@ -711,11 +711,13 @@ export class AnalysisOrchestrator {
           interrogationPrefixSha256: await sha256Utf8(promptPrefix(options.recipe, "detail")),
           modelRouting: {
             requestedModel: analyzer.model,
+            // GEMINI_MODEL set to the default value is still an explicit
+            // choice; only env-absent default-model runs report default-flash.
             reason: options.model
               ? "operator-selected" as const
-              : analyzer.model === DEFAULT_GEMINI_MODEL
-                ? "default-flash" as const
-                : "environment-or-dependency-override" as const,
+              : process.env.GEMINI_MODEL || analyzer.model !== DEFAULT_GEMINI_MODEL
+                ? "environment-or-dependency-override" as const
+                : "default-flash" as const,
           },
         };
         const manifestBase = {
