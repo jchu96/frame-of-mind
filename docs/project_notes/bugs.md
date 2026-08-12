@@ -5,18 +5,29 @@
 - Symptom: three consecutive runs on real recordings (50 min and 28 min) all
   warned "Derived transcription failed; continuing without a transcript" while
   audio extraction succeeded.
-- Cause: the transcribe pass asked for a complete verbatim structured
-  transcript of the whole audio in one request; a meeting-length transcript
-  exceeds the model's output budget, so the JSON truncated and the one-shot
-  repair regenerated the same oversized payload.
+- Cause (corrected 2026-08-11 after live probing): the failure was provider
+  capacity, not output truncation. A probe of one ten-minute window returned
+  two consecutive `503 UNAVAILABLE` "model is currently experiencing high
+  demand" errors and then succeeded, producing a well-formed transcript with
+  `finishReason: STOP` at 3,411 output tokens — far below any budget. The
+  original truncation hypothesis was never confirmed; the transport-retry
+  budget introduced with the per-candidate isolation work (two retries, linear
+  1s/2s backoff) was simply too small to outlast a 503 burst.
+- Note: windowed transcription still shipped and is still correct — it bounds
+  per-request output and cost — but it was not what fixed this symptom.
 - Correction: transcribe in ten-minute windows with a fifteen-second lead-in
   overlap, shift each window's segments onto recording time, and merge with
-  overlap segments dropped. A failed window discards the whole transcript
-  instead of publishing one with an unlabeled hole.
+  overlap segments dropped; a failed window discards the whole transcript
+  instead of publishing one with an unlabeled hole. Then widen the retryable
+  transport budget to four retries with exponential backoff capped at 16s,
+  which is what actually clears a 503 burst.
 - Prevention: unit tests pin window planning, offsetting, overlap dedupe, and
   ordering; orchestrator tests prove per-window extraction bounds, per-window
   upload cleanup, the stitched result reaching both passes, and no-transcript
-  publication when a window fails. Issue #40 tracks the incident.
+  publication when a window fails; an adapter test proves a burst two failures
+  deep still resolves. Probe the sanitized error class against the live API
+  before theorizing about a cause — the swallowed status was the whole answer.
+  Issue #40 tracks the incident.
 
 ## 2026-08-11 — Retained-upload digest check rejected every genuine match
 

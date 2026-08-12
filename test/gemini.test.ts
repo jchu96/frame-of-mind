@@ -1304,6 +1304,32 @@ describe("Gemini generation transport handling", () => {
     expect(delays).toEqual([1_000, 2_000]);
   });
 
+  it("rides out a burst of capacity errors longer than the old two-retry budget", async () => {
+    // Live 503 bursts ran two deep before clearing; the budget must survive
+    // more than that, with exponential backoff between attempts.
+    let calls = 0;
+    const delays: number[] = [];
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      generateContent: async () => {
+        calls += 1;
+        if (calls < 5) throw { status: 503, message: "high demand" };
+        return { text: detailJson };
+      },
+      sleep: async (milliseconds) => {
+        delays.push(milliseconds);
+      },
+    });
+
+    await expect(analyzer.interrogate(
+      activeFile,
+      validIndexResponse.moments[0]!,
+      meeting.transcript,
+      recipe,
+    )).resolves.toMatchObject({ accepted: true });
+    expect(calls).toBe(5);
+    expect(delays).toEqual([1_000, 2_000, 4_000, 8_000]);
+  });
+
   it("isolates an exhausted detail transport failure as a candidate-scoped typed error", async () => {
     let calls = 0;
     const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
@@ -1327,7 +1353,7 @@ describe("Gemini generation transport handling", () => {
     }
     expect(error).toBeInstanceOf(CandidateAnalysisError);
     expect(error).toMatchObject({ code: "generation_failed", attempts: 1 });
-    expect(calls).toBe(3);
+    expect(calls).toBe(5);
   });
 
   it("does not retry non-retryable provider errors", async () => {
@@ -1363,7 +1389,7 @@ describe("Gemini generation transport handling", () => {
 
     await expect(analyzer.index(activeFile, meeting, recipe))
       .rejects.toBeInstanceOf(GeminiFileError);
-    expect(calls).toBe(3);
+    expect(calls).toBe(5);
   });
 });
 
