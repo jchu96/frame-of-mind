@@ -36,6 +36,11 @@ Semantic Versioning.
 
 ### Fixed
 
+- `--remote-file` digest verification now accepts the Files API's live
+  `sha256Hash` encoding — base64 of the lowercase hex digest string — in
+  addition to the documented raw-bytes base64 and plain hex. The first live
+  reuse attempt was rejected because only the documented encodings were
+  accepted, making every genuine match fail.
 - `doctor` now detects ffmpeg on Windows by probing `ffmpeg.exe`/`.cmd`/`.bat`
   in PATH; previously it only looked for an extensionless `ffmpeg` file and
   always reported ffmpeg missing even though analysis spawns resolved it.
