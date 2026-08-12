@@ -1082,6 +1082,58 @@ describe("AnalysisOrchestrator", () => {
     );
     expect(persistedManifest.remoteFile.deleted).toBe(false);
   });
+
+  it("reuses a retained Gemini upload without uploading or deleting", async () => {
+    const fixture = await createFixture();
+    const retained: GeminiFile = {
+      name: "files/retained-test",
+      uri: "https://generativelanguage.googleapis.com/v1beta/files/retained-test",
+      mimeType: "video/mp4",
+      state: "ACTIVE",
+    };
+    const resolveRetainedFile = vi.fn(async () => retained);
+    const analyzer = { ...fixture.analyzer, resolveRetainedFile };
+    const events: AnalysisProgressEvent[] = [];
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "reuse-run",
+      now: () => "2026-07-27T12:00:00.000Z",
+      sleep: async () => undefined,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+      remoteFileName: "files/retained-test",
+    }, {
+      progress: { report: (event) => events.push(event) },
+    });
+
+    expect(analyzer.upload).not.toHaveBeenCalled();
+    expect(analyzer.delete).not.toHaveBeenCalled();
+    expect(resolveRetainedFile).toHaveBeenCalledWith(
+      "files/retained-test",
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+    );
+    expect(result.manifest.remoteFile).toMatchObject({
+      name: "files/retained-test",
+      deleted: false,
+    });
+    expect(events.some((event) =>
+      event.kind === "stage"
+        && event.message === "Reusing the retained Gemini upload…",
+    )).toBe(true);
+  });
 });
 
 interface Fixture {
