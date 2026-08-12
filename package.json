@@ -61,7 +61,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@google/genai": "2.13.0",
+    "@google/genai": "2.16.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "commander": "15.0.0",
     "dotenv": "17.4.2",
