@@ -116,7 +116,11 @@ flowchart LR
 ```
 
 A derived transcript uses generic speaker labels, is never stored, and can be
-disabled with `--no-derived-transcript`.
+disabled with `--no-derived-transcript`. Recordings longer than ten minutes are
+transcribed in ten-minute windows — each with a short lead-in overlap for
+boundary context — then stitched back onto recording time, because one request
+cannot emit a verbatim transcript of an hour-long meeting. If any window fails,
+the run continues with no transcript rather than one containing a silent gap.
 
 The durable source of truth is local:
 

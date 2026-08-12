@@ -125,6 +125,7 @@ describe("AnalysisOrchestrator", () => {
       now: () => "2026-07-28T12:00:00.000Z",
       sleep: async () => undefined,
       extractAudioTrack,
+      probeDurationSeconds: async () => 420,
     });
 
     const result = await orchestrator.analyze({
@@ -144,7 +145,7 @@ describe("AnalysisOrchestrator", () => {
     const derivedLine = "[00:00:02] Speaker 1: Please add the report.";
     expect(extractAudioTrack).toHaveBeenCalledTimes(1);
     expect(analyzer.upload).toHaveBeenCalledWith(
-      expect.stringContaining("derived-audio.aac"),
+      expect.stringContaining("derived-audio-1.aac"),
       "audio/aac",
     );
     expect(analyzer.transcribe).toHaveBeenCalledTimes(1);
@@ -172,6 +173,139 @@ describe("AnalysisOrchestrator", () => {
       model: "gemini-test",
       sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
+  });
+
+  it("transcribes a long recording in windows and stitches recording time", async () => {
+    const fixture = await createFixture();
+    // Each window is transcribed independently and reports chunk-relative
+    // times; the second window re-transcribes its lead-in overlap.
+    const perWindow = [
+      [
+        { start: "00:00:02", end: "00:00:05", speaker: "Speaker 1", text: "Please add the report." },
+        { start: "00:09:56", end: "00:09:59", speaker: "Speaker 2", text: "Boundary sentence." },
+      ],
+      [
+        { start: "00:00:11", end: "00:00:14", speaker: "Speaker 2", text: "Boundary sentence." },
+        { start: "00:00:20", end: "00:00:24", speaker: "Speaker 1", text: "Second window line." },
+      ],
+    ];
+    let transcribeCall = 0;
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => perWindow[transcribeCall++] ?? []),
+    };
+    const windows: Array<{ startSeconds?: number; durationSeconds?: number }> = [];
+    const extractAudioTrack = vi.fn(async (
+      _video: string,
+      destination: string,
+      options?: { startSeconds?: number; durationSeconds?: number },
+    ) => {
+      windows.push({
+        startSeconds: options?.startSeconds,
+        durationSeconds: options?.durationSeconds,
+      });
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "chunked-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+      probeDurationSeconds: async () => 900,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    });
+
+    expect(windows).toEqual([
+      { startSeconds: undefined, durationSeconds: 600 },
+      { startSeconds: 585, durationSeconds: 315 },
+    ]);
+    expect(analyzer.transcribe).toHaveBeenCalledTimes(2);
+    // One delete per window audio upload, plus the final recording cleanup.
+    expect(analyzer.delete).toHaveBeenCalledTimes(3);
+    const stitched = [
+      "[00:00:02] Speaker 1: Please add the report.",
+      "[00:09:56] Speaker 2: Boundary sentence.",
+      "[00:10:05] Speaker 1: Second window line.",
+    ].join("\n");
+    expect(analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      fixture.options.recipe,
+      undefined,
+      0.5,
+      stitched,
+    );
+    expect(result.manifest.derivedTranscript).toMatchObject({ origin: "gemini-audio" });
+  });
+
+  it("publishes no transcript when one window fails rather than a transcript with a hole", async () => {
+    const fixture = await createFixture();
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => {
+        if (analyzer.transcribe.mock.calls.length > 1) throw new Error("provider body");
+        return [{ start: "00:00:02", end: "00:00:05", speaker: "Speaker 1", text: "First window." }];
+      }),
+    };
+    const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const events: AnalysisProgressEvent[] = [];
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "partial-transcript-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async () => undefined,
+      extractAudioTrack,
+      probeDurationSeconds: async () => 900,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    }, { progress: { report: (event) => events.push(event) } });
+
+    expect(result.manifest).not.toHaveProperty("derivedTranscript");
+    expect(analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      fixture.options.recipe,
+      undefined,
+      0.5,
+      undefined,
+    );
+    const warning = events.find((event) =>
+      event.kind === "warning" && event.message.includes("audio window 2/2"),
+    );
+    expect(warning).toBeDefined();
+    expect(warning && "message" in warning ? warning.message : "").not.toContain("provider body");
   });
 
   it("skips derived transcription when the operator disables it", async () => {
