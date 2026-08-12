@@ -7,6 +7,16 @@ Semantic Versioning.
 
 ### Added
 
+- Long recordings now derive a transcript in bounded windows. Audio beyond ten
+  minutes is extracted, uploaded, and transcribed one window at a time, each
+  window after the first starting fifteen seconds early for boundary context,
+  then stitched back onto recording time with overlap segments dropped. A
+  single request could not emit a verbatim transcript of a 30-50 minute
+  meeting, so derived transcription previously failed outright on every long
+  recording (issue #40). Each window's upload is deleted on its own success and
+  failure paths, a failed window discards the whole transcript rather than
+  publishing one with a silent gap, and an unprobeable duration degrades to the
+  previous single-window behavior.
 - Added a derived transcript rung to the analyze pipeline. When neither a
   provider nor a context file supplies a transcript, ffmpeg strips the
   recording's first audio stream into a private AAC derivative, the run's own

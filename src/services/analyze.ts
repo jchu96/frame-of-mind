@@ -46,8 +46,17 @@ import {
   sha256File,
   sha256Text,
 } from "../lib/files.js";
-import { formatDerivedTranscript, nearbyTranscript } from "./transcript.js";
-import { extractAudioTrack } from "./audio.js";
+import {
+  formatDerivedTranscript,
+  mergeTranscriptionChunks,
+  nearbyTranscript,
+  offsetTranscriptionSegments,
+} from "./transcript.js";
+import {
+  extractAudioTrack,
+  planTranscriptionWindows,
+  probeDurationSeconds,
+} from "./audio.js";
 import { extractScreenshot } from "./screenshots.js";
 import { writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
@@ -67,6 +76,12 @@ import {
 // validated, the run aborts as systematic instead of burning a provider call
 // per remaining candidate.
 const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
+
+// Verbatim transcription is bounded by the model's output budget, not the
+// audio length, so long recordings are transcribed in windows with a short
+// lead-in overlap for boundary context.
+const TRANSCRIPTION_WINDOW_SECONDS = 600;
+const TRANSCRIPTION_OVERLAP_SECONDS = 15;
 
 interface AnalyzeOptionsBase {
   recipe: AnalysisRecipe;
@@ -237,6 +252,7 @@ export interface AnalysisOrchestratorDependencies {
   sleep?: (milliseconds: number) => Promise<void>;
   extractScreenshot?: typeof extractScreenshot;
   extractAudioTrack?: typeof extractAudioTrack;
+  probeDurationSeconds?: typeof probeDurationSeconds;
 }
 
 export type AnalyzeResult = PublishedAnalysisRun & {
@@ -258,6 +274,7 @@ export class AnalysisOrchestrator {
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly screenshot: typeof extractScreenshot;
   private readonly extractAudio: typeof extractAudioTrack;
+  private readonly probeDuration: typeof probeDurationSeconds;
 
   constructor(dependencies: AnalysisOrchestratorDependencies) {
     this.createContextSource = dependencies.createContextSource;
@@ -267,6 +284,7 @@ export class AnalysisOrchestrator {
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.screenshot = dependencies.extractScreenshot ?? extractScreenshot;
     this.extractAudio = dependencies.extractAudioTrack ?? extractAudioTrack;
+    this.probeDuration = dependencies.probeDurationSeconds ?? probeDurationSeconds;
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
@@ -385,35 +403,70 @@ export class AnalysisOrchestrator {
           stage: "fetching_context",
           message: "Deriving a transcript from the recording audio…",
         });
-        const audioPath = join(temp, "derived-audio.aac");
-        if (!(await this.extractAudio(localVideo, audioPath, { signal: execution.signal }))) {
-          await reportWarning(progress, {
-            kind: "warning",
-            stage: "fetching_context",
-            message: "No audio track could be extracted; continuing without a transcript.",
-          });
-        } else {
+        // A single request cannot emit a verbatim transcript for a long
+        // recording, so the audio is transcribed in bounded windows and
+        // stitched back onto recording time. When the duration is unknown the
+        // plan degrades to one window, matching the previous behavior.
+        const duration = await this.probeDuration(localVideo, { signal: execution.signal });
+        assertNotCanceled(execution.signal);
+        const windows = planTranscriptionWindows(
+          duration ?? TRANSCRIPTION_WINDOW_SECONDS,
+          TRANSCRIPTION_WINDOW_SECONDS,
+          TRANSCRIPTION_OVERLAP_SECONDS,
+        );
+        const transcribed: Array<{
+          segments: DerivedTranscriptionSegment[];
+          nominalStartSeconds: number;
+        }> = [];
+        let transcriptionFailed = false;
+        for (const [windowNumber, window] of windows.entries()) {
+          assertNotCanceled(execution.signal);
+          if (windows.length > 1) {
+            await report(progress, {
+              kind: "progress",
+              stage: "fetching_context",
+              progress: {
+                completed: windowNumber,
+                total: windows.length,
+                unit: "items",
+              },
+              message: `Transcribing audio window ${windowNumber + 1}/${windows.length}…`,
+            });
+          }
+          const audioPath = join(temp, `derived-audio-${windowNumber + 1}.aac`);
+          if (!(await this.extractAudio(localVideo, audioPath, {
+            signal: execution.signal,
+            ...(window.startSeconds ? { startSeconds: window.startSeconds } : {}),
+            ...(duration === undefined ? {} : { durationSeconds: window.durationSeconds }),
+          }))) {
+            await reportWarning(progress, {
+              kind: "warning",
+              stage: "fetching_context",
+              message: windows.length > 1
+                ? `Audio window ${windowNumber + 1}/${windows.length} could not be extracted; continuing without a transcript.`
+                : "No audio track could be extracted; continuing without a transcript.",
+            });
+            transcriptionFailed = true;
+            break;
+          }
           assertNotCanceled(execution.signal);
           let audioRemote: GeminiFile | undefined;
           try {
             audioRemote = await analyzer.upload(audioPath, "audio/aac");
             assertNotCanceled(execution.signal);
             const segments = await analyzer.transcribe(audioRemote);
-            const formatted = formatDerivedTranscript(segments);
-            if (formatted) {
-              derivedTranscript = formatted;
-              derivedTranscriptProvenance = {
-                origin: "gemini-audio",
-                model: analyzer.model,
-                sha256: sha256Text(formatted),
-              };
-            }
+            transcribed.push({
+              segments: offsetTranscriptionSegments(segments, window.startSeconds),
+              nominalStartSeconds: window.nominalStartSeconds,
+            });
           } catch (error) {
             if (error instanceof AnalysisCanceledError) throw error;
             await reportWarning(progress, {
               kind: "warning",
               stage: "fetching_context",
-              message: "Derived transcription failed; continuing without a transcript.",
+              message: windows.length > 1
+                ? `Transcription failed on audio window ${windowNumber + 1}/${windows.length}; continuing without a transcript.`
+                : "Derived transcription failed; continuing without a transcript.",
             });
             if (error instanceof GeminiFileError && error.uploadCleanup === "unconfirmed") {
               await reportWarning(progress, {
@@ -422,6 +475,7 @@ export class AnalysisOrchestrator {
                 message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
               });
             }
+            transcriptionFailed = true;
           } finally {
             if (audioRemote) {
               if (!(await deleteWithRetry(analyzer, audioRemote, this.sleep))) {
@@ -434,8 +488,24 @@ export class AnalysisOrchestrator {
             }
             await rm(audioPath, { force: true });
           }
+          if (transcriptionFailed) break;
           assertNotCanceled(execution.signal);
         }
+        // A transcript with an unlabeled hole would misrepresent the meeting,
+        // so a failed window discards the whole derived transcript rather than
+        // publishing a partial one.
+        if (!transcriptionFailed) {
+          const formatted = formatDerivedTranscript(mergeTranscriptionChunks(transcribed));
+          if (formatted) {
+            derivedTranscript = formatted;
+            derivedTranscriptProvenance = {
+              origin: "gemini-audio",
+              model: analyzer.model,
+              sha256: sha256Text(formatted),
+            };
+          }
+        }
+        assertNotCanceled(execution.signal);
       }
 
       const retainRemote = options.keepUpload || Boolean(options.remoteFileName);
