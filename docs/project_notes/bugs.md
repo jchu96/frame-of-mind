@@ -28,6 +28,11 @@
   deep still resolves. Probe the sanitized error class against the live API
   before theorizing about a cause — the swallowed status was the whole answer.
   Issue #40 tracks the incident.
+- Follow-up: request-level retries alone left the transcript all-or-nothing
+  across windows, so a window that exhausts them is re-uploaded and transcribed
+  once more from the audio already on disk. Measured during a load-shedding
+  episode, per-request failure ran near 50%; with five retried requests per
+  attempt and two attempts per window, losing a window became remote.
 
 ## 2026-08-11 — Retained-upload digest check rejected every genuine match
 
