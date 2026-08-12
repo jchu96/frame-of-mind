@@ -1013,14 +1013,20 @@ describe("GeminiVideoAnalyzer", () => {
     expect(generationMessage).toBe("Gemini index generation failed.");
     expect(generationMessage).not.toContain(privateMarker);
 
-    await expect(
-      generationAnalyzer.interrogate(
+    let detailError: unknown;
+    try {
+      await generationAnalyzer.interrogate(
         activeFile,
         validIndexResponse.moments[0]!,
         meeting.transcript,
         recipe,
-      ),
-    ).rejects.toBeInstanceOf(GeminiFileError);
+      );
+    } catch (caught) {
+      detailError = caught;
+    }
+    expect(detailError).toBeInstanceOf(CandidateAnalysisError);
+    expect(detailError).toMatchObject({ code: "generation_failed", attempts: 1 });
+    expect((detailError as Error).message).not.toContain(privateMarker);
 
     const deletionAnalyzer = new GeminiVideoAnalyzer(
       "test-api-key",
@@ -1267,5 +1273,174 @@ describe("GeminiVideoAnalyzer", () => {
       recipe,
     )).resolves.toMatchObject({ evidence: { timestamp: candidate.start } });
     expect(calls).toBe(2);
+  });
+});
+
+describe("Gemini generation transport handling", () => {
+  const detailJson = JSON.stringify(validDetailResponse);
+  const transientError = () => ({ status: 503, message: "transient" });
+
+  it("retries transient transport statuses before succeeding", async () => {
+    let calls = 0;
+    const delays: number[] = [];
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      generateContent: async () => {
+        calls += 1;
+        if (calls < 3) throw transientError();
+        return { text: detailJson };
+      },
+      sleep: async (milliseconds) => {
+        delays.push(milliseconds);
+      },
+    });
+
+    await expect(analyzer.interrogate(
+      activeFile,
+      validIndexResponse.moments[0]!,
+      meeting.transcript,
+      recipe,
+    )).resolves.toMatchObject({ accepted: true });
+    expect(calls).toBe(3);
+    expect(delays).toEqual([1_000, 2_000]);
+  });
+
+  it("isolates an exhausted detail transport failure as a candidate-scoped typed error", async () => {
+    let calls = 0;
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      generateContent: async () => {
+        calls += 1;
+        throw transientError();
+      },
+      sleep: async () => {},
+    });
+
+    let error: unknown;
+    try {
+      await analyzer.interrogate(
+        activeFile,
+        validIndexResponse.moments[0]!,
+        meeting.transcript,
+        recipe,
+      );
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(CandidateAnalysisError);
+    expect(error).toMatchObject({ code: "generation_failed", attempts: 1 });
+    expect(calls).toBe(3);
+  });
+
+  it("does not retry non-retryable provider errors", async () => {
+    let calls = 0;
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      generateContent: async () => {
+        calls += 1;
+        throw { status: 400, message: "invalid" };
+      },
+      sleep: async () => {
+        throw new Error("must not sleep for non-retryable errors");
+      },
+    });
+
+    await expect(analyzer.interrogate(
+      activeFile,
+      validIndexResponse.moments[0]!,
+      meeting.transcript,
+      recipe,
+    )).rejects.toBeInstanceOf(CandidateAnalysisError);
+    expect(calls).toBe(1);
+  });
+
+  it("keeps exhausted index transport failures run-scoped", async () => {
+    let calls = 0;
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      generateContent: async () => {
+        calls += 1;
+        throw transientError();
+      },
+      sleep: async () => {},
+    });
+
+    await expect(analyzer.index(activeFile, meeting, recipe))
+      .rejects.toBeInstanceOf(GeminiFileError);
+    expect(calls).toBe(3);
+  });
+});
+
+describe("retained Gemini file reuse", () => {
+  const localSha256Hex = "ab".repeat(32);
+  const matchingSha256Base64 = Buffer.from(localSha256Hex, "hex").toString("base64");
+  const retainedFile: GeminiFile = {
+    ...activeFile,
+    sha256Hash: matchingSha256Base64,
+  };
+
+  it("resolves an ACTIVE retained file that matches the local digest", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => retainedFile,
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+      .resolves.toMatchObject({ name: "files/public-test", uri: activeFile.uri });
+  });
+
+  it("resolves when the provider omits a digest to compare", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => activeFile,
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+      .resolves.toMatchObject({ name: "files/public-test" });
+  });
+
+  it("rejects a retained file whose digest does not match the local recording", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => ({
+        ...activeFile,
+        sha256Hash: Buffer.from("cd".repeat(32), "hex").toString("base64"),
+      }),
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+      .rejects.toMatchObject({
+        name: "GeminiFileError",
+        uploadCleanup: "not_obtained",
+        message: expect.stringContaining("does not match the local recording digest"),
+      });
+  });
+
+  it("rejects a retained file that is not ACTIVE", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => ({ ...retainedFile, state: FileState.PROCESSING }),
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+      .rejects.toMatchObject({ name: "GeminiFileError", uploadCleanup: "not_obtained" });
+  });
+
+  it("rejects a lookup failure without attempting cleanup", async () => {
+    let deletions = 0;
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => {
+        throw new Error("expired");
+      },
+      deleteFile: async () => {
+        deletions += 1;
+        return {};
+      },
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+      .rejects.toMatchObject({ name: "GeminiFileError", uploadCleanup: "not_obtained" });
+    expect(deletions).toBe(0);
+  });
+
+  it("rejects a lookup that returns a different file identity", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => ({ ...retainedFile, name: "files/other-file" }),
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+      .rejects.toMatchObject({ name: "GeminiFileError", uploadCleanup: "not_obtained" });
   });
 });

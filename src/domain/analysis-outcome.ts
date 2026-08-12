@@ -7,6 +7,7 @@ export const candidateFailureCodeSchema = z.enum([
   "invalid_json",
   "schema_validation",
   "evidence_out_of_range",
+  "generation_failed",
 ]);
 
 export const candidateValidationIssueSchema = z.strictObject({
@@ -172,6 +173,9 @@ function candidateErrorMessage(
   if (code === "response_missing") return `${label} is missing.`;
   if (code === "evidence_out_of_range") {
     return "Gemini returned an evidence timestamp outside the indexed candidate window.";
+  }
+  if (code === "generation_failed") {
+    return "Gemini generation for this candidate failed after bounded transport retries.";
   }
   return "Gemini analysis response could not be validated.";
 }

@@ -63,6 +63,11 @@ import {
   type RunFailureManifest,
 } from "../domain/run-failure.js";
 
+// When this many leading candidates all fail at generation with nothing
+// validated, the run aborts as systematic instead of burning a provider call
+// per remaining candidate.
+const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
+
 interface AnalyzeOptionsBase {
   recipe: AnalysisRecipe;
   customRecipe: boolean;
@@ -79,6 +84,12 @@ interface AnalyzeOptionsBase {
   maxIncidents: number;
   screenshots: boolean;
   keepUpload: boolean;
+  /**
+   * Reuse an operator-retained Gemini Files API upload (`files/...`) for this
+   * exact recording instead of uploading again. The run never deletes a file
+   * it did not create.
+   */
+  remoteFileName?: string;
   derivedTranscript?: boolean;
 }
 
@@ -187,6 +198,10 @@ type AnalysisIndex = MeetingAnalysisIndex | VideoOnlyAnalysisIndex;
 export interface AnalysisVideoAnalyzer {
   readonly model: string;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
+  resolveRetainedFile?(
+    name: string,
+    expectedSha256Hex?: string,
+  ): Promise<GeminiFile>;
   index(
     file: GeminiFile,
     meeting: MeetingEvidence | undefined,
@@ -423,15 +438,32 @@ export class AnalysisOrchestrator {
         }
       }
 
+      const retainRemote = options.keepUpload || Boolean(options.remoteFileName);
       await report(progress, {
         kind: "stage",
         stage: "uploading_to_gemini",
-        message: "Uploading recording to Gemini Files API…",
+        message: options.remoteFileName
+          ? "Reusing the retained Gemini upload…"
+          : "Uploading recording to Gemini Files API…",
       });
       assertNotCanceled(execution.signal);
       let remote: GeminiFile;
       try {
-        remote = await analyzer.upload(localVideo, mimeType);
+        if (options.remoteFileName) {
+          if (typeof analyzer.resolveRetainedFile !== "function") {
+            throw new GeminiFileError(
+              "The configured analyzer cannot reuse a retained Gemini file.",
+              options.remoteFileName,
+              "not_obtained",
+            );
+          }
+          remote = await analyzer.resolveRetainedFile(
+            options.remoteFileName,
+            recordingSha256,
+          );
+        } else {
+          remote = await analyzer.upload(localVideo, mimeType);
+        }
       } catch (error) {
         if (error instanceof AnalysisCanceledError) throw error;
         assertNotCanceled(execution.signal);
@@ -486,7 +518,7 @@ export class AnalysisOrchestrator {
         throw error;
       }
       let remoteDeleted = false;
-      let cleanupFinalized = options.keepUpload;
+      let cleanupFinalized = retainRemote;
       let failurePhase: AnalysisFailurePhase = "index";
       try {
         assertNotCanceled(execution.signal);
@@ -604,8 +636,23 @@ export class AnalysisOrchestrator {
             await reportWarning(progress, {
               kind: "warning",
               stage: "interrogating",
-              message: `Candidate ${indexNumber + 1} could not be validated after ${error.attempts} attempt${error.attempts === 1 ? "" : "s"}; continuing with remaining candidates.`,
+              message: error.code === "generation_failed"
+                ? `Candidate ${indexNumber + 1} generation failed after bounded transport retries; continuing with remaining candidates.`
+                : `Candidate ${indexNumber + 1} could not be validated after ${error.attempts} attempt${error.attempts === 1 ? "" : "s"}; continuing with remaining candidates.`,
             });
+            // Circuit breaker for systematic failures: when the first few
+            // candidates ALL fail at generation with nothing validated, the
+            // fault is run-scoped (schema drift, revoked key), and grinding
+            // through the remaining candidates only wastes provider calls.
+            if (
+              items.length === 0
+              && failures.length >= GENERATION_FAILURE_CIRCUIT_BREAKER
+              && failures.every((failure) => failure.code === "generation_failed")
+            ) {
+              throw new Error(
+                `Gemini generation failed for the first ${failures.length} candidates; aborting as a systematic failure.`,
+              );
+            }
           }
           await report(progress, {
             kind: "progress",
@@ -698,9 +745,9 @@ export class AnalysisOrchestrator {
         await report(progress, {
           kind: "stage",
           stage: "cleaning_up",
-          message: options.keepUpload ? "Finalizing the analysis bundle." : "Deleting the temporary Gemini upload.",
+          message: retainRemote ? "Finalizing the analysis bundle." : "Deleting the temporary Gemini upload.",
         });
-        if (!options.keepUpload) {
+        if (!retainRemote) {
           remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep);
           cleanupFinalized = remoteDeleted;
         }
@@ -796,7 +843,7 @@ export class AnalysisOrchestrator {
         // Failed cleanup may be retried in `finally` only while publication has
         // not completed and no durable manifest exists.
         cleanupFinalized = true;
-        if (!options.keepUpload && !remoteDeleted) {
+        if (!retainRemote && !remoteDeleted) {
           await reportWarning(progress, {
             kind: "warning",
             stage: "cleaning_up",
@@ -841,7 +888,7 @@ export class AnalysisOrchestrator {
         };
       } catch (error) {
         if (error instanceof AnalysisCanceledError) throw error;
-        if (!options.keepUpload && !cleanupFinalized) {
+        if (!retainRemote && !cleanupFinalized) {
           remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep);
           cleanupFinalized = true;
         }
@@ -863,7 +910,7 @@ export class AnalysisOrchestrator {
           error: sanitizedFailureError(error),
           remoteFile: {
             ...sanitizedRemoteFileMetadata(remote),
-            cleanup: options.keepUpload
+            cleanup: retainRemote
               ? "intentionally_retained"
               : remoteDeleted
                 ? "confirmed_deleted"
@@ -885,7 +932,7 @@ export class AnalysisOrchestrator {
             });
           }
         }
-        if (!options.keepUpload && !remoteDeleted) {
+        if (!retainRemote && !remoteDeleted) {
           await reportUnconfirmedCleanup(
             progress,
             sanitizedRemoteFileMetadata(remote).name,
@@ -893,7 +940,7 @@ export class AnalysisOrchestrator {
         }
         throw error;
       } finally {
-        if (!options.keepUpload && !cleanupFinalized) {
+        if (!retainRemote && !cleanupFinalized) {
           const deleted = await deleteWithRetry(analyzer, remote, this.sleep);
           if (!deleted) {
             await reportWarning(progress, {

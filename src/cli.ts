@@ -51,6 +51,7 @@ export interface AnalyzeCliFlags {
   maxMoments: string;
   screenshots: boolean;
   keepUpload?: boolean;
+  remoteFile?: string;
   derivedTranscript: boolean;
 }
 
@@ -116,6 +117,7 @@ program
   .option("--no-screenshots", "Skip ffmpeg screenshots")
   .option("--no-derived-transcript", "Skip deriving a transcript from the recording audio when no transcript is supplied")
   .option("--keep-upload", "Leave the Gemini file until its provider expiration time")
+  .option("--remote-file <name>", "Reuse a retained Gemini upload (files/...) of this exact recording; skips re-upload and never deletes it")
   .action(
     async (
       meetingId: string | undefined,
@@ -144,6 +146,15 @@ program
         `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
           `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
       );
+      const remoteFile = result.manifest.remoteFile;
+      const retentionRequested = Boolean(flags.keepUpload || flags.remoteFile);
+      if (retentionRequested && remoteFile && !remoteFile.deleted && remoteFile.name) {
+        process.stdout.write(
+          `Retained Gemini upload: ${remoteFile.name}` +
+            `${remoteFile.expirationTime ? ` (provider expiration ${remoteFile.expirationTime})` : ""}. ` +
+            `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
+        );
+      }
     },
   );
 
@@ -197,6 +208,14 @@ export async function buildAnalyzeOptions(
   if (!Number.isSafeInteger(maxIncidents) || maxIncidents > 1_000) {
     throw new Error("--max-moments must be between 1 and 1000.");
   }
+  if (flags.remoteFile) {
+    if (!flags.video) {
+      throw new Error("--remote-file requires --video so the local recording can be verified and screenshotted.");
+    }
+    if (!/^files\/[A-Za-z0-9_-]+$/.test(flags.remoteFile)) {
+      throw new Error("--remote-file must be a Gemini file name such as files/abc123.");
+    }
+  }
   if (flags.video) await access(resolve(flags.video));
   const common = {
     recipe: recipeResult.recipe,
@@ -211,6 +230,7 @@ export async function buildAnalyzeOptions(
     maxIncidents,
     screenshots: flags.screenshots,
     keepUpload: Boolean(flags.keepUpload),
+    ...(flags.remoteFile ? { remoteFileName: flags.remoteFile } : {}),
     derivedTranscript: flags.derivedTranscript !== false,
   };
   return videoOnly
@@ -258,13 +278,20 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
 }
 
 async function executableExists(command: string): Promise<boolean> {
-  const paths = (process.env.PATH || "").split(process.platform === "win32" ? ";" : ":");
+  const isWindows = process.platform === "win32";
+  const candidates = isWindows
+    ? [`${command}.exe`, `${command}.cmd`, `${command}.bat`, command]
+    : [command];
+  const paths = (process.env.PATH || "").split(isWindows ? ";" : ":");
   for (const path of paths) {
-    try {
-      await access(resolve(path, command));
-      return true;
-    } catch {
-      // Try the next PATH entry.
+    if (!path) continue;
+    for (const candidate of candidates) {
+      try {
+        await access(resolve(path, candidate));
+        return true;
+      } catch {
+        // Try the next candidate or PATH entry.
+      }
     }
   }
   return false;
