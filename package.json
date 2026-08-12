@@ -18,9 +18,10 @@
     "apps/web"
   ],
   "overrides": {
-    "@hono/node-server": "2.0.12",
-    "brace-expansion": "5.0.8",
-    "esbuild": "0.28.1"
+    "brace-expansion": "^5.0.9",
+    "fast-uri": "^3.1.5",
+    "nanoid": "^3.3.18",
+    "undici": "^8.10.0"
   },
   "bin": {
     "frameofmind": "./dist/cli.js"
