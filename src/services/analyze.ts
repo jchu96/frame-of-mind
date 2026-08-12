@@ -82,6 +82,11 @@ const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
 // lead-in overlap for boundary context.
 const TRANSCRIPTION_WINDOW_SECONDS = 600;
 const TRANSCRIPTION_OVERLAP_SECONDS = 15;
+// One failed window discards the whole transcript, so a window that exhausts
+// the adapter's per-request retries is re-uploaded and transcribed once more
+// after a pause long enough to outlast a load-shedding episode.
+const TRANSCRIPTION_WINDOW_ATTEMPTS = 2;
+const TRANSCRIPTION_WINDOW_RETRY_MS = 20_000;
 
 interface AnalyzeOptionsBase {
   recipe: AnalysisRecipe;
@@ -450,42 +455,61 @@ export class AnalysisOrchestrator {
             break;
           }
           assertNotCanceled(execution.signal);
-          let audioRemote: GeminiFile | undefined;
+          // The adapter already retries a single request across a transport
+          // blip. This outer attempt exists for the case that survives that:
+          // the provider shedding load for longer than one request's retry
+          // budget. Losing one window discards the entire transcript, so the
+          // window earns a second full upload-and-transcribe from the audio
+          // already on disk.
           try {
-            audioRemote = await analyzer.upload(audioPath, "audio/aac");
-            assertNotCanceled(execution.signal);
-            const segments = await analyzer.transcribe(audioRemote);
-            transcribed.push({
-              segments: offsetTranscriptionSegments(segments, window.startSeconds),
-              nominalStartSeconds: window.nominalStartSeconds,
-            });
-          } catch (error) {
-            if (error instanceof AnalysisCanceledError) throw error;
-            await reportWarning(progress, {
-              kind: "warning",
-              stage: "fetching_context",
-              message: windows.length > 1
-                ? `Transcription failed on audio window ${windowNumber + 1}/${windows.length}; continuing without a transcript.`
-                : "Derived transcription failed; continuing without a transcript.",
-            });
-            if (error instanceof GeminiFileError && error.uploadCleanup === "unconfirmed") {
-              await reportWarning(progress, {
-                kind: "warning",
-                stage: "cleaning_up",
-                message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
-              });
-            }
-            transcriptionFailed = true;
-          } finally {
-            if (audioRemote) {
-              if (!(await deleteWithRetry(analyzer, audioRemote, this.sleep))) {
+            for (let attempt = 1; attempt <= TRANSCRIPTION_WINDOW_ATTEMPTS; attempt += 1) {
+              assertNotCanceled(execution.signal);
+              const finalAttempt = attempt === TRANSCRIPTION_WINDOW_ATTEMPTS;
+              let audioRemote: GeminiFile | undefined;
+              try {
+                audioRemote = await analyzer.upload(audioPath, "audio/aac");
+                assertNotCanceled(execution.signal);
+                const segments = await analyzer.transcribe(audioRemote);
+                transcribed.push({
+                  segments: offsetTranscriptionSegments(segments, window.startSeconds),
+                  nominalStartSeconds: window.nominalStartSeconds,
+                });
+                break;
+              } catch (error) {
+                if (error instanceof AnalysisCanceledError) throw error;
+                const windowLabel = windows.length > 1
+                  ? `audio window ${windowNumber + 1}/${windows.length}`
+                  : "the recording audio";
                 await reportWarning(progress, {
                   kind: "warning",
-                  stage: "cleaning_up",
-                  message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
+                  stage: "fetching_context",
+                  message: finalAttempt
+                    ? `Transcription failed on ${windowLabel} after ${TRANSCRIPTION_WINDOW_ATTEMPTS} attempts; continuing without a transcript.`
+                    : `Transcription failed on ${windowLabel}; retrying once.`,
                 });
+                if (error instanceof GeminiFileError && error.uploadCleanup === "unconfirmed") {
+                  await reportWarning(progress, {
+                    kind: "warning",
+                    stage: "cleaning_up",
+                    message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
+                  });
+                }
+                if (finalAttempt) transcriptionFailed = true;
+              } finally {
+                if (audioRemote) {
+                  if (!(await deleteWithRetry(analyzer, audioRemote, this.sleep))) {
+                    await reportWarning(progress, {
+                      kind: "warning",
+                      stage: "cleaning_up",
+                      message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window.",
+                    });
+                  }
+                }
               }
+              if (transcriptionFailed) break;
+              await this.sleep(TRANSCRIPTION_WINDOW_RETRY_MS);
             }
+          } finally {
             await rm(audioPath, { force: true });
           }
           if (transcriptionFailed) break;

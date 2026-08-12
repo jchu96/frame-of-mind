@@ -254,11 +254,80 @@ describe("AnalysisOrchestrator", () => {
     expect(result.manifest.derivedTranscript).toMatchObject({ origin: "gemini-audio" });
   });
 
+  it("retries a window that exhausts its request retries and keeps the transcript", async () => {
+    const fixture = await createFixture();
+    // Window 1 is shed once, mirroring a provider load-shedding episode that
+    // outlasts the adapter's own per-request retry budget.
+    let calls = 0;
+    const analyzer = {
+      ...fixture.analyzer,
+      transcribe: vi.fn(async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("provider body");
+        return [{ start: "00:00:02", end: "00:00:05", speaker: "Speaker 1", text: "Recovered window." }];
+      }),
+    };
+    const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+      await writeFile(destination, "synthetic-audio");
+      return true;
+    });
+    const delays: number[] = [];
+    const events: AnalysisProgressEvent[] = [];
+    const orchestrator = new AnalysisOrchestrator({
+      createContextSource: () => fixture.context,
+      createAnalyzer: () => analyzer,
+      createRunId: () => "window-retry-run",
+      now: () => "2026-07-28T12:00:00.000Z",
+      sleep: async (milliseconds) => {
+        delays.push(milliseconds);
+      },
+      extractAudioTrack,
+      probeDurationSeconds: async () => 420,
+    });
+
+    const result = await orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: fixture.options.video!,
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+    }, { progress: { report: (event) => events.push(event) } });
+
+    expect(analyzer.transcribe).toHaveBeenCalledTimes(2);
+    // The audio is extracted once and reused by the retry.
+    expect(extractAudioTrack).toHaveBeenCalledTimes(1);
+    // Both audio uploads are deleted, plus the recording.
+    expect(analyzer.delete).toHaveBeenCalledTimes(3);
+    expect(delays).toContain(20_000);
+    expect(result.manifest.derivedTranscript).toMatchObject({ origin: "gemini-audio" });
+    expect(analyzer.index).toHaveBeenCalledWith(
+      expect.any(Object),
+      undefined,
+      fixture.options.recipe,
+      undefined,
+      0.5,
+      "[00:00:02] Speaker 1: Recovered window.",
+    );
+    const retryWarning = events.find((event) =>
+      event.kind === "warning" && event.message.includes("retrying once"),
+    );
+    expect(retryWarning).toBeDefined();
+    expect(retryWarning && "message" in retryWarning ? retryWarning.message : "")
+      .not.toContain("provider body");
+  });
+
   it("publishes no transcript when one window fails rather than a transcript with a hole", async () => {
     const fixture = await createFixture();
     const analyzer = {
       ...fixture.analyzer,
       transcribe: vi.fn(async () => {
+        // Window 1 succeeds; window 2 fails on both of its attempts.
         if (analyzer.transcribe.mock.calls.length > 1) throw new Error("provider body");
         return [{ start: "00:00:02", end: "00:00:05", speaker: "Speaker 1", text: "First window." }];
       }),
@@ -302,7 +371,9 @@ describe("AnalysisOrchestrator", () => {
       undefined,
     );
     const warning = events.find((event) =>
-      event.kind === "warning" && event.message.includes("audio window 2/2"),
+      event.kind === "warning"
+      && event.message.includes("audio window 2/2")
+      && event.message.includes("after 2 attempts"),
     );
     expect(warning).toBeDefined();
     expect(warning && "message" in warning ? warning.message : "").not.toContain("provider body");
@@ -382,11 +453,16 @@ describe("AnalysisOrchestrator", () => {
       progress: { report: (event) => events.push(event) },
     });
 
+    // One retry of the whole window, then the transcript is abandoned.
+    expect(analyzer.transcribe).toHaveBeenCalledTimes(2);
     expect(events.some((event) =>
       event.kind === "warning"
-      && event.message.includes("Derived transcription failed"))).toBe(true);
-    // Audio remote cleanup on the failure path plus final recording cleanup.
-    expect(analyzer.delete).toHaveBeenCalledTimes(2);
+      && event.message.includes("retrying once"))).toBe(true);
+    expect(events.some((event) =>
+      event.kind === "warning"
+      && event.message.includes("after 2 attempts; continuing without a transcript"))).toBe(true);
+    // Audio remote cleanup on both attempts plus final recording cleanup.
+    expect(analyzer.delete).toHaveBeenCalledTimes(3);
     expect(result.manifest).not.toHaveProperty("derivedTranscript");
     expect(analyzer.index).toHaveBeenCalledWith(
       expect.any(Object),
@@ -530,10 +606,12 @@ describe("AnalysisOrchestrator", () => {
       progress: { report: (event) => events.push(event) },
     });
 
-    expect(uploadCalls).toBe(2);
+    // Two audio upload attempts for the single window, then the video upload.
+    expect(uploadCalls).toBe(3);
     expect(analyzer.transcribe).not.toHaveBeenCalled();
     expect(events.some((event) =>
-      event.kind === "warning" && event.message.includes("Derived transcription failed"))).toBe(true);
+      event.kind === "warning"
+      && event.message.includes("after 2 attempts; continuing without a transcript"))).toBe(true);
     expect(events.some((event) =>
       event.kind === "warning" && event.message.includes("retention window"))).toBe(true);
     expect(result.manifest).not.toHaveProperty("derivedTranscript");
