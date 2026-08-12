@@ -34,6 +34,17 @@ Semantic Versioning.
   with a run-scoped failure instead of spending a provider call per remaining
   candidate.
 
+### Security
+
+- Cleared all nine high-severity production advisories. Nuxt moves 4.5.0 →
+  4.5.2, resolving the SSR payload-cache cross-user disclosure, the mixed-case
+  route-rule auth bypass, the island OOM and CPU-exhaustion vectors, and the
+  island-props RCE. Root `overrides` lift four transitive dependencies onto
+  patched releases: `brace-expansion` ≥5.0.9, `fast-uri` ≥3.1.5, `nanoid`
+  ≥3.3.18, and `undici` ≥8.10.0 (raising Miniflare's exact 7.28.0 pin, which
+  the advisory range covers). `bun audit --production --audit-level=high` now
+  exits clean.
+
 ### Fixed
 
 - `--remote-file` digest verification now accepts the Files API's live
