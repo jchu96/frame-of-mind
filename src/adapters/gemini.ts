@@ -56,9 +56,18 @@ const MODEL_REQUEST_TIMEOUT_MS = 10 * 60_000;
 const FILE_REQUEST_TIMEOUT_MS = 30_000;
 // Transient provider statuses retry in-place before a generation failure is
 // declared; anything else fails immediately to avoid retrying billing errors.
-const GENERATION_TRANSPORT_RETRIES = 2;
+// Capacity errors (503 UNAVAILABLE) arrive in short bursts: a live probe hit
+// two consecutive 503s before the third attempt succeeded. Linear 1s/2s backoff
+// across two retries was not enough to ride one out, so retries are exponential
+// and go wide enough to outlast a burst without stalling a run for minutes.
+const GENERATION_TRANSPORT_RETRIES = 4;
 const GENERATION_RETRY_BASE_MS = 1_000;
+const GENERATION_RETRY_MAX_MS = 16_000;
 const RETRYABLE_TRANSPORT_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+function generationRetryDelayMs(attempt: number): number {
+  return Math.min(GENERATION_RETRY_BASE_MS * 2 ** attempt, GENERATION_RETRY_MAX_MS);
+}
 
 function isRetryableTransportError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -571,7 +580,7 @@ export class GeminiVideoAnalyzer {
           attempt < GENERATION_TRANSPORT_RETRIES
           && isRetryableTransportError(error)
         ) {
-          await this.sleep(GENERATION_RETRY_BASE_MS * (attempt + 1));
+          await this.sleep(generationRetryDelayMs(attempt));
           continue;
         }
         // A detail-generation failure is candidate-scoped: the orchestrator
