@@ -66,6 +66,21 @@ function isRetryableTransportError(error: unknown): boolean {
   return typeof status === "number" && RETRYABLE_TRANSPORT_STATUSES.has(status);
 }
 
+/**
+ * The Files API documents `sha256Hash` as base64, but live responses encode
+ * the lowercase HEX DIGEST STRING (verified 2026-08-11 against a real
+ * upload), not the raw digest bytes. Accept plain hex plus both base64
+ * shapes so a provider-side encoding change cannot break genuine matches.
+ */
+function remoteDigestMatchesHex(remote: string, expectedHex: string): boolean {
+  const expected = expectedHex.toLowerCase();
+  if (remote.toLowerCase() === expected) return true;
+  const decoded = Buffer.from(remote, "base64");
+  if (decoded.length === 32) return decoded.toString("hex") === expected;
+  const decodedText = decoded.toString("utf8").trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(decodedText) && decodedText === expected;
+}
+
 const meetingIndexSchema = z.object({
   isRelevantCall: z.boolean(),
   matchNotes: z.string().max(20_000),
@@ -254,8 +269,7 @@ export class GeminiVideoAnalyzer {
     }
     const remoteSha256 = (file as { sha256Hash?: unknown }).sha256Hash;
     if (expectedSha256Hex && typeof remoteSha256 === "string" && remoteSha256) {
-      const expectedBase64 = Buffer.from(expectedSha256Hex, "hex").toString("base64");
-      if (remoteSha256 !== expectedBase64 && remoteSha256 !== expectedSha256Hex) {
+      if (!remoteDigestMatchesHex(remoteSha256, expectedSha256Hex)) {
         throw new GeminiFileError(
           "The retained Gemini file does not match the local recording digest.",
           name,
