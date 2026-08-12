@@ -1,5 +1,18 @@
 # Bugs and Failure History
 
+## 2026-08-11 — Retained-upload digest check rejected every genuine match
+
+- Symptom: the first live `--remote-file` reuse failed with "does not match
+  the local recording digest" for the exact file the previous run uploaded.
+- Cause: the Files API documents `sha256Hash` as base64, and the check assumed
+  base64 of the raw digest bytes; live responses actually base64-encode the
+  lowercase hex digest string.
+- Correction: compare via a tolerant matcher that accepts plain hex, raw-bytes
+  base64, and hex-string base64, normalizing before comparison.
+- Prevention: the reuse tests pin the live-observed encoding as the primary
+  fixture; verify provider-side encodings against a real response, not only
+  documentation, before shipping an equality gate.
+
 ## 2026-08-11 — One transient detail-generation error erased a 22-candidate run
 
 - Symptom: a real 50-minute analysis failed at detail 14/22 after ~26 minutes
