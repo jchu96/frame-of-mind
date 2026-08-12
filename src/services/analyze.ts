@@ -63,6 +63,11 @@ import {
   type RunFailureManifest,
 } from "../domain/run-failure.js";
 
+// When this many leading candidates all fail at generation with nothing
+// validated, the run aborts as systematic instead of burning a provider call
+// per remaining candidate.
+const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
+
 interface AnalyzeOptionsBase {
   recipe: AnalysisRecipe;
   customRecipe: boolean;
@@ -635,6 +640,19 @@ export class AnalysisOrchestrator {
                 ? `Candidate ${indexNumber + 1} generation failed after bounded transport retries; continuing with remaining candidates.`
                 : `Candidate ${indexNumber + 1} could not be validated after ${error.attempts} attempt${error.attempts === 1 ? "" : "s"}; continuing with remaining candidates.`,
             });
+            // Circuit breaker for systematic failures: when the first few
+            // candidates ALL fail at generation with nothing validated, the
+            // fault is run-scoped (schema drift, revoked key), and grinding
+            // through the remaining candidates only wastes provider calls.
+            if (
+              items.length === 0
+              && failures.length >= GENERATION_FAILURE_CIRCUIT_BREAKER
+              && failures.every((failure) => failure.code === "generation_failed")
+            ) {
+              throw new Error(
+                `Gemini generation failed for the first ${failures.length} candidates; aborting as a systematic failure.`,
+              );
+            }
           }
           await report(progress, {
             kind: "progress",

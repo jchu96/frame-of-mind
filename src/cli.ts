@@ -147,7 +147,8 @@ program
           `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
       );
       const remoteFile = result.manifest.remoteFile;
-      if (remoteFile && !remoteFile.deleted && remoteFile.name) {
+      const retentionRequested = Boolean(flags.keepUpload || flags.remoteFile);
+      if (retentionRequested && remoteFile && !remoteFile.deleted && remoteFile.name) {
         process.stdout.write(
           `Retained Gemini upload: ${remoteFile.name}` +
             `${remoteFile.expirationTime ? ` (provider expiration ${remoteFile.expirationTime})` : ""}. ` +
