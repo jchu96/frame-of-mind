@@ -12,6 +12,19 @@ export function timestampToSeconds(value: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
+export function secondsToTimestamp(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    throw new Error("Cannot render a negative or non-finite timestamp.");
+  }
+  const whole = Math.floor(seconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const remainder = whole % 60;
+  return [hours, minutes, remainder]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
+}
+
 export function parseSignedOffset(value: string): number {
   const match = value.match(/^(-?)(\d{2,}):([0-5]\d):([0-5]\d)$/);
   if (!match) throw new Error("Transcript offset must be a signed HH:MM:SS timestamp.");
