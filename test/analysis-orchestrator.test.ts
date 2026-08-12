@@ -1134,6 +1134,65 @@ describe("AnalysisOrchestrator", () => {
         && event.message === "Reusing the retained Gemini upload…",
     )).toBe(true);
   });
+
+  it("aborts as systematic when the leading candidates all fail at generation", async () => {
+    const fixture = await createFixture();
+    const index = indexResult();
+    fixture.analyzer.index = vi.fn(async () => ({
+      ...index,
+      moments: [
+        { ...index.moments[0]!, start: "00:00:01", end: "00:00:05" },
+        { ...index.moments[0]!, start: "00:00:06", end: "00:00:10" },
+        { ...index.moments[0]!, start: "00:00:11", end: "00:00:15" },
+        { ...index.moments[0]!, start: "00:00:16", end: "00:00:20" },
+      ],
+    }));
+    fixture.analyzer.interrogate = vi.fn(async () => {
+      throw new CandidateAnalysisError({ code: "generation_failed", attempts: 1 });
+    });
+    fixture.options.maxIncidents = 4;
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options))
+      .rejects.toThrow("aborting as a systematic failure");
+    expect(fixture.analyzer.interrogate).toHaveBeenCalledTimes(3);
+    const container = join(fixture.outputRoot, "meeting-test");
+    const runs = await readdir(container);
+    expect(runs).toContain("run-test");
+    const failureManifest = JSON.parse(
+      await readFile(join(container, "run-test", "failure-manifest.json"), "utf8"),
+    );
+    expect(failureManifest).toMatchObject({ status: "failed", phase: "detail" });
+  });
+
+  it("keeps isolating generation failures that are not systematic", async () => {
+    const fixture = await createFixture();
+    const index = indexResult();
+    fixture.analyzer.index = vi.fn(async () => ({
+      ...index,
+      moments: [
+        { ...index.moments[0]!, start: "00:00:01", end: "00:00:05" },
+        { ...index.moments[0]!, start: "00:00:06", end: "00:00:10" },
+      ],
+    }));
+    let call = 0;
+    const detail = detailResult();
+    fixture.analyzer.interrogate = vi.fn(async () => {
+      call += 1;
+      if (call === 2) {
+        throw new CandidateAnalysisError({ code: "generation_failed", attempts: 1 });
+      }
+      return detail;
+    });
+    fixture.options.maxIncidents = 2;
+
+    const result = await createOrchestrator(fixture).analyze(fixture.options);
+
+    expect(result.outcome).toMatchObject({
+      status: "partial",
+      candidates: { accepted: 1, failed: 1 },
+      failures: [{ code: "generation_failed", attempts: 1 }],
+    });
+  });
 });
 
 interface Fixture {

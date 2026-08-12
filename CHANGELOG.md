@@ -29,6 +29,10 @@ Semantic Versioning.
 - Added bounded transport retry (two retries with backoff on HTTP 429/500/502/
   503/504) before any generation attempt is declared failed. Non-retryable
   errors, including billing failures, still fail immediately.
+- Added a systematic-failure circuit breaker: when the first three selected
+  candidates all fail at generation with nothing validated, the run aborts
+  with a run-scoped failure instead of spending a provider call per remaining
+  candidate.
 
 ### Fixed
 
