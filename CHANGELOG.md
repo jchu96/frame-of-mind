@@ -36,9 +36,13 @@ Semantic Versioning.
   per candidate like validation failures: the run records the failure,
   continues with remaining candidates, and publishes a `partial` outcome
   instead of aborting and discarding validated candidates (issue #41).
-- Added bounded transport retry (two retries with backoff on HTTP 429/500/502/
-  503/504) before any generation attempt is declared failed. Non-retryable
-  errors, including billing failures, still fail immediately.
+- Added bounded transport retry (four retries with exponential backoff capped
+  at 16 seconds, on HTTP 429/500/502/503/504) before any generation attempt is
+  declared failed. Non-retryable errors, including billing failures, still fail
+  immediately. The budget is sized from a live probe that hit two consecutive
+  `503 UNAVAILABLE` capacity errors before succeeding; the original two-retry
+  linear budget could not outlast that burst and was the real reason derived
+  transcription kept failing on long recordings.
 - Added a systematic-failure circuit breaker: when the first three selected
   candidates all fail at generation with nothing validated, the run aborts
   with a run-scoped failure instead of spending a provider call per remaining
