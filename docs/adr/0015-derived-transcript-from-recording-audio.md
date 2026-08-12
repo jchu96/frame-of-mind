@@ -55,6 +55,16 @@ the same provider (Gemini) that already receives the pixels and audio.
 6. The remote audio upload is deleted immediately after transcription in
    success and failure paths, and the local audio derivative is removed with
    the run's temporary directory.
+7. Audio longer than one window (ten minutes) is extracted, uploaded, and
+   transcribed per window, each window after the first starting fifteen
+   seconds early so the model sees the sentence it joins mid-way. Segments are
+   shifted onto recording time and merged; a segment landing inside the
+   lead-in overlap is dropped because the previous window already owns it.
+   Every window's upload is deleted on its own success and failure paths. A
+   failed window discards the whole derived transcript: a transcript with an
+   unlabeled hole would misrepresent the meeting, and the ladder already
+   treats "none" as a supported rung. When the duration cannot be probed the
+   plan degrades to a single window, matching the original behavior.
 7. Amend ADR 0012 clause 5: video-only prompts may carry a transcript **only**
    when it is derived from the selected recording's own audio and labeled as
    such. All other clauses of ADR 0012 stand.

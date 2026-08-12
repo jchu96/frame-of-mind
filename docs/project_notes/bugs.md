@@ -1,5 +1,23 @@
 # Bugs and Failure History
 
+## 2026-08-11 — Derived transcription failed on every long recording
+
+- Symptom: three consecutive runs on real recordings (50 min and 28 min) all
+  warned "Derived transcription failed; continuing without a transcript" while
+  audio extraction succeeded.
+- Cause: the transcribe pass asked for a complete verbatim structured
+  transcript of the whole audio in one request; a meeting-length transcript
+  exceeds the model's output budget, so the JSON truncated and the one-shot
+  repair regenerated the same oversized payload.
+- Correction: transcribe in ten-minute windows with a fifteen-second lead-in
+  overlap, shift each window's segments onto recording time, and merge with
+  overlap segments dropped. A failed window discards the whole transcript
+  instead of publishing one with an unlabeled hole.
+- Prevention: unit tests pin window planning, offsetting, overlap dedupe, and
+  ordering; orchestrator tests prove per-window extraction bounds, per-window
+  upload cleanup, the stitched result reaching both passes, and no-transcript
+  publication when a window fails. Issue #40 tracks the incident.
+
 ## 2026-08-11 — Retained-upload digest check rejected every genuine match
 
 - Symptom: the first live `--remote-file` reuse failed with "does not match
