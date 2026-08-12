@@ -1,5 +1,35 @@
 # Bugs and Failure History
 
+## 2026-08-11 — One transient detail-generation error erased a 22-candidate run
+
+- Symptom: a real 50-minute analysis failed at detail 14/22 after ~26 minutes
+  with `Gemini detail generation failed.`, publishing only a sanitized
+  `unexpected_failure` manifest and discarding 13 validated candidates. A
+  minimal probe with the same key immediately succeeded.
+- Cause: the 2026-07-28 per-candidate isolation covered typed
+  response-validation failures but not `GeminiFileError` thrown when the
+  generation request itself failed, so one transient transport error was
+  run-fatal.
+- Correction: detail-phase generation failures now raise the candidate-scoped
+  `generation_failed` code after two bounded transport retries (429/5xx only),
+  and the orchestrator records them and continues; index and transcribe phases
+  keep run-scoped failure semantics.
+- Prevention: adapter tests cover retry-then-succeed, retry exhaustion,
+  non-retryable immediate failure, and index-phase run-scoping; issue #41
+  tracks the incident.
+
+## 2026-08-11 — Doctor never detected ffmpeg on Windows
+
+- Symptom: `frameofmind doctor` reported ffmpeg missing on Windows even though
+  `ffmpeg -version` succeeded and the screenshot/audio extractors worked.
+- Cause: the PATH probe checked each directory for a file literally named
+  `ffmpeg`, but Windows installs `ffmpeg.exe`; only the presence check was
+  wrong because `spawn("ffmpeg", ...)` resolves the `.exe` itself.
+- Correction: probe Windows executable names (`.exe`, `.cmd`, `.bat`, then the
+  bare name) per PATH entry and skip empty PATH segments.
+- Prevention: treat a doctor presence probe as wrong until it uses the same
+  resolution rules as the spawn path it describes.
+
 ## 2026-07-27 — Context expiry could race an active upload
 
 - Symptom: the first janitor draft removed every `.stage-*` directory as

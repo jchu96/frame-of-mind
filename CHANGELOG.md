@@ -16,6 +16,29 @@ Semantic Versioning.
 - Added `--no-derived-transcript` to opt out of that step.
 - Added optional `derivedTranscript` manifest provenance (`origin`, model, and
   SHA-256 of the formatted transcript) to schema 2 and schema 3.
+- Added `--remote-file <name>` to reuse a retained Gemini upload for the same
+  recording. The run verifies the remote file is `ACTIVE` and, when the
+  provider reports a digest, that it matches the local recording's SHA-256; it
+  treats the file as operator-owned and never deletes it. A `--keep-upload`
+  run now prints the retained file name and its provider expiration for reuse.
+- Added the `generation_failed` candidate failure code. A detail-phase
+  generation failure (transport error, quota, provider 5xx) is now isolated
+  per candidate like validation failures: the run records the failure,
+  continues with remaining candidates, and publishes a `partial` outcome
+  instead of aborting and discarding validated candidates (issue #41).
+- Added bounded transport retry (two retries with backoff on HTTP 429/500/502/
+  503/504) before any generation attempt is declared failed. Non-retryable
+  errors, including billing failures, still fail immediately.
+- Added a systematic-failure circuit breaker: when the first three selected
+  candidates all fail at generation with nothing validated, the run aborts
+  with a run-scoped failure instead of spending a provider call per remaining
+  candidate.
+
+### Fixed
+
+- `doctor` now detects ffmpeg on Windows by probing `ffmpeg.exe`/`.cmd`/`.bat`
+  in PATH; previously it only looked for an extensionless `ffmpeg` file and
+  always reported ffmpeg missing even though analysis spawns resolved it.
 
 ### Changed
 

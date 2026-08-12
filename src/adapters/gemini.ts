@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { GoogleGenAI, MediaResolution } from "@google/genai";
 import { z } from "zod";
 import type {
@@ -53,6 +54,17 @@ export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
 const FILE_PROCESSING_LIMIT_MS = 30 * 60_000;
 const MODEL_REQUEST_TIMEOUT_MS = 10 * 60_000;
 const FILE_REQUEST_TIMEOUT_MS = 30_000;
+// Transient provider statuses retry in-place before a generation failure is
+// declared; anything else fails immediately to avoid retrying billing errors.
+const GENERATION_TRANSPORT_RETRIES = 2;
+const GENERATION_RETRY_BASE_MS = 1_000;
+const RETRYABLE_TRANSPORT_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+function isRetryableTransportError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" && RETRYABLE_TRANSPORT_STATUSES.has(status);
+}
 
 const meetingIndexSchema = z.object({
   isRelevantCall: z.boolean(),
@@ -199,6 +211,59 @@ export class GeminiVideoAnalyzer {
         "unconfirmed",
       );
     }
+  }
+
+  /**
+   * Resolves an operator-supplied retained upload instead of re-uploading.
+   * The file must exist, be ACTIVE, and (when the provider reports a digest)
+   * match the local recording's SHA-256. This adapter never created the file,
+   * so every failure reports `not_obtained` and cleanup is never attempted.
+   */
+  async resolveRetainedFile(
+    name: string,
+    expectedSha256Hex?: string,
+  ): Promise<GeminiFile> {
+    let file: GeminiFile;
+    try {
+      file = await this.getFile({
+        name,
+        config: { httpOptions: { timeout: FILE_REQUEST_TIMEOUT_MS } },
+      });
+    } catch {
+      throw new GeminiFileError(
+        "The retained Gemini file could not be fetched; it may have expired.",
+        name,
+        "not_obtained",
+      );
+    }
+    const resolvedName = safeRemoteFileName(file.name);
+    if (!resolvedName || resolvedName !== name) {
+      throw new GeminiFileError(
+        "The retained Gemini file lookup returned a different file identity.",
+        name,
+        "not_obtained",
+      );
+    }
+    requireString(file.uri, "Gemini file URI");
+    if (String(file.state) !== "ACTIVE") {
+      throw new GeminiFileError(
+        `The retained Gemini file is not analyzable (state: ${String(file.state)}).`,
+        name,
+        "not_obtained",
+      );
+    }
+    const remoteSha256 = (file as { sha256Hash?: unknown }).sha256Hash;
+    if (expectedSha256Hex && typeof remoteSha256 === "string" && remoteSha256) {
+      const expectedBase64 = Buffer.from(expectedSha256Hex, "hex").toString("base64");
+      if (remoteSha256 !== expectedBase64 && remoteSha256 !== expectedSha256Hex) {
+        throw new GeminiFileError(
+          "The retained Gemini file does not match the local recording digest.",
+          name,
+          "not_obtained",
+        );
+      }
+    }
+    return file;
   }
 
   async index(
@@ -484,10 +549,24 @@ export class GeminiVideoAnalyzer {
     parameters: GenerateContentParameters,
     phase: "index" | "detail" | "transcribe",
   ): Promise<Pick<GenerateContentResponse, "text">> {
-    try {
-      return await this.generateContent(parameters);
-    } catch {
-      throw new GeminiFileError(`Gemini ${phase} generation failed.`);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.generateContent(parameters);
+      } catch (error) {
+        if (
+          attempt < GENERATION_TRANSPORT_RETRIES
+          && isRetryableTransportError(error)
+        ) {
+          await this.sleep(GENERATION_RETRY_BASE_MS * (attempt + 1));
+          continue;
+        }
+        // A detail-generation failure is candidate-scoped: the orchestrator
+        // isolates it and continues, instead of aborting the whole run.
+        if (phase === "detail") {
+          throw new CandidateAnalysisError({ code: "generation_failed", attempts: 1 });
+        }
+        throw new GeminiFileError(`Gemini ${phase} generation failed.`);
+      }
     }
   }
 
@@ -502,10 +581,18 @@ export class GeminiVideoAnalyzer {
       return parseGeminiJson(response.text, schema, label);
     } catch (error) {
       if (!(error instanceof GeminiResponseValidationError)) throw error;
-      const repaired = await this.generate(
-        withValidationRepairInstruction(parameters, error),
-        phase,
-      );
+      let repaired: Pick<GenerateContentResponse, "text">;
+      try {
+        repaired = await this.generate(
+          withValidationRepairInstruction(parameters, error),
+          phase,
+        );
+      } catch (generationError) {
+        if (generationError instanceof CandidateAnalysisError) {
+          throw generationError.withAttempts(2);
+        }
+        throw generationError;
+      }
       try {
         return parseGeminiJson(repaired.text, schema, label);
       } catch (repairError) {

@@ -321,9 +321,15 @@ frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|non
 | `--no-screenshots` | run without ffmpeg screenshots |
 | `--no-derived-transcript` | skip transcribing the recording's own audio |
 | `--keep-upload` | retain Gemini upload until provider expiration |
+| `--remote-file <name>` | reuse a retained Gemini upload (`files/...`) of the same recording |
 | `-o, --output <path>` | override private application-data root |
 
-Avoid `--keep-upload` during normal operation.
+Avoid `--keep-upload` during normal operation. Its intended use is iterating on
+the same long recording: a `--keep-upload` run prints the retained file name,
+and a follow-up run with `--remote-file <name>` plus the same `--video` skips
+the re-upload. The reused file is verified against the local recording's
+SHA-256 and is never deleted by the reusing run; it expires on the provider's
+schedule (about 48 hours).
 
 ## Launch the local Studio preview
 
