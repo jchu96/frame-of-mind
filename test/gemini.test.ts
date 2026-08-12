@@ -1369,19 +1369,42 @@ describe("Gemini generation transport handling", () => {
 
 describe("retained Gemini file reuse", () => {
   const localSha256Hex = "ab".repeat(32);
-  const matchingSha256Base64 = Buffer.from(localSha256Hex, "hex").toString("base64");
+  // Live Files API responses base64-encode the lowercase HEX STRING of the
+  // digest (verified 2026-08-11), not the raw digest bytes.
+  const liveSha256Hash = Buffer.from(localSha256Hex, "utf8").toString("base64");
   const retainedFile: GeminiFile = {
     ...activeFile,
-    sha256Hash: matchingSha256Base64,
+    sha256Hash: liveSha256Hash,
   };
 
-  it("resolves an ACTIVE retained file that matches the local digest", async () => {
+  it("resolves an ACTIVE retained file whose live-format digest matches", async () => {
     const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
       getFile: async () => retainedFile,
     });
 
     await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
       .resolves.toMatchObject({ name: "files/public-test", uri: activeFile.uri });
+  });
+
+  it("resolves when the provider reports the documented raw-bytes base64 digest", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => ({
+        ...activeFile,
+        sha256Hash: Buffer.from(localSha256Hex, "hex").toString("base64"),
+      }),
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+      .resolves.toMatchObject({ name: "files/public-test" });
+  });
+
+  it("resolves when the provider reports a plain hex digest", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => ({ ...activeFile, sha256Hash: localSha256Hex }),
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+      .resolves.toMatchObject({ name: "files/public-test" });
   });
 
   it("resolves when the provider omits a digest to compare", async () => {
