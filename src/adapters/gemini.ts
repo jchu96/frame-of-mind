@@ -50,7 +50,7 @@ const genericEvidenceExample = [
   "Observed state: a control is visibly disabled. This is direct evidence.",
   "Inference: validation may be blocking the action. This is not a fact unless the clip or transcript establishes it, so label it Inference and state the observed basis.",
 ].join("\n");
-export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.7-flash";
 const FILE_PROCESSING_LIMIT_MS = 30 * 60_000;
 const MODEL_REQUEST_TIMEOUT_MS = 10 * 60_000;
 const FILE_REQUEST_TIMEOUT_MS = 30_000;
