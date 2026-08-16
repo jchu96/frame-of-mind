@@ -1,0 +1,2 @@
+root:build:cd "/Users/jeremychu/repos/frame-of-mind" && npm run build
+root:tsc:cd "/Users/jeremychu/repos/frame-of-mind" && npx tsc --noEmit
