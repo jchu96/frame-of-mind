@@ -24,6 +24,7 @@ bun-error.log
 !.agents/skills/gemini-interactions-api/**
 skills-lock.json
 .claude/skills/
+.claude/tsc-cache/
 apps/web/wrangler.jsonc
 
 # Local credentials, downloads, and generated analyses
