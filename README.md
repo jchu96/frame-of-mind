@@ -148,7 +148,7 @@ The durable source of truth is local:
 - A local MP4/MOV/M4V/WebM screen recording within the Files API 2 GB limit
 
 The pipeline uses the official `@google/genai` `2.13.0` Files API and
-defaults to `gemini-3.6-flash`. `gemini-pro-latest` is accepted for in-depth
+defaults to `gemini-3.7-flash`. `gemini-pro-latest` is accepted for in-depth
 runs but is a mutable alias, so it is less reproducible than a pinned model.
 
 ## Install
