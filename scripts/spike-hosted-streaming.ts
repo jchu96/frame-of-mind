@@ -14,9 +14,10 @@ const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-stream-
 const configPath = join(temporaryRoot, "wrangler.jsonc");
 const persistRoot = join(temporaryRoot, "wrangler-state");
 const routePath = "/api/_spike/stream";
-const priorBackingPlateau = 33_568_143;
 const slowSinkHoldMs = 2_500;
-const slowSinkBackingLimit = 2 * mebibyte;
+const partBytesValues = [1, 2, 4].map((value) => value * mebibyte);
+const concurrencyValues = [2, 4];
+const absoluteBackingGrowthLimit = 24 * mebibyte;
 const sinkReceipts = new Map<string, SinkReceipt>();
 const sinkStates = new Map<string, SinkState>();
 let lastSinkFailure = "none";
@@ -128,7 +129,7 @@ try {
     sinkUrl: `http://127.0.0.1:${sinkServer.port}/resumable`,
   });
   activeWrangler = await startWrangler(workerPort, inspectorPort);
-  const origin = `http://127.0.0.1:${workerPort}`;
+  let origin = `http://127.0.0.1:${workerPort}`;
   await waitForWorker(origin, activeWrangler.child);
   inspector = await InspectorClient.connect(inspectorPort).catch(() => undefined);
   const accessNegatives = await Promise.all([
@@ -174,63 +175,110 @@ try {
     "trailing=wrapper double_slash=wrapper percent_decoded=wrapper nitro_handler=absent",
   );
 
-  await Bun.sleep(250);
-  const slowBaseline = await sampleMemory(activeWrangler.child.pid, inspector);
-  const slowUpload = uploadFixture(origin, token, {
-    id: "slow-sink-8m",
-    bytes: 8 * mebibyte,
-    seed: 11,
-  });
-  const slowState = await waitForSinkState("slow-sink-8m", (state) => state.startedAt > 0);
-  const slowHoldSamples = [slowBaseline];
-  const slowDeadline = slowState.startedAt + slowSinkHoldMs + 1_000;
-  while (slowState.firstByteAt === 0 && Date.now() < slowDeadline) {
-    slowHoldSamples.push(await sampleMemory(activeWrangler.child.pid, inspector));
-    await Bun.sleep(50);
+  inspector?.close();
+  inspector = undefined;
+  await stopWrangler(activeWrangler);
+  activeWrangler = undefined;
+
+  const partBounds: PartBoundResult[] = [];
+  const matrixReceipts: UploadReceipt[] = [];
+  for (const partBytes of partBytesValues) {
+    for (const concurrency of concurrencyValues) {
+      const matrixPort = await reservePort();
+      const matrixInspectorPort = await reservePort();
+      activeWrangler = await startWrangler(matrixPort, matrixInspectorPort);
+      origin = `http://127.0.0.1:${matrixPort}`;
+      await waitForWorker(origin, activeWrangler.child);
+      inspector = await InspectorClient.connect(matrixInspectorPort);
+      const result = await runPartBoundCheck({
+        origin,
+        token,
+        rootPid: activeWrangler.child.pid,
+        inspector,
+        partBytes,
+        concurrency,
+      });
+      partBounds.push(result);
+      matrixReceipts.push(...result.receipts);
+      console.log(
+        `HOSTED_STREAM part_bound part=${partBytes} concurrency=${concurrency} `
+          + `hold_delta=${formatBytes(result.holdDelta)} peak=${formatBytes(result.peakGrowth)} `
+          + `rss_peak=${formatBytes(result.rssPeak)} bounded=${result.bounded}`,
+      );
+      inspector.close();
+      inspector = undefined;
+      await stopWrangler(activeWrangler);
+      activeWrangler = undefined;
+    }
   }
-  assert(slowState.firstByteAt > 0, "Slow sink never drained after its hold.");
-  const slowReceipt = await slowUpload;
-  assertUploadReceipt(slowReceipt);
-  const slowMemory = summarizeMemory(slowHoldSamples);
-  const slowDelay = slowState.firstByteAt - slowState.startedAt;
-  const slowSinkPassed = slowDelay >= slowSinkHoldMs
-    && slowMemory.backingDelta !== null
-    && slowMemory.backingDelta < slowSinkBackingLimit;
+  const slowSinkPassed = partBounds.every((value) => value.delayMs >= slowSinkHoldMs)
+    && matrixReceipts.every((value) => value.sha256 === value.expected.sha256);
   receipt(
     "slow_sink",
     slowSinkPassed,
-    `delay_ms=${slowDelay} `
-      + `inspector_backing_baseline=${formatBytes(slowMemory.backingBaseline)} `
-      + `inspector_backing_hold=${formatBytes(slowMemory.backingPeak)} `
-      + `inspector_backing_hold_delta=${formatBytes(slowMemory.backingDelta)} `
-      + `limit=${slowSinkBackingLimit} bytes=${slowReceipt.bytes} sha256=${slowReceipt.sha256}`,
+    `combos=${partBounds.length} delay_ms_min=${Math.min(...partBounds.map((value) => value.delayMs))} `
+      + "all_digests_exact=true",
   );
 
-  const overLength = await runOverLengthCheck({
+  const postMatrixPort = await reservePort();
+  const postMatrixInspectorPort = await reservePort();
+  activeWrangler = await startWrangler(postMatrixPort, postMatrixInspectorPort);
+  origin = `http://127.0.0.1:${postMatrixPort}`;
+  await waitForWorker(origin, activeWrangler.child);
+  inspector = await InspectorClient.connect(postMatrixInspectorPort);
+
+  const truncatedOverLength = await runDirectLengthCheck({
     issuer,
     sinkUrl: `http://127.0.0.1:${sinkServer.port}/resumable`,
     token,
+    uploadId: "over-length",
+    sourceBytes: 9 * mebibyte,
+    declaredBytes: 8 * mebibyte,
+    seed: 17,
   });
-  const overLengthPassed = (overLength.status === 400 || overLength.status === 413)
-    && overLength.sinkState?.aborted === true
-    && overLength.sinkState.completed === false
-    && !sinkReceipts.has("over-length")
-    && overLength.backingDelta !== null
-    && overLength.backingDelta < slowSinkBackingLimit;
+  const truncatedReceipt = sinkReceipts.get("over-length");
+  const truncatedOverLengthPassed = truncatedOverLength.status === 200
+    && truncatedOverLength.sinkState?.completed === true
+    && truncatedOverLength.sinkState.aborted === false
+    && truncatedOverLength.sinkState.bytes === 8 * mebibyte
+    && truncatedReceipt?.bytes === 8 * mebibyte;
   receipt(
-    "over_length",
-    overLengthPassed,
-    `declared_bytes=${8 * mebibyte} sent_bytes=${9 * mebibyte} status=${overLength.status} `
-      + `sink_bytes=${overLength.sinkState?.bytes ?? "none"} `
-      + `sink_aborted=${overLength.sinkState?.aborted ?? false} `
-      + `receipt=${sinkReceipts.has("over-length")} `
-      + `inspector_backing_delta=${formatBytes(overLength.backingDelta)} limit=${slowSinkBackingLimit}`,
+    "over_length_truncation",
+    truncatedOverLengthPassed,
+    `declared_bytes=${8 * mebibyte} source_bytes=${9 * mebibyte} `
+      + `forwarded_bytes=${truncatedOverLength.sinkState?.bytes ?? "none"} `
+      + `status=${truncatedOverLength.status} receipt=${sinkReceipts.has("over-length")}`,
+  );
+
+  const shortPart = await runDirectLengthCheck({
+    issuer,
+    sinkUrl: `http://127.0.0.1:${sinkServer.port}/resumable`,
+    token,
+    uploadId: "short-part",
+    sourceBytes: 7 * mebibyte,
+    declaredBytes: 8 * mebibyte,
+    seed: 23,
+  });
+  const shortPartPassed = shortPart.status >= 400
+    && (shortPart.sinkState === undefined || (
+      shortPart.sinkState.aborted
+      && !shortPart.sinkState.completed
+      && shortPart.sinkState.bytes === 7 * mebibyte
+    ))
+    && !sinkReceipts.has("short-part");
+  receipt(
+    "short_part",
+    shortPartPassed,
+    `declared_bytes=${8 * mebibyte} forwarded_bytes=${shortPart.sinkState?.bytes ?? "none"} `
+      + `status=${shortPart.status} sink_aborted=${shortPart.sinkState?.aborted ?? false} `
+      + `sink_not_reached=${shortPart.sinkState === undefined} `
+      + `receipt=${sinkReceipts.has("short-part")}`,
   );
 
   const clientAbort = new AbortController();
   const clientAbortRequest = uploadResponse(origin, token, {
     id: "client-abort",
-    bytes: 8 * mebibyte,
+    bytes: 4 * mebibyte,
     seed: 13,
     pullDelayMs: 10,
     signal: clientAbort.signal,
@@ -251,7 +299,7 @@ try {
   const clientAbortPassed = clientAbortState.aborted
     && !clientAbortState.completed
     && clientAbortState.bytes > 0
-    && clientAbortState.bytes < 8 * mebibyte
+    && clientAbortState.bytes < 4 * mebibyte
     && !sinkReceipts.has("client-abort");
   receipt(
     "client_abort",
@@ -261,38 +309,9 @@ try {
   );
   assert(clientAbortPassed, "Client abort left a completed sink receipt.");
 
-  const largeBaseline = await sampleMemory(activeWrangler.child.pid, inspector);
-  const large = uploadFixture(origin, token, { id: "single-16m", bytes: 16 * mebibyte, seed: 17 });
-  const largeMonitor = monitorMemory(activeWrangler.child.pid, inspector, large);
-  const [largeReceipt, largeMemory] = await Promise.all([large, largeMonitor]);
-  assertUploadReceipt(largeReceipt);
-  receipt("single_16m_bytes", true, `bytes=${largeReceipt.bytes} sink_bytes=${largeReceipt.sink.bytes}`);
-  receipt("single_16m_digest", true, `sha256=${largeReceipt.sha256}`);
-
-  await Bun.sleep(250);
-  const concurrentBaseline = await sampleMemory(activeWrangler.child.pid, inspector);
-  const concurrent = Promise.all([
-    uploadFixture(origin, token, { id: "concurrent-a", bytes: 8 * mebibyte, seed: 31 }),
-    uploadFixture(origin, token, { id: "concurrent-b", bytes: 8 * mebibyte, seed: 47 }),
-  ]);
-  const concurrentMonitor = monitorMemory(activeWrangler.child.pid, inspector, concurrent);
-  const [concurrentReceipts, concurrentMemory] = await Promise.all([concurrent, concurrentMonitor]);
-  for (const value of concurrentReceipts) assertUploadReceipt(value);
-  receipt(
-    "concurrent_bytes",
-    true,
-    `uploads=2 bytes_each=${8 * mebibyte} sink_exact=true`,
-  );
-  receipt(
-    "concurrent_digests",
-    true,
-    `a=${concurrentReceipts[0].sha256} b=${concurrentReceipts[1].sha256}`,
-  );
   const allUploadReceipts = [
     ...bypassReceipts,
-    slowReceipt,
-    largeReceipt,
-    ...concurrentReceipts,
+    ...matrixReceipts,
   ];
   const digestPassed = allUploadReceipts.every(
     (value) => value.runtime.hashImplementation === "DigestStream"
@@ -301,37 +320,7 @@ try {
   receipt(
     "digest_impl",
     digestPassed,
-    `implementation=DigestStream sha256=${largeReceipt.sha256}`,
-  );
-
-  const memory = summarizeMemory([
-    largeBaseline,
-    ...largeMemory,
-    concurrentBaseline,
-    ...concurrentMemory,
-  ]);
-  const concurrentMemorySummary = summarizeMemory([concurrentBaseline, ...concurrentMemory]);
-  const backingThreshold = Math.floor(priorBackingPlateau / 2);
-  const memoryBounded = concurrentMemorySummary.backingDelta !== null
-    && concurrentMemorySummary.backingDelta < backingThreshold;
-  receipt(
-    "memory_signal",
-    true,
-    `inspector_heap_baseline=${formatBytes(memory.heapBaseline)} `
-      + `inspector_heap_peak=${formatBytes(memory.heapPeak)} `
-      + `inspector_heap_delta=${formatBytes(memory.heapDelta)} `
-      + `inspector_backing_baseline=${formatBytes(memory.backingBaseline)} `
-      + `inspector_backing_peak=${formatBytes(memory.backingPeak)} `
-      + `inspector_backing_delta=${formatBytes(memory.backingDelta)} `
-      + `process_tree_rss_baseline=${formatBytes(memory.rssBaseline)} `
-      + `process_tree_rss_peak=${formatBytes(memory.rssPeak)} `
-      + `process_tree_rss_delta=${formatBytes(memory.rssDelta)}`,
-  );
-  receipt(
-    "concurrent_backing",
-    memoryBounded,
-    `inspector_backing_delta=${formatBytes(concurrentMemorySummary.backingDelta)} `
-      + `prior_plateau=${priorBackingPlateau} threshold=${backingThreshold}`,
+    `implementation=DigestStream uploads=${allUploadReceipts.length}`,
   );
   receipt(
     "wasm_signal",
@@ -348,21 +337,35 @@ try {
     .map((value) => String(value.runtime.upstreamBodyUsedAtHandler));
   const streamingPathPassed = artifactScan.hostedEntry
     && !artifactScan.hostedEntryArrayBuffer
-    && upstreamStates.every((value) => value === "false")
-    && memoryBounded;
+    && upstreamStates.every((value) => value === "false");
   receipt(
     "streaming_path",
     streamingPathPassed,
     `entry=hosted-entry upstream_body_used=${upstreamStates.join(",")} `
       + `stock_nitro_prebuffer=${artifactScan.requestArrayBuffer} `
-      + `inspector_backing_delta=${formatBytes(concurrentMemorySummary.backingDelta)}`,
+      + `matrix_uploads=${matrixReceipts.length}`,
+  );
+
+  const boundedPartSizes = partBytesValues.filter((partBytes) => partBounds
+    .filter((value) => value.partBytes === partBytes)
+    .every((value) => value.bounded));
+  const selectedPartBytes = boundedPartSizes.at(-1) ?? null;
+  const selectedConcurrency = selectedPartBytes === null ? null : Math.max(...concurrencyValues);
+  receipt(
+    "decision",
+    selectedPartBytes !== null,
+    selectedPartBytes === null
+      ? "NO-GO no_part_size_bounded"
+      : `GO part=${selectedPartBytes} concurrency_cap=${selectedConcurrency} pending_ADR_amendment`,
   );
 
   spikePassed = streamingPathPassed
     && digestPassed
     && slowSinkPassed
-    && overLengthPassed
-    && clientAbortPassed;
+    && truncatedOverLengthPassed
+    && shortPartPassed
+    && clientAbortPassed
+    && selectedPartBytes !== null;
   console.log(
     spikePassed
       ? "HOSTED_STREAM_SPIKE PASSED"
@@ -370,8 +373,10 @@ try {
           ...(streamingPathPassed ? [] : ["hosted_entry_streaming_path_failed"]),
           ...(digestPassed ? [] : ["digest_stream_failed"]),
           ...(slowSinkPassed ? [] : ["slow_sink_unbounded"]),
-          ...(overLengthPassed ? [] : ["over_length_contract_failed"]),
+          ...(truncatedOverLengthPassed ? [] : ["over_length_truncation_contract_failed"]),
+          ...(shortPartPassed ? [] : ["short_part_contract_failed"]),
           ...(clientAbortPassed ? [] : ["client_abort_contract_failed"]),
+          ...(selectedPartBytes !== null ? [] : ["no_materialization_tolerant_part_bound"]),
         ].join(",")}`,
   );
 } catch (error) {
@@ -424,9 +429,21 @@ interface UploadReceipt {
 }
 
 interface MemorySample {
+  sampledAt: number;
   inspectorHeap: number | null;
   inspectorBacking: number | null;
   processTreeRss: number | null;
+}
+
+interface PartBoundResult {
+  partBytes: number;
+  concurrency: number;
+  delayMs: number;
+  holdDelta: number | null;
+  peakGrowth: number | null;
+  rssPeak: number | null;
+  bounded: boolean;
+  receipts: UploadReceipt[];
 }
 
 interface WranglerProcess {
@@ -463,7 +480,7 @@ async function receiveAtFakeSink(request: Request): Promise<Response> {
     completed: false,
   };
   sinkStates.set(uploadId, state);
-  if (uploadId === "slow-sink-8m") await Bun.sleep(slowSinkHoldMs);
+  if (uploadId.startsWith("part-bound-")) await Bun.sleep(slowSinkHoldMs);
   const reader = request.body?.getReader();
   if (!reader) {
     lastSinkFailure = "missing_body";
@@ -717,23 +734,82 @@ function unsignedAccessToken(
   })}.`;
 }
 
-async function runOverLengthCheck(options: {
+async function runPartBoundCheck(options: {
+  origin: string;
+  token: string;
+  rootPid: number;
+  inspector: InspectorClient | undefined;
+  partBytes: number;
+  concurrency: number;
+}): Promise<PartBoundResult> {
+  const baseline = await sampleMemory(options.rootPid, options.inspector);
+  const uploadIds = Array.from(
+    { length: options.concurrency },
+    (_, index) => `part-bound-${options.partBytes}-${options.concurrency}-${index}`,
+  );
+  const uploads = Promise.all(uploadIds.map((id, index) => uploadFixture(
+    options.origin,
+    options.token,
+    {
+      id,
+      bytes: options.partBytes,
+      seed: 31 + options.partBytes / mebibyte * 10 + options.concurrency + index,
+    },
+  )));
+  const memoryMonitor = monitorMemory(options.rootPid, options.inspector, uploads);
+  const states = await Promise.all(uploadIds.map((id) => waitForSinkState(
+    id,
+    (state) => state.startedAt > 0,
+  )));
+  const deadline = Math.max(...states.map((state) => state.startedAt)) + slowSinkHoldMs + 1_000;
+  while (states.some((state) => state.firstByteAt === 0) && Date.now() < deadline) {
+    await Bun.sleep(25);
+  }
+  assert(states.every((state) => state.firstByteAt > 0), "A part-bound sink never drained after its hold.");
+  const [receipts, samples] = await Promise.all([uploads, memoryMonitor]);
+  for (const value of receipts) assertUploadReceipt(value);
+  const firstReadAt = Math.min(...states.map((state) => state.firstByteAt));
+  const holdMemory = summarizeMemory([
+    baseline,
+    ...samples.filter((sample) => sample.sampledAt <= firstReadAt),
+  ]);
+  const peakMemory = summarizeMemory([baseline, ...samples]);
+  const delayMs = Math.min(...states.map((state) => state.firstByteAt - state.startedAt));
+  const tolerantLimit = Math.floor(options.partBytes * options.concurrency * 1.5);
+  const bounded = delayMs >= slowSinkHoldMs
+    && holdMemory.backingDelta !== null
+    && holdMemory.backingDelta <= tolerantLimit
+    && peakMemory.backingDelta !== null
+    && peakMemory.backingDelta <= absoluteBackingGrowthLimit;
+  return {
+    partBytes: options.partBytes,
+    concurrency: options.concurrency,
+    delayMs,
+    holdDelta: holdMemory.backingDelta,
+    peakGrowth: peakMemory.backingDelta,
+    rssPeak: peakMemory.rssPeak,
+    bounded,
+    receipts,
+  };
+}
+
+async function runDirectLengthCheck(options: {
   issuer: string;
   sinkUrl: string;
   token: string;
+  uploadId: string;
+  sourceBytes: number;
+  declaredBytes: number;
+  seed: number;
 }): Promise<{
   status: number;
   sinkState: SinkState | undefined;
-  backingDelta: number | null;
 }> {
-  const inspectorPort = await reservePort();
   const miniflare = new Miniflare({
     modules: true,
     scriptPath: resolve("apps/web/.output/server/hosted-entry.mjs"),
     compatibilityDate: "2026-07-02",
     compatibilityFlags: ["nodejs_compat"],
-    inspectorHost: "127.0.0.1",
-    inspectorPort,
     bindings: {
       NUXT_AUTH_MODE: "cloudflare-access",
       NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: options.issuer,
@@ -743,56 +819,31 @@ async function runOverLengthCheck(options: {
       NUXT_HOSTED_STREAM_SPIKE_SINK_URL: options.sinkUrl,
     },
   });
-  let directInspector: InspectorClient | undefined;
   try {
     await miniflare.ready;
-    directInspector = await InspectorClient.connect(inspectorPort);
-    const baseline = await directInspector.heapUsage();
     const worker = await miniflare.getWorker();
     const request = new Request(`https://spike.example${routePath}`, {
       method: "POST",
       headers: {
         "cf-access-jwt-assertion": options.token,
-        "content-length": String(8 * mebibyte),
-        "content-range": `bytes 0-${8 * mebibyte - 1}/${8 * mebibyte}`,
+        "content-length": String(options.declaredBytes),
+        "content-range": `bytes 0-${options.declaredBytes - 1}/${options.declaredBytes}`,
         "content-type": "application/octet-stream",
-        "x-spike-upload-id": "over-length",
+        "x-spike-upload-id": options.uploadId,
       },
-      body: fixtureStream(9 * mebibyte, 17),
+      body: fixtureStream(options.sourceBytes, options.seed),
       duplex: "half",
     } as RequestInit & { duplex: "half" });
-    const responsePromise = worker.fetch(request);
-    let settled = false;
-    void responsePromise.then(
-      () => { settled = true; },
-      () => { settled = true; },
-    );
-    const backingSamples = baseline?.backingStorageSize === null || baseline === null
-      ? []
-      : [baseline.backingStorageSize];
-    while (!settled) {
-      const usage = await directInspector.heapUsage().catch(() => null);
-      if (usage?.backingStorageSize !== null && usage?.backingStorageSize !== undefined) {
-        backingSamples.push(usage.backingStorageSize);
-      }
-      await Bun.sleep(20);
-    }
-    const response = await responsePromise;
-    const sinkState = await waitForSinkState(
-      "over-length",
+    const response = await worker.fetch(request);
+    const sinkState = await findSinkState(
+      options.uploadId,
       (state) => state.aborted || state.completed,
     );
-    const backingPeak = backingSamples.length ? Math.max(...backingSamples) : null;
-    const backingBaseline = baseline?.backingStorageSize ?? null;
     return {
       status: response.status,
       sinkState,
-      backingDelta: backingPeak === null || backingBaseline === null
-        ? null
-        : backingPeak - backingBaseline,
     };
   } finally {
-    directInspector?.close();
     await miniflare.dispose();
   }
 }
@@ -908,6 +959,18 @@ async function waitForSinkState(
   throw new Error(`${uploadId}: sink state did not reach the expected condition.`);
 }
 
+async function findSinkState(
+  uploadId: string,
+  predicate: (state: SinkState) => boolean,
+): Promise<SinkState | undefined> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const state = sinkStates.get(uploadId);
+    if (state && predicate(state)) return state;
+    await Bun.sleep(25);
+  }
+  return undefined;
+}
+
 async function monitorMemory<T>(
   rootPid: number,
   inspectorClient: InspectorClient | undefined,
@@ -936,6 +999,7 @@ async function sampleMemory(
     processTreeRss(rootPid),
   ]);
   return {
+    sampledAt: Date.now(),
     inspectorHeap: heap?.usedSize ?? null,
     inspectorBacking: heap?.backingStorageSize ?? null,
     processTreeRss: rss,

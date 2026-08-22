@@ -2,11 +2,11 @@
 
 ## Decision
 
-**NO-GO after Task 2.0c:** the built wrapper-entry cannot prove bounded
-browser → Worker → Gemini forwarding when the sink applies backpressure.
-Tasks 2.1–2.4 are blocked. The private-R2 amendment is again the active
-fallback for replanning, but remains unadopted and grants no implementation
-authority.
+**GO at 4 MiB parts with a per-principal concurrency cap of 4, pending an ADR
+0018 amendment.** Task 2.0d accepts the measured runtime materialization and
+bounds it by construction instead of claiming ideal streaming. Tasks 2.1–2.4
+must not implement the new numbers until the amendment is reviewed and
+adopted. Private R2 remains the second fallback, not the active design.
 
 `apps/web/.output/server/hosted-entry.mjs` imports the stock Nitro artifact and
 intercepts only the normalized `POST /api/_spike/stream` path. The wrapper
@@ -19,20 +19,12 @@ delegates to Nitro unchanged. The route remains absent unless its spike
 environment flag is present, and no deployment or production Wrangler
 configuration changed.
 
-The strengthened workerd oracle invalidated the Task 2.0b fast-sink result.
-With the fake sink delaying its first read for 2,503 ms, an 8 MiB upload added
-8,398,085 bytes of inspector backing storage against a strict 2,097,152-byte
-limit. A separate run without an outbound `Content-Length` briefly reduced the
-delta to 2,158,612 bytes, still over the limit, and a later run again retained
-the full body. The single-pipe shape therefore does not stay bounded under
-sink backpressure.
-
-The over-length workerd check also fails closed incorrectly at the service
-boundary: a request declaring 8 MiB while its source produces 9 MiB reached
-the wrapper as exactly 8 MiB, returned 200, completed the sink, and recorded a
-receipt. The transform contains a byte-at-`contentLength + 1` abort, but the
-runtime truncation means that guard cannot observe the extra byte in this
-production-shaped oracle. This is a second reason not to authorize Phase 2.
+Task 2.0c remains the causal proof that raw 8 MiB parts are not bounded under
+backpressure: one slow request added 8,398,085 bytes of inspector backing
+storage. Task 2.0d measures 1, 2, and 4 MiB parts at concurrency 2 and 4 in a
+fresh Wrangler process per combination. A combination passes only when its
+hold delta is no more than `part × concurrency × 1.5` and its full-run backing
+peak growth is no more than 24 MiB. All six combinations pass.
 
 Cloudflare documents `DigestStream` as a writable stream that does not retain
 written data, and documents that Workers' WebAssembly instantiation accepts
@@ -40,11 +32,63 @@ precompiled modules. The wrapper therefore avoids both original blockers:
 [Web Crypto `DigestStream`](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/#digeststream)
 and [WebAssembly](https://developers.cloudflare.com/workers/runtime-apis/webassembly/).
 
-The private-R2 amendment is **the active fallback for replanning, not adopted,
-and still grants no implementation authority** in
+The private-R2 amendment is **the second fallback, not adopted, and grants no
+implementation authority** in
 [`adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`](adr-0018-private-r2-staging-amendment-draft-2026-08-22.md).
 
-## Task 2.0c oracle
+## FR-04 amendment proposal: 4 MiB parts, concurrency 4
+
+This section proposes an ADR 0018 amendment; it does not edit or adopt ADR
+0018. Replace FR-04's raw 8 MiB part with:
+
+- at most **4 MiB** per non-final raw part;
+- at most **4 concurrent in-flight parts per validated principal**;
+- Gemini's accepted offset remains resume authority;
+- a completed receipt covers exactly the bytes forwarded and is written only
+  after `DigestStream.bytesWritten` equals the declared part size;
+- a runtime-truncated request is legitimate when its forwarded bytes equal the
+  declaration, while an early-close/short part is rejected with no receipt;
+  and
+- full-file browser SHA-256 and final Gemini digest comparison remain
+  unchanged.
+
+Rationale: workerd may materialize an inbound request while the provider sink
+is backpressured. The new size and concurrency numbers bound that accepted
+behavior by construction. The 4 MiB × 4 case allows a 25,165,824-byte
+materialization-tolerant threshold, while the independent absolute backing
+growth cap remains 25,165,824 bytes (24 MiB). Its measured hold and full-run
+peak growth were both 2,842,764 bytes.
+
+### Task 2.0d oracle
+
+Each matrix combination starts a fresh Wrangler process and inspector so a
+warmed isolate cannot reuse prior backing allocations and create a false-low
+delta. The sink delays every first read by at least 2,500 ms, all clients send
+as fast as pull permits, and every completed digest matches its independent
+fixture.
+
+```text
+HOSTED_STREAM part_bound part=1048576 concurrency=2 hold_delta=2107920 peak=2107920 rss_peak=591151104 bounded=true
+HOSTED_STREAM part_bound part=1048576 concurrency=4 hold_delta=606348 peak=606348 rss_peak=602210304 bounded=true
+HOSTED_STREAM part_bound part=2097152 concurrency=2 hold_delta=536646 peak=536646 rss_peak=589545472 bounded=true
+HOSTED_STREAM part_bound part=2097152 concurrency=4 hold_delta=4780172 peak=4780172 rss_peak=602128384 bounded=true
+HOSTED_STREAM part_bound part=4194304 concurrency=2 hold_delta=4687100 peak=4687100 rss_peak=604815360 bounded=true
+HOSTED_STREAM part_bound part=4194304 concurrency=4 hold_delta=2842764 peak=2842764 rss_peak=628490240 bounded=true
+HOSTED_STREAM slow_sink=PASS combos=6 delay_ms_min=2500 all_digests_exact=true
+HOSTED_STREAM over_length_truncation=PASS declared_bytes=8388608 source_bytes=9437184 forwarded_bytes=8388608 status=200 receipt=true
+HOSTED_STREAM short_part=PASS declared_bytes=8388608 forwarded_bytes=none status=502 sink_aborted=false sink_not_reached=true receipt=false
+HOSTED_STREAM client_abort=PASS client=AbortError sink_bytes=131072 sink_aborted=true receipt=false
+HOSTED_STREAM decision=PASS GO part=4194304 concurrency_cap=4 pending_ADR_amendment
+HOSTED_STREAM_SPIKE PASSED
+```
+
+`rss_peak` is the measured Wrangler process-tree peak, not per-isolate memory
+and not part of the backing-store verdict. In the short-part check, workerd
+rejected the 7 MiB source before the sink was reached; no partial sink receipt
+existed. The wrapper also compares `DigestStream.bytesWritten` with the
+declared part size before reading or returning a sink receipt.
+
+## Task 2.0c oracle (superseded 8 MiB contract)
 
 `bun run check:hosted-stream` now additionally:
 

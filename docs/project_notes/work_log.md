@@ -581,3 +581,15 @@
   active unadopted fallback. No deployment or production Wrangler change
   occurred. `bun run check:hosted-stream` intentionally exits nonzero until
   both blockers clear; the ordinary repository gate remains separate.
+- Completed Hosted Studio Task 2.0d and re-issued Task 2.0 as GO at 4 MiB
+  parts with at most four concurrent parts per principal, pending an ADR 0018
+  amendment. The oracle starts a fresh Wrangler process for every 1, 2, and
+  4 MiB × concurrency-two/four combination so allocator reuse cannot suppress
+  the delta. All six slow-sink combinations passed their
+  `part × concurrency × 1.5` hold bounds and the 24 MiB full-run backing cap;
+  4 MiB × 4 measured 2,842,764 bytes for hold and peak growth. Runtime
+  truncation now authorizes a receipt only for the exact forwarded bytes; an
+  early-close short part was rejected with no sink receipt, and partial client
+  abort still aborted the sink at 131,072 bytes with no receipt. Private R2 is
+  the second fallback. No ADR, deployment, or production Wrangler
+  configuration was changed. Validated by `bun run check:hosted-stream`.

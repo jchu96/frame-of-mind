@@ -38,8 +38,13 @@ fallback Nitro spike handler, normalized path variants, and expanded Access,
 abort, and length tests. The required slow-sink run still retained 8,398,085
 backing bytes for an 8 MiB request against a 2 MiB limit; the production-shaped
 over-length run returned 200 with a receipt because workerd exposed only the
-declared bytes. Task 2.0 is NO-GO and Tasks 2.1–2.4 are blocked. The private-R2
-amendment is the active unadopted fallback; ADR 0018 remains Proposed.
+declared bytes. Task 2.0d then accepted materialization and measured fresh
+processes across 1, 2, and 4 MiB parts at concurrency two and four. Every
+combination passed its relative hold bound and the 24 MiB absolute backing
+growth cap; the largest 4 MiB × 4 case measured 2,842,764 bytes. Task 2.0 is GO
+at 4 MiB with a per-principal concurrency cap of four, pending an ADR 0018
+amendment. Tasks 2.1–2.4 remain blocked until adoption. Private R2 is the
+second unadopted fallback; ADR 0018 remains Proposed.
 
 ## 2026-08-11 — Recipes become charters; the executor owns prompt policy
 
