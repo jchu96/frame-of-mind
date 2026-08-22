@@ -222,7 +222,7 @@ function technicalDuration(seconds: number): string {
         icon="i-lucide-check-circle"
         title="Analysis completed"
         description="Your results are ready to review."
-        :actions="detail.job.runId ? [{ label: 'Open completed run', to: `/runs/${encodeURIComponent(detail.job.runId)}` }] : []"
+        :actions="detail.job.runId ? [{ label: 'Open review workspace', to: `/review/${encodeURIComponent(detail.job.runId)}` }] : []"
       />
       <UAlert
         v-else-if="['failed', 'canceled', 'interrupted'].includes(detail.job.stage)"

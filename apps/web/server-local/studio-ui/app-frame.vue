@@ -54,6 +54,7 @@ const title = computed(() => {
   if (route.path === "/run") return "Run receipt";
   if (route.path === "/activity") return "Activity";
   if (route.path.startsWith("/activity/")) return "Job activity";
+  if (route.path.startsWith("/review/")) return "Review findings";
   if (route.path === "/connections") return "Connections";
   if (route.path === "/import") return "Import run";
   if (route.path.startsWith("/runs/")) return "Run detail";

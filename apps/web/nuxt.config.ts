@@ -115,6 +115,9 @@ const studioActivityPage = fileURLToPath(
 const studioActivityDetailPage = fileURLToPath(
   new URL("./server-local/studio-ui/activity-detail.vue", import.meta.url),
 );
+const studioReviewPage = fileURLToPath(
+  new URL("./server-local/studio-ui/review.vue", import.meta.url),
+);
 const studioSupportReceiptHandler = fileURLToPath(
   new URL("./server-local/studio-ui/support-receipt.get.ts", import.meta.url),
 );
@@ -181,6 +184,12 @@ const studioMediaAbortHandler = fileURLToPath(
 );
 const studioMediaCleanupRetryHandler = fileURLToPath(
   new URL("./server-local/studio-media/cleanup-retry.post.ts", import.meta.url),
+);
+const studioReviewMediaHandler = fileURLToPath(
+  new URL("./server-local/studio-media/review.get.ts", import.meta.url),
+);
+const studioReviewMediaStatusHandler = fileURLToPath(
+  new URL("./server-local/studio-media/review-status.get.ts", import.meta.url),
 );
 const studioContextCreateHandler = fileURLToPath(
   new URL("./server-local/studio-context/create.post.ts", import.meta.url),
@@ -285,6 +294,21 @@ const localHandlers = [
           route: "/api/studio/media/:id/cleanup-retry",
           method: "post",
           handler: studioMediaCleanupRetryHandler,
+        },
+        {
+          route: "/api/runs/:id/media",
+          method: "get",
+          handler: studioReviewMediaHandler,
+        },
+        {
+          route: "/api/runs/:id/media",
+          method: "head",
+          handler: studioReviewMediaHandler,
+        },
+        {
+          route: "/api/runs/:id/media-status",
+          method: "get",
+          handler: studioReviewMediaStatusHandler,
         },
         {
           route: "/api/context-files",
@@ -521,6 +545,11 @@ export default defineNuxtConfig({
           name: "activity-detail",
           path: "/activity/:id",
           file: studioActivityDetailPage,
+        });
+        pages.push({
+          name: "studio-review",
+          path: "/review/:runId",
+          file: studioReviewPage,
         });
       }
       if (hostedWorkflowsBuilt) {

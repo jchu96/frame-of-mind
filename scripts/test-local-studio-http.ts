@@ -4,9 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini-model";
-import { verifyImmutableJobInput } from "../src/domain/studio-schemas";
+import {
+  verifyImmutableJobInput,
+  type AnalysisJob,
+} from "../src/domain/studio-schemas";
+import { validateMediaSessionTransition } from "../src/domain/studio-state";
 import { LocalSqliteJobRepository } from "../apps/web/server-local/studio-jobs/sqlite-job-repository";
 import { publishedRunDirectory } from "../apps/web/server-local/studio-jobs/run-reimport";
+import { LocalMediaStagingAdapter } from "../apps/web/server-local/studio-media/local-media-staging";
 import { videoRunFixture } from "../apps/web/test/fixtures";
 
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
@@ -83,6 +88,13 @@ function createStudioProbe(origin: string) {
         redirect: "manual",
       });
     },
+    head(path: string, headers: Record<string, string> = {}) {
+      return fetch(`${origin}${path}`, {
+        method: "HEAD",
+        headers: { ...(cookie ? { cookie } : {}), ...headers },
+        redirect: "manual",
+      });
+    },
     mutate(
       path: string,
       method: "POST" | "PUT" | "DELETE",
@@ -145,60 +157,166 @@ if (await build.exited !== 0) {
 }
 
 const runFixture = await videoRunFixture();
+const retainedFixture = new Uint8Array(64);
+retainedFixture.set([0x00, 0x00, 0x00, 0x18], 0);
+retainedFixture.set(new TextEncoder().encode("ftypisom"), 4);
+for (let index = 12; index < retainedFixture.length; index += 1) {
+  retainedFixture[index] = index % 251;
+}
+const retainedDigest = createHash("sha256").update(retainedFixture).digest("hex");
+runFixture.manifest.recordingSha256 = retainedDigest;
+
+async function* mediaChunks(bytes: Uint8Array) {
+  yield bytes;
+}
+
+async function stageFixtureMedia(input: {
+  id: string;
+  idempotencyKey: string;
+  mode: "retained" | "ephemeral";
+  now?: Date;
+}) {
+  const adapter = new LocalMediaStagingAdapter({
+    rootDirectory: mediaRoot,
+    checkoutRoot: process.cwd(),
+    partSizeBytes: retainedFixture.byteLength,
+    minimumFreeBytes: 0,
+    createId: () => input.id,
+    ...(input.now ? { now: () => input.now! } : {}),
+  });
+  const session = await adapter.create({
+    idempotencyKey: input.idempotencyKey,
+    expectedBytes: retainedFixture.byteLength,
+    mimeType: "video/mp4",
+    retention: input.mode === "retained"
+      ? { mode: "retained", ttlSeconds: 60 * 60 }
+      : { mode: "ephemeral" },
+  });
+  await adapter.writePart(session.id, {
+    part: 0,
+    offset: 0,
+    contentLength: retainedFixture.byteLength,
+    bytes: mediaChunks(retainedFixture),
+  });
+  await adapter.seal(session.id, { expectedSha256: retainedDigest });
+  await adapter.transition(validateMediaSessionTransition({
+    id: session.id,
+    expected: "sealed",
+    next: "in_use",
+  }));
+  const retained = input.mode === "retained"
+    ? await adapter.transition(validateMediaSessionTransition({
+        id: session.id,
+        expected: "in_use",
+        next: "retained",
+      }))
+    : await adapter.deleteEphemeralExecutionLease(session.id, retainedDigest);
+  return retained;
+}
+
+const retainedMedia = await stageFixtureMedia({
+  id: "media_http_review_0001",
+  idempotencyKey: "studio-http-review-media-0001",
+  mode: "retained",
+});
+const expiredMedia = await stageFixtureMedia({
+  id: "media_http_expired_0001",
+  idempotencyKey: "studio-http-expired-media-0001",
+  mode: "retained",
+  now: new Date("2020-01-01T00:00:00.000Z"),
+});
+const cleanedMedia = await stageFixtureMedia({
+  id: "media_http_cleaned_0001",
+  idempotencyKey: "studio-http-cleaned-media-0001",
+  mode: "ephemeral",
+});
 const seedDatabase = new Database(databasePath);
 let seededSucceededJobId: string;
+let seededRunJob: AnalysisJob | undefined;
 try {
+  const seededJobIds = [
+    "job_http_reimport_0001",
+    "job_http_expired_0001",
+    "job_http_cleaned_0001",
+  ];
   const repository = new LocalSqliteJobRepository(seedDatabase, {
-    createId: () => "job_http_reimport_0001",
+    createId: () => seededJobIds.shift()!,
   });
   const baseTime = Date.now() + 2_000;
-  const createdAt = new Date(baseTime).toISOString();
-  const verifiedInput = await verifyImmutableJobInput({
-    mediaSessionId: "media_http_reimport_0001",
-    mediaSha256: runFixture.manifest.recordingSha256,
-    context: { mode: "none" },
-    recipe: {
-      id: runFixture.manifest.recipe.id,
-      custom: runFixture.manifest.recipe.custom,
-      revision: runFixture.manifest.recipe.revision,
-      sha256: runFixture.manifest.recipe.sha256,
+  const fixtures = [
+    {
+      idempotencyKey: "studio-http-reimport-job-0001",
+      media: retainedMedia,
+      runId: runFixture.manifest.runId,
+      projectionWarning: "Synthetic import warning.",
     },
-    model: runFixture.manifest.model,
-    retention: {
-      mode: "ephemeral",
-      expiresAt: new Date(baseTime + 24 * 60 * 60 * 1_000).toISOString(),
+    {
+      idempotencyKey: "studio-http-expired-job-0001",
+      media: expiredMedia,
+      runId: "run_http_expired_media_0001",
+      createdAt: "2020-01-01T00:10:00.000Z",
     },
-  });
-  const seeded = await repository.createOrReplay({
-    idempotencyKey: "studio-http-reimport-job-0001",
-    verifiedInput,
-    createdAt,
-  });
-  await repository.transition({
-    jobId: seeded.job.id,
-    expectedStage: "queued",
-    nextStage: "fetching_context",
-    occurredAt: new Date(baseTime + 1).toISOString(),
-    message: "Synthetic HTTP fixture claimed.",
-  });
-  await repository.transition({
-    jobId: seeded.job.id,
-    expectedStage: "fetching_context",
-    nextStage: "cleaning_up",
-    occurredAt: new Date(baseTime + 2).toISOString(),
-    message: "Synthetic HTTP fixture published.",
-  });
-  const succeeded = await repository.transition({
-    jobId: seeded.job.id,
-    expectedStage: "cleaning_up",
-    nextStage: "succeeded",
-    occurredAt: new Date(baseTime + 3).toISOString(),
-    message: "Synthetic HTTP fixture completed.",
-    runId: runFixture.manifest.runId,
-    projectionWarning: "Synthetic import warning.",
-  });
-  seededSucceededJobId = succeeded.id;
-  const runDirectory = publishedRunDirectory(succeeded, outputRoot);
+    {
+      idempotencyKey: "studio-http-cleaned-job-0001",
+      media: cleanedMedia,
+      runId: "run_http_cleaned_media_0001",
+    },
+  ];
+  let succeeded;
+  for (const [index, fixture] of fixtures.entries()) {
+    const fixtureTime = fixture.createdAt
+      ? Date.parse(fixture.createdAt)
+      : baseTime + index * 10;
+    const createdAt = new Date(fixtureTime).toISOString();
+    const seeded = await repository.createOrReplay({
+      idempotencyKey: fixture.idempotencyKey,
+      verifiedInput: await verifyImmutableJobInput({
+        mediaSessionId: fixture.media.id,
+        mediaSha256: retainedDigest,
+        context: { mode: "none" },
+        recipe: {
+          id: runFixture.manifest.recipe.id,
+          custom: runFixture.manifest.recipe.custom,
+          revision: runFixture.manifest.recipe.revision,
+          sha256: runFixture.manifest.recipe.sha256,
+        },
+        model: runFixture.manifest.model,
+        retention: fixture.media.retention,
+      }),
+      createdAt,
+    });
+    await repository.transition({
+      jobId: seeded.job.id,
+      expectedStage: "queued",
+      nextStage: "fetching_context",
+      occurredAt: new Date(fixtureTime + 1).toISOString(),
+      message: "Synthetic HTTP fixture claimed.",
+    });
+    await repository.transition({
+      jobId: seeded.job.id,
+      expectedStage: "fetching_context",
+      nextStage: "cleaning_up",
+      occurredAt: new Date(fixtureTime + 2).toISOString(),
+      message: "Synthetic HTTP fixture published.",
+    });
+    succeeded = await repository.transition({
+      jobId: seeded.job.id,
+      expectedStage: "cleaning_up",
+      nextStage: "succeeded",
+      occurredAt: new Date(fixtureTime + 3).toISOString(),
+      message: "Synthetic HTTP fixture completed.",
+      runId: fixture.runId,
+      ...(fixture.projectionWarning
+        ? { projectionWarning: fixture.projectionWarning }
+        : {}),
+    });
+    if (index === 0) {
+      seededSucceededJobId = succeeded.id;
+      seededRunJob = succeeded;
+    }
+  }
+  if (!seededRunJob) throw new Error("Synthetic HTTP run job was not created.");
+  const runDirectory = publishedRunDirectory(seededRunJob, outputRoot);
   await mkdir(runDirectory, { recursive: true });
   await Promise.all([
     writeFile(
@@ -292,6 +410,23 @@ try {
     await probe.get("/activity/job_01K123456789ABC"),
     401,
     "Activity detail page requires a session",
+  );
+  await expectStatus(
+    await probe.get(`/review/${encodeURIComponent(runFixture.manifest.runId)}`),
+    401,
+    "review workspace requires a session",
+  );
+  await expectStatus(
+    await probe.get(`/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media`, {
+      range: "bytes=0-3",
+    }),
+    401,
+    "retained media requires a session",
+  );
+  await expectStatus(
+    await probe.get(`/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media-status`),
+    401,
+    "retained media status requires a session",
   );
   await expectStatus(
     await probe.get("/api/studio/recipes"),
@@ -391,8 +526,8 @@ try {
   const jobsBody = await jobs.json() as { jobs?: Array<{ id?: string }> };
   if (
     !Array.isArray(jobsBody.jobs)
-    || jobsBody.jobs.length !== 1
-    || jobsBody.jobs[0]?.id !== seededSucceededJobId
+    || jobsBody.jobs.length !== 3
+    || !jobsBody.jobs.some((job) => job.id === seededSucceededJobId)
   ) {
     throw new Error("Fresh Studio job runtime did not preserve the terminal fixture.");
   }
@@ -439,8 +574,8 @@ try {
     !maintenance.plan?.generatedAt
     || !Array.isArray(maintenance.plan.actions)
     || maintenance.plan.actions.length !== 0
-    || maintenance.lastRun?.applied !== 0
-    || maintenance.lastRun.removed !== 0
+    || maintenance.lastRun?.applied !== 1
+    || maintenance.lastRun.removed !== 1
     || maintenance.lastRun.staleJobs !== 0
     || !Array.isArray(maintenance.lastRun.failures)
   ) {
@@ -468,6 +603,125 @@ try {
     await probe.get("/api/studio/session"),
     200,
     "session cookie authorizes Studio APIs",
+  );
+  const retainedMediaPath = `/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media`;
+  const retainedStatus = await expectStatus(
+    await probe.get(`/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media-status`),
+    200,
+    "retained media status reports availability without reading bytes",
+  );
+  if ((await retainedStatus.json() as { available?: boolean }).available !== true) {
+    throw new Error("Retained media status did not report the live receipt.");
+  }
+  const retainedRange = await expectStatus(
+    await probe.get(retainedMediaPath, { range: "bytes=4-11" }),
+    206,
+    "retained media serves one authenticated byte range",
+  );
+  if (
+    retainedRange.headers.get("content-range") !== "bytes 4-11/64"
+    || retainedRange.headers.get("content-length") !== "8"
+    || retainedRange.headers.get("content-type") !== "video/mp4"
+    || retainedRange.headers.get("content-disposition") !== "inline"
+    || retainedRange.headers.get("accept-ranges") !== "bytes"
+    || retainedRange.headers.get("cache-control") !== "no-store"
+    || retainedRange.headers.get("x-content-type-options") !== "nosniff"
+    || !Buffer.from(await retainedRange.arrayBuffer())
+      .equals(Buffer.from(retainedFixture.slice(4, 12)))
+  ) {
+    throw new Error("Retained media range response did not match its sealed receipt.");
+  }
+  const overlappingRanges = await Promise.all([
+    probe.get(retainedMediaPath, { range: "bytes=0-31" }),
+    probe.get(retainedMediaPath, { range: "bytes=16-47" }),
+  ]);
+  await Promise.all(overlappingRanges.map((response, index) => expectStatus(
+    response,
+    206,
+    `overlapping retained media range ${index + 1} streams concurrently`,
+  )));
+  const overlappingBodies = await Promise.all(overlappingRanges.map(
+    (response) => response.arrayBuffer(),
+  ));
+  if (
+    !Buffer.from(overlappingBodies[0]!)
+      .equals(Buffer.from(retainedFixture.slice(0, 32)))
+    || !Buffer.from(overlappingBodies[1]!)
+      .equals(Buffer.from(retainedFixture.slice(16, 48)))
+  ) {
+    throw new Error("Overlapping retained media ranges returned incorrect bytes.");
+  }
+  const retainedFull = await expectStatus(
+    await probe.get(retainedMediaPath),
+    200,
+    "retained media supports a full streaming GET",
+  );
+  if (
+    retainedFull.headers.get("content-length") !== "64"
+    || !Buffer.from(await retainedFull.arrayBuffer()).equals(Buffer.from(retainedFixture))
+  ) {
+    throw new Error("Retained media full response did not match its sealed bytes.");
+  }
+  for (const [range, label] of [
+    ["bytes=0-1,4-5", "multiple ranges"],
+    ["bytes=--1", "negative ranges"],
+    ["bytes=999999999999999999999-", "overflow ranges"],
+  ] as const) {
+    const rejected = await expectStatus(
+      await probe.get(retainedMediaPath, { range }),
+      416,
+      `retained media rejects ${label}`,
+    );
+    if (rejected.headers.get("content-range") !== "bytes */64") {
+      throw new Error(`Rejected ${label} omitted the authoritative size.`);
+    }
+  }
+  await expectStatus(
+    await probe.head(retainedMediaPath),
+    405,
+    "retained media rejects HEAD",
+  );
+  await expectStatus(
+    await probe.get(retainedMediaPath, {
+      range: "bytes=0-3",
+      "if-range": "synthetic-etag",
+    }),
+    400,
+    "retained media rejects If-Range",
+  );
+  await expectStatus(
+    await probe.get("/api/runs/run_http_unknown_media_0001/media", {
+      range: "bytes=0-3",
+    }),
+    404,
+    "unknown run media is not found",
+  );
+  await expectStatus(
+    await probe.get("/api/runs/..%5Cprivate/media", { range: "bytes=0-3" }),
+    404,
+    "path traversal in a run identifier is not found",
+  );
+  await expectStatus(
+    await probe.get("/api/runs/run_http_expired_media_0001/media", {
+      range: "bytes=0-3",
+    }),
+    404,
+    "expired retained media is not found",
+  );
+  const expiredStatus = await expectStatus(
+    await probe.get("/api/runs/run_http_expired_media_0001/media-status"),
+    200,
+    "expired retained media status remains a non-error read",
+  );
+  if ((await expiredStatus.json() as { available?: boolean }).available !== false) {
+    throw new Error("Expired retained media status claimed playback availability.");
+  }
+  await expectStatus(
+    await probe.get("/api/runs/run_http_cleaned_media_0001/media", {
+      range: "bytes=0-3",
+    }),
+    404,
+    "ephemeral cleaned media is not found",
   );
   const studioPage = await expectStatus(
     await probe.get("/"),
@@ -815,7 +1069,7 @@ try {
     200,
     "rejected composer inputs do not insert jobs",
   );
-  if ((await beforeCreate.json() as { jobs: unknown[] }).jobs.length !== 1) {
+  if ((await beforeCreate.json() as { jobs: unknown[] }).jobs.length !== 3) {
     throw new Error("Rejected composer input inserted a job.");
   }
 
@@ -832,7 +1086,7 @@ try {
     200,
     "unconfigured composer input does not insert a job",
   );
-  if ((await afterUnconfigured.json() as { jobs: unknown[] }).jobs.length !== 1) {
+  if ((await afterUnconfigured.json() as { jobs: unknown[] }).jobs.length !== 3) {
     throw new Error("Unconfigured composer input inserted a job.");
   }
 
@@ -970,6 +1224,19 @@ try {
     200,
     "re-import restores the review workspace result",
   );
+  const reviewPage = await expectStatus(
+    await probe.get(`/review/${encodeURIComponent(runFixture.manifest.runId)}`),
+    200,
+    "authenticated review workspace renders",
+  );
+  const reviewHtml = await reviewPage.text();
+  if (
+    !reviewHtml.includes('data-studio-review="local"')
+    || !reviewHtml.includes("Analysis records")
+    || !reviewHtml.includes("Candidate markers")
+  ) {
+    throw new Error("Authenticated review workspace omitted its local review shell.");
+  }
 
   const composerMediaCleanup = await probe.mutate(
     `/api/studio/media/${media.id}`,

@@ -31,6 +31,9 @@ export const localOnlyForbiddenMarkers = [
   "/api/studio/maintenance",
   "FRAME_OF_MIND_MAINTENANCE_INTERVAL_MS",
   "maintenance_stale_job",
+  "/api/runs/:id/media",
+  "/api/runs/:id/media-status",
+  "data-studio-review=\"local\"",
 ] as const;
 
 export const hostedWrapperMarker = "FRAME_OF_MIND_HOSTED_ENTRY_V1";

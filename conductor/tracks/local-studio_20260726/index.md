@@ -12,10 +12,9 @@
 ## Progress
 
 - Phases: 7/9 complete
-- Tasks: 41/51 complete
-- Current focus: Task 8.1, adding a local-session-protected opaque-ID
-  byte-range media route with traversal, expiry, content-type, and hostile-
-  request coverage.
+- Tasks: 43/51 complete
+- Current focus: Task 8.3, seeking retained playback from canonical evidence
+  timestamps and showing aligned transcript excerpts as literal text.
 
 ## Decision
 
