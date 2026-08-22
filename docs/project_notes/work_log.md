@@ -522,3 +522,11 @@
   repository now rejects canceled parents as well as the UI. Expanded the
   action-table cross product, added a preselected-provider browser check, and
   asserted the exact cancellation-request and canceled timeline rows.
+- Completed Hosted Studio Slice 1 identity and row ownership on 2026-08-22.
+  Access middleware now binds validated user `sub` or normalized service
+  identity once; D1 and SQLite projections use constructor-bound principals,
+  composite parent/child/registry keys, and fail-closed cross-owner run IDs.
+  Migration 0003 rejects any legacy row with the named operator guard and
+  proves zero sentinel rows on an empty D1. The built workerd contract signs
+  two same-email/different-sub JWTs and proves isolated list/detail/import,
+  service/missing-header denial, and hosted-creation darkness.

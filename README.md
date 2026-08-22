@@ -490,6 +490,11 @@ bun run build:web:cloudflare
   job/recipe/model/timing/version metadata only—never transcripts, recordings, findings, paths, filenames,
   meeting IDs, keys, bodies, query-bearing URLs, emails, or IP addresses. See
   [ADR 0017](docs/adr/0017-opt-in-sentry-telemetry.md).
+- Hosted review/import authorization is keyed by the validated Cloudflare
+  Access `sub`, never by display email. D1 and local SQLite use the same
+  principal-scoped `RunStore` contract; local mode binds the reserved
+  `local:single-user` principal. Service-token principals are denied on the
+  browser `/api/runs*` surface.
 
 Read [docs/RUNBOOK.md](docs/RUNBOOK.md) before processing sensitive meetings.
 
@@ -531,6 +536,7 @@ bun run test:web
 bun run test:e2e:smoke
 bun run build
 bun run build:web:cloudflare
+bun run test:hosted-access-http
 bun run check
 ```
 

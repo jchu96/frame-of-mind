@@ -1,20 +1,20 @@
 # Track: Hosted Studio - Team And Tenant Execution
 
 **ID:** `hosted-studio_20260822`
-**Status:** Proposed — pending adversarial plan review
+**Status:** Active — Slice 1 complete, Phase 2 stop/go next
 
 ## Documents
 
 - [Specification](./spec.md)
 - [Implementation Plan](./plan.md)
-- [Adversarial Plan Review R1](./review.md)
+- [Adversarial Plan Reviews R1 and R2](./review.md)
 
 ## Progress
 
-- Phases: 0/8 complete
-- Tasks: 0/33 complete
-- Current focus: revised plan review; Slice 1 principal-scopes the deployed
-  viewer before upload or Workflow implementation
+- Phases: 1/8 complete
+- Tasks: 3/33 complete
+- Current focus: Task 2.0 streaming stop/go. Slice 1 principal-scopes the
+  deployed viewer; hosted upload and Workflow creation remain dark.
 
 ## Decision
 

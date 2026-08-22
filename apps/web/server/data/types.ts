@@ -17,6 +17,15 @@ export interface RunStore {
   importRun(input: VersionedRunImport, actor?: string): Promise<{ runId: string; created: boolean }>;
 }
 
+export interface RunPrincipal {
+  principal: string;
+  email?: string;
+}
+
+export const LOCAL_SINGLE_USER_PRINCIPAL: RunPrincipal = {
+  principal: "local:single-user",
+};
+
 export class RunProjectionVersionConflictError extends Error {
   readonly code = "run_projection_version_conflict";
 
@@ -26,11 +35,30 @@ export class RunProjectionVersionConflictError extends Error {
   }
 }
 
-export function encodeRunCursor(row: RunSummaryRow): string {
-  return encodeURIComponent(JSON.stringify([row.completed_at, row.imported_at, row.run_id]));
+export class RunPrincipalConflictError extends Error {
+  readonly code = "run_principal_conflict";
+
+  constructor() {
+    super("Run ID is already owned by another principal.");
+    this.name = "RunPrincipalConflictError";
+  }
 }
 
-export function decodeRunCursor(value: string | undefined): [string, string, string] | undefined {
+// The cursor carries only pagination keys. The principal is never encoded:
+// every list query is already bound to the authenticated principal, so a
+// cursor pasted by another principal pages over that principal's own rows.
+// Encoding `sub` here would leak a durable identifier into URLs and logs.
+export function encodeRunCursor(row: RunSummaryRow): string {
+  return encodeURIComponent(JSON.stringify([
+    row.completed_at,
+    row.imported_at,
+    row.run_id,
+  ]));
+}
+
+export function decodeRunCursor(
+  value: string | undefined,
+): [string, string, string] | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(decodeURIComponent(value));
@@ -47,6 +75,8 @@ export function decodeRunCursor(value: string | undefined): [string, string, str
 export type RunStoreFactory = (event: H3Event) => Promise<RunStore>;
 
 export interface RunRow {
+  principal_sub: string;
+  principal_email: string | null;
   schema_version: 2 | 3;
   context_mode: "meeting" | "none";
   run_id: string;
@@ -70,7 +100,11 @@ export interface RunRow {
 
 export type RunSummaryRow = Omit<
   RunRow,
-  "match_notes" | "analysis_json" | "manifest_json"
+  | "principal_sub"
+  | "principal_email"
+  | "match_notes"
+  | "analysis_json"
+  | "manifest_json"
 >;
 
 export function rowToSummary(row: RunSummaryRow): RunSummary {
