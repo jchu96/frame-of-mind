@@ -1355,7 +1355,11 @@ Operational expectations:
 - the Activity list and detail pages read that existing bounded job API,
   preserve the last good read after polling errors, pause in hidden tabs, and
   keep the visible list live while stopping detail polling at a terminal job;
-- cancel and retry controls remain a later Phase 7 surface.
+- elapsed and relative times refresh on that same poll tick; terminal elapsed
+  time stops at the terminal transition, and progress shows counts only when an
+  event supplies a real numerator and denominator;
+- Activity actions appear only when the current job, media, connection, and run
+  state permit them.
 
 Home refreshes its three status sources when opened and through its Refresh
 action. If one source fails, its section reports that failure without

@@ -3,11 +3,12 @@ import type { AnalysisJob } from "../../../../src/domain/studio-schemas";
 import {
   activityDisplayState,
   activityStageLabel,
-  formatRelativeActivity,
+  activityStageChangeAnnouncement,
   groupActivityJobs,
   recipeDisplayLabel,
   type ActivityGroup,
 } from "./activity-state";
+import { deriveActivityProgress } from "./activity-progress";
 import {
   activityListTerminal,
   createJobActivityTransport,
@@ -43,16 +44,29 @@ const { data: recipeCatalog } = await useFetch<{
   recipes: Array<{ id: string; label: string }>;
 }>("/api/studio/recipes", { server: false });
 const now = ref(Date.now());
+const stageAnnouncement = ref("");
+let previousJobs: AnalysisJob[] | undefined;
 const actionTransport = createActivityActionTransport();
 const confirmingCancel = ref<string>();
 const pendingCancel = ref<string>();
 const cancelError = ref<{ jobId: string; message: string }>();
 
-watch(jobPage, () => {
+watch(jobPage, (page) => {
   now.value = Date.now();
+  if (previousJobs) {
+    const announcement = activityStageChangeAnnouncement(previousJobs, page.jobs);
+    if (announcement) stageAnnouncement.value = announcement;
+  }
+  previousJobs = page.jobs;
 });
 
 const grouped = computed(() => groupActivityJobs(jobPage.value.jobs));
+const progressByJob = computed(() => new Map(
+  jobPage.value.jobs.map((job) => [
+    job.id,
+    deriveActivityProgress(job, [], now.value),
+  ]),
+));
 const sections: Array<{
   key: ActivityGroup;
   title: string;
@@ -91,6 +105,14 @@ function stateColor(job: AnalysisJob): StatusColor {
   if (state === "failed") return "error";
   if (state === "canceled" || state === "interrupted") return "warning";
   return job.stage === "queued" ? "neutral" : "primary";
+}
+
+function jobProgress(job: AnalysisJob) {
+  return progressByJob.value.get(job.id)!;
+}
+
+function progressWidth(completed: number, total: number): string {
+  return `${Math.min(100, Math.max(0, (completed / total) * 100))}%`;
 }
 
 function formatDate(value: string): string {
@@ -165,8 +187,8 @@ async function confirmCancel(job: AnalysisJob): Promise<void> {
       />
     </section>
 
-    <p class="sr-only" aria-live="polite">
-      {{ notice || (refreshing ? "Refreshing activity." : "Activity is up to date.") }}
+    <p class="sr-only" aria-live="polite" aria-atomic="true">
+      {{ stageAnnouncement }}
     </p>
     <UAlert
       v-if="notice"
@@ -209,11 +231,12 @@ async function confirmCancel(job: AnalysisJob): Promise<void> {
           </template>
 
           <div v-if="grouped[section.key].length" class="overflow-x-auto">
-            <table class="w-full min-w-[44rem] text-left" :aria-label="`${section.title} jobs`">
+            <table class="w-full min-w-[54rem] text-left" :aria-label="`${section.title} jobs`">
               <thead class="border-b border-default text-xs font-bold uppercase tracking-wider text-muted">
                 <tr>
                   <th scope="col" class="pb-2 pr-4">Recipe</th>
                   <th scope="col" class="px-4 pb-2">Created</th>
+                  <th scope="col" class="px-4 pb-2">Elapsed</th>
                   <th scope="col" class="px-4 pb-2">Current stage</th>
                   <th scope="col" class="pb-2 pl-4">Last activity</th>
                   <th scope="col" class="pb-2 pl-4">Actions</th>
@@ -239,13 +262,50 @@ async function confirmCancel(job: AnalysisJob): Promise<void> {
                       {{ formatDate(job.createdAt) }}
                     </time>
                   </td>
+                  <td class="px-4 py-4 text-sm font-semibold tabular-nums">
+                    <span data-activity-elapsed>
+                      <span aria-hidden="true">{{ jobProgress(job).elapsed.text }}</span>
+                      <span class="sr-only">{{ jobProgress(job).elapsed.accessibleText }}</span>
+                    </span>
+                  </td>
                   <td class="px-4 py-4">
                     <UBadge :color="stateColor(job)" variant="soft">
                       {{ activityStageLabel(job.stage) }}
                     </UBadge>
+                    <p class="mt-2 text-xs text-muted">
+                      <span
+                        :aria-hidden="jobProgress(job).descriptor.kind === 'determinate' || undefined"
+                      >
+                        {{ jobProgress(job).descriptor.text }}
+                        <span v-if="'detail' in jobProgress(job).descriptor">
+                          · {{ jobProgress(job).descriptor.detail }}
+                        </span>
+                      </span>
+                    </p>
+                    <div
+                      v-if="jobProgress(job).descriptor.kind === 'determinate'"
+                      class="mt-2 h-1.5 overflow-hidden rounded-full bg-accented"
+                      role="progressbar"
+                      :aria-label="jobProgress(job).descriptor.accessibleText"
+                      aria-valuemin="0"
+                      :aria-valuenow="jobProgress(job).descriptor.completed"
+                      :aria-valuemax="jobProgress(job).descriptor.total"
+                    >
+                      <div
+                        class="h-full rounded-full bg-primary"
+                        :style="{ width: progressWidth(
+                          jobProgress(job).descriptor.completed,
+                          jobProgress(job).descriptor.total,
+                        ) }"
+                      />
+                    </div>
                   </td>
                   <td class="py-4 pl-4 text-sm text-muted">
-                    {{ formatRelativeActivity(job.updatedAt, now) }}
+                    <time
+                      :datetime="jobProgress(job).lastActivityAt"
+                    >
+                      {{ jobProgress(job).lastActivityText }}
+                    </time>
                   </td>
                   <td class="py-4 pl-4 text-sm">
                     <template v-if="canCancel(job)">
