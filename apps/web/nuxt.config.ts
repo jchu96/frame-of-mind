@@ -65,6 +65,9 @@ const hostedJobRetryHandler = fileURLToPath(
 const hostedJobCancelHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/cancel.post.ts", import.meta.url),
 );
+const hostedSpendJanitorHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/spend-janitor.post.ts", import.meta.url),
+);
 const hostedRouteTelemetry = fileURLToPath(
   new URL(
     hostedWorkflowsBuilt
@@ -419,6 +422,11 @@ const localHandlers = [
           route: "/api/hosted/jobs/:id/cancel",
           method: "post",
           handler: hostedJobCancelHandler,
+        },
+        {
+          route: "/api/hosted/spend/janitor",
+          method: "post",
+          handler: hostedSpendJanitorHandler,
         },
       ]
     : []),

@@ -109,6 +109,7 @@ export interface HostedGeminiAnalyzer {
 export interface HostedProviderEnv {
   GEMINI_API_KEY?: string;
   HOSTED_FAKE_GEMINI?: string;
+  HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID?: string;
 }
 
 export function createHostedAnalysisProvider(
@@ -116,7 +117,10 @@ export function createHostedAnalysisProvider(
   options: { contextSource?: HostedContextSourceFactory } = {},
 ): HostedAnalysisProvider {
   if (env.HOSTED_FAKE_GEMINI === "true") {
-    return new FakeHostedAnalysisProvider(options.contextSource);
+    return new FakeHostedAnalysisProvider(
+      options.contextSource,
+      env.HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID,
+    );
   }
   const apiKey = env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new Error("gemini_secret_unavailable");
@@ -266,7 +270,10 @@ export class GeminiHostedAnalysisProvider implements HostedAnalysisProvider {
 class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   private pendingUsage: HostedProviderUsage | undefined;
 
-  constructor(private readonly contextSource?: HostedContextSourceFactory) {}
+  constructor(
+    private readonly contextSource?: HostedContextSourceFactory,
+    private readonly overrunMediaId?: string,
+  ) {}
 
   takeUsage(): HostedProviderUsage | undefined {
     const usage = this.pendingUsage;
@@ -300,8 +307,8 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
     };
   }
 
-  async transcribe(): Promise<DerivedTranscriptionSegment[]> {
-    this.pendingUsage = { promptTokens: 80, outputTokens: 20, totalTokens: 100 };
+  async transcribe(file: HostedResolvedFile): Promise<DerivedTranscriptionSegment[]> {
+    this.pendingUsage = this.usage(file, 80, 20);
     return [{
       start: "00:00:00",
       end: "00:00:04",
@@ -310,8 +317,10 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
     }];
   }
 
-  async index(): Promise<{ matchNotes: string; moments: IndexedMoment[] }> {
-    this.pendingUsage = { promptTokens: 160, outputTokens: 40, totalTokens: 200 };
+  async index(input: {
+    file: HostedResolvedFile;
+  }): Promise<{ matchNotes: string; moments: IndexedMoment[] }> {
+    this.pendingUsage = this.usage(input.file, 160, 40);
     return {
       matchNotes: "Synthetic hosted Workflow fixture matched the selected recording.",
       moments: [{
@@ -325,9 +334,10 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   }
 
   async interrogate(input: {
+    file: HostedResolvedFile;
     candidate: IndexedMoment;
   }): Promise<AnalysisDetail> {
-    this.pendingUsage = { promptTokens: 240, outputTokens: 60, totalTokens: 300 };
+    this.pendingUsage = this.usage(input.file, 240, 60);
     return {
       accepted: true,
       kind: input.candidate.kind,
@@ -339,6 +349,22 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   }
 
   async cleanup(): Promise<void> {}
+
+  private usage(
+    file: HostedResolvedFile,
+    promptTokens: number,
+    outputTokens: number,
+  ): HostedProviderUsage {
+    const multiplier = this.overrunMediaId
+      && file.name.includes(this.overrunMediaId)
+      ? 100
+      : 1;
+    return {
+      promptTokens: promptTokens * multiplier,
+      outputTokens: outputTokens * multiplier,
+      totalTokens: (promptTokens + outputTokens) * multiplier,
+    };
+  }
 }
 
 function resolvedFile(
