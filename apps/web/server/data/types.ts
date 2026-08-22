@@ -1,10 +1,9 @@
-import type { H3Event } from "h3";
 import {
   isRunImportV2,
   isRunImportV3,
   type VersionedRunImport,
-} from "../../../../src/domain/schemas";
-import type { RunPage, RunSummary, StoredRun } from "../../shared/types";
+} from "../../../../src/domain/schemas.js";
+import type { RunPage, RunSummary, StoredRun } from "../../shared/types.js";
 
 export interface ListRunsOptions {
   limit: number;
@@ -71,8 +70,6 @@ export function decodeRunCursor(
     return undefined;
   }
 }
-
-export type RunStoreFactory = (event: H3Event) => Promise<RunStore>;
 
 export interface RunRow {
   principal_sub: string;
