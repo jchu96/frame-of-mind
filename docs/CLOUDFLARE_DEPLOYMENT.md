@@ -22,12 +22,22 @@ plan, not a deployed capability. Tier A would add `GEMINI_API_KEY` as the only
 Worker secret; provider connections and their separate encryption KEK remain
 Tier B.
 
+Task 3.0 selected a sibling, internal-only Workflows Worker because pinned
+Nitro 2.13.4 has no supported `WorkflowEntrypoint` export seam. The Nuxt Worker
+will call it through a service binding while remaining the only public Worker
+on the Access hostname. The target Workflows Worker deploys first; the Nuxt
+caller binding deploys second. Access context does not propagate over the
+binding, so the sibling must revalidate a bounded principal-scoped job receipt.
+The passing local/dry-run proof is recorded in
+[`docs/spikes/hosted-workflows-spike-2026-08-22.md`](spikes/hosted-workflows-spike-2026-08-22.md).
+
 The Cloudflare build uses Nitro's module-format `cloudflare_module` preset.
 The legacy `cloudflare-worker` service-worker preset is incompatible with
 module-bound D1 and produced Wrangler deploy error 100329. Verified Wrangler
 output for this deployment shape identifies the module entrypoint, Workers
 Assets, and the D1 `DB` binding; hosted implementation must additionally show
-its Workflow binding before release. It must not report 100329.
+the Nuxt service binding and the sibling Workflows binding in separate dry-run
+receipts before release. Neither may report 100329.
 
 ## Security model
 

@@ -45,12 +45,18 @@ Hosted Studio uses the existing Cloudflare hostname and Access application:
 - each analysis job runs as one Cloudflare Workflow with idempotent steps,
   explicit 15-minute `WorkflowStepConfig`, zero provider-step retries, durable
   cancellation, linked user retry attempts, and terminal cleanup;
+- an internal-only sibling Worker owns the `WorkflowEntrypoint` export because
+  pinned Nitro 2.13.4 has no supported named-export seam; the public Nuxt
+  Worker reaches it through a service binding on the existing Access hostname,
+  and the sibling revalidates bounded principal-scoped receipts because Access
+  context does not propagate across that binding;
 - D1 stores principal-scoped operational state and review projections while
   the validated analysis/manifest bundle remains the durable run contract;
 - `GEMINI_API_KEY` is the only Tier A Worker secret. Tier B provider tokens
   require a distinct KEK and principal-bound AES-GCM ciphertext;
-- the deployed system is one linked boundary: Worker + D1 + Workflows + Access,
-  with optional private R2 only when retention is selected.
+- the deployed system is one linked boundary: Nuxt Worker + sibling Workflows
+  Worker + D1 + Access, with optional private R2 only when retention is
+  selected. The sibling deploys first; the caller binding deploys second.
 
 The phased implementation and exact route/data contracts live in the
 [Hosted Studio track](../../conductor/tracks/hosted-studio_20260822/).
@@ -60,7 +66,7 @@ The phased implementation and exact route/data contracts live in the
 | Threat | Decision |
 |---|---|
 | Isolate-memory DoS | Task 2.0 must prove raw 8 MiB request streaming and two concurrent uploads within the 128 MB per-isolate limit; failure changes the contract before implementation. |
-| Workflow default retries | Every step has explicit config; provider steps use `retries.limit: 0`, durable pre-call receipt checks, and `NonRetryableError` after success-without-receipt. |
+| Workflow default retries / skipped cleanup | Every step has explicit config; provider steps use `retries.limit: 0`, durable pre-call receipt checks, and `NonRetryableError` after success-without-receipt. The Workflow catches terminal errors inside `run`, performs explicit cleanup before rethrow/finalization, and registers rollback for committed outputs that own cleanup actions. |
 | D1 export of encrypted session URLs | D1 exports are secret-bearing artifacts; exports and derived keys have separate custody, and rotation aborts active sessions before ciphertext removal. |
 | Access `sub` recycle | A re-added user's new subject receives no old rows automatically; email never transfers ownership, and an explicit old/new-sub migration is required. |
 | Import-overwrite IDOR | Parent, child, and registry keys include `principal_sub`; import rejects another principal's matching run ID before any mutation. |

@@ -9,6 +9,9 @@ const sentryNuxtEnabled = nitroPreset !== "cloudflare-worker"
 const studioSpikeEnabled = databaseDriver === "sqlite"
   && nitroPreset === "node-server"
   && process.env.FRAME_OF_MIND_STUDIO_SPIKE === "1";
+const hostedWorkflowSpikeEnabled = databaseDriver === "d1"
+  && nitroPreset === "cloudflare_module"
+  && process.env.FRAME_OF_MIND_HOSTED_WORKFLOW_SPIKE === "1";
 const localStudioEnabled = shouldRegisterLocalStudioRoutes(
   nitroPreset,
   databaseDriver === "sqlite" && process.env.FRAME_OF_MIND_STUDIO === "1",
@@ -22,6 +25,9 @@ const spikeUploadHandler = fileURLToPath(
 );
 const spikeMediaHandler = fileURLToPath(
   new URL("./server-local/studio-spike/media.get.ts", import.meta.url),
+);
+const hostedWorkflowSpikeHandler = fileURLToPath(
+  new URL("./server-spikes/hosted-workflows/relay.ts", import.meta.url),
 );
 const studioBootstrapHandler = fileURLToPath(
   new URL("./server-local/studio-session/bootstrap.post.ts", import.meta.url),
@@ -286,6 +292,20 @@ const localHandlers = [
           route: "/api/__studio-spike/media",
           method: "get",
           handler: spikeMediaHandler,
+        },
+      ]
+    : []),
+  ...(hostedWorkflowSpikeEnabled
+    ? [
+        {
+          route: "/api/__hosted-workflow-spike",
+          method: "post",
+          handler: hostedWorkflowSpikeHandler,
+        },
+        {
+          route: "/api/__hosted-workflow-spike/:id",
+          method: "get",
+          handler: hostedWorkflowSpikeHandler,
         },
       ]
     : []),
