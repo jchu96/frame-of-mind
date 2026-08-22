@@ -120,6 +120,19 @@ export function throwHostedJobHttpError(error: unknown): never {
   });
 }
 
+export function hostedJobErrorCode(error: unknown): string {
+  if (
+    error instanceof HostedRepositoryError
+    || error instanceof HostedSpendPolicyError
+    || error instanceof HostedWorkflowDispatchError
+  ) {
+    return error.code;
+  }
+  return error instanceof z.ZodError
+    ? "invalid_hosted_job_request"
+    : "hosted_job_request_failed";
+}
+
 export function newHostedOpaqueId(prefix: "job" | "attempt" | "workflow"): string {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 }

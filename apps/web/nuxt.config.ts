@@ -50,6 +50,14 @@ const hostedJobRetryHandler = fileURLToPath(
 const hostedJobCancelHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/cancel.post.ts", import.meta.url),
 );
+const hostedRouteTelemetry = fileURLToPath(
+  new URL(
+    hostedWorkflowsBuilt
+      ? "./server-hosted/telemetry.ts"
+      : "./server/telemetry/noop-hosted.ts",
+    import.meta.url,
+  ),
+);
 const studioBootstrapHandler = fileURLToPath(
   new URL("./server-local/studio-session/bootstrap.post.ts", import.meta.url),
 );
@@ -443,6 +451,7 @@ export default defineNuxtConfig({
     "#frame-app": appFrame,
     "#frame-contracts": `${projectRoot}/src/domain/schemas.ts`,
     "#frame-store": storeImplementation,
+    "#frame-hosted-telemetry": hostedRouteTelemetry,
   },
   nitro: {
     preset: nitroPreset,

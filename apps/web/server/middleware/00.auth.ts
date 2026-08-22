@@ -5,14 +5,27 @@ import {
   normalizeTeamDomain,
   parseAuthMode,
 } from "../utils/auth-policy";
+import { getHostedRouteTelemetry } from "#frame-hosted-telemetry";
 
 export default defineEventHandler(async (event) => {
+  const path = event.path.split("?", 1)[0] || "";
+  const hostedTelemetry = path === "/api/hosted" || path.startsWith("/api/hosted/")
+    ? getHostedRouteTelemetry(event)
+    : undefined;
   const config = useRuntimeConfig(event);
   let mode;
   let identity: Awaited<ReturnType<typeof verifyCloudflareAccessJwt>>;
   try {
     mode = parseAuthMode(config.authMode);
   } catch {
+    await hostedTelemetry?.emit({
+      area: "access",
+      outcome: "failed",
+      code: "access_configuration_unavailable",
+      routeClass: "hosted_api",
+      status: 503,
+      studioMode: "hosted",
+    });
     throw createError({ statusCode: 503, statusMessage: "Authentication is misconfigured." });
   }
 
@@ -37,6 +50,14 @@ export default defineEventHandler(async (event) => {
   const token = getHeader(event, "cf-access-jwt-assertion");
   const audience = String(config.cloudflareAccessAud || "");
   if (!token || !audience) {
+    await hostedTelemetry?.emit({
+      area: "access",
+      outcome: "failed",
+      code: "access_assertion_missing",
+      routeClass: "hosted_api",
+      status: 403,
+      studioMode: "hosted",
+    });
     throw createError({ statusCode: 403, statusMessage: "Cloudflare Access is required." });
   }
 
@@ -49,6 +70,14 @@ export default defineEventHandler(async (event) => {
     );
     identity = await verifyCloudflareAccessJwt(token, teamDomain, audience);
   } catch {
+    await hostedTelemetry?.emit({
+      area: "access",
+      outcome: "failed",
+      code: "access_assertion_invalid",
+      routeClass: "hosted_api",
+      status: 403,
+      studioMode: "hosted",
+    });
     throw createError({ statusCode: 403, statusMessage: "Cloudflare Access token is invalid." });
   }
   event.context.frameOfMindPrincipal = {
@@ -59,7 +88,6 @@ export default defineEventHandler(async (event) => {
     authMode: mode,
     ...(identity.email ? { email: identity.email } : {}),
   };
-  const path = event.path.split("?", 1)[0] || "";
   if (
     identity.principal.startsWith("service:")
     && (
@@ -69,10 +97,26 @@ export default defineEventHandler(async (event) => {
       || path.startsWith("/api/hosted/")
     )
   ) {
+    await hostedTelemetry?.emit({
+      area: "access",
+      outcome: "failed",
+      code: "access_service_principal_denied",
+      routeClass: "hosted_api",
+      status: 403,
+      studioMode: "hosted",
+    });
     throw createError({
       statusCode: 403,
       statusMessage: "Service principals cannot use browser run routes.",
       data: { code: "service_principal_browser_route_denied" },
     });
   }
+  await hostedTelemetry?.emit({
+    area: "access",
+    outcome: "succeeded",
+    code: "access_assertion_valid",
+    routeClass: "hosted_api",
+    status: 200,
+    studioMode: "hosted",
+  });
 });

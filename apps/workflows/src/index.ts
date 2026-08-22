@@ -29,6 +29,12 @@ import {
   HostedRepositoryError,
   HostedWorkflowRepository,
 } from "./repository.js";
+import {
+  createHostedTelemetry,
+  hostedTelemetryEventSchema,
+  type HostedTelemetryOutcome,
+  type HostedTelemetryPort,
+} from "./telemetry.js";
 
 const MAX_WORKFLOW_OUTPUT_BYTES = 800 * 1_024;
 
@@ -39,6 +45,9 @@ interface Env {
   HOSTED_FAKE_GEMINI?: string;
   HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID?: string;
   HOSTED_FAKE_RECEIPT_FAILURE_STEP?: string;
+  SENTRY_DSN?: string;
+  SENTRY_ENVIRONMENT?: string;
+  SENTRY_RELEASE?: string;
 }
 
 interface HostedWorkflowOutput {
@@ -62,10 +71,19 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       throw new NonRetryableError("workflow_instance_receipt_mismatch");
     }
     const provider = createHostedAnalysisProvider(this.env);
+    const telemetry = createHostedTelemetry(this.env);
+    const startedAt = Date.now();
+    await telemetry.emit(telemetryEvent(attempt, {
+      area: "workflow",
+      outcome: "started",
+      code: "hosted_workflow_started",
+      stage: "queued",
+    }));
     let file: HostedResolvedFile | undefined;
     let runId: string | undefined;
     let acceptedCount = 0;
     let primaryError: unknown;
+    let publicationStarted = false;
 
     try {
       const meeting = await this.fetchContext(
@@ -108,6 +126,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         file,
       );
       acceptedCount = details.filter((detail) => detail.accepted).length;
+      publicationStarted = true;
       const published = await this.publish(
         step,
         repository,
@@ -116,8 +135,22 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         details,
       );
       runId = published.runId;
+      await telemetry.emit(telemetryEvent(attempt, {
+        area: "publication",
+        outcome: "succeeded",
+        code: "hosted_publication_succeeded",
+        stage: "publish",
+      }));
     } catch (error) {
       primaryError = error;
+      if (publicationStarted && runId === undefined) {
+        await telemetry.emit(telemetryEvent(attempt, {
+          area: "publication",
+          outcome: "failed",
+          code: "hosted_publication_incomplete",
+          stage: "publish",
+        }));
+      }
     }
 
     let cleanupError: unknown;
@@ -129,14 +162,26 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         attempt,
         file,
       );
+      await telemetry.emit(telemetryEvent(attempt, {
+        area: "cleanup",
+        outcome: "succeeded",
+        code: "hosted_cleanup_succeeded",
+        stage: "cleanup",
+      }));
     } catch (error) {
       cleanupError = error;
+      await telemetry.emit(telemetryEvent(attempt, {
+        area: "cleanup",
+        outcome: "failed",
+        code: "hosted_cleanup_failed",
+        stage: "cleanup",
+      }));
     }
 
     const finishedAt = new Date().toISOString();
     if (primaryError || cleanupError) {
       const terminal = terminalFailure(primaryError, cleanupError);
-      await repository.finishAttempt({
+      const reconciliation = await repository.finishAttempt({
         principalSub: attempt.principalSub,
         attemptId: attempt.attemptId,
         stage: terminal.stage,
@@ -144,10 +189,18 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         errorCode: terminal.code,
         cleanupCompleted: !cleanupError,
       });
+      await emitTerminalTelemetry(
+        telemetry,
+        attempt,
+        reconciliation.code,
+        terminal.stage,
+        terminal.code,
+        startedAt,
+      );
       throw new NonRetryableError(terminal.code);
     }
     if (!runId) {
-      await repository.finishAttempt({
+      const reconciliation = await repository.finishAttempt({
         principalSub: attempt.principalSub,
         attemptId: attempt.attemptId,
         stage: "indeterminate",
@@ -155,9 +208,17 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         errorCode: "publish_receipt_missing",
         cleanupCompleted: true,
       });
+      await emitTerminalTelemetry(
+        telemetry,
+        attempt,
+        reconciliation.code,
+        "indeterminate",
+        "publish_receipt_missing",
+        startedAt,
+      );
       throw new NonRetryableError("publish_receipt_missing");
     }
-    await repository.finishAttempt({
+    const reconciliation = await repository.finishAttempt({
       principalSub: attempt.principalSub,
       attemptId: attempt.attemptId,
       stage: "succeeded",
@@ -165,6 +226,14 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       runId,
       cleanupCompleted: true,
     });
+    await emitTerminalTelemetry(
+      telemetry,
+      attempt,
+      reconciliation.code,
+      "succeeded",
+      "hosted_workflow_succeeded",
+      startedAt,
+    );
     return { attemptId: attempt.attemptId, runId, acceptedCount };
   }
 
@@ -451,6 +520,20 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({ ok: true, service: "frame-of-mind-hosted-workflows" });
     }
+    if (request.method === "POST" && url.pathname === "/telemetry") {
+      const rawTelemetry = await request.text();
+      if (new TextEncoder().encode(rawTelemetry).byteLength > 8_192) {
+        return Response.json({ error: "invalid_telemetry" }, { status: 400 });
+      }
+      const parsedTelemetry = hostedTelemetryEventSchema.safeParse(
+        parseJson(rawTelemetry),
+      );
+      if (!parsedTelemetry.success) {
+        return Response.json({ error: "invalid_telemetry" }, { status: 400 });
+      }
+      await createHostedTelemetry(env).emit(parsedTelemetry.data);
+      return Response.json({ accepted: true }, { status: 202 });
+    }
     if (request.method !== "POST" || url.pathname !== "/attempts/dispatch") {
       return Response.json({ error: "not_found" }, { status: 404 });
     }
@@ -459,13 +542,7 @@ export default {
       return Response.json({ error: "invalid_request" }, { status: 400 });
     }
     const parsed = hostedWorkflowParametersSchema.safeParse(
-      (() => {
-        try {
-          return JSON.parse(rawBody);
-        } catch {
-          return undefined;
-        }
-      })(),
+      parseJson(rawBody),
     );
     if (!parsed.success) {
       return Response.json({ error: "invalid_request" }, { status: 400 });
@@ -769,4 +846,58 @@ function errorMessage(error: unknown): string | undefined {
     && typeof error.message === "string"
     ? error.message
     : undefined;
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function telemetryEvent(
+  attempt: HostedAnalysisAttempt,
+  event: Omit<Parameters<HostedTelemetryPort["emit"]>[0],
+    "jobId" | "recipeId" | "recipeRevision" | "model" | "studioMode">,
+): Parameters<HostedTelemetryPort["emit"]>[0] {
+  return {
+    ...event,
+    jobId: attempt.attemptId,
+    recipeId: attempt.input.recipe.id,
+    recipeRevision: attempt.input.recipe.revision,
+    model: attempt.input.model,
+    studioMode: "hosted",
+  };
+}
+
+async function emitTerminalTelemetry(
+  telemetry: HostedTelemetryPort,
+  attempt: HostedAnalysisAttempt,
+  reconciliationCode: string,
+  stage: "succeeded" | "failed" | "canceled" | "indeterminate",
+  workflowCode: string,
+  startedAt: number,
+): Promise<void> {
+  await telemetry.emit(telemetryEvent(attempt, {
+    area: "spend",
+    outcome: "succeeded",
+    code: reconciliationCode,
+    stage,
+  }));
+  await telemetry.emit(telemetryEvent(attempt, {
+    area: "workflow",
+    outcome: terminalTelemetryOutcome(stage),
+    code: workflowCode,
+    stage,
+    durationMs: Math.max(0, Date.now() - startedAt),
+  }));
+}
+
+function terminalTelemetryOutcome(
+  stage: "succeeded" | "failed" | "canceled" | "indeterminate",
+): HostedTelemetryOutcome {
+  if (stage === "succeeded") return "succeeded";
+  if (stage === "canceled") return "canceled";
+  return "failed";
 }
