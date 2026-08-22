@@ -374,7 +374,8 @@ What works today:
 - **Intent** — canonical built-in recipe cards, optional bounded focus, strict
   instruction-only custom-recipe JSON, and the current default Gemini model
   under advanced controls. The refresh-safe draft stores only recipe, focus,
-  and model.
+  and model; built-ins pin their catalog revision. Custom recipes can be saved
+  as drafts but cannot run until the staging contract ships.
 - **Context** — exactly one source (Bluedot MCP, Granola MCP, Granola API,
   or a local file up to 8 MiB in five text formats), stored as an opaque
   content-bound receipt that expires after one hour, never a filename or body;

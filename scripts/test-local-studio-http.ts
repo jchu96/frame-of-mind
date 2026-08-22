@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini";
 
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
 const port = 34_000 + Math.floor(Math.random() * 10_000);
@@ -313,7 +314,7 @@ try {
     recipes?: Array<{ id?: string; label?: string; description?: string; revision?: string }>;
   };
   if (
-    recipesBody.defaultModel !== "gemini-3.7-flash"
+    recipesBody.defaultModel !== DEFAULT_GEMINI_MODEL
     || !recipesBody.recipes?.some((recipe) => recipe.id === "requirements")
     || recipesText.includes("indexInstruction")
     || recipesText.includes("interrogationInstruction")

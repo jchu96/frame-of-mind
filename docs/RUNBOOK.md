@@ -1311,7 +1311,7 @@ Operational expectations:
 - the Recording page stages authenticated resumable media locally;
 - the Intent page selects one canonical built-in recipe or validates strict
   custom JSON before saving recipe, optional focus, and model in session
-  storage;
+  storage; built-in drafts pin the selected catalog revision;
 - Home and all three composer sections read one readiness coordinator:
   Recording and Intent are required, while Context is optional and explicit;
 - the local API stages optional bounded context separately from recordings;
@@ -1363,12 +1363,13 @@ On **Intent**:
 2. Optionally add a focus note of at most 10,000 characters.
 3. For a custom recipe, paste instruction-only JSON and select **Validate
    custom recipe**. Unknown keys, charter fields, and schema errors fail before
-   any browser save.
+   any browser save. Studio accepts a valid custom recipe as a draft but cannot
+   run it until the custom-recipe staging contract exists.
 4. Open **Advanced model selection** to verify the current default model. No
    provider key or secret is displayed there.
 5. Select **Save intent**. The
    `frame-of-mind:studio:intent-draft` value contains exactly `recipe`, optional
-   `focus`, and `model`.
+   `focus`, and `model`; a built-in `recipe` contains its `id` and `revision`.
 
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and

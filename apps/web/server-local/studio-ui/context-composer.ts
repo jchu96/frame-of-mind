@@ -220,7 +220,12 @@ export function loadContextDraft(
         : { transcriptOffsetSeconds: legacy.data.transcriptOffsetSeconds }),
       committed: legacy.data.committed,
     };
-    storage.setItem(CONTEXT_DRAFT_STORAGE_KEY, JSON.stringify(migrated));
+    try {
+      storage.setItem(CONTEXT_DRAFT_STORAGE_KEY, JSON.stringify(migrated));
+    } catch {
+      // The readable legacy draft is still authoritative for this page load.
+      // A later explicit save can report that browser storage is unavailable.
+    }
     return { draft: migrated, storageAvailable: true };
   } catch {
     return { storageAvailable: false };

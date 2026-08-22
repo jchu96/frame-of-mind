@@ -35,11 +35,14 @@ const {
   refresh: refreshReadiness,
   setIntentState,
 } = useComposerReadiness();
+const runtimeConfig = useRuntimeConfig();
+const fallbackModel = runtimeConfig.public.studioDefaultModel;
 const toast = useToast();
 
 const selectedRecipeId = ref("");
+const selectedRecipeRevision = ref("");
 const focus = ref("");
-const model = ref("");
+const model = ref(catalog.value?.defaultModel ?? fallbackModel);
 const customMode = ref(false);
 const customText = ref("");
 const validatedCustom = shallowRef<CustomRecipe>();
@@ -57,8 +60,25 @@ function markDraft(): void {
   setIntentState("draft");
 }
 
-function selectBuiltIn(id: string): void {
-  selectedRecipeId.value = id;
+const catalogErrorStatus = computed(() => {
+  const error = catalogError.value as {
+    status?: number;
+    statusCode?: number;
+  } | undefined;
+  return error?.statusCode ?? error?.status;
+});
+const catalogErrorDescription = computed(() =>
+  catalogErrorStatus.value === 401
+    ? "Your Studio session expired. Relaunch Studio and use its new one-time launch URL."
+    : "Studio could not load recipes — see logs."
+);
+const modelItems = computed(() => [
+  catalog.value?.defaultModel ?? fallbackModel,
+]);
+
+function selectBuiltIn(recipe: RecipeSummary): void {
+  selectedRecipeId.value = recipe.id;
+  selectedRecipeRevision.value = recipe.revision;
   customMode.value = false;
   customError.value = undefined;
   markDraft();
@@ -66,6 +86,7 @@ function selectBuiltIn(id: string): void {
 
 function useCustomRecipe(): void {
   selectedRecipeId.value = "";
+  selectedRecipeRevision.value = "";
   customMode.value = true;
   markDraft();
 }
@@ -89,8 +110,11 @@ function draftInput(): unknown {
     ? validatedCustom.value && validatedCustomSource.value === customText.value
       ? { custom: validatedCustom.value }
       : undefined
-    : selectedRecipeId.value
-      ? { id: selectedRecipeId.value }
+    : selectedRecipeId.value && selectedRecipeRevision.value
+      ? {
+          id: selectedRecipeId.value,
+          revision: selectedRecipeRevision.value,
+        }
       : undefined;
   return {
     recipe,
@@ -147,7 +171,13 @@ function saveIntent(): void {
 }
 
 watch(catalog, (next) => {
-  if (next?.defaultModel && !model.value) model.value = next.defaultModel;
+  if (
+    next?.defaultModel
+    && (!model.value || model.value === fallbackModel)
+    && !saved.value
+  ) {
+    model.value = next.defaultModel;
+  }
 }, { immediate: true });
 
 onMounted(() => {
@@ -172,6 +202,7 @@ onMounted(() => {
     validatedCustomSource.value = customText.value;
   } else {
     selectedRecipeId.value = draft.recipe.id;
+    selectedRecipeRevision.value = draft.recipe.revision;
   }
   saved.value = true;
   setIntentState("ready");
@@ -226,7 +257,7 @@ onMounted(() => {
               color="error"
               variant="soft"
               title="Built-in recipes are unavailable"
-              description="Restart Studio and use its new one-time launch URL."
+              :description="catalogErrorDescription"
             />
             <div
               v-else-if="catalogStatus === 'idle' || catalogStatus === 'pending'"
@@ -258,7 +289,7 @@ onMounted(() => {
                     name="intent-recipe"
                     :value="recipe.id"
                     class="mt-1 size-4 accent-[var(--ui-primary)]"
-                    @change="selectBuiltIn(recipe.id)"
+                    @change="selectBuiltIn(recipe)"
                   >
                   <span>
                     <span class="block text-sm font-bold text-highlighted">
@@ -291,6 +322,13 @@ onMounted(() => {
                 <h2 class="mt-2 text-2xl font-black">Validate strict recipe JSON</h2>
               </div>
             </template>
+            <UAlert
+              class="mb-5"
+              color="warning"
+              variant="soft"
+              title="Custom recipes cannot run yet"
+              description="Custom recipes are accepted as drafts but cannot run until the custom-recipe staging contract exists (custom_recipe_staging_unavailable)."
+            />
             <UFormField
               label="Custom recipe JSON"
               description="Instruction-only schema. Unknown keys and charter fields are rejected."
@@ -301,7 +339,7 @@ onMounted(() => {
                 v-model="customText"
                 class="w-full font-mono"
                 :rows="12"
-                aria-describedby="intent-custom-error"
+                :aria-describedby="customError ? 'intent-custom-error' : undefined"
                 :aria-invalid="Boolean(customError)"
                 @update:model-value="validatedCustom = undefined; validatedCustomSource = ''; customError = undefined; markDraft()"
               />
@@ -334,7 +372,7 @@ onMounted(() => {
                 class="w-full"
                 :rows="5"
                 placeholder="Prioritize observable targets…"
-                aria-describedby="intent-focus-error"
+                :aria-describedby="focusError ? 'intent-focus-error' : undefined"
                 :aria-invalid="Boolean(focusError)"
                 @update:model-value="focusError = undefined; markDraft()"
               />
@@ -367,7 +405,7 @@ onMounted(() => {
                     <USelect
                       v-model="model"
                       class="w-full sm:max-w-sm"
-                      :items="catalog?.defaultModel ? [catalog.defaultModel] : []"
+                      :items="modelItems"
                       @update:model-value="modelError = undefined; markDraft()"
                     />
                   </UFormField>

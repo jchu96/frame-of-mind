@@ -1,14 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import type { MediaSession } from "../../../src/domain/studio-schemas";
 import {
+  loadContextDraft,
   persistContextDraft,
 } from "../server-local/studio-ui/context-composer";
 import {
+  loadIntentDraft,
   persistIntentDraft,
 } from "../server-local/studio-ui/intent-composer";
 import {
+  loadMediaResumeReceipt,
+  persistMediaResumeReceipt,
+} from "../server-local/studio-ui/media-upload";
+import {
   composerReadinessFromStorage,
-} from "../server-local/studio-ui/use-composer-readiness";
+} from "../server-local/studio-ui/composer-readiness";
 
 class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem"> {
   readonly values = new Map<string, string>();
@@ -50,7 +56,10 @@ describe("Studio composer readiness", () => {
   test("requires ready Intent and sealed Recording while Context stays optional", () => {
     const storage = new MemoryStorage();
     persistIntentDraft(storage, {
-      recipe: { id: "requirements" },
+      recipe: {
+        id: "requirements",
+        revision: "builtin-2026-07-27.1",
+      },
       model: "gemini-3.7-flash",
     });
 
@@ -71,7 +80,10 @@ describe("Studio composer readiness", () => {
   test("preserves Intent and Context when media is deleted or expires", () => {
     const storage = new MemoryStorage();
     persistIntentDraft(storage, {
-      recipe: { id: "decisions" },
+      recipe: {
+        id: "decisions",
+        revision: "builtin-2026-07-27.1",
+      },
       focus: "Capture explicit rationale.",
       model: "gemini-3.7-flash",
     });
@@ -110,5 +122,42 @@ describe("Studio composer readiness", () => {
     });
     expect(composerReadinessFromStorage(storage, undefined).context)
       .toBe("video-only");
+  });
+
+  test("preserves all composer steps persisted in non-canonical order", () => {
+    const storage = new MemoryStorage();
+    const intent = {
+      recipe: {
+        id: "requirements",
+        revision: "builtin-2026-07-27.1",
+      },
+      focus: "Preserve order-independent state.",
+      model: "gemini-3.7-flash",
+    };
+    const context = {
+      schemaVersion: 2 as const,
+      mode: "enriched" as const,
+      context: {
+        provider: "bluedot" as const,
+        transport: "mcp" as const,
+        meetingId: "synthetic-meeting",
+      },
+      committed: true,
+    };
+    const sealedMedia = media("sealed");
+
+    expect(persistIntentDraft(storage, intent)).toBe(true);
+    expect(persistContextDraft(storage, context)).toBe(true);
+    expect(persistMediaResumeReceipt(storage, sealedMedia.id)).toBe(true);
+
+    expect(loadIntentDraft(storage).draft).toEqual(intent);
+    expect(loadContextDraft(storage).draft).toEqual(context);
+    expect(loadMediaResumeReceipt(storage).mediaSessionId).toBe(sealedMedia.id);
+    expect(composerReadinessFromStorage(storage, sealedMedia)).toEqual({
+      intent: "ready",
+      context: "committed",
+      recording: "sealed",
+      canRun: true,
+    });
   });
 });
