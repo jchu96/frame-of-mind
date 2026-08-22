@@ -410,6 +410,16 @@
 
 ## 2026-08-22
 
+- Created the proposed `hosted-studio_20260822` Conductor track, eight-phase
+  Tier A/Tier B plan, and ADR 0018 for principal-scoped Cloudflare creation.
+  The approved upload design hashes incrementally in a dedicated browser Web
+  Worker with `hash-wasm`, uses WebCrypto only as a small-fixture oracle, and
+  fails closed unless Gemini's final digest matches. Corrected the Cloudflare
+  build from legacy `cloudflare-worker` to module-format `cloudflare_module`.
+  Validated by `bun run check`: 21 Vitest files / 202 tests passed; Nitro built
+  with `cloudflare-module`; the Cloudflare boundary reported 55 forbidden
+  markers absent and 2 hosted review markers present; the 32 MiB streaming
+  spike completed with atomic seal and bounded heap growth.
 - Implemented Local Studio Task 6.7: authenticated Intent route and sanitized
   built-in recipe catalog, strict custom-recipe/focus/model draft validation,
   shared Intent/Context/Recording readiness, explicit recording-only Context,

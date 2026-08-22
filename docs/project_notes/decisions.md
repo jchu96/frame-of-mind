@@ -4,6 +4,18 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-08-22 — Hosted Studio is a principal-scoped Cloudflare boundary
+
+Proposed: Tier A extends the existing Worker, D1, Access application, and
+hostname with one Workflow per analysis job and Worker-proxied Gemini resumable
+upload. Every row and operation is scoped by validated Access `sub`; recording
+bytes are not stored unless retention is explicit. The browser hashes the full
+file incrementally in a dedicated Web Worker with `hash-wasm`, and the server
+fails closed unless the digest matches Gemini `sha256Hash`. One-shot WebCrypto
+and cross-request server hashing were rejected as unbounded and unnecessarily
+stateful, respectively. Tier B separately adds principal-bound encrypted
+provider connections. See proposed ADR 0018 and `hosted-studio_20260822`.
+
 ## 2026-08-11 — Recipes become charters; the executor owns prompt policy
 
 Proposed: recipe intent decomposes into named, bounded slots (stance, allowed
