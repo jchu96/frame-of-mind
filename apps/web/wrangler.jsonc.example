@@ -1,7 +1,7 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "frame-of-mind",
-  "main": ".output/server/index.mjs",
+  "main": ".output/server/hosted-entry.mjs",
   "compatibility_date": "2026-07-24",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
@@ -22,10 +22,17 @@
       "migrations_dir": "db/migrations"
     }
   ],
+  "services": [
+    {
+      "binding": "HOSTED_WORKFLOWS",
+      "service": "REPLACE_WITH_INTERNAL_WORKFLOWS_WORKER"
+    }
+  ],
   "vars": {
     "NUXT_AUTH_MODE": "cloudflare-access",
     "NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://REPLACE_WITH_TEAM.cloudflareaccess.com",
-    "NUXT_CLOUDFLARE_ACCESS_AUD": "REPLACE_WITH_APPLICATION_AUD"
+    "NUXT_CLOUDFLARE_ACCESS_AUD": "REPLACE_WITH_APPLICATION_AUD",
+    "NUXT_HOSTED_WORKFLOWS_ENABLED": "false"
   },
   "observability": {
     "enabled": true
