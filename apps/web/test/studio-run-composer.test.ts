@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test";
 import type { MediaSession } from "../../../src/domain/studio-schemas";
 import {
   buildComposerPayload,
+  canStartRunAnalysis,
   clearRunDraft,
   createOrLoadRunDraft,
   deriveRunReceiptState,
+  runRetentionDisplay,
   retentionRequestForMediaSession,
   runFieldErrorForJobCode,
   RUN_DRAFT_STORAGE_KEY,
+  startFreshRunReceipt,
 } from "../server-local/studio-ui/run-composer";
 
 class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem"> {
@@ -216,5 +219,65 @@ describe("Studio Run receipt state", () => {
       section: "recording",
       message: "The recording's retention changed. Reopen Run to refresh the exact receipt.",
     });
+  });
+
+  test("maps an idempotency conflict to Home and starts only a fresh Run receipt", () => {
+    expect(runFieldErrorForJobCode("idempotency_conflict")).toEqual({
+      section: "home",
+      message: "A job already exists under this retry key. Open Home, or start a fresh receipt.",
+      canStartFreshReceipt: true,
+    });
+
+    const storage = new MemoryStorage();
+    storage.setItem("frame-of-mind:studio:intent-draft", "intent-receipt");
+    storage.setItem("frame-of-mind:studio:context-draft", "context-receipt");
+    storage.setItem("frame-of-mind:studio:media-upload", "media-receipt");
+    storage.setItem(RUN_DRAFT_STORAGE_KEY, JSON.stringify({
+      idempotencyKey: "studio-run-conflicted-0001",
+    }));
+
+    const fresh = startFreshRunReceipt(
+      storage,
+      { mode: "retained", ttlSeconds: 60 * 60 },
+      () => "studio-run-fresh-0002",
+    );
+    expect(fresh.idempotencyKey).toBe("studio-run-fresh-0002");
+    expect(JSON.parse(storage.getItem(RUN_DRAFT_STORAGE_KEY)!)).toEqual({
+      idempotencyKey: "studio-run-fresh-0002",
+    });
+    expect(storage.getItem("frame-of-mind:studio:intent-draft")).toBe("intent-receipt");
+    expect(storage.getItem("frame-of-mind:studio:context-draft")).toBe("context-receipt");
+    expect(storage.getItem("frame-of-mind:studio:media-upload")).toBe("media-receipt");
+  });
+
+  test("shows unavailable retention and disables Start after either mount failure", () => {
+    const invalidRetained = media();
+    invalidRetained.retention = {
+      mode: "retained",
+      expiresAt: "2026-08-22T11:30:00.000Z",
+    };
+    expect(() => retentionRequestForMediaSession(invalidRetained)).toThrow();
+    expect(runRetentionDisplay(invalidRetained, undefined)).toEqual({
+      mode: "unavailable",
+      expiresAt: "2026-08-22T11:30:00.000Z",
+    });
+
+    const retained = media();
+    retained.retention = {
+      mode: "retained",
+      expiresAt: "2026-08-22T12:00:00.000Z",
+    };
+    const unavailableStorage = {
+      getItem: () => null,
+      setItem: () => { throw new Error("storage unavailable"); },
+      removeItem: () => undefined,
+    };
+    const retention = retentionRequestForMediaSession(retained);
+    expect(() => createOrLoadRunDraft(unavailableStorage, retention)).toThrow();
+    expect(runRetentionDisplay(retained, undefined)).toEqual({
+      mode: "unavailable",
+      expiresAt: "2026-08-22T12:00:00.000Z",
+    });
+    expect(canStartRunAnalysis({ canSubmit: true }, undefined)).toBe(false);
   });
 });

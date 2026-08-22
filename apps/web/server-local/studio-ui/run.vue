@@ -18,11 +18,14 @@ import {
 } from "./media-upload";
 import {
   buildComposerPayload,
+  canStartRunAnalysis,
   clearRunDraft,
   createOrLoadRunDraft,
   deriveRunReceiptState,
   retentionRequestForMediaSession,
+  runRetentionDisplay,
   runFieldErrorForJobCode,
+  startFreshRunReceipt,
   type RunDraft,
   type RunFieldError,
   type RunReceiptState,
@@ -68,15 +71,27 @@ let contextLoad = loadContextDraft({
   removeItem: () => undefined,
 });
 
-const retentionMode = computed({
-  get: () => runDraft.value?.retention.mode ?? "ephemeral",
-  set: () => undefined,
-});
-const retainedTtlSeconds = computed(() =>
-  runDraft.value?.retention.mode === "retained"
-    ? runDraft.value.retention.ttlSeconds
-    : undefined
+const retentionDisplay = computed(() =>
+  runRetentionDisplay(mediaSession.value, runDraft.value)
 );
+const retainedTtlSeconds = computed(() =>
+  retentionDisplay.value.ttlSeconds
+);
+const startAnalysisEnabled = computed(() =>
+  canStartRunAnalysis(receiptState.value, runDraft.value)
+  && !fieldError.value?.canStartFreshReceipt
+);
+const startAnalysisDescription = computed(() => {
+  if (startAnalysisEnabled.value) return undefined;
+  const ids: string[] = [];
+  if (receiptState.value?.blockers.length) ids.push("run-blockers");
+  if (fieldError.value) ids.push("run-field-error");
+  if (submitError.value) ids.push("run-submit-error");
+  if (!runDraft.value && mediaSession.value) {
+    ids.push("run-retention-unavailable");
+  }
+  return ids.join(" ") || undefined;
+});
 const retentionOptions = [
   {
     label: "Ephemeral",
@@ -239,6 +254,21 @@ async function startAnalysis(): Promise<void> {
     submitting.value = false;
   }
 }
+
+function startFreshReceipt(): void {
+  if (!runDraft.value) return;
+  submitError.value = undefined;
+  try {
+    runDraft.value = startFreshRunReceipt(
+      sessionStorage,
+      runDraft.value.retention,
+    );
+    fieldError.value = undefined;
+  } catch {
+    submitError.value =
+      "A fresh Run retry key could not be saved. Enable browser session storage and try again.";
+  }
+}
 </script>
 
 <template>
@@ -265,23 +295,36 @@ async function startAnalysis(): Promise<void> {
         />
       </section>
 
-      <div v-if="!browserMounted || loadingReceipt" class="mt-10 flex items-center gap-3 text-sm text-muted">
+      <div
+        v-if="!browserMounted || loadingReceipt"
+        class="mt-10 flex items-center gap-3 text-sm text-muted"
+        role="status"
+        aria-live="polite"
+      >
         <UIcon name="i-lucide-loader-circle" class="size-5 animate-spin" />
         Reading the private composer receipts…
       </div>
 
       <section v-else class="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">
-          <UAlert
-            v-for="blocker in receiptState?.blockers ?? []"
-            :key="blocker.code"
-            color="error"
-            variant="soft"
-            icon="i-lucide-shield-alert"
-            title="BLOCKED"
-            :description="blocker.message"
-            :actions="[{ label: `Open ${blocker.link.slice(1)}`, to: blocker.link, color: 'neutral', variant: 'outline' }]"
-          />
+          <div
+            v-if="receiptState?.blockers.length"
+            id="run-blockers"
+            class="space-y-3"
+            role="alert"
+            aria-live="polite"
+          >
+            <UAlert
+              v-for="blocker in receiptState.blockers"
+              :key="blocker.code"
+              color="error"
+              variant="soft"
+              icon="i-lucide-shield-alert"
+              title="BLOCKED"
+              :description="blocker.message"
+              :actions="[{ label: `Open ${blocker.link.slice(1)}`, to: blocker.link, color: 'neutral', variant: 'outline' }]"
+            />
+          </div>
 
           <UCard>
             <template #header>
@@ -383,11 +426,20 @@ async function startAnalysis(): Promise<void> {
               description="This exact choice was locked when staging began; the job receipt cannot extend it."
             >
               <URadioGroup
-                v-model="retentionMode"
+                v-if="retentionDisplay.mode !== 'unavailable'"
+                :model-value="retentionDisplay.mode"
                 :items="retentionOptions"
                 variant="card"
                 disabled
               />
+              <p
+                v-else
+                id="run-retention-unavailable"
+                class="mt-2 text-sm font-semibold text-error"
+                role="status"
+              >
+                Unavailable
+              </p>
             </UFormField>
             <USelect
               v-if="retainedTtlSeconds"
@@ -398,21 +450,47 @@ async function startAnalysis(): Promise<void> {
               disabled
               class="mt-4 w-full sm:max-w-xs"
             />
-            <p v-if="mediaSession" class="mt-4 text-sm text-muted">
-              Server-owned expiry: {{ formatDate(mediaSession.retention.expiresAt) }}
+            <p v-if="retentionDisplay.expiresAt" class="mt-4 text-sm text-muted">
+              Server-owned expiry: {{ formatDate(retentionDisplay.expiresAt) }}
             </p>
           </UCard>
 
           <UAlert
             v-if="fieldError"
+            id="run-field-error"
+            role="alert"
             color="error"
             variant="soft"
-            :title="`${fieldError.section[0].toUpperCase()}${fieldError.section.slice(1)} needs attention`"
+            :title="fieldError.section === 'home'
+              ? 'Retry key already used'
+              : `${fieldError.section[0].toUpperCase()}${fieldError.section.slice(1)} needs attention`"
             :description="fieldError.message"
-            :actions="[{ label: `Open ${fieldError.section}`, to: `/${fieldError.section}`, color: 'neutral', variant: 'outline' }]"
-          />
+          >
+            <template #actions>
+              <UButton
+                :to="fieldError.section === 'home' ? '/' : `/${fieldError.section}`"
+                color="neutral"
+                variant="outline"
+                size="sm"
+              >
+                {{ fieldError.section === "home" ? "Open Home" : `Open ${fieldError.section}` }}
+              </UButton>
+              <UButton
+                v-if="fieldError.canStartFreshReceipt"
+                type="button"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                @click="startFreshReceipt"
+              >
+                Start a fresh receipt
+              </UButton>
+            </template>
+          </UAlert>
           <UAlert
             v-if="submitError"
+            id="run-submit-error"
+            role="alert"
             color="error"
             variant="soft"
             title="Job creation was not confirmed"
@@ -425,7 +503,8 @@ async function startAnalysis(): Promise<void> {
               size="xl"
               icon="i-lucide-play"
               :loading="submitting"
-              :disabled="!receiptState?.canSubmit || !runDraft"
+              :disabled="!startAnalysisEnabled"
+              :aria-describedby="startAnalysisDescription"
               @click="startAnalysis"
             >
               Start analysis
