@@ -18,6 +18,7 @@ import {
   canonicalImmutableJobInputJson,
   digestImmutableJobInput,
   idempotencyKeySchema,
+  publishedRunIdSchema,
   validateAnalysisJob,
   type AnalysisJob,
   type AnalysisJobEvent,
@@ -214,6 +215,25 @@ export class LocalSqliteJobRepository implements JobRepository {
     const row = this.findById(parsedId);
     if (!row) return undefined;
     return this.validateJob(this.parseJobRow(row));
+  }
+
+  async getSucceededByRunId(runIdValue: string): Promise<AnalysisJob | undefined> {
+    const runId = publishedRunIdSchema.parse(runIdValue);
+    const rows = this.database.query<JobRow, [string]>(
+      `SELECT * FROM studio_analysis_jobs
+       WHERE run_id = ? AND stage = 'succeeded'
+       ORDER BY terminal_at DESC, id DESC
+       LIMIT 2`,
+    ).all(runId);
+    if (rows.length > 1) {
+      throw new StudioJobRepositoryError(
+        "corrupt_job",
+        "Published run is linked to multiple successful jobs.",
+      );
+    }
+    return rows[0]
+      ? this.validateJob(this.parseJobRow(rows[0]))
+      : undefined;
   }
 
   async getByIdempotencyKey(key: string): Promise<AnalysisJob | undefined> {

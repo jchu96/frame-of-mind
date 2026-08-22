@@ -566,7 +566,7 @@ const maintenanceSummary = computed(() => {
           <NuxtLink
             v-for="run in recentRuns"
             :key="run.runId"
-            :to="`/runs/${encodeURIComponent(run.runId)}`"
+            :to="`/review/${encodeURIComponent(run.runId)}`"
             :aria-label="runTitle(run)"
             class="grid gap-3 py-4 first:pt-0 last:pb-0 hover:text-primary sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
           >
