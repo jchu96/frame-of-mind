@@ -151,8 +151,8 @@ deliberately rather than relying on the failure path.
 gh repo clone jchu96/frame-of-mind
 cd frame-of-mind
 bun install --frozen-lockfile
-bun run check
-bun run build
+bun run build:cli
+bun run build:web
 bun link
 ```
 
@@ -166,6 +166,7 @@ cd frame-of-mind
 Verify:
 
 ```bash
+frameofmind --help
 frameofmind --version
 frameofmind recipes
 ```
@@ -1166,7 +1167,41 @@ git status --short
 git pull --ff-only
 bun install --frozen-lockfile
 bun run check
+bun --no-env-file scripts/test-fresh-clone.ts upgrade
 ```
+
+The upgrade proof clones the previous release tag (or the current branch's
+`origin/main` merge-base), installs it with its frozen lockfile, fast-forwards
+that isolated checkout to the current `HEAD`, reinstalls, rebuilds both CLI and
+web artifacts, and boots Studio against the same temporary SQLite database.
+The authenticated composer request must migrate the legacy local projection
+and initialize the current job schema before the script prints:
+
+```text
+UPGRADE install=PASS build=PASS studio_boot=PASS migration=PASS
+```
+
+Set `FRAME_OF_MIND_UPGRADE_FROM=<ref>` only when validating a specific
+supported starting point. The script removes its exact OS-temporary checkout,
+database, and Studio staging roots on success and failure.
+
+For a standalone clean-install receipt at the current commit:
+
+```bash
+bun --no-env-file scripts/test-fresh-clone.ts fresh
+```
+
+macOS and Linux CI run the complete headless Studio boot. Windows support uses
+WSL or Git Bash with Bun 1.3.14+ and an LF checkout:
+
+```bash
+git config --global core.autocrlf false
+git config --global core.eol lf
+```
+
+`windows-latest` CI runs `install-only`, which repeats the frozen install,
+CLI/web builds, and CLI help check without claiming native Local Studio boot
+coverage.
 
 Check pinned/current versions:
 
@@ -1227,6 +1262,8 @@ Do not apply forced audit fixes without reviewing breaking changes.
 | Access missing/invalid JWT denial | every auth change              |
 | No tracked sensitive artifacts    | every release                  |
 | Repository hygiene checker        | every `bun run check`          |
+| Fresh clone and Studio boot        | every install or release change |
+| Previous-tag upgrade and migration | every migration or release change |
 
 ## 10. Release procedure
 
