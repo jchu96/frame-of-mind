@@ -14,6 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { isAbsolute, relative, resolve, join, sep } from "node:path";
+import { Readable } from "node:stream";
 import { z } from "zod";
 import type {
   BinaryChunkSource,
@@ -78,6 +79,13 @@ export interface LocalMediaStagingOptions {
   createId?: () => string;
   availableBytes?: () => Promise<number>;
   removeFile?: (path: string) => Promise<void>;
+}
+
+export interface RetainedReviewMedia {
+  body: ReadableStream<Uint8Array>;
+  contentLength: number;
+  mimeType: "video/mp4" | "video/quicktime" | "video/webm";
+  totalBytes: number;
 }
 
 function digestText(value: string): string {
@@ -549,6 +557,117 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
   async get(id: string): Promise<MediaSession | undefined> {
     await this.#ensureRoot();
     return (await this.#readStored(this.#parseId(id)))?.session;
+  }
+
+  /**
+   * Opens one retained recording without exposing its private path.
+   *
+   * The per-session ownership lock remains held until the response stream
+   * closes, so expiry or operator cleanup cannot remove the opened file while
+   * a browser range is in flight.
+   */
+  async openRetainedReviewMedia(
+    idValue: string,
+    expectedSha256: string,
+    range?: { start: number; end: number },
+  ): Promise<RetainedReviewMedia> {
+    const id = this.#parseId(idValue);
+    sha256Schema.parse(expectedSha256);
+    if (this.#activeWriters.has(id)) {
+      throw new MediaStagingError(
+        "media_review_unavailable",
+        "Retained media is temporarily unavailable.",
+      );
+    }
+    this.#activeWriters.add(id);
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    const release = () => this.#activeWriters.delete(id);
+    try {
+      await this.#ensureRoot();
+      const stored = await this.#requireStored(id);
+      const session = stored.session;
+      if (
+        session.status !== "retained"
+        || session.retention.mode !== "retained"
+        || session.sha256 !== expectedSha256
+        || Date.parse(session.retention.expiresAt) <= this.#now().getTime()
+      ) {
+        throw new MediaStagingError(
+          "media_review_unavailable",
+          "Retained media is unavailable.",
+        );
+      }
+      if (
+        range
+        && (
+          !Number.isSafeInteger(range.start)
+          || !Number.isSafeInteger(range.end)
+          || range.start < 0
+          || range.end < range.start
+          || range.end >= session.expectedBytes
+        )
+      ) {
+        throw new MediaStagingError(
+          "media_review_unavailable",
+          "Retained media range is unavailable.",
+        );
+      }
+
+      const path = this.#sealedPath(id);
+      const before = await lstat(path);
+      assertRegularFile(before);
+      if (before.size !== session.expectedBytes) {
+        throw new MediaStagingError(
+          "media_review_unavailable",
+          "Retained media is unavailable.",
+        );
+      }
+      const canonical = await realpath(path);
+      const canonicalSessionDirectory = await realpath(
+        this.#sessionDirectory(id),
+      );
+      if (canonical !== join(canonicalSessionDirectory, "media.sealed")) {
+        throw new MediaStagingError(
+          "media_review_unavailable",
+          "Retained media is unavailable.",
+        );
+      }
+      handle = await open(
+        canonical,
+        constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
+      );
+      const opened = await handle.stat();
+      if (!opened.isFile() || !sameFile(before, opened)) {
+        throw new MediaStagingError(
+          "media_review_unavailable",
+          "Retained media is unavailable.",
+        );
+      }
+
+      const nodeStream = handle.createReadStream({
+        autoClose: true,
+        ...(range ? { start: range.start, end: range.end } : {}),
+      });
+      handle = undefined;
+      nodeStream.once("close", release);
+      nodeStream.once("error", release);
+      return {
+        body: Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>,
+        contentLength: range
+          ? range.end - range.start + 1
+          : session.expectedBytes,
+        mimeType: session.mimeType,
+        totalBytes: session.expectedBytes,
+      };
+    } catch (error) {
+      await handle?.close();
+      release();
+      if (error instanceof MediaStagingError) throw error;
+      throw new MediaStagingError(
+        "media_review_unavailable",
+        "Retained media is unavailable.",
+      );
+    }
   }
 
   async maintenanceInventory(): Promise<MaintenanceMediaSnapshot[]> {
