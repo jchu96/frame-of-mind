@@ -22,6 +22,14 @@ or `setupEntryExports` seam. The spike script inspects the installed preset and
 will stop if a future dependency update adds one, so topology A can be
 re-evaluated deliberately rather than remaining permanently excluded.
 
+Review caveat (Grok, 2026-08-22): this is a preset inspection, not a failed
+wrap. The pin already emits `exports: "named"` ESM, so a custom entry that
+re-exports Nitro's default handler alongside a `WorkflowEntrypoint` subclass
+(the same wrapper-entry mechanism Task 2.0b is exercising for streaming) is an
+unattempted topology-A candidate. Topology B stands on its own merits —
+isolation, separate secrets, independent deploys — but the freeze reason is
+"not attempted on this pin", not "impossible".
+
 An open Nitro request describes the same missing Workflows preset. Current
 Nitro `main` has since gained general Cloudflare entry-export setup, but that is
 not the version this repository builds or tests. A custom deep-runtime import,
