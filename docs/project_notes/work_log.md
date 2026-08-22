@@ -663,3 +663,17 @@
   against a three-reservation principal and observed three 201 responses and
   seven sanitized 429 responses with only three Workflow-backed attempts. No
   deployment or production Wrangler change occurred.
+- Implemented Local Studio Task 7.4 with one pure closed-allowlist projection
+  for both Activity's Technical details disclosure and its versioned v1
+  support receipt. The formatter emits only sanitized job/stage/terminal codes,
+  normalized timestamps, transition-derived stage durations, provider/recipe
+  IDs, retention, and cleanup state; adversarial fixtures prove transcript
+  text, paths, URLs, tokens, emails, meeting IDs, and raw provider errors are
+  excluded. Copy uses the Clipboard API with a visible selected textarea
+  fallback, and the same receipt is exposed through a session-guarded local-
+  only GET route. Also closed the Task 7.3 review NITs by binding the full last-
+  activity screen-reader text, rejecting invalid clocks instead of consulting
+  wall time, and recording SHAs `40945d4`, `26290db`, and `dd4b2b4` in track
+  metadata. Validated by `bun run check` (22 Vitest files / 212 tests; Bun web
+  suite: 283 tests; local Studio HTTP, hosted Access/Workflow, builds, and the
+  32 MiB streaming proof passed) and `bun run test:e2e:smoke` (13 passed).

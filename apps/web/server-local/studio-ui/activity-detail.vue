@@ -10,6 +10,10 @@ import {
 } from "./activity-state";
 import { deriveActivityProgress } from "./activity-progress";
 import {
+  buildActivityTechnicalDetails,
+  formatActivitySupportReceipt,
+} from "./activity-support-receipt";
+import {
   createJobActivityTransport,
   useJobActivity,
   type StudioJobDetail,
@@ -60,6 +64,37 @@ const activityProgress = computed(() => detail.value
   ? deriveActivityProgress(detail.value.job, detail.value.events, now.value)
   : undefined
 );
+const technicalDetails = computed(() => detail.value
+  ? buildActivityTechnicalDetails({
+      job: detail.value.job,
+      events: detail.value.events,
+      media: detail.value.actionSnapshot.media,
+    })
+  : undefined
+);
+const supportReceipt = computed(() => technicalDetails.value
+  ? formatActivitySupportReceipt(technicalDetails.value)
+  : ""
+);
+const copyMessage = ref("");
+const showReceiptFallback = ref(false);
+const receiptFallback = ref<HTMLTextAreaElement>();
+
+async function copySupportReceipt(): Promise<void> {
+  showReceiptFallback.value = false;
+  copyMessage.value = "";
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("clipboard_unavailable");
+    await navigator.clipboard.writeText(supportReceipt.value);
+    copyMessage.value = "Support receipt copied.";
+  } catch {
+    showReceiptFallback.value = true;
+    copyMessage.value = "Clipboard unavailable. Copy the selected receipt below.";
+    await nextTick();
+    receiptFallback.value?.focus();
+    receiptFallback.value?.select();
+  }
+}
 
 function stateColor(job: AnalysisJob): StatusColor {
   const state = activityDisplayState(job.stage);
@@ -100,6 +135,17 @@ function terminalMessage(job: AnalysisJob): string {
       : job.stage === "canceled"
         ? "This analysis was canceled."
         : "This analysis stopped when the local process ended.");
+}
+
+function technicalTimestamp(value: string | null): string {
+  return value ? formatDate(value) : "Not recorded";
+}
+
+function technicalDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (!minutes) return `${remainder} second${remainder === 1 ? "" : "s"}`;
+  return `${minutes} minute${minutes === 1 ? "" : "s"} ${remainder} second${remainder === 1 ? "" : "s"}`;
 }
 </script>
 
@@ -221,7 +267,8 @@ function terminalMessage(job: AnalysisJob): string {
               <time
                 :datetime="activityProgress.lastActivityAt"
               >
-                {{ activityProgress.lastActivityText }}
+                <span aria-hidden="true">{{ activityProgress.lastActivityText }}</span>
+                <span class="sr-only">{{ activityProgress.lastActivityAccessibleText }}</span>
               </time>
             </dd>
           </div>
@@ -332,6 +379,108 @@ function terminalMessage(job: AnalysisJob): string {
                 <dd class="mt-1">{{ retentionLabel(detail.job) }}</dd>
               </div>
             </dl>
+          </UCard>
+
+          <UCard
+            v-if="technicalDetails"
+            data-technical-details="allowlisted"
+          >
+            <details>
+              <summary class="cursor-pointer text-lg font-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary">
+                Technical details
+              </summary>
+              <p class="mt-3 text-sm leading-6 text-muted">
+                Sanitized codes and timing only. Private content and raw provider errors are excluded.
+              </p>
+              <dl class="mt-5 space-y-4 text-sm">
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Job ID</dt>
+                  <dd class="mt-1 break-all font-mono">{{ technicalDetails.jobId }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Stage</dt>
+                  <dd class="mt-1 font-mono">{{ technicalDetails.stage }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Terminal code</dt>
+                  <dd class="mt-1 font-mono">{{ technicalDetails.terminalCode }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Created</dt>
+                  <dd class="mt-1">{{ technicalTimestamp(technicalDetails.timestamps.createdAt) }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Updated</dt>
+                  <dd class="mt-1">{{ technicalTimestamp(technicalDetails.timestamps.updatedAt) }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Terminal time</dt>
+                  <dd class="mt-1">{{ technicalTimestamp(technicalDetails.timestamps.terminalAt) }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Cancellation requested</dt>
+                  <dd class="mt-1">{{ technicalTimestamp(technicalDetails.timestamps.cancellationRequestedAt) }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Provider ID</dt>
+                  <dd class="mt-1 font-mono">{{ technicalDetails.providerId }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Recipe ID</dt>
+                  <dd class="mt-1 font-mono">{{ technicalDetails.recipeId }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Media retention state</dt>
+                  <dd class="mt-1 font-mono">{{ technicalDetails.mediaRetentionState }}</dd>
+                  <dd class="mt-1 text-xs text-muted">
+                    Expires {{ technicalTimestamp(technicalDetails.mediaRetentionExpiresAt) }}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Cleanup state</dt>
+                  <dd class="mt-1 font-mono">{{ technicalDetails.cleanupState }}</dd>
+                </div>
+                <div>
+                  <dt class="text-xs font-bold uppercase tracking-wider text-muted">Stage durations</dt>
+                  <dd class="mt-2">
+                    <ul class="space-y-2">
+                      <li
+                        v-for="duration in technicalDetails.stageDurations"
+                        :key="duration.stage"
+                        class="flex flex-wrap justify-between gap-2"
+                      >
+                        <span class="font-mono">{{ duration.stage }}</span>
+                        <span>{{ technicalDuration(duration.seconds) }}</span>
+                      </li>
+                    </ul>
+                  </dd>
+                </div>
+              </dl>
+              <UButton
+                class="mt-6"
+                type="button"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-copy"
+                label="Copy support receipt"
+                @click="copySupportReceipt"
+              />
+              <p class="mt-3 text-sm font-semibold" role="status" aria-live="polite">
+                {{ copyMessage }}
+              </p>
+              <div v-if="showReceiptFallback" class="mt-3">
+                <label for="support-receipt-fallback" class="text-sm font-bold">
+                  Support receipt text
+                </label>
+                <textarea
+                  id="support-receipt-fallback"
+                  ref="receiptFallback"
+                  class="mt-2 min-h-64 w-full rounded-lg border border-default bg-default p-3 font-mono text-xs"
+                  readonly
+                  :value="supportReceipt"
+                />
+              </div>
+            </details>
           </UCard>
 
           <UCard aria-labelledby="job-actions-heading">

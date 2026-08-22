@@ -281,6 +281,15 @@ describe("Studio Activity state", () => {
     expect(progress.lastActivityText).toBe("just now");
   });
 
+  test("rejects an invalid caller clock instead of consulting the wall clock", () => {
+    expect(() => deriveActivityProgress(job("queued"), [], "not-a-clock"))
+      .toThrow("Activity clock must be a valid timestamp.");
+    expect(() => deriveActivityProgress(job("queued"), [], Number.NaN))
+      .toThrow("Activity clock must be a valid timestamp.");
+    expect(() => deriveActivityProgress(job("queued"), [], new Date(Number.NaN)))
+      .toThrow("Activity clock must be a valid timestamp.");
+  });
+
   test("announces a stage change once and stays silent on an unchanged poll", () => {
     const queued = job("queued");
     const indexing = job("indexing", queued.id);
@@ -319,10 +328,16 @@ describe("Studio Activity state", () => {
     );
     expect(source).toContain('activityProgress.elapsed.accessibleText');
     expect(source).toContain('activityProgress.lastActivityText');
+    expect(source).toContain('activityProgress.lastActivityAccessibleText');
     expect(source).toContain('activityProgress.currentStageStartedAt');
     expect(source).toContain("activityProgress.descriptor.kind === 'determinate'");
     expect(source).toContain(':aria-valuenow="activityProgress.descriptor.completed"');
     expect(source).toContain(':aria-valuemax="activityProgress.descriptor.total"');
+    expect(source).toContain('data-technical-details="allowlisted"');
+    expect(source).toContain("Technical details");
+    expect(source).toContain("Copy support receipt");
+    expect(source).toContain("navigator.clipboard.writeText");
+    expect(source).toContain('id="support-receipt-fallback"');
   });
 
   test("orders transitions and keeps cancellation, warning, and cleanup rows", () => {

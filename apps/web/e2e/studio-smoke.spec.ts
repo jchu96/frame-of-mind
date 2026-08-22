@@ -428,6 +428,41 @@ test("creates and cancels one video-only analysis from Activity", {
   );
   await expect(timing.getByText("Canceled", { exact: true })).toBeVisible();
   await expect(timing.getByRole("progressbar")).toHaveCount(0);
+  await page.getByText("Technical details", { exact: true }).click();
+  const technicalDetails = page.locator('[data-technical-details="allowlisted"]');
+  await expect(technicalDetails.getByText(createdJob.job.id, { exact: true })).toBeVisible();
+  await expect(
+    technicalDetails.locator("dt", { hasText: /^Stage$/ })
+      .locator("xpath=following-sibling::dd[1]"),
+  ).toHaveText("canceled");
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText(value: string) {
+          (window as typeof window & { __supportReceipt?: string }).__supportReceipt = value;
+          return Promise.resolve();
+        },
+      },
+    });
+  });
+  await technicalDetails.getByRole("button", { name: "Copy support receipt" }).click();
+  await expect(technicalDetails.getByRole("status")).toHaveText("Support receipt copied.");
+  expect(await page.evaluate(() =>
+    (window as typeof window & { __supportReceipt?: string }).__supportReceipt
+  )).toMatch(/^Frame of Mind support receipt v1\njob_id=job_/);
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("synthetic denial")) },
+    });
+  });
+  await technicalDetails.getByRole("button", { name: "Copy support receipt" }).click();
+  await expect(technicalDetails.getByLabel("Support receipt text")).toBeVisible();
+  await expect(technicalDetails.getByLabel("Support receipt text"))
+    .toHaveValue(/^Frame of Mind support receipt v1\njob_id=job_/);
   expect(clientErrors).toEqual([]);
 });
 
