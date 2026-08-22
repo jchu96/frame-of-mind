@@ -8,7 +8,9 @@ import {
   type HostedAttemptInput,
 } from "../../../workflows/src/contracts.js";
 import { getHostedWorkflowExecutor } from "./executor.js";
+import { getHostedRouteTelemetry } from "../telemetry.js";
 import {
+  hostedJobErrorCode,
   hostedSpendPlan,
   hostedSpendPolicy,
   newHostedOpaqueId,
@@ -20,6 +22,7 @@ const BUILT_IN_RECIPE_REVISION = "builtin-2026-07-27.1";
 
 export default defineEventHandler(async (event) => {
   assertTrustedJsonMutation(event);
+  const telemetry = getHostedRouteTelemetry(event);
   try {
     const request = hostedJobCreateRequestSchema.parse(
       await readHostedJobJson(event),
@@ -74,6 +77,17 @@ export default defineEventHandler(async (event) => {
       attemptId,
       workflowInstanceId: newHostedOpaqueId("workflow"),
     });
+    await telemetry.emit({
+      area: "spend",
+      outcome: "succeeded",
+      code: "spend_reservation_created",
+      stage: "queued",
+      jobId: result.attempt.attemptId,
+      recipeId: result.attempt.input.recipe.id,
+      recipeRevision: result.attempt.input.recipe.revision,
+      model: result.attempt.input.model,
+      studioMode: "hosted",
+    });
     const dispatch = await runtime.executor.dispatch(result.attempt.attemptId);
     setResponseStatus(event, result.replayed ? 200 : 201);
     return {
@@ -81,6 +95,14 @@ export default defineEventHandler(async (event) => {
       dispatch: { replayed: dispatch.replayed },
     };
   } catch (error) {
+    await telemetry.emit({
+      area: "spend",
+      outcome: "failed",
+      code: hostedJobErrorCode(error),
+      stage: "queued",
+      routeClass: "hosted_job_create",
+      studioMode: "hosted",
+    });
     throwHostedJobHttpError(error);
   }
 });

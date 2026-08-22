@@ -158,6 +158,32 @@ try {
     workflowWorker,
     200,
   );
+  await expectStatus(fetch(`http://127.0.0.1:${workflowPort}/telemetry`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      area: "upload",
+      outcome: "started",
+      code: "hosted_upload_started",
+      routeClass: "hosted_upload",
+      byteCount: 0,
+      studioMode: "hosted",
+    }),
+  }), 202, "codes-only telemetry event");
+  await expectStatus(fetch(`http://127.0.0.1:${workflowPort}/telemetry`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      area: "upload",
+      outcome: "failed",
+      code: "hosted_upload_failed",
+      email: "seat@example.test",
+      studioMode: "hosted",
+    }),
+  }), 400, "telemetry content rejection");
+  console.log(
+    "HOSTED_TELEMETRY contract=PASS codes_and_structural_fields_only dsn_default=off upload=interface_only",
+  );
 
   const workerPort = await reservePort();
   const baseUrl = `http://127.0.0.1:${workerPort}`;
