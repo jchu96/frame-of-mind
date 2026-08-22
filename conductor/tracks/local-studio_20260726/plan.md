@@ -236,7 +236,7 @@ separate proposed track.
       SQLite/D1 migration and shared projection changes, keep existing v2 rows
       readable, require provider credentials only for enriched runs, and prove
       context is skipped only by committed user intent rather than failure.
-- [ ] Task 6.7: Build the Intent step and shared composer-readiness coordinator
+- [x] Task 6.7: Build the Intent step and shared composer-readiness coordinator
       with recipe cards, focus, strict custom recipe validation, advanced model
       details, and entry through Intent, Context, or Recording. Recording and
       Intent are required; Context is optional; sections can be completed in
@@ -258,6 +258,19 @@ The shipped route currently requires sealed media and committed context; Tasks
 6.5-6.8 deliberately generalize that flow without reopening the provider,
 staging, or isolation contracts. Task 6.5's versioned context-optional contract
 is next.
+
+Task 6.7 is complete: the authenticated local-only `/intent` route renders
+canonical built-in recipe cards from a sanitized server catalog, validates
+strict instruction-only custom recipes before browser persistence, and stores
+only recipe, optional focus, and the current default model in the refresh-safe
+Intent draft. Home, Intent, Context, and Recording now share one readiness
+coordinator: Intent and sealed Recording are required, while missing,
+committed, or explicitly video-only Context remains informational. Context
+draft v2 removes the media-session coupling while migrating valid legacy
+drafts, so media deletion or expiry cannot discard Intent or Context. Contract,
+component, production HTTP, Cloudflare-boundary, and Playwright smoke coverage
+validate keyboard selection, field errors, order-independent drafts, and
+fail-closed custom imports. Task 6.8's final Run receipt is next.
 
 ### Verification
 
