@@ -317,17 +317,24 @@ principal-scoped durable receipt before every Gemini call, and throw
 `NonRetryableError` when Gemini succeeded but its receipt could not be
 committed. A crash after Gemini success must never cause a second automatic
 generate; the attempt becomes indeterminate and only explicit user retry may
-create a new Workflow instance.
+create a new Workflow instance. The Workflow catches terminal provider/receipt
+errors inside `run`, executes the explicit `cleanup` step before rethrowing or
+finalizing, and registers rollback handlers for committed step outputs that own
+cleanup actions. An uncaught `NonRetryableError` may not sit before a later
+linear cleanup step because Cloudflare would skip that step.
 Cancellation writes a D1 flag checked between steps and before publication;
 retry creates a new linked job, attempt, and Workflow instance.
 
 `AnalysisJobExecutor` gains a hosted Workflows adapter. The local Bun/SQLite
 executor and its startup/restart behavior remain untouched.
 
-Task 3.0 resolves whether the Nitro `cloudflare_module` output can export the
-required `WorkflowEntrypoint`. Until it passes, runtime topology is residual.
-The decided fallback is a sibling Workflows Worker reached through a service
-binding while browser/API traffic remains on the same Access hostname.
+Task 3.0 resolved the runtime topology on 2026-08-22. Pinned Nitro 2.13.4 has
+no supported named-export seam for the required `WorkflowEntrypoint`, so a
+sibling, internal-only Workflows Worker owns the class export. The Nuxt Worker
+reaches it through a service binding while browser/API traffic remains on the
+same Access hostname. Both dry-runs passed, and local workerd completed a
+two-step instance created through Nuxt; see the
+[topology spike](../../../docs/spikes/hosted-workflows-spike-2026-08-22.md).
 
 **Rationale.** Workflows persist step progress and retry independently of
 browser or HTTP lifetime. One instance per attempt maps directly to existing
@@ -522,7 +529,10 @@ strictly above `MODEL_REQUEST_TIMEOUT_MS`. Provider steps use
 `retries.limit: 0`, check a principal-scoped durable receipt before any Gemini
 call, and raise `NonRetryableError` after provider success without a committed
 receipt. A crash-after-Gemini test must prove the platform never issues a
-second generate. Steps return only bounded state and emit codes-only events.
+second generate. Terminal provider/receipt errors are caught within `run` so
+the explicit `cleanup` step executes before the error is rethrown or finalized;
+owned step outputs also register rollback handlers for termination. Steps
+return only bounded state and emit codes-only events.
 `ensure_gemini_file` accepts only a sealed,
 digest-matched media receipt. `publish` validates the analysis/manifest pair
 and atomically records the projection. `cleanup` runs after success, failure,

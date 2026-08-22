@@ -22,10 +22,12 @@ creation stays dark; hosted uploads use raw 8 MiB parts only after a measured
 two-concurrent-stream Nitro spike; provider Workflow steps use explicit
 15-minute configs with zero platform retry; and parent, item, and registry rows
 all use composite principal keys. Workflow export topology is resolved only by
-Task 3.0, with a sibling Worker/service binding as the fixed fallback. Local
-SQLite uses reserved `local:single-user` so shared RunStore SQL stays in
-lockstep without adding principal fields to durable run bundles or local
-job/media ports.
+Task 3.0: pinned Nitro 2.13.4 has no supported named-export seam, so an
+internal-only sibling Workflows Worker owns `WorkflowEntrypoint` and Nuxt calls
+it through a service binding on the existing Access hostname. Both dry-runs and
+a local two-step instance passed. Local SQLite uses reserved
+`local:single-user` so shared RunStore SQL stays in lockstep without adding
+principal fields to durable run bundles or local job/media ports.
 
 ## 2026-08-11 — Recipes become charters; the executor owns prompt policy
 

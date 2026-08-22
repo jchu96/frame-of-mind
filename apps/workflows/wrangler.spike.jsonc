@@ -1,0 +1,14 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "frame-of-mind-hosted-workflows-spike",
+  "main": "src/hosted-workflow-spike.ts",
+  "compatibility_date": "2026-08-18",
+  "workers_dev": false,
+  "workflows": [
+    {
+      "name": "frame-of-mind-hosted-workflow-spike",
+      "binding": "HOSTED_WORKFLOW",
+      "class_name": "HostedWorkflowSpike"
+    }
+  ]
+}
