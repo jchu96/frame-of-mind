@@ -631,6 +631,26 @@ try {
   ) {
     throw new Error("Retained media range response did not match its sealed receipt.");
   }
+  const overlappingRanges = await Promise.all([
+    probe.get(retainedMediaPath, { range: "bytes=0-31" }),
+    probe.get(retainedMediaPath, { range: "bytes=16-47" }),
+  ]);
+  await Promise.all(overlappingRanges.map((response, index) => expectStatus(
+    response,
+    206,
+    `overlapping retained media range ${index + 1} streams concurrently`,
+  )));
+  const overlappingBodies = await Promise.all(overlappingRanges.map(
+    (response) => response.arrayBuffer(),
+  ));
+  if (
+    !Buffer.from(overlappingBodies[0]!)
+      .equals(Buffer.from(retainedFixture.slice(0, 32)))
+    || !Buffer.from(overlappingBodies[1]!)
+      .equals(Buffer.from(retainedFixture.slice(16, 48)))
+  ) {
+    throw new Error("Overlapping retained media ranges returned incorrect bytes.");
+  }
   const retainedFull = await expectStatus(
     await probe.get(retainedMediaPath),
     200,
