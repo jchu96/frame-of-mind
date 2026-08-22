@@ -1,6 +1,6 @@
 # Reference draft amendment to ADR 0018: stage hosted media in private R2
 
-- Status: Active fallback after Task 2.0c NO-GO — not adopted
+- Status: Second fallback after Task 2.0d bounded-part GO — not adopted
 - Date: 2026-08-22
 - Amends: [ADR 0018](../adr/0018-hosted-studio-trust-boundary.md)
 - Trigger: Task 2.0c hosted streaming NO-GO
@@ -10,8 +10,11 @@ Task 2.0b provisionally resolved both blockers against a fast sink, but Task
 `TransformStream` retained the full 8 MiB request while the sink delayed its
 first read. The same production-shaped check could not reject a source that
 declared 8 MiB and produced 9 MiB because workerd exposed only the declared
-bytes to the wrapper. This R2 design is now the active fallback for replanning,
-but it still grants no implementation or deployment authority until adopted.
+bytes to the wrapper. Task 2.0d subsequently measured smaller parts and
+proposed a 4 MiB part with a per-principal concurrency cap of four. This R2
+design is therefore the second fallback if that amendment is rejected or
+regresses; it still grants no implementation or deployment authority until
+adopted.
 
 ## Preserved invariant
 
@@ -53,14 +56,15 @@ surface. That is a material expansion from ADR 0018's Tier A assertion that
 fresh secret-custody and threat-model review rather than treating this draft
 as an implementation detail.
 
-## Why not only reduce the part size
+## Why the smaller-part proposal comes first
 
-Nitro 2.13.4 materializes every request body before H3. Four MiB parts would
-make each allocation smaller, but they would preserve the forbidden shape,
-increase request and receipt count, and leave concurrency as an allocation
-multiplier. Smaller parts remain a possible separate amendment only if the
-product explicitly accepts bounded materialization and proves its concurrency
-ceiling; this draft does not weaken that requirement silently.
+Nitro 2.13.4 materializes every request body before H3. Task 2.0d explicitly
+accepts that behavior and bounds it by construction rather than describing it
+as streaming: fresh-process measurements covered 1, 2, and 4 MiB parts at
+concurrency two and four, and the proposal selects the largest passing 4 MiB ×
+4 combination. It increases request and receipt count but avoids the new R2
+custody, secret, and CORS boundaries. This draft remains available if the
+bounded-part amendment is rejected or later fails its oracle.
 
 ## Required proof before adoption
 
@@ -78,9 +82,10 @@ ceiling; this draft does not weaken that requirement silently.
   recording names, or media bytes; and
 - local Studio and durable v2/v3 run contracts remain unchanged.
 
-## Current consequence after Task 2.0c
+## Current consequence after Task 2.0d
 
-Tasks 2.1–2.4 are blocked by the renewed NO-GO. Phase 2 must be replanned around R2 session
-creation, direct multipart transfer, verified completion, provider streaming,
-and exact cleanup. This draft does not modify ADR 0018 and carries no
-implementation or deployment authority.
+Tasks 2.1–2.4 remain blocked only until the proposed 4 MiB × 4 amendment is
+reviewed and adopted. If that proposal is rejected or regresses, Phase 2 must
+be replanned around R2 session creation, direct multipart transfer, verified
+completion, provider streaming, and exact cleanup. This draft does not modify
+ADR 0018 and carries no implementation or deployment authority.

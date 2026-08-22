@@ -7,7 +7,7 @@ declare const nitro: {
 
 const hostedStreamSpikeMarker = "FRAME_OF_MIND_HOSTED_STREAM_SPIKE_WRAPPER_V2";
 const hostedUploadPath = "/api/_spike/stream";
-const minimumSpikeBytes = 8 * 1024 * 1024;
+const minimumSpikeBytes = 1 * 1024 * 1024;
 const maximumSpikeBytes = 16 * 1024 * 1024;
 
 interface HostedStreamEnv {
@@ -135,17 +135,15 @@ async function handleRawUpload(request: Request, env: HostedStreamEnv): Promise<
   if (lengthFailure === "under_length") {
     return errorResponse(400, "The request body is shorter than Content-Length.");
   }
+  const bytesWritten = Number(digestStream.bytesWritten);
+  if (forwardedBytes !== contentLength || bytesWritten !== contentLength) {
+    sinkAbort.abort(new Error("hosted_stream_length_receipt_mismatch"));
+    return errorResponse(400, "The forwarded body does not match Content-Length.");
+  }
   const sinkReceipt = await readSinkReceipt(sinkResponse);
   if (sinkReceipt instanceof Response) return sinkReceipt;
-  const bytesWritten = Number(digestStream.bytesWritten);
   const sha256 = toHex(await digestStream.digest);
-  if (
-    forwardedBytes !== contentLength
-    || bytesWritten !== contentLength
-    || sinkReceipt.bytes !== contentLength
-  ) {
-    return errorResponse(502, "Spike sink byte receipt mismatch.");
-  }
+  if (sinkReceipt.bytes !== contentLength) return errorResponse(502, "Spike sink byte receipt mismatch.");
   if (sinkReceipt.sha256 !== sha256) {
     return errorResponse(502, "Spike sink digest receipt mismatch.");
   }

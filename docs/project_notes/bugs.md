@@ -19,13 +19,18 @@
   counting/digesting `TransformStream` still added 8,398,085 backing bytes for
   an 8 MiB upload while the sink delayed its first read for 2,503 ms. A request
   source that declared 8 MiB and produced 9 MiB was truncated to 8 MiB at the
-  workerd service boundary, returned 200, and recorded a receipt. Task 2.0 is
-  NO-GO, Tasks 2.1–2.4 are blocked, and private R2 is the active unadopted
-  fallback.
+  workerd service boundary, returned 200, and recorded a receipt.
+- Resolution proposal: Task 2.0d accepts runtime materialization and bounds it
+  by construction. Fresh Wrangler processes measured 1, 2, and 4 MiB parts at
+  concurrency two and four; every combination passed its
+  `part × concurrency × 1.5` hold bound and the 24 MiB full-run backing-growth
+  cap. The largest 4 MiB × 4 case measured 2,842,764 bytes. Task 2.0 is GO at
+  4 MiB parts pending an ADR 0018 amendment; private R2 is the second fallback.
 - Prevention: gate hosted upload changes on the built workerd artifact, scan
   the emitted entry as well as route source, inspect backing storage rather
   than ordinary JS heap alone, stall the sink long enough to exercise
-  backpressure, test over-length behavior through the service boundary, and
+  backpressure, isolate each memory combination in a fresh process to prevent
+  allocator reuse from hiding growth, test length behavior through the service boundary, and
   require `DigestStream` or a static precompiled WASM import before claiming
   Worker-side digest support.
 
