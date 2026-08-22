@@ -13,6 +13,7 @@ const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-stream-
 const configPath = join(temporaryRoot, "wrangler.jsonc");
 const persistRoot = join(temporaryRoot, "wrangler-state");
 const routePath = "/api/_spike/stream";
+const priorBackingPlateau = 33_568_143;
 const sinkReceipts = new Map<string, SinkReceipt>();
 let lastSinkFailure = "none";
 let jwksServer: ReturnType<typeof Bun.serve> | undefined;
@@ -28,17 +29,23 @@ try {
     "Cloudflare artifact build",
   );
   receipt("build", true, "cloudflare_module");
+  await runChecked(
+    ["bun", "--no-env-file", "run", "build:hosted-stream-entry"],
+    "Hosted wrapper entry build",
+  );
+  receipt("hosted_entry_build", true, "apps/web/.output/server/hosted-entry.mjs");
 
-  const routeSource = await readFile(resolve("apps/web/server/api/_spike/stream.post.ts"), "utf8");
+  const routeSource = await readFile(resolve("scripts/spike-hosted-entry.ts"), "utf8");
   const forbiddenRouteCalls = [...routeSource.matchAll(/\b(?:readBody|readRawBody)\s*\(/g)];
   assert(forbiddenRouteCalls.length === 0, "Spike route calls a body-materializing H3 helper.");
-  receipt("route_source", true, "raw_stream hash_wasm no_readBody_no_readRawBody");
+  assert(!routeSource.includes(".arrayBuffer()"), "Hosted entry source materializes the request body.");
+  receipt("route_source", true, "raw_stream DigestStream no_body_materializer");
 
   const artifactScan = await scanBuiltArtifact();
   receipt(
     "artifact_marker",
-    artifactScan.routeMarker && artifactScan.routePath,
-    `route=${artifactScan.routePath} marker=${artifactScan.routeMarker}`,
+    artifactScan.routeMarker && artifactScan.routePath && artifactScan.hostedEntry,
+    `route=${artifactScan.routePath} marker=${artifactScan.routeMarker} hosted_entry=${artifactScan.hostedEntry}`,
   );
 
   const keys = await generateKeyPair("RS256");
@@ -87,8 +94,19 @@ try {
   const origin = `http://127.0.0.1:${workerPort}`;
   await waitForWorker(origin, activeWrangler.child);
   inspector = await InspectorClient.connect(inspectorPort).catch(() => undefined);
+  await expectStatus(fetch(`${origin}${routePath}`, {
+    method: "POST",
+    headers: {
+      "content-length": String(8 * mebibyte),
+      "content-range": `bytes 0-${8 * mebibyte - 1}/${8 * mebibyte}`,
+      "x-spike-upload-id": "missing-access",
+    },
+    body: fixtureStream(8 * mebibyte, 7),
+    duplex: "half",
+  } as RequestInit & { duplex: "half" }), 403, "enabled spike Access gate");
+  receipt("access_gate", true, "missing_assertion_status=403");
 
-  const baseline = await sampleMemory(activeWrangler.child.pid, inspector);
+  const largeBaseline = await sampleMemory(activeWrangler.child.pid, inspector);
   const large = uploadFixture(origin, token, { id: "single-16m", bytes: 16 * mebibyte, seed: 17 });
   const largeMonitor = monitorMemory(activeWrangler.child.pid, inspector, large);
   const [largeReceipt, largeMemory] = await Promise.all([large, largeMonitor]);
@@ -96,6 +114,8 @@ try {
   receipt("single_16m_bytes", true, `bytes=${largeReceipt.bytes} sink_bytes=${largeReceipt.sink.bytes}`);
   receipt("single_16m_digest", true, `sha256=${largeReceipt.sha256}`);
 
+  await Bun.sleep(250);
+  const concurrentBaseline = await sampleMemory(activeWrangler.child.pid, inspector);
   const concurrent = Promise.all([
     uploadFixture(origin, token, { id: "concurrent-a", bytes: 8 * mebibyte, seed: 31 }),
     uploadFixture(origin, token, { id: "concurrent-b", bytes: 8 * mebibyte, seed: 47 }),
@@ -114,18 +134,26 @@ try {
     `a=${concurrentReceipts[0].sha256} b=${concurrentReceipts[1].sha256}`,
   );
   const allUploadReceipts = [largeReceipt, ...concurrentReceipts];
-  const hashWasmRuntimePassed = allUploadReceipts.every(
-    (value) => value.runtime.hashImplementation === "hash-wasm",
+  const digestPassed = allUploadReceipts.every(
+    (value) => value.runtime.hashImplementation === "DigestStream"
+      && value.sha256 === value.expected.sha256,
   );
   receipt(
-    "hash_wasm_runtime",
-    hashWasmRuntimePassed,
-    hashWasmRuntimePassed
-      ? "implementation=hash-wasm"
-      : "implementation=sink-receipt-fallback failure=runtime_compile_disallowed",
+    "digest_impl",
+    digestPassed,
+    `implementation=DigestStream sha256=${largeReceipt.sha256}`,
   );
 
-  const memory = summarizeMemory([baseline, ...largeMemory, ...concurrentMemory]);
+  const memory = summarizeMemory([
+    largeBaseline,
+    ...largeMemory,
+    concurrentBaseline,
+    ...concurrentMemory,
+  ]);
+  const concurrentMemorySummary = summarizeMemory([concurrentBaseline, ...concurrentMemory]);
+  const backingThreshold = Math.floor(priorBackingPlateau / 2);
+  const memoryBounded = concurrentMemorySummary.backingDelta !== null
+    && concurrentMemorySummary.backingDelta < backingThreshold;
   receipt(
     "memory_signal",
     true,
@@ -140,9 +168,15 @@ try {
       + `process_tree_rss_delta=${formatBytes(memory.rssDelta)}`,
   );
   receipt(
+    "concurrent_backing",
+    memoryBounded,
+    `inspector_backing_delta=${formatBytes(concurrentMemorySummary.backingDelta)} `
+      + `prior_plateau=${priorBackingPlateau} threshold=${backingThreshold}`,
+  );
+  receipt(
     "wasm_signal",
     true,
-    "unavailable hash-wasm does_not_expose_linear_memory; inspector_heap_includes_reachable_wasm_wrapper_only",
+    "not_used DigestStream avoids_runtime_wasm_compile",
   );
   receipt(
     "isolate_total_signal",
@@ -152,22 +186,25 @@ try {
 
   const upstreamStates = allUploadReceipts
     .map((value) => String(value.runtime.upstreamBodyUsedAtHandler));
-  const prebuffered = artifactScan.requestArrayBuffer;
+  const streamingPathPassed = artifactScan.hostedEntry
+    && !artifactScan.hostedEntryArrayBuffer
+    && upstreamStates.every((value) => value === "false")
+    && memoryBounded;
   receipt(
     "streaming_path",
-    !prebuffered,
-    prebuffered
-      ? `nitro_entry=request.arrayBuffer upstream_body_used=${upstreamStates.join(",")} source=${artifactScan.prebufferFile}`
-      : `nitro_entry=stream upstream_body_used=${upstreamStates.join(",")}`,
+    streamingPathPassed,
+    `entry=hosted-entry upstream_body_used=${upstreamStates.join(",")} `
+      + `stock_nitro_prebuffer=${artifactScan.requestArrayBuffer} `
+      + `inspector_backing_delta=${formatBytes(concurrentMemorySummary.backingDelta)}`,
   );
 
-  spikePassed = !prebuffered && hashWasmRuntimePassed;
+  spikePassed = streamingPathPassed && digestPassed;
   console.log(
     spikePassed
       ? "HOSTED_STREAM_SPIKE PASSED"
       : `HOSTED_STREAM_SPIKE FAILED reason=${[
-          ...(prebuffered ? ["nitro_cloudflare_module_materializes_request_body"] : []),
-          ...(hashWasmRuntimePassed ? [] : ["hash_wasm_runtime_compile_disallowed"]),
+          ...(streamingPathPassed ? [] : ["hosted_entry_streaming_path_failed"]),
+          ...(digestPassed ? [] : ["digest_stream_failed"]),
         ].join(",")}`,
   );
 } catch (error) {
@@ -207,10 +244,7 @@ interface UploadReceipt {
   expected: { bytes: number; sha256: string };
   runtime: {
     upstreamBodyUsedAtHandler: boolean | null;
-    hashImplementation: "hash-wasm" | "sink-receipt-fallback";
-    hashWasmFailure: "runtime_compile_disallowed" | null;
-    heapBefore: unknown;
-    heapAfter: unknown;
+    hashImplementation: "DigestStream";
   };
 }
 
@@ -300,7 +334,10 @@ async function uploadFixture(
 
 function assertUploadReceipt(receiptValue: UploadReceipt): void {
   const sink = sinkReceipts.get(receiptValue.uploadId);
-  assert(receiptValue.marker === "FRAME_OF_MIND_HOSTED_STREAM_SPIKE_ROUTE_V1", "Route marker mismatch.");
+  assert(
+    receiptValue.marker === "FRAME_OF_MIND_HOSTED_STREAM_SPIKE_WRAPPER_V2",
+    "Hosted wrapper marker mismatch.",
+  );
   assert(receiptValue.bytes === receiptValue.expected.bytes, `${receiptValue.uploadId}: route byte mismatch.`);
   assert(receiptValue.sink.bytes === receiptValue.expected.bytes, `${receiptValue.uploadId}: sink byte mismatch.`);
   assert(receiptValue.sha256 === receiptValue.expected.sha256, `${receiptValue.uploadId}: route digest mismatch.`);
@@ -348,7 +385,7 @@ async function writeWranglerConfig(options: {
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("node_modules/wrangler/config-schema.json"),
     name: "frame-of-mind-hosted-stream-spike",
-    main: resolve("apps/web/.output/server/index.mjs"),
+    main: resolve("apps/web/.output/server/hosted-entry.mjs"),
     compatibility_date: "2026-07-02",
     compatibility_flags: ["nodejs_compat"],
     assets: {
@@ -429,11 +466,15 @@ async function signAccessToken(privateKey: KeyLike, issuer: string): Promise<str
 async function scanBuiltArtifact(): Promise<{
   routePath: boolean;
   routeMarker: boolean;
+  hostedEntry: boolean;
+  hostedEntryArrayBuffer: boolean;
   requestArrayBuffer: boolean;
   prebufferFile: string;
 }> {
   const artifactRoot = resolve("apps/web/.output/server");
   const artifactFiles = await files(artifactRoot);
+  const hostedEntryPath = resolve("apps/web/.output/server/hosted-entry.mjs");
+  const hostedEntrySource = await readFile(hostedEntryPath, "utf8");
   let routePathFound = false;
   let routeMarkerFound = false;
   let requestArrayBufferFound = false;
@@ -450,6 +491,10 @@ async function scanBuiltArtifact(): Promise<{
   return {
     routePath: routePathFound,
     routeMarker: routeMarkerFound,
+    hostedEntry: hostedEntrySource.includes("FRAME_OF_MIND_HOSTED_STREAM_SPIKE_WRAPPER_V2")
+      && hostedEntrySource.includes("./index.mjs")
+      && hostedEntrySource.includes("DigestStream"),
+    hostedEntryArrayBuffer: hostedEntrySource.includes(".arrayBuffer()"),
     requestArrayBuffer: requestArrayBufferFound,
     prebufferFile,
   };

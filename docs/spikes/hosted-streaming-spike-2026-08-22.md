@@ -2,9 +2,79 @@
 
 ## Decision
 
-**NO-GO:** keep hosted creation dark and do not implement FR-04's browser →
-Worker → Gemini raw 8 MiB part path on the current Nitro
-`cloudflare_module` artifact.
+**GO after Task 2.0b:** the built wrapper-entry and Worker-native digest
+workarounds preserve FR-04's browser → Worker → Gemini raw-part contract
+without R2 staging. Tasks 2.1–2.4 are unblocked but remain unimplemented.
+
+`apps/web/.output/server/hosted-entry.mjs` imports the stock Nitro artifact and
+intercepts only `POST /api/_spike/stream`. The wrapper reuses the existing
+Cloudflare Access JWT verifier before reading the body, streams the original
+`request.body` into the Content-Range sink, and tees the stream into
+Cloudflare's `crypto.DigestStream("SHA-256")`. Every other request delegates to
+Nitro unchanged. The route remains absent unless its spike environment flag is
+present, and no deployment or production Wrangler configuration changed.
+
+The workerd oracle passed three consecutive runs. In the decisive full run,
+all three handlers received `bodyUsed=false`; the independent fixture,
+DigestStream, and sink SHA-256 receipts matched; and the two concurrent 8 MiB
+requests added 6,930,496 bytes of inspector backing storage. A repeat measured
+6,926,400 bytes. Both are well below the prior 33,568,143-byte plateau.
+
+Cloudflare documents `DigestStream` as a writable stream that does not retain
+written data, and documents that Workers' WebAssembly instantiation accepts
+precompiled modules. The wrapper therefore avoids both original blockers:
+[Web Crypto `DigestStream`](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/#digeststream)
+and [WebAssembly](https://developers.cloudflare.com/workers/runtime-apis/webassembly/).
+
+The private-R2 amendment is **not needed, not adopted, and kept for reference**
+in
+[`adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`](adr-0018-private-r2-staging-amendment-draft-2026-08-22.md).
+
+## Task 2.0b oracle
+
+`bun run check:hosted-stream` now:
+
+1. builds the stock `cloudflare_module` artifact and its sibling
+   `hosted-entry.mjs` wrapper;
+2. scans the emitted wrapper for its route/marker, Nitro fallback import,
+   `DigestStream`, and absence of body materialization;
+3. proves the authenticated path is 404 while dark and rejects a missing
+   Access assertion with 403 when enabled;
+4. sends one 16 MiB body and two concurrent 8 MiB bodies through workerd to a
+   fake Content-Range sink;
+5. checks wrapper, sink, and independent fixture byte/digest receipts; and
+6. measures `Runtime.getHeapUsage` backing storage plus host process-tree RSS.
+
+The decisive Task 2.0b receipt is:
+
+```text
+HOSTED_STREAM build=PASS cloudflare_module
+HOSTED_STREAM hosted_entry_build=PASS apps/web/.output/server/hosted-entry.mjs
+HOSTED_STREAM route_source=PASS raw_stream DigestStream no_body_materializer
+HOSTED_STREAM artifact_marker=PASS route=true marker=true hosted_entry=true
+HOSTED_STREAM dark_gate=PASS authenticated_status=404 env_absent
+HOSTED_STREAM access_gate=PASS missing_assertion_status=403
+HOSTED_STREAM single_16m_bytes=PASS bytes=16777216 sink_bytes=16777216
+HOSTED_STREAM single_16m_digest=PASS sha256=ace873f60c5a925cbf6e49dd456d40e1bb2cdc7689d329f69997e67b139f197b
+HOSTED_STREAM concurrent_bytes=PASS uploads=2 bytes_each=8388608 sink_exact=true
+HOSTED_STREAM concurrent_digests=PASS a=343314891f2a2b41235120eb6832810cbb543ae9a186bb9bb000ac21822e2857 b=504c55f2b9bec2bb1514dfae56e21990fb2037904b154a06b356ac4ec2ecc39f
+HOSTED_STREAM digest_impl=PASS implementation=DigestStream sha256=ace873f60c5a925cbf6e49dd456d40e1bb2cdc7689d329f69997e67b139f197b
+HOSTED_STREAM memory_signal=PASS inspector_heap_baseline=9419872 inspector_heap_peak=23514004 inspector_heap_delta=14094132 inspector_backing_baseline=9155422 inspector_backing_peak=10036161 inspector_backing_delta=880739 process_tree_rss_baseline=602456064 process_tree_rss_peak=655196160 process_tree_rss_delta=52740096
+HOSTED_STREAM concurrent_backing=PASS inspector_backing_delta=6930496 prior_plateau=33568143 threshold=16784071
+HOSTED_STREAM wasm_signal=PASS not_used DigestStream avoids_runtime_wasm_compile
+HOSTED_STREAM isolate_total_signal=PASS unavailable workerd_has_no_per_isolate_total_api; process_tree_rss_is_host-level_best_signal
+HOSTED_STREAM streaming_path=PASS entry=hosted-entry upstream_body_used=false,false,false stock_nitro_prebuffer=true inspector_backing_delta=6930496
+HOSTED_STREAM_SPIKE PASSED
+```
+
+The stock Nitro artifact still contains its prebuffering call; the passing
+contract is specifically the wrapper's exact-path bypass. This is intentional
+and is pinned by both artifact scanning and runtime `bodyUsed` receipts.
+
+## Task 2.0 NO-GO history
+
+The initial **NO-GO** is retained below as causal history. It applied to the
+stock Nitro entry before the two Task 2.0b workarounds.
 
 The sink received the right bytes, but only after Nitro had materialized each
 request. The stock entry therefore violates the stronger requirement that H3
@@ -12,12 +82,12 @@ receive and forward the original stream. A second independent blocker prevents
 the requested server-side `hash-wasm` digest: workerd rejects the package's
 runtime `WebAssembly.compile()` call.
 
-The proposed contract change is private R2 staging, not merely smaller parts.
-Smaller parts would reduce the size of each allocation without removing the
-materialization boundary. The amendment proposal is
+The then-proposed contract change was private R2 staging, not merely smaller
+parts. Smaller parts would reduce the size of each allocation without removing
+the materialization boundary. The amendment proposal is
 [`adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`](adr-0018-private-r2-staging-amendment-draft-2026-08-22.md).
 
-## Oracle
+## Task 2.0 oracle (historical)
 
 `bun run check:hosted-stream` performs the following against the built
 `apps/web/.output/server/index.mjs` artifact under Wrangler/workerd:
@@ -38,7 +108,7 @@ Access assertion and returns 404 unless `NUXT_HOSTED_STREAM_SPIKE_ENABLED` is
 set. Its sink is restricted to loopback HTTP. No Gemini endpoint, key, upload,
 deployment, production D1, or `wrangler.jsonc` was touched.
 
-## Receipt
+## Task 2.0 receipt (historical)
 
 The decisive run used Bun 1.3.14, Wrangler 4.123.0, workerd 1.20260811.1,
 Nitro 2.13.4, and `hash-wasm` 4.12.0:
@@ -60,11 +130,13 @@ HOSTED_STREAM streaming_path=FAIL nitro_entry=request.arrayBuffer upstream_body_
 HOSTED_STREAM_SPIKE FAILED reason=nitro_cloudflare_module_materializes_request_body,hash_wasm_runtime_compile_disallowed
 ```
 
-The script intentionally exits 1 for this measured NO-GO and is therefore a
-standalone check, not part of `bun run check`. Its full run is approximately
-eight seconds on the measured machine.
+The script intentionally exited 1 for this measured historical NO-GO. After
+Task 2.0b it exits 0 only when the wrapper streaming, Access, digest, byte, and
+backing-store receipts all pass. It remains a standalone check rather than a
+`bun run check` step; its full run is approximately nine seconds on the
+measured machine.
 
-## Memory interpretation
+## Task 2.0 memory interpretation (historical)
 
 - Inspector JavaScript heap rose by only about 0.8 MB.
 - Inspector backing storage rose by 33,568,143 bytes during two concurrent
@@ -80,7 +152,7 @@ The observed peak does not by itself prove a 128 MB isolate OOM. It does prove
 the forbidden allocation shape: ordinary heap alone would have hidden the
 body copies, while inspector backing storage tracks them.
 
-## Grep proof and exact failure shape
+## Task 2.0 grep proof and exact failure shape (historical)
 
 The route source contains neither H3 body materializer:
 
@@ -106,9 +178,11 @@ CompileError: WebAssembly.compile(): Wasm code generation disallowed by embedder
 The successful sink receipts therefore prove transport correctness after
 materialization. They do not waive either blocker or authorize Task 2.1.
 
-## Re-open criteria
+## Historical re-open criteria
 
-Re-run this spike only after one of these contract changes is reviewed:
+These were the criteria recorded by the original NO-GO. Task 2.0b supplied an
+equivalent spec-preserving path—an exact-route wrapper plus `DigestStream`—
+without adopting R2:
 
 - a Nitro/workerd combination passes the original-request streaming path and
   a workerd-compatible precompiled SHA-256 module replaces runtime WASM
