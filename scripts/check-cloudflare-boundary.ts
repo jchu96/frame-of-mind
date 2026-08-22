@@ -24,6 +24,15 @@ export const ad11ForbiddenMarkers = [
   "bun:sqlite",
 ] as const;
 
+// Local-only surfaces added after AD-11 was frozen. They extend the forbidden
+// scan without changing the AD-11 set the release rehearsal reports.
+export const localOnlyForbiddenMarkers = [
+  "server-local/studio-maintenance",
+  "/api/studio/maintenance",
+  "FRAME_OF_MIND_MAINTENANCE_INTERVAL_MS",
+  "maintenance_stale_job",
+] as const;
+
 export const hostedWrapperMarker = "FRAME_OF_MIND_HOSTED_ENTRY_V1";
 const wrapperSensitiveMarkers = [
   "GEMINI_API_KEY",
@@ -54,7 +63,7 @@ export async function checkCloudflareBoundary(
   const foundRequiredMarkers = new Set<string>();
   for (const path of artifactFiles) {
     const contents = await readFile(path, "utf8");
-    for (const marker of ad11ForbiddenMarkers) {
+    for (const marker of [...ad11ForbiddenMarkers, ...localOnlyForbiddenMarkers]) {
       if (contents.includes(marker)) {
         matches.push(`${relative(resolvedOutputRoot, path)}: ${marker}`);
       }

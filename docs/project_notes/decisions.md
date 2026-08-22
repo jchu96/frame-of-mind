@@ -4,6 +4,17 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-08-22 — One plan owns local Studio maintenance
+
+Local Studio replaces independently scheduled media/context expiry work with
+one startup-and-interval controller over job, media, and context snapshots. A
+pure plan names only opaque IDs and fixed reasons; its executor is idempotent,
+and stale-job warning plus interruption is atomic. The operator's original
+recording is outside the inventory, a live retained receipt is a deletion veto,
+and an active job heartbeat protects its media/context leases. This changes the
+operational cleanup mechanism, not the accepted retention or ownership
+boundaries in ADRs 0007 and 0011.
+
 ## 2026-08-22 — Hosted Studio is a principal-scoped Cloudflare boundary
 
 Proposed: Tier A extends the existing Worker, D1, Access application, and

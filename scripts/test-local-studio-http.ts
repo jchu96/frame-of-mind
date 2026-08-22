@@ -29,6 +29,7 @@ const environment = {
   NITRO_PORT: String(port),
   NUXT_SQLITE_PATH: databasePath,
   FRAME_OF_MIND_OUTPUT: outputRoot,
+  FRAME_OF_MIND_MAINTENANCE_INTERVAL_MS: "0",
   XDG_CONFIG_HOME: join(mediaRoot, "config"),
 };
 delete environment.NITRO_UNIX_SOCKET;
@@ -318,6 +319,11 @@ try {
     "support receipt requires a Studio session",
   );
   await expectStatus(
+    await probe.get("/api/studio/maintenance"),
+    401,
+    "maintenance diagnostics require a Studio session",
+  );
+  await expectStatus(
     await probe.mutate(
       "/api/studio/jobs/job_01K123456789ABC/reimport",
       "POST",
@@ -409,6 +415,36 @@ try {
     || supportReceipt.includes(outputRoot)
   ) {
     throw new Error("Support receipt did not preserve its closed allowlist.");
+  }
+  await expectStatus(
+    await probe.get("/api/studio/jobs/job_missing_support_receipt/support-receipt"),
+    404,
+    "missing support receipt id returns not found",
+  );
+  const maintenanceResponse = await expectStatus(
+    await probe.get("/api/studio/maintenance"),
+    200,
+    "authenticated maintenance diagnostics are available",
+  );
+  const maintenance = await maintenanceResponse.json() as {
+    plan?: { generatedAt?: string; actions?: unknown[] };
+    lastRun?: {
+      applied?: number;
+      removed?: number;
+      staleJobs?: number;
+      failures?: unknown[];
+    };
+  };
+  if (
+    !maintenance.plan?.generatedAt
+    || !Array.isArray(maintenance.plan.actions)
+    || maintenance.plan.actions.length !== 0
+    || maintenance.lastRun?.applied !== 0
+    || maintenance.lastRun.removed !== 0
+    || maintenance.lastRun.staleJobs !== 0
+    || !Array.isArray(maintenance.lastRun.failures)
+  ) {
+    throw new Error("Maintenance diagnostics did not return a sanitized dry-run plan and summary.");
   }
   await expectStatus(
     await probe.mutate(

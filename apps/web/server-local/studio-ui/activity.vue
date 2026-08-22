@@ -303,6 +303,7 @@ async function confirmCancel(job: AnalysisJob): Promise<void> {
                   <td class="py-4 pl-4 text-sm text-muted">
                     <time
                       :datetime="jobProgress(job).lastActivityAt"
+                      :aria-label="jobProgress(job).lastActivityAccessibleText"
                     >
                       {{ jobProgress(job).lastActivityText }}
                     </time>
