@@ -74,6 +74,7 @@ const forbidden = [
   "deleteEphemeralExecutionLease",
   "StudioJobApiUnavailableError",
   "/api/studio/jobs",
+  "/api/studio/composer/jobs",
   "studio_analysis_jobs",
 ];
 const requiredReviewMarkers = [

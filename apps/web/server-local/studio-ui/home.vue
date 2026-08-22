@@ -5,6 +5,8 @@ import type {
 } from "../../../../src/domain/studio-schemas";
 import type { JobListPage } from "../../../../src/domain/studio-ports";
 import type { RunPage, RunSummary } from "../../shared/types";
+import { loadIntentDraft } from "./intent-composer";
+import { intentReceiptStatus } from "./run-composer";
 import { useComposerReadiness } from "./use-composer-readiness";
 
 useSeoMeta({
@@ -73,6 +75,20 @@ const {
 } = await useFetch<ConfigurationStatus>("/api/studio/configuration", {
   server: false,
 });
+const {
+  data: recipeCatalog,
+  error: recipeCatalogError,
+} = await useFetch<{
+  recipes: Array<{ id: string; label: string; revision: string }>;
+}>("/api/studio/recipes", { server: false });
+const route = useRoute();
+const createdJobId = computed(() =>
+  typeof route.query.created === "string" ? route.query.created : undefined
+);
+const intentStatus = ref({
+  ready: false,
+  label: "Intent is missing. Choose and save a built-in recipe.",
+});
 
 const activeJobs = computed(() =>
   jobPage.value.jobs.filter((job) => !terminalStages.has(job.stage))
@@ -101,6 +117,12 @@ async function refreshAll() {
       refreshConfiguration(),
       refreshReadiness(),
     ]);
+    if (typeof sessionStorage !== "undefined") {
+      intentStatus.value = intentReceiptStatus(
+        loadIntentDraft(sessionStorage),
+        recipeCatalogError.value ? undefined : recipeCatalog.value?.recipes,
+      );
+    }
   } finally {
     refreshing.value = false;
   }
@@ -108,6 +130,14 @@ async function refreshAll() {
 
 onMounted(() => {
   void refreshAll();
+});
+
+watch([recipeCatalog, recipeCatalogError], () => {
+  if (typeof sessionStorage === "undefined") return;
+  intentStatus.value = intentReceiptStatus(
+    loadIntentDraft(sessionStorage),
+    recipeCatalogError.value ? undefined : recipeCatalog.value?.recipes,
+  );
 });
 
 function formatDate(value: string): string {
@@ -184,6 +214,16 @@ function jobContext(job: AnalysisJob): string {
       />
     </section>
 
+    <UAlert
+      v-if="createdJobId"
+      class="mt-6"
+      color="success"
+      variant="soft"
+      icon="i-lucide-check-circle"
+      title="Analysis job started"
+      :description="`Job ${createdJobId} is in the durable local queue.`"
+    />
+
     <section
       class="mt-8"
       aria-labelledby="composer-readiness-heading"
@@ -211,9 +251,9 @@ function jobContext(job: AnalysisJob): string {
             <p class="mt-2 font-black text-highlighted">Intent</p>
             <p
               class="mt-1 text-sm"
-              :class="readiness.intent === 'ready' ? 'text-muted' : 'text-error'"
+              :class="intentStatus.ready ? 'text-muted' : 'text-error'"
             >
-              {{ readiness.intent === "ready" ? "Ready" : "Needs attention" }}
+              {{ intentStatus.label }}
             </p>
           </NuxtLink>
           <NuxtLink

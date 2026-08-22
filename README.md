@@ -385,9 +385,15 @@ What works today:
   Bun worker share the CLI's typed orchestrator; immutable model and recipe
   receipts bind each job, and staged paths never enter SQLite or an HTTP
   response.
+- **Run** — an authenticated final receipt revalidates the live sealed media,
+  explicit video-only or committed enriched context, pinned built-in recipe,
+  model, focus, and exact server-owned retention lifetime. **Start analysis**
+  creates or safely replays one durable local job and then clears the four
+  browser resume hints.
 
-The Run-receipt composer step arrives in the next phase, so
-`frameofmind analyze` remains the supported end-user execution path today.
+The CLI remains available for direct analysis, while Local Studio now exposes
+the same shared executor through the deliberate Run receipt. Custom recipe
+drafts remain blocked until their private staging contract ships.
 Details: [docs/WEB_WORKSPACE.md](docs/WEB_WORKSPACE.md),
 [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), and
 [docs/RUNBOOK.md](docs/RUNBOOK.md).

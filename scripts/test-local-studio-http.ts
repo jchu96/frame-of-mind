@@ -183,6 +183,11 @@ try {
     "Intent page requires a session",
   );
   await expectStatus(
+    await probe.get("/run"),
+    401,
+    "Run receipt page requires a session",
+  );
+  await expectStatus(
     await probe.get("/api/studio/recipes"),
     401,
     "recipe catalog requires a Studio session",
@@ -196,6 +201,11 @@ try {
     await probe.get("/api/studio/jobs"),
     401,
     "job list requires a Studio session",
+  );
+  await expectStatus(
+    await probe.mutate("/api/studio/composer/jobs", "POST", {}),
+    401,
+    "composer job creation requires a Studio session",
   );
   await expectStatus(
     await probe.uploadContext(new TextEncoder().encode(
@@ -302,6 +312,18 @@ try {
     || !intentHtml.includes("Choose what this analysis should find.")
   ) {
     throw new Error("Authenticated Intent page did not render its local composer step.");
+  }
+  const runPage = await expectStatus(
+    await probe.get("/run"),
+    200,
+    "authenticated Run receipt page renders",
+  );
+  const runHtml = await runPage.text();
+  if (
+    !runHtml.includes('data-run-step="local"')
+    || !runHtml.includes("Review the exact run receipt.")
+  ) {
+    throw new Error("Authenticated Run page did not render its receipt shell.");
   }
   const recipesResponse = await expectStatus(
     await probe.get("/api/studio/recipes"),
@@ -439,11 +461,161 @@ try {
   ) {
     throw new Error("Media completion returned an invalid seal receipt.");
   }
-  await expectStatus(
-    await probe.mutate(`/api/studio/media/${media.id}`, "DELETE", {}),
-    200,
-    "media abort deletes only the private staged copy",
+
+  const requirementsRecipe = recipesBody.recipes?.find(
+    (recipe) => recipe.id === "requirements",
   );
+  if (!requirementsRecipe?.revision) {
+    throw new Error("Recipe catalog omitted the requirements revision.");
+  }
+  const composerBody = {
+    idempotencyKey: "studio-http-composer-0001",
+    mediaSessionId: media.id,
+    context: { mode: "none" },
+    recipe: {
+      id: "requirements",
+      revision: requirementsRecipe.revision,
+    },
+    model: DEFAULT_GEMINI_MODEL,
+    retention: { mode: "ephemeral" },
+  };
+  const invalidContext = await expectStatus(
+    await probe.mutate(
+      "/api/studio/composer/jobs",
+      "POST",
+      { ...composerBody, context: { mode: "enriched" } },
+    ),
+    422,
+    "composer refuses an uncommitted context shape instead of video-only downgrade",
+  );
+  const invalidContextText = await invalidContext.text();
+  if (
+    !invalidContextText.includes("invalid_job_request")
+    || invalidContextText.includes(mediaRoot)
+    || invalidContextText.includes("transcript")
+  ) {
+    throw new Error("Invalid composer context response was not sanitized.");
+  }
+
+  const customRejected = await expectStatus(
+    await probe.mutate(
+      "/api/studio/composer/jobs",
+      "POST",
+      {
+        ...composerBody,
+        recipe: {
+          custom: {
+            id: "synthetic-review",
+            label: "Synthetic review",
+            description: "Review a synthetic fixture.",
+            indexInstruction: "Find synthetic evidence.",
+            interrogationInstruction: "Verify synthetic evidence.",
+          },
+        },
+      },
+    ),
+    409,
+    "composer rejects custom recipe before insertion",
+  );
+  if (!(await customRejected.text()).includes("custom_recipe_staging_unavailable")) {
+    throw new Error("Custom recipe rejection omitted its sanitized code.");
+  }
+
+  const mismatchRejected = await expectStatus(
+    await probe.mutate(
+      "/api/studio/composer/jobs",
+      "POST",
+      {
+        ...composerBody,
+        recipe: { id: "requirements", revision: "stale-revision" },
+      },
+    ),
+    409,
+    "composer rejects stale recipe revision before insertion",
+  );
+  if (!(await mismatchRejected.text()).includes("recipe_receipt_mismatch")) {
+    throw new Error("Recipe mismatch rejection omitted its sanitized code.");
+  }
+
+  const beforeCreate = await expectStatus(
+    await probe.get("/api/studio/jobs"),
+    200,
+    "rejected composer inputs do not insert jobs",
+  );
+  if ((await beforeCreate.json() as { jobs: unknown[] }).jobs.length !== 0) {
+    throw new Error("Rejected composer input inserted a job.");
+  }
+
+  const composerCreated = await expectStatus(
+    await probe.mutate("/api/studio/composer/jobs", "POST", composerBody),
+    201,
+    "validated composer receipt creates one job",
+  );
+  const createdJob = await composerCreated.json() as {
+    kind: string;
+    job: { id: string; input: { context: unknown } };
+  };
+  if (
+    createdJob.kind !== "created"
+    || !createdJob.job.id.startsWith("job_")
+    || JSON.stringify(createdJob.job.input.context) !== JSON.stringify({ mode: "none" })
+  ) {
+    throw new Error("Composer creation returned an invalid job receipt.");
+  }
+  const composerReplay = await expectStatus(
+    await probe.mutate("/api/studio/composer/jobs", "POST", composerBody),
+    200,
+    "same composer idempotency key replays the same job",
+  );
+  const replayedJob = await composerReplay.json() as {
+    kind: string;
+    job: { id: string };
+  };
+  if (
+    replayedJob.kind !== "replayed"
+    || replayedJob.job.id !== createdJob.job.id
+  ) {
+    throw new Error("Composer idempotency replay returned a different job.");
+  }
+
+  const unsealedMediaResponse = await expectStatus(
+    await probe.mutate("/api/studio/media", "POST", {
+      ...createMediaBody,
+      idempotencyKey: "studio-http-media-unsealed-0001",
+    }),
+    201,
+    "unsealed composer fixture creates a staging receipt",
+  );
+  const unsealedMedia = await unsealedMediaResponse.json() as { id: string };
+  const unsealedRejected = await expectStatus(
+    await probe.mutate("/api/studio/composer/jobs", "POST", {
+      ...composerBody,
+      idempotencyKey: "studio-http-composer-unsealed-0001",
+      mediaSessionId: unsealedMedia.id,
+    }),
+    409,
+    "composer rejects an unsealed media session",
+  );
+  if (!(await unsealedRejected.text()).includes("media_not_usable")) {
+    throw new Error("Unsealed media rejection omitted its sanitized code.");
+  }
+  await expectStatus(
+    await probe.mutate(`/api/studio/media/${unsealedMedia.id}`, "DELETE", {}),
+    200,
+    "unsealed composer fixture is deleted",
+  );
+
+  const composerMediaCleanup = await probe.mutate(
+    `/api/studio/media/${media.id}`,
+    "DELETE",
+    {},
+  );
+  if (![200, 404, 409].includes(composerMediaCleanup.status)) {
+    throw new Error(
+      "Composer media cleanup returned an unexpected status: "
+      + `${composerMediaCleanup.status} ${await composerMediaCleanup.text()}`,
+    );
+  }
 
   const contextBytes = new TextEncoder().encode(
     "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nSynthetic context\n",
