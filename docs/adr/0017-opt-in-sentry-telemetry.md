@@ -40,10 +40,31 @@ addresses, or IP addresses.
 
 Both SDKs use `sendDefaultPii: false`, `tracesSampleRate: 0`, no Replay,
 profiling, feedback, or logs integration, and a shared `beforeSend` scrubber.
-The scrubber accepts only code-shaped synthetic exception values, removes
-stack frames, requests, users, extras, breadcrumbs, and non-allowlisted
-tags/contexts, and drops an event when sensitive patterns are present. The CLI
-uses `@sentry/bun`; the Nuxt client and server use `@sentry/nuxt` v10.
+The scrubber never edits and returns the SDK event. It validates every raw
+message and exception value as a code, drops the whole event when any string is
+not code-shaped, then constructs a new event from this closed top-level
+allowlist: `event_id`, `timestamp`, `level`, `platform`, `environment`,
+optional `release`, SDK name/version, synthetic exception type/code,
+allowlisted tags, and allowlisted contexts. Exception frames, stack traces,
+mechanism data, messages, log entries, culprit, fingerprints, threads, spans,
+SDK processing metadata, requests, users, extras, breadcrumbs, modules, server
+names, debug metadata, transactions, and unknown future fields are absent by
+construction. The CLI uses `@sentry/bun`; the Nuxt client and server use
+`@sentry/nuxt` v10.
+
+SDK initialization only occurs when the DSN is non-empty. Both client and
+server return `null` from `beforeSendTransaction`; the Nuxt module is built
+with `bundleSizeOptimizations.excludeTracing: true`, which replaces
+`__SENTRY_TRACING__` with `false` and prevents its browser tracing integration
+from being added. Because the module only installs its replacement plugin when
+source maps are enabled, the Nuxt Vite config mirrors that replacement while
+keeping source maps and uploads disabled. Server initialization sets
+`enableNitroErrorHandler: false`.
+The Nuxt runtime still registers its `app:error` and `vue:error` hooks, but
+their events traverse the same closed allowlist: ordinary raw errors are
+dropped and a code-shaped event is rewritten to `SanitizedTelemetryError`
+before transport. SDK package/integration metadata is fixed to empty lists so
+the post-`beforeSend` envelope builder cannot append unreviewed package data.
 
 The current `@sentry/nuxt` v10 module is excluded from the Nitro
 `cloudflare-worker` preset. Its server-config injection produces an IIFE
@@ -68,8 +89,8 @@ Positive:
 - local failures can be correlated by code, stage, and opaque job receipt;
 - telemetry remains visibly off by default and reversible by removing one
   environment value;
-- the same deterministic scrubber protects the browser, Nuxt server, worker,
-  and CLI capture paths.
+- the same deterministic, allowlist-constructing scrubber protects the browser,
+  Nuxt server, worker, and CLI capture paths.
 
 Costs:
 

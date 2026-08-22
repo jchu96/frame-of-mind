@@ -24,6 +24,13 @@ type TelemetryExceptionValue = {
 };
 
 export type ScrubbableSentryEvent = {
+  event_id?: unknown;
+  timestamp?: unknown;
+  level?: unknown;
+  platform?: unknown;
+  environment?: unknown;
+  release?: unknown;
+  sdk?: unknown;
   message?: string;
   exception?: {
     values?: TelemetryExceptionValue[];
@@ -46,6 +53,27 @@ export type ScrubbableSentryEvent = {
   server_name?: string;
   debug_meta?: unknown;
   [key: string]: unknown;
+};
+
+export type AllowlistedSentryEvent = {
+  event_id?: string;
+  timestamp?: number;
+  level?: string;
+  platform?: string;
+  environment?: string;
+  release?: string;
+  sdk?: {
+    name?: string;
+    version?: string;
+  };
+  exception: {
+    values: Array<{
+      type: "SanitizedTelemetryError";
+      value: string;
+    }>;
+  };
+  tags?: Record<string, unknown>;
+  contexts?: Record<string, unknown>;
 };
 
 const SENSITIVE_TEXT_PATTERNS = [
@@ -105,11 +133,16 @@ export function normalizeTelemetryTags(tags: TelemetryTags): Record<string, stri
   );
 }
 
-export function scrubSentryEvent<T extends ScrubbableSentryEvent>(event: T): T | null {
-  const messages = [
-    event.message,
-    ...(event.exception?.values?.map((value) => value.value) ?? []),
-  ].filter((value): value is string => typeof value === "string");
+export function scrubSentryEvent(
+  event: ScrubbableSentryEvent,
+): AllowlistedSentryEvent | null {
+  const exceptionValues = event.exception?.values ?? [];
+  if (exceptionValues.some((value) => typeof value.value !== "string")) {
+    return null;
+  }
+
+  const messages = [event.message, ...exceptionValues.map((value) => value.value)]
+    .filter((value): value is string => typeof value === "string");
 
   if (
     messages.length === 0
@@ -121,33 +154,55 @@ export function scrubSentryEvent<T extends ScrubbableSentryEvent>(event: T): T |
     return null;
   }
 
-  delete event.extra;
-  delete event.breadcrumbs;
-  delete event.user;
-  delete event.stacktrace;
-  delete event.transaction;
-  delete event.modules;
-  delete event.server_name;
-  delete event.debug_meta;
-  delete event.request;
+  const codes = exceptionValues.length
+    ? exceptionValues.map((value) => value.value as string)
+    : [event.message as string];
+  const result: AllowlistedSentryEvent = {
+    exception: {
+      values: codes.map((code) => ({
+        type: "SanitizedTelemetryError",
+        value: code,
+      })),
+    },
+  };
 
-  event.tags = filterMetadata(event.tags);
-  event.contexts = filterMetadata(event.contexts);
-  if (event.exception?.values) {
-    event.exception.values = event.exception.values.map((value) => ({
-      type: "SanitizedTelemetryError",
-      value: value.value,
-      ...(value.mechanism
-        ? {
-            mechanism: {
-              handled: value.mechanism.handled,
-              type: value.mechanism.type,
-            },
-          }
-        : {}),
-    }));
+  copySafeString(event, result, "event_id");
+  if (typeof event.timestamp === "number" && Number.isFinite(event.timestamp)) {
+    result.timestamp = event.timestamp;
   }
-  return event;
+  copySafeString(event, result, "level");
+  copySafeString(event, result, "platform");
+  copySafeString(event, result, "environment");
+  copySafeString(event, result, "release");
+  result.sdk = filterSdk(event.sdk);
+  result.tags = filterMetadata(event.tags);
+  result.contexts = filterMetadata(event.contexts);
+
+  return result;
+}
+
+function copySafeString(
+  source: ScrubbableSentryEvent,
+  target: AllowlistedSentryEvent,
+  key: "event_id" | "level" | "platform" | "environment" | "release",
+): void {
+  const value = source[key];
+  if (typeof value === "string" && isSafeMetadataValue(value)) {
+    target[key] = value;
+  }
+}
+
+function filterSdk(value: unknown): AllowlistedSentryEvent["sdk"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const sdk = value as Record<string, unknown>;
+  const filtered = Object.fromEntries(
+    ["name", "version"]
+      .map((key) => [key, sdk[key]] as const)
+      .filter((entry): entry is readonly [string, string] =>
+        typeof entry[1] === "string" && isSafeMetadataValue(entry[1])
+      ),
+  );
+  return Object.keys(filtered).length ? filtered : undefined;
 }
 
 function filterMetadata(
