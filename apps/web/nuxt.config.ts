@@ -12,6 +12,9 @@ const studioSpikeEnabled = databaseDriver === "sqlite"
 const hostedWorkflowSpikeEnabled = databaseDriver === "d1"
   && nitroPreset === "cloudflare_module"
   && process.env.FRAME_OF_MIND_HOSTED_WORKFLOW_SPIKE === "1";
+const hostedWorkflowsBuilt = databaseDriver === "d1"
+  && nitroPreset === "cloudflare_module"
+  && process.env.FRAME_OF_MIND_HOSTED_WORKFLOWS === "1";
 const localStudioEnabled = shouldRegisterLocalStudioRoutes(
   nitroPreset,
   databaseDriver === "sqlite" && process.env.FRAME_OF_MIND_STUDIO === "1",
@@ -28,6 +31,18 @@ const spikeMediaHandler = fileURLToPath(
 );
 const hostedWorkflowSpikeHandler = fileURLToPath(
   new URL("./server-spikes/hosted-workflows/relay.ts", import.meta.url),
+);
+const hostedJobsCreateHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/create.post.ts", import.meta.url),
+);
+const hostedJobDetailHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/detail.get.ts", import.meta.url),
+);
+const hostedJobRetryHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/retry.post.ts", import.meta.url),
+);
+const hostedJobCancelHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/cancel.post.ts", import.meta.url),
 );
 const studioBootstrapHandler = fileURLToPath(
   new URL("./server-local/studio-session/bootstrap.post.ts", import.meta.url),
@@ -309,6 +324,30 @@ const localHandlers = [
         },
       ]
     : []),
+  ...(hostedWorkflowsBuilt
+    ? [
+        {
+          route: "/api/hosted/jobs",
+          method: "post",
+          handler: hostedJobsCreateHandler,
+        },
+        {
+          route: "/api/hosted/jobs/:id",
+          method: "get",
+          handler: hostedJobDetailHandler,
+        },
+        {
+          route: "/api/hosted/jobs/:id/retry",
+          method: "post",
+          handler: hostedJobRetryHandler,
+        },
+        {
+          route: "/api/hosted/jobs/:id/cancel",
+          method: "post",
+          handler: hostedJobCancelHandler,
+        },
+      ]
+    : []),
 ];
 
 export default defineNuxtConfig({
@@ -413,6 +452,8 @@ export default defineNuxtConfig({
     cloudflareAccessTeamDomain: "",
     cloudflareAccessAud: "",
     cloudflareAccessAllowInsecureTestJwks: false,
+    hostedWorkflowsEnabled: false,
+    hostedWorkflowReservationUnits: 0,
     public: {
       appName: "Frame of Mind",
       appVersion: "0.3.0",
