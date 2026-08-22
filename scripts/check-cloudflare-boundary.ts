@@ -89,6 +89,10 @@ const forbidden = [
   "@sentry/nuxt",
   "@sentry/cloudflare",
   "Sentry.init",
+  "server-spikes/hosted-workflows",
+  "FRAME_OF_MIND_HOSTED_WORKFLOW_SPIKE",
+  "/api/__hosted-workflow-spike",
+  "HOSTED_WORKFLOWS",
 ];
 const requiredReviewMarkers = [
   "Primary navigation",

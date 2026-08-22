@@ -1,0 +1,21 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "frame-of-mind-hosted-workflow-nuxt-spike",
+  "main": ".output/server/index.mjs",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".output/public",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "HOSTED_WORKFLOWS",
+      "service": "frame-of-mind-hosted-workflows-spike"
+    }
+  ],
+  "vars": {
+    "NUXT_AUTH_MODE": "off",
+    "NUXT_ALLOW_UNAUTHENTICATED_REMOTE": "true"
+  }
+}

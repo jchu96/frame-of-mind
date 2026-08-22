@@ -168,12 +168,18 @@ Workflow can start from an unsealed or mismatched receipt.
 
 ### Tasks
 
-- [ ] Task 3.0: Spike whether Nitro's `cloudflare_module` output can export a
+- [x] Task 3.0: Spike whether Nitro's `cloudflare_module` output can export a
       `WorkflowEntrypoint` class and bind it in the generated Wrangler module.
       Record the module/dry-run receipt. If it fails, freeze the decided fallback:
       a sibling Workflows Worker reached through a service binding while the
       Nuxt Worker remains on the same Access hostname.
       Trust-boundary review trigger: deployment topology begins granting durable execution authority.
+
+      **Status (2026-08-22):** topology B selected. Pinned Nitro 2.13.4 has no
+      supported named-export seam; both sibling-Worker and Nuxt service-binding
+      dry-runs passed, and local workerd completed one two-step Workflow created
+      through Nuxt. See
+      [`docs/spikes/hosted-workflows-spike-2026-08-22.md`](../../../docs/spikes/hosted-workflows-spike-2026-08-22.md).
 - [ ] Task 3.1: Implement a Cloudflare Workflows `AnalysisJobExecutor` adapter
       while leaving the local SQLite executor selection and behavior untouched.
       Trust-boundary review trigger: durable execution authority moves from one

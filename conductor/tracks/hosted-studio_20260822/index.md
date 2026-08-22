@@ -1,7 +1,7 @@
 # Track: Hosted Studio - Team And Tenant Execution
 
 **ID:** `hosted-studio_20260822`
-**Status:** Active — Slice 1 complete, Phase 2 stop/go next
+**Status:** Active — Slice 1 complete, Task 3.0 topology resolved
 
 ## Documents
 
@@ -12,9 +12,10 @@
 ## Progress
 
 - Phases: 1/8 complete
-- Tasks: 3/33 complete
-- Current focus: Task 2.0 streaming stop/go. Slice 1 principal-scopes the
-  deployed viewer; hosted upload and Workflow creation remain dark.
+- Tasks: 4/33 complete
+- Current focus: Task 2.0 streaming stop/go remains required. Task 3.0 selected
+  an internal sibling Workflows Worker reached from Nuxt by service binding;
+  hosted upload and Workflow creation remain dark.
 
 ## Decision
 
