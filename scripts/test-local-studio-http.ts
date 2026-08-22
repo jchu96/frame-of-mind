@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini";
+import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini-model";
 
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
 const port = 34_000 + Math.floor(Math.random() * 10_000);
@@ -20,8 +20,19 @@ const environment = {
   PORT: String(port),
   NITRO_PORT: String(port),
   NUXT_SQLITE_PATH: join(mediaRoot, "studio.sqlite"),
+  XDG_CONFIG_HOME: join(mediaRoot, "config"),
 };
 delete environment.NITRO_UNIX_SOCKET;
+// CI has no provider credentials, and this contract must not depend on a maintainer's .env.
+for (const key of [
+  "GEMINI_API_KEY",
+  "GEMINI_MODEL",
+  "GRANOLA_API_KEY",
+  "BLUEDOT_MCP_URL",
+  "GRANOLA_MCP_URL",
+] as const) {
+  delete environment[key];
+}
 
 async function expectStatus(
   response: Response,
@@ -546,51 +557,90 @@ try {
     throw new Error("Rejected composer input inserted a job.");
   }
 
-  const composerCreated = await expectStatus(
+  const unconfiguredComposer = await expectStatus(
     await probe.mutate("/api/studio/composer/jobs", "POST", composerBody),
-    201,
-    "validated composer receipt creates one job",
-  );
-  const createdJob = await composerCreated.json() as {
-    kind: string;
-    job: { id: string; input: Record<string, unknown> & { context: unknown } };
-  };
-  if (
-    createdJob.kind !== "created"
-    || !createdJob.job.id.startsWith("job_")
-    || JSON.stringify(createdJob.job.input.context) !== JSON.stringify({ mode: "none" })
-  ) {
-    throw new Error("Composer creation returned an invalid job receipt.");
-  }
-  const composerReplay = await expectStatus(
-    await probe.mutate("/api/studio/composer/jobs", "POST", composerBody),
-    200,
-    "same composer idempotency key replays the same job",
-  );
-  const replayedJob = await composerReplay.json() as {
-    kind: string;
-    job: { id: string };
-  };
-  if (
-    replayedJob.kind !== "replayed"
-    || replayedJob.job.id !== createdJob.job.id
-  ) {
-    throw new Error("Composer idempotency replay returned a different job.");
-  }
-  const conflictingReplay = await expectStatus(
-    await probe.mutate("/api/studio/jobs", "POST", {
-      idempotencyKey: composerBody.idempotencyKey,
-      input: {
-        ...createdJob.job.input,
-        focus: "Changed input under an already-used key.",
-      },
-    }),
     409,
-    "job API refuses a reused key with changed input",
+    "composer fails closed without Gemini configuration",
   );
-  const conflictingReplayText = await conflictingReplay.text();
-  if (!conflictingReplayText.includes("idempotency_conflict")) {
-    throw new Error("Job API idempotency conflict omitted its sanitized code.");
+  if (!(await unconfiguredComposer.text()).includes("gemini_not_configured")) {
+    throw new Error("Unconfigured composer rejection omitted its sanitized code.");
+  }
+  const afterUnconfigured = await expectStatus(
+    await probe.get("/api/studio/jobs"),
+    200,
+    "unconfigured composer input does not insert a job",
+  );
+  if ((await afterUnconfigured.json() as { jobs: unknown[] }).jobs.length !== 0) {
+    throw new Error("Unconfigured composer input inserted a job.");
+  }
+
+  const syntheticGeminiKey = "synthetic-http-gemini-key-never-use";
+  await expectStatus(
+    await probe.mutate(
+      "/api/studio/configuration/secrets/gemini-api-key",
+      "PUT",
+      { value: syntheticGeminiKey },
+    ),
+    200,
+    "composer fixture installs a synthetic Gemini key",
+  );
+  try {
+    const composerCreated = await expectStatus(
+      await probe.mutate("/api/studio/composer/jobs", "POST", composerBody),
+      201,
+      "validated composer receipt creates one job",
+    );
+    const createdJob = await composerCreated.json() as {
+      kind: string;
+      job: { id: string; input: Record<string, unknown> & { context: unknown } };
+    };
+    if (
+      createdJob.kind !== "created"
+      || !createdJob.job.id.startsWith("job_")
+      || JSON.stringify(createdJob.job.input.context) !== JSON.stringify({ mode: "none" })
+    ) {
+      throw new Error("Composer creation returned an invalid job receipt.");
+    }
+    const composerReplay = await expectStatus(
+      await probe.mutate("/api/studio/composer/jobs", "POST", composerBody),
+      200,
+      "same composer idempotency key replays the same job",
+    );
+    const replayedJob = await composerReplay.json() as {
+      kind: string;
+      job: { id: string };
+    };
+    if (
+      replayedJob.kind !== "replayed"
+      || replayedJob.job.id !== createdJob.job.id
+    ) {
+      throw new Error("Composer idempotency replay returned a different job.");
+    }
+    const conflictingReplay = await expectStatus(
+      await probe.mutate("/api/studio/jobs", "POST", {
+        idempotencyKey: composerBody.idempotencyKey,
+        input: {
+          ...createdJob.job.input,
+          focus: "Changed input under an already-used key.",
+        },
+      }),
+      409,
+      "job API refuses a reused key with changed input",
+    );
+    const conflictingReplayText = await conflictingReplay.text();
+    if (!conflictingReplayText.includes("idempotency_conflict")) {
+      throw new Error("Job API idempotency conflict omitted its sanitized code.");
+    }
+  } finally {
+    await expectStatus(
+      await probe.mutate(
+        "/api/studio/configuration/secrets/gemini-api-key",
+        "DELETE",
+        {},
+      ),
+      200,
+      "composer fixture deletes its synthetic Gemini key",
+    );
   }
 
   const unsealedMediaResponse = await expectStatus(
