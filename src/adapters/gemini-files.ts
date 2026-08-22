@@ -59,6 +59,7 @@ export class GeminiFileError extends Error {
     message: string,
     readonly remoteFileName?: string,
     readonly uploadCleanup?: GeminiUploadCleanup,
+    readonly telemetryCode?: string,
   ) {
     super(message);
   }
@@ -151,6 +152,7 @@ export function createGeminiFileUploader(
           `Gemini upload finalize failed (HTTP ${uploadResponse.status}); remote cleanup cannot be confirmed.`,
           undefined,
           "unconfirmed",
+          `gemini_http_${uploadResponse.status}`,
         );
       }
 
@@ -216,6 +218,7 @@ function assertSuccessfulResponse(response: Response, phase: string): void {
       `Gemini ${phase} failed (HTTP ${response.status}).`,
       undefined,
       "not_obtained",
+      `gemini_http_${response.status}`,
     );
   }
 }

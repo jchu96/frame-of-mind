@@ -96,7 +96,13 @@ try {
     process.exitCode = buildExitCode;
   } else {
     activeChild = Bun.spawn(
-      [process.execPath, "--no-env-file", ".output/server/index.mjs"],
+      [
+        process.execPath,
+        "--no-env-file",
+        "--preload",
+        join(webRoot, ".output/server/sentry.server.config.mjs"),
+        join(webRoot, ".output/server/index.mjs"),
+      ],
       {
         cwd: webRoot,
         env: environment,

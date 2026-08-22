@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./instrument.js";
 import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -16,6 +17,11 @@ import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.j
 import type { ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
 import { redactUrlForDisplay } from "./lib/http.js";
+import { telemetryCodeFromError } from "./lib/sentry-telemetry.js";
+import {
+  captureCliException,
+  isCliTelemetryEnabled,
+} from "./telemetry.js";
 import {
   analysisDepthSchema,
   listBuiltInRecipes,
@@ -84,6 +90,9 @@ program
     process.stdout.write(
       `Granola MCP: ${redactUrlForDisplay(process.env.GRANOLA_MCP_URL || DEFAULT_GRANOLA_MCP_URL)}\n`,
     );
+    process.stdout.write(
+      `Telemetry: ${isCliTelemetryEnabled() ? "on (Sentry)" : "off"}\n`,
+    );
     process.stdout.write(`Artifact root: ${defaultOutputRoot()}\n`);
     if (!checks[0][1] || !checks[1][1]) process.exitCode = 1;
   });
@@ -123,37 +132,65 @@ program
       meetingId: string | undefined,
       flags: AnalyzeCliFlags,
     ) => {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
-      const analyzeOptions = await buildAnalyzeOptions(meetingId, flags, apiKey);
-      const cancellation = new AbortController();
-      const cancel = () => cancellation.abort();
-      process.on("SIGINT", cancel);
-      let result;
+      const startedAt = Date.now();
+      let stage = "cli";
+      let analyzeOptions: AnalyzeOptions | undefined;
       try {
-        result = await analyzeMeeting(
-          analyzeOptions,
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
+        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, apiKey);
+        const cancellation = new AbortController();
+        const cancel = () => cancellation.abort();
+        process.on("SIGINT", cancel);
+        let result;
+        try {
+          result = await analyzeMeeting(
+            analyzeOptions,
+            {
+              signal: cancellation.signal,
+              progress: {
+                report(event) {
+                  stage = event.stage;
+                  CLI_ANALYSIS_PROGRESS.report(event);
+                },
+              },
+            },
+          );
+        } finally {
+          process.off("SIGINT", cancel);
+        }
+        const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
+        process.stdout.write(
+          `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
+            `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
+        );
+        const remoteFile = result.manifest.remoteFile;
+        const retentionRequested = Boolean(flags.keepUpload || flags.remoteFile);
+        if (retentionRequested && remoteFile && !remoteFile.deleted && remoteFile.name) {
+          process.stdout.write(
+            `Retained Gemini upload: ${remoteFile.name}` +
+              `${remoteFile.expirationTime ? ` (provider expiration ${remoteFile.expirationTime})` : ""}. ` +
+              `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
+          );
+        }
+      } catch (error) {
+        await captureCliException(
+          telemetryCodeFromError(error, "analysis_failed"),
           {
-            signal: cancellation.signal,
-            progress: CLI_ANALYSIS_PROGRESS,
+            stage,
+            recipeId: analyzeOptions?.recipe.id ?? flags.recipe,
+            ...(analyzeOptions?.recipeRevision
+              ? { recipeRevision: analyzeOptions.recipeRevision }
+              : {}),
+            ...(analyzeOptions?.model ?? flags.model
+              ? { model: analyzeOptions?.model ?? flags.model }
+              : {}),
+            durationMs: Math.max(0, Date.now() - startedAt),
+            studioMode: "cli",
+            version: "0.3.0",
           },
         );
-      } finally {
-        process.off("SIGINT", cancel);
-      }
-      const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
-      process.stdout.write(
-        `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
-          `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
-      );
-      const remoteFile = result.manifest.remoteFile;
-      const retentionRequested = Boolean(flags.keepUpload || flags.remoteFile);
-      if (retentionRequested && remoteFile && !remoteFile.deleted && remoteFile.name) {
-        process.stdout.write(
-          `Retained Gemini upload: ${remoteFile.name}` +
-            `${remoteFile.expirationTime ? ` (provider expiration ${remoteFile.expirationTime})` : ""}. ` +
-            `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
-        );
+        throw error;
       }
     },
   );

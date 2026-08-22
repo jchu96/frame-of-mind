@@ -77,6 +77,17 @@ function isRetryableTransportError(error: unknown): boolean {
   return typeof status === "number" && RETRYABLE_TRANSPORT_STATUSES.has(status);
 }
 
+function geminiHttpTelemetryCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number"
+      && Number.isInteger(status)
+      && status >= 400
+      && status <= 599
+    ? `gemini_http_${status}`
+    : undefined;
+}
+
 /**
  * The Files API documents `sha256Hash` as base64, but live responses encode
  * the lowercase HEX DIGEST STRING (verified 2026-08-11 against a real
@@ -228,6 +239,7 @@ export class GeminiVideoAnalyzer {
             : "Gemini file upload or processing failed.",
           cleanupName,
           "confirmed_deleted",
+          error instanceof GeminiFileError ? error.telemetryCode : undefined,
         );
       }
       if (error instanceof GeminiFileError) throw error;
@@ -590,7 +602,12 @@ export class GeminiVideoAnalyzer {
         if (phase === "detail") {
           throw new CandidateAnalysisError({ code: "generation_failed", attempts: 1 });
         }
-        throw new GeminiFileError(`Gemini ${phase} generation failed.`);
+        throw new GeminiFileError(
+          `Gemini ${phase} generation failed.`,
+          undefined,
+          undefined,
+          geminiHttpTelemetryCode(error),
+        );
       }
     }
   }

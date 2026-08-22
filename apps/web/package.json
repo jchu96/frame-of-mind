@@ -9,11 +9,12 @@
     "cloudflare:types": "wrangler types --config wrangler.jsonc",
     "dev": "FRAME_OF_MIND_DB_DRIVER=sqlite nuxi dev --host 127.0.0.1",
     "import": "bun scripts/import-run.ts",
-    "preview": "bun .output/server/index.mjs",
+    "preview": "bun --preload .output/server/sentry.server.config.mjs .output/server/index.mjs",
     "typecheck": "nuxi typecheck && tsc -p tsconfig.server-local.json --noEmit"
   },
   "dependencies": {
     "@nuxt/ui": "4.10.0",
+    "@sentry/nuxt": "10.70.0",
     "jose": "6.2.8",
     "nuxt": "4.5.2",
     "vue": "3.5.40",

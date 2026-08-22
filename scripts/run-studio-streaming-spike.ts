@@ -38,7 +38,12 @@ try {
   await reservation.stop(true);
   const baseUrl = `http://127.0.0.1:${port}`;
 
-  const server = Bun.spawn(["bun", "apps/web/.output/server/index.mjs"], {
+  const server = Bun.spawn([
+    "bun",
+    "--preload",
+    resolve("apps/web/.output/server/sentry.server.config.mjs"),
+    resolve("apps/web/.output/server/index.mjs"),
+  ], {
     cwd: resolve("."),
     env: {
       ...globalThis.process.env,
