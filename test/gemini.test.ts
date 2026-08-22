@@ -1388,7 +1388,10 @@ describe("Gemini generation transport handling", () => {
     });
 
     await expect(analyzer.index(activeFile, meeting, recipe))
-      .rejects.toBeInstanceOf(GeminiFileError);
+      .rejects.toMatchObject({
+        name: "GeminiFileError",
+        telemetryCode: "gemini_http_503",
+      });
     expect(calls).toBe(5);
   });
 });

@@ -4,6 +4,7 @@ import { shouldRegisterLocalStudioRoutes } from "./server-local/studio-session/s
 
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
 const nitroPreset = process.env.NITRO_PRESET || "node-server";
+const sentryNuxtEnabled = nitroPreset !== "cloudflare-worker";
 const studioSpikeEnabled = databaseDriver === "sqlite"
   && nitroPreset === "node-server"
   && process.env.FRAME_OF_MIND_STUDIO_SPIKE === "1";
@@ -276,7 +277,21 @@ const localHandlers = [
 export default defineNuxtConfig({
   compatibilityDate: "2026-07-24",
   devtools: { enabled: true },
-  modules: ["@nuxt/ui"],
+  modules: [
+    ...(sentryNuxtEnabled ? ["@sentry/nuxt/module"] : []),
+    "@nuxt/ui",
+  ],
+  sentry: {
+    telemetry: false,
+    sourcemaps: { disable: true },
+    bundleSizeOptimizations: { excludeTracing: true },
+  },
+  // The Sentry module only installs its define-replacement plugin when source
+  // maps are enabled. Keep uploads off and enforce the same module option at
+  // Vite's boundary so the runtime plugin cannot add BrowserTracing.
+  vite: {
+    define: { __SENTRY_TRACING__: "false" },
+  },
   css: ["~/assets/css/main.css"],
   app: {
     head: {
@@ -363,6 +378,9 @@ export default defineNuxtConfig({
     public: {
       appName: "Frame of Mind",
       appVersion: "0.3.0",
+      ...(sentryNuxtEnabled
+        ? { sentryDsn: process.env.SENTRY_DSN?.trim() ?? "" }
+        : {}),
       ...(localStudioEnabled
         ? { studioDefaultModel: DEFAULT_GEMINI_MODEL }
         : {}),

@@ -1284,6 +1284,35 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
 ### Local Studio Home, Activity, Connections, and analysis composer
+### Opt-in error telemetry
+
+Telemetry is off by default. To opt one local Studio or CLI process into
+codes-only Sentry error reporting, set the DSN in the ignored `.env` or the
+launch environment:
+
+```bash
+SENTRY_DSN="<your-public-sentry-dsn>"
+bun run studio
+```
+
+The Connections page reports **Telemetry: On (Sentry)** or **Off**, and
+`frameofmind doctor` prints the same state. When enabled, Frame of Mind sends
+only sanitized error codes, job stage and opaque job ID, recipe ID/revision,
+model ID, duration, version/mode, and platform. It never sends transcripts,
+recordings, findings or analysis output, paths, filenames, meeting IDs, keys or
+tokens, request/response bodies, query-bearing URLs, emails, or IP addresses.
+Tracing, Replay, profiling, logs, and user feedback remain disabled.
+The current Cloudflare review build excludes the Sentry Nuxt module and DSN;
+hosted telemetry remains deferred because v10 server-config injection is not
+compatible with the current code-split Nitro Worker artifact.
+
+Disable telemetry by removing `SENTRY_DSN` from `.env` and the process
+environment, then restart Studio or rerun the CLI. No local database or run
+bundle contains the DSN or a telemetry payload. The complete boundary and
+scrubbing policy are recorded in
+[ADR 0017](adr/0017-opt-in-sentry-telemetry.md#disable-telemetry).
+
+### Local Studio Home, Connections, and analysis composer
 
 Launch the authenticated local configuration surface:
 
@@ -1308,6 +1337,8 @@ Operational expectations:
 - temporary keys are process-memory only;
 - OAuth tokens remain in the CLI's private exact-resource files;
 - the Connections API never returns secret values;
+- the Connections page discloses whether opt-in codes-only Sentry telemetry is
+  on or off without returning the DSN;
 - the Recording page stages authenticated resumable media locally;
 - the Intent page selects one canonical built-in recipe or validates strict
   custom JSON before saving recipe, optional focus, and model in session

@@ -366,7 +366,9 @@ What works today:
   readiness that routes to the first incomplete required section.
 - **Connections** — credential presence/source/lifetime only; keys pasted
   into Studio live in process memory, are never stored in SQLite, and are
-  never returned to the browser.
+  never returned to the browser. A fourth Telemetry card shows whether
+  opt-in, codes-only Sentry error reporting is on or off and links to its
+  privacy and disable steps.
 - **Recording** — one MP4/MOV/M4V/WebM through an accessible picker/drop
   zone. Selection alone uploads nothing; after explicit retention consent,
   Studio streams parts to private local storage with pause, retry, verified
@@ -481,6 +483,11 @@ bun run build:web:cloudflare
 - Downloads enforce host, TLS, redirect, time, size, and media-type controls.
 - Outputs use user-only POSIX modes and publish atomically.
 - The tool never creates tickets or messages without separate authorization.
+- Sentry telemetry is off unless `SENTRY_DSN` is set. When enabled it sends
+  synthetic error codes in newly constructed, allowlisted events plus approved
+  job/recipe/model/timing/version metadata only—never transcripts, recordings, findings, paths, filenames,
+  meeting IDs, keys, bodies, query-bearing URLs, emails, or IP addresses. See
+  [ADR 0017](docs/adr/0017-opt-in-sentry-telemetry.md).
 
 Read [docs/RUNBOOK.md](docs/RUNBOOK.md) before processing sensitive meetings.
 

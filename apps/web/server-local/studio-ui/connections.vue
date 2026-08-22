@@ -14,6 +14,7 @@ const { data: configuration, error, refresh, status } =
     server: false,
   });
 const toast = useToast();
+const telemetryEnabled = Boolean(useRuntimeConfig().public.sentryDsn);
 const secretInput = reactive<Record<SecretProviderName, string>>({
   gemini: "",
   granola: "",
@@ -181,7 +182,7 @@ async function connectOAuth(name: "bluedot" | "granola") {
         description="Restart with bun run studio and open its new one-time URL."
       />
 
-      <section v-else class="mt-10 grid gap-5 lg:grid-cols-3" aria-label="Provider connections">
+      <section v-else class="mt-10 grid gap-5 lg:grid-cols-2 xl:grid-cols-4" aria-label="Provider connections and telemetry">
         <UCard
           v-for="name in (['gemini', 'bluedot', 'granola'] as ProviderName[])"
           :key="name"
@@ -301,6 +302,47 @@ async function connectOAuth(name: "bluedot" | "granola") {
             </p>
           </div>
         </UCard>
+
+        <UCard role="region" aria-labelledby="telemetry-heading">
+          <template #header>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">
+                  Diagnostics
+                </p>
+                <h2 id="telemetry-heading" class="mt-1 text-xl font-black">
+                  Telemetry
+                </h2>
+              </div>
+              <UBadge
+                role="status"
+                :color="telemetryEnabled ? 'success' : 'neutral'"
+                :variant="telemetryEnabled ? 'soft' : 'outline'"
+              >
+                {{ telemetryEnabled ? 'On (Sentry)' : 'Off' }}
+              </UBadge>
+            </div>
+          </template>
+
+          <p class="text-sm leading-6 text-zinc-600">
+            Sends error codes and timing only. Never transcripts, recordings,
+            findings, file names, or keys.
+          </p>
+          <p class="mt-4 text-sm text-zinc-500">
+            Telemetry is off unless <code>SENTRY_DSN</code> is set before launch.
+          </p>
+          <UButton
+            class="mt-5"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            icon="i-lucide-book-open"
+            to="https://github.com/jchu96/frame-of-mind/blob/feat/sentry-opt-in-telemetry/docs/RUNBOOK.md#opt-in-error-telemetry"
+            target="_blank"
+          >
+            Privacy and disable steps
+          </UButton>
+        </UCard>
       </section>
 
       <section class="fom-panel mt-8 p-6 sm:p-8" aria-labelledby="persistent-setup">
@@ -328,6 +370,8 @@ async function connectOAuth(name: "bluedot" | "granola") {
 # edit locally:
 GEMINI_API_KEY=...
 GRANOLA_API_KEY=...
+# Optional, opt-in codes-only telemetry:
+SENTRY_DSN=...
 
 bun run studio</code></pre>
         <p class="mt-3 text-sm text-zinc-500">
