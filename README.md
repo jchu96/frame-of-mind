@@ -479,8 +479,14 @@ topology proof remains in the
 
 The same dark path now reserves a versioned conservative token estimate before
 each initial or linked attempt and reconciles it from Gemini usage receipts on
-terminal cleanup. Per-principal caps, video rate, prompt/output headroom, and
-maximum interrogation calls are operator configuration, not browser input.
+terminal cleanup. The v2 plan includes the maximum schema-repair generation
+and every configured transport retry for each video-bearing step. Actual usage
+above the reservation fails closed as indeterminate and can never increase
+committed spend beyond the reserved ceiling. Zero-claim cancellations and
+failures release their reservations; a hosted-only, principal-scoped janitor
+idempotently settles terminal or expired reservations. Per-principal caps,
+video rate, prompt/output headroom, and maximum interrogation calls are
+operator configuration, not browser input.
 Hosted telemetry remains off unless `SENTRY_DSN` is configured on the internal
 Workflows Worker; when enabled, Access/upload-interface/Workflow/spend/
 publication/cleanup events use the ADR-0017 codes-only allowlist. The normal

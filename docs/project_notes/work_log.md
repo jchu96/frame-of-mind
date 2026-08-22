@@ -652,3 +652,14 @@
   passed all hosted Access, Studio, Workflow, spend, and telemetry contracts;
   `bun run test:e2e:smoke` passed 13 tests. No deployment or production
   Wrangler change occurred.
+- Closed PR #66 review findings SF1–SF3 on 2026-08-22. Spend plan
+  `hosted-video-v2` shares Gemini's maximum repair and transport-attempt policy,
+  blocks publication when actual usage exceeds reserved usage, marks the
+  attempt indeterminate, and caps committed units at the reservation. Failed
+  or canceled zero-claim attempts release reservations; the hosted-only,
+  principal-scoped janitor idempotently releases expired zero-claim rows while
+  retaining the full-reservation fallback for incomplete usage. The built
+  Nuxt + Workflow workerd contract concurrently submitted ten unique creates
+  against a three-reservation principal and observed three 201 responses and
+  seven sanitized 429 responses with only three Workflow-backed attempts. No
+  deployment or production Wrangler change occurred.
