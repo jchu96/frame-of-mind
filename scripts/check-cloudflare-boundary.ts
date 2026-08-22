@@ -93,6 +93,8 @@ const forbidden = [
   "FRAME_OF_MIND_HOSTED_WORKFLOW_SPIKE",
   "/api/__hosted-workflow-spike",
   "HOSTED_WORKFLOWS",
+  "/api/_spike/stream",
+  "FRAME_OF_MIND_HOSTED_STREAM_SPIKE_ROUTE_V1",
   "HostedWorkflowAnalysisJobExecutor",
   "/api/hosted/jobs",
 ];

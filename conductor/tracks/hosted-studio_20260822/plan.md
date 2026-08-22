@@ -2,7 +2,7 @@
 
 **Track ID:** `hosted-studio_20260822`
 **Spec:** [spec.md](./spec.md)
-**Status:** Active — Phase 1 complete; Phase 2 is next
+**Status:** Active — Phase 1 complete; Phase 2 GO at 4 MiB parts pending ADR amendment
 
 ## Overview
 
@@ -118,14 +118,16 @@ to release this security hardening.
 
 ### Tasks
 
-- [ ] Task 2.0: Stop/go spike the real `cloudflare_module` route with a
-      synthetic body at least 8 MiB: pipe `request.body` directly into a
-      Gemini-compatible resumable sink, prove H3/Nitro never calls `readBody()`
-      or materializes the part, and measure isolate memory with two concurrent
-      uploads. Record heap/WASM/total isolate evidence and exact failure shape.
-      Failure changes FR-04 to smaller parts or private R2 staging through an
-      ADR amendment before any Task 2.1+ work; Tasks 2.1–2.4 are blocked until
-      the spike receipt is passing. Trust-boundary review trigger:
+- [x] Task 2.0: Stop/go spike the real `cloudflare_module` route with a
+      synthetic body at least 8 MiB: use a built wrapper entry to route the
+      exact upload path around Nitro/H3, pipe the original `request.body`
+      directly into a Gemini-compatible resumable sink, and measure isolate
+      memory with two concurrent uploads. Record heap/backing/total-process
+      evidence and exact failure shape. The Worker digest must use Cloudflare
+      `DigestStream` or a statically imported precompiled WASM module; runtime
+      compilation is forbidden. Failure changes FR-04 to smaller parts or
+      private R2 staging through an ADR amendment before any Task 2.1+ work.
+      Trust-boundary review trigger:
       the platform is asked to carry untrusted recording bytes through a
       shared 128 MB isolate.
 - [ ] Task 2.1: Add the browser hashing worker using `hash-wasm`
@@ -139,30 +141,60 @@ to release this security hardening.
       Trust-boundary review trigger: the Worker creates and encrypts
       provider-side upload authority on a user's behalf.
 - [ ] Task 2.3: Implement `POST /api/hosted/media/:id/parts` as a raw-body
-      8 MiB-or-final-shorter request with bounded Content-Length, offset, part,
-      and digest headers—never multipart. On every start/retry query Gemini's
+      request capped by the adopted hosted limit (Task 2.0d proposes 4 MiB,
+      including a final shorter part) with bounded Content-Length, offset,
+      part, and digest headers—never multipart. On every start/retry query Gemini's
       accepted offset and forward only the unaccepted suffix; D1 completed-part
-      receipts never authorize overlap. Leave shared `MAX_MEDIA_PART_BYTES`
-      untouched. Trust-boundary review trigger:
+      receipts never authorize overlap. Keep this hosted cap distinct from and
+      leave shared local `MAX_MEDIA_PART_BYTES` untouched. Trust-boundary review trigger:
       recording bytes cross browser → Worker → provider without persistence.
 - [ ] Task 2.4: Finalize by normalizing and comparing client SHA-256 with
       Gemini `sha256Hash`, fail closed as `media_digest_mismatch`, and delete
       mismatched remote files. Trust-boundary review trigger: provider metadata
       becomes eligible to authorize a Workflow.
 
+**Task 2.0 status (2026-08-22): Complete — GO at 4 MiB parts pending ADR
+amendment after 2.0d.** The original
+stock-Nitro run materialized the body before H3 and `hash-wasm` attempted
+forbidden runtime WASM compilation. Task 2.0b's exact-path wrapper and
+`DigestStream` looked bounded against a fast sink, but adversarial review found
+that the tee retained the full request when the sink stalled. Task 2.0c
+replaced it with one counting/digesting `TransformStream`, deleted the old
+Nitro spike route, normalized path variants, and added complete Access,
+over-length, and client-abort checks. Path, Access, digest, exact-byte, and
+client-abort receipts pass. The required 2,503 ms slow-sink check still added
+8,398,085 bytes of inspector backing storage against a 2,097,152-byte limit.
+The over-length workerd check also returned 200 with a receipt because the
+service boundary exposed only the declared 8 MiB to the wrapper. Task 2.0d
+accepted materialization and ran a fresh-process matrix for 1, 2, and 4 MiB
+parts at concurrency 2 and 4. All six combinations stayed below both the
+`part × concurrency × 1.5` hold bound and the 24 MiB full-run backing-growth
+cap; the largest 4 MiB × 4 case measured 2,842,764 bytes for both hold and
+peak growth. Runtime truncation is legitimate when forwarded bytes equal the
+declaration; a 7 MiB short source declared as 8 MiB was rejected with no sink
+receipt. The proposed contract is 4 MiB parts with at most four concurrent
+parts per principal. Tasks 2.1–2.4 remain blocked until ADR 0018 adopts that
+amendment. The decision record and second-fallback private-R2 draft are in
+[`hosted-streaming-spike-2026-08-22.md`](../../../docs/spikes/hosted-streaming-spike-2026-08-22.md)
+and
+[`adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`](../../../docs/spikes/adr-0018-private-r2-staging-amendment-draft-2026-08-22.md).
+
 ### Verification
 
-- [ ] Task 2.0 passes with two concurrent streams; bounded-memory browser tests,
-      raw 8 MiB request limits, killed-mid-part Gemini-offset resume, overlap
-      denial, provider digest fixtures, mismatch cleanup, and cross-principal
-      media denial all pass.
+- [x] Task 2.0 proves a materialization-tolerant 4 MiB × 4 construction bound,
+      exact forwarded-byte receipts, short-part denial, and partial abort.
+- [ ] Bounded-memory browser tests, raw 8 MiB request limits, killed-mid-part
+      Gemini-offset resume, overlap denial, provider digest fixtures, mismatch
+      cleanup, and cross-principal media denial all pass.
 
 ### Stop/Go Gate
 
-Stop immediately if Task 2.0 does not prove bounded two-upload streaming on the
-built Worker. Otherwise continue only when the full-file digest is incremental,
-one-shot WebCrypto is test-only, Gemini offset is resume authority, and no
-Workflow can start from an unsealed or mismatched receipt.
+Stop immediately if Task 2.0 does not prove the adopted part/concurrency bound
+on the built Worker. Task 2.0d's 4 MiB × 4 result is proposal evidence, not an
+adopted contract: Tasks 2.1–2.4 cannot start until ADR 0018 is amended.
+Thereafter continue only when the full-file digest is incremental, one-shot
+WebCrypto is test-only, Gemini offset is resume authority, and no Workflow can
+start from an unsealed or mismatched receipt.
 
 ## Phase 3: Durable Workflow Execution
 
@@ -478,7 +510,7 @@ label; Phases 7-8 carry `tier-b` and remain blocked until the Phase 6 gate.
       Gemini digest mismatch fails closed before Workflow creation.
 - [ ] Upload, Workflow retry/cancel, publication, spend, and cleanup pass a
       production-shaped end-to-end run with sanitized observability.
-- [ ] Task 2.0 proves two concurrent raw 8 MiB streams do not buffer in Nitro;
+- [x] Task 2.0 proves a 4 MiB × 4 materialization-tolerant bound pending ADR amendment;
       Task 3.0 records the working WorkflowEntrypoint topology.
 - [ ] A crash after Gemini success cannot trigger a second automatic generate,
       and user retry creates a new linked Workflow instance.

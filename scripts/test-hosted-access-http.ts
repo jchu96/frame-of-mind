@@ -11,6 +11,11 @@ const persistRoot = join(temporaryRoot, "wrangler-state");
 const configPath = join(temporaryRoot, "wrangler.jsonc");
 const audience = "frame-of-mind-hosted-access-contract";
 const keyId = "hosted-access-contract-key";
+const entrySelection = process.env.FRAME_OF_MIND_HOSTED_ACCESS_ENTRY || "index";
+if (entrySelection !== "index" && entrySelection !== "hosted-entry") {
+  throw new Error("FRAME_OF_MIND_HOSTED_ACCESS_ENTRY must be 'index' or 'hosted-entry'.");
+}
+const entryFile = entrySelection === "hosted-entry" ? "hosted-entry.mjs" : "index.mjs";
 let wrangler: ReturnType<typeof Bun.spawn> | undefined;
 let jwksServer: ReturnType<typeof Bun.serve> | undefined;
 let wranglerOutput: Promise<[string, string]> | undefined;
@@ -22,6 +27,12 @@ try {
     "Cloudflare artifact build",
   );
   console.log("HOSTED_ACCESS build=PASS cloudflare_module");
+  if (entrySelection === "hosted-entry") {
+    await runChecked(
+      ["bun", "--no-env-file", "run", "build:hosted-stream-entry"],
+      "Hosted wrapper entry build",
+    );
+  }
 
   const keys = await generateKeyPair("RS256");
   const publicJwk = await exportJWK(keys.publicKey);
@@ -44,7 +55,7 @@ try {
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("node_modules/wrangler/config-schema.json"),
     name: "frame-of-mind-hosted-access-contract",
-    main: resolve("apps/web/.output/server/index.mjs"),
+    main: resolve(`apps/web/.output/server/${entryFile}`),
     compatibility_date: "2026-07-02",
     compatibility_flags: ["nodejs_compat"],
     assets: {
@@ -177,7 +188,7 @@ try {
   console.log("HOSTED_ACCESS service=PASS status=403 browser_runs_denied");
   console.log("HOSTED_ACCESS missing_header=PASS status=403");
   console.log("HOSTED_ACCESS dark=PASS hosted_creation_status=404");
-  console.log("HOSTED_ACCESS_CONTRACT PASSED");
+  console.log(`HOSTED_ACCESS_CONTRACT PASSED entry=${entryFile}`);
 
   wrangler.kill("SIGTERM");
   await wrangler.exited;

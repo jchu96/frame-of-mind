@@ -550,6 +550,7 @@ bun run test:e2e:smoke
 bun run build
 bun run build:web:cloudflare
 bun run test:hosted-access-http
+bun run check:hosted-stream                 # 1/2/4 MiB materialization-bound Worker oracle
 bun run check
 ```
 

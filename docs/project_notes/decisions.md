@@ -29,6 +29,23 @@ a local two-step instance passed. Local SQLite uses reserved
 `local:single-user` so shared RunStore SQL stays in lockstep without adding
 principal fields to durable run bundles or local job/media ports.
 
+Task 2.0 first measured a NO-GO on the stock built Worker: Nitro 2.13.4 consumes
+incoming bodies with `request.arrayBuffer()` before H3, and `hash-wasm` 4.12.0
+attempts runtime WASM compilation that workerd forbids. Task 2.0b's wrapper and
+`DigestStream` produced a provisional GO against a fast sink. Task 2.0c then
+replaced the tee with one counting/digesting `TransformStream`, deleted the
+fallback Nitro spike handler, normalized path variants, and expanded Access,
+abort, and length tests. The required slow-sink run still retained 8,398,085
+backing bytes for an 8 MiB request against a 2 MiB limit; the production-shaped
+over-length run returned 200 with a receipt because workerd exposed only the
+declared bytes. Task 2.0d then accepted materialization and measured fresh
+processes across 1, 2, and 4 MiB parts at concurrency two and four. Every
+combination passed its relative hold bound and the 24 MiB absolute backing
+growth cap; the largest 4 MiB × 4 case measured 2,842,764 bytes. Task 2.0 is GO
+at 4 MiB with a per-principal concurrency cap of four, pending an ADR 0018
+amendment. Tasks 2.1–2.4 remain blocked until adoption. Private R2 is the
+second unadopted fallback; ADR 0018 remains Proposed.
+
 ## 2026-08-11 — Recipes become charters; the executor owns prompt policy
 
 Proposed: recipe intent decomposes into named, bounded slots (stance, allowed
