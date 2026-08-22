@@ -1605,8 +1605,9 @@ The accepted boundaries and phased plan are in the
 Studio starts one maintenance controller after the durable worker is ready and
 before the job API is exposed. The controller first builds a pure dry-run plan
 from the job repository plus the media and context staging inventories, applies
-that plan once, then starts a non-overlapping interval. Nitro shutdown cancels
-the timer and waits for an active run.
+its stale-job compare-and-swap actions first, and rebuilds a cleanup-only plan
+only after a stale transition succeeds. It then starts a non-overlapping
+interval. Nitro shutdown cancels the timer and waits for an active run.
 
 The defaults are deliberately conservative:
 
@@ -1629,8 +1630,17 @@ These are hard deletion gates:
   never a maintenance target;
 - a retained staging receipt whose server-owned expiry is still live is never
   deleted, even when no job references it;
-- a context or media execution lease referenced by a live job is preserved;
+- every nonterminal job remains a context/media reference owner until its
+  stale-job compare-and-swap succeeds;
+- every media receipt currently marked `in_use` is preserved, even if it was
+  not in use when the plan was built;
 - a job with a published run receipt is not stale-terminalized.
+
+The worker has concurrency one, so its one recent heartbeat is process-liveness
+evidence for every queued sibling. An old queued job is eligible for stale
+interruption only when no worker heartbeat is recent. Active non-queued jobs
+still require their own recent heartbeat. If a planned stale transition loses
+its stage/update compare-and-swap, no follow-up cleanup is planned for that job.
 
 Use the session-protected, local-only diagnostic read without applying it:
 

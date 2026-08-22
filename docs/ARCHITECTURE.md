@@ -1045,17 +1045,23 @@ controller plans and applies expired/orphan cleanup, then reconciles
 uncommitted bytes and interrupted seals. It repeats the plan on a configurable,
 non-overlapping interval until Nitro closes. Every action is idempotent and
 uses the same per-session ownership boundary as upload, seal, lifecycle
-transition, and delete; live retained receipts and active leases are deletion
-vetoes, and cleanup failures remain durable and retryable.
+transition, and delete. Every nonterminal job remains a staging reference owner
+until a stale-job CAS succeeds; stale CAS actions run first, then a fresh
+cleanup-only plan may remove newly unreferenced staging. Live retained receipts
+and every `in_use` status are deletion vetoes, and cleanup failures remain
+durable and retryable.
 
 The same planner compares nonterminal unpublished jobs with the configured
-inactivity horizon and the worker's last in-memory heartbeat. A job that is
-old on both clocks is atomically given a sanitized warning event and terminal
-`maintenance_stale_job` interruption; published and terminal rows are
-preserved. `GET /api/studio/maintenance` exposes the current plan and last-run
-summary behind the local session using sanitized IDs/codes only. Operator-owned
-source recordings never enter this inventory, so maintenance can remove only
-private Studio staging copies.
+inactivity horizon and the worker's last in-memory heartbeat. Because the
+worker has concurrency one, any recent heartbeat protects queued siblings;
+active non-queued jobs require their own heartbeat. A job old on both relevant
+clocks is atomically given a sanitized warning event and terminal
+`maintenance_stale_job` interruption. A lost stage/update CAS cannot authorize
+cleanup. Published and terminal rows are preserved. The local-session-only
+`GET /api/studio/maintenance` route exposes the current plan and last-run
+summary using sanitized IDs/codes only. Operator-owned source recordings never
+enter this inventory, so maintenance can remove only private Studio staging
+copies.
 
 `bun run studio` generates a capability and places it only in a URL fragment.
 The client removes the fragment before exchanging the capability once for an
