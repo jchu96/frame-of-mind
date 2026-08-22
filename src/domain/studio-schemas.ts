@@ -139,7 +139,7 @@ const recipeIdSchema = z.string()
 // queue insertion (custom_recipe_staging_unavailable), so ADR 0016 charter
 // support here waits for the custom-recipe staging contract rather than
 // accepting a shape the executor cannot run yet.
-const customRecipeSchema = z.object({
+export const customRecipeSchema = z.object({
   id: recipeIdSchema,
   label: z.string().min(1).max(100),
   description: z.string().min(1).max(500),
@@ -148,7 +148,7 @@ const customRecipeSchema = z.object({
   revision: z.string().min(1).max(120).optional(),
 }).strict();
 
-const composerRecipeSchema = z.union([
+export const composerRecipeSchema = z.union([
   z.object({ id: recipeIdSchema }).strict(),
   z.object({ custom: customRecipeSchema }).strict(),
 ]);

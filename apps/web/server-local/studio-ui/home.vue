@@ -5,6 +5,7 @@ import type {
 } from "../../../../src/domain/studio-schemas";
 import type { JobListPage } from "../../../../src/domain/studio-ports";
 import type { RunPage, RunSummary } from "../../shared/types";
+import { useComposerReadiness } from "./use-composer-readiness";
 
 useSeoMeta({
   title: "Studio Home · Frame of Mind",
@@ -13,6 +14,12 @@ useSeoMeta({
 
 type ProviderStatus = ConfigurationStatus["providers"][number];
 type StatusColor = "primary" | "success" | "warning" | "error" | "neutral";
+
+const {
+  primaryAction,
+  readiness,
+  refresh: refreshReadiness,
+} = useComposerReadiness();
 
 const terminalStages = new Set([
   "succeeded",
@@ -92,6 +99,7 @@ async function refreshAll() {
       refreshJobs(),
       refreshRuns(),
       refreshConfiguration(),
+      refreshReadiness(),
     ]);
   } finally {
     refreshing.value = false;
@@ -168,12 +176,59 @@ function jobContext(job: AnalysisJob): string {
       </div>
       <UButton
         id="new-analysis"
-        to="/recording"
+        :to="primaryAction.to"
         icon="i-lucide-plus"
         label="New analysis"
         size="xl"
         class="justify-center"
       />
+    </section>
+
+    <section
+      class="mt-8"
+      aria-labelledby="composer-readiness-heading"
+    >
+      <UCard>
+        <template #header>
+          <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p class="fom-kicker text-muted">New analysis composer</p>
+              <h2 id="composer-readiness-heading" class="mt-2 text-2xl font-black">
+                Complete sections in any order
+              </h2>
+            </div>
+            <UBadge :color="readiness.canRun ? 'success' : 'neutral'" variant="soft">
+              {{ readiness.canRun ? "Ready for run receipt" : "Not ready" }}
+            </UBadge>
+          </div>
+        </template>
+        <div class="grid gap-3 sm:grid-cols-3">
+          <NuxtLink
+            to="/intent"
+            class="rounded-xl border border-default p-4 transition hover:bg-elevated"
+          >
+            <p class="text-xs font-bold uppercase tracking-wider text-muted">Required</p>
+            <p class="mt-2 font-black text-highlighted">Intent</p>
+            <p class="mt-1 text-sm capitalize text-muted">{{ readiness.intent }}</p>
+          </NuxtLink>
+          <NuxtLink
+            to="/context"
+            class="rounded-xl border border-default p-4 transition hover:bg-elevated"
+          >
+            <p class="text-xs font-bold uppercase tracking-wider text-muted">Optional</p>
+            <p class="mt-2 font-black text-highlighted">Context</p>
+            <p class="mt-1 text-sm capitalize text-muted">{{ readiness.context.replace('-', ' ') }}</p>
+          </NuxtLink>
+          <NuxtLink
+            to="/recording"
+            class="rounded-xl border border-default p-4 transition hover:bg-elevated"
+          >
+            <p class="text-xs font-bold uppercase tracking-wider text-muted">Required</p>
+            <p class="mt-2 font-black text-highlighted">Recording</p>
+            <p class="mt-1 text-sm capitalize text-muted">{{ readiness.recording }}</p>
+          </NuxtLink>
+        </div>
+      </UCard>
     </section>
 
     <UAlert

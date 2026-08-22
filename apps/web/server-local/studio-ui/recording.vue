@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useMediaStaging } from "./use-media-staging";
+import { useComposerReadiness } from "./use-composer-readiness";
 
 useSeoMeta({
   title: "Recording · Frame of Mind",
@@ -28,6 +29,14 @@ const {
   statusMessage,
   totalBytes,
 } = useMediaStaging();
+const {
+  readiness,
+  setRecordingSession,
+} = useComposerReadiness();
+
+watch([session, phase], () => {
+  setRecordingSession(session.value);
+}, { immediate: true });
 
 const retentionOptions = [
   {
@@ -275,9 +284,18 @@ function formatDate(value: string | undefined): string {
             <div class="mt-6 flex flex-wrap gap-3">
               <UButton
                 v-if="phase === 'sealed'"
-                to="/context"
+                to="/intent"
                 icon="i-lucide-arrow-right"
                 trailing
+              >
+                Continue to intent
+              </UButton>
+              <UButton
+                v-if="phase === 'sealed'"
+                to="/context"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-notebook-text"
               >
                 Continue to context
               </UButton>
@@ -334,6 +352,13 @@ function formatDate(value: string | undefined): string {
         </div>
 
         <aside class="space-y-5" aria-label="Recording privacy details">
+          <UAlert
+            :color="readiness.recording === 'sealed' ? 'success' : 'warning'"
+            variant="soft"
+            :icon="readiness.recording === 'sealed' ? 'i-lucide-check-circle' : 'i-lucide-circle-dashed'"
+            title="Composer readiness"
+            :description="`Recording is ${readiness.recording}. Intent is ${readiness.intent}; Context is ${readiness.context}.`"
+          />
           <UAlert
             color="primary"
             variant="soft"

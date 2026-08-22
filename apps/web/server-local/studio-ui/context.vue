@@ -2,15 +2,10 @@
 import {
   meetingCatalogPageSchema,
   type ConfigurationStatus,
-  type MediaSession,
 } from "../../../../src/domain/studio-schemas";
 import type {
   MeetingCatalogItem,
 } from "../../../../src/domain/studio-ports";
-import {
-  createMediaStagingTransport,
-  loadMediaResumeReceipt,
-} from "./media-upload";
 import {
   clearContextDraft,
   createContextStagingTransport,
@@ -19,9 +14,10 @@ import {
   persistContextDraft,
   previewContextFile,
   validateContextFile,
-  type ContextDraft,
+  type EnrichedContextDraft,
   type ContextFileReceipt,
 } from "./context-composer";
+import { useComposerReadiness } from "./use-composer-readiness";
 
 useSeoMeta({
   title: "Context · Frame of Mind",
@@ -69,10 +65,15 @@ const {
 } = await useFetch<ConfigurationStatus>("/api/studio/configuration", {
   server: false,
 });
-const mediaTransport = createMediaStagingTransport();
 const contextTransport = createContextStagingTransport();
 const toast = useToast();
+const {
+  readiness,
+  refresh: refreshReadiness,
+  setContextState,
+} = useComposerReadiness();
 
+const contextMode = ref<"video-only" | "enriched">("enriched");
 const source = ref<SourceKey>("bluedot:mcp");
 const meetingId = ref("");
 const transcriptOffset = ref("");
@@ -80,8 +81,6 @@ const offsetError = ref<string>();
 const formError = ref<string>();
 const storageWarning = ref<string>();
 const saved = ref(false);
-const media = shallowRef<MediaSession>();
-const mediaLoading = ref(true);
 const selectedFile = shallowRef<File>();
 const fileError = ref<string>();
 const filePreview = ref("");
@@ -94,6 +93,21 @@ const catalogCursor = ref<string>();
 const catalogLoading = ref(false);
 const catalogError = ref<string>();
 const browserMounted = ref(false);
+
+const contextModeModel = computed<"video-only" | "enriched">({
+  get: () => contextMode.value,
+  set: (next) => {
+    if (contextReceipt.value && next === "video-only") {
+      formError.value =
+        "Delete the staged local context before choosing recording-only analysis.";
+      return;
+    }
+    contextMode.value = next;
+    formError.value = undefined;
+    saved.value = false;
+    setContextState("draft");
+  },
+});
 
 const sourceModel = computed<SourceKey>({
   get: () => source.value,
@@ -110,6 +124,7 @@ const sourceModel = computed<SourceKey>({
     catalogError.value = undefined;
     formError.value = undefined;
     saved.value = false;
+    setContextState("draft");
   },
 });
 
@@ -126,6 +141,7 @@ const fileModel = computed<File | null>({
     filePreview.value = "";
     previewTruncated.value = false;
     saved.value = false;
+    setContextState("draft");
     if (!next) return;
     const validation = validateContextFile(next);
     if (!validation.ok) {
@@ -144,12 +160,6 @@ const fileModel = computed<File | null>({
   },
 });
 
-const mediaReady = computed(() =>
-  Boolean(
-    media.value?.sha256
-    && ["sealed", "retained", "in_use"].includes(media.value.status),
-  )
-);
 const isLocalContext = computed(() => source.value === "file:file");
 const isBluedot = computed(() => source.value === "bluedot:mcp");
 const selectedCatalogItem = computed(() =>
@@ -170,7 +180,7 @@ const sourceConnected = computed(() => {
   return current.source === "environment" || current.source === "session";
 });
 
-function sourceFromDraft(draft: ContextDraft): SourceKey {
+function sourceFromDraft(draft: EnrichedContextDraft): SourceKey {
   const context = draft.context;
   return `${context.provider}:${context.transport}` as SourceKey;
 }
@@ -206,51 +216,39 @@ onMounted(() => {
 });
 
 onMounted(async () => {
-  const mediaReceipt = loadMediaResumeReceipt(sessionStorage);
-  if (!mediaReceipt.storageAvailable) {
-    storageWarning.value =
-      "Browser session storage is unavailable. Return to Recording and keep this tab open.";
-    mediaLoading.value = false;
-    return;
-  }
-  if (mediaReceipt.mediaSessionId) {
-    try {
-      media.value = await mediaTransport.status(mediaReceipt.mediaSessionId);
-    } catch {
-      media.value = undefined;
-    }
-  }
-
   const restored = loadContextDraft(sessionStorage);
   if (!restored.storageAvailable) {
     storageWarning.value =
       "Context draft storage is unavailable. Staged server receipts remain authoritative.";
-  } else if (
-    restored.draft
-    && restored.draft.mediaSessionId === media.value?.id
-  ) {
-    source.value = sourceFromDraft(restored.draft);
-    if ("meetingId" in restored.draft.context) {
-      meetingId.value = restored.draft.context.meetingId;
+  } else if (restored.draft) {
+    contextMode.value = restored.draft.mode;
+    if (restored.draft.mode === "video-only") {
+      saved.value = true;
     } else {
-      try {
-        contextReceipt.value = await contextTransport.status(
-          restored.draft.context.contextFileId,
-        );
-      } catch {
-        clearContextDraft(sessionStorage);
+      source.value = sourceFromDraft(restored.draft);
+      if ("meetingId" in restored.draft.context) {
+        meetingId.value = restored.draft.context.meetingId;
+      } else {
+        try {
+          contextReceipt.value = await contextTransport.status(
+            restored.draft.context.contextFileId,
+          );
+        } catch {
+          clearContextDraft(sessionStorage);
+          setContextState("none");
+        }
       }
-    }
-    if (restored.draft.transcriptOffsetSeconds !== undefined) {
-      transcriptOffset.value = formatOffset(
-        restored.draft.transcriptOffsetSeconds,
+      if (restored.draft.transcriptOffsetSeconds !== undefined) {
+        transcriptOffset.value = formatOffset(
+          restored.draft.transcriptOffsetSeconds,
+        );
+      }
+      saved.value = restored.draft.committed && Boolean(
+        "meetingId" in restored.draft.context || contextReceipt.value,
       );
     }
-    saved.value = restored.draft.committed && Boolean(
-      "meetingId" in restored.draft.context || contextReceipt.value,
-    );
   }
-  mediaLoading.value = false;
+  await refreshReadiness();
 });
 
 async function loadCatalog(append = false) {
@@ -316,7 +314,8 @@ async function stageContext() {
       validation.format,
     );
     saved.value = false;
-    if (media.value?.id) persistCurrentDraft(false);
+    setContextState("draft");
+    persistCurrentDraft(false);
   } catch {
     fileError.value =
       "Context staging failed. Verify the file format and try again.";
@@ -333,6 +332,8 @@ async function deleteContext() {
     contextReceipt.value = undefined;
     saved.value = false;
     clearContextDraft(sessionStorage);
+    setContextState("none");
+    await refreshReadiness();
   } catch {
     fileError.value =
       "The staged context could not be deleted. Retry before switching sources.";
@@ -341,7 +342,7 @@ async function deleteContext() {
   }
 }
 
-function currentContext(): ContextDraft["context"] | undefined {
+function currentContext(): EnrichedContextDraft["context"] | undefined {
   if (isLocalContext.value) {
     if (!contextReceipt.value) return undefined;
     return {
@@ -364,13 +365,20 @@ function currentContext(): ContextDraft["context"] | undefined {
 }
 
 function persistCurrentDraft(committed: boolean): boolean {
+  if (contextMode.value === "video-only") {
+    return committed && persistContextDraft(sessionStorage, {
+      schemaVersion: 2,
+      mode: "video-only",
+      committed: true,
+    });
+  }
   const context = currentContext();
-  if (!media.value?.id || !context) return false;
+  if (!context) return false;
   const alignment = parseTranscriptOffsetInput(transcriptOffset.value);
   if (!alignment.ok) return false;
   return persistContextDraft(sessionStorage, {
-    schemaVersion: 1,
-    mediaSessionId: media.value.id,
+    schemaVersion: 2,
+    mode: "enriched",
     context,
     ...(alignment.seconds === undefined
       ? {}
@@ -382,8 +390,21 @@ function persistCurrentDraft(committed: boolean): boolean {
 async function saveContext() {
   formError.value = undefined;
   offsetError.value = undefined;
-  if (!mediaReady.value) {
-    formError.value = "Stage and seal a recording before choosing context.";
+  if (contextMode.value === "video-only") {
+    if (!persistCurrentDraft(true)) {
+      storageWarning.value =
+        "The browser could not save the recording-only choice. Keep this tab open and try again.";
+      return;
+    }
+    saved.value = true;
+    setContextState("video-only");
+    await refreshReadiness();
+    toast.add({
+      title: "Recording-only context saved",
+      description: "Missing context will not be confused with this explicit choice.",
+      color: "success",
+      icon: "i-lucide-check",
+    });
     return;
   }
   if (!sourceConnected.value) {
@@ -421,6 +442,8 @@ async function saveContext() {
     return;
   }
   saved.value = true;
+  setContextState("committed");
+  await refreshReadiness();
   toast.add({
     title: "Context saved for this analysis",
     description: "Only typed identifiers and receipts were stored in this browser session.",
@@ -467,6 +490,40 @@ async function saveContext() {
 
       <section class="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div v-if="browserMounted" class="space-y-6">
+          <UCard>
+            <template #header>
+              <div>
+                <p class="fom-kicker text-muted">Context mode</p>
+                <h2 class="mt-2 text-2xl font-black">Choose context deliberately</h2>
+              </div>
+            </template>
+            <URadioGroup
+              v-model="contextModeModel"
+              :items="[
+                {
+                  label: 'Context enriched',
+                  value: 'enriched',
+                  description: 'Pair one exact meeting source or bounded local context receipt.',
+                },
+                {
+                  label: 'Recording only',
+                  value: 'video-only',
+                  description: 'Explicitly run without external meeting context.',
+                },
+              ]"
+              variant="card"
+            />
+            <UAlert
+              v-if="contextMode === 'video-only'"
+              class="mt-5"
+              color="primary"
+              variant="soft"
+              title="Explicit recording-only analysis"
+              description="This is a deliberate choice. Missing, expired, or failed enriched context never changes this setting automatically."
+            />
+          </UCard>
+
+          <template v-if="contextMode === 'enriched'">
           <UCard>
             <template #header>
               <div>
@@ -638,7 +695,7 @@ async function saveContext() {
                 autocomplete="off"
                 maxlength="500"
                 placeholder="Provider meeting ID"
-                @update:model-value="saved = false"
+                @update:model-value="saved = false; setContextState('draft')"
               />
             </UFormField>
 
@@ -757,12 +814,13 @@ async function saveContext() {
                     class="w-full sm:max-w-sm"
                     inputmode="text"
                     placeholder="01:02:47 or -00:04:30"
-                    @update:model-value="offsetError = undefined; saved = false"
+                    @update:model-value="offsetError = undefined; saved = false; setContextState('draft')"
                   />
                 </UFormField>
               </div>
             </details>
           </UCard>
+          </template>
 
           <UAlert
             v-if="formError"
@@ -778,10 +836,20 @@ async function saveContext() {
             variant="soft"
             icon="i-lucide-check-circle"
             title="Context step saved"
-            description="The next composer task is Intent. No provider transcript has been fetched and no Gemini upload has started."
+            :description="contextMode === 'video-only'
+              ? 'Recording-only intent is explicit. No provider transcript has been fetched and no Gemini upload has started.'
+              : 'The context choice is committed independently. No provider transcript has been fetched and no Gemini upload has started.'"
           />
 
           <div class="flex flex-wrap gap-3">
+            <UButton
+              to="/intent"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-target"
+            >
+              Open intent
+            </UButton>
             <UButton
               to="/recording"
               color="neutral"
@@ -793,7 +861,7 @@ async function saveContext() {
             <UButton
               type="button"
               icon="i-lucide-save"
-              :disabled="mediaLoading"
+              :disabled="contextBusy"
               @click="saveContext"
             >
               Save context step
@@ -809,13 +877,11 @@ async function saveContext() {
 
         <aside class="space-y-5" aria-label="Context privacy details">
           <UAlert
-            :color="mediaReady ? 'success' : 'warning'"
+            :color="readiness.context === 'committed' || readiness.context === 'video-only' ? 'success' : 'warning'"
             variant="soft"
-            :icon="mediaReady ? 'i-lucide-check-circle' : 'i-lucide-video-off'"
-            :title="mediaReady ? 'Recording ready' : 'Recording required'"
-            :description="mediaReady
-              ? 'The sealed local media receipt is available for this draft.'
-              : 'Return to Recording and seal one file before saving context.'"
+            :icon="readiness.context === 'committed' || readiness.context === 'video-only' ? 'i-lucide-check-circle' : 'i-lucide-circle-dashed'"
+            title="Context readiness"
+            :description="`Context is ${readiness.context}. Recording is ${readiness.recording}; neither draft owns the other.`"
           />
           <UAlert
             color="neutral"

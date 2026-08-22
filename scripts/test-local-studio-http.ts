@@ -177,6 +177,16 @@ try {
     "Context page requires a session",
   );
   await expectStatus(
+    await probe.get("/intent"),
+    401,
+    "Intent page requires a session",
+  );
+  await expectStatus(
+    await probe.get("/api/studio/recipes"),
+    401,
+    "recipe catalog requires a Studio session",
+  );
+  await expectStatus(
     await probe.get("/api/studio/session", { host: "attacker.example" }),
     403,
     "hostile Host fails closed",
@@ -279,6 +289,36 @@ try {
     || !contextHtml.includes("Pair the recording with what was said.")
   ) {
     throw new Error("Authenticated Context page did not render its local composer step.");
+  }
+  const intentPage = await expectStatus(
+    await probe.get("/intent"),
+    200,
+    "authenticated Intent page renders",
+  );
+  const intentHtml = await intentPage.text();
+  if (
+    !intentHtml.includes('data-intent-step="local"')
+    || !intentHtml.includes("Choose what this analysis should find.")
+  ) {
+    throw new Error("Authenticated Intent page did not render its local composer step.");
+  }
+  const recipesResponse = await expectStatus(
+    await probe.get("/api/studio/recipes"),
+    200,
+    "authenticated recipe catalog renders",
+  );
+  const recipesText = await recipesResponse.text();
+  const recipesBody = JSON.parse(recipesText) as {
+    defaultModel?: string;
+    recipes?: Array<{ id?: string; label?: string; description?: string; revision?: string }>;
+  };
+  if (
+    recipesBody.defaultModel !== "gemini-3.7-flash"
+    || !recipesBody.recipes?.some((recipe) => recipe.id === "requirements")
+    || recipesText.includes("indexInstruction")
+    || recipesText.includes("interrogationInstruction")
+  ) {
+    throw new Error("Recipe catalog exposed an invalid or unsafe projection.");
   }
 
   const fixture = new Uint8Array(20);

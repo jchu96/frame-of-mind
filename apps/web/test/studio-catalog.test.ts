@@ -6,6 +6,7 @@ import {
   StudioMeetingCatalogError,
   StudioMeetingCatalogService,
 } from "../server-local/studio-catalog/service";
+import { studioRecipeCatalog } from "../server-local/studio-catalog/recipes";
 
 describe("Studio meeting catalog", () => {
   test("uses an explicit provider transport and always closes it", async () => {
@@ -88,5 +89,21 @@ describe("Studio meeting catalog", () => {
       limit: 8,
     })).rejects.toMatchObject({ code: "catalog_failed" });
     expect(closed).toBe(true);
+  });
+});
+
+describe("Studio recipe catalog", () => {
+  test("projects built-ins without exposing analysis instructions", async () => {
+    const catalog = await studioRecipeCatalog();
+    expect(catalog.defaultModel).toBe("gemini-3.7-flash");
+    expect(catalog.recipes.length).toBeGreaterThan(0);
+    expect(catalog.recipes[0]).toEqual({
+      id: expect.any(String),
+      label: expect.any(String),
+      description: expect.any(String),
+      revision: expect.any(String),
+    });
+    expect(JSON.stringify(catalog)).not.toContain("indexInstruction");
+    expect(JSON.stringify(catalog)).not.toContain("interrogationInstruction");
   });
 });
