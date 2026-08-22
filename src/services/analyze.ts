@@ -96,6 +96,7 @@ interface AnalyzeOptionsBase {
   apiKey: string;
   model?: string;
   video?: string;
+  videoMimeType?: string;
   expectedVideoSha256?: string;
   recordingUrl?: string;
   focus?: string;
@@ -361,7 +362,10 @@ export class AnalysisOrchestrator {
         throw new Error("A local recording is required when no external context is selected.");
       }
 
-      const mimeType = mimeForPath(localVideo, downloadedMimeType);
+      const mimeType = mimeForPath(
+        localVideo,
+        options.videoMimeType ?? downloadedMimeType,
+      );
       if (!mimeType.startsWith("video/")) {
         throw new Error(
           `Frame of Mind requires a screen recording; received '${mimeType}'. ` +

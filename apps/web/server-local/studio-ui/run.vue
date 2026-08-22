@@ -7,6 +7,7 @@ import type {
 } from "../../../../src/domain/studio-schemas";
 import {
   clearContextDraft,
+  commitVideoOnlyContextDraft,
   createContextStagingTransport,
   loadContextDraft,
 } from "./context-composer";
@@ -58,6 +59,7 @@ const runDraft = shallowRef<RunDraft>();
 const receiptState = shallowRef<RunReceiptState>();
 const loadingReceipt = ref(true);
 const submitting = ref(false);
+const committingVideoOnly = ref(false);
 const submitError = ref<string>();
 const fieldError = ref<RunFieldError>();
 let intentLoad = loadIntentDraft({
@@ -269,6 +271,29 @@ function startFreshReceipt(): void {
       "A fresh Run retry key could not be saved. Enable browser session storage and try again.";
   }
 }
+
+function canContinueWithoutContext(code: string): boolean {
+  return code === "context_missing" || code === "context_uncommitted";
+}
+
+async function continueWithoutContext(): Promise<void> {
+  if (committingVideoOnly.value) return;
+  submitError.value = undefined;
+  committingVideoOnly.value = true;
+  try {
+    if (!commitVideoOnlyContextDraft(sessionStorage)) {
+      submitError.value =
+        "The browser could not save the recording-only choice. Enable browser session storage and try again.";
+      return;
+    }
+    contextLoad = loadContextDraft(sessionStorage);
+    contextFileReceipt.value = undefined;
+    await refreshReadiness();
+    refreshDerivedState();
+  } finally {
+    committingVideoOnly.value = false;
+  }
+}
 </script>
 
 <template>
@@ -321,9 +346,31 @@ function startFreshReceipt(): void {
               variant="soft"
               icon="i-lucide-shield-alert"
               title="BLOCKED"
-              :description="blocker.message"
-              :actions="[{ label: `Open ${blocker.link.slice(1)}`, to: blocker.link, color: 'neutral', variant: 'outline' }]"
-            />
+              :description="canContinueWithoutContext(blocker.code)
+                ? 'Add meeting context, or continue with the recording only.'
+                : blocker.message"
+            >
+              <template #actions>
+                <UButton
+                  v-if="canContinueWithoutContext(blocker.code)"
+                  type="button"
+                  color="primary"
+                  size="sm"
+                  :loading="committingVideoOnly"
+                  @click="continueWithoutContext"
+                >
+                  Continue without context
+                </UButton>
+                <UButton
+                  :to="blocker.link"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                >
+                  Open {{ blocker.link.slice(1) }}
+                </UButton>
+              </template>
+            </UAlert>
           </div>
 
           <UCard>

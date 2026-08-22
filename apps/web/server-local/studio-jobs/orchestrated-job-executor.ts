@@ -19,12 +19,14 @@ import type {
 } from "../../../../src/services/analyze";
 import { digestRecipe } from "../../../../src/recipes/index";
 import { validateVersionedRunImport } from "../../../../src/domain/integrity";
+import { GeminiFileError } from "../../../../src/adapters/gemini-files";
 import {
   LocalInitialMediaGuard,
   LocalMediaReuseGuard,
   type LocalMediaReuseLease,
   StudioMediaReuseError,
 } from "./media-reuse-guard";
+import { StudioJobInputUnavailableError } from "./analysis-options";
 
 interface AnalysisOrchestratorPort {
   analyze: AnalysisOrchestrator["analyze"];
@@ -85,22 +87,30 @@ export class OrchestratedAnalysisJobExecutor implements AnalysisJobExecutor {
       const resolved = await this.options.resolveAnalyzeOptions(job);
       const analyzeOptions = await bindImmutableOptions(job, resolved);
       let currentStage: AnalysisJobStage = job.stage;
-      const result = await this.options.orchestrator.analyze(analyzeOptions, {
-        signal: execution.signal,
-        ...(this.options.projection
-          ? { projection: this.options.projection }
-          : {}),
-        progress: {
-          report: async (event) => {
-            currentStage = await this.persistProgress(
-              job,
-              currentStage,
-              event,
-              execution.progress,
-            );
+      let result;
+      try {
+        result = await this.options.orchestrator.analyze(analyzeOptions, {
+          signal: execution.signal,
+          ...(this.options.projection
+            ? { projection: this.options.projection }
+            : {}),
+          progress: {
+            report: async (event) => {
+              currentStage = await this.persistProgress(
+                job,
+                currentStage,
+                event,
+                execution.progress,
+              );
+            },
           },
-        },
-      });
+        });
+      } catch (error) {
+        if (error instanceof GeminiFileError) {
+          throw new StudioJobInputUnavailableError("gemini_request_failed");
+        }
+        throw error;
+      }
       const validated = await validateVersionedRunImport({
         analysis: result.analysis,
         manifest: result.manifest,
