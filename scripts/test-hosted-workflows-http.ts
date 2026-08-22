@@ -319,7 +319,20 @@ try {
     404,
     "cross-principal published run",
   );
-  console.log("HOSTED_WORKFLOW principal_isolation=PASS activity_media_run_foreign_ids=404");
+  await createJob(baseUrl, tokenB, normalMedia, "foreign-media-create", 404);
+  await expectStatus(fetch(`${baseUrl}/api/hosted/composer/jobs`, {
+    method: "POST",
+    headers: mutationHeaders(baseUrl, tokenB),
+    body: JSON.stringify({
+      idempotencyKey: "foreign-media-composer",
+      mediaSessionId: normalMedia,
+      context: { mode: "none" },
+      recipe: { id: "decisions", revision: "builtin-2026-08-11.1" },
+      model: "gemini-3.7-flash",
+      retention: { mode: "ephemeral" },
+    }),
+  }), 404, "cross-principal composer create with foreign media");
+  console.log("HOSTED_WORKFLOW principal_isolation=PASS activity_media_run_foreign_ids=404 create_with_foreign_media=404");
 
   const canceled = await createJob(baseUrl, tokenA, cancelMedia, "cancel-submit-key");
   await expectStatus(fetch(`${baseUrl}/api/hosted/jobs/${canceled.job.id}/cancel`, {
