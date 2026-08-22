@@ -78,6 +78,14 @@ const forbidden = [
   "/api/studio/jobs",
   "/api/studio/composer/jobs",
   "studio_analysis_jobs",
+  "sentry.client.config",
+  "sentry.server.config",
+  "SENTRY_DSN",
+  "SanitizedTelemetryError",
+  "@sentry/node",
+  "@sentry/nuxt",
+  "@sentry/cloudflare",
+  "Sentry.init",
 ];
 const requiredReviewMarkers = [
   "Primary navigation",

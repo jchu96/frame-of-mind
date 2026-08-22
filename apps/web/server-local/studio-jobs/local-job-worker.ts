@@ -19,7 +19,9 @@ import {
 import type {
   AnalysisJobStage,
 } from "../../../../src/domain/studio-types";
+import type { TelemetryTags } from "../../../../src/lib/sentry-telemetry";
 import { MediaStagingError } from "../studio-media/local-media-staging";
+import { captureStudioException } from "../telemetry";
 import { StudioJobInputUnavailableError } from "./analysis-options";
 import { StudioMediaReuseError } from "./media-reuse-guard";
 
@@ -51,6 +53,10 @@ export interface StudioJobReconciliationReport {
 export interface LocalStudioJobWorkerOptions {
   now?: () => string;
   onWorkerError?: (error: StudioJobWorkerError) => Promise<void> | void;
+  captureTelemetry?: (
+    code: string,
+    tags: TelemetryTags,
+  ) => Promise<string | undefined> | string | undefined;
 }
 
 export class StudioJobWorkerError extends Error {
@@ -78,6 +84,9 @@ export class LocalStudioJobWorker {
   private readonly onWorkerError: NonNullable<
     LocalStudioJobWorkerOptions["onWorkerError"]
   >;
+  private readonly captureTelemetry: NonNullable<
+    LocalStudioJobWorkerOptions["captureTelemetry"]
+  >;
   private started = false;
   private stopping = false;
   private wakeRequested = false;
@@ -96,6 +105,7 @@ export class LocalStudioJobWorker {
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
     this.onWorkerError = options.onWorkerError ?? (() => undefined);
+    this.captureTelemetry = options.captureTelemetry ?? captureStudioException;
   }
 
   get activeJobId(): string | undefined {
@@ -212,6 +222,7 @@ export class LocalStudioJobWorker {
   }
 
   private async executeOne(queuedJob: AnalysisJob): Promise<void> {
+    const startedAt = Date.now();
     const controller = new AbortController();
     this.active = { jobId: queuedJob.id, controller };
     try {
@@ -255,6 +266,11 @@ export class LocalStudioJobWorker {
           : undefined;
         if (failure) {
           await this.recordExecutionFailure(claimed.id, failure);
+          await this.reportJobTelemetry(
+            failure.code,
+            latest,
+            startedAt,
+          );
         }
         await this.finishUnsuccessful(
           claimed.id,
@@ -271,6 +287,7 @@ export class LocalStudioJobWorker {
           message: SANITIZED_FAILURE_MESSAGES.executor_result_invalid,
         };
         await this.recordExecutionFailure(claimed.id, failure);
+        await this.reportJobTelemetry(failure.code, claimed, startedAt);
         await this.finishUnsuccessful(claimed.id, "interrupted", failure);
         return;
       }
@@ -457,11 +474,36 @@ export class LocalStudioJobWorker {
   }
 
   private async reportWorkerError(error: StudioJobWorkerError): Promise<void> {
+    await Promise.resolve(this.captureTelemetry(error.code, {
+      code: error.code,
+      stage: "worker",
+      ...(error.jobId ? { jobId: error.jobId } : {}),
+      studioMode: "local-studio",
+      version: "0.3.0",
+    })).catch(() => undefined);
     try {
       await this.onWorkerError(error);
     } catch {
       // A diagnostics sink must not create another worker failure.
     }
+  }
+
+  private async reportJobTelemetry(
+    code: string,
+    job: AnalysisJob,
+    startedAt: number,
+  ): Promise<void> {
+    await Promise.resolve(this.captureTelemetry(code, {
+      code,
+      stage: job.stage,
+      jobId: job.id,
+      recipeId: job.input.recipe.id,
+      recipeRevision: job.input.recipe.revision,
+      model: job.input.model,
+      durationMs: Math.max(0, Date.now() - startedAt),
+      studioMode: "local-studio",
+      version: "0.3.0",
+    })).catch(() => undefined);
   }
 }
 
