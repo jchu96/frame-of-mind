@@ -26,6 +26,11 @@ const navigation: NavigationMenuItem[] = [
     to: "/recording",
   },
   {
+    label: "Run",
+    icon: "i-lucide-play",
+    to: "/run",
+  },
+  {
     label: "Connections",
     icon: "i-lucide-plug-zap",
     to: "/connections",
@@ -41,6 +46,7 @@ const title = computed(() => {
   if (route.path === "/recording") return "Recording";
   if (route.path === "/context") return "Context";
   if (route.path === "/intent") return "Intent";
+  if (route.path === "/run") return "Run receipt";
   if (route.path === "/connections") return "Connections";
   if (route.path === "/import") return "Import run";
   if (route.path.startsWith("/runs/")) return "Run detail";

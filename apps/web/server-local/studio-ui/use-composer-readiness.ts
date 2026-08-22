@@ -74,7 +74,13 @@ export function useComposerReadiness() {
     if (readiness.value.recording !== "sealed") {
       return { to: "/recording", label: "Add recording" };
     }
-    return { to: "/intent", label: "Review intent" };
+    if (
+      readiness.value.context !== "committed"
+      && readiness.value.context !== "video-only"
+    ) {
+      return { to: "/context", label: "Choose context" };
+    }
+    return { to: "/run", label: "Review run receipt" };
   });
 
   onMounted(() => {

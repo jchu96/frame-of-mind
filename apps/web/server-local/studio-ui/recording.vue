@@ -300,6 +300,15 @@ function formatDate(value: string | undefined): string {
                 Continue to context
               </UButton>
               <UButton
+                v-if="phase === 'sealed'"
+                to="/run"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-file-check-2"
+              >
+                Review run receipt
+              </UButton>
+              <UButton
                 v-if="phase === 'selected' || phase === 'aborted' || (phase === 'failed' && !session)"
                 type="button"
                 icon="i-lucide-hard-drive-upload"
@@ -364,7 +373,7 @@ function formatDate(value: string | undefined): string {
             variant="soft"
             icon="i-lucide-cloud-upload"
             title="Gemini transfer happens later"
-            description="Selecting or staging does not contact Gemini. A future analysis action will explicitly upload a temporary copy to Gemini Files and report cleanup."
+            description="Selecting or staging does not contact Gemini. The Run receipt names the exact temporary Gemini Files transfer and cleanup before Start analysis."
           />
           <UAlert
             color="neutral"
