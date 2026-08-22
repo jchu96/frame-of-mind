@@ -225,6 +225,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
   readonly #availableBytes: () => Promise<number>;
   readonly #removeFile: (path: string) => Promise<void>;
   readonly #activeWriters = new Set<string>();
+  readonly #activeReaders = new Map<string, number>();
   #creationTail = Promise.resolve();
 
   constructor(options: LocalMediaStagingOptions) {
@@ -350,6 +351,22 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
 
   #sealedPath(id: OpaqueResourceId): string {
     return join(this.#sessionDirectory(id), "media.sealed");
+  }
+
+  #hasActiveReaders(id: OpaqueResourceId): boolean {
+    return (this.#activeReaders.get(id) ?? 0) > 0;
+  }
+
+  #acquireReader(id: OpaqueResourceId): () => void {
+    this.#activeReaders.set(id, (this.#activeReaders.get(id) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (this.#activeReaders.get(id) ?? 1) - 1;
+      if (remaining > 0) this.#activeReaders.set(id, remaining);
+      else this.#activeReaders.delete(id);
+    };
   }
 
   async #readStored(id: OpaqueResourceId): Promise<StoredMediaSession | undefined> {
@@ -562,9 +579,9 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
   /**
    * Opens one retained recording without exposing its private path.
    *
-   * The per-session ownership lock remains held until the response stream
-   * closes, so expiry or operator cleanup cannot remove the opened file while
-   * a browser range is in flight.
+   * The per-session reader count remains held until the response stream
+   * closes. Review ranges may overlap, while expiry or operator cleanup cannot
+   * remove the opened file until the final reader releases it.
    */
   async openRetainedReviewMedia(
     idValue: string,
@@ -579,9 +596,8 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
         "Retained media is temporarily unavailable.",
       );
     }
-    this.#activeWriters.add(id);
+    const release = this.#acquireReader(id);
     let handle: Awaited<ReturnType<typeof open>> | undefined;
-    const release = () => this.#activeWriters.delete(id);
     try {
       await this.#ensureRoot();
       const stored = await this.#requireStored(id);
@@ -1284,6 +1300,12 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
     } = {},
   ): Promise<MediaSession> {
     const id = this.#parseId(idValue);
+    if (this.#hasActiveReaders(id)) {
+      throw new MediaStagingError(
+        "media_in_use",
+        "Media is being reviewed. Retry deletion shortly.",
+      );
+    }
     if (this.#activeWriters.has(id) && !options.allowActiveWriter) {
       throw new MediaStagingError(
         "concurrent_writer",
@@ -1371,7 +1393,7 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
     );
     for (const candidate of candidates) {
       const id = candidate.session.id;
-      if (this.#activeWriters.has(id)) continue;
+      if (this.#activeWriters.has(id) || this.#hasActiveReaders(id)) continue;
       this.#activeWriters.add(id);
       try {
         let stored = await this.#requireStored(id);
