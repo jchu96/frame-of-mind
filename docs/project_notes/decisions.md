@@ -227,6 +227,8 @@ fixture must be a genuinely public or self-produced recording.
 
 Frame of Mind sends no Sentry events unless `SENTRY_DSN` is set. Explicit
 capture paths create synthetic code-only exceptions, and one shared scrubber
-removes stack paths, requests, users, extras, breadcrumbs, and non-allowlisted
-metadata before transport. The durable boundary and disable procedure are
+constructs a new event from a closed top-level allowlist before transport.
+SDK auto-capture for Nitro errors, tracing, transactions, and package metadata
+is disabled; Nuxt app/Vue error hooks can only pass a synthetic code. The
+durable boundary and disable procedure are
 canonical in [ADR 0017](../adr/0017-opt-in-sentry-telemetry.md).

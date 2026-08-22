@@ -337,7 +337,7 @@ async function connectOAuth(name: "bluedot" | "granola") {
             variant="outline"
             size="sm"
             icon="i-lucide-book-open"
-            to="https://github.com/jchu96/frame-of-mind/blob/main/docs/RUNBOOK.md#opt-in-error-telemetry"
+            to="https://github.com/jchu96/frame-of-mind/blob/feat/sentry-opt-in-telemetry/docs/RUNBOOK.md#opt-in-error-telemetry"
             target="_blank"
           >
             Privacy and disable steps

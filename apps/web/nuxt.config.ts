@@ -284,6 +284,13 @@ export default defineNuxtConfig({
   sentry: {
     telemetry: false,
     sourcemaps: { disable: true },
+    bundleSizeOptimizations: { excludeTracing: true },
+  },
+  // The Sentry module only installs its define-replacement plugin when source
+  // maps are enabled. Keep uploads off and enforce the same module option at
+  // Vite's boundary so the runtime plugin cannot add BrowserTracing.
+  vite: {
+    define: { __SENTRY_TRACING__: "false" },
   },
   css: ["~/assets/css/main.css"],
   app: {

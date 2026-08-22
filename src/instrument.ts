@@ -8,15 +8,27 @@ const dsn = process.env.SENTRY_DSN?.trim() ?? "";
 
 export const CLI_TELEMETRY_ENABLED = dsn.length > 0;
 
-Sentry.init({
-  dsn: dsn || undefined,
-  enabled: CLI_TELEMETRY_ENABLED,
-  environment: "cli",
-  sendDefaultPii: false,
-  tracesSampleRate: 0,
-  defaultIntegrations: false,
-  beforeBreadcrumb: () => null,
-  beforeSend(event) {
-    return scrubSentryEvent(event as typeof event & import("./lib/sentry-telemetry.js").ScrubbableSentryEvent);
-  },
-});
+if (CLI_TELEMETRY_ENABLED) {
+  Sentry.init({
+    dsn,
+    _metadata: {
+      sdk: {
+        name: "sentry.javascript.bun",
+        version: Sentry.SDK_VERSION,
+        integrations: [],
+        packages: [],
+      },
+    },
+    environment: "cli",
+    sendDefaultPii: false,
+    tracesSampleRate: 0,
+    defaultIntegrations: false,
+    beforeSendTransaction: () => null,
+    beforeBreadcrumb: () => null,
+    beforeSend(event) {
+      return scrubSentryEvent(
+        event as unknown as import("./lib/sentry-telemetry.js").ScrubbableSentryEvent,
+      ) as typeof event | null;
+    },
+  });
+}

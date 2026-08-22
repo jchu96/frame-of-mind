@@ -484,8 +484,8 @@ bun run build:web:cloudflare
 - Outputs use user-only POSIX modes and publish atomically.
 - The tool never creates tickets or messages without separate authorization.
 - Sentry telemetry is off unless `SENTRY_DSN` is set. When enabled it sends
-  sanitized error codes and allowlisted job/recipe/model/timing/version
-  metadata only—never transcripts, recordings, findings, paths, filenames,
+  synthetic error codes in newly constructed, allowlisted events plus approved
+  job/recipe/model/timing/version metadata only—never transcripts, recordings, findings, paths, filenames,
   meeting IDs, keys, bodies, query-bearing URLs, emails, or IP addresses. See
   [ADR 0017](docs/adr/0017-opt-in-sentry-telemetry.md).
 
