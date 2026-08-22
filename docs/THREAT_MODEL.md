@@ -24,6 +24,15 @@ implementation constraints. Hosted execution remains out of scope.
 6. Cleanup failure is recorded and recoverable; it is never reported as
    successful deletion.
 
+Opt-in diagnostics add one deliberately narrower outbound boundary. Sentry is
+off unless `SENTRY_DSN` is set, uses `sendDefaultPii: false`, and receives only
+synthetic error codes plus allowlisted job/recipe/model/timing/version metadata.
+A shared pre-send scrubber drops raw messages and sensitive patterns, removes
+stack paths, requests, users, extras, and breadcrumbs, and never permits
+transcripts, recordings, findings, filenames, provider meeting IDs,
+credentials, bodies, query-bearing URLs, email addresses, or IP addresses.
+See [ADR 0017](adr/0017-opt-in-sentry-telemetry.md).
+
 ## Data Flow And Trust Boundaries
 
 ```mermaid

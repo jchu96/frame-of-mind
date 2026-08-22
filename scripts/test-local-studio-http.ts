@@ -7,6 +7,7 @@ import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini-model";
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
 const port = 34_000 + Math.floor(Math.random() * 10_000);
 const baseUrl = `http://127.0.0.1:${port}`;
+const webRoot = join(process.cwd(), "apps", "web");
 const mediaRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-http-media-"));
 const environment = {
   ...process.env,
@@ -134,8 +135,13 @@ if (await build.exited !== 0) {
   throw new Error("Local Studio contract fixture build failed.");
 }
 
-const server = Bun.spawn(["bun", ".output/server/index.mjs"], {
-  cwd: `${process.cwd()}/apps/web`,
+const server = Bun.spawn([
+  "bun",
+  "--preload",
+  join(webRoot, ".output/server/sentry.server.config.mjs"),
+  join(webRoot, ".output/server/index.mjs"),
+], {
+  cwd: webRoot,
   env: environment,
   stdin: "ignore",
   stdout: "ignore",

@@ -131,6 +131,7 @@ describe("LocalStudioJobWorker", () => {
   test("persists a sanitized failure without provider error content", async () => {
     const { repository } = createRepository();
     const job = await createJob(repository, "worker-failure-0001", 0);
+    const telemetry: Array<{ code: string; tags: Record<string, unknown> }> = [];
     const executor: AnalysisJobExecutor = {
       async execute() {
         throw new Error("secret transcript and signed URL");
@@ -138,6 +139,10 @@ describe("LocalStudioJobWorker", () => {
     };
     const worker = new LocalStudioJobWorker(repository, executor, {
       now: createClock(),
+      captureTelemetry(code, tags) {
+        telemetry.push({ code, tags });
+        return "synthetic-event-id";
+      },
     });
 
     await worker.start();
@@ -157,6 +162,20 @@ describe("LocalStudioJobWorker", () => {
       code: "analysis_failed",
       message: "Analysis execution failed.",
     }));
+    expect(telemetry).toEqual([{
+      code: "analysis_failed",
+      tags: expect.objectContaining({
+        code: "analysis_failed",
+        stage: "fetching_context",
+        jobId: job.id,
+        recipeId: "issue-review",
+        recipeRevision: "builtin-v1",
+        model: "gemini-3.6-flash",
+        studioMode: "local-studio",
+        version: "0.3.0",
+      }),
+    }]);
+    expect(JSON.stringify(telemetry)).not.toContain("secret transcript");
   });
 
   test("preserves every typed execution code in logs, warning events, and terminal state", async () => {
@@ -197,6 +216,7 @@ describe("LocalStudioJobWorker", () => {
           "Execution completed with an invalid publication receipt; explicit retry is required.",
       },
     ] as const;
+    const telemetry: Array<{ code: string; tags: Record<string, unknown> }> = [];
     const originalConsoleError = console.error;
     const logged: unknown[][] = [];
     console.error = (...arguments_: unknown[]) => {
@@ -217,6 +237,10 @@ describe("LocalStudioJobWorker", () => {
         };
         const worker = new LocalStudioJobWorker(repository, executor, {
           now: createClock(),
+          captureTelemetry(code, tags) {
+            telemetry.push({ code, tags });
+            return "synthetic-event-id";
+          },
         });
 
         await worker.start();
@@ -249,6 +273,9 @@ describe("LocalStudioJobWorker", () => {
       { code: item.code, jobId: expect.stringMatching(/^job_/) },
     ]));
     expect(JSON.stringify(logged)).not.toContain("private path must not survive");
+    expect(telemetry.map(({ code }) => code)).toEqual(
+      cases.map(({ code }) => code),
+    );
   });
 
   test("aborts the active job on shutdown and leaves later jobs queued", async () => {

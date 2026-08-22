@@ -470,3 +470,14 @@
   discovery, three-page event ordering, additive warning fields,
   cancellation-request timeline rows, authenticated detail SSR, and the
   grouped-row smoke click.
+- Added opt-in, errors-only Sentry telemetry under ADR 0017 for the CLI and
+  local Studio. A shared code-only scrubber drops non-code exception text and
+  removes request, user, breadcrumb, stack, and non-allowlisted metadata; the
+  local worker and Gemini adapters preserve only sanitized failure/status
+  codes. Cloudflare remains telemetry-free because the Nuxt module is gated
+  off for that preset. Validated by `bun run check` (Vitest: 22 files / 210
+  tests; Bun web suite: 223; Studio HTTP, Cloudflare boundary, and 32 MiB
+  streaming spike passed), `bun run test:e2e:smoke` (12 passed),
+  `bun run smoke:gemini`, and live Sentry transport event
+  `56337fa242e84b378dfebd9aa1274e87` (no auth token was available for
+  dashboard read-back).
