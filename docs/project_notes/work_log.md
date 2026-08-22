@@ -707,3 +707,17 @@
   37 files / 291 tests; Local Studio HTTP, hosted Access/Workflow, builds,
   Cloudflare boundary, and 32 MiB streaming proof passed) and
   `bun run test:e2e:smoke` (13 passed).
+- Closed PR #69 review SF1 for Local Studio Task 7.5 on 2026-08-22. Maintenance
+  now treats any recent single-concurrency worker heartbeat as liveness for old
+  queued siblings, and every nonterminal job remains a staging-reference owner
+  until its stale-job stage/update CAS succeeds. Stale CAS actions run before
+  cleanup; any successful transition triggers a fresh cleanup-only plan, while
+  a lost CAS cannot authorize deletion. The executor independently vetoes
+  every `in_use` receipt, closing the plan-to-claim race. Added live-worker,
+  no-worker, CAS-win, CAS-loss, and claim-race coverage. Also fixed the cheap
+  review NIT so the hosted-release boundary receipt counts all 13 forbidden
+  markers; the startup-timeout NIT remains open because safe cancellation is a
+  separate design change. Validated by `bun run check` (22 Vitest files / 212
+  tests; Bun web suite: 37 files / 294 tests; Local Studio HTTP, hosted
+  Access/Workflow, hosted release rehearsal, builds, and 32 MiB streaming proof
+  passed) and `bun run test:e2e:smoke` (13 passed).

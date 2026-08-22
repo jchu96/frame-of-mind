@@ -137,6 +137,13 @@ describe("Local Studio maintenance planner", () => {
       generatedAt: now,
       actions: [
         {
+          action: "mark_job_stale",
+          expectedStage: "indexing",
+          expectedUpdatedAt: old,
+          id: "job_stale",
+          reason: "stale_without_heartbeat",
+        },
+        {
           action: "delete_context",
           id: "context_expired",
           reason: "context_expired",
@@ -155,13 +162,6 @@ describe("Local Studio maintenance planner", () => {
           action: "delete_media",
           id: "media_retained_upload_expired",
           reason: "media_expired",
-        },
-        {
-          action: "mark_job_stale",
-          expectedStage: "indexing",
-          expectedUpdatedAt: old,
-          id: "job_stale",
-          reason: "stale_without_heartbeat",
         },
       ],
     });
@@ -188,6 +188,67 @@ describe("Local Studio maintenance planner", () => {
       }],
     })).toThrow("sanitized");
   });
+
+  test("protects an old queued sibling while any worker heartbeat is recent", () => {
+    const queuedJob = {
+      id: "job_queued_old",
+      stage: "queued" as const,
+      updatedAt: old,
+      mediaSessionId: "media_queued_old",
+    };
+    const queuedMedia = {
+      id: "media_queued_old",
+      ownership: "studio_staged_copy" as const,
+      status: "sealed",
+      retention: { mode: "ephemeral" as const, expiresAt: old },
+      updatedAt: old,
+      sha256: digest,
+    };
+    const liveWorkerPlan = planStudioMaintenance({
+      now,
+      staleJobHorizonMs: 60 * 60 * 1_000,
+      orphanGraceMs: 60 * 60 * 1_000,
+      heartbeats: [{ jobId: "job_worker_live", observedAt: recent }],
+      jobs: [
+        queuedJob,
+        {
+          id: "job_worker_live",
+          stage: "interrogating",
+          updatedAt: old,
+          mediaSessionId: "media_worker_live",
+        },
+      ],
+      media: [queuedMedia],
+      contextFiles: [],
+    });
+
+    expect(liveWorkerPlan.actions).toEqual([]);
+
+    const noWorkerInput: StudioMaintenanceInput = {
+      now,
+      staleJobHorizonMs: 60 * 60 * 1_000,
+      orphanGraceMs: 60 * 60 * 1_000,
+      heartbeats: [],
+      jobs: [queuedJob],
+      media: [queuedMedia],
+      contextFiles: [],
+    };
+    expect(planStudioMaintenance(noWorkerInput).actions).toEqual([{
+      action: "mark_job_stale",
+      id: "job_queued_old",
+      expectedStage: "queued",
+      expectedUpdatedAt: old,
+      reason: "stale_without_heartbeat",
+    }]);
+    expect(planStudioMaintenance({
+      ...noWorkerInput,
+      jobs: [{ ...queuedJob, stage: "interrupted" }],
+    }).actions).toEqual([{
+      action: "delete_media",
+      id: "media_queued_old",
+      reason: "media_expired",
+    }]);
+  });
 });
 
 describe("Local Studio maintenance executor", () => {
@@ -196,19 +257,23 @@ describe("Local Studio maintenance executor", () => {
     const deletedMedia = new Set<string>();
     const deletedContext = new Set<string>();
     const staleJobs = new Set<string>();
+    const operations: string[] = [];
     const logs: unknown[] = [];
     const ports = {
       deleteMedia: async (id: string) => {
+        operations.push(`delete_media:${id}`);
         if (deletedMedia.has(id)) return false;
         deletedMedia.add(id);
         return true;
       },
       deleteContextFile: async (id: string) => {
+        operations.push(`delete_context:${id}`);
         if (deletedContext.has(id)) return false;
         deletedContext.add(id);
         return true;
       },
       markJobStale: async (id: string) => {
+        operations.push(`mark_job_stale:${id}`);
         if (staleJobs.has(id)) return false;
         staleJobs.add(id);
         return true;
@@ -226,6 +291,7 @@ describe("Local Studio maintenance executor", () => {
       staleJobs: 1,
       failures: [],
     });
+    expect(operations[0]).toBe("mark_job_stale:job_stale");
     expect(second).toMatchObject({
       planned: 5,
       applied: 0,
@@ -317,6 +383,99 @@ describe("Local Studio stale-job repository action", () => {
 });
 
 describe("Local Studio maintenance controller", () => {
+  test("replans referenced cleanup only after the stale-job CAS succeeds", async () => {
+    for (const casSucceeds of [false, true]) {
+      const database = new Database(":memory:");
+      const repository = new LocalSqliteJobRepository(database, {
+        createId: () => `job_maintenance_cas_${casSucceeds ? "win" : "loss"}`,
+      });
+      const mediaId = `media_maintenance_cas_${casSucceeds ? "win" : "loss"}`;
+      const input = await verifyImmutableJobInput({
+        mediaSessionId: mediaId,
+        mediaSha256: digest,
+        context: { mode: "none" },
+        recipe: {
+          id: "issue-review",
+          custom: false,
+          revision: "builtin-v1",
+          sha256: digest,
+        },
+        model: "gemini-3.7-flash",
+        retention: { mode: "ephemeral", expiresAt: old },
+      });
+      await repository.createOrReplay({
+        idempotencyKey: `maintenance-cas-${casSucceeds}`,
+        verifiedInput: input,
+        createdAt: old,
+      });
+      const operations: string[] = [];
+      let deleted = false;
+      const controller = createStudioMaintenanceController({
+        configuration: {
+          intervalMs: 0,
+          orphanGraceMs: 60_000,
+          scheduled: false,
+          staleJobHorizonMs: 60_000,
+        },
+        repository: {
+          list: (query) => repository.list(query),
+          markStale: async (staleInput) => {
+            operations.push("mark_job_stale");
+            return casSucceeds
+              ? repository.markStale(staleInput)
+              : false;
+          },
+        },
+        media: {
+          maintenanceInventory: async () => deleted ? [] : [{
+            id: mediaId,
+            ownership: "studio_staged_copy",
+            status: "sealed",
+            retention: { mode: "ephemeral", expiresAt: old },
+            updatedAt: old,
+            sha256: digest,
+          }],
+          get: async () => deleted ? undefined : ({
+            id: mediaId,
+            status: "sealed",
+            expectedBytes: 1,
+            receivedBytes: 1,
+            partSizeBytes: 1,
+            parts: [],
+            mimeType: "video/mp4",
+            sha256: digest,
+            retention: { mode: "ephemeral", expiresAt: old },
+            createdAt: old,
+            updatedAt: old,
+          }),
+          delete: async () => {
+            operations.push("delete_media");
+            deleted = true;
+          },
+        },
+        contextFiles: {
+          maintenanceInventory: async () => [],
+          deleteForMaintenance: async () => false,
+        },
+        worker: { maintenanceHeartbeat: undefined },
+        now: () => new Date(now),
+        log: () => undefined,
+      });
+
+      const summary = await controller.start();
+      expect(operations).toEqual(casSucceeds
+        ? ["mark_job_stale", "delete_media"]
+        : ["mark_job_stale"]);
+      expect(summary).toMatchObject(casSucceeds
+        ? { applied: 2, planned: 2, removed: 1, staleJobs: 1 }
+        : { applied: 0, planned: 1, removed: 0, staleJobs: 0 });
+      expect(deleted).toBe(casSucceeds);
+
+      await controller.stop();
+      database.close();
+    }
+  });
+
   test("runs at startup and deletes only owned expired or old orphan staging", async () => {
     const root = await mkdtemp(join(tmpdir(), "frame-of-mind-maintenance-"));
     const checkout = join(root, "checkout");
@@ -422,6 +581,60 @@ describe("Local Studio maintenance controller", () => {
     expect(source).toContain("data-studio-maintenance-summary");
   });
 
+  test("vetoes deletion when a planned media receipt becomes in use", async () => {
+    let deleted = false;
+    const controller = createStudioMaintenanceController({
+      configuration: {
+        intervalMs: 0,
+        orphanGraceMs: 60_000,
+        scheduled: false,
+        staleJobHorizonMs: 60_000,
+      },
+      repository: {
+        list: async () => ({ jobs: [] }),
+        markStale: async () => false,
+      },
+      media: {
+        maintenanceInventory: async () => [{
+          id: "media_claim_race",
+          ownership: "studio_staged_copy",
+          status: "sealed",
+          retention: { mode: "ephemeral", expiresAt: old },
+          updatedAt: old,
+          sha256: digest,
+        }],
+        get: async () => ({
+          id: "media_claim_race",
+          status: "in_use",
+          expectedBytes: 1,
+          receivedBytes: 1,
+          partSizeBytes: 1,
+          parts: [],
+          mimeType: "video/mp4",
+          sha256: digest,
+          retention: { mode: "ephemeral", expiresAt: old },
+          createdAt: old,
+          updatedAt: old,
+        }),
+        delete: async () => {
+          deleted = true;
+          throw new Error("maintenance must not delete an active lease");
+        },
+      },
+      contextFiles: {
+        maintenanceInventory: async () => [],
+        deleteForMaintenance: async () => false,
+      },
+      worker: { maintenanceHeartbeat: undefined },
+      now: () => new Date(now),
+      log: () => undefined,
+    });
+
+    expect(await controller.start()).toMatchObject({ applied: 0, removed: 0 });
+    expect(deleted).toBe(false);
+    await controller.stop();
+  });
+
   test("runs once before scheduling and coalesces an interval callback", async () => {
     let inventoryReads = 0;
     let scheduled: (() => void) | undefined;
@@ -446,12 +659,6 @@ describe("Local Studio maintenance controller", () => {
         get: async () => undefined,
         delete: async () => {
           throw new Error("unexpected delete");
-        },
-        deleteEphemeralExecutionLease: async () => {
-          throw new Error("unexpected delete");
-        },
-        transition: async () => {
-          throw new Error("unexpected transition");
         },
       },
       contextFiles: {

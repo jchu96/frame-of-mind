@@ -49,7 +49,11 @@ export async function executeStudioMaintenancePlan(
   let removed = 0;
   let staleJobs = 0;
   const failures: Array<{ code: string; id: string }> = [];
-  for (const action of plan.actions) {
+  const orderedActions = [...plan.actions].sort((left, right) =>
+    Number(right.action === "mark_job_stale")
+      - Number(left.action === "mark_job_stale")
+  );
+  for (const action of orderedActions) {
     try {
       const changed = action.action === "delete_media"
         ? await ports.deleteMedia(action.id)

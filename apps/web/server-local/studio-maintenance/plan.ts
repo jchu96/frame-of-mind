@@ -109,13 +109,14 @@ export function planStudioMaintenance(
     input.orphanGraceMs,
     "Orphan grace",
   );
-  const heartbeatByJob = new Map(
-    input.heartbeats.map((heartbeat) => [
-      sanitizedId(heartbeat.jobId),
-      timestamp(heartbeat.observedAt, "Worker heartbeat"),
-    ]),
+  const heartbeatEntries = input.heartbeats.map((heartbeat) => [
+    sanitizedId(heartbeat.jobId),
+    timestamp(heartbeat.observedAt, "Worker heartbeat"),
+  ] as const);
+  const heartbeatByJob = new Map(heartbeatEntries);
+  const workerRecentlyAlive = heartbeatEntries.some(
+    ([, observedAt]) => observedAt > staleCutoff,
   );
-  const staleJobIds = new Set<string>();
   const actions: StudioMaintenanceAction[] = [];
 
   for (const job of input.jobs) {
@@ -128,9 +129,10 @@ export function planStudioMaintenance(
       !isAnalysisJobTerminal(job.stage)
       && !job.runId
       && updatedAt <= staleCutoff
-      && (heartbeat === undefined || heartbeat <= staleCutoff)
+      && (job.stage === "queued"
+        ? !workerRecentlyAlive
+        : heartbeat === undefined || heartbeat <= staleCutoff)
     ) {
-      staleJobIds.add(id);
       actions.push({
         action: "mark_job_stale",
         id,
@@ -141,8 +143,11 @@ export function planStudioMaintenance(
     }
   }
 
+  // A planned stale transition is not authoritative until its repository CAS
+  // succeeds. Keep every nonterminal job as a reference owner in this plan;
+  // the controller replans cleanup only after a successful stale transition.
   const liveJobs = input.jobs.filter((job) =>
-    !isAnalysisJobTerminal(job.stage) && !staleJobIds.has(job.id)
+    !isAnalysisJobTerminal(job.stage)
   );
   const liveMediaIds = new Set(liveJobs.map((job) => job.mediaSessionId));
   const liveContextIds = new Set(
@@ -164,8 +169,8 @@ export function planStudioMaintenance(
     const liveRetained = media.retention.mode === "retained"
       && ["sealed", "retained", "in_use"].includes(media.status)
       && timestamp(media.retention.expiresAt, "Retention expiry") > now;
-    const liveLease = liveMediaIds.has(id) && media.status === "in_use";
-    if (liveLease || liveRetained) continue;
+    const liveReference = liveMediaIds.has(id);
+    if (liveReference || liveRetained) continue;
     if (expiresAt <= now) {
       actions.push({
         action: "delete_media",
@@ -202,8 +207,12 @@ export function planStudioMaintenance(
     }
   }
 
-  actions.sort((left, right) =>
-    left.action.localeCompare(right.action) || left.id.localeCompare(right.id)
-  );
+  actions.sort((left, right) => {
+    const leftPriority = left.action === "mark_job_stale" ? 0 : 1;
+    const rightPriority = right.action === "mark_job_stale" ? 0 : 1;
+    return leftPriority - rightPriority
+      || left.action.localeCompare(right.action)
+      || left.id.localeCompare(right.id);
+  });
   return { generatedAt: input.now, actions };
 }

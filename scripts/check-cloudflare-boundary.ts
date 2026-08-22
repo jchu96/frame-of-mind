@@ -109,7 +109,8 @@ export async function checkCloudflareBoundary(
     outputRoot: resolvedOutputRoot,
     filesScanned: artifactFiles.length,
     requiredMarkers: ad11RequiredMarkers.length,
-    forbiddenMarkers: ad11ForbiddenMarkers.length,
+    forbiddenMarkers:
+      ad11ForbiddenMarkers.length + localOnlyForbiddenMarkers.length,
   };
 }
 
@@ -144,7 +145,7 @@ async function files(directory: string): Promise<string[]> {
 if (import.meta.main) {
   const receipt = await checkCloudflareBoundary(process.argv[2]);
   console.log(
-    `Cloudflare boundary clean: ${receipt.forbiddenMarkers} AD-11 forbidden markers absent; `
+    `Cloudflare boundary clean: ${receipt.forbiddenMarkers} forbidden markers absent; `
     + `${receipt.requiredMarkers} AD-11 required markers present; `
     + `${receipt.filesScanned} artifact files scanned; hosted wrapper clean.`,
   );

@@ -1,6 +1,5 @@
 import type { JobListPage } from "../../../../src/domain/studio-ports";
 import type { AnalysisJob } from "../../../../src/domain/studio-schemas";
-import { validateMediaSessionTransition } from "../../../../src/domain/studio-state";
 import type { LocalContextFileStagingAdapter } from "../studio-context/local-context-staging.js";
 import type {
   LocalMediaStagingAdapter,
@@ -16,6 +15,7 @@ import type {
 } from "./config.js";
 import {
   executeStudioMaintenancePlan,
+  type StudioMaintenanceExecutorPorts,
   type StudioMaintenanceSummary,
 } from "./executor.js";
 import {
@@ -45,10 +45,8 @@ export interface StudioMaintenanceControllerOptions {
   media: Pick<
     LocalMediaStagingAdapter,
     | "delete"
-    | "deleteEphemeralExecutionLease"
     | "get"
     | "maintenanceInventory"
-    | "transition"
   >;
   contextFiles: Pick<
     LocalContextFileStagingAdapter,
@@ -143,33 +141,17 @@ export function createStudioMaintenanceController(
 
   const execute = async (): Promise<StudioMaintenanceSummary> => {
     const plan = await collectPlan();
-    const summary = await executeStudioMaintenancePlan(plan, {
+    const ports: StudioMaintenanceExecutorPorts = {
       deleteMedia: async (id) => {
-        let session = await options.media.get(id);
+        const session = await options.media.get(id);
         if (!session || session.status === "deleted") return false;
+        if (session.status === "in_use") return false;
         if (
           session.retention.mode === "retained"
-          && ["sealed", "retained", "in_use"].includes(session.status)
+          && ["sealed", "retained"].includes(session.status)
           && Date.parse(session.retention.expiresAt) > now().getTime()
         ) {
           return false;
-        }
-        if (session.status === "in_use") {
-          if (session.retention.mode === "ephemeral") {
-            if (!session.sha256) return false;
-            await options.media.deleteEphemeralExecutionLease(
-              id,
-              session.sha256,
-            );
-            return true;
-          }
-          session = await options.media.transition(
-            validateMediaSessionTransition({
-              id,
-              expected: "in_use",
-              next: "retained",
-            }),
-          );
         }
         await options.media.delete(session.id);
         return true;
@@ -183,7 +165,36 @@ export function createStudioMaintenanceController(
           occurredAt,
         }),
       log,
-    }, { now: () => now().toISOString() });
+    };
+    const first = await executeStudioMaintenancePlan(
+      plan,
+      ports,
+      { now: () => now().toISOString() },
+    );
+    let summary = first;
+    if (first.staleJobs > 0) {
+      const followUp = await collectPlan();
+      const cleanupOnlyPlan: StudioMaintenancePlan = {
+        ...followUp,
+        actions: followUp.actions.filter(
+          (action) => action.action !== "mark_job_stale",
+        ),
+      };
+      const cleanup = await executeStudioMaintenancePlan(
+        cleanupOnlyPlan,
+        ports,
+        { now: () => now().toISOString() },
+      );
+      summary = {
+        startedAt: first.startedAt,
+        completedAt: cleanup.completedAt,
+        planned: first.planned + cleanup.planned,
+        applied: first.applied + cleanup.applied,
+        removed: first.removed + cleanup.removed,
+        staleJobs: first.staleJobs,
+        failures: [...first.failures, ...cleanup.failures],
+      };
+    }
     lastRun = summary;
     return summary;
   };

@@ -11,9 +11,12 @@ one startup-and-interval controller over job, media, and context snapshots. A
 pure plan names only opaque IDs and fixed reasons; its executor is idempotent,
 and stale-job warning plus interruption is atomic. The operator's original
 recording is outside the inventory, a live retained receipt is a deletion veto,
-and an active job heartbeat protects its media/context leases. This changes the
-operational cleanup mechanism, not the accepted retention or ownership
-boundaries in ADRs 0007 and 0011.
+and any recent worker heartbeat protects queued work behind the active job.
+Every nonterminal job remains a media/context reference owner until a stale-job
+CAS succeeds; only a fresh cleanup plan may then remove its unreferenced
+staging, and `in_use` is always a deletion veto. This changes the operational
+cleanup mechanism, not the accepted retention or ownership boundaries in ADRs
+0007 and 0011.
 
 ## 2026-08-22 — Hosted Studio is a principal-scoped Cloudflare boundary
 
