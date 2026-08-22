@@ -76,15 +76,32 @@ const title = computed(() => {
           aria-label="Frame of Mind Studio home"
         >
           <span
-            class="grid size-9 shrink-0 place-items-center rounded-md bg-primary text-xs font-black text-inverted"
+            class="grid size-9 shrink-0 place-items-center rounded-md bg-primary text-inverted"
           >
-            FM
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 64 64"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="size-7"
+              role="img"
+              aria-label="Frame of Mind"
+            >
+              <path d="M10 24V16a6 6 0 0 1 6-6h8" />
+              <path d="M40 10h8a6 6 0 0 1 6 6v8" />
+              <path d="M54 40v8a6 6 0 0 1-6 6h-8" />
+              <path d="M24 54h-8a6 6 0 0 1-6-6v-8" />
+              <circle cx="37" cy="27" r="5" fill="currentColor" stroke="none" />
+            </svg>
           </span>
           <span v-if="!collapsed" class="min-w-0">
             <span class="block truncate text-sm font-black text-highlighted">
               Frame of Mind
             </span>
-            <span class="block truncate text-xs text-muted">Local Studio</span>
+            <span class="block truncate text-xs text-muted">Studio</span>
           </span>
         </NuxtLink>
       </template>

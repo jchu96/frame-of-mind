@@ -32,18 +32,18 @@ function provider(name: ProviderName) {
 
 function sourceLabel(name: ProviderName): string {
   const source = provider(name)?.source;
-  if (source === "environment") return ".env / environment";
+  if (source === "environment") return "From your .env";
   if (source === "session") return "This Bun process";
-  if (source === "oauth") return "Private OAuth file";
+  if (source === "oauth") return "Signed in with OAuth";
   return "Not configured";
 }
 
 function lifetimeLabel(name: ProviderName): string {
   const lifetime = provider(name)?.lifetime;
-  if (lifetime === "persistent-oauth") return "Persists until disconnected";
+  if (lifetime === "persistent-oauth") return "Until you disconnect";
   if (lifetime === "process") {
     return provider(name)?.source === "environment"
-      ? "Reloaded from your environment at launch"
+      ? "Until you close Studio"
       : "Cleared when Bun stops";
   }
   return "No credential";
@@ -144,22 +144,21 @@ async function connectOAuth(name: "bluedot" | "granola") {
     <main class="fom-shell py-10 sm:py-14">
       <section class="grid gap-8 lg:grid-cols-[1fr_0.55fr] lg:items-end">
         <div>
-          <p class="fom-kicker text-emerald-700">Local Studio</p>
+          <p class="fom-kicker text-emerald-700">Connections</p>
           <h1 class="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-6xl">
-            Connections, without a credential vault.
+            Bring your own keys.
           </h1>
           <p class="mt-5 max-w-3xl text-base leading-7 text-zinc-600 sm:text-lg">
-            Reusable API keys stay in your ignored <code>.env</code>. Keys
-            entered here live only in this Bun process. OAuth remains in the
-            provider-specific private files already used by the CLI.
+            Keys you paste here last until you close Studio. Keys in your
+            <code>.env</code> are picked up automatically.
           </p>
         </div>
         <UAlert
           color="neutral"
           variant="soft"
           icon="i-lucide-shield-check"
-          title="Per-launch local session"
-          description="This page requires the one-time launch link. Restarting Bun creates a new browser session."
+          title="Each launch is a fresh session"
+          description="Close Studio and any pasted keys are gone."
         />
       </section>
 
@@ -247,7 +246,7 @@ async function connectOAuth(name: "bluedot" | "granola") {
             <UFormField
               :label="`${name === 'gemini' ? 'Gemini' : 'Granola'} API key`"
               :description="provider(name)?.source === 'environment'
-                ? 'Environment input has precedence. Edit .env and restart to replace it.'
+                ? 'Set in .env — edit the file and relaunch to change it.'
                 : 'Stored in process memory only; the server never returns it.'"
             >
               <UInput
@@ -266,7 +265,7 @@ async function connectOAuth(name: "bluedot" | "granola") {
                 :loading="busy[name]"
                 :disabled="!secretInput[name] || provider(name)?.source === 'environment'"
               >
-                Use for this launch
+                Use this key
               </UButton>
               <UButton
                 v-if="provider(name)?.source === 'session'"
