@@ -88,6 +88,18 @@ CREATE TABLE hosted_analysis_receipts (
     REFERENCES hosted_analysis_attempts (principal_sub, attempt_id) ON DELETE CASCADE
 ) STRICT;
 
+CREATE TABLE hosted_provider_claims (
+  principal_sub TEXT NOT NULL,
+  attempt_id TEXT NOT NULL,
+  step_name TEXT NOT NULL,
+  claim_token TEXT NOT NULL,
+  claimed_at TEXT NOT NULL,
+  PRIMARY KEY (principal_sub, attempt_id, step_name),
+  UNIQUE (claim_token),
+  FOREIGN KEY (principal_sub, attempt_id)
+    REFERENCES hosted_analysis_attempts (principal_sub, attempt_id) ON DELETE CASCADE
+) STRICT;
+
 CREATE TABLE hosted_analysis_events (
   principal_sub TEXT NOT NULL,
   attempt_id TEXT NOT NULL,
@@ -131,6 +143,8 @@ CREATE INDEX hosted_attempts_stage_idx
   ON hosted_analysis_attempts (principal_sub, stage, updated_at);
 CREATE INDEX hosted_receipts_attempt_idx
   ON hosted_analysis_receipts (principal_sub, attempt_id, step_name);
+CREATE INDEX hosted_provider_claims_attempt_idx
+  ON hosted_provider_claims (principal_sub, attempt_id, step_name);
 CREATE INDEX hosted_events_attempt_idx
   ON hosted_analysis_events (principal_sub, attempt_id, sequence);
 CREATE INDEX hosted_spend_active_idx

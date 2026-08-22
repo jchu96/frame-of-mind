@@ -137,6 +137,36 @@ describe("hosted Workflow durability", () => {
         workflowInstanceId: "workflow_contract_0003",
       })).rejects.toMatchObject({ code: "principal_spend_cap_exceeded" });
 
+      const claims = await Promise.all([
+        repository.claimProviderCall(
+          principalA,
+          first.attempt.attemptId,
+          "transcribe",
+          "gemini_transcribe_started",
+          now,
+        ),
+        repository.claimProviderCall(
+          principalA,
+          first.attempt.attemptId,
+          "transcribe",
+          "gemini_transcribe_started",
+          now,
+        ),
+      ]);
+      expect(claims.sort()).toEqual([false, true]);
+      expect((await fixture.database.prepare(`
+        SELECT count(*) AS count FROM hosted_provider_claims
+        WHERE principal_sub = ? AND attempt_id = ? AND step_name = 'transcribe'
+      `).bind(principalA, first.attempt.attemptId).first<{ count: number }>())?.count)
+        .toBe(1);
+      expect((await fixture.database.prepare(`
+        SELECT count(*) AS count FROM hosted_analysis_events
+        WHERE principal_sub = ? AND attempt_id = ?
+          AND event_kind = 'provider_call'
+          AND code = 'gemini_transcribe_started'
+      `).bind(principalA, first.attempt.attemptId).first<{ count: number }>())?.count)
+        .toBe(1);
+
       await repository.putReceipt(
         principalA,
         first.attempt.attemptId,

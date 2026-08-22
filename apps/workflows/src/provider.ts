@@ -67,7 +67,7 @@ export type HostedContextSourceFactory = (
   attempt: HostedAnalysisAttempt,
 ) => MeetingContextSource;
 
-interface HostedGeminiAnalyzer {
+export interface HostedGeminiAnalyzer {
   resolveRetainedFile?(
     name: string,
     expectedSha256: string,
@@ -144,7 +144,7 @@ export function resolveHostedTranscript(input: {
   return { origin: "none" };
 }
 
-class GeminiHostedAnalysisProvider implements HostedAnalysisProvider {
+export class GeminiHostedAnalysisProvider implements HostedAnalysisProvider {
   constructor(
     private readonly analyzer: HostedGeminiAnalyzer,
     private readonly contextSource?: HostedContextSourceFactory,

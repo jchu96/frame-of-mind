@@ -278,7 +278,12 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         derivedSegments: segments,
       }));
     } catch (error) {
-      if (error instanceof NonRetryableError) throw error;
+      if (
+        error instanceof NonRetryableError
+        || errorMessage(error) === "provider_success_without_receipt"
+      ) {
+        throw error;
+      }
       await repository.appendEvent(
         attempt.principalSub,
         attempt.attemptId,
@@ -529,15 +534,28 @@ async function providerStep<T>(input: {
           input.providerStepName,
         );
         if (existing) {
+          if (input.providerStepName === "cleanup") {
+            return { status: "ok", output: undefined };
+          }
           throw new NonRetryableError("provider_receipt_without_step_output");
         }
-        await input.repository.appendEvent(
+        const claimed = await input.repository.claimProviderCall(
           input.attempt.principalSub,
           input.attempt.attemptId,
-          "provider_call",
+          input.providerStepName,
           input.eventCode,
           new Date().toISOString(),
         );
+        if (!claimed) {
+          await input.repository.appendEvent(
+            input.attempt.principalSub,
+            input.attempt.attemptId,
+            "provider_reentry_blocked",
+            "provider_claim_without_receipt",
+            new Date().toISOString(),
+          );
+          throw new NonRetryableError("provider_success_without_receipt");
+        }
         const invoked = await input.invoke();
         providerSucceeded = true;
         const output = boundedOutput(invoked);
@@ -554,7 +572,7 @@ async function providerStep<T>(input: {
           && input.env.HOSTED_FAKE_RECEIPT_FAILURE_STEP
             === input.providerStepName
         ) {
-          throw new Error("synthetic_receipt_commit_failure");
+          throw new Error("provider_success_without_receipt");
         }
         const json = JSON.stringify(output);
         await input.repository.putReceipt(
@@ -570,10 +588,7 @@ async function providerStep<T>(input: {
         return { status: "ok", output };
       } catch (error) {
         if (providerSucceeded) {
-          return {
-            status: "indeterminate",
-            code: "provider_success_without_receipt",
-          };
+          throw new Error("provider_success_without_receipt");
         }
         if (error instanceof NonRetryableError) {
           return { status: "indeterminate", code: safeErrorCode(error.message) };
@@ -585,6 +600,21 @@ async function providerStep<T>(input: {
       }
     },
   );
+  const durableReceipt = await input.repository.getReceipt(
+    input.attempt.principalSub,
+    input.attempt.attemptId,
+    input.providerStepName,
+  );
+  if (
+    !durableReceipt
+    && await input.repository.hasProviderClaim(
+      input.attempt.principalSub,
+      input.attempt.attemptId,
+      input.providerStepName,
+    )
+  ) {
+    throw new NonRetryableError("provider_success_without_receipt");
+  }
   if (result.status === "indeterminate") {
     throw new NonRetryableError(result.code);
   }
@@ -695,6 +725,9 @@ function terminalFailure(
       : safeErrorCode(primaryError.message);
     return { stage: "indeterminate", code };
   }
+  if (errorMessage(primaryError) === "provider_success_without_receipt") {
+    return { stage: "indeterminate", code: "provider_receipt_indeterminate" };
+  }
   return { stage: "failed", code: "hosted_workflow_failed" };
 }
 
@@ -702,4 +735,11 @@ function safeErrorCode(message: string): string {
   return /^[a-z0-9_:-]{1,120}$/.test(message)
     ? message
     : "hosted_workflow_failed";
+}
+
+function errorMessage(error: unknown): string | undefined {
+  return error && typeof error === "object" && "message" in error
+    && typeof error.message === "string"
+    ? error.message
+    : undefined;
 }

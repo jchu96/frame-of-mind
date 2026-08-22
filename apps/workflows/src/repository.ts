@@ -455,6 +455,78 @@ export class HostedWorkflowRepository {
     return stored;
   }
 
+  async claimProviderCall(
+    principalSub: string,
+    attemptId: string,
+    stepName: string,
+    eventCode: string,
+    occurredAt: string,
+  ): Promise<boolean> {
+    const claimToken = crypto.randomUUID();
+    await this.database.batch([
+      this.database.prepare(`
+        INSERT OR IGNORE INTO hosted_provider_claims (
+          principal_sub, attempt_id, step_name, claim_token, claimed_at
+        ) VALUES (?, ?, ?, ?, ?)
+      `).bind(
+        principalSub,
+        attemptId,
+        stepName,
+        claimToken,
+        occurredAt,
+      ),
+      this.database.prepare(`
+        INSERT INTO hosted_analysis_events (
+          principal_sub, attempt_id, sequence, stage, event_kind, code,
+          occurred_at
+        )
+        SELECT ?, ?, (
+            SELECT COALESCE(MAX(sequence), 0) + 1
+            FROM hosted_analysis_events
+            WHERE principal_sub = ? AND attempt_id = ?
+          ), COALESCE((
+            SELECT stage FROM hosted_analysis_attempts
+            WHERE principal_sub = ? AND attempt_id = ?
+          ), 'failed'), 'provider_call', ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM hosted_provider_claims
+          WHERE principal_sub = ? AND attempt_id = ? AND step_name = ?
+            AND claim_token = ?
+        )
+      `).bind(
+        principalSub,
+        attemptId,
+        principalSub,
+        attemptId,
+        principalSub,
+        attemptId,
+        eventCode,
+        occurredAt,
+        principalSub,
+        attemptId,
+        stepName,
+        claimToken,
+      ),
+    ]);
+    const stored = await this.database.prepare(`
+      SELECT claim_token FROM hosted_provider_claims
+      WHERE principal_sub = ? AND attempt_id = ? AND step_name = ?
+    `).bind(principalSub, attemptId, stepName).first<{ claim_token: string }>();
+    if (!stored) throw new HostedRepositoryError("provider_claim_commit_failed");
+    return stored.claim_token === claimToken;
+  }
+
+  async hasProviderClaim(
+    principalSub: string,
+    attemptId: string,
+    stepName: string,
+  ): Promise<boolean> {
+    return Boolean(await this.database.prepare(`
+      SELECT 1 AS claimed FROM hosted_provider_claims
+      WHERE principal_sub = ? AND attempt_id = ? AND step_name = ?
+    `).bind(principalSub, attemptId, stepName).first<{ claimed: number }>());
+  }
+
   async appendEvent(
     principalSub: string,
     attemptId: string,
