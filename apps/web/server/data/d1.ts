@@ -55,7 +55,7 @@ export function createD1RunStore(
 ): RunStore {
   return {
     async listRuns({ limit, cursor }) {
-      const decoded = decodeRunCursor(cursor, principal.principal);
+      const decoded = decodeRunCursor(cursor);
       if (cursor && !decoded) {
         throw createError({ statusCode: 400, statusMessage: "Run cursor is invalid." });
       }
@@ -89,7 +89,7 @@ export function createD1RunStore(
       return {
         runs: page.map(rowToSummary),
         ...(result.results.length > limit && page.length
-          ? { nextCursor: encodeRunCursor(page[page.length - 1]!, principal.principal) }
+          ? { nextCursor: encodeRunCursor(page[page.length - 1]!) }
           : {}),
       };
     },

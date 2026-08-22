@@ -9,7 +9,7 @@ import {
 } from "../server/data/sql";
 import type { RunRow } from "../server/data/types";
 import { RunProjectionVersionConflictError } from "../server/data/types";
-import { RunPrincipalConflictError } from "../server/data/types";
+import { RunPrincipalConflictError, encodeRunCursor } from "../server/data/types";
 import { runFixture, videoRunFixture } from "./fixtures";
 import { analysisDigest } from "../../../src/domain/integrity";
 
@@ -317,6 +317,18 @@ describe("D1 projection contract", () => {
       .toEqual([runA.manifest.runId]);
     expect((await storeB.listRuns({ limit: 10 })).runs.map((run) => run.runId))
       .toEqual([runB.manifest.runId]);
+
+    // Pagination cursors are opaque pagination keys only: they never carry
+    // the Access `sub`, and a cursor pasted by another principal pages over
+    // that principal's own rows rather than revealing the owner's.
+    const cursorA = encodeRunCursor({
+      run_id: runA.manifest.runId,
+      completed_at: "2026-08-22T00:00:00.000Z",
+      imported_at: "2026-08-22T00:00:00.000Z",
+    } as Parameters<typeof encodeRunCursor>[0]);
+    expect(decodeURIComponent(cursorA)).not.toContain(principalA.principal);
+    const pagedByB = await storeB.listRuns({ limit: 10, cursor: cursorA });
+    expect(pagedByB.runs.every((run) => run.runId !== runA.manifest.runId)).toBe(true);
   });
 
   test("uses real local D1 semantics for migrations, mixed versions, and collisions", async () => {

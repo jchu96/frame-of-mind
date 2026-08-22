@@ -88,7 +88,7 @@ export function createLocalRunStoreFromDatabase(
   database.exec("PRAGMA busy_timeout = 5000;");
   return {
     async listRuns({ limit, cursor }) {
-      const decoded = decodeRunCursor(cursor, principal.principal);
+      const decoded = decodeRunCursor(cursor);
       if (cursor && !decoded) {
         throw createError({ statusCode: 400, statusMessage: "Run cursor is invalid." });
       }
@@ -120,7 +120,7 @@ export function createLocalRunStoreFromDatabase(
       return {
         runs: page.map(rowToSummary),
         ...(rows.length > limit && page.length
-          ? { nextCursor: encodeRunCursor(page[page.length - 1]!, principal.principal) }
+          ? { nextCursor: encodeRunCursor(page[page.length - 1]!) }
           : {}),
       };
     },
