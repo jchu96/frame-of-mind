@@ -141,6 +141,22 @@ export function recipeDisplayLabel(id: string): string {
     .join(" ");
 }
 
+export function activityStageChangeAnnouncement(
+  previous: readonly AnalysisJob[],
+  current: readonly AnalysisJob[],
+): string | undefined {
+  if (previous.length === 0) return undefined;
+  const previousStages = new Map(previous.map((job) => [job.id, job.stage]));
+  const changes = current.flatMap((job) => {
+    const previousStage = previousStages.get(job.id);
+    if (!previousStage || previousStage === job.stage) return [];
+    return [
+      `${recipeDisplayLabel(job.input.recipe.id)} moved to ${activityStageLabel(job.stage)}.`,
+    ];
+  });
+  return changes.length ? changes.join(" ") : undefined;
+}
+
 export function deriveActivityTimeline(
   input: readonly AnalysisJobEvent[],
 ): TimelineRow[] {

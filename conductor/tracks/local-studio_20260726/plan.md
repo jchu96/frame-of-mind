@@ -317,7 +317,7 @@ context-before-upload ordering. Phase 6 is closed; Task 7.1 is next.
       states.
 - [x] Task 7.2: Add cancel, retry, reconnect-provider, re-import-projection, and
       cleanup-remediation actions only where the state machine permits them.
-- [ ] Task 7.3: Add elapsed-time, last-activity, progress, and accessible text
+- [x] Task 7.3: Add elapsed-time, last-activity, progress, and accessible text
       equivalents without fabricated completion percentages.
 - [ ] Task 7.4: Add sanitized technical details and copyable support receipts
       that exclude private content.
@@ -346,6 +346,16 @@ session-guarded routes re-import an already-rendered run pair or retry a failed
 media cleanup without weakening either state machine. Unit/component-state,
 route, authenticated HTTP, Cloudflare-exclusion, and browser cancellation
 coverage validate the slice. Task 7.3 is next.
+
+Task 7.3 is complete: one pure activity-progress module derives elapsed time,
+the latest activity, the current stage start, and an honest progress descriptor
+from each job and its events. Counted item/step and byte events render their
+real numerator and denominator; every other active stage says In progress with
+its position in the seven-stage flow. Activity rows and detail share the
+existing poll tick for time updates, terminal elapsed time stops at the terminal
+transition, stage-change announcements do not repeat on unchanged polls, and
+all timing/progress values have full text equivalents. Unit, type, production
+build, and browser smoke coverage validate the slice. Task 7.4 is next.
 
 ### Verification
 

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import type {
   AnalysisJob,
   AnalysisJobEvent,
@@ -6,10 +7,12 @@ import type {
 import {
   activityDisplayState,
   activityGroupForStage,
+  activityStageChangeAnnouncement,
   deriveActivityTimeline,
   formatRelativeActivity,
   groupActivityJobs,
 } from "../server-local/studio-ui/activity-state";
+import { deriveActivityProgress } from "../server-local/studio-ui/activity-progress";
 import {
   activityListTerminal,
   createJobActivityTransport,
@@ -125,6 +128,201 @@ describe("Studio Activity state", () => {
     expect(formatRelativeActivity("2026-08-22T12:03:00.000Z", now)).toBe("2 minutes ago");
     expect(formatRelativeActivity("2026-08-22T10:05:00.000Z", now)).toBe("2 hours ago");
     expect(formatRelativeActivity("2026-08-20T12:05:00.000Z", now)).toBe("2 days ago");
+    expect(formatRelativeActivity("2026-08-22T12:06:00.000Z", now)).toBe("just now");
+  });
+
+  test("derives honest elapsed and stage progress for every job stage without progress events", () => {
+    const activeStages = [
+      "queued",
+      "fetching_context",
+      "uploading_to_gemini",
+      "indexing",
+      "interrogating",
+      "rendering",
+      "cleaning_up",
+    ] as const;
+
+    for (const [index, stage] of activeStages.entries()) {
+      const current = job(stage);
+      const transitionEvent = stage === "queued"
+        ? []
+        : [transition(index + 1, activeStages[Math.max(0, index - 1)]!, stage)];
+      const progress = deriveActivityProgress(
+        current,
+        transitionEvent,
+        "2026-08-22T12:10:12.000Z",
+      );
+
+      expect(progress.elapsed).toEqual({
+        seconds: 612,
+        text: "10m 12s",
+        accessibleText: "10 minutes 12 seconds elapsed",
+      });
+      expect(progress.currentStageStartedAt).toBe(
+        stage === "queued" ? current.createdAt : transitionEvent[0]!.occurredAt,
+      );
+      expect(progress.descriptor).toEqual({
+        kind: "indeterminate",
+        text: "In progress",
+        detail: `Step ${index + 1} of 7`,
+        accessibleText: `In progress, step ${index + 1} of 7`,
+      });
+    }
+
+    for (const stage of ["succeeded", "failed", "canceled", "interrupted"] as const) {
+      const current = job(stage);
+      const terminal = transition(7, "cleaning_up", stage);
+      const progress = deriveActivityProgress(
+        current,
+        [terminal],
+        "2026-08-22T13:10:12.000Z",
+      );
+      expect(progress.elapsed.seconds).toBe(420);
+      expect(progress.currentStageStartedAt).toBe(terminal.occurredAt);
+      expect(progress.descriptor.kind).toBe("terminal");
+      expect(progress.descriptor.text).toBe(
+        stage === "succeeded"
+          ? "Completed"
+          : stage === "failed"
+            ? "Failed"
+            : stage === "canceled"
+              ? "Canceled"
+              : "Interrupted",
+      );
+    }
+  });
+
+  test("renders counted item and byte progress without inventing a percentage", () => {
+    const current = job("interrogating");
+    const stageEvent = transition(4, "indexing", "interrogating");
+    const itemProgress: AnalysisJobEvent = {
+      jobId: current.id,
+      attempt: 1,
+      sequence: 5,
+      kind: "progress",
+      stage: "interrogating",
+      occurredAt: "2026-08-22T12:05:30.000Z",
+      progress: { completed: 3, total: 8, unit: "items" },
+      message: "Reviewed candidate 3.",
+    };
+    const counted = deriveActivityProgress(
+      current,
+      [stageEvent, itemProgress],
+      "2026-08-22T12:10:00.000Z",
+    );
+
+    expect(counted.lastActivityAt).toBe(itemProgress.occurredAt);
+    expect(counted.lastActivityText).toBe("4 minutes ago");
+    expect(counted.descriptor).toEqual({
+      kind: "determinate",
+      text: "3 of 8",
+      detail: "Step 5 of 7",
+      accessibleText: "3 of 8 items, step 5 of 7",
+      completed: 3,
+      total: 8,
+    });
+    expect(counted.descriptor.text).not.toContain("%");
+
+    const byteProgress: AnalysisJobEvent = {
+      ...itemProgress,
+      stage: "uploading_to_gemini",
+      progress: { completed: 1_500_000, total: 4_000_000, unit: "bytes" },
+    };
+    const upload = deriveActivityProgress(
+      job("uploading_to_gemini"),
+      [transition(2, "fetching_context", "uploading_to_gemini"), byteProgress],
+      "2026-08-22T12:10:00.000Z",
+    );
+    expect(upload.descriptor).toEqual({
+      kind: "determinate",
+      text: "1.5 MB of 4 MB",
+      detail: "Step 3 of 7",
+      accessibleText: "1.5 megabytes of 4 megabytes, step 3 of 7",
+      completed: 1_500_000,
+      total: 4_000_000,
+    });
+
+    // Rounding must never make an incomplete transfer read as complete.
+    const nearlyDone = deriveActivityProgress(
+      job("uploading_to_gemini"),
+      [
+        transition(2, "fetching_context", "uploading_to_gemini"),
+        { ...byteProgress, progress: { completed: 4_950_000, total: 5_000_000, unit: "bytes" } },
+      ],
+      "2026-08-22T12:10:00.000Z",
+    );
+    expect(nearlyDone.descriptor.text).toBe("4.95 MB of 5 MB");
+    expect(nearlyDone.descriptor.text).not.toBe("5 MB of 5 MB");
+  });
+
+  test("freezes terminal elapsed at the transition and clamps future activity", () => {
+    const terminal = transition(7, "cleaning_up", "succeeded");
+    const futureWarning: AnalysisJobEvent = {
+      jobId: terminal.jobId,
+      attempt: 1,
+      sequence: 8,
+      kind: "warning",
+      stage: "succeeded",
+      occurredAt: "2026-08-22T12:12:00.000Z",
+      message: "Synthetic skew.",
+    };
+    const progress = deriveActivityProgress(
+      job("succeeded"),
+      [terminal, futureWarning],
+      "2026-08-22T12:10:00.000Z",
+    );
+
+    expect(progress.elapsed).toEqual({
+      seconds: 420,
+      text: "7m",
+      accessibleText: "7 minutes elapsed",
+    });
+    expect(progress.lastActivityAt).toBe(futureWarning.occurredAt);
+    expect(progress.lastActivityText).toBe("just now");
+  });
+
+  test("announces a stage change once and stays silent on an unchanged poll", () => {
+    const queued = job("queued");
+    const indexing = job("indexing", queued.id);
+    expect(activityStageChangeAnnouncement([], [queued])).toBeUndefined();
+    expect(activityStageChangeAnnouncement([queued], [indexing])).toBe(
+      "Requirements moved to Finding relevant moments.",
+    );
+    expect(activityStageChangeAnnouncement([indexing], [indexing])).toBeUndefined();
+  });
+
+  test("renders elapsed and honest progress in Activity rows", async () => {
+    const source = await readFile(
+      new URL("../server-local/studio-ui/activity.vue", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('data-activity-elapsed');
+    expect(source).toContain('jobProgress(job).elapsed.accessibleText');
+    expect(source).toContain('jobProgress(job).lastActivityText');
+    expect(source).toContain('jobProgress(job).descriptor.kind === \'determinate\'');
+    expect(source).toContain('role="progressbar"');
+    expect(source).toContain(':aria-valuenow="jobProgress(job).descriptor.completed"');
+    expect(source).toContain(':aria-valuemax="jobProgress(job).descriptor.total"');
+  });
+
+  test("renders timing and terminal-freeze metadata in Activity detail", async () => {
+    const source = await readFile(
+      new URL("../server-local/studio-ui/activity-detail.vue", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('data-activity-progress="honest"');
+    expect(source).toContain(':data-elapsed-seconds="activityProgress.elapsed.seconds"');
+    expect(source).toContain(
+      ':data-terminal="activityProgress.descriptor.kind === \'terminal\'"',
+    );
+    expect(source).toContain('activityProgress.elapsed.accessibleText');
+    expect(source).toContain('activityProgress.lastActivityText');
+    expect(source).toContain('activityProgress.currentStageStartedAt');
+    expect(source).toContain("activityProgress.descriptor.kind === 'determinate'");
+    expect(source).toContain(':aria-valuenow="activityProgress.descriptor.completed"');
+    expect(source).toContain(':aria-valuemax="activityProgress.descriptor.total"');
   });
 
   test("orders transitions and keeps cancellation, warning, and cleanup rows", () => {
