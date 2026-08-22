@@ -36,7 +36,6 @@ import { studioJobSchemaSql } from "./sql";
 const MAX_JOB_PAGE_SIZE = 100;
 const retryableTerminalStages = new Set<AnalysisJobStage>([
   "failed",
-  "canceled",
   "interrupted",
 ]);
 const jobCursorSchema = z.tuple([
@@ -521,7 +520,7 @@ export class LocalSqliteJobRepository implements JobRepository {
       if (!retryableTerminalStages.has(parent.stage)) {
         throw new StudioJobRepositoryError(
           "job_not_retryable",
-          "Only failed, canceled, or interrupted jobs may be retried.",
+          "Only failed or interrupted jobs may be retried.",
         );
       }
       assertMonotonicTime(parent.updatedAt, createdAt);

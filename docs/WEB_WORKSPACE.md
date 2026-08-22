@@ -89,7 +89,13 @@ back off after a failed read, keep the last good result, and provide an explicit
 Refresh action. No Activity page stores another copy of job state. The detail
 receipt summarizes recipe/revision, context mode, model, and retention without
 returning media/context IDs, digests, paths, keys, transcripts, or provider
-payloads.
+payloads. A pure permission table combines that job receipt with the current
+media status and completed-run availability. Detail renders only permitted
+cancel, retained-media retry, provider reconnect, completed-results re-import,
+or cleanup-retry controls with inline confirmation and pending state; list
+rows expose cancel only. Reconnect preselects the exact provider in Connections
+and returns to the detail. The re-import and cleanup-retry handlers are
+session-guarded local routes and remain absent from hosted builds.
 
 The Run page re-reads the browser drafts, live media receipt, local context
 receipt when applicable, and sanitized recipe catalog. It shows the exact
@@ -364,11 +370,13 @@ For a new migration:
 | `PUT` | `/api/studio/media/:id/parts/:part` | stream one exact part with `Upload-Offset` |
 | `POST` | `/api/studio/media/:id/complete` | verify and atomically seal media |
 | `DELETE` | `/api/studio/media/:id` | abort and clean the staged copy |
+| `POST` | `/api/studio/media/:id/cleanup-retry` | retry deletion only from `cleanup_failed` and return the actual media status |
 | `GET` | `/api/studio/jobs` | list bounded local operational jobs |
 | `POST` | `/api/studio/composer/jobs` | validate one browser composer receipt and create/replay a job |
 | `GET` | `/api/studio/jobs/:id` | read one job and bounded event history |
 | `POST` | `/api/studio/jobs/:id/cancel` | persist cancellation intent |
 | `POST` | `/api/studio/jobs/:id/retry` | create or replay a linked retained-media retry |
+| `POST` | `/api/studio/jobs/:id/reimport` | idempotently re-import one succeeded job's existing run pair |
 
 The entire hostname should be protected by Access. `/api/health` is not a
 public bypass because a health response can reveal deployment state.

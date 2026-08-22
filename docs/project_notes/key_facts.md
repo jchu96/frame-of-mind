@@ -141,6 +141,10 @@
 - Local Studio uses an unauthenticated inert `/__studio/launch` page only for
   fragment exchange; every data-bearing Studio page and API requires the
   per-launch HttpOnly session.
+- Local Studio Activity action availability is derived from authoritative job,
+  media, provider, and completed-run receipts. Re-import republishes an
+  existing atomic run pair into `RunStore`; cleanup retry delegates to the
+  media adapter and returns its actual status.
 - Gemini detail failures are repaired once and isolated per candidate only when
   they cross the typed provider-response boundary; strict Zod remains local
   authority.

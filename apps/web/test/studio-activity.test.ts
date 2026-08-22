@@ -234,7 +234,12 @@ describe("Studio Activity transport", () => {
       `/api/studio/jobs/${detailJob.id}?limit=100`,
       `/api/studio/jobs/${detailJob.id}?limit=100&after=100`,
       `/api/studio/jobs/${detailJob.id}?limit=100&after=200`,
+      `/api/studio/media/${detailJob.input.mediaSessionId}`,
     ]);
+    expect(detail.actionSnapshot).toEqual({
+      media: undefined,
+      projection: "unknown",
+    });
     expect(detail.events.map((event) => event.sequence)).toEqual(
       sourceEvents.map((event) => event.sequence),
     );
