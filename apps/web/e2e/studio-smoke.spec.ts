@@ -248,6 +248,98 @@ test("selects Intent by keyboard and reports strict field errors", {
   expect(clientErrors).toEqual([]);
 });
 
+test("creates one video-only analysis from the Run receipt", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page, {
+    ignoreConsoleError: (message) =>
+      message.includes("Failed to load resource"),
+  });
+
+  await page.goto("/intent");
+  await page.getByRole("radio", { name: /Requirements/ }).check();
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.getByText("Intent step saved")).toBeVisible();
+
+  await page.goto("/recording");
+  await page.getByLabel("Screen recording").setInputFiles({
+    name: "synthetic-run-receipt.mp4",
+    mimeType: "video/mp4",
+    buffer: syntheticMp4(),
+  });
+  await page.getByRole("button", { name: "Stage locally" }).click();
+  await expect(page.getByText("Recording staged and sealed locally."))
+    .toBeVisible();
+
+  await page.goto("/context");
+  await page.getByRole("radio", { name: /Recording only/ }).check();
+  await page.getByRole("button", { name: "Save context step" }).click();
+  await expect(page.getByText("Context step saved")).toBeVisible();
+
+  await page.goto("/run");
+  await expect(
+    page.getByRole("heading", { name: "Review the exact run receipt." }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Requirements" }))
+    .toBeVisible();
+  await expect(page.getByText("Video-only", { exact: true })).toBeVisible();
+  let resolveCreatedJob!: (job: unknown) => void;
+  const createdJob = new Promise<unknown>((resolve) => {
+    resolveCreatedJob = resolve;
+  });
+  page.on("response", async (response) => {
+    if (
+      response.url().endsWith("/api/studio/composer/jobs")
+      && response.request().method() === "POST"
+      && response.status() === 201
+    ) {
+      resolveCreatedJob((await response.json() as { job: unknown }).job);
+    }
+  });
+  await page.route("**/api/studio/jobs?**", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ jobs: [await createdJob] }),
+    });
+  });
+  const keyResponse = await page.request.put(
+    "/api/studio/configuration/secrets/gemini-api-key",
+    {
+      data: { value: "synthetic-run-receipt-key-never-use" },
+      headers: { "content-type": "application/json" },
+    },
+  );
+  expect(keyResponse.status()).toBe(200);
+  const start = page.getByRole("button", { name: "Start analysis" });
+  await expect(start).toBeEnabled();
+  const createResponsePromise = page.waitForResponse((response) =>
+    response.url().endsWith("/api/studio/composer/jobs")
+    && response.request().method() === "POST"
+  );
+  await start.click();
+  const createResponse = await createResponsePromise;
+  expect(
+    createResponse.status(),
+    await createResponse.text(),
+  ).toBe(201);
+
+  await expect(page).toHaveURL(/\/?created=job_/);
+  const notice = page.getByText(/Job job_.* durable local queue\./);
+  await expect(notice).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Active jobs" }))
+    .toBeVisible();
+  const activeJobsCard = page.locator('[aria-labelledby="active-jobs-heading"]');
+  await expect(activeJobsCard.getByText("requirements", { exact: true }))
+    .toBeVisible();
+  expect(await page.evaluate(() => ({
+    intent: sessionStorage.getItem("frame-of-mind:studio:intent-draft"),
+    context: sessionStorage.getItem("frame-of-mind:studio:context-draft"),
+    media: sessionStorage.getItem("frame-of-mind:studio:media-upload"),
+    run: sessionStorage.getItem("frame-of-mind:studio:run-draft"),
+  }))).toEqual({ intent: null, context: null, media: null, run: null });
+  expect(clientErrors).toEqual([]);
+});
+
 test("keeps custom Intent saveable when the recipe catalog fails", {
   tag: "@smoke",
 }, async ({ page }) => {

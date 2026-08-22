@@ -27,6 +27,7 @@ const statusByJobError: Readonly<Record<string, number>> = {
   media_not_retained: 409,
   media_not_reusable: 409,
   media_not_usable: 409,
+  media_retention_mismatch: 409,
   media_digest_mismatch: 409,
   media_lease_unavailable: 409,
   media_lease_invalid: 409,
@@ -58,11 +59,13 @@ export async function readJobJson(event: H3Event): Promise<unknown> {
       throw createError({
         statusCode: 413,
         statusMessage: "Job request is too large.",
+        data: { code: "job_request_too_large" },
       });
     }
     throw createError({
       statusCode: 400,
       statusMessage: "Job request must be valid JSON.",
+      data: { code: "invalid_job_json" },
     });
   }
 }
@@ -78,6 +81,7 @@ export function throwJobHttpError(error: unknown): never {
     throw createError({
       statusCode: 422,
       statusMessage: "Job request is invalid.",
+      data: { code: "invalid_job_request" },
     });
   }
   if (error instanceof StudioJobQueryError) {
@@ -100,11 +104,13 @@ export function throwJobHttpError(error: unknown): never {
     && "code" in error
     && typeof error.code === "string"
   ) {
+    const statusCode = statusByJobError[error.code];
     throw createError({
-      statusCode: statusByJobError[error.code] ?? 500,
-      statusMessage: statusByJobError[error.code]
+      statusCode: statusCode ?? 500,
+      statusMessage: statusCode
         ? "Job operation was rejected."
         : "Local Studio job state is inconsistent.",
+      ...(statusCode ? { data: { code: error.code } } : {}),
     });
   }
   throw createError({
