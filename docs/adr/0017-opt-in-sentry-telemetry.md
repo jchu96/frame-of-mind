@@ -66,8 +66,10 @@ dropped and a code-shaped event is rewritten to `SanitizedTelemetryError`
 before transport. SDK package/integration metadata is fixed to empty lists so
 the post-`beforeSend` envelope builder cannot append unreviewed package data.
 
-The current `@sentry/nuxt` v10 module is excluded from the Nitro
-`cloudflare-worker` preset. Its server-config injection produces an IIFE
+The current `@sentry/nuxt` v10 module is excluded from both Nitro Cloudflare
+presets: the legacy `cloudflare-worker` preset and the deployed
+`cloudflare_module` preset. Its server-config injection is not part of the
+review-only Worker trust boundary and the legacy preset also produces an IIFE
 code-splitting build error with this repository's current Nuxt/Nitro versions.
 The Cloudflare artifact gate proves the SDK configs, DSN marker, and telemetry
 implementation are absent. Hosted client/server telemetry is deferred until a

@@ -410,6 +410,16 @@
 
 ## 2026-08-22
 
+- Created the proposed `hosted-studio_20260822` Conductor track, eight-phase
+  Tier A/Tier B plan, and ADR 0018 for principal-scoped Cloudflare creation.
+  The approved upload design hashes incrementally in a dedicated browser Web
+  Worker with `hash-wasm`, uses WebCrypto only as a small-fixture oracle, and
+  fails closed unless Gemini's final digest matches. Corrected the Cloudflare
+  build from legacy `cloudflare-worker` to module-format `cloudflare_module`.
+  Validated by `bun run check`: 21 Vitest files / 202 tests passed; Nitro built
+  with `cloudflare-module`; the Cloudflare boundary reported 55 forbidden
+  markers absent and 2 hosted review markers present; the 32 MiB streaming
+  spike completed with atomic seal and bounded heap growth.
 - Implemented Local Studio Task 6.7: authenticated Intent route and sanitized
   built-in recipe catalog, strict custom-recipe/focus/model draft validation,
   shared Intent/Context/Recording readiness, explicit recording-only Context,
@@ -489,3 +499,13 @@
   Validated by `bun run check` (Vitest: 22 files / 212 tests; Bun web suite:
   223; Studio HTTP, Cloudflare boundary, and 32 MiB streaming spike passed),
   `bun run test:e2e:smoke` (12 passed), and `bun run smoke:gemini`.
+- Revised the Hosted Studio track after adversarial review r1: made principal
+  scoping the first independently deployable slice, added hard streaming and
+  Workflow-export spikes, fixed the raw 8 MiB resumable-part and Gemini-offset
+  contracts, made Workflow retries and receipts explicit, and closed every
+  listed security/threat-model residual. Rebasing ADR 0017 exposed that its
+  Sentry preset guard named only the legacy Cloudflare preset; the guard now
+  also excludes the deployed `cloudflare_module` preset. Validated by
+  `bun run check` (Vitest: 22 files / 212 tests; Bun web suite passed; Studio
+  HTTP passed; Cloudflare boundary: 63 forbidden markers absent and 2 required
+  markers present; 32 MiB streaming spike passed with atomic seal).

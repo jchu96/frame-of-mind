@@ -14,6 +14,7 @@ Navigation hub for the public product context and implementation tracks.
 ## Active Tracks
 
 - [Local Studio: Drag-and-Drop Analysis](./tracks/local-studio_20260726/)
+- [Hosted Studio: Team And Tenant Execution](./tracks/hosted-studio_20260822/)
 
 ## Repository Policy
 

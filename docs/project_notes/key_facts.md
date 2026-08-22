@@ -57,7 +57,8 @@
 - Embeddings are intentionally absent from the initial release; structured analyses remain useful without a vector service.
 - The Nuxt review workspace stores only validated run contracts in SQLite/D1;
   it does not store recording or screenshot bytes.
-- The Cloudflare target uses Nitro's `cloudflare` preset, Workers Assets, a D1
+- The Cloudflare target uses Nitro's module-format `cloudflare_module` preset,
+  Workers Assets, a D1
   binding named `DB`, and Cloudflare Access JWT validation.
 - Schema v2 binds `analysis.json` to `manifest.json` with a shared run ID and
   canonical analysis SHA-256; import and hydration fail closed on divergence.
