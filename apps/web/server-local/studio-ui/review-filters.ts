@@ -1,5 +1,11 @@
-import type { AnalysisItem } from "../../../../src/domain/types.js";
-import { timestampToSeconds } from "../../../../src/lib/time.js";
+import type {
+  AnalysisItem,
+  VersionedRunManifest,
+} from "../../../../src/domain/types.js";
+import {
+  secondsToTimestamp,
+  timestampToSeconds,
+} from "../../../../src/lib/time.js";
 
 export type ReviewFindingFilter = "all" | "accepted" | "rejected";
 
@@ -39,4 +45,39 @@ export function reviewMarkerPosition(
     100,
     Math.max(0, timestampToSeconds(item.candidate.start) / durationSeconds * 100),
   );
+}
+
+export function reviewEvidenceTimestamp(item: AnalysisItem): string {
+  return item.result.evidence?.timestamp ?? item.candidate.start;
+}
+
+export function reviewSeekSeconds(item: AnalysisItem): number {
+  return timestampToSeconds(reviewEvidenceTimestamp(item));
+}
+
+export interface AlignedTranscriptExcerpt {
+  text: string;
+  videoTimestamp: string;
+  transcriptTimestamp?: string;
+  offsetSeconds?: number;
+}
+
+export function alignedTranscriptExcerpt(
+  item: AnalysisItem,
+  manifest: VersionedRunManifest,
+): AlignedTranscriptExcerpt | undefined {
+  const text = item.result.evidence?.reporterQuote;
+  if (!text) return undefined;
+  const videoTimestamp = reviewEvidenceTimestamp(item);
+  if (manifest.schemaVersion !== 2) return { text, videoTimestamp };
+  const offsetSeconds = manifest.transcriptAlignment.offsetSeconds;
+  const transcriptSeconds = timestampToSeconds(videoTimestamp) + offsetSeconds;
+  return {
+    text,
+    videoTimestamp,
+    offsetSeconds,
+    ...(transcriptSeconds >= 0
+      ? { transcriptTimestamp: secondsToTimestamp(transcriptSeconds) }
+      : {}),
+  };
 }

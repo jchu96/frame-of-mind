@@ -1073,7 +1073,11 @@ the CLI's existing exact-resource private-file boundary.
 Ephemeral recording staging is deleted after terminal cleanup by default.
 Timestamp-linked playback requires explicit time-bounded retention or
 reattachment of a file whose streamed SHA-256 matches the manifest. Recording
-bytes do not enter SQLite, D1, the run bundle, or logs.
+bytes do not enter SQLite, D1, the run bundle, or logs. Reattachment obtains
+the expected digest from the validated `RunStore` projection, not from browser
+input, then records the run ID on the private media receipt. That receipt-side
+binding permits imported bundles to regain playback without inventing an
+operational job row or making SQLite the authority for media ownership.
 
 The Cloudflare review artifact excludes the local session bootstrap, secret
 resolver, media staging/server, executor, and `bun:` implementations. Hosted

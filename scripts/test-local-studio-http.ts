@@ -429,6 +429,15 @@ try {
     "retained media status requires a session",
   );
   await expectStatus(
+    await probe.mutate(
+      `/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media/reattach`,
+      "POST",
+      { mediaSessionId: "media_01K123456789ABC" },
+    ),
+    401,
+    "review media reattachment requires a session",
+  );
+  await expectStatus(
     await probe.get("/api/studio/recipes"),
     401,
     "recipe catalog requires a Studio session",
@@ -715,6 +724,128 @@ try {
   );
   if ((await expiredStatus.json() as { available?: boolean }).available !== false) {
     throw new Error("Expired retained media status claimed playback availability.");
+  }
+  await expectStatus(
+    await probe.mutate("/api/runs", "POST", runFixture),
+    201,
+    "review reattachment reads an imported manifest projection",
+  );
+  await expectStatus(
+    await probe.mutate(`/api/studio/media/${retainedMedia.id}`, "DELETE", {}),
+    200,
+    "retained review fixture can be removed before explicit reattachment",
+  );
+  const unavailableAfterDelete = await expectStatus(
+    await probe.get(`/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media-status`),
+    200,
+    "deleted run media reports unavailable before reattachment",
+  );
+  if ((await unavailableAfterDelete.json() as { available?: boolean }).available !== false) {
+    throw new Error("Deleted run media remained available before reattachment.");
+  }
+
+  const mismatchedFixture = retainedFixture.slice();
+  mismatchedFixture[mismatchedFixture.length - 1] ^= 0xff;
+  const mismatchedCreate = await expectStatus(
+    await probe.mutate("/api/studio/media", "POST", {
+      idempotencyKey: "studio-http-review-reattach-mismatch-0001",
+      expectedBytes: mismatchedFixture.byteLength,
+      mimeType: "video/mp4",
+      retention: { mode: "retained", ttlSeconds: 24 * 60 * 60 },
+    }),
+    201,
+    "mismatched review reattachment creates private staging",
+  );
+  const mismatchedMedia = await mismatchedCreate.json() as { id: string };
+  await expectStatus(
+    await probe.upload(
+      `/api/studio/media/${mismatchedMedia.id}/parts/0`,
+      mismatchedFixture,
+      { "upload-offset": "0" },
+    ),
+    200,
+    "mismatched review fixture streams to private staging",
+  );
+  const mismatchedComplete = await expectStatus(
+    await probe.mutate(
+      `/api/studio/media/${mismatchedMedia.id}/complete`,
+      "POST",
+      { expectedSha256: retainedDigest },
+    ),
+    422,
+    "streamed review digest mismatch fails closed",
+  );
+  if (!(await mismatchedComplete.text()).includes("digest_mismatch")) {
+    throw new Error("Review digest mismatch omitted its sanitized code.");
+  }
+  const mismatchedDeleted = await expectStatus(
+    await probe.mutate(`/api/studio/media/${mismatchedMedia.id}`, "DELETE", {}),
+    200,
+    "mismatched review staging is deleted",
+  );
+  if ((await mismatchedDeleted.json() as { status?: string }).status !== "deleted") {
+    throw new Error("Mismatched review staging remained retained.");
+  }
+
+  const matchingCreate = await expectStatus(
+    await probe.mutate("/api/studio/media", "POST", {
+      idempotencyKey: "studio-http-review-reattach-match-0001",
+      expectedBytes: retainedFixture.byteLength,
+      mimeType: "video/mp4",
+      retention: { mode: "retained", ttlSeconds: 24 * 60 * 60 },
+    }),
+    201,
+    "matching review reattachment creates private staging",
+  );
+  const matchingMedia = await matchingCreate.json() as { id: string };
+  await expectStatus(
+    await probe.upload(
+      `/api/studio/media/${matchingMedia.id}/parts/0`,
+      retainedFixture,
+      { "upload-offset": "0" },
+    ),
+    200,
+    "matching review fixture streams to private staging",
+  );
+  await expectStatus(
+    await probe.mutate(
+      `/api/studio/media/${matchingMedia.id}/complete`,
+      "POST",
+      { expectedSha256: retainedDigest },
+    ),
+    200,
+    "matching review digest seals only after streamed verification",
+  );
+  const matchingBound = await expectStatus(
+    await probe.mutate(
+      `/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media/reattach`,
+      "POST",
+      { mediaSessionId: matchingMedia.id },
+    ),
+    200,
+    "matching review media binds to the imported run",
+  );
+  if ((await matchingBound.json() as { status?: string }).status !== "retained") {
+    throw new Error("Matching review media was not retained after binding.");
+  }
+  const reattachedStatus = await expectStatus(
+    await probe.get(`/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media-status`),
+    200,
+    "reattached review media becomes available",
+  );
+  if ((await reattachedStatus.json() as { available?: boolean }).available !== true) {
+    throw new Error("Verified reattached media did not enable playback.");
+  }
+  const reattachedRange = await expectStatus(
+    await probe.get(`/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media`, {
+      range: "bytes=8-15",
+    }),
+    206,
+    "reattached review media serves verified bytes",
+  );
+  if (!Buffer.from(await reattachedRange.arrayBuffer())
+    .equals(Buffer.from(retainedFixture.slice(8, 16)))) {
+    throw new Error("Reattached review media bytes did not match the manifest digest.");
   }
   await expectStatus(
     await probe.get("/api/runs/run_http_cleaned_media_0001/media", {

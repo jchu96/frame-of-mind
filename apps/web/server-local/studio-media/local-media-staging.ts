@@ -30,6 +30,7 @@ import {
   MAX_RETAINED_MEDIA_TTL_SECONDS,
   mediaCreateRequestSchema,
   mediaSessionSchema,
+  publishedRunIdSchema,
   sha256Schema,
   type MediaSession,
 } from "../../../../src/domain/studio-schemas";
@@ -49,6 +50,7 @@ const storedMediaSessionSchema = z.object({
   schemaVersion: z.literal(1),
   idempotencyDigest: sha256Schema,
   requestDigest: sha256Schema,
+  reviewRunIds: z.array(publishedRunIdSchema).max(100).optional(),
   session: mediaSessionSchema,
 }).strict();
 
@@ -698,6 +700,66 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
       updatedAt: session.updatedAt,
       ...(session.sha256 ? { sha256: session.sha256 } : {}),
     }));
+  }
+
+  async retainedReviewBinding(
+    runIdValue: string,
+    expectedSha256?: string,
+  ): Promise<MediaSession | undefined> {
+    const runId = publishedRunIdSchema.parse(runIdValue);
+    if (expectedSha256) sha256Schema.parse(expectedSha256);
+    const matches = (await this.#storedSessions())
+      .filter((stored) => (
+        stored.reviewRunIds?.includes(runId)
+        && stored.session.status === "retained"
+        && stored.session.retention.mode === "retained"
+        && (!expectedSha256 || stored.session.sha256 === expectedSha256)
+        && Date.parse(stored.session.retention.expiresAt) > this.#now().getTime()
+      ))
+      .sort((left, right) => (
+        right.session.updatedAt.localeCompare(left.session.updatedAt)
+      ));
+    return matches[0]?.session;
+  }
+
+  async bindRetainedReviewRun(
+    idValue: string,
+    runIdValue: string,
+    expectedSha256: string,
+  ): Promise<MediaSession> {
+    const id = this.#parseId(idValue);
+    const runId = publishedRunIdSchema.parse(runIdValue);
+    sha256Schema.parse(expectedSha256);
+    if (this.#activeWriters.has(id)) {
+      throw new MediaStagingError(
+        "concurrent_writer",
+        "Another writer already owns this media session.",
+      );
+    }
+    this.#activeWriters.add(id);
+    try {
+      const stored = await this.#requireStored(id);
+      if (
+        stored.session.status !== "retained"
+        || stored.session.retention.mode !== "retained"
+        || stored.session.sha256 !== expectedSha256
+        || Date.parse(stored.session.retention.expiresAt) <= this.#now().getTime()
+      ) {
+        throw new MediaStagingError(
+          "media_review_unavailable",
+          "Retained media is unavailable.",
+        );
+      }
+      if (!stored.reviewRunIds?.includes(runId)) {
+        await this.#writeStored({
+          ...stored,
+          reviewRunIds: [...(stored.reviewRunIds ?? []), runId],
+        });
+      }
+      return stored.session;
+    } finally {
+      this.#activeWriters.delete(id);
+    }
   }
 
   /**

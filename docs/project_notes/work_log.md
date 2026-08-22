@@ -733,3 +733,16 @@
   files / 299 tests; local Studio HTTP, hosted Access/Workflow/Studio/spend,
   both builds, release rehearsal, and 32 MiB streaming proof passed) and
   `bun run test:e2e:smoke` (13 passed).
+- Completed Local Studio Tasks 8.3–8.5 on 2026-08-22. Review finding and marker
+  selection now seeks the canonical evidence timestamp, with J/K and listbox
+  keyboard navigation plus signed transcript-offset display as escaped text.
+  Expired or deleted media can be reattached to job-backed or imported runs
+  only after the server streams and matches the projected manifest digest; the
+  private receipt stores the run binding, and mismatches are deleted with a
+  sanitized code. Added allowlisted local Markdown copy and analysis/manifest
+  JSON download actions with no media or external publication. Validated by
+  `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40 files / 303
+  tests; local Studio HTTP, hosted Access/Workflow/Studio/spend, both builds,
+  release rehearsal, and 32 MiB streaming proof passed) and
+  `bun run test:e2e:smoke` (13 passed), including offset/export, matching and
+  mismatching reattachment, Cloudflare exclusion, and browser review coverage.
