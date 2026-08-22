@@ -241,7 +241,7 @@ separate proposed track.
       details, and entry through Intent, Context, or Recording. Recording and
       Intent are required; Context is optional; sections can be completed in
       any order without coupling context drafts to a media receipt.
-- [ ] Task 6.8: Build the Run receipt with privacy, retention, Gemini transfer,
+- [x] Task 6.8: Build the Run receipt with privacy, retention, Gemini transfer,
       explicit video-only or context-enriched provenance, cleanup, and final
       validated job creation. Enriched jobs fetch and normalize context before
       Gemini upload; failed context cannot silently become video-only.
@@ -273,13 +273,40 @@ media receipt through a fake transport. Playwright smoke validates keyboard
 selection, field errors, refresh-safe Intent restore after reload, and
 fail-closed custom imports. Task 6.8's final Run receipt is next.
 
+Task 6.8 is complete: the authenticated local-only `/run` route reconstructs
+the exact Intent, Context, sealed-media, recipe-catalog, and server-owned
+retention receipts without persisting recording names or exposing private
+paths. Specific custom, changed, unavailable, unreadable, missing, expired,
+and uncommitted blockers fail closed; only an explicitly committed video-only
+choice becomes `{ mode: "none" }`. The composer-shaped job route resolves
+media digests, built-in recipe revision/digest, and retention server-side
+before the existing idempotent durable create API inserts anything. Successful
+creation clears the four browser resume receipts and returns Home with the job
+ID; uncertain retries reuse one persisted idempotency key. Unit, production
+HTTP, Cloudflare-artifact, and Playwright smoke coverage prove create/replay,
+sanitized rejection, the real Home job-ID notice, retry-hint clearing, and
+context-before-upload ordering. Phase 6 is closed; Task 7.1 is next.
+
 ### Verification
 
-- [ ] Contract, component, HTTP, and browser tests cover video-only and
-      context-enriched runs, entry through each composer section, completion in
-      different orders, keyboard navigation, field errors, refresh-safe draft
-      state, provider isolation, context-before-upload ordering, and the rule
-      that context failure never silently downgrades a run.
+- [x] Contract, component, HTTP, and browser tests cover the Phase 6 composer.
+  - Video-only and context-enriched immutable inputs retain their exact
+    provenance through creation and execution.
+  - Home routes incomplete work through Intent, Context, or Recording and then
+    to the final Run receipt, independent of section completion order.
+  - Keyboard navigation, field errors, and refresh-safe opaque drafts remain
+    covered by the Studio browser and component suites.
+  - Creation-time no-silent-downgrade is a browser invariant: `deriveContext`
+    blocks every non-committed Context draft, and `buildComposerPayload` emits
+    `{ mode: "none" }` only for a committed video-only draft. The authenticated
+    route intentionally accepts an explicit `{ mode: "none" }` from its caller.
+  - At execution, the `fetching_context` guard fetches and normalizes enriched
+    context before Gemini upload; context failure cannot authorize video-only.
+    The creation route still rejects mismatched recipe, media, and retention
+    receipts before insertion.
+  - The authenticated browser smoke completes Intent → Recording → explicit
+    video-only Context → Run → Start, asserts the real Home URL and job-ID
+    notice without stubbing the job list, and clears the exact four resume keys.
 
 ## Phase 7: Activity, Recovery, And Operations
 

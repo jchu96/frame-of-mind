@@ -740,13 +740,25 @@ export const meetingCatalogRequestSchema = z.object({
 export const composerPayloadSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
   mediaSessionId: opaqueIdSchema,
-  context: providerContextSchema,
+  context: analysisContextSchema,
   recipe: composerRecipeSchema,
   model: z.string().min(1).max(240),
   focus: z.string().max(10_000).optional(),
   transcriptOffsetSeconds: transcriptOffsetSecondsSchema.optional(),
   retention: mediaRetentionRequestSchema,
-}).strict();
+}).strict().superRefine((input, context) => {
+  if (
+    "mode" in input.context
+    && input.context.mode === "none"
+    && input.transcriptOffsetSeconds !== undefined
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["transcriptOffsetSeconds"],
+      message: "video-only input cannot include transcript alignment",
+    });
+  }
+});
 
 export const jobCreateRequestSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
@@ -765,6 +777,7 @@ export type MediaSession = z.infer<typeof mediaSessionSchema>;
 export type MediaPartReceipt = z.infer<typeof mediaPartReceiptSchema>;
 export type MediaCreateRequest = z.infer<typeof mediaCreateRequestSchema>;
 export type MediaCompleteRequest = z.infer<typeof mediaCompleteRequestSchema>;
+export type MediaRetentionRequest = z.infer<typeof mediaRetentionRequestSchema>;
 export type ConfigurationStatus = z.infer<typeof configurationStatusSchema>;
 export type ComposerPayload = z.infer<typeof composerPayloadSchema>;
 export type JobCreateRequest = z.infer<typeof jobCreateRequestSchema>;

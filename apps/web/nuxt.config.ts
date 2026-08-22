@@ -51,6 +51,9 @@ const studioContextPage = fileURLToPath(
 const studioIntentPage = fileURLToPath(
   new URL("./server-local/studio-ui/intent.vue", import.meta.url),
 );
+const studioRunPage = fileURLToPath(
+  new URL("./server-local/studio-ui/run.vue", import.meta.url),
+);
 const appFrame = fileURLToPath(
   new URL(
     localStudioEnabled
@@ -115,6 +118,9 @@ const studioJobsListHandler = fileURLToPath(
 );
 const studioJobsCreateHandler = fileURLToPath(
   new URL("./server-local/studio-jobs/index.post.ts", import.meta.url),
+);
+const studioComposerJobsCreateHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/composer.post.ts", import.meta.url),
 );
 const studioJobDetailHandler = fileURLToPath(
   new URL("./server-local/studio-jobs/detail.get.ts", import.meta.url),
@@ -224,6 +230,11 @@ const localHandlers = [
           handler: studioJobsCreateHandler,
         },
         {
+          route: "/api/studio/composer/jobs",
+          method: "post",
+          handler: studioComposerJobsCreateHandler,
+        },
+        {
           route: "/api/studio/jobs/:id",
           method: "get",
           handler: studioJobDetailHandler,
@@ -299,6 +310,11 @@ export default defineNuxtConfig({
           name: "intent",
           path: "/intent",
           file: studioIntentPage,
+        });
+        pages.push({
+          name: "run",
+          path: "/run",
+          file: studioRunPage,
         });
       }
     },

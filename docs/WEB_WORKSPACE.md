@@ -32,7 +32,8 @@ require that session in addition to Host/peer validation. A rejected or
 replayed link stays on the inert page and starts no dashboard reads.
 
 The Studio-enabled node build selects a local-only Nuxt UI dashboard frame and
-Home route for Home, Recording, Connections, Import, and run detail. Home
+Home route for Home, Intent, Context, Recording, Run, Connections, Import, and
+run detail. Home
 combines three existing read contracts: operational jobs, rebuildable run
 summaries, and sanitized connection presence. It creates no fourth authority
 or dashboard-only persistence, revalidates after client navigation, and keeps
@@ -66,12 +67,29 @@ originating tab closes. If session storage is unavailable, the current page
 can finish but Studio explicitly reports that refresh-resume is disabled. The
 immutable job/runtime and completed-run projection support deliberate
 video-only work without provider credentials. The authenticated `/intent`
-page, v2 context draft, and shared composer-readiness coordinator are
-shipped: Intent and sealed Recording are required, Context is optional and
-never inferred as video-only from absence, and custom-recipe drafts stay
-unrunnable until Task 6.8. Only the Run receipt and job-detail activity UI
-remain later track tasks; Home already reports composer readiness and active
-work from the protected durable job runtime underneath them.
+page, v2 context draft, shared composer-readiness coordinator, and final Run
+receipt are shipped. Intent and sealed Recording are required; the final
+receipt additionally requires Context to be explicitly committed as enriched
+or video-only. Missing, unreadable, expired, or uncommitted context blocks job
+creation in the browser and is never inferred as video-only there:
+`deriveContext` blocks every non-committed state, and `buildComposerPayload`
+emits `{ mode: "none" }` only from a committed video-only draft. The local,
+authenticated composer route intentionally accepts an explicit
+`{ mode: "none" }` from its caller; at execution, enriched jobs enter through
+the `fetching_context` guard and cannot silently fall back after context
+failure. Custom-recipe drafts remain unrunnable until their private staging
+contract exists. Job-detail activity UI remains a later track task; Home
+already reports composer readiness and active work from the protected durable
+job runtime underneath it.
+
+The Run page re-reads the browser drafts, live media receipt, local context
+receipt when applicable, and sanitized recipe catalog. It shows the exact
+recipe revision, model, optional focus, media digest prefix, context identity,
+and server-owned retention deadline. Browser session storage contains only
+`{ idempotencyKey }` for the Run retry hint; retention is recomputed from the
+live media receipt on every mount. A network retry reuses that key. A
+successful 201 create or 200 replay clears the Intent, Context, media-resume,
+and Run hints and returns Home with the durable job ID.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:
@@ -337,6 +355,11 @@ For a new migration:
 | `PUT` | `/api/studio/media/:id/parts/:part` | stream one exact part with `Upload-Offset` |
 | `POST` | `/api/studio/media/:id/complete` | verify and atomically seal media |
 | `DELETE` | `/api/studio/media/:id` | abort and clean the staged copy |
+| `GET` | `/api/studio/jobs` | list bounded local operational jobs |
+| `POST` | `/api/studio/composer/jobs` | validate one browser composer receipt and create/replay a job |
+| `GET` | `/api/studio/jobs/:id` | read one job and bounded event history |
+| `POST` | `/api/studio/jobs/:id/cancel` | persist cancellation intent |
+| `POST` | `/api/studio/jobs/:id/retry` | create or replay a linked retained-media retry |
 
 The entire hostname should be protected by Access. `/api/health` is not a
 public bypass because a health response can reveal deployment state.

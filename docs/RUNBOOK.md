@@ -1283,7 +1283,7 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
-### Local Studio Home, Connections, and analysis composer preview
+### Local Studio Home, Connections, and analysis composer
 
 Launch the authenticated local configuration surface:
 
@@ -1319,7 +1319,9 @@ Operational expectations:
   Gemini;
 - one local durable job runtime starts with Studio and backs the protected
   `/api/studio/jobs` routes;
-- the Run receipt and job-detail controls are not yet exposed in the Studio UI.
+- the authenticated Run page revalidates all composer receipts and creates or
+  replays one job through `POST /api/studio/composer/jobs`;
+- job-detail controls remain a Phase 7 surface.
 
 Home refreshes its three status sources when opened and through its Refresh
 action. If one source fails, its section reports that failure without
@@ -1343,17 +1345,19 @@ provider identity. Public diagnostics may include the sanitized failure code,
 never the endpoint query, authorization URL, token, or key.
 
 `bun run web` remains the unauthenticated loopback completed-run viewer.
-`frameofmind analyze` remains the end-user execution path until the Run receipt
-ships. The protected job API is operational for development and automated
-clients. It accepts exact unexpired local context receipts but still rejects
-custom recipes until their separate staging contract is implemented.
+`frameofmind analyze` remains available for direct CLI execution. Local Studio
+now exposes deliberate job creation through the Run receipt; it accepts exact
+unexpired local context receipts and explicit video-only intent but still
+rejects custom recipes until their separate staging contract is implemented.
 
 Open **Intent**, **Context**, or **Recording** in any order. A page refresh
 restores only typed browser drafts and opaque receipts; it never restores a
 `File`, provider response, transcript, credential, or prompt catalog. Home's
 primary **New analysis** action routes to Intent until Intent is ready, then to
-Recording until media is sealed. Context status is informational and never
-blocks readiness.
+Recording until media is sealed, then to Context until enriched or video-only
+intent is committed, and finally to the Run receipt. Context remains
+order-independent, but the final Start action fails closed without an explicit
+committed choice.
 
 On **Intent**:
 
@@ -1370,6 +1374,35 @@ On **Intent**:
 5. Select **Save intent**. The
    `frame-of-mind:studio:intent-draft` value contains exactly `recipe`, optional
    `focus`, and `model`; a built-in `recipe` contains its `id` and `revision`.
+
+On **Run**:
+
+1. Resolve every **BLOCKED** item through its Intent, Context, or Recording
+   link. A missing, expired, unreadable, or uncommitted Context never appears
+   as video-only in the browser composer. The authenticated local route accepts
+   an explicit `{ mode: "none" }` as caller intent; `deriveContext` and
+   `buildComposerPayload` are the creation-time guard against inventing it.
+2. Verify the sealed recording size and SHA-256 prefix, exact context identity,
+   pinned recipe revision, optional focus, model, and staging retention
+   deadline. The retention choice was locked when staging began; Run cannot
+   extend it. If the live retention receipt cannot be converted or the Run
+   retry key cannot be stored, retention reads **Unavailable** beside the live
+   server expiry and **Start analysis** remains disabled.
+3. Read the plain-language Gemini Files transfer and cleanup disclosure.
+   Enriched execution resolves and normalizes context during
+   `fetching_context`, before recording upload. Context failure terminates the
+   job and cannot authorize a video-only retry.
+4. Select **Start analysis** once. The browser persists only
+   `frame-of-mind:studio:run-draft` with `{ idempotencyKey }`; Run recomputes
+   retention from the live media receipt on every mount. A network retry
+   reuses that key, so it cannot insert a duplicate job. Reusing the same key
+   with different input is rejected as 409 `idempotency_conflict`; it never
+   creates or replays a different job. Run then links Home to the job that may
+   already exist and offers **Start a fresh receipt**; that explicit action
+   replaces only the Run key, preserving Intent, Context, and Recording.
+5. A 201 create or 200 replay clears all composer resume hints and returns Home
+   with a success notice naming the durable job ID. A 409/422 keeps every draft
+   and links the sanitized recipe, context, or media failure to its section.
 
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and
