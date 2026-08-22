@@ -8,6 +8,7 @@ import type {
 } from "../../../../src/domain/studio-ports";
 import {
   clearContextDraft,
+  commitVideoOnlyContextDraft,
   createContextStagingTransport,
   loadContextDraft,
   parseTranscriptOffsetInput,
@@ -366,11 +367,7 @@ function currentContext(): EnrichedContextDraft["context"] | undefined {
 
 function persistCurrentDraft(committed: boolean): boolean {
   if (contextMode.value === "video-only") {
-    return committed && persistContextDraft(sessionStorage, {
-      schemaVersion: 2,
-      mode: "video-only",
-      committed: true,
-    });
+    return committed && commitVideoOnlyContextDraft(sessionStorage);
   }
   const context = currentContext();
   if (!context) return false;

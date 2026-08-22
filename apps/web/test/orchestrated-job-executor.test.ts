@@ -16,6 +16,7 @@ import type {
   AnalysisRecipe,
 } from "../../../src/domain/types";
 import { digestRecipe } from "../../../src/recipes/index";
+import { GeminiFileError } from "../../../src/adapters/gemini-files";
 import type {
   AnalysisOrchestrator,
   AnalyzeOptions,
@@ -23,6 +24,9 @@ import type {
 import {
   OrchestratedAnalysisJobExecutor,
 } from "../server-local/studio-jobs/orchestrated-job-executor";
+import {
+  StudioJobInputUnavailableError,
+} from "../server-local/studio-jobs/analysis-options";
 import type {
   LocalInitialMediaGuard,
   LocalMediaReuseGuard,
@@ -161,6 +165,27 @@ describe("OrchestratedAnalysisJobExecutor", () => {
       }),
     ).rejects.toThrow("immutable job receipt");
     expect(called).toBe(false);
+  });
+
+  test("turns a Gemini request failure into one sanitized Studio code", async () => {
+    const executor = new OrchestratedAnalysisJobExecutor({
+      orchestrator: {
+        async analyze() {
+          throw new GeminiFileError("provider credential rejected");
+        },
+      } as unknown as AnalysisOrchestrator,
+      initialMediaGuard: noOpInitialMediaGuard(),
+      resolveAnalyzeOptions: async () => resolvedOptions(),
+    });
+
+    await expect(executor.execute(await claimedJob(), {
+      signal: new AbortController().signal,
+      progress: collect([]),
+    })).rejects.toMatchObject({
+      name: "StudioJobInputUnavailableError",
+      code: "gemini_request_failed",
+      message: "Local Studio analysis input is unavailable.",
+    } satisfies Partial<StudioJobInputUnavailableError>);
   });
 
   test("binds explicit video-only input and accepts a v3 publication receipt", async () => {

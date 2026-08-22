@@ -389,7 +389,9 @@ What works today:
   explicit video-only or committed enriched context, pinned built-in recipe,
   model, focus, and exact server-owned retention lifetime. **Start analysis**
   creates or safely replays one durable local job and then clears the four
-  browser resume hints. If the retry key is already bound to different input,
+  browser resume hints. When Context is absent or still uncommitted, Run can
+  commit the same explicit recording-only choice used by the Context page and
+  re-evaluate readiness in place. If the retry key is already bound to different input,
   Run links back Home or offers an explicit fresh receipt that replaces only
   the Run key and preserves the prepared Intent, Context, and Recording.
 

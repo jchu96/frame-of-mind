@@ -472,6 +472,7 @@ export const analysisJobEventSchema = z.discriminatedUnion("kind", [
   }).strict(),
   analysisJobEventBaseSchema.extend({
     kind: z.literal("warning"),
+    code: z.string().min(1).max(120).regex(/^[a-z0-9_:-]+$/).optional(),
     message: safeMessageSchema,
   }).strict(),
   analysisJobEventBaseSchema.extend({

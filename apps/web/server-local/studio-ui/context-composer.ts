@@ -195,6 +195,14 @@ export function persistContextDraft(
   }
 }
 
+export function commitVideoOnlyContextDraft(storage: BrowserStorage): boolean {
+  return persistContextDraft(storage, {
+    schemaVersion: 2,
+    mode: "video-only",
+    committed: true,
+  });
+}
+
 export function loadContextDraft(
   storage: BrowserStorage,
 ): { draft?: ContextDraft; storageAvailable: boolean } {

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   CONTEXT_DRAFT_STORAGE_KEY,
   clearContextDraft,
+  commitVideoOnlyContextDraft,
   createContextStagingTransport,
   loadContextDraft,
   parseTranscriptOffsetInput,
@@ -27,6 +28,16 @@ class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem
 }
 
 describe("Studio Context composer", () => {
+  test("commits the shared recording-only context receipt", () => {
+    const storage = new MemoryStorage();
+    expect(commitVideoOnlyContextDraft(storage)).toBe(true);
+    expect(JSON.parse(storage.getItem(CONTEXT_DRAFT_STORAGE_KEY)!)).toEqual({
+      schemaVersion: 2,
+      mode: "video-only",
+      committed: true,
+    });
+  });
+
   test("validates the five bounded local context formats", () => {
     for (const [name, type, format] of [
       ["context.json", "application/json", "json"],

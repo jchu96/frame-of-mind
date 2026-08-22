@@ -30,6 +30,33 @@ afterEach(async () => {
 });
 
 describe("AnalysisOrchestrator", () => {
+  it("uses an explicit staged MIME type before hashing an extensionless recording", async () => {
+    const fixture = await createFixture();
+    const sealedVideo = join(fixture.outputRoot, "..", "media.sealed");
+    await writeFile(sealedVideo, "synthetic-sealed-video");
+    const orchestrator = createOrchestrator(fixture);
+
+    await expect(orchestrator.analyze({
+      contextMode: "none",
+      recipe: fixture.options.recipe,
+      customRecipe: fixture.options.customRecipe,
+      recipeSha256: fixture.options.recipeSha256,
+      recipeRevision: fixture.options.recipeRevision,
+      apiKey: fixture.options.apiKey,
+      video: sealedVideo,
+      videoMimeType: "video/webm",
+      expectedVideoSha256: "f".repeat(64),
+      outputRoot: fixture.outputRoot,
+      maxIncidents: fixture.options.maxIncidents,
+      screenshots: false,
+      keepUpload: false,
+      derivedTranscript: false,
+    })).rejects.toThrow(
+      "Selected recording no longer matches its staged media receipt.",
+    );
+    expect(fixture.analyzer.upload).not.toHaveBeenCalled();
+  });
+
   it("publishes video-only v3 provenance without touching a context provider", async () => {
     const fixture = await createFixture();
     const createContextSource = vi.fn(() => fixture.context);
