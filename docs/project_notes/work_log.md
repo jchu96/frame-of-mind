@@ -550,3 +550,11 @@
   32 MiB streaming proof), the executable topology spike, and the standard
   Cloudflare boundary build (70 forbidden markers absent; 2 hosted review
   markers present).
+- Completed Hosted Studio Task 2.0 with a measured NO-GO. A dark,
+  Access-authenticated route and fake Content-Range sink proved exact one
+  16 MiB and two concurrent 8 MiB transfers on the built Worker, but the
+  emitted Nitro entry materialized each request with `request.arrayBuffer()`;
+  inspector backing storage rose by about 32 MiB for the concurrent pair.
+  workerd also rejected `hash-wasm` 4.12.0 runtime compilation. Tasks 2.1–2.4
+  remain blocked, and an unadopted ADR 0018 amendment proposes short-lived
+  private R2 staging rather than silently accepting smaller buffered parts.

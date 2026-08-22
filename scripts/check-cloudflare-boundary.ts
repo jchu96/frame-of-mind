@@ -97,6 +97,8 @@ const forbidden = [
 const requiredReviewMarkers = [
   "Primary navigation",
   "Import run",
+  "/api/_spike/stream",
+  "FRAME_OF_MIND_HOSTED_STREAM_SPIKE_ROUTE_V1",
 ];
 
 async function files(directory: string): Promise<string[]> {

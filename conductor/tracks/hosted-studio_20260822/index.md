@@ -20,11 +20,13 @@
 ## Decision
 
 Tier A extends the existing Cloudflare Worker, D1, Access application, and
-hostname with principal-scoped hosted creation and durable Workflows. Uploads
-are Worker-proxied to Gemini, full-file integrity is computed incrementally in
-a browser Web Worker, recording retention is opt-in, and the local SQLite
-executor remains untouched. Tier B adds encrypted per-principal provider
-connections only after the Tier A trust boundaries pass review.
+hostname with principal-scoped hosted creation and durable Workflows. The
+original Worker-proxied upload decision is blocked by Task 2.0; an unadopted
+private-R2 amendment draft is under review. Full-file integrity remains
+incremental in a browser Web Worker, recording retention remains explicit, and
+the local SQLite executor remains untouched. Tier B adds encrypted
+per-principal provider connections only after the Tier A trust boundaries pass
+review.
 
 ## Quick Links
 
