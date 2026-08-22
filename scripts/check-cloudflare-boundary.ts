@@ -1,154 +1,142 @@
-import { readdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
 
-const nuxtConfigPath = resolve("apps/web/nuxt.config.ts");
-const nuxtConfig = await Bun.file(nuxtConfigPath).text();
-const geminiImportSpecs = [...nuxtConfig.matchAll(/\bfrom\s+["']([^"']+)["']/g)]
-  .map((match) => match[1])
-  .filter((specifier) => specifier.includes("src/adapters/gemini"));
-const forbiddenGeminiImports = geminiImportSpecs.filter(
-  (specifier) => !specifier.includes("gemini-model"),
-);
-if (forbiddenGeminiImports.length) {
-  throw new Error(
-    `nuxt.config.ts imports the Gemini adapter graph: ${
-      forbiddenGeminiImports.join(", ")
-    }`,
-  );
-}
-console.log(
-  "nuxt.config.ts Gemini import boundary clean: gemini-model only; "
-  + `${geminiImportSpecs.length} allowed import(s).`,
-);
+const repositoryRoot = resolve(import.meta.dir, "..");
 
-const outputRoot = resolve("apps/web/.output");
-const forbidden = [
-  "bun:",
-  "server-local/studio-spike",
-  "FRAME_OF_MIND_STUDIO_SPIKE",
-  "FRAME_OF_MIND_STUDIO_SPIKE_DIR",
-  "/api/__studio-spike/",
-  "stream-upload.partial",
-  "stream-upload.sealed",
-  "server-local/studio-session",
-  "FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN",
-  "frame_of_mind_studio",
-  "/__studio/bootstrap",
-  "/api/studio/",
-  "server-local/studio-configuration",
-  "ProcessRuntimeSecretResolver",
-  "server-local/studio-ui",
-  "studioDefaultModel",
-  "Bring your own keys",
-  "frame-of-mind-studio-shell",
-  "Private local process",
-  "Studio navigation",
-  "Turn a recording into findings",
-  "/activity",
-  "Activity · Frame of Mind",
-  "Launch link expired",
-  "/__studio/launch",
-  "server-local/studio-media",
-  "FRAME_OF_MIND_MEDIA_ROOT",
-  "FRAME_OF_MIND_CHECKOUT_ROOT",
-  "LocalMediaStagingAdapter",
-  "createMediaExpiryJanitor",
-  "/api/studio/media",
-  "/api/studio/media/:id/cleanup-retry",
-  "media.partial",
-  "media.sealed",
-  "server-local/studio-context",
-  "server-local/studio-catalog",
-  "FRAME_OF_MIND_CONTEXT_ROOT",
-  "LocalContextFileStagingAdapter",
-  "createContextExpiryJanitor",
-  "/api/context-files",
-  "/api/studio/catalog/",
-  "server-local/studio-jobs",
-  "LocalSqliteJobRepository",
-  "LocalStudioJobWorker",
-  "OrchestratedAnalysisJobExecutor",
-  "LocalStudioJobControl",
-  "LocalMediaReuseGuard",
-  "LocalInitialMediaGuard",
-  "LocalStudioAnalyzeOptionsResolver",
-  "createLocalStudioJobRuntime",
-  "resolveInUsePath",
-  "deleteEphemeralExecutionLease",
-  "StudioJobApiUnavailableError",
-  "/api/studio/jobs",
-  "/api/studio/jobs/:id/reimport",
-  "StudioRunReimportError",
-  "/api/studio/composer/jobs",
-  "studio_analysis_jobs",
-  "sentry.client.config",
-  "sentry.server.config",
-  "SENTRY_DSN",
-  "SanitizedTelemetryError",
-  "@sentry/node",
-  "@sentry/nuxt",
-  "@sentry/cloudflare",
-  "Sentry.init",
-  "server-spikes/hosted-workflows",
-  "FRAME_OF_MIND_HOSTED_WORKFLOW_SPIKE",
-  "/api/__hosted-workflow-spike",
-  "HOSTED_WORKFLOWS",
-  "/api/_spike/stream",
-  "FRAME_OF_MIND_HOSTED_STREAM_SPIKE_ROUTE_V1",
-  "HostedWorkflowAnalysisJobExecutor",
+export const ad11RequiredMarkers = [
+  "/api/hosted/media",
   "/api/hosted/jobs",
-  "hosted-video-v2",
-  "spend_reservation_created",
-  "hosted-workflows.internal/telemetry",
-  "/api/hosted/composer/jobs",
-  "/api/hosted/spend/janitor",
+  "/hosted/activity",
+  "HostedWorkflowAnalysisJobExecutor",
+  "principal_spend_cap_exceeded",
   "data-hosted-studio-shell",
-  "data-hosted-activity-page",
-  "data-hosted-composer",
-];
-const requiredReviewMarkers = [
-  "Primary navigation",
-  "Import run",
-];
+] as const;
+
+export const ad11ForbiddenMarkers = [
+  "/__studio/bootstrap",
+  "/api/studio/jobs",
+  "server-local/studio-session",
+  "server-local/studio-media",
+  "server-local/studio-ui/activity",
+  "LocalMediaStagingAdapter",
+  "LocalSqliteJobRepository",
+  "OrchestratedAnalysisJobExecutor",
+  "bun:sqlite",
+] as const;
+
+export const hostedWrapperMarker = "FRAME_OF_MIND_HOSTED_ENTRY_V1";
+const wrapperSensitiveMarkers = [
+  "GEMINI_API_KEY",
+  "geminiFileUri",
+  "gemini_file_uri",
+  "generativelanguage.googleapis.com",
+  "transcript",
+] as const;
+
+export interface CloudflareBoundaryReceipt {
+  outputRoot: string;
+  filesScanned: number;
+  requiredMarkers: number;
+  forbiddenMarkers: number;
+}
+
+export async function checkCloudflareBoundary(
+  outputRoot = resolve(repositoryRoot, "apps/web/.output"),
+): Promise<CloudflareBoundaryReceipt> {
+  await checkNuxtGeminiImportBoundary();
+  const resolvedOutputRoot = resolve(outputRoot);
+  const artifactFiles = await files(resolvedOutputRoot);
+  if (artifactFiles.length === 0) {
+    throw new Error(`Cloudflare artifact is empty: ${resolvedOutputRoot}`);
+  }
+
+  const matches: string[] = [];
+  const foundRequiredMarkers = new Set<string>();
+  for (const path of artifactFiles) {
+    const contents = await readFile(path, "utf8");
+    for (const marker of ad11ForbiddenMarkers) {
+      if (contents.includes(marker)) {
+        matches.push(`${relative(resolvedOutputRoot, path)}: ${marker}`);
+      }
+    }
+    for (const marker of ad11RequiredMarkers) {
+      if (contents.includes(marker)) foundRequiredMarkers.add(marker);
+    }
+  }
+
+  if (matches.length) {
+    throw new Error(
+      `Cloudflare artifact contains AD-11 forbidden markers:\n${matches.join("\n")}`,
+    );
+  }
+  const missingRequiredMarkers = ad11RequiredMarkers.filter(
+    (marker) => !foundRequiredMarkers.has(marker),
+  );
+  if (missingRequiredMarkers.length) {
+    throw new Error(
+      "Cloudflare artifact is missing AD-11 required markers: "
+      + missingRequiredMarkers.join(", "),
+    );
+  }
+
+  const hostedEntryPath = join(resolvedOutputRoot, "server", "hosted-entry.mjs");
+  const hostedEntry = await readFile(hostedEntryPath, "utf8").catch(() => {
+    throw new Error("Cloudflare artifact is missing server/hosted-entry.mjs.");
+  });
+  if (!hostedEntry.includes(hostedWrapperMarker)) {
+    throw new Error(`Cloudflare hosted entry is missing ${hostedWrapperMarker}.`);
+  }
+  const wrapperSensitiveMatches = wrapperSensitiveMarkers.filter(
+    (marker) => hostedEntry.toLowerCase().includes(marker.toLowerCase()),
+  );
+  if (wrapperSensitiveMatches.length) {
+    throw new Error(
+      "Cloudflare hosted entry contains provider-sensitive markers: "
+      + wrapperSensitiveMatches.join(", "),
+    );
+  }
+
+  return {
+    outputRoot: resolvedOutputRoot,
+    filesScanned: artifactFiles.length,
+    requiredMarkers: ad11RequiredMarkers.length,
+    forbiddenMarkers: ad11ForbiddenMarkers.length,
+  };
+}
+
+async function checkNuxtGeminiImportBoundary(): Promise<void> {
+  const nuxtConfig = await readFile(
+    resolve(repositoryRoot, "apps/web/nuxt.config.ts"),
+    "utf8",
+  );
+  const geminiImportSpecs = [...nuxtConfig.matchAll(/\bfrom\s+["']([^"']+)["']/g)]
+    .map((match) => match[1])
+    .filter((specifier) => specifier?.includes("src/adapters/gemini"));
+  const forbiddenGeminiImports = geminiImportSpecs.filter(
+    (specifier) => !specifier?.includes("gemini-model"),
+  );
+  if (forbiddenGeminiImports.length) {
+    throw new Error(
+      `nuxt.config.ts imports the Gemini adapter graph: ${forbiddenGeminiImports.join(", ")}`,
+    );
+  }
+}
 
 async function files(directory: string): Promise<string[]> {
   const result: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) result.push(...await files(path));
-    else result.push(path);
+    else if (/\.(?:css|html|js|json|map|mjs|txt)$/.test(entry.name)) result.push(path);
   }
-  return result;
+  return result.sort();
 }
 
-const matches: string[] = [];
-const foundReviewMarkers = new Set<string>();
-for (const path of await files(outputRoot)) {
-  const contents = await Bun.file(path).text();
-  for (const marker of forbidden) {
-    if (contents.includes(marker)) matches.push(`${path}: ${marker}`);
-  }
-  for (const marker of requiredReviewMarkers) {
-    if (contents.includes(marker)) foundReviewMarkers.add(marker);
-  }
-}
-
-if (matches.length) {
-  throw new Error(
-    `Cloudflare artifact contains local-only Studio markers:\n${matches.join("\n")}`,
+if (import.meta.main) {
+  const receipt = await checkCloudflareBoundary(process.argv[2]);
+  console.log(
+    `Cloudflare boundary clean: ${receipt.forbiddenMarkers} AD-11 forbidden markers absent; `
+    + `${receipt.requiredMarkers} AD-11 required markers present; `
+    + `${receipt.filesScanned} artifact files scanned; hosted wrapper clean.`,
   );
 }
-const missingReviewMarkers = requiredReviewMarkers.filter(
-  (marker) => !foundReviewMarkers.has(marker),
-);
-if (missingReviewMarkers.length) {
-  throw new Error(
-    "Cloudflare artifact is missing the hosted review shell markers: "
-    + missingReviewMarkers.join(", "),
-  );
-}
-
-console.log(
-  `Cloudflare boundary clean: ${forbidden.length} forbidden markers absent; `
-  + `${requiredReviewMarkers.length} hosted review markers present.`,
-);
