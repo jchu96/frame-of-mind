@@ -3,6 +3,16 @@
 This guide explains how to authenticate Frame of Mind without putting a secret
 in the repository or chat.
 
+Status as of 2026-08-22: Local Studio resolves Gemini/Granola keys from the
+environment or process memory and keeps provider OAuth in exact-resource
+private files; these paths are covered by
+[`runtime-secrets.test.ts`](../apps/web/test/runtime-secrets.test.ts) and
+[`oauth.test.ts`](../test/oauth.test.ts). Hosted creation remains dark and
+undeployed. Its Tier A proposal permits `GEMINI_API_KEY` only on the internal
+Workflows Worker; Tier B provider-token custody is pending. See
+[DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md) and
+[ADR 0018](adr/0018-hosted-studio-trust-boundary.md).
+
 ## Short answer
 
 Frame of Mind currently uses the Gemini Developer API Files API. Create an auth

@@ -25,12 +25,34 @@ even derive its own transcript from the recording's audio.
 [Install](#install) ·
 [Quickstart](#analyze) ·
 [Recipes](#recipes) ·
-[Studio preview](#launch-the-local-studio-preview) ·
+[Local Studio](#launch-the-local-studio) ·
 [Documentation](#documentation)
 
 > [!IMPORTANT]
 > Early public release (`v0.3.0`). Review generated work before using or
 > publishing it. Generated output always requires human review.
+
+## Status as of 2026-08-22
+
+- Local Studio Phases 1–8 are shipped: per-launch authentication, Connections,
+  recording/context staging, the Intent/Context/Recording/Run composer,
+  durable single-concurrency jobs, Activity recovery, retained playback and
+  digest-verified reattachment, local exports, and unified maintenance. The
+  implementation receipts and verification commands are recorded in the
+  [Local Studio plan](conductor/tracks/local-studio_20260726/plan.md) and
+  [Studio browser suite](apps/web/e2e/studio-smoke.spec.ts).
+- Phase 9 release hardening is in progress. Documentation, classification,
+  repository hygiene, and hosted-track reconciliation are complete in this
+  slice; fresh-clone platform testing (9.3) and the operator/adversarial release
+  gate (9.4) remain pending in the
+  [Phase 9 checklist](conductor/tracks/local-studio_20260726/plan.md#phase-9-public-release-hardening-and-phase-b-roadmap).
+- Hosted Studio remains dark and undeployed. Principal scoping (Slice 1),
+  durable Workflows (Phase 3), composer/activity/publication (Phase 4), spend
+  and telemetry Tasks 5.3–5.4, and Phase 6 preparation artifacts are built and
+  contract-tested. ADR 0018 Amendment 1 in PR #65, upload Tasks 2.1–2.4,
+  retention/capture Tasks 5.1–5.2, and the Phase 6 deployment gate remain
+  pending. The current source of truth is the
+  [Hosted Studio track](conductor/tracks/hosted-studio_20260822/).
 
 ## Why watch the video at all?
 
@@ -335,10 +357,9 @@ the re-upload. The reused file is verified against the local recording's
 SHA-256 and is never deleted by the reusing run; it expires on the provider's
 schedule (about 48 hours).
 
-## Launch the local Studio preview
+## Launch the local Studio
 
-Frame of Mind is evolving from a CLI plus review workspace into **Frame of
-Mind Studio**: a local-first Nuxt application for configuring providers,
+**Frame of Mind Studio** is the local-first Nuxt application for configuring providers,
 dropping in a recording, running an analysis through a local Bun process, and
 reviewing timestamp-linked results. The public product context, spec, and
 plan live in [conductor/](conductor/).
@@ -631,6 +652,7 @@ metadata, OAuth, and cleanup contracts.
 | [Video understanding](docs/VIDEO_UNDERSTANDING.md) | Gemini video/prompt behavior, deep analysis |
 | [Artifact composition](docs/ARTIFACT_COMPOSITION.md) | evidence-to-deliverable quality contract |
 | [Gemini credentials](docs/CREDENTIALS.md) | keys, restrictions, rotation, Vertex differences |
+| [Data classification](docs/DATA_CLASSIFICATION.md) | public/internal/sensitive-runtime locations, retention, visibility, repository hygiene |
 | [Provider contracts](docs/PROVIDERS.md) | Bluedot, Granola MCP/API, local context |
 | [Web workspace](docs/WEB_WORKSPACE.md) | local data model, import boundary, backups |
 | [Local Studio threat model](docs/THREAT_MODEL.md) | session, staging, and credential boundaries |

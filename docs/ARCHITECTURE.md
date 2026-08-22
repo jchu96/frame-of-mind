@@ -3,6 +3,20 @@
 The local Studio trust boundaries and abuse cases are maintained in the
 [Local Studio threat model](THREAT_MODEL.md).
 
+## Status as of 2026-08-22
+
+Local Studio Phases 1–8 are implemented and verified through the
+[phase plan](../conductor/tracks/local-studio_20260726/plan.md), the
+[production HTTP contract](../scripts/test-local-studio-http.ts), and the
+[browser smoke suite](../apps/web/e2e/studio-smoke.spec.ts). Hosted Studio is a
+separate dark track: principal scoping and Phases 3–4 ship behind disabled
+build/runtime gates, Tasks 5.3–5.4 and Phase 6 preparation are present, but
+recording upload, retention/capture Tasks 5.1–5.2, the deployment gate, and
+ADR 0018 Amendment 1 remain pending. Nothing in the hosted creation path is
+deployed or enabled by this repository state. See the
+[Hosted Studio track](../conductor/tracks/hosted-studio_20260822/) and
+[data classification](DATA_CLASSIFICATION.md).
+
 ## 1. Purpose
 
 Frame of Mind is a local-first video-understanding workbench. It combines:
@@ -215,6 +229,7 @@ Built-ins:
 - `requirements`
 - `action-items`
 - `repo-plan`
+- `communication-coaching`
 
 Recipes cannot change:
 
@@ -771,10 +786,12 @@ through the same principal-bound `RunStore` and adds no share or transfer path.
 
 ### Local Studio
 
-Phase A evolves the local viewer into a Studio in independently shippable
+Phase A evolved the local viewer into a Studio in independently shippable
 slices. The per-launch session, dashboard shell and Home, connection health,
-recording UI, resumable local media, execution adapter, and durable jobs are
-implemented; the remaining composer and job-detail slices build on them:
+recording/context staging, composer and Run receipt, execution adapter,
+durable jobs, Activity/recovery controls, timestamp-linked review,
+digest-verified reattachment, local exports, and unified maintenance are
+implemented:
 
 ```mermaid
 flowchart LR
@@ -1030,8 +1047,9 @@ the successful run. They never delete or mutate `analysis.json`,
 projection port receives cloned validated contracts without the authoritative
 bundle path, so it has no filesystem capability through this interface. The
 Bun executor maps these service events into job-bound sequenced events; it
-does not parse CLI text. Route wiring and validated staged-media reuse remain
-in the next implementation slices.
+does not parse CLI text. The local composer, Activity, review, retained-media
+reuse, and digest-verified reattachment routes consume these contracts; their
+production HTTP and browser proofs are recorded in the Local Studio plan.
 
 The local media backend streams server-advertised fixed-size parts directly
 from H3's Node request iterable into a private Bun `FileSink`. Durable JSON
@@ -1079,9 +1097,10 @@ input, then records the run ID on the private media receipt. That receipt-side
 binding permits imported bundles to regain playback without inventing an
 operational job row or making SQLite the authority for media ownership.
 
-The Cloudflare review artifact excludes the local session bootstrap, secret
+The normal Cloudflare artifact excludes the local session bootstrap, secret
 resolver, media staging/server, executor, and `bun:` implementations. Hosted
-execution remains a separate Phase B track. See
+creation is a separate, dark Phase B track with independent build/runtime
+gates and no deployment implied by implemented source. See
 [ADR 0006](adr/0006-local-studio-execution-and-session-boundary.md),
 [ADR 0007](adr/0007-separate-media-job-and-run-lifecycles.md),
 [ADR 0008](adr/0008-local-secret-resolution.md), and the
