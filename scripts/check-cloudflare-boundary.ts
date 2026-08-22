@@ -95,6 +95,8 @@ const forbidden = [
   "HOSTED_WORKFLOWS",
   "/api/_spike/stream",
   "FRAME_OF_MIND_HOSTED_STREAM_SPIKE_ROUTE_V1",
+  "HostedWorkflowAnalysisJobExecutor",
+  "/api/hosted/jobs",
 ];
 const requiredReviewMarkers = [
   "Primary navigation",

@@ -1,0 +1,23 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "frame-of-mind-hosted-workflows",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "<D1_DATABASE_NAME>",
+      "database_id": "<D1_DATABASE_ID>",
+      "migrations_dir": "../web/db/migrations"
+    }
+  ],
+  "workflows": [
+    {
+      "name": "frame-of-mind-analysis",
+      "binding": "HOSTED_WORKFLOW",
+      "class_name": "HostedAnalysisWorkflow"
+    }
+  ]
+}

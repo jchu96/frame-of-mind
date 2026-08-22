@@ -1,7 +1,7 @@
 # Track: Hosted Studio - Team And Tenant Execution
 
 **ID:** `hosted-studio_20260822`
-**Status:** Active — Slice 1 and Task 3.0 complete; Phase 2 GO at 4 MiB pending ADR amendment
+**Status:** Active — Slice 1 and Phase 3 complete; Phase 2 GO at 4 MiB parts pending ADR 0018 amendment
 
 ## Documents
 
@@ -11,12 +11,13 @@
 
 ## Progress
 
-- Phases: 1/8 complete
-- Tasks: 4/33 complete
-- Current focus: review the proposed ADR 0018 amendment before Tasks 2.1–2.4; Task 3.0
-  selected an internal sibling Workflows Worker reached from Nuxt by service binding.
-  Slice 1 principal-scopes the deployed viewer; hosted upload and Workflow
-  creation remain dark until their own gates pass.
+- Phases: 2/8 complete
+- Tasks: 8/33 complete
+- Current focus: adopt the proposed ADR 0018 amendment (FR-04: 4 MiB parts, ≤4
+  concurrent per principal), then Tasks 2.1–2.4. Task 3.0 selected an internal
+  sibling Workflows Worker reached from Nuxt by service binding; Tasks 3.1–3.4
+  implement and verify its dark durable execution path. The live Nuxt artifact
+  remains unchanged.
 
 ## Decision
 

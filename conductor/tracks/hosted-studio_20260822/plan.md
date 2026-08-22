@@ -212,17 +212,28 @@ start from an unsealed or mismatched receipt.
       dry-runs passed, and local workerd completed one two-step Workflow created
       through Nuxt. See
       [`docs/spikes/hosted-workflows-spike-2026-08-22.md`](../../../docs/spikes/hosted-workflows-spike-2026-08-22.md).
-- [ ] Task 3.1: Implement a Cloudflare Workflows `AnalysisJobExecutor` adapter
+- [x] Task 3.1: Implement a Cloudflare Workflows `AnalysisJobExecutor` adapter
       while leaving the local SQLite executor selection and behavior untouched.
       Trust-boundary review trigger: durable execution authority moves from one
       Bun process to Cloudflare.
-- [ ] Task 3.2: Implement one Workflow per job with idempotent `fetch_context`,
+
+      **Status (2026-08-22):** added an environment/driver-selected hosted
+      executor over the existing port. It dispatches through the internal
+      service binding and rehydrates principal-scoped attempt state from D1;
+      the local SQLite worker, runtime, and tests are unchanged.
+- [x] Task 3.2: Implement one Workflow per job with idempotent `fetch_context`,
       `ensure_gemini_file`, `transcribe`, `index`, `interrogate`, `publish`, and
       `cleanup` steps. The hosted transcript ladder uses provider/operator
       context, then Gemini-audio directly from the uploaded file, then none;
       it never invokes ffmpeg or fabricates provenance.
       Trust-boundary review trigger: durable step state may invoke providers and mutate job state.
-- [ ] Task 3.3: Give every `step.do` an explicit `WorkflowStepConfig` with a
+
+      **Status (2026-08-22):** `apps/workflows` now owns the seven-step
+      `WorkflowEntrypoint`, consumes a sealed Phase-2 media receipt, and uses
+      the existing Gemini adapter through a hosted provider port. The hosted
+      transcript ladder is context, Gemini audio, then none; the Worker bundle
+      contains no ffmpeg path and the real adapter requires its Worker secret.
+- [x] Task 3.3: Give every `step.do` an explicit `WorkflowStepConfig` with a
       15-minute timeout, strictly greater than `MODEL_REQUEST_TIMEOUT_MS`.
       Provider steps use `retries.limit: 0`, check the durable principal-scoped
       receipt before any Gemini call, and throw `NonRetryableError` after
@@ -234,18 +245,39 @@ start from an unsealed or mismatched receipt.
       Phase 3 review note N1: cleanup must still run after a
       `NonRetryableError`; wrap provider steps so terminal cleanup executes or
       register a Workflow rollback handler before this task can pass.
-- [ ] Task 3.4: Implement retry as a new linked attempt with immutable prior
+
+      **Status (2026-08-22):** all durable calls have an explicit 15-minute
+      config and provider calls have zero platform retries. The callback
+      persists a codes-only invocation event before Gemini and returns a
+      durable failure envelope when success cannot be receipted; the outer
+      Workflow marks the attempt indeterminate, executes cleanup, then throws
+      `NonRetryableError`. The workerd crash oracle proves replay does not make
+      a second provider call and terminal cleanup is recorded.
+- [x] Task 3.4: Implement retry as a new linked attempt with immutable prior
       receipts, an atomic spend reservation, and no Workflow-instance reuse.
       Trust-boundary review trigger: a user reauthorizes cost and provider work
       after a terminal attempt.
 
+      **Status (2026-08-22):** D1 creates a fresh linked attempt and Workflow
+      ID under one principal-scoped spend reservation. Prior receipts are
+      insert-only, and concurrent initial/retry submits converge on one
+      idempotency receipt without reserving twice.
+
 ### Verification
 
-- [ ] Task 3.0 resolves and records one deployment topology. Workflow contracts
+- [x] Task 3.0 resolves and records one deployment topology. Workflow contracts
       cover every explicit StepConfig, crash-after-Gemini, success-without-
       receipt, timeout, cancellation, linked user retry, Gemini-file expiry,
       transcript provenance, and terminal cleanup; local executor tests and
       principal-free job/media ports remain unchanged.
+
+      **Verification (2026-08-22):** `bun run typecheck`, the hosted Workflow
+      Bun tests, and `bun run test:hosted-workflows-http` pass. The HTTP oracle
+      builds both Workers, applies migration 0004, runs fake Access JWKS and
+      Gemini boundaries, proves successful publication, foreign-principal 404,
+      one provider call after a post-Gemini receipt crash, terminal cleanup,
+      and a deduplicated linked retry. The default hosted Access contract still
+      proves job creation is 404-dark.
 
 ### Stop/Go Gate
 
