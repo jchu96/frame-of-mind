@@ -4,7 +4,10 @@ import { readLimitedText, RequestBodyTooLargeError } from "../../utils/request-b
 import { assertTrustedJsonMutation } from "../../utils/request-security";
 import { getRunStore } from "../../utils/store";
 import { D1ProjectionLimitError } from "../../data/sql";
-import { RunProjectionVersionConflictError } from "../../data/types";
+import {
+  RunPrincipalConflictError,
+  RunProjectionVersionConflictError,
+} from "../../data/types";
 
 const maximumImportBytes = 2 * 1024 * 1024;
 
@@ -55,6 +58,13 @@ export default defineEventHandler(async (event) => {
       throw createError({
         statusCode: 409,
         statusMessage: "Run ID already exists under another schema version.",
+      });
+    }
+    if (error instanceof RunPrincipalConflictError) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: "Run ID is already owned by another principal.",
+        data: { code: error.code },
       });
     }
     throw error;

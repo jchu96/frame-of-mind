@@ -2,7 +2,7 @@
 
 **Track ID:** `hosted-studio_20260822`
 **Spec:** [spec.md](./spec.md)
-**Status:** Proposed — pending adversarial plan review
+**Status:** Active — Phase 1 complete; Phase 2 is next
 
 ## Overview
 
@@ -35,7 +35,7 @@ cross-principal tests pass.
 
 ### Tasks
 
-- [ ] Task 1.1: Make validated Access identity executable: extend
+- [x] Task 1.1: Make validated Access identity executable: extend
       `apps/web/server/utils/access.ts:5-20` to return user `sub` plus
       display-only email and normalized empty-sub service principals; bind it
       once in `apps/web/server/middleware/00.auth.ts:42-48`; keep
@@ -43,7 +43,7 @@ cross-principal tests pass.
       and never a principal override. Add missing/malformed/recycled-sub and
       service-route denial fixtures. Trust-boundary review trigger: middleware
       begins deriving durable ownership from an external Access assertion.
-- [ ] Task 1.2: Add the reviewed D1 migration for `principal_sub TEXT NOT NULL`
+- [x] Task 1.2: Add the reviewed D1 migration for `principal_sub TEXT NOT NULL`
       and `principal_email` on both run tables, both item tables, and the
       registry, with composite parent/child keys and indexes. Rehearse against
       an empty D1: a non-empty legacy count fails closed for operator review,
@@ -51,7 +51,7 @@ cross-principal tests pass.
       dark. Add the reserved SQLite principal `local:single-user` to the same
       shared schema without changing v2/v3 import bytes.
       Trust-boundary review trigger: existing projection rows and shared local SQL acquire an owner.
-- [ ] Task 1.3: Scope every existing viewer/import path below and delete or make
+- [x] Task 1.3: Scope every existing viewer/import path below and delete or make
       unreachable every unscoped alternative:
       - list route `apps/web/server/api/runs/index.get.ts:12-16`, D1 pagination
         `apps/web/server/data/d1.ts:45-69`, and union SQL
@@ -80,9 +80,29 @@ cross-principal tests pass.
       rows through any route. Trust-boundary review trigger: the existing
       deployed viewer/import surface becomes a row-level authorization boundary.
 
+**Task 1.1 status (2026-08-22).** Complete. RS256 Access verification now
+returns `sub`, display email, and the normalized principal; middleware binds
+the principal once, the session response stays display-only, and service
+principals fail closed on `/api/runs*`. Signed claim fixtures cover malformed,
+wrong-audience, wrong-issuer, expired, empty/reserved subject, and service
+shapes.
+
+**Task 1.2 status (2026-08-22).** Complete. Migration 0003 rebuilds all five
+projection tables with principal columns, composite keys/FKs, and indexes. An
+empty D1 completes with zero sentinel rows; any legacy row trips the named
+operator guard. Local SQLite upgrades under `local:single-user`, and v2/v3
+request and bundle bytes remain unchanged.
+
+**Task 1.3 status (2026-08-22).** Complete. D1 and SQLite stores require a
+constructor-bound principal; both list arms, principal-bound cursor, both
+detail versions, global ownership conflict probe, registry/existence checks,
+parent upserts, and every child delete/insert carry it. The built workerd HTTP
+contract proves two same-email/different-sub principals cannot list, read, or
+reuse one another's runs while hosted creation stays dark.
+
 ### Verification
 
-- [ ] Access claim fixtures, empty-DB migration/backfill rehearsal, shared
+- [x] Access claim fixtures, empty-DB migration/backfill rehearsal, shared
       D1/SQLite schema parity, byte-stable local v2/v3 import fixtures, and the
       complete two-principal built-Worker HTTP contract pass. Hosted creation
       routes remain dark; only the already-deployed viewer/import surface ships.
@@ -173,6 +193,9 @@ Workflow can start from an unsealed or mismatched receipt.
       replay only. Keep bounded receipts, stable idempotency keys, and
       cancellation checks between steps. Trust-boundary review trigger:
       platform defaults could otherwise duplicate a billable provider call.
+      Phase 3 review note N1: cleanup must still run after a
+      `NonRetryableError`; wrap provider steps so terminal cleanup executes or
+      register a Workflow rollback handler before this task can pass.
 - [ ] Task 3.4: Implement retry as a new linked attempt with immutable prior
       receipts, an atomic spend reservation, and no Workflow-instance reuse.
       Trust-boundary review trigger: a user reauthorizes cost and provider work

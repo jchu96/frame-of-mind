@@ -2,18 +2,20 @@
   "id": "hosted-studio_20260822",
   "title": "Hosted Studio: Team And Tenant Execution",
   "type": "feature",
-  "status": "proposed",
+  "status": "active",
   "created": "2026-08-22T00:00:00Z",
   "updated": "2026-08-22T00:00:00Z",
-  "current_phase": 0,
-  "current_task": null,
+  "current_phase": 2,
+  "current_task": "2.0",
   "phases": {
     "total": 8,
-    "completed": 0
+    "completed": 1
   },
   "tasks": {
     "total": 33,
-    "completed": 0
+    "completed": 3
   },
-  "commits": []
+  "commits": [
+    "37c2dbba19609aa099bb04691df67eca788ef195"
+  ]
 }

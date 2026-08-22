@@ -31,13 +31,23 @@ export function isTrustedLoopbackRequest(
   return isLoopbackHost(listenerHost);
 }
 
-export function normalizeTeamDomain(value: unknown): string {
+export function normalizeTeamDomain(
+  value: unknown,
+  allowInsecureLoopback = false,
+): string {
   const raw = String(value || "").replace(/\/+$/, "");
   const url = new URL(raw);
+  const loopbackFixture = allowInsecureLoopback
+    && url.protocol === "http:"
+    && (url.hostname === "127.0.0.1" || url.hostname === "::1")
+    && url.pathname === "/";
   if (
-    url.protocol !== "https:"
-    || !url.hostname.endsWith(".cloudflareaccess.com")
-    || url.pathname !== "/"
+    !loopbackFixture
+    && (
+      url.protocol !== "https:"
+      || !url.hostname.endsWith(".cloudflareaccess.com")
+      || url.pathname !== "/"
+    )
   ) {
     throw new Error("Cloudflare Access team domain must be an HTTPS cloudflareaccess.com origin.");
   }
