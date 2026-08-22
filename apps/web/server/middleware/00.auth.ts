@@ -62,7 +62,12 @@ export default defineEventHandler(async (event) => {
   const path = event.path.split("?", 1)[0] || "";
   if (
     identity.principal.startsWith("service:")
-    && (path === "/api/runs" || path.startsWith("/api/runs/"))
+    && (
+      path === "/api/runs"
+      || path.startsWith("/api/runs/")
+      || path === "/api/hosted"
+      || path.startsWith("/api/hosted/")
+    )
   ) {
     throw createError({
       statusCode: 403,
