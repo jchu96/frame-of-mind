@@ -721,3 +721,15 @@
   tests; Bun web suite: 37 files / 294 tests; Local Studio HTTP, hosted
   Access/Workflow, hosted release rehearsal, builds, and 32 MiB streaming proof
   passed) and `bun run test:e2e:smoke` (13 passed).
+- Completed Local Studio Tasks 8.1 and 8.2 on 2026-08-22. Successful jobs now
+  resolve live retained recordings from an opaque run ID, exact job digest,
+  and server-owned receipt, then stream them through an authenticated
+  local-only route with bounded single-range responses. Unknown, expired,
+  cleaned, ephemeral, traversal-shaped, conditional, and malformed requests
+  fail closed. Added the responsive `/review/:runId` findings/video/detail
+  workspace with keyboard filters, candidate markers, literal untrusted text,
+  and an honest no-media state that leaves reattachment disabled for Task 8.4.
+  Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite: 39
+  files / 299 tests; local Studio HTTP, hosted Access/Workflow/Studio/spend,
+  both builds, release rehearsal, and 32 MiB streaming proof passed) and
+  `bun run test:e2e:smoke` (13 passed).

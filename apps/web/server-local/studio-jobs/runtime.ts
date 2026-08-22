@@ -34,6 +34,9 @@ import {
   getLocalMediaStaging,
 } from "../studio-media/service.js";
 import {
+  LocalStudioReviewMediaService,
+} from "../studio-media/review-service.js";
+import {
   LocalStudioAnalyzeOptionsResolver,
 } from "./analysis-options.js";
 import {
@@ -68,6 +71,7 @@ import {
 export interface LocalStudioJobRuntime {
   api: StudioJobApi;
   maintenance: StudioMaintenanceController;
+  reviewMedia: LocalStudioReviewMediaService;
   worker: LocalStudioJobWorker;
   shutdown(): Promise<void>;
 }
@@ -151,6 +155,7 @@ export async function createLocalStudioJobRuntime(
       },
     },
   );
+  const reviewMedia = new LocalStudioReviewMediaService(repository, options.media);
   await worker.start({ drain: false });
   const contextFiles = options.contextFiles ?? {
     maintenanceInventory: async () => [],
@@ -171,6 +176,7 @@ export async function createLocalStudioJobRuntime(
   return {
     api,
     maintenance,
+    reviewMedia,
     worker,
     shutdown: async () => {
       if (stopped) return;

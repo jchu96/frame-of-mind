@@ -389,9 +389,9 @@ coverage validate the slice. Phase 8 is next.
 
 ### Tasks
 
-- [ ] Task 8.1: Add a local-session-protected opaque-ID byte-range media route
+- [x] Task 8.1: Add a local-session-protected opaque-ID byte-range media route
       with traversal, expiry, content-type, and hostile-request tests.
-- [ ] Task 8.2: Build the responsive finding/video/detail workspace with
+- [x] Task 8.2: Build the responsive finding/video/detail workspace with
       accepted/rejected filters and candidate markers.
 - [ ] Task 8.3: Seek the player from canonical evidence timestamps and display
       aligned transcript excerpts without rendering untrusted HTML.
@@ -404,6 +404,18 @@ coverage validate the slice. Phase 8 is next.
 
 - [ ] Browser tests prove timestamp seeking, byte ranges, keyboard access,
       mobile layout, untrusted-content escaping, and no arbitrary path access.
+
+Tasks 8.1 and 8.2 are complete: successful local jobs resolve retained media
+through their opaque run ID and exact digest, then stream it only through the
+authenticated local server with single-range, bounded-chunk responses. The
+route returns 404 for unknown, expired, cleaned, or ephemeral media and rejects
+traversal-shaped IDs, multi-range input, invalid ranges, `HEAD`, and `If-Range`.
+The local-only `/review/:runId` workspace provides responsive finding, player,
+and detail columns; keyboard-operable accepted/rejected filters; candidate
+markers; literal rendering of untrusted analysis text; and an honest no-media
+state with the Task 8.4 reattachment control disabled. Pure range/filter tests,
+production HTTP probes, Cloudflare artifact exclusion, and Playwright desktop
+and mobile smoke coverage validate the slice. Task 8.3 is next.
 
 ## Phase 9: Public Release Hardening And Phase B Roadmap
 

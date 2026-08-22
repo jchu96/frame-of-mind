@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { DEFAULT_GEMINI_MODEL } from "../../../src/adapters/gemini-model";
+import { analysisDigest } from "../../../src/domain/integrity";
 import { runFixture, videoRunFixture } from "../test/fixtures";
 import { collectClientErrors } from "./support/client-errors";
 
@@ -507,6 +508,10 @@ test("imports and reviews one synthetic run", {
 }, async ({ page }) => {
   const clientErrors = collectClientErrors(page);
   const fixture = runFixture();
+  fixture.analysis.items[0]!.result.evidence = {
+    reporterQuote: "<script data-synthetic-transcript>not executable</script>",
+  };
+  fixture.manifest.analysisSha256 = await analysisDigest(fixture.analysis);
 
   await page.goto("/import");
   await page.getByLabel("analysis.json", { exact: true }).setInputFiles({
@@ -534,6 +539,33 @@ test("imports and reviews one synthetic run", {
     }),
   ).toBeVisible();
   await expect(page.getByText("The database remains a projection.")).toBeVisible();
+
+  await page.goto(`/review/${encodeURIComponent(fixture.manifest.runId)}`);
+  await expect(page.locator('[data-studio-review="local"]')).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Product review", level: 1 }))
+    .toBeVisible();
+  await expect(page.getByRole("heading", { name: "Analysis records" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Candidate markers" })).toBeVisible();
+  await expect(page.getByRole("button", {
+    name: "Accepted candidate 1: Use the portable contract at 00:00:10",
+  })).toBeVisible();
+  await expect(page.getByText(
+    "<script data-synthetic-transcript>not executable</script>",
+    { exact: true },
+  )).toBeVisible();
+  await expect(page.locator("script[data-synthetic-transcript]")).toHaveCount(0);
+  await expect(page.locator('[data-review-playback="unavailable"]')).toBeVisible();
+  await expect(page.getByRole("button", {
+    name: "Reattach recording (coming in Task 8.4)",
+  })).toBeDisabled();
+
+  const acceptedFilter = page.getByRole("button", { name: "Accepted", exact: true });
+  await acceptedFilter.focus();
+  await page.keyboard.press("Enter");
+  await expect(acceptedFilter).toHaveAttribute("aria-pressed", "true");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "Detail" })).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 720 });
 
   await page.getByRole("link", { name: "Home", exact: true }).click();
   await expect(

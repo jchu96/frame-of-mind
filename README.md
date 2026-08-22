@@ -411,6 +411,14 @@ What works today:
   cancel only. Failure banners show only their sanitized operator message;
   successful jobs link to the completed run. A Technical details disclosure
   and copyable v1 support receipt share one privacy-safe closed allowlist.
+- **Review** — successful runs open a responsive findings/video/detail
+  workspace with keyboard-operable accepted/rejected filters and candidate
+  markers. When a server-owned retained recording is still live, the browser
+  plays it through a session-protected opaque-run-ID route with bounded
+  single-range responses; paths never enter the URL or response. Ephemeral,
+  expired, cleaned, and unknown media render an honest no-recording state with
+  reattachment visibly deferred to Task 8.4. Analysis and transcript-derived
+  text is rendered literally, never as HTML.
 - **Maintenance** — one local-only planner runs at startup and on a configurable
   interval, removes expired or abandoned Studio staging, and marks inactive
   jobs interrupted only after the stale horizon passes without a worker
