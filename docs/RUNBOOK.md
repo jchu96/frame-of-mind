@@ -1337,7 +1337,21 @@ creation fails closed. Cap exhaustion returns
 `principal_spend_cap_exceeded` before dispatch, so no Workflow instance is
 created. Linked retries reserve the immutable prior attempt plan. Terminal
 cleanup commits provider usage when every billable claim has a usage receipt;
-otherwise it commits the full reservation rather than understating spend.
+otherwise it commits the full reservation rather than understating spend. The
+`hosted-video-v2` plan reserves both possible structured generations (initial
+plus schema repair) and all five transport attempts for every video-bearing
+step. If observed usage still exceeds the reservation, the attempt becomes
+indeterminate with `spend_actual_exceeds_reservation`, publication is blocked,
+and committed spend is capped at the reserved amount. A failed or canceled
+attempt with zero provider claims releases its reservation.
+
+The authenticated `POST /api/hosted/spend/janitor` route is available only in
+the hosted build. It is principal-scoped and idempotently settles reservations
+left in `reserved` when their attempt is already terminal or their sealed media
+receipt has expired. Zero-claim rows are released; rows with incomplete usage
+commit the full reservation. Run it through the same Cloudflare Access user
+principal as the affected hosted activity. A second invocation should report
+zero changes.
 
 To opt the internal Workflows Worker into hosted telemetry, set
 `SENTRY_DSN` on that Worker only using the operator-owned secret/config flow.
