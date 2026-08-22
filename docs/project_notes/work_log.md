@@ -426,3 +426,8 @@
   available with an explicit `useState` import. Validated by `bun run check`
   (Vitest: 21 files / 201 tests; Bun web tests: 199), the production Studio HTTP
   contract, a clean Cloudflare boundary, and 11 Playwright smoke tests.
+- Closed the final Task 6.7 delta review by moving the default Gemini model to
+  a dependency-free adapter constant, gating its local-only public runtime key,
+  and extending the hosted-artifact boundary marker set. Composer ordering now
+  covers three permutations, and the catalog-failure smoke rejects unexpected
+  client errors while allowing only its synthetic HTTP 500 console message.

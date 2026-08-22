@@ -228,6 +228,10 @@ test("selects Intent by keyboard and reports strict field errors", {
 test("keeps custom Intent saveable when the recipe catalog fails", {
   tag: "@smoke",
 }, async ({ page }) => {
+  const clientErrors = collectClientErrors(page, {
+    ignoreConsoleError: (message) =>
+      message === "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  });
   await page.route("**/api/studio/recipes", async (route) => {
     await route.fulfill({
       status: 500,
@@ -254,6 +258,7 @@ test("keeps custom Intent saveable when the recipe catalog fails", {
     sessionStorage.getItem("frame-of-mind:studio:intent-draft") || "null",
   ));
   expect(draft.model).toBe(DEFAULT_GEMINI_MODEL);
+  expect(clientErrors).toEqual([]);
 });
 
 test("imports and reviews one synthetic run", {

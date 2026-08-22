@@ -18,6 +18,7 @@ const forbidden = [
   "server-local/studio-configuration",
   "ProcessRuntimeSecretResolver",
   "server-local/studio-ui",
+  "studioDefaultModel",
   "Connections, without a credential vault",
   "frame-of-mind-studio-shell",
   "Private local process",
