@@ -550,3 +550,13 @@
   32 MiB streaming proof), the executable topology spike, and the standard
   Cloudflare boundary build (70 forbidden markers absent; 2 hosted review
   markers present).
+- Completed Hosted Studio Tasks 3.1–3.4 on 2026-08-22. The dark Nuxt adapter
+  dispatches one principal-scoped attempt to an internal Workflows Worker;
+  migration 0004 adds immutable attempts, provider receipts/events, and atomic
+  spend reservations. Every provider step uses an explicit 15-minute,
+  zero-retry configuration, reads the sealed media receipt first, and converts
+  success-without-receipt into an indeterminate terminal state after cleanup.
+  The two-Worker fake-JWKS/Gemini contract proves successful publication,
+  foreign-principal denial, one provider call across crash replay, and
+  concurrent retry deduplication. No upload path, deployment, or live route was
+  added.
