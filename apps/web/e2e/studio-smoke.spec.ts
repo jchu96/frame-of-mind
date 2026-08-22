@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { DEFAULT_GEMINI_MODEL } from "../../../src/adapters/gemini";
 import { runFixture, videoRunFixture } from "../test/fixtures";
 import { collectClientErrors } from "./support/client-errors";
 
@@ -39,7 +40,7 @@ test("shows local work, connection health, and one clear start action", {
   expect(recentSummary).not.toBeNull();
   expect(Math.abs(activeSummary!.y - recentSummary!.y)).toBeLessThanOrEqual(2);
 
-  const newAnalysis = page.getByRole("link", { name: "New analysis" });
+  const newAnalysis = page.getByRole("link", { name: "Define intent" });
   await expect(newAnalysis).toHaveCount(1);
   await newAnalysis.click();
   await expect(
@@ -191,7 +192,22 @@ test("selects Intent by keyboard and reports strict field errors", {
     .toBeVisible();
 
   await page.getByLabel("Optional focus").fill("Prioritize acceptance criteria.");
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.getByText("Intent step saved")).toBeVisible();
+  const builtInDraft = await page.evaluate(() => JSON.parse(
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft") || "null",
+  ));
+  expect(builtInDraft.recipe).toEqual({
+    id: "requirements",
+    revision: expect.any(String),
+  });
+  await page.evaluate(() =>
+    sessionStorage.removeItem("frame-of-mind:studio:intent-draft")
+  );
+
   await page.getByRole("button", { name: "Use a custom recipe" }).click();
+  await expect(page.getByText("Custom recipes cannot run yet")).toBeVisible();
+  await expect(page.getByText(/custom_recipe_staging_unavailable/)).toBeVisible();
   await page.getByLabel("Custom recipe JSON").fill(JSON.stringify({
     id: "synthetic-review",
     label: "Synthetic review",
@@ -207,6 +223,37 @@ test("selects Intent by keyboard and reports strict field errors", {
     sessionStorage.getItem("frame-of-mind:studio:intent-draft")
   )).toBeNull();
   expect(clientErrors).toEqual([]);
+});
+
+test("keeps custom Intent saveable when the recipe catalog fails", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  await page.route("**/api/studio/recipes", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ statusCode: 500 }),
+    });
+  });
+  await page.goto("/intent");
+  await expect(page.getByText("Studio could not load recipes — see logs."))
+    .toBeVisible();
+
+  await page.getByRole("button", { name: "Use a custom recipe" }).click();
+  await page.getByLabel("Custom recipe JSON").fill(JSON.stringify({
+    id: "catalog-independent-review",
+    label: "Catalog-independent review",
+    description: "A synthetic custom recipe for fallback coverage.",
+    indexInstruction: "Find synthetic evidence.",
+    interrogationInstruction: "Verify synthetic evidence.",
+  }));
+  await page.getByRole("button", { name: "Validate custom recipe" }).click();
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.getByText("Intent step saved")).toBeVisible();
+  const draft = await page.evaluate(() => JSON.parse(
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft") || "null",
+  ));
+  expect(draft.model).toBe(DEFAULT_GEMINI_MODEL);
 });
 
 test("imports and reviews one synthetic run", {

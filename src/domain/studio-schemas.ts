@@ -149,7 +149,10 @@ export const customRecipeSchema = z.object({
 }).strict();
 
 export const composerRecipeSchema = z.union([
-  z.object({ id: recipeIdSchema }).strict(),
+  z.object({
+    id: recipeIdSchema,
+    revision: z.string().min(1).max(120),
+  }).strict(),
   z.object({ custom: customRecipeSchema }).strict(),
 ]);
 

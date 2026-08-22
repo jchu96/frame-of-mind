@@ -28,7 +28,10 @@ describe("Studio Intent composer", () => {
   test("persists exactly the immutable composer intent fields", () => {
     const storage = new MemoryStorage();
     const draft = {
-      recipe: { id: "requirements" },
+      recipe: {
+        id: "requirements",
+        revision: "builtin-2026-07-27.1",
+      },
       focus: "Prioritize explicit acceptance criteria.",
       model: DEFAULT_GEMINI_MODEL,
     };
@@ -46,7 +49,10 @@ describe("Studio Intent composer", () => {
   test("reports focus overflow without saving it", () => {
     const storage = new MemoryStorage();
     const invalid = {
-      recipe: { id: "requirements" },
+      recipe: {
+        id: "requirements",
+        revision: "builtin-2026-07-27.1",
+      },
       focus: "x".repeat(10_001),
       model: DEFAULT_GEMINI_MODEL,
     };
@@ -86,6 +92,18 @@ describe("Studio Intent composer", () => {
       recipe: { custom: { ...valid, extra: "must fail" } },
       model: DEFAULT_GEMINI_MODEL,
     })).toBe(false);
+    expect(storage.values.has(INTENT_DRAFT_STORAGE_KEY)).toBe(false);
+  });
+
+  test("requires a built-in recipe revision receipt", () => {
+    const storage = new MemoryStorage();
+    const withoutRevision = {
+      recipe: { id: "requirements" },
+      model: DEFAULT_GEMINI_MODEL,
+    };
+
+    expect(validateIntentDraft(withoutRevision)).toMatchObject({ ok: false });
+    expect(persistIntentDraft(storage, withoutRevision)).toBe(false);
     expect(storage.values.has(INTENT_DRAFT_STORAGE_KEY)).toBe(false);
   });
 });

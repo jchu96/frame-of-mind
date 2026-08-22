@@ -132,6 +132,44 @@ describe("Studio Context composer", () => {
       .not.toContain("mediaSessionId");
   });
 
+  test("returns a committed migrated draft when migration persistence fails", () => {
+    let persistenceAttempted = false;
+    const storage = new MemoryStorage();
+    storage.values.set(CONTEXT_DRAFT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      mediaSessionId: "media_01K123456789ABC",
+      context: {
+        provider: "bluedot",
+        transport: "mcp",
+        meetingId: "synthetic-meeting",
+      },
+      committed: true,
+    }));
+    const throwingSetItemStorage = {
+      getItem: storage.getItem.bind(storage),
+      removeItem: storage.removeItem.bind(storage),
+      setItem(_key: string, _value: string): void {
+        persistenceAttempted = true;
+        throw new Error("Synthetic storage quota failure.");
+      },
+    };
+
+    expect(loadContextDraft(throwingSetItemStorage)).toEqual({
+      draft: {
+        schemaVersion: 2,
+        mode: "enriched",
+        context: {
+          provider: "bluedot",
+          transport: "mcp",
+          meetingId: "synthetic-meeting",
+        },
+        committed: true,
+      },
+      storageAvailable: true,
+    });
+    expect(persistenceAttempted).toBe(true);
+  });
+
   test("stages, verifies, and deletes only opaque context receipts", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const receipt = {

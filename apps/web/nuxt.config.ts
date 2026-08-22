@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { DEFAULT_GEMINI_MODEL } from "../../src/adapters/gemini";
 import { shouldRegisterLocalStudioRoutes } from "./server-local/studio-session/session";
 
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
@@ -323,6 +324,7 @@ export default defineNuxtConfig({
     public: {
       appName: "Frame of Mind",
       appVersion: "0.3.0",
+      studioDefaultModel: DEFAULT_GEMINI_MODEL,
       studioEnabled: localStudioEnabled,
     },
   },

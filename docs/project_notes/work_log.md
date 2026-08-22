@@ -418,3 +418,11 @@
   navigation. Validated by `bun run check` (Vitest: 21 files / 201 tests; Bun
   web tests: 196), the production Studio HTTP contract, a clean Cloudflare
   boundary, and the focused Playwright Intent keyboard/error smoke.
+- Addressed Task 6.7 adversarial-review findings: Context v1 migration now
+  survives failed write-back, built-in Intent drafts pin recipe revision,
+  catalog failure retains a safe default-model path, and custom drafts disclose
+  their staging limitation without changing readiness. Split the pure composer
+  readiness reducer from its Nuxt state wrapper so direct Bun coverage remains
+  available with an explicit `useState` import. Validated by `bun run check`
+  (Vitest: 21 files / 201 tests; Bun web tests: 199), the production Studio HTTP
+  contract, a clean Cloudflare boundary, and 11 Playwright smoke tests.

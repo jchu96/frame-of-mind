@@ -178,7 +178,7 @@ function jobContext(job: AnalysisJob): string {
         id="new-analysis"
         :to="primaryAction.to"
         icon="i-lucide-plus"
-        label="New analysis"
+        :label="primaryAction.label"
         size="xl"
         class="justify-center"
       />
