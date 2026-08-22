@@ -12,9 +12,9 @@
 ## Progress
 
 - Phases: 6/9 complete
-- Tasks: 38/51 complete
-- Current focus: Task 7.3, adding honest elapsed-time, last-activity, and
-  progress text without fabricated completion percentages.
+- Tasks: 39/51 complete
+- Current focus: Task 7.4, adding sanitized technical details and copyable
+  support receipts that exclude private content.
 
 ## Decision
 

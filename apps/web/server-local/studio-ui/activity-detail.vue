@@ -4,9 +4,11 @@ import ActivityActionPanel from "./activity-action-panel.vue";
 import {
   activityDisplayState,
   activityStageLabel,
+  activityStageChangeAnnouncement,
   deriveActivityTimeline,
   recipeDisplayLabel,
 } from "./activity-state";
+import { deriveActivityProgress } from "./activity-progress";
 import {
   createJobActivityTransport,
   useJobActivity,
@@ -42,6 +44,22 @@ const {
   ].includes(value.job.stage)),
 });
 const timeline = computed(() => deriveActivityTimeline(detail.value?.events ?? []));
+const now = ref(Date.now());
+const stageAnnouncement = ref("");
+let previousJob: AnalysisJob | undefined;
+watch(detail, (value) => {
+  now.value = Date.now();
+  if (!value) return;
+  if (previousJob) {
+    const announcement = activityStageChangeAnnouncement([previousJob], [value.job]);
+    if (announcement) stageAnnouncement.value = announcement;
+  }
+  previousJob = value.job;
+});
+const activityProgress = computed(() => detail.value
+  ? deriveActivityProgress(detail.value.job, detail.value.events, now.value)
+  : undefined
+);
 
 function stateColor(job: AnalysisJob): StatusColor {
   const state = activityDisplayState(job.stage);
@@ -49,6 +67,10 @@ function stateColor(job: AnalysisJob): StatusColor {
   if (state === "failed") return "error";
   if (state === "canceled" || state === "interrupted") return "warning";
   return job.stage === "queued" ? "neutral" : "primary";
+}
+
+function progressWidth(completed: number, total: number): string {
+  return `${Math.min(100, Math.max(0, (completed / total) * 100))}%`;
 }
 
 function formatDate(value: string): string {
@@ -102,8 +124,8 @@ function terminalMessage(job: AnalysisJob): string {
       />
     </div>
 
-    <p class="sr-only" aria-live="polite">
-      {{ notice || (refreshing ? "Refreshing job activity." : "Job activity is up to date.") }}
+    <p class="sr-only" aria-live="polite" aria-atomic="true">
+      {{ stageAnnouncement }}
     </p>
     <UAlert
       v-if="notice"
@@ -165,6 +187,92 @@ function terminalMessage(job: AnalysisJob): string {
         :title="activityStageLabel(detail.job.stage)"
         :description="terminalMessage(detail.job)"
       />
+
+      <UCard
+        v-if="activityProgress"
+        class="mt-8"
+        aria-labelledby="job-progress-heading"
+        data-activity-progress="honest"
+      >
+        <template #header>
+          <div>
+            <p class="fom-kicker text-muted">Current work</p>
+            <h2 id="job-progress-heading" class="mt-2 text-2xl font-black">
+              Timing and progress
+            </h2>
+          </div>
+        </template>
+        <dl class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted">Elapsed</dt>
+            <dd class="mt-2 text-xl font-black tabular-nums">
+              <span
+                :data-elapsed-seconds="activityProgress.elapsed.seconds"
+                :data-terminal="activityProgress.descriptor.kind === 'terminal'"
+              >
+                <span aria-hidden="true">{{ activityProgress.elapsed.text }}</span>
+                <span class="sr-only">{{ activityProgress.elapsed.accessibleText }}</span>
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted">Last activity</dt>
+            <dd class="mt-2 text-xl font-black">
+              <time
+                :datetime="activityProgress.lastActivityAt"
+              >
+                {{ activityProgress.lastActivityText }}
+              </time>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted">
+              Current stage started
+            </dt>
+            <dd class="mt-2 text-sm font-semibold">
+              <time :datetime="activityProgress.currentStageStartedAt">
+                {{ formatDate(activityProgress.currentStageStartedAt) }}
+              </time>
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs font-bold uppercase tracking-wider text-muted">Progress</dt>
+            <dd class="mt-2">
+              <p class="text-xl font-black">
+                <span
+                  :aria-hidden="activityProgress.descriptor.kind === 'determinate' || undefined"
+                >
+                  {{ activityProgress.descriptor.text }}
+                </span>
+              </p>
+              <p
+                v-if="'detail' in activityProgress.descriptor"
+                class="mt-1 text-xs font-semibold uppercase tracking-wider text-muted"
+                :aria-hidden="activityProgress.descriptor.kind === 'determinate' || undefined"
+              >
+                {{ activityProgress.descriptor.detail }}
+              </p>
+              <div
+                v-if="activityProgress.descriptor.kind === 'determinate'"
+                class="mt-3 h-2 overflow-hidden rounded-full bg-accented"
+                role="progressbar"
+                :aria-label="activityProgress.descriptor.accessibleText"
+                aria-valuemin="0"
+                :aria-valuenow="activityProgress.descriptor.completed"
+                :aria-valuemax="activityProgress.descriptor.total"
+              >
+                <div
+                  class="h-full rounded-full bg-primary"
+                  :style="{ width: progressWidth(
+                    activityProgress.descriptor.completed,
+                    activityProgress.descriptor.total,
+                  ) }"
+                />
+              </div>
+            </dd>
+          </div>
+        </dl>
+      </UCard>
 
       <section class="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(19rem,0.65fr)]">
         <UCard aria-labelledby="job-timeline-heading">
