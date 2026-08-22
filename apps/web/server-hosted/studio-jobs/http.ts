@@ -59,8 +59,12 @@ export function throwHostedJobHttpError(error: unknown): never {
     });
   }
   if (error instanceof HostedRepositoryError) {
+    // A foreign media id and a missing one are the same query for the caller's
+    // principal, so both answer 404: a 422 would confirm another principal's
+    // media exists.
     const statusCode = error.code === "hosted_attempt_not_found"
       || error.code === "hosted_media_not_found"
+      || error.code === "sealed_media_receipt_missing"
       ? 404
       : error.code === "hosted_idempotency_conflict"
         || error.code === "hosted_attempt_create_conflict"
