@@ -457,10 +457,12 @@ Cloudflare Access JWT validation:
 bun run build:web:cloudflare
 ```
 
-The planned hosted execution path uses an internal sibling Workflows Worker,
-reached from the public Nuxt Worker through a service binding; it is not
-deployed or enabled yet. Maintainers can reproduce the dark Task 3.0 topology
-proof with `bun --no-env-file scripts/spike-hosted-workflows.ts`. See the
+The dark hosted execution path uses an internal sibling Workflows Worker,
+reached from the public Nuxt Worker through a service binding. Its
+principal-scoped jobs, immutable attempts/receipts, explicit zero-retry Gemini
+steps, cleanup, and linked retry are implemented but are not deployed or
+enabled. Verify both Workers and their fake-provider contract with
+`bun run test:hosted-workflows-http`; the earlier topology proof remains in the
 [spike receipt](docs/spikes/hosted-workflows-spike-2026-08-22.md).
 
 > [!CAUTION]
@@ -520,7 +522,7 @@ src/
 test/               deterministic offline tests
 apps/web/           Nuxt SSR review workspace, SQLite/D1 adapters, migrations
 apps/web/e2e/       Playwright Studio journeys with synthetic fixtures
-apps/workflows/     dark Cloudflare Workflows topology spike
+apps/workflows/     dark Cloudflare Workflows execution Worker
 scripts/            safe cross-platform skill installer
 conductor/          product context, spec, and implementation plan
 docs/               guides, runbooks, adr/, project_notes/

@@ -54,7 +54,7 @@ const genericEvidenceExample = [
   "Inference: validation may be blocking the action. This is not a fact unless the clip or transcript establishes it, so label it Inference and state the observed basis.",
 ].join("\n");
 const FILE_PROCESSING_LIMIT_MS = 30 * 60_000;
-const MODEL_REQUEST_TIMEOUT_MS = 10 * 60_000;
+export const MODEL_REQUEST_TIMEOUT_MS = 10 * 60_000;
 const FILE_REQUEST_TIMEOUT_MS = 30_000;
 // Transient provider statuses retry in-place before a generation failure is
 // declared; anything else fails immediately to avoid retrying billing errors.
