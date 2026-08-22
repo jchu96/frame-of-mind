@@ -36,6 +36,7 @@ decision may be made in place.
 | [0015](0015-derived-transcript-from-recording-audio.md) | Derive a transcript from the recording's own audio | Accepted | 2026-07-28 |
 | [0016](0016-recipe-charters-and-executor-owned-prompt-policy.md) | Decompose recipes into charters under executor-owned prompt policy | Accepted | 2026-08-11 |
 | [0017](0017-opt-in-sentry-telemetry.md) | Make Sentry telemetry opt-in and codes-only | Accepted | 2026-08-22 |
+| [0018](0018-hosted-studio-trust-boundary.md) | Host Studio creation behind principal-scoped Cloudflare execution | Proposed | 2026-08-22 |
 
 ## Adding An ADR
 
