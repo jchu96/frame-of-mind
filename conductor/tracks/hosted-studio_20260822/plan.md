@@ -290,28 +290,36 @@ generate; cleanup remains terminal-path safe.
 
 ### Tasks
 
-- [ ] Task 4.1: Add hosted composer routes and UI for recording, intent,
+- [x] Task 4.1: Add hosted composer routes and UI for recording, intent,
       optional context, recipe, retention, and explicit transfer disclosure.
       Trust-boundary review trigger: browser input can initiate remote analysis
       and storage lifecycle choices.
-- [ ] Task 4.2: Add principal-scoped activity/detail/cancel/retry endpoints and
+- [x] Task 4.2: Add principal-scoped activity/detail/cancel/retry endpoints and
       accessible status UI using opaque IDs and sanitized error codes only.
       Trust-boundary review trigger: operational job metadata becomes visible
       across requests and devices.
-- [ ] Task 4.3: Publish only a validated analysis/manifest pair, atomically add
+- [x] Task 4.3: Publish only a validated analysis/manifest pair, atomically add
       its principal-scoped D1 projection, and preserve immutable job/media/
       provider provenance. Trust-boundary review trigger: provisional provider
       output becomes a durable review artifact.
-- [ ] Task 4.4: Integrate hosted published runs into the existing viewer without
+- [x] Task 4.4: Integrate hosted published runs into the existing viewer without
       adding cross-principal lookup, sharing, or ownership transfer paths.
       Trust-boundary review trigger: the established read surface begins
       resolving newly created hosted data.
 
 ### Verification
 
-- [ ] Production-build HTTP and browser tests prove create → activity → review,
+- [x] Production-build HTTP and browser tests prove create → activity → review,
       cancellation/retry, mobile/accessibility behavior, pair validation, and
       exhaustive cross-principal denial for guessed media/job/run IDs.
+
+  Verification: `bun run test:hosted-workflows-http` builds both Workers and
+  prints `HOSTED_STUDIO_CONTRACT PASSED` after the gated composer/activity
+  Playwright journey, validated publication/viewer read, cancel/retry, runtime
+  darkness, and two-principal 404 checks. `apps/web/test/hosted-workflows.test.ts`
+  rejects schema/digest mismatches; the real-Miniflare D1 test forces an item
+  insert failure and proves the registry, run, and item rows all remain absent.
+  Repository-wide gate receipts are recorded in the project work log.
 
 ### Stop/Go Gate
 

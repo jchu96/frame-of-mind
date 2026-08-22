@@ -458,11 +458,23 @@ bun run build:web:cloudflare
 ```
 
 The dark hosted execution path uses an internal sibling Workflows Worker,
-reached from the public Nuxt Worker through a service binding. Its
-principal-scoped jobs, immutable attempts/receipts, explicit zero-retry Gemini
-steps, cleanup, and linked retry are implemented but are not deployed or
-enabled. Verify both Workers and their fake-provider contract with
-`bun run test:hosted-workflows-http`; the earlier topology proof remains in the
+reached from the public Nuxt Worker through a service binding. When explicitly
+built and enabled, an Access-authenticated user can choose intent and
+video-only context, use an existing sealed recording receipt, start analysis,
+follow sanitized activity, cancel or retry eligible attempts, and open the
+validated published run in the existing viewer. Recording upload is not
+available in hosted Studio yet; the Recording page says so and contains no
+upload implementation.
+
+Hosted jobs, media receipts, activity, and published runs are bound to the
+validated Access principal. IDs owned by another principal resolve as not
+found, and no sharing or ownership-transfer route exists. Publication first
+validates the exact `analysis.json`/`manifest.json` pair, then projects it into
+D1 in one atomic batch. These routes remain absent from the normal Worker build
+and return not found when the hosted runtime flag is off. They are implemented
+but are not deployed or enabled. Verify the two-Worker, two-principal, and
+focused browser contract with `bun run test:hosted-workflows-http`; the earlier
+topology proof remains in the
 [spike receipt](docs/spikes/hosted-workflows-spike-2026-08-22.md).
 
 > [!CAUTION]
