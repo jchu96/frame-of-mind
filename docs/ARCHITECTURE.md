@@ -701,14 +701,15 @@ Local unauthenticated mode is loopback-only. Hosted mode combines a
 Cloudflare Access policy over the complete hostname with in-Worker validation
 of the Access JWT signature, issuer, audience, and algorithm.
 
-### Hosted execution topology (planned)
+### Hosted execution topology (dark)
 
 Task 3.0 proved the hosted Workflows boundary under the pinned toolchain. Nitro
 2.13.4's `cloudflare_module` output remains the public Nuxt Worker, while an
 internal-only sibling Worker exports the Cloudflare `WorkflowEntrypoint`.
 Nuxt calls it through a service binding; the sibling has no public route or
 hostname. Both Workers dry-run independently and a local two-workerd proof
-completed one two-step Workflow created through Nuxt.
+completed one two-step Workflow created through Nuxt. Tasks 3.1–3.4 now keep
+the Nuxt caller and durable sibling as separate deployable artifacts.
 
 ```mermaid
 flowchart LR
@@ -717,17 +718,26 @@ flowchart LR
     Nuxt[Nuxt Worker]
     WorkflowService[Internal Workflows Worker]
     Workflow[Workflow instance]
+    Gemini[Gemini Files and generateContent]
+    D1[(Principal-scoped D1 receipts)]
 
     Browser --> Access --> Nuxt
     Nuxt -->|service binding| WorkflowService --> Workflow
+    Nuxt --> D1
+    Workflow --> D1
+    Workflow --> Gemini
 ```
 
 Access context does not propagate across service bindings. Nuxt therefore
 passes a bounded principal-scoped job/attempt receipt, and the Workflow service
 rehydrates and revalidates it against D1. An internal call is not itself user
-authentication. The current spike-only relay is excluded from normal
-Cloudflare artifacts; provider execution remains unimplemented and dark. See
-the [Task 3.0 spike](spikes/hosted-workflows-spike-2026-08-22.md) and
+authentication. Every provider step writes a codes-only invocation event
+before Gemini, has zero automatic retries, and stores a bounded immutable
+receipt before the Workflow can advance. A success that cannot be receipted is
+indeterminate, executes terminal cleanup, and requires an explicit linked
+attempt; it never reuses a Workflow ID. Normal Cloudflare artifacts still
+exclude all hosted creation routes unless the build/runtime flags are both
+enabled. See the [Task 3.0 spike](spikes/hosted-workflows-spike-2026-08-22.md) and
 [ADR 0018](adr/0018-hosted-studio-trust-boundary.md).
 
 ### Local Studio

@@ -1,7 +1,7 @@
 # Track: Hosted Studio - Team And Tenant Execution
 
 **ID:** `hosted-studio_20260822`
-**Status:** Active — Slice 1 complete, Task 3.0 topology resolved
+**Status:** Active — Slice 1 and Phase 3 complete; Phase 2 remains in flight
 
 ## Documents
 
@@ -11,11 +11,12 @@
 
 ## Progress
 
-- Phases: 1/8 complete
-- Tasks: 4/33 complete
+- Phases: 2/8 complete
+- Tasks: 8/33 complete
 - Current focus: Task 2.0 streaming stop/go remains required. Task 3.0 selected
   an internal sibling Workflows Worker reached from Nuxt by service binding;
-  hosted upload and Workflow creation remain dark.
+  Tasks 3.1–3.4 implement and verify its dark durable execution path. Hosted
+  upload remains in flight and the live Nuxt artifact remains unchanged.
 
 ## Decision
 
