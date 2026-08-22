@@ -127,6 +127,7 @@ try {
     "0002_video_only_projection.sql",
     "0003_principal_scope.sql",
     "0004_hosted_workflows.sql",
+    "0005_hosted_spend_telemetry.sql",
   ]) {
     await cp(
       resolve(repositoryRoot, "apps/web/db/migrations", name),
@@ -145,15 +146,15 @@ try {
     "node", wranglerBin, "d1", "migrations", "apply", databaseName,
     "--local", "--config", migrationConfig, "--persist-to", persistRoot,
   ];
-  const firstMigration = await runChecked(migrationCommand, "D1 0001 through 0004 migration");
-  for (const name of ["0001_initial.sql", "0002_video_only_projection.sql", "0003_principal_scope.sql", "0004_hosted_workflows.sql"]) {
+  const firstMigration = await runChecked(migrationCommand, "D1 0001 through 0005 migration");
+  for (const name of ["0001_initial.sql", "0002_video_only_projection.sql", "0003_principal_scope.sql", "0004_hosted_workflows.sql", "0005_hosted_spend_telemetry.sql"]) {
     if (!firstMigration.includes(name)) throw new Error(`D1 rehearsal omitted ${name}.`);
   }
   const replayMigration = await runChecked(migrationCommand, "D1 migration replay");
   if (!/no migrations to apply/i.test(replayMigration)) {
     throw new Error("D1 migration replay did not report an idempotent no-op.");
   }
-  console.log("HOSTED_RELEASE migrations=PASS range=0001..0004 replay=idempotent");
+  console.log("HOSTED_RELEASE migrations=PASS range=0001..0005 replay=idempotent");
 
   await runChecked(
     [
@@ -207,6 +208,11 @@ function validateConfigShapes(
     || workflows?.[0]?.class_name !== "HostedAnalysisWorkflow"
   ) {
     throw new Error("Workflow Wrangler shape is missing DB or HOSTED_WORKFLOW.");
+  }
+  // The Workflows Worker has no Access check of its own; it must never be
+  // published on *.workers.dev (Wrangler's default when no routes exist).
+  if (workflowShape.workers_dev !== false) {
+    throw new Error("Workflow Wrangler shape must pin workers_dev: false.");
   }
   if (/SENTRY_DSN|GRANOLA|BLUEDOT/.test(JSON.stringify(workflowShape))) {
     throw new Error("Workflow production shape names a disallowed Tier A secret.");
