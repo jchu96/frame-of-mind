@@ -6,6 +6,7 @@ import {
   supportedMediaMimeTypeSchema,
 } from "../../../src/domain/studio-schemas.js";
 import { opaqueIdSchema } from "../../../src/domain/studio-identifiers.js";
+import { hostedSpendPlanSchema } from "./spend.js";
 
 export const HOSTED_WORKFLOW_STEPS = [
   "fetch_context",
@@ -64,6 +65,7 @@ export const sealedHostedMediaReceiptSchema = z.object({
   sha256: sha256Schema,
   mimeType: supportedMediaMimeTypeSchema,
   retention: z.enum(["ephemeral", "retained"]),
+  durationSeconds: z.number().finite().positive().max(86_400),
   sealedAt: utcDateTimeSchema,
   expiresAt: utcDateTimeSchema,
 }).strict().superRefine((receipt, context) => {
@@ -113,6 +115,7 @@ export interface HostedAttemptInput {
   focus?: string;
   transcriptOffsetSeconds?: number;
   retention: "ephemeral" | "retained";
+  spendPlan: z.infer<typeof hostedSpendPlanSchema>;
 }
 
 export const hostedAttemptInputSchema: z.ZodType<HostedAttemptInput> = z.object({
@@ -130,6 +133,7 @@ export const hostedAttemptInputSchema: z.ZodType<HostedAttemptInput> = z.object(
   transcriptOffsetSeconds: z.number().int().min(-31_536_000).max(31_536_000)
     .optional(),
   retention: z.enum(["ephemeral", "retained"]),
+  spendPlan: hostedSpendPlanSchema,
 }).strict();
 
 export const hostedAttemptSchema = z.object({

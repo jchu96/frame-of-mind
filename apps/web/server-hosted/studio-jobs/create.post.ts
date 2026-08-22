@@ -9,7 +9,8 @@ import {
 } from "../../../workflows/src/contracts.js";
 import { getHostedWorkflowExecutor } from "./executor.js";
 import {
-  hostedReservationUnits,
+  hostedSpendPlan,
+  hostedSpendPolicy,
   newHostedOpaqueId,
   readHostedJobJson,
   throwHostedJobHttpError,
@@ -31,6 +32,7 @@ export default defineEventHandler(async (event) => {
       now,
     );
     const recipe = builtInRecipe(request.recipeId);
+    const spendPlan = hostedSpendPlan(event, media.durationSeconds);
     const immutableInput: HostedAttemptInput = {
       mediaId: media.mediaId,
       mediaSha256: media.sha256,
@@ -47,9 +49,19 @@ export default defineEventHandler(async (event) => {
         ? { transcriptOffsetSeconds: request.transcriptOffsetSeconds }
         : {}),
       retention: media.retention,
+      spendPlan,
     };
     const jobId = newHostedOpaqueId("job");
     const attemptId = newHostedOpaqueId("attempt");
+    const spendPolicy = hostedSpendPolicy(event);
+    await runtime.repository.ensurePrincipalSpendCap({
+      principalSub: runtime.principalSub,
+      ...(runtime.principalEmail
+        ? { principalEmail: runtime.principalEmail }
+        : {}),
+      capUnits: spendPolicy.principalCapUnits,
+      occurredAt: now,
+    });
     const result = await runtime.repository.createInitialAttempt({
       principalSub: runtime.principalSub,
       ...(runtime.principalEmail
@@ -57,7 +69,6 @@ export default defineEventHandler(async (event) => {
         : {}),
       idempotencyKey: request.idempotencyKey,
       immutableInput,
-      reserveUnits: hostedReservationUnits(event),
       createdAt: now,
       jobId,
       attemptId,

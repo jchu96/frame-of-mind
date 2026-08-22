@@ -7,6 +7,10 @@ import {
   type HostedAttemptInput,
   type SealedHostedMediaReceipt,
 } from "./contracts.js";
+import {
+  hostedProviderUsageSchema,
+  type HostedProviderUsage,
+} from "./spend.js";
 
 const MAX_RECEIPT_JSON_BYTES = 32 * 1_024;
 
@@ -44,6 +48,7 @@ interface MediaRow {
   sha256: string;
   mime_type: string;
   retention: "ephemeral" | "retained";
+  duration_seconds: number | null;
   sealed_at: string;
   expires_at: string;
 }
@@ -59,6 +64,15 @@ export interface HostedEventView {
   kind: string;
   code?: string;
   occurredAt: string;
+}
+
+export interface HostedSpendReconciliation {
+  reservedUnits: number;
+  actualUnits: number;
+  committedUnits: number;
+  code:
+    | "spend_reconciled_provider_usage"
+    | "spend_reconciled_reservation_fallback";
 }
 
 export interface HostedD1PreparedStatement {
@@ -84,7 +98,10 @@ export class HostedWorkflowRepository {
       SELECT * FROM hosted_media_receipts
       WHERE principal_sub = ? AND media_id = ?
     `).bind(principalSub, mediaId).first<MediaRow>();
-    return row ? mediaFromRow(row) : undefined;
+    if (!row) return undefined;
+    const media = mediaFromRow(row);
+    if (!media) throw new HostedRepositoryError("spend_duration_unavailable");
+    return media;
   }
 
   async requireUsableMediaReceipt(
@@ -105,13 +122,13 @@ export class HostedWorkflowRepository {
     principalEmail?: string;
     idempotencyKey: string;
     immutableInput: HostedAttemptInput;
-    reserveUnits: number;
     createdAt: string;
     jobId: string;
     attemptId: string;
     workflowInstanceId: string;
   }): Promise<HostedAttemptCreateResult> {
     const immutableInput = hostedAttemptInputSchema.parse(input.immutableInput);
+    const reserveUnits = immutableInput.spendPlan.estimatedTokens;
     const immutableJson = JSON.stringify(immutableInput);
     const replay = await this.getByIdempotencyKey(
       input.principalSub,
@@ -156,7 +173,7 @@ export class HostedWorkflowRepository {
         immutableInput.mediaSha256,
         input.createdAt,
         input.principalSub,
-        input.reserveUnits,
+        reserveUnits,
         input.principalSub,
         input.idempotencyKey,
       ),
@@ -179,7 +196,7 @@ export class HostedWorkflowRepository {
         input.idempotencyKey,
         input.workflowInstanceId,
         immutableJson,
-        input.reserveUnits,
+        reserveUnits,
         input.createdAt,
         input.createdAt,
         input.principalSub,
@@ -199,7 +216,7 @@ export class HostedWorkflowRepository {
       `).bind(
         input.principalSub,
         input.attemptId,
-        input.reserveUnits,
+        reserveUnits,
         input.createdAt,
         input.createdAt,
         input.principalSub,
@@ -216,7 +233,7 @@ export class HostedWorkflowRepository {
     await this.explainCreateFailure(
       input.principalSub,
       immutableInput.mediaId,
-      input.reserveUnits,
+      reserveUnits,
       input.createdAt,
     );
     throw new HostedRepositoryError("hosted_attempt_create_failed");
@@ -226,7 +243,6 @@ export class HostedWorkflowRepository {
     principalSub: string;
     parentAttemptId: string;
     idempotencyKey: string;
-    reserveUnits: number;
     createdAt: string;
     attemptId: string;
     workflowInstanceId: string;
@@ -253,6 +269,7 @@ export class HostedWorkflowRepository {
       throw new HostedRepositoryError("sealed_media_receipt_mismatch");
     }
     const immutableJson = JSON.stringify(parent.input);
+    const reserveUnits = parent.input.spendPlan.estimatedTokens;
     await this.database.batch([
       this.database.prepare(`
         INSERT OR IGNORE INTO hosted_analysis_attempts (
@@ -292,13 +309,13 @@ export class HostedWorkflowRepository {
         input.attemptId,
         input.idempotencyKey,
         input.workflowInstanceId,
-        input.reserveUnits,
+        reserveUnits,
         input.createdAt,
         input.createdAt,
         input.principalSub,
         input.parentAttemptId,
         input.createdAt,
-        input.reserveUnits,
+        reserveUnits,
       ),
       this.database.prepare(`
         INSERT OR IGNORE INTO hosted_spend_reservations (
@@ -314,7 +331,7 @@ export class HostedWorkflowRepository {
       `).bind(
         input.principalSub,
         input.attemptId,
-        input.reserveUnits,
+        reserveUnits,
         input.createdAt,
         input.createdAt,
         input.principalSub,
@@ -330,7 +347,7 @@ export class HostedWorkflowRepository {
     await this.explainCreateFailure(
       input.principalSub,
       parent.input.mediaId,
-      input.reserveUnits,
+      reserveUnits,
       input.createdAt,
     );
     throw new HostedRepositoryError("hosted_retry_create_failed");
@@ -544,6 +561,72 @@ export class HostedWorkflowRepository {
     ).run();
   }
 
+  async ensurePrincipalSpendCap(input: {
+    principalSub: string;
+    principalEmail?: string;
+    capUnits: number;
+    occurredAt: string;
+  }): Promise<void> {
+    if (!Number.isSafeInteger(input.capUnits) || input.capUnits < 1) {
+      throw new HostedRepositoryError("principal_spend_cap_unavailable");
+    }
+    await this.database.prepare(`
+      INSERT OR IGNORE INTO hosted_principal_spend (
+        principal_sub, principal_email, cap_units, committed_units, updated_at
+      ) VALUES (?, ?, ?, 0, ?)
+    `).bind(
+      input.principalSub,
+      input.principalEmail ?? null,
+      input.capUnits,
+      input.occurredAt,
+    ).run();
+  }
+
+  async recordProviderUsage(input: {
+    principalSub: string;
+    attemptId: string;
+    stepName: string;
+    usage: HostedProviderUsage;
+    occurredAt: string;
+  }): Promise<void> {
+    const usage = hostedProviderUsageSchema.parse(input.usage);
+    await this.database.prepare(`
+      INSERT OR IGNORE INTO hosted_provider_usage (
+        principal_sub, attempt_id, step_name, prompt_units, output_units,
+        total_units, recorded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      input.principalSub,
+      input.attemptId,
+      input.stepName,
+      usage.promptTokens,
+      usage.outputTokens,
+      usage.totalTokens,
+      input.occurredAt,
+    ).run();
+    const stored = await this.database.prepare(`
+      SELECT prompt_units, output_units, total_units
+      FROM hosted_provider_usage
+      WHERE principal_sub = ? AND attempt_id = ? AND step_name = ?
+    `).bind(
+      input.principalSub,
+      input.attemptId,
+      input.stepName,
+    ).first<{
+      prompt_units: number;
+      output_units: number;
+      total_units: number;
+    }>();
+    if (
+      !stored
+      || stored.prompt_units !== usage.promptTokens
+      || stored.output_units !== usage.outputTokens
+      || stored.total_units !== usage.totalTokens
+    ) {
+      throw new HostedRepositoryError("provider_usage_receipt_conflict");
+    }
+  }
+
   async events(
     principalSub: string,
     attemptId: string,
@@ -578,30 +661,34 @@ export class HostedWorkflowRepository {
     runId?: string;
     errorCode?: string;
     cleanupCompleted: boolean;
-  }): Promise<void> {
-    const successful = input.stage === "succeeded";
+  }): Promise<HostedSpendReconciliation> {
+    const reconciliation = await this.spendReconciliation(
+      input.principalSub,
+      input.attemptId,
+    );
     await this.database.batch([
-      ...(successful
-        ? [this.database.prepare(`
-            UPDATE hosted_principal_spend
-            SET committed_units = committed_units + COALESCE((
-              SELECT reserved_units FROM hosted_spend_reservations
-              WHERE principal_sub = ? AND attempt_id = ? AND state = 'reserved'
-            ), 0), updated_at = ?
-            WHERE principal_sub = ?
-          `).bind(
-            input.principalSub,
-            input.attemptId,
-            input.occurredAt,
-            input.principalSub,
-          )]
-        : []),
+      this.database.prepare(`
+        UPDATE hosted_principal_spend
+        SET committed_units = committed_units + ?, updated_at = ?
+        WHERE principal_sub = ? AND EXISTS (
+          SELECT 1 FROM hosted_spend_reservations
+          WHERE principal_sub = ? AND attempt_id = ? AND state = 'reserved'
+        )
+      `).bind(
+        reconciliation.committedUnits,
+        input.occurredAt,
+        input.principalSub,
+        input.principalSub,
+        input.attemptId,
+      ),
       this.database.prepare(`
         UPDATE hosted_spend_reservations
-        SET state = ?, updated_at = ?
+        SET state = 'committed', actual_units = ?, reconciliation_code = ?,
+            updated_at = ?
         WHERE principal_sub = ? AND attempt_id = ? AND state = 'reserved'
       `).bind(
-        successful ? "committed" : "released",
+        reconciliation.actualUnits,
+        reconciliation.code,
         input.occurredAt,
         input.principalSub,
         input.attemptId,
@@ -621,7 +708,56 @@ export class HostedWorkflowRepository {
         input.principalSub,
         input.attemptId,
       ),
+      eventStatement(
+        this.database,
+        input.principalSub,
+        input.attemptId,
+        "spend_reconciled",
+        reconciliation.code,
+        input.occurredAt,
+      ),
     ]);
+    return reconciliation;
+  }
+
+  private async spendReconciliation(
+    principalSub: string,
+    attemptId: string,
+  ): Promise<HostedSpendReconciliation> {
+    const row = await this.database.prepare(`
+      SELECT reservation.reserved_units,
+        (SELECT COUNT(*) FROM hosted_provider_claims claims
+          WHERE claims.principal_sub = reservation.principal_sub
+            AND claims.attempt_id = reservation.attempt_id
+            AND (claims.step_name IN ('transcribe', 'index')
+              OR claims.step_name LIKE 'interrogate_%')) AS claimed_calls,
+        (SELECT COUNT(*) FROM hosted_provider_usage usage
+          WHERE usage.principal_sub = reservation.principal_sub
+            AND usage.attempt_id = reservation.attempt_id) AS usage_calls,
+        COALESCE((SELECT SUM(total_units) FROM hosted_provider_usage usage
+          WHERE usage.principal_sub = reservation.principal_sub
+            AND usage.attempt_id = reservation.attempt_id), 0) AS actual_units
+      FROM hosted_spend_reservations reservation
+      WHERE reservation.principal_sub = ? AND reservation.attempt_id = ?
+    `).bind(principalSub, attemptId).first<{
+      reserved_units: number;
+      claimed_calls: number;
+      usage_calls: number;
+      actual_units: number;
+    }>();
+    if (!row || ![row.reserved_units, row.claimed_calls, row.usage_calls, row.actual_units]
+      .every(Number.isSafeInteger)) {
+      throw new HostedRepositoryError("spend_reconciliation_unavailable");
+    }
+    const complete = row.claimed_calls === row.usage_calls;
+    return {
+      reservedUnits: row.reserved_units,
+      actualUnits: row.actual_units,
+      committedUnits: complete ? row.actual_units : row.reserved_units,
+      code: complete
+        ? "spend_reconciled_provider_usage"
+        : "spend_reconciled_reservation_fallback",
+    };
   }
 
   private async explainCreateFailure(
@@ -643,7 +779,13 @@ export class HostedWorkflowRepository {
       committed_units: number;
       reserved_units: number;
     }>();
-    if (!spend) throw new HostedRepositoryError("principal_spend_cap_unavailable");
+    if (
+      !spend
+      || ![spend.cap_units, spend.committed_units, spend.reserved_units]
+        .every(Number.isSafeInteger)
+    ) {
+      throw new HostedRepositoryError("principal_spend_cap_unavailable");
+    }
     if (spend.committed_units + spend.reserved_units + reserveUnits > spend.cap_units) {
       throw new HostedRepositoryError("principal_spend_cap_exceeded");
     }
@@ -710,8 +852,8 @@ function attemptFromRow(row: AttemptRow): HostedAnalysisAttempt {
   });
 }
 
-function mediaFromRow(row: MediaRow): SealedHostedMediaReceipt {
-  return sealedHostedMediaReceiptSchema.parse({
+function mediaFromRow(row: MediaRow): SealedHostedMediaReceipt | undefined {
+  const parsed = sealedHostedMediaReceiptSchema.safeParse({
     principalSub: row.principal_sub,
     mediaId: row.media_id,
     geminiFileName: row.gemini_file_name,
@@ -719,9 +861,11 @@ function mediaFromRow(row: MediaRow): SealedHostedMediaReceipt {
     sha256: row.sha256,
     mimeType: row.mime_type,
     retention: row.retention,
+    durationSeconds: row.duration_seconds,
     sealedAt: row.sealed_at,
     expiresAt: row.expires_at,
   });
+  return parsed.success ? parsed.data : undefined;
 }
 
 function assertReplay(

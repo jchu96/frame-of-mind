@@ -199,6 +199,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       eventCode: "context_fetch_started",
       attempt,
       env: this.env,
+      provider,
       invoke: async () => sanitizeMeeting(await provider.fetchContext(attempt)),
     });
   }
@@ -228,6 +229,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       eventCode: "gemini_file_resolve_started",
       attempt,
       env: this.env,
+      provider,
       invoke: () => provider.ensureGeminiFile(receipt),
     });
     return { file, receipt };
@@ -271,7 +273,9 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         eventCode: "gemini_transcribe_started",
         attempt,
         env: this.env,
+        provider,
         invoke: () => provider.transcribe(file),
+        usageRequired: true,
       });
       return boundedOutput(resolveHostedTranscript({
         meeting,
@@ -313,6 +317,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       eventCode: "gemini_index_started",
       attempt,
       env: this.env,
+      provider,
       invoke: () => provider.index({
         file,
         meeting,
@@ -320,6 +325,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         recipe,
         ...(attempt.input.focus ? { focus: attempt.input.focus } : {}),
       }),
+      usageRequired: true,
     });
     return boundedOutput({
       matchNotes: indexed.matchNotes,
@@ -350,7 +356,11 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     });
     const recipe = await requireRecipe(attempt);
     const details: AnalysisDetail[] = [];
-    for (const [index, candidate] of moments.entries()) {
+    const selectedMoments = moments.slice(
+      0,
+      attempt.input.spendPlan.callGraph.maxInterrogationCalls,
+    );
+    for (const [index, candidate] of selectedMoments.entries()) {
       const stepName = `interrogate_${String(index + 1).padStart(4, "0")}`;
       details.push(await providerStep({
         step,
@@ -359,6 +369,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         eventCode: "gemini_interrogate_started",
         attempt,
         env: this.env,
+        provider,
         invoke: () => provider.interrogate({
           file,
           candidate,
@@ -366,6 +377,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
           recipe,
           ...(attempt.input.focus ? { focus: attempt.input.focus } : {}),
         }),
+        usageRequired: true,
       }));
     }
     return details;
@@ -423,6 +435,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       eventCode: "gemini_cleanup_started",
       attempt,
       env: this.env,
+      provider,
       allowCancellation: true,
       invoke: async () => {
         await provider.cleanup(file, receipt);
@@ -505,7 +518,9 @@ async function providerStep<T>(input: {
   eventCode: string;
   attempt: HostedAnalysisAttempt;
   env: Env;
+  provider: HostedAnalysisProvider;
   allowCancellation?: boolean;
+  usageRequired?: boolean;
   invoke(): Promise<T>;
 }): Promise<T> {
   const result = await input.step.do(
@@ -556,8 +571,20 @@ async function providerStep<T>(input: {
           );
           throw new NonRetryableError("provider_success_without_receipt");
         }
+        if (input.usageRequired) input.provider.takeUsage();
         const invoked = await input.invoke();
         providerSucceeded = true;
+        if (input.usageRequired) {
+          const usage = input.provider.takeUsage();
+          if (!usage) throw new Error("provider_usage_unavailable");
+          await input.repository.recordProviderUsage({
+            principalSub: input.attempt.principalSub,
+            attemptId: input.attempt.attemptId,
+            stepName: input.providerStepName,
+            usage,
+            occurredAt: new Date().toISOString(),
+          });
+        }
         const output = boundedOutput(invoked);
         await input.repository.appendEvent(
           input.attempt.principalSub,

@@ -7,7 +7,7 @@ import {
 } from "../../../workflows/src/contracts.js";
 import { getHostedWorkflowExecutor } from "./executor.js";
 import {
-  hostedReservationUnits,
+  hostedSpendPolicy,
   newHostedOpaqueId,
   readHostedJobJson,
   throwHostedJobHttpError,
@@ -18,12 +18,21 @@ export default defineEventHandler(async (event) => {
   try {
     const request = hostedRetryRequestSchema.parse(await readHostedJobJson(event));
     const runtime = getHostedWorkflowExecutor(event);
+    const now = new Date().toISOString();
+    const spendPolicy = hostedSpendPolicy(event);
+    await runtime.repository.ensurePrincipalSpendCap({
+      principalSub: runtime.principalSub,
+      ...(runtime.principalEmail
+        ? { principalEmail: runtime.principalEmail }
+        : {}),
+      capUnits: spendPolicy.principalCapUnits,
+      occurredAt: now,
+    });
     const result = await runtime.repository.createLinkedRetry({
       principalSub: runtime.principalSub,
       parentAttemptId: parseOpaqueResourceId(getRouterParam(event, "id")),
       idempotencyKey: request.idempotencyKey,
-      reserveUnits: hostedReservationUnits(event),
-      createdAt: new Date().toISOString(),
+      createdAt: now,
       attemptId: newHostedOpaqueId("attempt"),
       workflowInstanceId: newHostedOpaqueId("workflow"),
     });
