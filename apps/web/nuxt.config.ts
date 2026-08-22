@@ -35,6 +35,21 @@ const hostedWorkflowSpikeHandler = fileURLToPath(
 const hostedJobsCreateHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/create.post.ts", import.meta.url),
 );
+const hostedJobsListHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/list.get.ts", import.meta.url),
+);
+const hostedComposerJobsCreateHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/composer.post.ts", import.meta.url),
+);
+const hostedConfigurationHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/configuration.get.ts", import.meta.url),
+);
+const hostedRecipesHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/recipes.get.ts", import.meta.url),
+);
+const hostedMediaHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/media.get.ts", import.meta.url),
+);
 const hostedJobDetailHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/detail.get.ts", import.meta.url),
 );
@@ -83,10 +98,30 @@ const studioActivityPage = fileURLToPath(
 const studioActivityDetailPage = fileURLToPath(
   new URL("./server-local/studio-ui/activity-detail.vue", import.meta.url),
 );
+const hostedIntentPage = fileURLToPath(
+  new URL("./server-hosted/studio-ui/intent.vue", import.meta.url),
+);
+const hostedContextPage = fileURLToPath(
+  new URL("./server-hosted/studio-ui/context.vue", import.meta.url),
+);
+const hostedRecordingPage = fileURLToPath(
+  new URL("./server-hosted/studio-ui/recording.vue", import.meta.url),
+);
+const hostedRunPage = fileURLToPath(
+  new URL("./server-hosted/studio-ui/run.vue", import.meta.url),
+);
+const hostedActivityPage = fileURLToPath(
+  new URL("./server-hosted/studio-ui/activity.vue", import.meta.url),
+);
+const hostedActivityDetailPage = fileURLToPath(
+  new URL("./server-hosted/studio-ui/activity-detail.vue", import.meta.url),
+);
 const appFrame = fileURLToPath(
   new URL(
     localStudioEnabled
       ? "./server-local/studio-ui/app-frame.vue"
+      : hostedWorkflowsBuilt
+        ? "./server-hosted/studio-ui/app-frame.vue"
       : "./app/components/ReviewAppFrame.vue",
     import.meta.url,
   ),
@@ -327,9 +362,34 @@ const localHandlers = [
   ...(hostedWorkflowsBuilt
     ? [
         {
+          route: "/api/hosted/configuration",
+          method: "get",
+          handler: hostedConfigurationHandler,
+        },
+        {
+          route: "/api/hosted/recipes",
+          method: "get",
+          handler: hostedRecipesHandler,
+        },
+        {
+          route: "/api/hosted/media/:id",
+          method: "get",
+          handler: hostedMediaHandler,
+        },
+        {
+          route: "/api/hosted/jobs",
+          method: "get",
+          handler: hostedJobsListHandler,
+        },
+        {
           route: "/api/hosted/jobs",
           method: "post",
           handler: hostedJobsCreateHandler,
+        },
+        {
+          route: "/api/hosted/composer/jobs",
+          method: "post",
+          handler: hostedComposerJobsCreateHandler,
         },
         {
           route: "/api/hosted/jobs/:id",
@@ -430,6 +490,16 @@ export default defineNuxtConfig({
           path: "/activity/:id",
           file: studioActivityDetailPage,
         });
+      }
+      if (hostedWorkflowsBuilt) {
+        pages.push(
+          { name: "hosted-intent", path: "/hosted/new/intent", file: hostedIntentPage },
+          { name: "hosted-context", path: "/hosted/new/context", file: hostedContextPage },
+          { name: "hosted-recording", path: "/hosted/new/recording", file: hostedRecordingPage },
+          { name: "hosted-run", path: "/hosted/new/run", file: hostedRunPage },
+          { name: "hosted-activity", path: "/hosted/activity", file: hostedActivityPage },
+          { name: "hosted-activity-detail", path: "/hosted/activity/:id", file: hostedActivityDetailPage },
+        );
       }
     },
   },
