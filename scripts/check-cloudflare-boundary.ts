@@ -97,6 +97,10 @@ const forbidden = [
   "FRAME_OF_MIND_HOSTED_STREAM_SPIKE_ROUTE_V1",
   "HostedWorkflowAnalysisJobExecutor",
   "/api/hosted/jobs",
+  "/api/hosted/composer/jobs",
+  "data-hosted-studio-shell",
+  "data-hosted-activity-page",
+  "data-hosted-composer",
 ];
 const requiredReviewMarkers = [
   "Primary navigation",

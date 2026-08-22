@@ -412,6 +412,39 @@ describe("D1 projection contract", () => {
       ).bind(principalA.principal, meeting.manifest.runId).first<{ analysis_json: string }>();
       expect(itemsAfter.results).toEqual(itemsBefore.results);
       expect(runAfter?.analysis_json).toBe(runBefore?.analysis_json);
+
+      const atomic = await videoRunFixture();
+      atomic.analysis.runId = "20260822T120000Z-atomic-publication";
+      atomic.manifest.runId = atomic.analysis.runId;
+      atomic.manifest.analysisSha256 = await analysisDigest(atomic.analysis);
+      const digestMismatch = structuredClone(atomic);
+      digestMismatch.manifest.analysisSha256 = "0".repeat(64);
+      await expect(store.importRun(digestMismatch)).rejects.toThrow();
+      const schemaMismatch = structuredClone(atomic) as unknown as {
+        analysis: typeof atomic.analysis;
+        manifest: Record<string, unknown>;
+      };
+      schemaMismatch.manifest.schemaVersion = 2;
+      await expect(store.importRun(schemaMismatch as never)).rejects.toThrow();
+      await database.prepare(`
+        CREATE TRIGGER reject_atomic_publication_item
+        BEFORE INSERT ON video_analysis_items
+        WHEN NEW.run_id = '${atomic.analysis.runId}'
+        BEGIN SELECT RAISE(ABORT, 'forced_atomic_publication_failure'); END
+      `).run();
+      await expect(store.importRun(atomic)).rejects.toThrow(
+        /forced_atomic_publication_failure/,
+      );
+      for (const table of [
+        "analysis_run_registry",
+        "video_analysis_runs",
+        "video_analysis_items",
+      ]) {
+        const row = await database.prepare(
+          `SELECT count(*) AS count FROM ${table} WHERE principal_sub = ? AND run_id = ?`,
+        ).bind(principalA.principal, atomic.analysis.runId).first<{ count: number }>();
+        expect(row?.count).toBe(0);
+      }
     } finally {
       await miniflare.dispose();
     }
