@@ -22,7 +22,9 @@ import {
   createOrLoadRunDraft,
   deriveRunReceiptState,
   retentionRequestForMediaSession,
+  runFieldErrorForJobCode,
   type RunDraft,
+  type RunFieldError,
   type RunReceiptState,
 } from "./run-composer";
 import { useComposerReadiness } from "./use-composer-readiness";
@@ -54,10 +56,7 @@ const receiptState = shallowRef<RunReceiptState>();
 const loadingReceipt = ref(true);
 const submitting = ref(false);
 const submitError = ref<string>();
-const fieldError = ref<{
-  section: "intent" | "context" | "recording" | "connections";
-  message: string;
-}>();
+const fieldError = ref<RunFieldError>();
 let intentLoad = loadIntentDraft({
   getItem: () => null,
   setItem: () => undefined,
@@ -145,14 +144,20 @@ onMounted(async () => {
   }
   await refreshReadiness();
   if (mediaSession.value) {
+    let retention: MediaRetentionRequest | undefined;
     try {
-      runDraft.value = createOrLoadRunDraft(
-        sessionStorage,
-        retentionRequestForMediaSession(mediaSession.value),
-      );
+      retention = retentionRequestForMediaSession(mediaSession.value);
     } catch {
       submitError.value =
-        "Run retry state could not be saved. Enable browser session storage and reload.";
+        "The recording's retained lifetime is outside Run's supported range. Restage it with a supported retention choice.";
+    }
+    if (retention) {
+      try {
+        runDraft.value = createOrLoadRunDraft(sessionStorage, retention);
+      } catch {
+        submitError.value =
+          "Run retry state could not be saved. Enable browser session storage and reload.";
+      }
     }
   }
   refreshDerivedState();
@@ -194,29 +199,6 @@ function responseCode(body: unknown): string | undefined {
   return typeof code === "string" ? code : undefined;
 }
 
-function mapJobError(code: string | undefined): {
-  section: "intent" | "context" | "recording" | "connections";
-  message: string;
-} {
-  if (code === "custom_recipe_staging_unavailable") {
-    return { section: "intent", message: "Custom recipes cannot run yet. Choose a built-in Intent." };
-  }
-  if (code === "recipe_receipt_mismatch" || code === "recipe_not_found") {
-    return { section: "intent", message: "The recipe changed or is unavailable. Review Intent." };
-  }
-  if (code?.startsWith("context_")) {
-    return { section: "context", message: "Context is unavailable or changed. Review Context." };
-  }
-  if (
-    code === "gemini_not_configured"
-    || code === "granola_api_not_configured"
-    || code?.endsWith("_oauth_not_configured")
-  ) {
-    return { section: "connections", message: "The exact analysis connection is not configured. Review Connections." };
-  }
-  return { section: "recording", message: "The staged recording is unavailable, changed, or expired. Review Recording." };
-}
-
 async function startAnalysis(): Promise<void> {
   if (submitting.value || !receiptState.value || !runDraft.value) return;
   submitError.value = undefined;
@@ -238,7 +220,7 @@ async function startAnalysis(): Promise<void> {
     });
     const body = await response.json().catch(() => undefined);
     if (!response.ok) {
-      fieldError.value = mapJobError(responseCode(body));
+      fieldError.value = runFieldErrorForJobCode(responseCode(body));
       return;
     }
     const result = body as JobCreateResult;

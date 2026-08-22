@@ -284,8 +284,8 @@ before the existing idempotent durable create API inserts anything. Successful
 creation clears the four browser resume receipts and returns Home with the job
 ID; uncertain retries reuse one persisted idempotency key. Unit, production
 HTTP, Cloudflare-artifact, and Playwright smoke coverage prove create/replay,
-sanitized rejection, active-row rendering, and context-before-upload ordering.
-Phase 6 is closed; Task 7.1 is next.
+sanitized rejection, the real Home job-ID notice, retry-hint clearing, and
+context-before-upload ordering. Phase 6 is closed; Task 7.1 is next.
 
 ### Verification
 
@@ -296,14 +296,17 @@ Phase 6 is closed; Task 7.1 is next.
     to the final Run receipt, independent of section completion order.
   - Keyboard navigation, field errors, and refresh-safe opaque drafts remain
     covered by the Studio browser and component suites.
-  - Provider context stays isolated from browser storage and sanitized HTTP
-    errors; missing or failed context never becomes video-only.
-  - The executor fetches and normalizes enriched context before Gemini upload,
-    while the creation route rejects mismatched context, recipe, media, and
-    retention receipts before insertion.
+  - Creation-time no-silent-downgrade is a browser invariant: `deriveContext`
+    blocks every non-committed Context draft, and `buildComposerPayload` emits
+    `{ mode: "none" }` only for a committed video-only draft. The authenticated
+    route intentionally accepts an explicit `{ mode: "none" }` from its caller.
+  - At execution, the `fetching_context` guard fetches and normalizes enriched
+    context before Gemini upload; context failure cannot authorize video-only.
+    The creation route still rejects mismatched recipe, media, and retention
+    receipts before insertion.
   - The authenticated browser smoke completes Intent → Recording → explicit
-    video-only Context → Run → Start, names the created job, renders its active
-    row, and clears the exact four resume keys.
+    video-only Context → Run → Start, asserts the real Home URL and job-ID
+    notice without stubbing the job list, and clears the exact four resume keys.
 
 ## Phase 7: Activity, Recovery, And Operations
 

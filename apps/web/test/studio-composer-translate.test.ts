@@ -119,6 +119,15 @@ describe("Studio composer job translation", () => {
     expect(request.input.transcriptOffsetSeconds).toBe(-90);
   });
 
+  test("rejects an invalid server check time", () => {
+    expectCode(() => translateComposerJob({
+      payload: payload(),
+      mediaSession: media(),
+      resolvedRecipe,
+      now: "not-an-iso-time",
+    }), "invalid_check_time");
+  });
+
   test("rejects every non-sealed, missing, expired, or digestless media receipt", () => {
     expectCode(() => translateComposerJob({
       payload: payload(), mediaSession: undefined, resolvedRecipe, now,
@@ -201,7 +210,7 @@ describe("Studio composer job translation", () => {
     }), "media_retention_mismatch");
   });
 
-  test("never manufactures video-only context from missing or draft input", () => {
+  test("rejects malformed context shapes", () => {
     expect(composerPayloadSchema.safeParse({
       ...payload(),
       context: undefined,

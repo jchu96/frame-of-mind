@@ -486,7 +486,7 @@ try {
       { ...composerBody, context: { mode: "enriched" } },
     ),
     422,
-    "composer refuses an uncommitted context shape instead of video-only downgrade",
+    "composer rejects malformed context shapes",
   );
   const invalidContextText = await invalidContext.text();
   if (
@@ -553,7 +553,7 @@ try {
   );
   const createdJob = await composerCreated.json() as {
     kind: string;
-    job: { id: string; input: { context: unknown } };
+    job: { id: string; input: Record<string, unknown> & { context: unknown } };
   };
   if (
     createdJob.kind !== "created"
@@ -576,6 +576,21 @@ try {
     || replayedJob.job.id !== createdJob.job.id
   ) {
     throw new Error("Composer idempotency replay returned a different job.");
+  }
+  const conflictingReplay = await expectStatus(
+    await probe.mutate("/api/studio/jobs", "POST", {
+      idempotencyKey: composerBody.idempotencyKey,
+      input: {
+        ...createdJob.job.input,
+        focus: "Changed input under an already-used key.",
+      },
+    }),
+    409,
+    "job API refuses a reused key with changed input",
+  );
+  const conflictingReplayText = await conflictingReplay.text();
+  if (!conflictingReplayText.includes("idempotency_conflict")) {
+    throw new Error("Job API idempotency conflict omitted its sanitized code.");
   }
 
   const unsealedMediaResponse = await expectStatus(

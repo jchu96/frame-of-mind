@@ -1379,7 +1379,9 @@ On **Run**:
 
 1. Resolve every **BLOCKED** item through its Intent, Context, or Recording
    link. A missing, expired, unreadable, or uncommitted Context never appears
-   as video-only.
+   as video-only in the browser composer. The authenticated local route accepts
+   an explicit `{ mode: "none" }` as caller intent; `deriveContext` and
+   `buildComposerPayload` are the creation-time guard against inventing it.
 2. Verify the sealed recording size and SHA-256 prefix, exact context identity,
    pinned recipe revision, optional focus, model, and staging retention
    deadline. The retention choice was locked when staging began; Run cannot
@@ -1389,8 +1391,11 @@ On **Run**:
    `fetching_context`, before recording upload. Context failure terminates the
    job and cannot authorize a video-only retry.
 4. Select **Start analysis** once. The browser persists only
-   `frame-of-mind:studio:run-draft` with `{ idempotencyKey, retention }`.
-   A network retry reuses that key, so it cannot insert a duplicate job.
+   `frame-of-mind:studio:run-draft` with `{ idempotencyKey }`; Run recomputes
+   retention from the live media receipt on every mount. A network retry
+   reuses that key, so it cannot insert a duplicate job. Reusing the same key
+   with different input is rejected as 409 `idempotency_conflict`; it never
+   creates or replays a different job.
 5. A 201 create or 200 replay clears all composer resume hints and returns Home
    with a success notice naming the durable job ID. A 409/422 keeps every draft
    and links the sanitized recipe, context, or media failure to its section.
