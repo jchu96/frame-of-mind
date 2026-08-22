@@ -490,7 +490,7 @@ describe("Studio boundary schemas", () => {
         contextFileId: "context_01K12345678",
         contextFileSha256: "c".repeat(64),
       },
-      recipe: { id: "issue-review" },
+      recipe: { id: "issue-review", revision: "builtin-2026-08-11.1" },
       model: "gemini-3.6-flash",
       transcriptOffsetSeconds: -3_723,
       retention: { mode: "ephemeral" },

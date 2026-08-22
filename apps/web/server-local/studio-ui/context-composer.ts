@@ -15,7 +15,7 @@ export const CONTEXT_DRAFT_STORAGE_KEY =
 
 type BrowserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const contextDraftSchema = z.object({
+const legacyContextDraftSchema = z.object({
   schemaVersion: z.literal(1),
   mediaSessionId: opaqueIdSchema,
   context: providerContextSchema,
@@ -23,7 +23,27 @@ const contextDraftSchema = z.object({
   committed: z.boolean(),
 }).strict();
 
+const enrichedContextDraftSchema = z.object({
+  schemaVersion: z.literal(2),
+  mode: z.literal("enriched"),
+  context: providerContextSchema,
+  transcriptOffsetSeconds: transcriptOffsetSecondsSchema.optional(),
+  committed: z.boolean(),
+}).strict();
+
+const videoOnlyContextDraftSchema = z.object({
+  schemaVersion: z.literal(2),
+  mode: z.literal("video-only"),
+  committed: z.literal(true),
+}).strict();
+
+const contextDraftSchema = z.discriminatedUnion("mode", [
+  enrichedContextDraftSchema,
+  videoOnlyContextDraftSchema,
+]);
+
 export type ContextDraft = z.infer<typeof contextDraftSchema>;
+export type EnrichedContextDraft = z.infer<typeof enrichedContextDraftSchema>;
 export type ContextFileReceipt = z.infer<typeof contextFileReceiptSchema>;
 
 const descriptorByExtension: Record<string, {
@@ -181,12 +201,32 @@ export function loadContextDraft(
   try {
     const raw = storage.getItem(CONTEXT_DRAFT_STORAGE_KEY);
     if (!raw) return { storageAvailable: true };
-    const parsed = contextDraftSchema.safeParse(JSON.parse(raw));
-    if (!parsed.success) {
+    const json = JSON.parse(raw);
+    const parsed = contextDraftSchema.safeParse(json);
+    if (parsed.success) {
+      return { draft: parsed.data, storageAvailable: true };
+    }
+    const legacy = legacyContextDraftSchema.safeParse(json);
+    if (!legacy.success) {
       storage.removeItem(CONTEXT_DRAFT_STORAGE_KEY);
       return { storageAvailable: true };
     }
-    return { draft: parsed.data, storageAvailable: true };
+    const migrated: EnrichedContextDraft = {
+      schemaVersion: 2,
+      mode: "enriched",
+      context: legacy.data.context,
+      ...(legacy.data.transcriptOffsetSeconds === undefined
+        ? {}
+        : { transcriptOffsetSeconds: legacy.data.transcriptOffsetSeconds }),
+      committed: legacy.data.committed,
+    };
+    try {
+      storage.setItem(CONTEXT_DRAFT_STORAGE_KEY, JSON.stringify(migrated));
+    } catch {
+      // The readable legacy draft is still authoritative for this page load.
+      // A later explicit save can report that browser storage is unavailable.
+    }
+    return { draft: migrated, storageAvailable: true };
   } catch {
     return { storageAvailable: false };
   }

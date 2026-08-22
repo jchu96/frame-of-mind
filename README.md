@@ -362,7 +362,8 @@ browser cannot open, opt into terminal output for that launch with
 What works today:
 
 - **Home** — durable job queue, five recent runs, sanitized provider health,
-  one primary New analysis action.
+  one primary New analysis action, and shared Intent/Context/Recording
+  readiness that routes to the first incomplete required section.
 - **Connections** — credential presence/source/lifetime only; keys pasted
   into Studio live in process memory, are never stored in SQLite, and are
   never returned to the browser.
@@ -370,15 +371,22 @@ What works today:
   zone. Selection alone uploads nothing; after explicit retention consent,
   Studio streams parts to private local storage with pause, retry, verified
   resume, and a server-owned expiry on every staged copy.
+- **Intent** — canonical built-in recipe cards, optional bounded focus, strict
+  instruction-only custom-recipe JSON, and the current default Gemini model
+  under advanced controls. The refresh-safe draft stores only recipe, focus,
+  and model; built-ins pin their catalog revision. Custom recipes can be saved
+  as drafts but cannot run until the staging contract ships.
 - **Context** — exactly one source (Bluedot MCP, Granola MCP, Granola API,
   or a local file up to 8 MiB in five text formats), stored as an opaque
-  content-bound receipt that expires after one hour, never a filename or body.
+  content-bound receipt that expires after one hour, never a filename or body;
+  recording-only analysis is a separate explicit choice. Context drafts no
+  longer own or store a media receipt.
 - **Jobs** — a local-only SQLite job/event repository and single-concurrency
   Bun worker share the CLI's typed orchestrator; immutable model and recipe
   receipts bind each job, and staged paths never enter SQLite or an HTTP
   response.
 
-The Intent and Run-receipt composer steps arrive in later phases, so
+The Run-receipt composer step arrives in the next phase, so
 `frameofmind analyze` remains the supported end-user execution path today.
 Details: [docs/WEB_WORKSPACE.md](docs/WEB_WORKSPACE.md),
 [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md), and

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { DEFAULT_GEMINI_MODEL } from "../../../src/adapters/gemini-model";
 import { runFixture, videoRunFixture } from "../test/fixtures";
 import { collectClientErrors } from "./support/client-errors";
 
@@ -39,11 +40,11 @@ test("shows local work, connection health, and one clear start action", {
   expect(recentSummary).not.toBeNull();
   expect(Math.abs(activeSummary!.y - recentSummary!.y)).toBeLessThanOrEqual(2);
 
-  const newAnalysis = page.getByRole("link", { name: "New analysis" });
+  const newAnalysis = page.getByRole("link", { name: "Define intent" });
   await expect(newAnalysis).toHaveCount(1);
   await newAnalysis.click();
   await expect(
-    page.getByRole("heading", { name: "Put one recording in the frame." }),
+    page.getByRole("heading", { name: "Choose what this analysis should find." }),
   ).toBeVisible();
   expect(clientErrors).toEqual([]);
 });
@@ -168,6 +169,118 @@ test("accepts an actual drop and keyboard file selection", {
   ).toBeVisible();
   await page.getByRole("button", { name: "Delete staged copy" }).click();
   await expect(page.getByText("Staged recording deleted.")).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});
+
+test("selects Intent by keyboard and reports strict field errors", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+  await page.goto("/intent");
+  await expect(
+    page.getByRole("heading", { name: "Choose what this analysis should find." }),
+  ).toBeVisible();
+
+  const requirements = page.getByRole("radio", { name: /Requirements/ });
+  await expect(requirements).toBeVisible();
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.locator("#intent-recipe-error")).toBeVisible();
+  await expect(page.locator("#intent-recipe-error"))
+    .toContainText("Choose one built-in recipe or validate a custom recipe.");
+
+  await requirements.focus();
+  await page.keyboard.press("Space");
+  await expect(requirements).toBeChecked();
+
+  await page.getByLabel("Optional focus").fill("x".repeat(10_001));
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.getByText("Focus must be 10,000 characters or fewer."))
+    .toBeVisible();
+
+  await page.getByLabel("Optional focus").fill("Prioritize acceptance criteria.");
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.getByText("Intent step saved")).toBeVisible();
+  const builtInDraft = await page.evaluate(() => JSON.parse(
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft") || "null",
+  ));
+  expect(builtInDraft.recipe).toEqual({
+    id: "requirements",
+    revision: expect.any(String),
+  });
+
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Choose what this analysis should find." }),
+  ).toBeVisible();
+  await expect(page.getByRole("radio", { name: /Requirements/ })).toBeChecked();
+  const restoredDraft = await page.evaluate(() => JSON.parse(
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft") || "null",
+  ));
+  expect(restoredDraft).toEqual(builtInDraft);
+  expect(restoredDraft.recipe).toEqual({
+    id: "requirements",
+    revision: expect.any(String),
+  });
+
+  await page.getByRole("button", { name: "Start over" }).click();
+  expect(await page.evaluate(() =>
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft")
+  )).toBeNull();
+  await expect(page.getByRole("radio", { name: /Requirements/ })).not.toBeChecked();
+
+  await page.getByRole("button", { name: "Use a custom recipe" }).click();
+  await expect(page.getByText("Custom recipes cannot run yet")).toBeVisible();
+  await expect(page.getByText(/custom_recipe_staging_unavailable/)).toBeVisible();
+  await page.getByLabel("Custom recipe JSON").fill(JSON.stringify({
+    id: "synthetic-review",
+    label: "Synthetic review",
+    description: "Public-safe browser fixture.",
+    indexInstruction: "Find synthetic evidence.",
+    interrogationInstruction: "Verify synthetic evidence.",
+    unexpected: true,
+  }));
+  await page.getByRole("button", { name: "Validate custom recipe" }).click();
+  await expect(page.locator("#intent-custom-error"))
+    .toContainText(/invalid input|unrecognized key/i);
+  expect(await page.evaluate(() =>
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft")
+  )).toBeNull();
+  expect(clientErrors).toEqual([]);
+});
+
+test("keeps custom Intent saveable when the recipe catalog fails", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page, {
+    ignoreConsoleError: (message) =>
+      message === "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+  });
+  await page.route("**/api/studio/recipes", async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ statusCode: 500 }),
+    });
+  });
+  await page.goto("/intent");
+  await expect(page.getByText("Studio could not load recipes — see logs."))
+    .toBeVisible();
+
+  await page.getByRole("button", { name: "Use a custom recipe" }).click();
+  await page.getByLabel("Custom recipe JSON").fill(JSON.stringify({
+    id: "catalog-independent-review",
+    label: "Catalog-independent review",
+    description: "A synthetic custom recipe for fallback coverage.",
+    indexInstruction: "Find synthetic evidence.",
+    interrogationInstruction: "Verify synthetic evidence.",
+  }));
+  await page.getByRole("button", { name: "Validate custom recipe" }).click();
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.getByText("Intent step saved")).toBeVisible();
+  const draft = await page.evaluate(() => JSON.parse(
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft") || "null",
+  ));
+  expect(draft.model).toBe(DEFAULT_GEMINI_MODEL);
   expect(clientErrors).toEqual([]);
 });
 
