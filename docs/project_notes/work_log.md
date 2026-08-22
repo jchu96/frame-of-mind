@@ -614,3 +614,15 @@
   abort still aborted the sink at 131,072 bytes with no receipt. Private R2 is
   the second fallback. No ADR, deployment, or production Wrangler
   configuration was changed. Validated by `bun run check:hosted-stream`.
+- Completed Hosted Studio Tasks 5.3 and 5.4 on 2026-08-22. A versioned spend
+  plan reserves trusted duration × the documented conservative 300 video
+  tokens/second across an enforced maximum call graph plus headroom; D1 gates
+  initial and linked attempts atomically and settles provider usage on every
+  terminal path, falling back to the full reservation when usage is
+  incomplete. The internal Workflows Worker now owns an optional ADR-0017
+  codes-only telemetry envelope port for Access, upload-interface, Workflow,
+  spend, publication, and cleanup outcomes; the normal review build resolves
+  it to a no-op. Targeted tests, the normal Cloudflare boundary build, and the
+  two-Worker HTTP contract passed; Tasks 5.1/5.2 remain Phase-2-dependent and
+  the complete `bun run check` gate passed; Tasks 5.1/5.2 remain
+  Phase-2-dependent and no deployment occurred.

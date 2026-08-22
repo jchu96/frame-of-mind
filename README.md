@@ -465,6 +465,15 @@ enabled. Verify both Workers and their fake-provider contract with
 `bun run test:hosted-workflows-http`; the earlier topology proof remains in the
 [spike receipt](docs/spikes/hosted-workflows-spike-2026-08-22.md).
 
+The same dark path now reserves a versioned conservative token estimate before
+each initial or linked attempt and reconciles it from Gemini usage receipts on
+terminal cleanup. Per-principal caps, video rate, prompt/output headroom, and
+maximum interrogation calls are operator configuration, not browser input.
+Hosted telemetry remains off unless `SENTRY_DSN` is configured on the internal
+Workflows Worker; when enabled, Access/upload-interface/Workflow/spend/
+publication/cleanup events use the ADR-0017 codes-only allowlist. The normal
+review Worker still contains neither hosted execution nor Sentry transport.
+
 > [!CAUTION]
 > Do not deploy from that command alone. Follow the database, custom-domain,
 > Access-policy, audience, migration, verification, and rollback procedure in

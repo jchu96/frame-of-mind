@@ -2,7 +2,7 @@
 
 **Track ID:** `hosted-studio_20260822`
 **Spec:** [spec.md](./spec.md)
-**Status:** Active — Phase 1 complete; Phase 2 GO at 4 MiB parts pending ADR amendment
+**Status:** Active — Phase 1 and Phase 3 complete; Phase 5 spend/telemetry complete; Phase 4 in review
 
 ## Overview
 
@@ -325,6 +325,8 @@ transcripts, and signed URLs.
 
 - [ ] Task 5.1: Implement explicit `ephemeral` and `retained` media policies;
       use private R2 only for retained bytes and configure lifecycle expiry.
+      This follows Phase 2 because retained bytes and lifecycle enforcement
+      require the upload/storage implementation; it is not part of Phase 5a.
       Trust-boundary review trigger: recording bytes may persist beyond the
       provider operation for the first time.
 - [ ] Task 5.2: Implement client-canvas evidence captures with manifest source
@@ -333,29 +335,57 @@ transcripts, and signed URLs.
       playback/screenshots after tab close until retained media or exact-digest
       reattachment is available. Trust-boundary review trigger: derived image
       evidence leaves the playback surface and enters the durable contract.
-- [ ] Task 5.3: Enforce per-principal estimated-token ceilings through atomic D1
+      This follows Phase 2 because playback and evidence capture require an
+      implemented upload/media source; it is not part of Phase 5a.
+- [x] Task 5.3: Enforce per-principal estimated-token ceilings through atomic D1
       reservation/reconciliation. Estimate each video-bearing call at recording
       duration × the documented conservative 300 tokens/second plus versioned
       prompt/output headroom; fail closed when duration, call graph, rate, or
       cap state is unknown.
       Trust-boundary review trigger: shared Worker credentials incur spend for
       user-initiated work.
-- [ ] Task 5.4: Emit ADR-0017 codes-only telemetry for Access, upload, Workflow,
+- [x] Task 5.4: Emit ADR-0017 codes-only telemetry for Access, upload, Workflow,
       spend, publication, and cleanup outcomes without user or media content.
       Trust-boundary review trigger: hosted failure metadata may leave the
       Worker for an external telemetry processor.
 
+**Task 5.3 status (2026-08-22).** Complete. The creation route derives a
+`hosted-video-v1` reservation from trusted duration, the documented 300
+tokens/second default-video rate, a configured maximum call graph, and
+versioned prompt/output headroom. D1 initializes a principal from the global
+configured cap only when no row exists, atomically gates each initial or linked
+attempt, records provider `usageMetadata`, and settles every terminal path to
+actual usage or the full reservation when usage is incomplete. Twenty
+concurrent unique creates against a three-reservation cap produced exactly
+three reservations; the built two-Worker contract returns sanitized 429 and
+creates no attempt or Workflow receipt after exhaustion.
+
+**Task 5.4 status (2026-08-22).** Complete. One strict telemetry port covers
+Access, the Phase-2 upload interface, Workflow, spend, publication, and cleanup
+outcomes. The internal Workflows Worker owns the optional Sentry envelope
+transport and is inert without its own `SENTRY_DSN`; the Nuxt Worker forwards
+only schema-validated code/structure events over the internal service binding.
+The normal review build resolves that port to a no-op and retains the existing
+Sentry/hosted-marker exclusion gate. Success, failure, timeout, and cancel
+tests prove allowlist-only envelopes and reject user/media/message fields.
+
 ### Verification
 
-- [ ] Lifecycle, explicit-delete, orphan-reconciliation, spend-race, screenshot
-      provenance, telemetry scrubber, and no-content logging tests pass on
-      success, failure, timeout, and cancellation paths.
+- [ ] Lifecycle, explicit-delete, orphan-reconciliation, and screenshot
+      provenance tests pass after Tasks 5.1/5.2.
+- [x] Spend-race, provider-usage reconciliation, cap-exhaustion/no-Workflow,
+      telemetry scrubber, and no-content success/failure/timeout/cancellation
+      tests pass.
 
 ### Stop/Go Gate
 
 Stop unless ephemeral bytes are absent after cleanup, retained bytes are
 private and expiring, concurrent spend cannot exceed cap, and telemetry
 contains codes and structural fields only.
+
+**Phase 5a gate status (2026-08-22):** spend and telemetry conditions pass;
+the full Phase 5 gate remains closed until Phase-2-dependent Tasks 5.1/5.2
+prove retention, expiry, playback, and screenshot provenance.
 
 ## Phase 6: Tier A Deployment And Team Gate
 
