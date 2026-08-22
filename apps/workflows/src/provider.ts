@@ -16,6 +16,10 @@ import type {
   HostedAnalysisAttempt,
   SealedHostedMediaReceipt,
 } from "./contracts.js";
+import {
+  hostedProviderUsageSchema,
+  type HostedProviderUsage,
+} from "./spend.js";
 
 export interface HostedResolvedFile {
   name: string;
@@ -30,6 +34,7 @@ export interface HostedTranscriptResult {
 }
 
 export interface HostedAnalysisProvider {
+  takeUsage(): HostedProviderUsage | undefined;
   fetchContext(attempt: HostedAnalysisAttempt): Promise<MeetingEvidence | undefined>;
   ensureGeminiFile(
     receipt: SealedHostedMediaReceipt,
@@ -68,6 +73,7 @@ export type HostedContextSourceFactory = (
 ) => MeetingContextSource;
 
 export interface HostedGeminiAnalyzer {
+  takeUsage?(): HostedProviderUsage | undefined;
   resolveRetainedFile?(
     name: string,
     expectedSha256: string,
@@ -103,6 +109,7 @@ export interface HostedGeminiAnalyzer {
 export interface HostedProviderEnv {
   GEMINI_API_KEY?: string;
   HOSTED_FAKE_GEMINI?: string;
+  HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID?: string;
 }
 
 export function createHostedAnalysisProvider(
@@ -110,7 +117,10 @@ export function createHostedAnalysisProvider(
   options: { contextSource?: HostedContextSourceFactory } = {},
 ): HostedAnalysisProvider {
   if (env.HOSTED_FAKE_GEMINI === "true") {
-    return new FakeHostedAnalysisProvider(options.contextSource);
+    return new FakeHostedAnalysisProvider(
+      options.contextSource,
+      env.HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID,
+    );
   }
   const apiKey = env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new Error("gemini_secret_unavailable");
@@ -149,6 +159,11 @@ export class GeminiHostedAnalysisProvider implements HostedAnalysisProvider {
     private readonly analyzer: HostedGeminiAnalyzer,
     private readonly contextSource?: HostedContextSourceFactory,
   ) {}
+
+  takeUsage(): HostedProviderUsage | undefined {
+    const parsed = hostedProviderUsageSchema.safeParse(this.analyzer.takeUsage?.());
+    return parsed.success ? parsed.data : undefined;
+  }
 
   async fetchContext(
     attempt: HostedAnalysisAttempt,
@@ -253,7 +268,18 @@ export class GeminiHostedAnalysisProvider implements HostedAnalysisProvider {
 }
 
 class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
-  constructor(private readonly contextSource?: HostedContextSourceFactory) {}
+  private pendingUsage: HostedProviderUsage | undefined;
+
+  constructor(
+    private readonly contextSource?: HostedContextSourceFactory,
+    private readonly overrunMediaId?: string,
+  ) {}
+
+  takeUsage(): HostedProviderUsage | undefined {
+    const usage = this.pendingUsage;
+    this.pendingUsage = undefined;
+    return usage;
+  }
 
   async fetchContext(
     attempt: HostedAnalysisAttempt,
@@ -281,7 +307,8 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
     };
   }
 
-  async transcribe(): Promise<DerivedTranscriptionSegment[]> {
+  async transcribe(file: HostedResolvedFile): Promise<DerivedTranscriptionSegment[]> {
+    this.pendingUsage = this.usage(file, 80, 20);
     return [{
       start: "00:00:00",
       end: "00:00:04",
@@ -290,7 +317,10 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
     }];
   }
 
-  async index(): Promise<{ matchNotes: string; moments: IndexedMoment[] }> {
+  async index(input: {
+    file: HostedResolvedFile;
+  }): Promise<{ matchNotes: string; moments: IndexedMoment[] }> {
+    this.pendingUsage = this.usage(input.file, 160, 40);
     return {
       matchNotes: "Synthetic hosted Workflow fixture matched the selected recording.",
       moments: [{
@@ -304,8 +334,10 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   }
 
   async interrogate(input: {
+    file: HostedResolvedFile;
     candidate: IndexedMoment;
   }): Promise<AnalysisDetail> {
+    this.pendingUsage = this.usage(input.file, 240, 60);
     return {
       accepted: true,
       kind: input.candidate.kind,
@@ -317,6 +349,22 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   }
 
   async cleanup(): Promise<void> {}
+
+  private usage(
+    file: HostedResolvedFile,
+    promptTokens: number,
+    outputTokens: number,
+  ): HostedProviderUsage {
+    const multiplier = this.overrunMediaId
+      && file.name.includes(this.overrunMediaId)
+      ? 100
+      : 1;
+    return {
+      promptTokens: promptTokens * multiplier,
+      outputTokens: outputTokens * multiplier,
+      totalTokens: (promptTokens + outputTokens) * multiplier,
+    };
+  }
 }
 
 function resolvedFile(

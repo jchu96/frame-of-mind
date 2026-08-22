@@ -351,6 +351,11 @@
 
 ## Gemini response and video-understanding gotchas
 
+- Hosted spend settlement must not release a reservation merely because an
+  attempt failed or was canceled. When any billable provider claim lacks a
+  matching usage receipt, commit the full conservative reservation; only a
+  complete usage set may reduce committed units to provider-reported actuals.
+
 - Provider `responseJsonSchema` is a conformance aid, not the trust boundary.
   Parse as unknown and keep the originating strict Zod schema authoritative.
 - Invalid JSON must enter the same bounded repair path as schema-invalid JSON;

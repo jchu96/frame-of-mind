@@ -740,6 +740,18 @@ exclude all hosted creation routes unless the build/runtime flags are both
 enabled. See the [Task 3.0 spike](spikes/hosted-workflows-spike-2026-08-22.md) and
 [ADR 0018](adr/0018-hosted-studio-trust-boundary.md).
 
+Phase 5a adds two ports without changing the local `AnalysisJobExecutor`.
+Creation derives a versioned estimated-token plan from sealed media duration,
+a configured maximum video-call graph, Google's documented conservative 300
+tokens/second default-resolution rate, and prompt/output headroom. D1 reserves
+that estimate atomically for initial and linked attempts, then terminal cleanup
+settles provider usage or conservatively commits the reservation when usage is
+incomplete. A separate strict telemetry port accepts codes and structural
+fields only. The Nuxt caller forwards Access and spend outcomes internally;
+the Workflows sibling owns optional Sentry delivery, publication/cleanup
+outcomes, and stays inert without its own `SENTRY_DSN`. Upload exposes only the
+telemetry interface until Phase 2 implements media transfer.
+
 Phase 4 places the hosted composer and activity pages behind those same two
 gates. Browser drafts reuse the pure Studio intent, context, readiness, run,
 activity-state, progress, and action modules through a hosted adapter; the

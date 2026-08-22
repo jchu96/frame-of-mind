@@ -7,12 +7,18 @@ import { builtInRecipe, digestRecipe } from "../../../../src/recipes/index.js";
 import { assertTrustedJsonMutation } from "../../server/utils/request-security.js";
 import { translateComposerJob } from "../../app/studio/composer-translate.js";
 import { hostedJobCreateRequestSchema } from "../../../workflows/src/contracts.js";
+import { getHostedRouteTelemetry } from "../telemetry.js";
 import { createHostedJob } from "./create-service.js";
 import { getHostedWorkflowExecutor } from "./executor.js";
-import { readHostedJobJson, throwHostedJobHttpError } from "./http.js";
+import {
+  hostedJobErrorCode,
+  readHostedJobJson,
+  throwHostedJobHttpError,
+} from "./http.js";
 
 export default defineEventHandler(async (event) => {
   assertTrustedJsonMutation(event);
+  const telemetry = getHostedRouteTelemetry(event);
   try {
     const runtime = getHostedWorkflowExecutor(event);
     const payload = composerPayloadSchema.parse(await readHostedJobJson(event));
@@ -52,6 +58,14 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, result.status);
     return result.body;
   } catch (error) {
+    await telemetry.emit({
+      area: "spend",
+      outcome: "failed",
+      code: hostedJobErrorCode(error),
+      stage: "queued",
+      routeClass: "hosted_composer_create",
+      studioMode: "hosted",
+    });
     throwHostedJobHttpError(error);
   }
 });

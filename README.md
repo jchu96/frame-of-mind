@@ -477,6 +477,21 @@ focused browser contract with `bun run test:hosted-workflows-http`; the earlier
 topology proof remains in the
 [spike receipt](docs/spikes/hosted-workflows-spike-2026-08-22.md).
 
+The same dark path now reserves a versioned conservative token estimate before
+each initial or linked attempt and reconciles it from Gemini usage receipts on
+terminal cleanup. The v2 plan includes the maximum schema-repair generation
+and every configured transport retry for each video-bearing step. Actual usage
+above the reservation fails closed as indeterminate and can never increase
+committed spend beyond the reserved ceiling. Zero-claim cancellations and
+failures release their reservations; a hosted-only, principal-scoped janitor
+idempotently settles terminal or expired reservations. Per-principal caps,
+video rate, prompt/output headroom, and maximum interrogation calls are
+operator configuration, not browser input.
+Hosted telemetry remains off unless `SENTRY_DSN` is configured on the internal
+Workflows Worker; when enabled, Access/upload-interface/Workflow/spend/
+publication/cleanup events use the ADR-0017 codes-only allowlist. The normal
+review Worker still contains neither hosted execution nor Sentry transport.
+
 > [!CAUTION]
 > Do not deploy from that command alone. Follow the database, custom-domain,
 > Access-policy, audience, migration, verification, and rollback procedure in

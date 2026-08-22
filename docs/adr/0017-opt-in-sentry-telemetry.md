@@ -72,9 +72,14 @@ presets: the legacy `cloudflare-worker` preset and the deployed
 review-only Worker trust boundary and the legacy preset also produces an IIFE
 code-splitting build error with this repository's current Nuxt/Nitro versions.
 The Cloudflare artifact gate proves the SDK configs, DSN marker, and telemetry
-implementation are absent. Hosted client/server telemetry is deferred until a
-Workers-compatible Nuxt SDK path passes that gate; local/node Studio and CLI
-telemetry are the shipped surfaces.
+implementation are absent. Hosted execution instead uses a narrower internal
+port: the public Nuxt Worker can forward only schema-validated code/structure
+events to the internal Workflows Worker, whose allowlist-constructed Sentry
+envelope transport is active only when `SENTRY_DSN` is set on that sibling
+Worker. The normal review artifact resolves the hosted port to a no-op and
+retains the existing bundle exclusion gate. Upload telemetry is an interface
+only until Phase 2 implements upload; no recording or provider capability
+crosses it.
 
 ## Disable telemetry
 

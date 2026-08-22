@@ -614,6 +614,17 @@
   abort still aborted the sink at 131,072 bytes with no receipt. Private R2 is
   the second fallback. No ADR, deployment, or production Wrangler
   configuration was changed. Validated by `bun run check:hosted-stream`.
+- Completed Hosted Studio Tasks 5.3 and 5.4 on 2026-08-22. A versioned spend
+  plan reserves trusted duration × the documented conservative 300 video
+  tokens/second across an enforced maximum call graph plus headroom; D1 gates
+  initial and linked attempts atomically and settles provider usage on every
+  terminal path, falling back to the full reservation when usage is
+  incomplete. The internal Workflows Worker now owns an optional ADR-0017
+  codes-only telemetry envelope port for Access, upload-interface, Workflow,
+  spend, publication, and cleanup outcomes; the normal review build resolves
+  it to a no-op. Targeted tests, the normal Cloudflare boundary build, the
+  two-Worker HTTP contract, and the complete `bun run check` gate passed;
+  Tasks 5.1/5.2 remain Phase-2-dependent and no deployment occurred.
 - Completed Hosted Studio Tasks 4.1–4.4 on 2026-08-22. The gated hosted shell
   reuses the local Studio composer/activity derivations through shared pure
   modules and a hosted data adapter; Recording consumes only an existing
@@ -631,3 +642,24 @@
   Bun web suite: 272 tests; local Studio, hosted Access, hosted Studio/Workflow,
   builds, boundary, and 32 MiB streaming contracts passed) and
   `bun run test:e2e:smoke` (13 passed).
+- Integrated the merged Phase 4 composer/activity/publication slice into the
+  Phase 5a spend/telemetry branch on 2026-08-22. Raw and composer creates now
+  share one trusted-duration spend-plan and atomic-reservation service; linked
+  retries retain their immutable plan. The two-Worker contract preserves the
+  Phase 4 browser, cancellation, foreign-media 404, cleanup-before-publication,
+  and viewer checks while proving both create surfaces return sanitized 429
+  with no attempt or Workflow receipt after cap exhaustion. `bun run check`
+  passed all hosted Access, Studio, Workflow, spend, and telemetry contracts;
+  `bun run test:e2e:smoke` passed 13 tests. No deployment or production
+  Wrangler change occurred.
+- Closed PR #66 review findings SF1–SF3 on 2026-08-22. Spend plan
+  `hosted-video-v2` shares Gemini's maximum repair and transport-attempt policy,
+  blocks publication when actual usage exceeds reserved usage, marks the
+  attempt indeterminate, and caps committed units at the reservation. Failed
+  or canceled zero-claim attempts release reservations; the hosted-only,
+  principal-scoped janitor idempotently releases expired zero-claim rows while
+  retaining the full-reservation fallback for incomplete usage. The built
+  Nuxt + Workflow workerd contract concurrently submitted ten unique creates
+  against a three-reservation principal and observed three 201 responses and
+  seven sanitized 429 responses with only three Workflow-backed attempts. No
+  deployment or production Wrangler change occurred.
