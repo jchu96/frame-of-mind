@@ -486,6 +486,7 @@ describe("local media staging adapter", () => {
     const reattached = await create(staging, {
       idempotencyKey: "media-reattach-0001",
       mimeType: "video/webm",
+      retention: { mode: "retained", ttlSeconds: 3_600 },
     });
     await writeFixture(staging, reattached.id, fixture);
     await expectMediaError(staging.seal(reattached.id, {
@@ -496,6 +497,31 @@ describe("local media staging adapter", () => {
     })).resolves.toMatchObject({
       sha256: digest(fixture),
     });
+    await staging.transition(validateMediaSessionTransition({
+      id: reattached.id,
+      expected: "sealed",
+      next: "in_use",
+    }));
+    await staging.transition(validateMediaSessionTransition({
+      id: reattached.id,
+      expected: "in_use",
+      next: "retained",
+    }));
+    await staging.bindRetainedReviewRun(
+      reattached.id,
+      "20260727T080000Z-review-binding",
+      digest(fixture),
+    );
+
+    const restarted = adapter();
+    expect(await restarted.retainedReviewBinding(
+      "20260727T080000Z-review-binding",
+      digest(fixture),
+    )).toMatchObject({ id: reattached.id, status: "retained" });
+    expect(await restarted.retainedReviewBinding(
+      "20260727T080000Z-other-run",
+      digest(fixture),
+    )).toBeUndefined();
   });
 
   test("resolves retained expiry on the server and expires retained media", async () => {

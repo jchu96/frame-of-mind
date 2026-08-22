@@ -233,6 +233,14 @@ export async function verifyRecordingForResume(
 interface JsonErrorBody {
   statusMessage?: unknown;
   message?: unknown;
+  data?: { code?: unknown };
+}
+
+function safeErrorCode(body: JsonErrorBody | undefined, status: number): string {
+  const candidate = body?.data?.code;
+  return typeof candidate === "string" && /^[a-z0-9_]{1,80}$/.test(candidate)
+    ? candidate
+    : `http_${status}`;
 }
 
 function safeErrorMessage(
@@ -260,7 +268,7 @@ async function responseJson(response: Response): Promise<unknown> {
     body = undefined;
   }
   throw new MediaUploadClientError(
-    `http_${response.status}`,
+    safeErrorCode(body, response.status),
     safeErrorMessage(body, "The local Studio could not complete that request."),
     response.status,
   );
@@ -280,7 +288,11 @@ export interface MediaStagingTransport {
     mimeType: SupportedMediaMimeType,
     signal?: AbortSignal,
   ): Promise<MediaPartWriteResult>;
-  complete(id: string, signal?: AbortSignal): Promise<MediaSession>;
+  complete(
+    id: string,
+    signal?: AbortSignal,
+    expectedSha256?: string,
+  ): Promise<MediaSession>;
   abort(id: string, signal?: AbortSignal): Promise<MediaSession>;
 }
 
@@ -330,13 +342,13 @@ export function createMediaStagingTransport(
         session: mediaSessionSchema.parse(value.session),
       };
     },
-    async complete(id, signal) {
+    async complete(id, signal, expectedSha256) {
       await jsonRequest(
         `/api/studio/media/${encodeURIComponent(id)}/complete`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: "{}",
+          body: JSON.stringify({ expectedSha256 }),
           signal,
         },
       );

@@ -1708,6 +1708,22 @@ Browser procedure:
    choose the correct file or explicitly delete the old upload and restart.
 8. Use **Delete staged copy** when the recording is no longer needed.
 
+Review procedure after retained media expires or is deleted:
+
+1. Open the completed run's **Review findings** workspace.
+2. Select **Reattach original recording** and choose the operator-owned source
+   file. The browser keeps the `File` only in component memory.
+3. Wait for bounded-part staging and the server's streamed SHA-256 check. Do
+   not close the tab while verification is active.
+4. If Studio reports a digest mismatch, confirm that the staged copy was
+   deleted and choose the exact recording used by the run. Never override the
+   manifest digest.
+5. After playback appears, select a finding or marker to seek its evidence
+   time. Use J/K or listbox arrow keys to move between findings.
+6. **Copy Markdown** and **Download run bundle** are local-only exports. The
+   JSON download contains `analysis` and `manifest`, never recording bytes;
+   neither action publishes to GitHub, Asana, or another service.
+
 The browser stores only the opaque resumable media ID in per-tab session
 storage. It does not store the recording name, path, bytes, or `File` object.
 Closing the tab loses the browser receipt, but the private server session
@@ -1742,6 +1758,7 @@ next plan; repeated failures require operator intervention.
 | terminal `failed`                       | receipt/file corruption or irrecoverable inconsistency    | preserve sanitized diagnostics and create a new session             |
 | `Reselect the same recording`           | browser refreshed and intentionally forgot the `File`     | choose the original file; Studio verifies the complete file binding |
 | `The selected recording does not match` | size, MIME, or complete-file fingerprint differs          | choose the original file or explicitly delete and restart           |
+| `digest_mismatch`                        | reattached bytes do not match the run manifest             | confirm cleanup, then choose the exact original recording            |
 
 ### Local Studio context-file staging
 

@@ -413,12 +413,19 @@ What works today:
   and copyable v1 support receipt share one privacy-safe closed allowlist.
 - **Review** — successful runs open a responsive findings/video/detail
   workspace with keyboard-operable accepted/rejected filters and candidate
-  markers. When a server-owned retained recording is still live, the browser
-  plays it through a session-protected opaque-run-ID route with bounded
-  single-range responses; paths never enter the URL or response. Ephemeral,
-  expired, cleaned, and unknown media render an honest no-recording state with
-  reattachment visibly deferred to Task 8.4. Analysis and transcript-derived
-  text is rendered literally, never as HTML.
+  markers. Selecting a finding seeks its canonical evidence timestamp; J/K and
+  arrow-key shortcuts move between findings, and meeting-backed excerpts show
+  the signed transcript alignment separately from video time. When a
+  server-owned retained recording is still live, the browser plays it through
+  a session-protected opaque-run-ID route with bounded single-range responses;
+  paths never enter the URL or response. Ephemeral, expired, or cleaned media
+  can be reattached from the operator's original file only after the server
+  streams its SHA-256 and matches the run manifest. A mismatch returns a
+  sanitized code and deletes the private staged copy. Copy Markdown and
+  download-bundle actions are built from explicit analysis/manifest
+  allowlists, include no media, and never publish to GitHub, Asana, or another
+  external service. Analysis and transcript-derived text is rendered
+  literally, never as HTML.
 - **Maintenance** — one local-only planner runs at startup and on a configurable
   interval, removes expired or abandoned Studio staging, and marks inactive
   jobs interrupted only after the stale horizon passes without a worker

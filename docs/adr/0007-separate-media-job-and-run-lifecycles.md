@@ -66,7 +66,9 @@ any nonterminal state -> failed
   part digests. Resume re-hashes the complete reselected file in bounded parts,
   so matching size, MIME, or a confirmed prefix cannot splice two recordings.
 - An expired/deleted recording can be reattached. The Studio accepts it only
-  when its streamed SHA-256 matches the run manifest.
+  when its streamed SHA-256 matches the run manifest. The validated projection
+  supplies that expected digest, and the private media receipt records the run
+  binding so imported bundles do not require a synthetic operational job.
 - Recording bytes never enter SQLite, D1, the run bundle, logs, or analytics.
 - The private media-session JSON receipt remains the sole authority for staged
   media ownership, retention, and cleanup. Jobs carry only opaque media IDs and

@@ -393,29 +393,30 @@ coverage validate the slice. Phase 8 is next.
       with traversal, expiry, content-type, and hostile-request tests.
 - [x] Task 8.2: Build the responsive finding/video/detail workspace with
       accepted/rejected filters and candidate markers.
-- [ ] Task 8.3: Seek the player from canonical evidence timestamps and display
+- [x] Task 8.3: Seek the player from canonical evidence timestamps and display
       aligned transcript excerpts without rendering untrusted HTML.
-- [ ] Task 8.4: Add the expired-media reattachment flow and require a streamed
+- [x] Task 8.4: Add the expired-media reattachment flow and require a streamed
       digest match against `manifest.json` before playback or retry.
-- [ ] Task 8.5: Add copy Markdown and download bundle actions; keep GitHub,
+- [x] Task 8.5: Add copy Markdown and download bundle actions; keep GitHub,
       Asana, and other external publishing out of scope.
 
 ### Verification
 
-- [ ] Browser tests prove timestamp seeking, byte ranges, keyboard access,
+- [x] Browser tests prove timestamp seeking, byte ranges, keyboard access,
       mobile layout, untrusted-content escaping, and no arbitrary path access.
 
-Tasks 8.1 and 8.2 are complete: successful local jobs resolve retained media
-through their opaque run ID and exact digest, then stream it only through the
-authenticated local server with single-range, bounded-chunk responses. The
-route returns 404 for unknown, expired, cleaned, or ephemeral media and rejects
-traversal-shaped IDs, multi-range input, invalid ranges, `HEAD`, and `If-Range`.
-The local-only `/review/:runId` workspace provides responsive finding, player,
-and detail columns; keyboard-operable accepted/rejected filters; candidate
-markers; literal rendering of untrusted analysis text; and an honest no-media
-state with the Task 8.4 reattachment control disabled. Pure range/filter tests,
-production HTTP probes, Cloudflare artifact exclusion, and Playwright desktop
-and mobile smoke coverage validate the slice. Task 8.3 is next.
+Phase 8 is complete. Successful local jobs resolve retained media through their
+opaque run ID and exact digest, then stream it only through the authenticated
+local server with single-range, bounded-chunk responses. Unknown, expired,
+cleaned, traversal-shaped, conditional, and malformed requests fail closed.
+Finding selection seeks canonical evidence time; meeting-backed excerpts apply
+the signed transcript offset and render untrusted text literally. The workspace
+supports keyboard navigation, digest-verified reattachment for imported or
+job-backed runs, and allowlisted local Markdown/JSON exports without media or
+external publication. Mismatched reattachment is deleted after returning only
+a sanitized code. Pure timeline/export tests, matching and mismatching streamed
+HTTP fixtures, Cloudflare artifact exclusion, and Playwright desktop/mobile
+smoke coverage validate the slice. Phase 9 is next.
 
 ## Phase 9: Public Release Hardening And Phase B Roadmap
 

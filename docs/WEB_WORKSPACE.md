@@ -112,6 +112,18 @@ live media receipt on every mount. A network retry reuses that key. A
 successful 201 create or 200 replay clears the Intent, Context, media-resume,
 and Run hints and returns Home with the durable job ID.
 
+The local review workspace seeks the media player from an evidence timestamp,
+falling back to the indexed candidate start. Meeting-backed transcript excerpts
+apply the manifest's signed alignment offset and remain literal escaped text.
+J/K and listbox arrow keys move through the visible findings. If the original
+private staging is gone, review accepts a newly selected file only after the
+server computes its SHA-256 as a stream and matches the projected run's
+manifest digest. The resulting run binding is stored in the private media
+receipt, so an imported run does not need an operational job row. Mismatches
+are deleted and expose only a sanitized code. Review can copy an allowlisted
+Markdown rendering or download a JSON pair containing only `analysis` and
+`manifest`; neither action includes media or publishes externally.
+
 The planned Studio distinguishes operational job data from the existing run
 projection:
 
@@ -377,6 +389,9 @@ For a new migration:
 | `POST` | `/api/studio/media/:id/complete` | verify and atomically seal media |
 | `DELETE` | `/api/studio/media/:id` | abort and clean the staged copy |
 | `POST` | `/api/studio/media/:id/cleanup-retry` | retry deletion only from `cleanup_failed` and return the actual media status |
+| `GET` | `/api/runs/:id/media` | stream one authenticated local review range from a matching live receipt |
+| `GET` | `/api/runs/:id/media-status` | report whether matching review media is available without reading bytes |
+| `POST` | `/api/runs/:id/media/reattach` | bind a sealed local receipt only after its streamed digest matches the run manifest |
 | `GET` | `/api/studio/jobs` | list bounded local operational jobs |
 | `POST` | `/api/studio/composer/jobs` | validate one browser composer receipt and create/replay a job |
 | `GET` | `/api/studio/jobs/:id` | read one job and bounded event history |
