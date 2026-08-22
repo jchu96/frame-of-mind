@@ -363,6 +363,20 @@ try {
   ) {
     throw new Error("Authenticated Activity page did not render its local list shell.");
   }
+  const activityDetailPage = await expectStatus(
+    await probe.get("/activity/job_01K123456789ABC"),
+    200,
+    "authenticated Activity detail page renders",
+  );
+  const activityDetailHtml = await activityDetailPage.text();
+  if (
+    !activityDetailHtml.includes('data-activity-detail="local"')
+    || !activityDetailHtml.includes("All activity")
+  ) {
+    throw new Error(
+      "Authenticated Activity detail page did not render its local detail shell.",
+    );
+  }
   const recipesResponse = await expectStatus(
     await probe.get("/api/studio/recipes"),
     200,

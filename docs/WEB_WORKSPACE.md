@@ -82,12 +82,14 @@ contract exists. The authenticated `/activity` page reads the existing bounded
 job list and groups it into Active, Finished, and Needs attention.
 `/activity/:id` reads the existing bounded detail contract, orders durable
 transitions by stage, nests progress under its stage, and keeps cancellation,
-warnings, and cleanup as distinct rows. Both pages poll only while visible and
-work is nonterminal, back off after a failed read, keep the last good result,
-and provide an explicit Refresh action. No Activity page stores another copy
-of job state. The detail receipt summarizes recipe/revision, context mode,
-model, and retention without returning media/context IDs, digests, paths,
-keys, transcripts, or provider payloads.
+warnings, and cleanup as distinct rows while following the bounded event cursor
+until exhausted. The list keeps its three-second cadence while visible, even
+when empty or all jobs are terminal; a terminal detail stops polling. Both
+back off after a failed read, keep the last good result, and provide an explicit
+Refresh action. No Activity page stores another copy of job state. The detail
+receipt summarizes recipe/revision, context mode, model, and retention without
+returning media/context IDs, digests, paths, keys, transcripts, or provider
+payloads.
 
 The Run page re-reads the browser drafts, live media receipt, local context
 receipt when applicable, and sanitized recipe catalog. It shows the exact

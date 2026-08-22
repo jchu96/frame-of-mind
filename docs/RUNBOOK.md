@@ -1323,7 +1323,7 @@ Operational expectations:
   replays one job through `POST /api/studio/composer/jobs`;
 - the Activity list and detail pages read that existing bounded job API,
   preserve the last good read after polling errors, pause in hidden tabs, and
-  stop polling when visible jobs are terminal;
+  keep the visible list live while stopping detail polling at a terminal job;
 - cancel and retry controls remain a later Phase 7 surface.
 
 Home refreshes its three status sources when opened and through its Refresh
@@ -1428,8 +1428,9 @@ On **Activity**:
    Provider payloads, codes, paths, keys, transcripts, and media identifiers
    are not shown.
 5. If automatic refresh fails, the last good result remains visible with a
-   notice. Use **Refresh** once. A hidden browser tab pauses polling; a list
-   with only terminal jobs and a terminal detail stop polling automatically.
+   notice. Use **Refresh** once. A hidden browser tab pauses polling. While the
+   Activity list is visible it keeps polling every three seconds, even when it
+   is empty or all jobs are terminal; a terminal detail stops automatically.
 
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and

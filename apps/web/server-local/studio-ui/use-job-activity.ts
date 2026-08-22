@@ -8,11 +8,28 @@ const jobListPageSchema = z.object({
   nextCursor: z.string().optional(),
 }).strict();
 
+const [
+  transitionEventSchema,
+  progressEventSchema,
+  cancellationRequestedEventSchema,
+  warningEventSchema,
+  cleanupEventSchema,
+] = analysisJobEventSchema.options;
+const activityJobEventSchema = z.discriminatedUnion("kind", [
+  transitionEventSchema.strip(),
+  progressEventSchema.strip(),
+  cancellationRequestedEventSchema.strip(),
+  warningEventSchema.strip(),
+  cleanupEventSchema.strip(),
+]);
+
 const jobDetailSchema = z.object({
   job: analysisJobSchema,
-  events: z.array(analysisJobEventSchema),
+  events: z.array(activityJobEventSchema),
   nextAfterSequence: z.number().int().nonnegative().optional(),
 }).strict();
+
+const MAX_JOB_DETAIL_PAGES = 20;
 
 export type StudioJobDetail = z.infer<typeof jobDetailSchema>;
 
@@ -39,6 +56,10 @@ export interface JobActivityPollerOptions<T> {
   maximumBackoffMs?: number;
 }
 
+export function activityListTerminal(_page: JobListPage): boolean {
+  return false;
+}
+
 export function createJobActivityTransport(
   fetchImplementation: typeof fetch = fetch,
 ): JobActivityTransport {
@@ -57,9 +78,32 @@ export function createJobActivityTransport(
       );
     },
     async detail(jobId) {
-      return jobDetailSchema.parse(
-        await read(`/api/studio/jobs/${encodeURIComponent(jobId)}?limit=100`),
-      );
+      const basePath = `/api/studio/jobs/${encodeURIComponent(jobId)}?limit=100`;
+      const events: StudioJobDetail["events"] = [];
+      let afterSequence: number | undefined;
+
+      for (let pageNumber = 0; pageNumber < MAX_JOB_DETAIL_PAGES; pageNumber += 1) {
+        const page = jobDetailSchema.parse(
+          await read(
+            afterSequence === undefined
+              ? basePath
+              : `${basePath}&after=${afterSequence}`,
+          ),
+        );
+        events.push(...page.events);
+        if (page.nextAfterSequence === undefined) {
+          return { ...page, events };
+        }
+        if (
+          afterSequence !== undefined
+          && page.nextAfterSequence <= afterSequence
+        ) {
+          throw new Error("Job activity pagination did not advance.");
+        }
+        afterSequence = page.nextAfterSequence;
+      }
+
+      throw new Error("Job activity exceeded the safe pagination limit.");
     },
   };
 }

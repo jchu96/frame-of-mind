@@ -11,6 +11,8 @@ import {
   groupActivityJobs,
 } from "../server-local/studio-ui/activity-state";
 import {
+  activityListTerminal,
+  createJobActivityTransport,
   createJobActivityPoller,
   type JobActivityPollRuntime,
 } from "../server-local/studio-ui/use-job-activity";
@@ -34,7 +36,10 @@ function job(stage: AnalysisJob["stage"], id = `job_${stage}`): AnalysisJob {
         sha256: "c".repeat(64),
       },
       model: "gemini-synthetic",
-      retention: { mode: "ephemeral" },
+      retention: {
+        mode: "ephemeral",
+        expiresAt: "2026-08-22T13:00:00.000Z",
+      },
     },
     ...(stage === "succeeded"
       ? {
@@ -122,7 +127,7 @@ describe("Studio Activity state", () => {
     expect(formatRelativeActivity("2026-08-20T12:05:00.000Z", now)).toBe("2 days ago");
   });
 
-  test("orders transitions by stage, nests progress, and keeps warning and cleanup rows", () => {
+  test("orders transitions and keeps cancellation, warning, and cleanup rows", () => {
     const indexing = transition(3, "uploading_to_gemini", "indexing");
     const fetching = transition(1, "queued", "fetching_context");
     const uploading = transition(2, "fetching_context", "uploading_to_gemini");
@@ -139,16 +144,25 @@ describe("Studio Activity state", () => {
     const warning: AnalysisJobEvent = {
       jobId: fetching.jobId,
       attempt: 1,
-      sequence: 5,
+      sequence: 6,
       kind: "warning",
       stage: "indexing",
       occurredAt: "2026-08-22T12:05:00.000Z",
       message: "One optional preview was unavailable.",
     };
+    const cancellationRequested: AnalysisJobEvent = {
+      jobId: fetching.jobId,
+      attempt: 1,
+      sequence: 5,
+      kind: "cancellation_requested",
+      stage: "indexing",
+      occurredAt: "2026-08-22T12:05:00.000Z",
+      message: "Cancellation requested by the operator.",
+    };
     const cleanup: AnalysisJobEvent = {
       jobId: fetching.jobId,
       attempt: 1,
-      sequence: 6,
+      sequence: 7,
       kind: "cleanup",
       stage: "cleaning_up",
       occurredAt: "2026-08-22T12:06:00.000Z",
@@ -162,6 +176,7 @@ describe("Studio Activity state", () => {
       indexing,
       cleanup,
       progress,
+      cancellationRequested,
       uploading,
     ]);
     expect(rows.filter((row) => row.type === "transition").map((row) => row.stage))
@@ -175,7 +190,62 @@ describe("Studio Activity state", () => {
       label: "First moment reviewed.",
     }]);
     expect(rows.filter((row) => row.type === "notice").map((row) => row.type === "notice" && row.kind))
-      .toEqual(["warning", "cleanup"]);
+      .toEqual(["cancellation_requested", "warning", "cleanup"]);
+  });
+});
+
+describe("Studio Activity transport", () => {
+  test("loads every detail page in sequence and strips additive event fields", async () => {
+    const detailJob = job("queued", "job_01K123456789ABC");
+    const sourceEvents = Array.from({ length: 201 }, (_, index) => {
+      const sequence = index + 1;
+      return {
+        jobId: detailJob.id,
+        attempt: 1,
+        sequence,
+        kind: "warning" as const,
+        stage: "queued" as const,
+        occurredAt: "2026-08-22T12:01:00.000Z",
+        message: `Warning ${sequence}.`,
+        ...(sequence === 101
+          ? {
+              code: "provider_raw_code",
+              futureField: "future_additive_value",
+            }
+          : {}),
+      };
+    });
+    const pages = [
+      { job: detailJob, events: sourceEvents.slice(0, 100), nextAfterSequence: 100 },
+      { job: detailJob, events: sourceEvents.slice(100, 200), nextAfterSequence: 200 },
+      { job: detailJob, events: sourceEvents.slice(200) },
+    ];
+    const requests: string[] = [];
+    const fakeFetch = (async (input: string | URL | Request) => {
+      requests.push(String(input));
+      const page = pages.shift();
+      if (!page) return new Response(null, { status: 500 });
+      return Response.json(page);
+    }) as typeof fetch;
+
+    const detail = await createJobActivityTransport(fakeFetch).detail(detailJob.id);
+
+    expect(requests).toEqual([
+      `/api/studio/jobs/${detailJob.id}?limit=100`,
+      `/api/studio/jobs/${detailJob.id}?limit=100&after=100`,
+      `/api/studio/jobs/${detailJob.id}?limit=100&after=200`,
+    ]);
+    expect(detail.events.map((event) => event.sequence)).toEqual(
+      sourceEvents.map((event) => event.sequence),
+    );
+    expect(detail.events).toHaveLength(201);
+    expect("futureField" in detail.events[100]!).toBe(false);
+    const warningMessages = deriveActivityTimeline(detail.events)
+      .filter((row) => row.type === "notice")
+      .map((row) => row.message);
+    expect(warningMessages).toEqual(sourceEvents.map((event) => event.message));
+    expect(warningMessages.join(" ")).not.toContain("provider_raw_code");
+    expect(warningMessages.join(" ")).not.toContain("future_additive_value");
   });
 });
 
@@ -208,6 +278,36 @@ class FakeRuntime implements JobActivityPollRuntime {
 }
 
 describe("Studio Activity polling", () => {
+  test("keeps an empty or terminal list live until a new job appears", async () => {
+    const runtime = new FakeRuntime();
+    const pages = [
+      { jobs: [] },
+      { jobs: [job("failed")] },
+      { jobs: [job("queued", "job_from_another_window")] },
+    ];
+    const observedIds: string[][] = [];
+    const poller = createJobActivityPoller({
+      runtime,
+      intervalMs: 3_000,
+      load: async () => pages.shift() ?? { jobs: [] },
+      terminal: activityListTerminal,
+      onData: (page) => observedIds.push(page.jobs.map((item) => item.id)),
+      onNotice: () => undefined,
+    });
+
+    await poller.start();
+    expect(observedIds).toEqual([[]]);
+    expect(runtime.scheduled[0]?.delay).toBe(3_000);
+    await runtime.runNext();
+    expect(observedIds).toEqual([[], ["job_failed"]]);
+    expect(runtime.scheduled[0]?.delay).toBe(3_000);
+    await runtime.runNext();
+    expect(observedIds.at(-1)).toEqual(["job_from_another_window"]);
+    expect(runtime.scheduled[0]?.delay).toBe(3_000);
+
+    poller.stop();
+  });
+
   test("starts, backs off, pauses while hidden, resumes, and stops", async () => {
     const runtime = new FakeRuntime();
     const results = [

@@ -338,17 +338,15 @@ test("creates one video-only analysis and opens its activity timeline", {
     level: 1,
   }))
     .toBeVisible();
-  const jobLink = page.locator(
-    `a[href="/activity/${createdJob.job.id}"]`,
-  );
   const activeJob = page.locator(
     'section[aria-labelledby="activity-active"]',
   ).locator(`a[href="/activity/${createdJob.job.id}"]`);
   const attentionJob = page.locator(
     'section[aria-labelledby="activity-needs-attention"]',
   ).locator(`a[href="/activity/${createdJob.job.id}"]`);
-  await expect(activeJob.or(attentionJob)).toBeVisible();
-  await jobLink.click();
+  const groupedJob = activeJob.or(attentionJob);
+  await expect(groupedJob).toBeVisible();
+  await groupedJob.click();
   await expect(page).toHaveURL(`/activity/${createdJob.job.id}`);
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
   await expect(page.locator('ol[aria-label="Job stage timeline"], ol').first().locator("li").first())
