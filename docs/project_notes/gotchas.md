@@ -144,6 +144,14 @@
   to exclude the SQLite adapter from the Worker bundle.
 - Cloudflare Access in front of a Worker is not sufficient by itself. Validate
   the Access JWT issuer, audience, and signature in the application.
+- Pinned Wrangler 4.123.0 bundles workerd with compatibility dates through
+  2026-08-18. A local config dated 2026-08-22 can pass deploy dry-run but fail
+  at workerd startup; pin synthetic spike configs to the bundled runtime's
+  reported maximum until Wrangler is upgraded.
+- A local workerd request may not expose peer IP or listener `HOST` metadata to
+  Nitro's loopback-only unauthenticated guard. Synthetic Wrangler configs may
+  set `NUXT_ALLOW_UNAUTHENTICATED_REMOTE=true` only inside an isolated local
+  proof; production remains `cloudflare-access` and must never inherit it.
 - An untimestamped transcript is useful for whole-recording indexing but cannot
   be safely attached to a bounded clip. Clip interrogation receives no nearby
   transcript unless timed lines can be aligned.

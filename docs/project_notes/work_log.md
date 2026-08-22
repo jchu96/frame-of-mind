@@ -539,3 +539,14 @@
   web suite: 258 tests; Studio HTTP, local/Cloudflare builds, boundary check,
   and 32 MiB streaming spike passed) and `bun run test:e2e:smoke` (13 passed),
   including active elapsed display and terminal elapsed freeze.
+- Completed Hosted Studio Task 3.0 and selected topology B. Pinned Nitro 2.13.4
+  kept the Nuxt `cloudflare_module` artifact default-export-only, so a sibling
+  internal-only Worker owns `HostedWorkflowSpike` and Nuxt reaches it through a
+  service binding. Both Wrangler deploy dry-runs passed; two local workerd
+  sessions created one instance through Nuxt and completed two persisted steps.
+  The spike remains environment-gated and normal Cloudflare artifacts forbid
+  its route, source, and binding markers. Validated by `bun run check` (22
+  Vitest files / 212 tests, web suite, Studio HTTP, hosted Access contract, and
+  32 MiB streaming proof), the executable topology spike, and the standard
+  Cloudflare boundary build (70 forbidden markers absent; 2 hosted review
+  markers present).
