@@ -414,3 +414,7 @@
   Activity renders. Seed a matching queued idempotency receipt in the isolated
   E2E database, then exercise composer replay and browser cancellation through
   the real HTTP routes.
+- A helper launched after `bun run --cwd apps/web ...` inherits `apps/web` as
+  its working directory. Repository-owned build helpers must resolve source
+  and output paths from `import.meta.url`, not `process.cwd()`, or deterministic
+  hosted-entry emission looks for an `apps/web/apps/web/.output` tree.

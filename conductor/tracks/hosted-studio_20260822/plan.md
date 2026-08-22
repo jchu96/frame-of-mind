@@ -415,13 +415,32 @@ prove retention, expiry, playback, and screenshot provenance.
       clone, Workflow binding validation, boundary scanning, local byte-stable
       import regression, and rollback drills. Record the active Cloudflare zone
       plan/body ceiling from the dashboard because Wrangler cannot read it; the
-      fixed 8 MiB part must remain below the lowest documented tier.
+      fixed 4 MiB part from ADR 0018 Amendment 1 must remain below the lowest
+      documented tier.
       Trust-boundary review trigger: release configuration can bind production
       data and durable execution resources.
 - [ ] Task 6.4: Complete adversarial Tier A review, synthetic canary run,
       cleanup proof, cost-cap proof, and operator runbook before enabling hosted
       routes. Trust-boundary review trigger: the route flag changes from dark
       deployment to allowlisted team use.
+
+**Task 6.1 preparation status (2026-08-22):** the production build emits the
+deterministic pre-Nitro hosted wrapper, the documented public and sibling
+Wrangler shapes include the module entry, Assets, D1, and both Workflow
+bindings, and the AD-11 gate now proves the exact required/forbidden marker
+sets with positive and negative fixture bundles. The runtime flag remains
+false, the Phase-2 upload shape remains wrapper-owned 404, and no deployment
+has occurred; keep Task 6.1 unchecked until the hub performs and reviews the
+real binding/deployment step.
+
+**Task 6.3 preparation status (2026-08-22):** the standalone release rehearsal
+applies local D1 migrations `0001` through `0004`, proves replay idempotence,
+validates both binding graphs and the bundle boundary, runs the byte-stable
+local import regression, dry-runs current and previous Worker artifacts, and
+checks the documented export/restore rollback strategy. The zone plan/body
+ceiling and remote backup/rollback drill remain operator evidence; keep Task
+6.3 unchecked until the hub completes them against the intended Cloudflare
+account.
 
 ### Verification
 

@@ -458,6 +458,19 @@ Cloudflare Access JWT validation:
 bun run build:web:cloudflare
 ```
 
+That command emits the deterministic `hosted-entry.mjs` production wrapper and
+runs the AD-11 artifact boundary gate. The committed Wrangler examples keep
+hosted routes disabled at runtime. Before any operator deployment, run the
+under-60-second local release rehearsal:
+
+```bash
+bun run rehearse:hosted-release
+```
+
+It exercises local D1 migration replay, both Worker dry-runs, boundary
+fixtures, byte-stable local import, and the previous-artifact rollback drill;
+success prints `HOSTED_RELEASE_REHEARSAL PASSED`.
+
 The dark hosted execution path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. When explicitly
 built and enabled, an Access-authenticated user can choose intent and
@@ -488,10 +501,10 @@ failures release their reservations; a hosted-only, principal-scoped janitor
 idempotently settles terminal or expired reservations. Per-principal caps,
 video rate, prompt/output headroom, and maximum interrogation calls are
 operator configuration, not browser input.
-Hosted telemetry remains off unless `SENTRY_DSN` is configured on the internal
-Workflows Worker; when enabled, Access/upload-interface/Workflow/spend/
-publication/cleanup events use the ADR-0017 codes-only allowlist. The normal
-review Worker still contains neither hosted execution nor Sentry transport.
+Hosted telemetry uses a strict ADR-0017 codes-only port, but the Phase 6 Tier A
+release shape keeps delivery off because `GEMINI_API_KEY` is its only allowed
+secret. Enabling a sibling-Worker `SENTRY_DSN` is a separate reviewed boundary
+expansion; the public Worker contains neither provider nor telemetry secrets.
 
 > [!CAUTION]
 > Do not deploy from that command alone. Follow the database, custom-domain,
@@ -578,6 +591,7 @@ bun run test:e2e:smoke
 bun run build
 bun run build:web:cloudflare
 bun run test:hosted-access-http
+bun run rehearse:hosted-release
 bun run check:hosted-stream                 # 1/2/4 MiB materialization-bound Worker oracle
 bun run check
 ```
