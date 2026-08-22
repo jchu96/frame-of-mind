@@ -241,6 +241,18 @@ describe("Studio Activity state", () => {
       completed: 1_500_000,
       total: 4_000_000,
     });
+
+    // Rounding must never make an incomplete transfer read as complete.
+    const nearlyDone = deriveActivityProgress(
+      job("uploading_to_gemini"),
+      [
+        transition(2, "fetching_context", "uploading_to_gemini"),
+        { ...byteProgress, progress: { completed: 4_950_000, total: 5_000_000, unit: "bytes" } },
+      ],
+      "2026-08-22T12:10:00.000Z",
+    );
+    expect(nearlyDone.descriptor.text).toBe("4.95 MB of 5 MB");
+    expect(nearlyDone.descriptor.text).not.toBe("5 MB of 5 MB");
   });
 
   test("freezes terminal elapsed at the transition and clamps future activity", () => {

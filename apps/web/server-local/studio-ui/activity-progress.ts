@@ -110,13 +110,16 @@ function deriveProgressDescriptor(
   }
 
   const { completed, total, unit } = progress.progress;
+  const [completedLabel, totalLabel] = unit === "bytes"
+    ? formatMegabytePair(completed, total)
+    : [formatCount(completed), formatCount(total)];
   const text = unit === "bytes"
-    ? `${formatMegabytes(completed)} MB of ${formatMegabytes(total)} MB`
-    : `${formatCount(completed)} of ${formatCount(total)}`;
+    ? `${completedLabel} MB of ${totalLabel} MB`
+    : `${completedLabel} of ${totalLabel}`;
   const countedUnit = unit === "bytes" ? "megabytes" : unit;
   const accessibleCount = unit === "bytes"
-    ? `${formatMegabytes(completed)} ${countedUnit} of ${formatMegabytes(total)} ${countedUnit}`
-    : `${formatCount(completed)} of ${formatCount(total)} ${countedUnit}`;
+    ? `${completedLabel} ${countedUnit} of ${totalLabel} ${countedUnit}`
+    : `${completedLabel} of ${totalLabel} ${countedUnit}`;
   return {
     kind: "determinate",
     text,
@@ -150,8 +153,28 @@ function formatElapsed(seconds: number): ActivityElapsedValue {
   };
 }
 
-function formatMegabytes(bytes: number): string {
-  return formatCount(Math.round((bytes / 1_000_000) * 10) / 10);
+// Honest labels: the displayed numerator and denominator may only read as
+// equal when the counts are actually equal. Rounding to 0.1 MB would otherwise
+// print "5 MB of 5 MB" for 4,950,000 of 5,000,000 bytes, so precision grows
+// until the two labels differ (or the raw byte counts are shown).
+function formatMegabytePair(completed: number, total: number): [string, string] {
+  if (completed === total) {
+    const label = formatMegabytes(total, 1);
+    return [label, label];
+  }
+  for (const decimals of [1, 2, 3]) {
+    const pair: [string, string] = [
+      formatMegabytes(completed, decimals),
+      formatMegabytes(total, decimals),
+    ];
+    if (pair[0] !== pair[1]) return pair;
+  }
+  return [`${completed / 1_000_000}`, `${total / 1_000_000}`];
+}
+
+function formatMegabytes(bytes: number, decimals: number): string {
+  const scale = 10 ** decimals;
+  return formatCount(Math.round((bytes / 1_000_000) * scale) / scale);
 }
 
 function formatCount(value: number): string {
