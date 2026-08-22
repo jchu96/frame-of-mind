@@ -29,7 +29,7 @@ setup("exchanges the one-time launch fragment for a local session", {
 
     await expect(
       page.getByRole("heading", {
-        name: "Connections, without a credential vault.",
+        name: "Bring your own keys.",
       }),
     ).toBeVisible();
     expect(new URL(page.url()).hash).toBe("");
