@@ -431,3 +431,15 @@
   and extending the hosted-artifact boundary marker set. Composer ordering now
   covers three permutations, and the catalog-failure smoke rejects unexpected
   client errors while allowing only its synthetic HTTP 500 console message.
+- Implemented Local Studio Task 6.8 and closed Phase 6: the authenticated
+  `/run` receipt binds the exact sealed media digest, explicit Context choice,
+  built-in recipe revision, model/focus, and server-owned retention policy.
+  `POST /api/studio/composer/jobs` resolves private media and recipe evidence
+  server-side, rejects custom/stale/missing inputs before insertion, and
+  delegates validated create/replay to the durable job API. Missing or
+  uncommitted Context cannot silently become video-only, and the existing
+  executor still resolves enriched Context before Gemini upload. Validated by
+  `bun run check` (Vitest: 21 files / 201 tests; Bun web suite and production
+  Studio HTTP contract passed; Gemini import and Cloudflare boundaries clean)
+  and `bun run test:e2e:smoke` (12 passed), including the complete synthetic
+  Intent → Recording → video-only Context → Run → Start flow.
