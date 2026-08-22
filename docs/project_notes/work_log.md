@@ -677,3 +677,18 @@
   metadata. Validated by `bun run check` (22 Vitest files / 212 tests; Bun web
   suite: 283 tests; local Studio HTTP, hosted Access/Workflow, builds, and the
   32 MiB streaming proof passed) and `bun run test:e2e:smoke` (13 passed).
+- Prepared Hosted Studio Phase 6.1/6.3/6.4 on 2026-08-22 without deploying.
+  The Cloudflare production build now emits a deterministic pre-Nitro wrapper
+  that keeps the Phase-2 upload-part path 404-dark without reading its body;
+  the AD-11 artifact gate proves six required and nine forbidden markers with
+  positive and negative fixture bundles. Committed Wrangler examples describe
+  the public module/Assets/D1/service binding and internal D1/Workflow shape
+  with `GEMINI_API_KEY` as the sole Tier A secret. The 16.74-second release
+  rehearsal applied local D1 migrations `0001`–`0004`, proved replay
+  idempotence and byte-stable local import, dry-ran both Workers and the
+  previous artifact without `100329`, and verified export/restore rollback
+  documentation. `bun run check` passed 22 Vitest files / 212 tests, the Bun
+  web suite, local Studio, both hosted Access entries, hosted Workflow/Studio/
+  spend contracts, the release rehearsal, and the 32 MiB streaming spike.
+  Hosted flags remain false by default; no live Wrangler file, PR, merge, or
+  deployment was created.

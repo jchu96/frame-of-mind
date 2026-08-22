@@ -1304,10 +1304,10 @@ tokens, request/response bodies, query-bearing URLs, emails, or IP addresses.
 Tracing, Replay, profiling, logs, and user feedback remain disabled.
 The current Cloudflare review build excludes the Sentry Nuxt module and DSN.
 The dark hosted execution build uses a separate strict event port: Nuxt
-forwards codes/structural fields over its internal service binding, and only
-the sibling Workflows Worker may send a Sentry envelope. Hosted telemetry is
-off unless `SENTRY_DSN` is set on that sibling Worker; do not set it on the
-public Nuxt Worker.
+forwards codes/structural fields over its internal service binding. The Phase
+6 Tier A release shape permits `GEMINI_API_KEY` as its only secret, so hosted
+Sentry delivery stays off; do not set `SENTRY_DSN` on either Worker for that
+release.
 
 Disable telemetry by removing `SENTRY_DSN` from `.env` and the process
 environment, then restart Studio or rerun the CLI. No local database or run
@@ -1353,12 +1353,12 @@ commit the full reservation. Run it through the same Cloudflare Access user
 principal as the affected hosted activity. A second invocation should report
 zero changes.
 
-To opt the internal Workflows Worker into hosted telemetry, set
-`SENTRY_DSN` on that Worker only using the operator-owned secret/config flow.
-Optional `SENTRY_ENVIRONMENT` and `SENTRY_RELEASE` values must be structural
-identifiers. Removing the DSN and restarting the Worker disables delivery.
-Never put the DSN or these hosted spend values in browser state, committed
-Wrangler files, or per-user source code.
+Future telemetry enablement requires a separately reviewed expansion of the
+Tier A one-secret boundary. If approved later, `SENTRY_DSN` belongs only on
+the internal Workflows Worker; optional `SENTRY_ENVIRONMENT` and
+`SENTRY_RELEASE` values must remain structural identifiers. Never put the DSN
+or hosted spend values in browser state, committed Wrangler files, or
+per-user source code.
 
 Verify both controls before any release:
 
@@ -1369,6 +1369,57 @@ bun run test:hosted-workflows-http
 
 The second command must print `HOSTED_SPEND_CONTRACT PASSED` and confirm the
 telemetry contract accepts codes/structural fields while rejecting content.
+
+### Hosted release enablement and canary (dark by default)
+
+The committed production shape builds hosted routes but keeps
+`NUXT_HOSTED_WORKFLOWS_ENABLED=false`. The upload wrapper independently
+returns 404 until Phase 2 lands. Do not enable the runtime flag while the
+upload implementation is absent.
+
+Release preparation:
+
+1. Run `bun run rehearse:hosted-release`, then `bun run check`; require
+   `HOSTED_RELEASE_REHEARSAL PASSED` and every hosted contract receipt.
+2. In the Cloudflare dashboard, record the production zone plan and maximum
+   upload size. Stop below 4 MiB; Wrangler cannot read this setting.
+3. Export D1 to private storage and record only the export checksum in the
+   release receipt. D1 has no down migrations.
+4. Dry-run the sibling and public Wrangler configurations. Require the module
+   entry, `DB`, `ASSETS`, `HOSTED_WORKFLOWS`, and `HOSTED_WORKFLOW`, with no
+   `100329`.
+5. Deploy the sibling first and the public Worker second with the runtime flag
+   still false. Verify authenticated requests to `/api/hosted/jobs`,
+   `/hosted/activity`, and the upload-part shape all return 404. Record status
+   codes only.
+
+After Phase 2 is merged and its upload gate passes, a reviewed canary may set
+`NUXT_HOSTED_WORKFLOWS_ENABLED=true` in the ignored public Wrangler config and
+redeploy the public Worker. Use one generated, non-sensitive recording and one
+allowlisted test principal. The canary receipt contains no resource IDs and
+records only:
+
+- creation and final HTTP status codes;
+- terminal job stage and publication success;
+- `hosted_cleanup_succeeded` plus `cleanup_completed=true`;
+- reservation state, `actual_units <= reserved_units`, and reconciliation
+  code; and
+- foreign-principal lookup status 404.
+
+Prove the cost cap separately before expanding access: lower only the canary
+principal's D1 cap below the immutable estimate, submit the same generated
+input, and require HTTP 429 with `principal_spend_cap_exceeded`, zero new
+attempts, and zero new Workflow instances. Restore the reviewed cap, invoke
+the principal-scoped spend janitor twice, and require the second invocation to
+report zero changes. Do not paste principal, media, attempt, Workflow, Gemini,
+or run IDs into the release receipt.
+
+Rollback on any failed condition: set the runtime flag false and redeploy the
+public Worker, then dry-run and redeploy the previous known-good artifact. Use
+a forward repair migration when possible. If schema recovery is required,
+restore the pre-migration `wrangler d1 export` into a replacement empty D1,
+verify counts privately, and repoint both `DB` bindings together. Never invent
+or run a down migration.
 
 ### Local Studio Home, Connections, and analysis composer
 

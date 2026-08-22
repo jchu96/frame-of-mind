@@ -178,3 +178,9 @@
 - Evaluation fixtures must be genuinely public or self-produced recordings.
   Hosted-online does not mean public; an authorized restricted recording can
   be analyzed but never becomes a shared test fixture.
+- The production Cloudflare build emits `hosted-entry.mjs`, includes the
+  AD-11 hosted implementation, and defaults
+  `NUXT_HOSTED_WORKFLOWS_ENABLED=false`. Its pre-Nitro upload-part intercept
+  remains 404 and body-unread until Phase 2 lands; the public Worker has no
+  secret and the internal Workflows Worker permits only `GEMINI_API_KEY` in
+  the Tier A release shape.
