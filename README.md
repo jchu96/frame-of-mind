@@ -179,18 +179,37 @@ runs but is a mutable alias, so it is less reproducible than a pinned model.
 gh repo clone jchu96/frame-of-mind
 cd frame-of-mind
 bun install --frozen-lockfile
-bun run check
-bun run build
+bun run build:cli
+bun run build:web
 bun link
 ```
 
 Verify:
 
 ```bash
+frameofmind --help
 frameofmind --version
 frameofmind recipes
 frameofmind doctor
 ```
+
+Contributors should also run the complete repository gate:
+
+```bash
+bun run check
+```
+
+The full fresh-clone Studio boot is continuously tested on macOS and Linux.
+On Windows, use WSL or Git Bash with Bun 1.3.14+ and keep the checkout on LF:
+
+```bash
+git config --global core.autocrlf false
+git config --global core.eol lf
+```
+
+Windows CI repeats the frozen install, CLI/web builds, and CLI help check, but
+does not yet boot Local Studio; the headless Studio boot contract currently
+runs on macOS and Linux only.
 
 Maintainers can verify upload, both structured model passes, and exact remote
 cleanup with generated media before processing a real meeting:

@@ -32,6 +32,38 @@ jobs:
       - name: Reject high or critical production advisories
         run: bun audit --production --audit-level=high
 
+  fresh-clone:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            mode: fresh
+          - os: macos-latest
+            mode: fresh
+          - os: windows-latest
+            mode: install-only
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Preserve LF checkout on Windows
+        if: runner.os == 'Windows'
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Test installation from a fresh clone
+        run: bun --no-env-file scripts/test-fresh-clone.ts ${{ matrix.mode }}
+
   browser-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
