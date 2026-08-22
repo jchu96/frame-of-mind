@@ -44,9 +44,12 @@ export class RunPrincipalConflictError extends Error {
   }
 }
 
-export function encodeRunCursor(row: RunSummaryRow, principal: string): string {
+// The cursor carries only pagination keys. The principal is never encoded:
+// every list query is already bound to the authenticated principal, so a
+// cursor pasted by another principal pages over that principal's own rows.
+// Encoding `sub` here would leak a durable identifier into URLs and logs.
+export function encodeRunCursor(row: RunSummaryRow): string {
   return encodeURIComponent(JSON.stringify([
-    principal,
     row.completed_at,
     row.imported_at,
     row.run_id,
@@ -55,16 +58,14 @@ export function encodeRunCursor(row: RunSummaryRow, principal: string): string {
 
 export function decodeRunCursor(
   value: string | undefined,
-  expectedPrincipal?: string,
 ): [string, string, string] | undefined {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(decodeURIComponent(value));
     return Array.isArray(parsed)
-      && parsed.length === 4
+      && parsed.length === 3
       && parsed.every((part) => typeof part === "string" && part.length <= 240)
-      && (!expectedPrincipal || parsed[0] === expectedPrincipal)
-      ? parsed.slice(1) as [string, string, string]
+      ? parsed as [string, string, string]
       : undefined;
   } catch {
     return undefined;
