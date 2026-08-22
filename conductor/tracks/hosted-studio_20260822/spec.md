@@ -43,9 +43,9 @@ Current platform facts used by this proposal are linked rather than assumed:
 - [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
   set 128 MB per isolate, not per request, and make request-body size an account
   plan limit: Free and Pro currently allow 100 MB. Hosted parts are fixed at
-  8 MiB. Before deployment an operator must check the zone/account plan and any
+  4 MiB. Before deployment an operator must check the zone/account plan and any
   lower upload ceiling in the dashboard because Wrangler cannot read that
-  setting; 8 MiB remains below the lowest documented tier.
+  setting; 4 MiB remains below the lowest documented tier.
 - [Workers Streams](https://developers.cloudflare.com/workers/runtime-apis/streams/)
   documents streaming as the way to avoid buffering inside the isolate, but it
   does not prove Nitro/H3 preserves the request stream. Task 2.0 measures that
@@ -214,7 +214,8 @@ the need for application authorization.
 
 ### Architectural Decision 4 - Proxy Gemini Resumable Upload Through The Worker
 
-**Decision.** The browser sends raw-body parts of exactly 8 MiB except for the
+**Decision.** The browser sends raw-body parts of exactly 4 MiB (ADR 0018
+Amendment 1; measured on the built Worker in Task 2.0) except for the
 final shorter part to `POST /api/hosted/media/:id/parts`. Metadata is carried
 in bounded `Content-Length`, upload-offset, part-number, and part-digest
 headers; multipart encoding is forbidden. The Worker validates the Access
@@ -471,13 +472,15 @@ or migration query in normal runtime code that omits principal scope.
 ### FR-04 - Worker-Proxied Media Upload
 
 - `POST /api/hosted/media` creates an opaque principal-owned media session.
-- `POST /api/hosted/media/:id/parts` accepts one raw-body 8 MiB part (or the
+- `POST /api/hosted/media/:id/parts` accepts one raw-body 4 MiB part (or the
   shorter final part) with bounded `Content-Length`, upload-offset,
   part-number, and part-digest headers; it never accepts multipart bytes.
 - Every start/retry queries Gemini's accepted resumable offset and forwards
   only the unaccepted suffix; D1 never authorizes overlapping replay.
-- The Worker never buffers the complete chunk or recording.
-- The browser maintains bounded upload concurrency and reconciles from the
+- The Worker may hold one complete 4 MiB part per in-flight request (at most four per principal, Worker-enforced) and never the recording; see ADR 0018 Amendment 1.
+- The Worker rejects a fifth in-flight part for the same principal before
+  reading its body (Task 2.3); the browser also maintains bounded upload
+  concurrency and reconciles from the
   server receipt after refresh.
 - The provider session capability is encrypted and never returned or logged.
 - Default uploads do not create an R2 object.

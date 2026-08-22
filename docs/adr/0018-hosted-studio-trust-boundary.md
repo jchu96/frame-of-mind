@@ -32,9 +32,12 @@ Hosted Studio uses the existing Cloudflare hostname and Access application:
 - service tokens use a separate Access policy and the same middleware, which
   normalizes the documented empty `sub` plus `common_name` claim into a
   service-principal namespace;
-- recording bytes travel browser → Worker → Gemini through raw 8 MiB resumable
-  requests and are never stored by Frame of Mind unless the user explicitly
-  chooses retained media; this supersedes local Studio's provisional Phase B
+- recording bytes travel browser → Worker → Gemini through raw 4 MiB resumable
+  requests, at most four in flight per principal (enforced on the Worker part
+  route, not only in the browser), and are never stored by Frame of Mind
+  unless the user explicitly chooses retained media; the Worker may hold a
+  complete part in memory while Gemini applies backpressure, so the memory
+  bound is parts × concurrency by construction (see Amendment 1); this supersedes local Studio's provisional Phase B
   browser → R2 sketch without changing local media-part constants;
 - retained media is private, principal-owned R2 data with a visible lifecycle;
   ephemeral media is cleaned from Gemini on every terminal path;
@@ -128,3 +131,36 @@ retention. R2 is opt-in for retained media only.
 
 Rejected because local process state and request lifetime are not durable
 hosted execution boundaries. The port receives a Workflows adapter instead.
+
+## Amendment 1 (proposed 2026-08-22, not yet adopted): part size and concurrency
+
+**Finding.** Task 2.0 measured on the built `cloudflare_module` Worker under
+workerd that the runtime materializes an inbound request body while the
+downstream sink applies backpressure, regardless of whether the handler pipes
+`request.body` without `tee()` (8.4 MB held for one 8 MiB part against a 2.5 s
+slow sink). FR-04's "the Worker never buffers the complete chunk" is therefore
+not provable on this platform. See `docs/spikes/hosted-streaming-spike-2026-08-22.md`.
+
+**Decision (proposed).** Keep browser → Worker → Gemini (no R2 custody of
+ephemeral media, no direct browser → Gemini). Change FR-04 to 4 MiB raw parts
+and add a Worker-enforced cap of four in-flight parts per principal, checked
+in the part route (Task 2.3) before bytes are read. The memory bound becomes
+parts × concurrency = 16 MiB per principal even if every part is fully
+materialized; the oracle's hold-delta measurements are planning evidence only,
+not the enforced bound.
+
+**What changes in the trust statement.** The Worker may hold a complete 4 MiB
+part in isolate memory for the duration of one Gemini part request. It still
+never persists it. Short parts, over-length parts, and client aborts record no
+receipt; the Gemini offset remains the resume authority.
+
+**Rejected alternative.** Private R2 staging (draft kept at
+`docs/spikes/adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`) would
+bound memory by construction too, but adds R2 custody of ephemeral recordings
+and a second lifecycle to reason about; it remains the fallback if the
+4 MiB × 4 bound fails its Phase 2 gate.
+
+**Adoption.** This amendment takes effect when the maintainer merges it and
+FR-04 in `conductor/tracks/hosted-studio_20260822/spec.md` is updated to
+match. Tasks 2.1–2.4 do not start before that.
+
