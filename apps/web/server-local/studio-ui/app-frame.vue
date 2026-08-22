@@ -31,6 +31,11 @@ const navigation: NavigationMenuItem[] = [
     to: "/run",
   },
   {
+    label: "Activity",
+    slot: "activity",
+    to: "/activity",
+  },
+  {
     label: "Connections",
     icon: "i-lucide-plug-zap",
     to: "/connections",
@@ -47,6 +52,8 @@ const title = computed(() => {
   if (route.path === "/context") return "Context";
   if (route.path === "/intent") return "Intent";
   if (route.path === "/run") return "Run receipt";
+  if (route.path === "/activity") return "Activity";
+  if (route.path.startsWith("/activity/")) return "Job activity";
   if (route.path === "/connections") return "Connections";
   if (route.path === "/import") return "Import run";
   if (route.path.startsWith("/runs/")) return "Run detail";
@@ -114,7 +121,22 @@ const title = computed(() => {
           tooltip
           aria-label="Studio navigation"
           :ui="{ link: collapsed ? 'justify-center' : undefined }"
-        />
+        >
+          <template #activity-leading>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="size-5 shrink-0"
+              aria-hidden="true"
+            >
+              <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />
+            </svg>
+          </template>
+        </UNavigationMenu>
       </template>
 
       <template #footer="{ collapsed }">

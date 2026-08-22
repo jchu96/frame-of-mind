@@ -394,6 +394,14 @@ What works today:
   re-evaluate readiness in place. If the retry key is already bound to different input,
   Run links back Home or offers an explicit fresh receipt that replaces only
   the Run key and preserves the prepared Intent, Context, and Recording.
+- **Activity** — every bounded local job grouped as Active, Finished, or Needs
+  attention, with a plain-language stage, relative last activity, and a
+  complete paged job-detail timeline. List polling stays live while Activity is
+  visible, including for empty or all-terminal lists; detail polling stops at a
+  terminal job. Both pause in hidden tabs, back off after errors, and preserve
+  the last good result.
+  Failed jobs show only their sanitized operator message; successful jobs link
+  to the completed run.
 
 The CLI remains available for direct analysis, while Local Studio now exposes
 the same shared executor through the deliberate Run receipt. Custom recipe

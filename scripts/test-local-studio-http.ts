@@ -199,6 +199,16 @@ try {
     "Run receipt page requires a session",
   );
   await expectStatus(
+    await probe.get("/activity"),
+    401,
+    "Activity page requires a session",
+  );
+  await expectStatus(
+    await probe.get("/activity/job_01K123456789ABC"),
+    401,
+    "Activity detail page requires a session",
+  );
+  await expectStatus(
     await probe.get("/api/studio/recipes"),
     401,
     "recipe catalog requires a Studio session",
@@ -212,6 +222,11 @@ try {
     await probe.get("/api/studio/jobs"),
     401,
     "job list requires a Studio session",
+  );
+  await expectStatus(
+    await probe.get("/api/studio/jobs/job_01K123456789ABC"),
+    401,
+    "job detail requires a Studio session",
   );
   await expectStatus(
     await probe.mutate("/api/studio/composer/jobs", "POST", {}),
@@ -335,6 +350,32 @@ try {
     || !runHtml.includes("Review the exact run receipt.")
   ) {
     throw new Error("Authenticated Run page did not render its receipt shell.");
+  }
+  const activityPage = await expectStatus(
+    await probe.get("/activity"),
+    200,
+    "authenticated Activity page renders",
+  );
+  const activityHtml = await activityPage.text();
+  if (
+    !activityHtml.includes('data-activity-page="local"')
+    || !activityHtml.includes("Follow each private local job")
+  ) {
+    throw new Error("Authenticated Activity page did not render its local list shell.");
+  }
+  const activityDetailPage = await expectStatus(
+    await probe.get("/activity/job_01K123456789ABC"),
+    200,
+    "authenticated Activity detail page renders",
+  );
+  const activityDetailHtml = await activityDetailPage.text();
+  if (
+    !activityDetailHtml.includes('data-activity-detail="local"')
+    || !activityDetailHtml.includes("All activity")
+  ) {
+    throw new Error(
+      "Authenticated Activity detail page did not render its local detail shell.",
+    );
   }
   const recipesResponse = await expectStatus(
     await probe.get("/api/studio/recipes"),

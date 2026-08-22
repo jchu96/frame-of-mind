@@ -54,6 +54,12 @@ const studioIntentPage = fileURLToPath(
 const studioRunPage = fileURLToPath(
   new URL("./server-local/studio-ui/run.vue", import.meta.url),
 );
+const studioActivityPage = fileURLToPath(
+  new URL("./server-local/studio-ui/activity.vue", import.meta.url),
+);
+const studioActivityDetailPage = fileURLToPath(
+  new URL("./server-local/studio-ui/activity-detail.vue", import.meta.url),
+);
 const appFrame = fileURLToPath(
   new URL(
     localStudioEnabled
@@ -322,6 +328,16 @@ export default defineNuxtConfig({
           name: "run",
           path: "/run",
           file: studioRunPage,
+        });
+        pages.push({
+          name: "activity",
+          path: "/activity",
+          file: studioActivityPage,
+        });
+        pages.push({
+          name: "activity-detail",
+          path: "/activity/:id",
+          file: studioActivityDetailPage,
         });
       }
     },
