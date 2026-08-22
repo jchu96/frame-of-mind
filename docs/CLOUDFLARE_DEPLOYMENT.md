@@ -69,6 +69,7 @@ The Workflows Worker shape is:
 {
   "name": "<INTERNAL_WORKFLOWS_WORKER>",
   "main": "src/index.ts",
+  "workers_dev": false,
   "d1_databases": [{
     "binding": "DB",
     "database_name": "<D1_DATABASE_NAME>",
@@ -81,6 +82,12 @@ The Workflows Worker shape is:
   }]
 }
 ```
+
+`workers_dev` must stay `false`: Wrangler defaults it to `true` when a Worker has
+no routes, which would publish the Workflows Worker on `*.workers.dev`. The
+Workflows Worker has no Access check of its own and must only be reachable
+through the Nuxt Worker's `HOSTED_WORKFLOWS` service binding. The release
+rehearsal fails if either committed example config drops this setting.
 
 The committed `apps/web/wrangler.jsonc.example` is the complete public shape,
 including module entry, Workers Assets, D1, and the service binding:
