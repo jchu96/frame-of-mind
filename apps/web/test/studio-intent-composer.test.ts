@@ -165,5 +165,34 @@ describe("Studio Intent composer", () => {
       selectedRecipeId: "requirements",
       selectedRecipeRevision: "builtin-2020-01-01.0",
     });
+
+    const missing = reconcileBuiltInIntentDraft({
+      recipe: {
+        id: "retired-recipe",
+        revision: "builtin-2020-01-01.0",
+      },
+      model: DEFAULT_GEMINI_MODEL,
+    }, [{
+      id: "requirements",
+      revision: "builtin-2026-07-27.1",
+    }]);
+    expect(missing).toEqual({ stale: true, missing: true });
+    expect("selectedRecipeId" in missing).toBe(false);
+    expect("selectedRecipeRevision" in missing).toBe(false);
+
+    const storage = new MemoryStorage();
+    const rebuiltFromReconcile = {
+      ...(missing.selectedRecipeId && missing.selectedRecipeRevision
+        ? {
+            recipe: {
+              id: missing.selectedRecipeId,
+              revision: missing.selectedRecipeRevision,
+            },
+          }
+        : {}),
+      model: DEFAULT_GEMINI_MODEL,
+    };
+    expect(persistIntentDraft(storage, rebuiltFromReconcile)).toBe(false);
+    expect(storage.values.has(INTENT_DRAFT_STORAGE_KEY)).toBe(false);
   });
 });

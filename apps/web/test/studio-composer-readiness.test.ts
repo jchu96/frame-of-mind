@@ -242,7 +242,7 @@ describe("Studio composer readiness", () => {
     expect(next.intent).toBe("ready");
   });
 
-  test("reports recording empty when only a media receipt exists and status fails", async () => {
+  test("preserves the prior recording slice when the status GET fails", async () => {
     const storage = new MemoryStorage();
     persistMediaResumeReceipt(storage, "media_01K123456789ABC");
     const next = await refreshComposerReadiness(

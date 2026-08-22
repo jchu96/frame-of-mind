@@ -9,7 +9,7 @@ export const INTENT_DRAFT_STORAGE_KEY =
 
 type BrowserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-export const intentDraftSchema = z.object({
+const intentDraftSchema = z.object({
   recipe: composerRecipeSchema,
   focus: z.string().max(10_000).optional(),
   model: z.string().min(1).max(240),
@@ -104,15 +104,17 @@ export function reconcileBuiltInIntentDraft(
   recipes: readonly { id: string; revision: string }[],
 ): {
   stale: boolean;
+  missing?: boolean;
   selectedRecipeId?: string;
   selectedRecipeRevision?: string;
 } {
   if ("custom" in draft.recipe) return { stale: false };
   const current = recipes.find((recipe) => recipe.id === draft.recipe.id);
+  if (!current) return { stale: true, missing: true };
   return {
-    stale: !current || current.revision !== draft.recipe.revision,
+    stale: current.revision !== draft.recipe.revision,
     selectedRecipeId: draft.recipe.id,
-    selectedRecipeRevision: current?.revision ?? draft.recipe.revision,
+    selectedRecipeRevision: current.revision,
   };
 }
 
