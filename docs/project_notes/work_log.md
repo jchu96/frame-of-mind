@@ -772,3 +772,13 @@
   release rehearsal, and 32 MiB streaming proof passed) and
   `bun run test:e2e:smoke` (13 passed), including offset/export, matching and
   mismatching reattachment, Cloudflare exclusion, and browser review coverage.
+- Closed Local Studio Task 9.4 review SF1 on 2026-08-22. The env-gated
+  node-server streaming spike now registers the Studio bootstrap and session
+  middleware even when the full Studio surface is off. Its executable proof
+  rejects an unauthenticated upload before writing bytes, exchanges the
+  one-time launch capability, and preserves the authenticated 32 MiB streaming
+  and range contract. The production HTTP contract covers both session states,
+  and the hosted artifact gate forbids spike route, source, and flag markers.
+  Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40
+  files / 303 tests; Local Studio HTTP, hosted contracts, release rehearsal,
+  and streaming spike passed).

@@ -25,6 +25,7 @@ const localStudioEnabled = shouldRegisterLocalStudioRoutes(
   nitroPreset,
   databaseDriver === "sqlite" && process.env.FRAME_OF_MIND_STUDIO === "1",
 );
+const localStudioSessionEnabled = localStudioEnabled || studioSpikeEnabled;
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const storeImplementation = fileURLToPath(
   new URL(`./server/data/${databaseDriver}.ts`, import.meta.url),
@@ -232,7 +233,7 @@ const studioJobReimportHandler = fileURLToPath(
 );
 
 const localHandlers = [
-  ...(localStudioEnabled
+  ...(localStudioSessionEnabled
     ? [
         {
           route: "/__studio/bootstrap",
@@ -243,6 +244,10 @@ const localHandlers = [
           middleware: true,
           handler: studioSessionMiddleware,
         },
+      ]
+    : []),
+  ...(localStudioEnabled
+    ? [
         {
           route: "/api/studio/session",
           method: "get",

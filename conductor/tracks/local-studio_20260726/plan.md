@@ -522,6 +522,11 @@ the Gemini adapter's timeouts/retries/cleanup, the SQLite job-state machine
 hosted viewer contracts) returned PASS with no blockers and no should-fix.
 Its one NIT — the env-gated streaming spike upload route accepted bodies
 without the Studio session when `FRAME_OF_MIND_STUDIO_SPIKE=1` — is closed
-here by adding `/api/__studio-spike/` to `requiresLocalStudioSession`. The
-rolling per-PR adversarial reviews (#59–#72) remain the per-change gate.
-
+by matching the spike surface in `requiresLocalStudioSession`, registering
+the bootstrap and session middleware whenever the node-server spike handlers
+are built, and making the streaming proof exchange the one-time bootstrap
+capability before upload. The production HTTP contract proves an
+unauthenticated spike upload returns 401 without writing partial or sealed
+bytes and an authenticated upload preserves the byte/digest contract; the
+Cloudflare boundary gate forbids the spike route, source, and flag markers.
+The rolling per-PR adversarial reviews (#59–#72) remain the per-change gate.

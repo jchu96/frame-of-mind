@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,8 +19,10 @@ async function runChecked(command: string[], env: Record<string, string>) {
 }
 
 const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-studio-spike-"));
+const bootstrapToken = randomBytes(32).toString("base64url");
 const spikeEnv = {
   FRAME_OF_MIND_DB_DRIVER: "sqlite",
+  FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: bootstrapToken,
   FRAME_OF_MIND_STUDIO_SPIKE: "1",
   FRAME_OF_MIND_STUDIO_SPIKE_DIR: directory,
   NITRO_PRESET: "node-server",
@@ -78,6 +80,51 @@ try {
   }
   if (!ready) throw new Error("Spike server did not become ready.");
 
+  const sealed = join(directory, "stream-upload.sealed");
+  const partial = join(directory, "stream-upload.partial");
+  const unauthorizedFixture = new Uint8Array([0x66, 0x6f, 0x6d]);
+  const unauthorized = await fetch(`${baseUrl}/api/__studio-spike/upload`, {
+    method: "PUT",
+    headers: {
+      "content-length": String(unauthorizedFixture.byteLength),
+      "content-type": "application/octet-stream",
+    },
+    body: unauthorizedFixture,
+  });
+  if (unauthorized.status !== 401) {
+    throw new Error(
+      `Unauthenticated spike upload returned ${unauthorized.status}, expected 401.`,
+    );
+  }
+  for (const path of [partial, sealed]) {
+    try {
+      await stat(path);
+      throw new Error("Unauthenticated spike upload wrote bytes.");
+    } catch (error) {
+      if (
+        !(error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+      ) {
+        throw error;
+      }
+    }
+  }
+
+  const exchange = await fetch(`${baseUrl}/__studio/bootstrap`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: baseUrl,
+    },
+    body: JSON.stringify({ token: bootstrapToken }),
+  });
+  if (exchange.status !== 200) {
+    throw new Error(`Studio bootstrap exchange failed (${exchange.status}).`);
+  }
+  const sessionCookie = exchange.headers.get("set-cookie")?.split(";", 1)[0];
+  if (!sessionCookie) {
+    throw new Error("Studio bootstrap exchange did not set a session cookie.");
+  }
+
   const chunk = new Uint8Array(CHUNK_BYTES);
   let remaining = FIXTURE_BYTES;
   const body = new ReadableStream<Uint8Array>({
@@ -97,6 +144,8 @@ try {
     headers: {
       "content-length": String(FIXTURE_BYTES),
       "content-type": "application/octet-stream",
+      cookie: sessionCookie,
+      origin: baseUrl,
     },
     body,
   });
@@ -136,8 +185,6 @@ try {
     );
   }
 
-  const sealed = join(directory, "stream-upload.sealed");
-  const partial = join(directory, "stream-upload.partial");
   if ((await stat(sealed)).size !== FIXTURE_BYTES) {
     throw new Error("Atomic seal did not produce the expected file.");
   }
@@ -153,7 +200,7 @@ try {
   }
 
   const range = await fetch(`${baseUrl}/api/__studio-spike/media`, {
-    headers: { range: "bytes=1024-2047" },
+    headers: { cookie: sessionCookie, range: "bytes=1024-2047" },
   });
   if (range.status !== 206) throw new Error(`Expected 206, received ${range.status}.`);
   if (range.headers.get("content-range") !== `bytes 1024-2047/${FIXTURE_BYTES}`) {
@@ -164,7 +211,7 @@ try {
   }
 
   const unsatisfiable = await fetch(`${baseUrl}/api/__studio-spike/media`, {
-    headers: { range: `bytes=${FIXTURE_BYTES}-` },
+    headers: { cookie: sessionCookie, range: `bytes=${FIXTURE_BYTES}-` },
   });
   if (unsatisfiable.status !== 416) {
     throw new Error(`Expected 416, received ${unsatisfiable.status}.`);
