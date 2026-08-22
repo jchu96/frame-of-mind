@@ -14,6 +14,7 @@ import {
   configureLocalRunStore,
   createLocalRunStoreFromDatabase,
 } from "../../server/data/sqlite.js";
+import { LOCAL_SINGLE_USER_PRINCIPAL } from "../../server/data/types.js";
 import {
   storedOAuthPresent,
 } from "../studio-configuration/connections.js";
@@ -89,7 +90,7 @@ export async function createLocalStudioJobRuntime(
   });
   const runStore = options.projection
     ? undefined
-    : createLocalRunStoreFromDatabase(options.database);
+    : createLocalRunStoreFromDatabase(options.database, LOCAL_SINGLE_USER_PRINCIPAL);
   const projection = options.projection ?? {
     publish: async (run) => {
       await runStore!.importRun(run);
@@ -174,7 +175,7 @@ async function startProductionRuntime(): Promise<LocalStudioJobRuntime> {
   let runtime: LocalStudioJobRuntime | undefined;
   try {
     if (process.platform !== "win32") chmodSync(path, 0o600);
-    const runStore = createLocalRunStoreFromDatabase(database);
+    const runStore = createLocalRunStoreFromDatabase(database, LOCAL_SINGLE_USER_PRINCIPAL);
     runtime = await createLocalStudioJobRuntime({
       database,
       media: await getLocalMediaStaging(),

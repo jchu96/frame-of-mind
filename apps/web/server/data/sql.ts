@@ -8,7 +8,9 @@ export const schemaSql = `
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS analysis_runs (
-  run_id TEXT PRIMARY KEY,
+  principal_sub TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  principal_email TEXT,
   meeting_id TEXT NOT NULL,
   meeting_title TEXT,
   provider TEXT NOT NULL CHECK (provider IN ('bluedot', 'granola', 'file')),
@@ -24,16 +26,19 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
   analysis_json TEXT NOT NULL,
   manifest_json TEXT NOT NULL,
   imported_at TEXT NOT NULL,
-  imported_by TEXT
+  imported_by TEXT,
+  PRIMARY KEY (principal_sub, run_id)
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS analysis_runs_completed_at_idx
-  ON analysis_runs (completed_at DESC);
+  ON analysis_runs (principal_sub, completed_at DESC, imported_at DESC, run_id DESC);
 CREATE INDEX IF NOT EXISTS analysis_runs_meeting_id_idx
-  ON analysis_runs (meeting_id);
+  ON analysis_runs (principal_sub, meeting_id);
 
 CREATE TABLE IF NOT EXISTS analysis_items (
-  run_id TEXT NOT NULL REFERENCES analysis_runs(run_id) ON DELETE CASCADE,
+  principal_sub TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  principal_email TEXT,
   item_index INTEGER NOT NULL,
   accepted INTEGER NOT NULL CHECK (accepted IN (0, 1)),
   kind TEXT NOT NULL,
@@ -45,24 +50,36 @@ CREATE TABLE IF NOT EXISTS analysis_items (
   screenshot TEXT,
   candidate_json TEXT NOT NULL,
   result_json TEXT NOT NULL,
-  PRIMARY KEY (run_id, item_index)
+  PRIMARY KEY (principal_sub, run_id, item_index),
+  FOREIGN KEY (principal_sub, run_id)
+    REFERENCES analysis_runs(principal_sub, run_id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS analysis_items_kind_idx
-  ON analysis_items (kind);
+  ON analysis_items (principal_sub, kind);
 CREATE INDEX IF NOT EXISTS analysis_items_accepted_idx
-  ON analysis_items (accepted);
+  ON analysis_items (principal_sub, accepted);
 
 CREATE TABLE IF NOT EXISTS analysis_run_registry (
-  run_id TEXT PRIMARY KEY,
-  schema_version INTEGER NOT NULL CHECK (schema_version IN (2, 3))
+  principal_sub TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  principal_email TEXT,
+  schema_version INTEGER NOT NULL CHECK (schema_version IN (2, 3)),
+  PRIMARY KEY (principal_sub, run_id)
 ) STRICT;
 
-INSERT OR IGNORE INTO analysis_run_registry (run_id, schema_version)
-SELECT run_id, 2 FROM analysis_runs;
+CREATE UNIQUE INDEX IF NOT EXISTS analysis_run_registry_run_id_unique_idx
+  ON analysis_run_registry (run_id);
+
+INSERT OR IGNORE INTO analysis_run_registry (
+  principal_sub, run_id, principal_email, schema_version
+)
+SELECT principal_sub, run_id, principal_email, 2 FROM analysis_runs;
 
 CREATE TABLE IF NOT EXISTS video_analysis_runs (
-  run_id TEXT PRIMARY KEY,
+  principal_sub TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  principal_email TEXT,
   recipe_id TEXT NOT NULL,
   recipe_label TEXT NOT NULL,
   model TEXT NOT NULL,
@@ -74,14 +91,17 @@ CREATE TABLE IF NOT EXISTS video_analysis_runs (
   analysis_json TEXT NOT NULL,
   manifest_json TEXT NOT NULL,
   imported_at TEXT NOT NULL,
-  imported_by TEXT
+  imported_by TEXT,
+  PRIMARY KEY (principal_sub, run_id)
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS video_analysis_runs_completed_at_idx
-  ON video_analysis_runs (completed_at DESC);
+  ON video_analysis_runs (principal_sub, completed_at DESC, imported_at DESC, run_id DESC);
 
 CREATE TABLE IF NOT EXISTS video_analysis_items (
-  run_id TEXT NOT NULL REFERENCES video_analysis_runs(run_id) ON DELETE CASCADE,
+  principal_sub TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  principal_email TEXT,
   item_index INTEGER NOT NULL,
   accepted INTEGER NOT NULL CHECK (accepted IN (0, 1)),
   kind TEXT NOT NULL,
@@ -93,26 +113,29 @@ CREATE TABLE IF NOT EXISTS video_analysis_items (
   screenshot TEXT,
   candidate_json TEXT NOT NULL,
   result_json TEXT NOT NULL,
-  PRIMARY KEY (run_id, item_index)
+  PRIMARY KEY (principal_sub, run_id, item_index),
+  FOREIGN KEY (principal_sub, run_id)
+    REFERENCES video_analysis_runs(principal_sub, run_id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE INDEX IF NOT EXISTS video_analysis_items_kind_idx
-  ON video_analysis_items (kind);
+  ON video_analysis_items (principal_sub, kind);
 CREATE INDEX IF NOT EXISTS video_analysis_items_accepted_idx
-  ON video_analysis_items (accepted);
+  ON video_analysis_items (principal_sub, accepted);
 `;
 
 export const upsertRunSql = `
 INSERT INTO analysis_runs (
-  run_id, meeting_id, meeting_title, provider, transport, recipe_id,
+  principal_sub, principal_email, run_id, meeting_id, meeting_title, provider, transport, recipe_id,
   recipe_label, model, started_at, completed_at, match_notes, accepted_count,
   rejected_count, analysis_json, manifest_json, imported_at, imported_by
-) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 WHERE EXISTS (
   SELECT 1 FROM analysis_run_registry
-  WHERE run_id = ? AND schema_version = 2
+  WHERE principal_sub = ? AND run_id = ? AND schema_version = 2
 )
-ON CONFLICT(run_id) DO UPDATE SET
+ON CONFLICT(principal_sub, run_id) DO UPDATE SET
+  principal_email = excluded.principal_email,
   meeting_id = excluded.meeting_id,
   meeting_title = excluded.meeting_title,
   provider = excluded.provider,
@@ -133,15 +156,16 @@ ON CONFLICT(run_id) DO UPDATE SET
 
 export const upsertVideoRunSql = `
 INSERT INTO video_analysis_runs (
-  run_id, recipe_id, recipe_label, model, started_at, completed_at,
+  principal_sub, principal_email, run_id, recipe_id, recipe_label, model, started_at, completed_at,
   match_notes, accepted_count, rejected_count, analysis_json, manifest_json,
   imported_at, imported_by
-) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 WHERE EXISTS (
   SELECT 1 FROM analysis_run_registry
-  WHERE run_id = ? AND schema_version = 3
+  WHERE principal_sub = ? AND run_id = ? AND schema_version = 3
 )
-ON CONFLICT(run_id) DO UPDATE SET
+ON CONFLICT(principal_sub, run_id) DO UPDATE SET
+  principal_email = excluded.principal_email,
   recipe_id = excluded.recipe_id,
   recipe_label = excluded.recipe_label,
   model = excluded.model,
@@ -158,10 +182,12 @@ ON CONFLICT(run_id) DO UPDATE SET
 
 export const insertItemsFromJsonSql = `
 INSERT INTO analysis_items (
-  run_id, item_index, accepted, kind, title, summary, importance,
+  principal_sub, principal_email, run_id, item_index, accepted, kind, title, summary, importance,
   start_time, end_time, screenshot, candidate_json, result_json
 )
 SELECT
+  ?1,
+  ?2,
   json_extract(value, '$.runId'),
   json_extract(value, '$.itemIndex'),
   json_extract(value, '$.result.accepted'),
@@ -177,10 +203,12 @@ SELECT
   json_extract(value, '$.screenshot'),
   json(json_extract(value, '$.candidate')),
   json(json_extract(value, '$.result'))
-FROM json_each(?)
+FROM json_each(?3)
 WHERE EXISTS (
   SELECT 1 FROM analysis_run_registry
-  WHERE run_id = json_extract(value, '$.runId') AND schema_version = 2
+  WHERE principal_sub = ?1
+    AND run_id = json_extract(value, '$.runId')
+    AND schema_version = 2
 )
 `;
 
@@ -190,9 +218,10 @@ export const insertVideoItemsFromJsonSql = insertItemsFromJsonSql
 
 export const deleteItemsForRunSql = `
 DELETE FROM analysis_items
-WHERE run_id = ? AND EXISTS (
+WHERE principal_sub = ? AND run_id = ? AND EXISTS (
   SELECT 1 FROM analysis_run_registry
-  WHERE analysis_run_registry.run_id = analysis_items.run_id
+  WHERE analysis_run_registry.principal_sub = analysis_items.principal_sub
+    AND analysis_run_registry.run_id = analysis_items.run_id
     AND schema_version = 2
 )
 `;
@@ -215,7 +244,8 @@ export const supportedRunSummariesSql = `
     recipe_label, model, started_at, completed_at, accepted_count,
     rejected_count, imported_at, imported_by
   FROM analysis_runs
-  WHERE json_valid(analysis_json) AND json_valid(manifest_json)
+  WHERE principal_sub = ?
+    AND json_valid(analysis_json) AND json_valid(manifest_json)
     AND json_extract(analysis_json, '$.schemaVersion') = 2
     AND json_extract(manifest_json, '$.schemaVersion') = 2
   UNION ALL
@@ -226,7 +256,8 @@ export const supportedRunSummariesSql = `
     NULL AS transport, recipe_id, recipe_label, model, started_at,
     completed_at, accepted_count, rejected_count, imported_at, imported_by
   FROM video_analysis_runs
-  WHERE json_valid(analysis_json) AND json_valid(manifest_json)
+  WHERE principal_sub = ?
+    AND json_valid(analysis_json) AND json_valid(manifest_json)
     AND json_extract(analysis_json, '$.schemaVersion') = 3
     AND json_extract(manifest_json, '$.schemaVersion') = 3
 `;
@@ -245,9 +276,11 @@ export function importValues(input: {
     startedAt: string;
     completedAt: string;
   };
-}, actor?: string) {
+}, principal: string, principalEmail?: string, actor?: string) {
   const acceptedCount = input.analysis.items.filter((item) => item.result.accepted).length;
   return [
+    principal,
+    principalEmail ?? null,
     input.manifest.runId,
     input.analysis.meeting.id,
     input.analysis.meeting.title ?? null,
@@ -265,6 +298,7 @@ export function importValues(input: {
     JSON.stringify(input.manifest),
     new Date().toISOString(),
     actor ?? null,
+    principal,
     input.manifest.runId,
   ] as const;
 }
@@ -281,9 +315,11 @@ export function importVideoValues(input: {
     startedAt: string;
     completedAt: string;
   };
-}, actor?: string) {
+}, principal: string, principalEmail?: string, actor?: string) {
   const acceptedCount = input.analysis.items.filter((item) => item.result.accepted).length;
   return [
+    principal,
+    principalEmail ?? null,
     input.manifest.runId,
     input.analysis.recipe.id,
     input.analysis.recipe.label,
@@ -297,6 +333,7 @@ export function importVideoValues(input: {
     JSON.stringify(input.manifest),
     new Date().toISOString(),
     actor ?? null,
+    principal,
     input.manifest.runId,
   ] as const;
 }
@@ -324,13 +361,15 @@ export class D1ProjectionLimitError extends Error {}
 
 export function assertD1RunRowSize(
   input: VersionedRunImport,
+  principal: string,
+  principalEmail?: string,
   actor?: string,
 ): void {
   const encoder = new TextEncoder();
   const values = isRunImportV2(input)
-    ? importValues(input, actor)
+    ? importValues(input, principal, principalEmail, actor)
     : isRunImportV3(input)
-      ? importVideoValues(input, actor)
+      ? importVideoValues(input, principal, principalEmail, actor)
       : undefined;
   if (!values) throw new Error("Run contract schema versions do not match.");
   const bytes = values.reduce<number>(

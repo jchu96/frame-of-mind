@@ -392,6 +392,7 @@ export default defineNuxtConfig({
     sqlitePath: ".data/frame-of-mind.sqlite",
     cloudflareAccessTeamDomain: "",
     cloudflareAccessAud: "",
+    cloudflareAccessAllowInsecureTestJwks: false,
     public: {
       appName: "Frame of Mind",
       appVersion: "0.3.0",

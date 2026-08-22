@@ -9,6 +9,7 @@ import {
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event);
   let mode;
+  let identity: Awaited<ReturnType<typeof verifyCloudflareAccessJwt>>;
   try {
     mode = parseAuthMode(config.authMode);
   } catch {
@@ -40,13 +41,33 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const teamDomain = normalizeTeamDomain(config.cloudflareAccessTeamDomain);
-    const identity = await verifyCloudflareAccessJwt(token, teamDomain, audience);
-    event.context.frameOfMindUser = {
-      authMode: mode,
-      ...(identity.email ? { email: identity.email } : {}),
-    };
+    const allowInsecureFixture = config.cloudflareAccessAllowInsecureTestJwks === true
+      || config.cloudflareAccessAllowInsecureTestJwks === "true";
+    const teamDomain = normalizeTeamDomain(
+      config.cloudflareAccessTeamDomain,
+      allowInsecureFixture,
+    );
+    identity = await verifyCloudflareAccessJwt(token, teamDomain, audience);
   } catch {
     throw createError({ statusCode: 403, statusMessage: "Cloudflare Access token is invalid." });
+  }
+  event.context.frameOfMindPrincipal = {
+    principal: identity.principal,
+    ...(identity.email ? { email: identity.email } : {}),
+  };
+  event.context.frameOfMindUser = {
+    authMode: mode,
+    ...(identity.email ? { email: identity.email } : {}),
+  };
+  const path = event.path.split("?", 1)[0] || "";
+  if (
+    identity.principal.startsWith("service:")
+    && (path === "/api/runs" || path.startsWith("/api/runs/"))
+  ) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: "Service principals cannot use browser run routes.",
+      data: { code: "service_principal_browser_route_denied" },
+    });
   }
 });

@@ -25,7 +25,9 @@ import {
   rowToSummary,
   type RunRow,
   type RunSummaryRow,
+  type RunPrincipal,
   type RunStore,
+  RunPrincipalConflictError,
   RunProjectionVersionConflictError,
 } from "./types";
 
@@ -37,13 +39,26 @@ export async function getRunStore(event: H3Event): Promise<RunStore> {
       statusMessage: "D1 binding DB is required for hosted mode.",
     });
   }
-  return createD1RunStore(database);
+  const principal = event.context.frameOfMindPrincipal;
+  if (!principal) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: "An authenticated principal is required.",
+    });
+  }
+  return createD1RunStore(database, principal);
 }
 
-export function createD1RunStore(database: D1Database): RunStore {
+export function createD1RunStore(
+  database: D1Database,
+  principal: RunPrincipal,
+): RunStore {
   return {
     async listRuns({ limit, cursor }) {
-      const decoded = decodeRunCursor(cursor);
+      const decoded = decodeRunCursor(cursor, principal.principal);
+      if (cursor && !decoded) {
+        throw createError({ statusCode: 400, statusMessage: "Run cursor is invalid." });
+      }
       const where = decoded
         ? `WHERE (
           completed_at < ?
@@ -57,14 +72,24 @@ export function createD1RunStore(database: D1Database): RunStore {
          ORDER BY completed_at DESC, imported_at DESC, run_id DESC LIMIT ?`,
       );
       const result = await (decoded
-        ? statement.bind(decoded[0], decoded[0], decoded[1], decoded[0], decoded[1], decoded[2], limit + 1)
-        : statement.bind(limit + 1)
+        ? statement.bind(
+          principal.principal,
+          principal.principal,
+          decoded[0],
+          decoded[0],
+          decoded[1],
+          decoded[0],
+          decoded[1],
+          decoded[2],
+          limit + 1,
+        )
+        : statement.bind(principal.principal, principal.principal, limit + 1)
       ).all<RunSummaryRow>();
       const page = result.results.slice(0, limit);
       return {
         runs: page.map(rowToSummary),
         ...(result.results.length > limit && page.length
-          ? { nextCursor: encodeRunCursor(page[page.length - 1]!) }
+          ? { nextCursor: encodeRunCursor(page[page.length - 1]!, principal.principal) }
           : {}),
       };
     },
@@ -72,22 +97,22 @@ export function createD1RunStore(database: D1Database): RunStore {
     async getRun(runId) {
       const meetingRow = await database.prepare(
         `SELECT 2 AS schema_version, 'meeting' AS context_mode, *
-         FROM analysis_runs WHERE run_id = ?
+         FROM analysis_runs WHERE principal_sub = ? AND run_id = ?
            AND json_valid(analysis_json) AND json_valid(manifest_json)
            AND json_extract(analysis_json, '$.schemaVersion') = 2
            AND json_extract(manifest_json, '$.schemaVersion') = 2`,
-      ).bind(runId).first<RunRow>();
+      ).bind(principal.principal, runId).first<RunRow>();
       const videoRow = await database.prepare(
         `SELECT 3 AS schema_version, 'none' AS context_mode,
            run_id, NULL AS meeting_id, NULL AS meeting_title,
            NULL AS provider, NULL AS transport, recipe_id, recipe_label,
            model, started_at, completed_at, match_notes, accepted_count,
            rejected_count, analysis_json, manifest_json, imported_at, imported_by
-         FROM video_analysis_runs WHERE run_id = ?
+         FROM video_analysis_runs WHERE principal_sub = ? AND run_id = ?
            AND json_valid(analysis_json) AND json_valid(manifest_json)
            AND json_extract(analysis_json, '$.schemaVersion') = 3
            AND json_extract(manifest_json, '$.schemaVersion') = 3`,
-      ).bind(runId).first<RunRow>();
+      ).bind(principal.principal, runId).first<RunRow>();
       if (meetingRow && videoRow) {
         throw new Error("Run ID exists in multiple projection schema tables.");
       }
@@ -102,13 +127,32 @@ export function createD1RunStore(database: D1Database): RunStore {
 
     async importRun(input, actor) {
       const validated = await validateVersionedRunImport(input);
-      assertD1RunRowSize(validated, actor);
+      assertD1RunRowSize(validated, principal.principal, principal.email, actor);
+      const conflictingPrincipal = await database.prepare(`
+        SELECT principal_sub FROM analysis_run_registry
+        WHERE run_id = ? AND principal_sub <> ?
+        UNION ALL
+        SELECT principal_sub FROM analysis_runs
+        WHERE run_id = ? AND principal_sub <> ?
+        UNION ALL
+        SELECT principal_sub FROM video_analysis_runs
+        WHERE run_id = ? AND principal_sub <> ?
+        LIMIT 1
+      `).bind(
+        validated.manifest.runId,
+        principal.principal,
+        validated.manifest.runId,
+        principal.principal,
+        validated.manifest.runId,
+        principal.principal,
+      ).first<{ principal_sub: string }>();
+      if (conflictingPrincipal) throw new RunPrincipalConflictError();
       const existingMeeting = await database.prepare(
-        "SELECT 1 AS found FROM analysis_runs WHERE run_id = ?",
-      ).bind(validated.manifest.runId).first<{ found: number }>();
+        "SELECT 1 AS found FROM analysis_runs WHERE principal_sub = ? AND run_id = ?",
+      ).bind(principal.principal, validated.manifest.runId).first<{ found: number }>();
       const existingVideo = await database.prepare(
-        "SELECT 1 AS found FROM video_analysis_runs WHERE run_id = ?",
-      ).bind(validated.manifest.runId).first<{ found: number }>();
+        "SELECT 1 AS found FROM video_analysis_runs WHERE principal_sub = ? AND run_id = ?",
+      ).bind(principal.principal, validated.manifest.runId).first<{ found: number }>();
       if (
         (validated.analysis.schemaVersion === 2 && existingVideo)
         || (validated.analysis.schemaVersion === 3 && existingMeeting)
@@ -117,35 +161,70 @@ export function createD1RunStore(database: D1Database): RunStore {
       }
       const statements: D1PreparedStatement[] = [
         database.prepare(
-          "INSERT OR IGNORE INTO analysis_run_registry (run_id, schema_version) VALUES (?, ?)",
-        ).bind(validated.manifest.runId, validated.analysis.schemaVersion),
+          `INSERT OR IGNORE INTO analysis_run_registry
+            (principal_sub, run_id, principal_email, schema_version)
+           VALUES (?, ?, ?, ?)`,
+        ).bind(
+          principal.principal,
+          validated.manifest.runId,
+          principal.email ?? null,
+          validated.analysis.schemaVersion,
+        ),
       ];
       if (isRunImportV2(validated)) {
         statements.push(
-          database.prepare(upsertRunSql).bind(...importValues(validated, actor)),
+          database.prepare(upsertRunSql).bind(...importValues(
+            validated,
+            principal.principal,
+            principal.email,
+            actor,
+          )),
           database.prepare(deleteItemsForRunSql)
-            .bind(validated.manifest.runId),
+            .bind(principal.principal, validated.manifest.runId),
         );
         for (const batch of itemJsonBatches(validated.manifest.runId, validated.analysis.items)) {
-          statements.push(database.prepare(insertItemsFromJsonSql).bind(batch));
+          statements.push(database.prepare(insertItemsFromJsonSql).bind(
+            principal.principal,
+            principal.email ?? null,
+            batch,
+          ));
         }
       } else if (isRunImportV3(validated)) {
         statements.push(
-          database.prepare(upsertVideoRunSql).bind(...importVideoValues(validated, actor)),
+          database.prepare(upsertVideoRunSql).bind(...importVideoValues(
+            validated,
+            principal.principal,
+            principal.email,
+            actor,
+          )),
           database.prepare(deleteVideoItemsForRunSql)
-            .bind(validated.manifest.runId),
+            .bind(principal.principal, validated.manifest.runId),
         );
         for (const batch of itemJsonBatches(validated.manifest.runId, validated.analysis.items)) {
-          statements.push(database.prepare(insertVideoItemsFromJsonSql).bind(batch));
+          statements.push(database.prepare(insertVideoItemsFromJsonSql).bind(
+            principal.principal,
+            principal.email ?? null,
+            batch,
+          ));
         }
       } else {
         throw new Error("Run contract schema versions do not match.");
       }
       await database.batch(statements);
       const registration = await database.prepare(
-        "SELECT schema_version FROM analysis_run_registry WHERE run_id = ?",
-      ).bind(validated.manifest.runId).first<{ schema_version: number }>();
+        `SELECT schema_version FROM analysis_run_registry
+         WHERE principal_sub = ? AND run_id = ?`,
+      ).bind(
+        principal.principal,
+        validated.manifest.runId,
+      ).first<{ schema_version: number }>();
       if (registration?.schema_version !== validated.analysis.schemaVersion) {
+        const owner = await database.prepare(
+          `SELECT principal_sub FROM analysis_run_registry
+           WHERE run_id = ? AND principal_sub <> ?`,
+        ).bind(validated.manifest.runId, principal.principal)
+          .first<{ principal_sub: string }>();
+        if (owner) throw new RunPrincipalConflictError();
         throw new RunProjectionVersionConflictError();
       }
       return {

@@ -12,6 +12,7 @@ import {
 } from "../server/data/sqlite";
 import { importValues, schemaSql } from "../server/data/sql";
 import type { RunStore } from "../server/data/types";
+import { LOCAL_SINGLE_USER_PRINCIPAL } from "../server/data/types";
 import { runFixture, videoRunFixture } from "./fixtures";
 import { analysisDigest } from "../../../src/domain/integrity";
 
@@ -58,8 +59,9 @@ describe("local SQLite projection", () => {
   test("imports, lists, reads, and refreshes a run", async () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
-    const store = createLocalRunStore(join(directory, "runs.sqlite"));
+    const store = createLocalRunStore(join(directory, "runs.sqlite"), LOCAL_SINGLE_USER_PRINCIPAL);
     const input = runFixture();
+    const submittedBytes = JSON.stringify(input);
 
     expect(await store.importRun(input, "tester@example.com")).toEqual({
       runId: input.manifest.runId,
@@ -73,14 +75,16 @@ describe("local SQLite projection", () => {
     expect((await store.getRun(input.manifest.runId))?.analysis.items[0]?.result.title)
       .toBe("Use the portable contract");
     expect((await store.importRun(input)).created).toBe(false);
+    expect(JSON.stringify(input)).toBe(submittedBytes);
     expect((await stat(join(directory, "runs.sqlite"))).mode & 0o077).toBe(0);
   });
 
   test("imports and reads video-only v3 without meeting projection fields", async () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
-    const store = createLocalRunStore(join(directory, "runs.sqlite"));
+    const store = createLocalRunStore(join(directory, "runs.sqlite"), LOCAL_SINGLE_USER_PRINCIPAL);
     const input = await videoRunFixture();
+    const submittedBytes = JSON.stringify(input);
 
     expect(await store.importRun(input, "tester@example.com")).toEqual({
       runId: input.manifest.runId,
@@ -101,12 +105,13 @@ describe("local SQLite projection", () => {
       analysis: { context: { mode: "none" } },
       manifest: { context: { mode: "none" } },
     });
+    expect(JSON.stringify(input)).toBe(submittedBytes);
   });
 
   test("rejects a run ID reused across v2 and v3 projection tables", async () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
-    const store = createLocalRunStore(join(directory, "runs.sqlite"));
+    const store = createLocalRunStore(join(directory, "runs.sqlite"), LOCAL_SINGLE_USER_PRINCIPAL);
     const meeting = runFixture();
     const video = await videoRunFixture();
     video.analysis.runId = meeting.analysis.runId;
@@ -127,12 +132,75 @@ describe("local SQLite projection", () => {
     const migrations = await Promise.all([
       "0001_initial.sql",
       "0002_video_only_projection.sql",
+      "0003_principal_scope.sql",
     ].map((name) => readFile(
       new URL(`../db/migrations/${name}`, import.meta.url),
       "utf8",
     )));
-    const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
-    expect(normalize(migrations.join("\n"))).toBe(normalize(schemaSql));
+    const migrated = new Database(":memory:");
+    const bootstrapped = new Database(":memory:");
+    try {
+      migrated.exec(migrations[0]!);
+      migrated.exec(migrations[1]!);
+      migrated.transaction(() => applySqlStatements(migrated, migrations[2]!)).immediate();
+      bootstrapped.exec(schemaSql);
+      const schemaRows = (database: Database) => database.query<{
+        type: string;
+        name: string;
+        sql: string;
+      }, []>(`
+        SELECT type, name, sql FROM sqlite_schema
+        WHERE name NOT LIKE 'sqlite_%' AND sql IS NOT NULL
+        ORDER BY type, name
+      `).all().map((row) => ({
+        ...row,
+        sql: row.sql.replace(/\s+/g, " ").trim(),
+      }));
+      expect(schemaRows(migrated)).toEqual(schemaRows(bootstrapped));
+      const sentinelCount = migrated.query<{ count: number }, []>(`
+        SELECT
+          (SELECT count(*) FROM analysis_runs WHERE principal_sub = '__legacy_unclaimed__')
+          + (SELECT count(*) FROM analysis_items WHERE principal_sub = '__legacy_unclaimed__')
+          + (SELECT count(*) FROM analysis_run_registry WHERE principal_sub = '__legacy_unclaimed__')
+          + (SELECT count(*) FROM video_analysis_runs WHERE principal_sub = '__legacy_unclaimed__')
+          + (SELECT count(*) FROM video_analysis_items WHERE principal_sub = '__legacy_unclaimed__')
+          AS count
+      `).get();
+      expect(sentinelCount?.count).toBe(0);
+    } finally {
+      migrated.close();
+      bootstrapped.close();
+    }
+  });
+
+  test("fails the principal-scope migration closed when legacy rows exist", async () => {
+    const [initialMigration, videoMigration, principalMigration] = await Promise.all([
+      "0001_initial.sql",
+      "0002_video_only_projection.sql",
+      "0003_principal_scope.sql",
+    ].map((name) => readFile(
+      new URL(`../db/migrations/${name}`, import.meta.url),
+      "utf8",
+    )));
+    const database = new Database(":memory:");
+    try {
+      database.exec(initialMigration!);
+      const meeting = runFixture();
+      insertLegacyV2Projection(database, meeting);
+      database.exec(videoMigration!);
+      expect(() => database.transaction(() => {
+        applySqlStatements(database, principalMigration!);
+      }).immediate()).toThrow(/principal_scope_requires_empty_legacy_tables/);
+      expect(database.query<{ count: number }, []>(
+        "SELECT count(*) AS count FROM analysis_runs",
+      ).get()?.count).toBe(1);
+      expect(database.query<{ count: number }, []>(`
+        SELECT count(*) AS count FROM pragma_table_info('analysis_runs')
+        WHERE name = 'principal_sub'
+      `).get()?.count).toBe(0);
+    } finally {
+      database.close();
+    }
   });
 
   test("upgrades a populated 0001 database without changing v2 projections", async () => {
@@ -160,7 +228,7 @@ describe("local SQLite projection", () => {
     ).get(meeting.manifest.runId)?.count).toBe(1);
     database.close();
 
-    const store = createLocalRunStore(path);
+    const store = createLocalRunStore(path, LOCAL_SINGLE_USER_PRINCIPAL);
     await expect(store.getRun(meeting.manifest.runId)).resolves.toMatchObject({
       schemaVersion: 2,
       contextMode: "meeting",
@@ -175,7 +243,7 @@ describe("local SQLite projection", () => {
   test("keyset-paginates stable summary rows", async () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
-    const store = createLocalRunStore(join(directory, "runs.sqlite"));
+    const store = createLocalRunStore(join(directory, "runs.sqlite"), LOCAL_SINGLE_USER_PRINCIPAL);
     for (const index of [1, 2, 3]) {
       const input = runFixture();
       const runId = `20260725T12000${index}Z-page`;
@@ -199,7 +267,7 @@ describe("local SQLite projection", () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
     const path = join(directory, "runs.sqlite");
-    const store = createLocalRunStore(path);
+    const store = createLocalRunStore(path, LOCAL_SINGLE_USER_PRINCIPAL);
     const input = runFixture();
     await store.importRun(input);
     const database = new Database(path);
@@ -213,7 +281,7 @@ describe("local SQLite projection", () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
     const path = join(directory, "runs.sqlite");
-    const store = createLocalRunStore(path);
+    const store = createLocalRunStore(path, LOCAL_SINGLE_USER_PRINCIPAL);
     const input = runFixture();
     await store.importRun(input);
     const database = new Database(path);
@@ -231,7 +299,7 @@ describe("local SQLite projection", () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
     const path = join(directory, "runs.sqlite");
-    const store = createLocalRunStore(path);
+    const store = createLocalRunStore(path, LOCAL_SINGLE_USER_PRINCIPAL);
     const input = runFixture();
     await store.importRun(input);
     const database = new Database(path);
@@ -247,7 +315,12 @@ function insertLegacyV2Projection(
   database: Database,
   input: ReturnType<typeof runFixture>,
 ): void {
-  const values = importValues(input, "legacy@example.com").slice(0, -1);
+  const values = importValues(
+    input,
+    LOCAL_SINGLE_USER_PRINCIPAL.principal,
+    undefined,
+    "legacy@example.com",
+  ).slice(2, -2);
   database.query(`
     INSERT INTO analysis_runs (
       run_id, meeting_id, meeting_title, provider, transport, recipe_id,
@@ -290,4 +363,10 @@ function emptyRunStore(): RunStore {
       return { runId: input.manifest.runId, created: true };
     },
   };
+}
+
+function applySqlStatements(database: Database, sql: string): void {
+  for (const statement of sql.split(";").map((value) => value.trim()).filter(Boolean)) {
+    database.exec(statement);
+  }
 }
