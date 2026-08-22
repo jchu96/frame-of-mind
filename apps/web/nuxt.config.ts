@@ -115,6 +115,9 @@ const studioActivityPage = fileURLToPath(
 const studioActivityDetailPage = fileURLToPath(
   new URL("./server-local/studio-ui/activity-detail.vue", import.meta.url),
 );
+const studioSupportReceiptHandler = fileURLToPath(
+  new URL("./server-local/studio-ui/support-receipt.get.ts", import.meta.url),
+);
 const hostedIntentPage = fileURLToPath(
   new URL("./server-hosted/studio-ui/intent.vue", import.meta.url),
 );
@@ -330,6 +333,11 @@ const localHandlers = [
           route: "/api/studio/jobs/:id",
           method: "get",
           handler: studioJobDetailHandler,
+        },
+        {
+          route: "/api/studio/jobs/:id/support-receipt",
+          method: "get",
+          handler: studioSupportReceiptHandler,
         },
         {
           route: "/api/studio/jobs/:id/cancel",

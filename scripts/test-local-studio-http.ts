@@ -313,6 +313,11 @@ try {
     "job detail requires a Studio session",
   );
   await expectStatus(
+    await probe.get("/api/studio/jobs/job_01K123456789ABC/support-receipt"),
+    401,
+    "support receipt requires a Studio session",
+  );
+  await expectStatus(
     await probe.mutate(
       "/api/studio/jobs/job_01K123456789ABC/reimport",
       "POST",
@@ -384,6 +389,26 @@ try {
     || jobsBody.jobs[0]?.id !== seededSucceededJobId
   ) {
     throw new Error("Fresh Studio job runtime did not preserve the terminal fixture.");
+  }
+  const supportReceiptResponse = await expectStatus(
+    await probe.get(`/api/studio/jobs/${seededSucceededJobId}/support-receipt`),
+    200,
+    "authenticated support receipt is available for the same job",
+  );
+  if (!supportReceiptResponse.headers.get("content-type")?.startsWith("text/plain")) {
+    throw new Error("Support receipt did not use a plain-text response type.");
+  }
+  const supportReceipt = await supportReceiptResponse.text();
+  if (
+    !supportReceipt.startsWith("Frame of Mind support receipt v1\n")
+    || !supportReceipt.includes(`job_id=${seededSucceededJobId}`)
+    || !supportReceipt.includes("stage=succeeded")
+    || !supportReceipt.includes("recipe_id=issue-review")
+    || supportReceipt.includes("idempotencyKey")
+    || supportReceipt.includes(DEFAULT_GEMINI_MODEL)
+    || supportReceipt.includes(outputRoot)
+  ) {
+    throw new Error("Support receipt did not preserve its closed allowlist.");
   }
   await expectStatus(
     await probe.mutate(

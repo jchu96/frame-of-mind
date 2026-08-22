@@ -96,6 +96,12 @@ or cleanup-retry controls with inline confirmation and pending state; list
 rows expose cancel only. Reconnect preselects the exact provider in Connections
 and returns to the detail. The re-import and cleanup-retry handlers are
 session-guarded local routes and remain absent from hosted builds.
+Technical details and the v1 plain-text support receipt are constructed from
+one closed allowlist: job/stage/terminal codes, normalized timestamps,
+transition-derived durations, provider/recipe IDs, retention, and cleanup
+state. They never copy event messages, source objects, transcripts, paths,
+URLs, tokens, emails, meeting IDs, or raw provider errors. The receipt GET
+route uses the same per-launch session boundary as Activity.
 
 The Run page re-reads the browser drafts, live media receipt, local context
 receipt when applicable, and sanitized recipe catalog. It shows the exact
@@ -374,6 +380,7 @@ For a new migration:
 | `GET` | `/api/studio/jobs` | list bounded local operational jobs |
 | `POST` | `/api/studio/composer/jobs` | validate one browser composer receipt and create/replay a job |
 | `GET` | `/api/studio/jobs/:id` | read one job and bounded event history |
+| `GET` | `/api/studio/jobs/:id/support-receipt` | read the same job's allowlisted v1 plain-text support receipt |
 | `POST` | `/api/studio/jobs/:id/cancel` | persist cancellation intent |
 | `POST` | `/api/studio/jobs/:id/retry` | create or replay a linked retained-media retry |
 | `POST` | `/api/studio/jobs/:id/reimport` | idempotently re-import one succeeded job's existing run pair |
