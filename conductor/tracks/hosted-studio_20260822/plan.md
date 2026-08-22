@@ -2,7 +2,7 @@
 
 **Track ID:** `hosted-studio_20260822`
 **Spec:** [spec.md](./spec.md)
-**Status:** Active — Phase 1 complete; Phase 2 is next
+**Status:** Active — Phase 1 complete; Phase 2 blocked by Task 2.0 NO-GO
 
 ## Overview
 
@@ -118,7 +118,7 @@ to release this security hardening.
 
 ### Tasks
 
-- [ ] Task 2.0: Stop/go spike the real `cloudflare_module` route with a
+- [x] Task 2.0: Stop/go spike the real `cloudflare_module` route with a
       synthetic body at least 8 MiB: pipe `request.body` directly into a
       Gemini-compatible resumable sink, prove H3/Nitro never calls `readBody()`
       or materializes the part, and measure isolate memory with two concurrent
@@ -149,6 +149,20 @@ to release this security hardening.
       Gemini `sha256Hash`, fail closed as `media_digest_mismatch`, and delete
       mismatched remote files. Trust-boundary review trigger: provider metadata
       becomes eligible to authorize a Workflow.
+
+**Task 2.0 status (2026-08-22): Complete — NO-GO.** The built
+`cloudflare_module` Worker authenticated the dark spike route and delivered
+one 16 MiB body plus two concurrent 8 MiB bodies to the fake resumable sink
+with exact byte and SHA-256 receipts. That transfer is not the required
+streaming path: Nitro 2.13.4 materializes every incoming body with
+`Buffer.from(await request.arrayBuffer())` before H3, the two-upload inspector
+run added 33,568,143 bytes of backing storage, and the handler observed the
+original request body already consumed. `hash-wasm` 4.12.0 also attempts
+runtime `WebAssembly.compile()`, which workerd forbids. Tasks 2.1–2.4 remain
+blocked. The decision record and unadopted private-R2 amendment proposal are in
+[`hosted-streaming-spike-2026-08-22.md`](../../../docs/spikes/hosted-streaming-spike-2026-08-22.md)
+and
+[`adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`](../../../docs/spikes/adr-0018-private-r2-staging-amendment-draft-2026-08-22.md).
 
 ### Verification
 

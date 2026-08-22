@@ -29,6 +29,13 @@ a local two-step instance passed. Local SQLite uses reserved
 `local:single-user` so shared RunStore SQL stays in lockstep without adding
 principal fields to durable run bundles or local job/media ports.
 
+Task 2.0 measured a NO-GO on the current built Worker. Nitro 2.13.4 consumes
+incoming bodies with `request.arrayBuffer()` before H3, and `hash-wasm` 4.12.0
+attempts runtime WASM compilation that workerd forbids. Hosted upload remains
+dark and Tasks 2.1–2.4 stay blocked. A separate unadopted amendment draft
+proposes private, short-lived R2 staging; ADR 0018 itself remains Proposed and
+unchanged until that expanded custody/secret boundary is reviewed.
+
 ## 2026-08-11 — Recipes become charters; the executor owns prompt policy
 
 Proposed: recipe intent decomposes into named, bounded slots (stance, allowed

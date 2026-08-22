@@ -1,5 +1,23 @@
 # Bugs and Failure History
 
+## 2026-08-22 — Built hosted upload route materialized every request body
+
+- Symptom: a route-local `TransformStream` delivered exact 16 MiB and
+  concurrent 8 MiB bodies to a resumable-shaped sink, but could not prove the
+  original Cloudflare request remained streaming; inspector backing storage
+  rose by about 32 MiB for the concurrent pair. The requested `hash-wasm`
+  server digest also failed before it could instantiate.
+- Cause: Nitro 2.13.4's `cloudflare_module` entry calls
+  `Buffer.from(await request.arrayBuffer())` before `localFetch` creates the H3
+  event. Separately, `hash-wasm` 4.12.0 decodes embedded bytes and calls
+  `WebAssembly.compile()` at runtime, which workerd disallows.
+- Decision: Task 2.0 is NO-GO; keep hosted creation dark and block Tasks
+  2.1–2.4. The unadopted ADR 0018 amendment draft proposes private R2 staging.
+- Prevention: gate hosted upload changes on the built workerd artifact, scan
+  the emitted entry as well as route source, inspect backing storage rather
+  than ordinary JS heap alone, and require Worker-compatible precompiled WASM
+  before claiming `hash-wasm` support.
+
 ## 2026-08-22 — Every Studio-created analysis failed before Gemini upload
 
 - Symptom: valid Studio jobs moved through `fetching_context` and failed in
