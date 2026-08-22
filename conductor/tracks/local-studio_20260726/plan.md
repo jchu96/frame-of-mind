@@ -321,7 +321,7 @@ context-before-upload ordering. Phase 6 is closed; Task 7.1 is next.
       equivalents without fabricated completion percentages.
 - [x] Task 7.4: Add sanitized technical details and copyable support receipts
       that exclude private content.
-- [ ] Task 7.5: Add startup and scheduled maintenance for expired uploads and
+- [x] Task 7.5: Add startup and scheduled maintenance for expired uploads and
       stale job records with dry-run diagnostics.
 
 Task 7.1 is complete: the authenticated local-only `/activity` route groups
@@ -368,9 +368,21 @@ paths, URLs, tokens, emails, meeting IDs, and raw provider errors cannot enter
 either projection. Unit, type, production HTTP, Cloudflare boundary, and
 Playwright smoke coverage validate the slice. Task 7.5 is next.
 
+Task 7.5 is complete: one pure planner joins durable jobs, media staging,
+context staging, and the worker heartbeat to identify expired or orphaned
+Studio-owned copies and stale unpublished jobs. Its idempotent executor
+preserves explicit operator recordings, live retained receipts, and active
+leases; stale jobs receive sanitized warning and interruption evidence. The
+controller runs after worker readiness and before job-route exposure, repeats
+on a configurable non-overlapping interval, and exposes a session-guarded,
+local-only dry-run plan plus last-run counts. Home reports maintenance only
+when a run changed something. Adversarial planner/executor tests,
+authenticated HTTP coverage, Cloudflare exclusion checks, and browser smoke
+coverage validate the slice. Phase 8 is next.
+
 ### Verification
 
-- [ ] End-to-end tests cover refresh, browser closure, server restart, expired
+- [x] End-to-end tests cover refresh, browser closure, server restart, expired
       auth, quota failure, timeout, cancellation, cleanup failure, and retry.
 
 ## Phase 8: Timestamp-Linked Review Workspace

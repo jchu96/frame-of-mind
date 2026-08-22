@@ -158,14 +158,11 @@ const studioSecretDeleteHandler = fileURLToPath(
 const studioOAuthHandler = fileURLToPath(
   new URL("./server-local/studio-configuration/oauth.post.ts", import.meta.url),
 );
-const studioMediaStartup = fileURLToPath(
-  new URL("./server-local/studio-media/startup.ts", import.meta.url),
-);
-const studioContextStartup = fileURLToPath(
-  new URL("./server-local/studio-context/startup.ts", import.meta.url),
-);
 const studioJobsStartup = fileURLToPath(
   new URL("./server-local/studio-jobs/startup.ts", import.meta.url),
+);
+const studioMaintenanceHandler = fileURLToPath(
+  new URL("./server-local/studio-maintenance/index.get.ts", import.meta.url),
 );
 const studioMediaCreateHandler = fileURLToPath(
   new URL("./server-local/studio-media/create.post.ts", import.meta.url),
@@ -338,6 +335,11 @@ const localHandlers = [
           route: "/api/studio/jobs/:id/support-receipt",
           method: "get",
           handler: studioSupportReceiptHandler,
+        },
+        {
+          route: "/api/studio/maintenance",
+          method: "get",
+          handler: studioMaintenanceHandler,
         },
         {
           route: "/api/studio/jobs/:id/cancel",
@@ -542,9 +544,7 @@ export default defineNuxtConfig({
   nitro: {
     preset: nitroPreset,
     handlers: localHandlers,
-    plugins: localStudioEnabled
-      ? [studioMediaStartup, studioContextStartup, studioJobsStartup]
-      : [],
+    plugins: localStudioEnabled ? [studioJobsStartup] : [],
   },
   runtimeConfig: {
     authMode: "off",

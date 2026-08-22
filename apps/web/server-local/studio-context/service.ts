@@ -45,14 +45,12 @@ export function resolveLocalContextRoot(
 
 export function getLocalContextFileStaging():
   Promise<LocalContextFileStagingAdapter> {
-  configuredAdapter ??= (async () => {
-    const adapter = new LocalContextFileStagingAdapter({
+  configuredAdapter ??= Promise.resolve(
+    new LocalContextFileStagingAdapter({
       rootDirectory: resolveLocalContextRoot(),
       checkoutRoot: process.env.FRAME_OF_MIND_CHECKOUT_ROOT,
-    });
-    await adapter.expire();
-    return adapter;
-  })();
+    }),
+  );
   return configuredAdapter;
 }
 

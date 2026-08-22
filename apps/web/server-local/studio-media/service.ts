@@ -44,14 +44,12 @@ export function resolveLocalMediaRoot(
 }
 
 export function getLocalMediaStaging(): Promise<LocalMediaStagingAdapter> {
-  configuredAdapter ??= (async () => {
-    const adapter = new LocalMediaStagingAdapter({
+  configuredAdapter ??= Promise.resolve(
+    new LocalMediaStagingAdapter({
       rootDirectory: resolveLocalMediaRoot(),
       checkoutRoot: process.env.FRAME_OF_MIND_CHECKOUT_ROOT,
-    });
-    await adapter.reconcile();
-    return adapter;
-  })();
+    }),
+  );
   return configuredAdapter;
 }
 
