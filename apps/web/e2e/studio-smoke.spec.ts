@@ -271,17 +271,18 @@ test("creates one video-only analysis from the Run receipt", {
   await expect(page.getByText("Recording staged and sealed locally."))
     .toBeVisible();
 
-  await page.goto("/context");
-  await page.getByRole("radio", { name: /Recording only/ }).check();
-  await page.getByRole("button", { name: "Save context step" }).click();
-  await expect(page.getByText("Context step saved")).toBeVisible();
-
   await page.goto("/run");
   await expect(
     page.getByRole("heading", { name: "Review the exact run receipt." }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Requirements" }))
     .toBeVisible();
+  await expect(page.getByText(
+    "Add meeting context, or continue with the recording only.",
+  )).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open context" })).toBeVisible();
+  await page.getByRole("button", { name: "Continue without context" }).click();
+  await expect(page.getByText("BLOCKED", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Video-only", { exact: true })).toBeVisible();
   const keyResponse = await page.request.put(
     "/api/studio/configuration/secrets/gemini-api-key",
@@ -299,14 +300,31 @@ test("creates one video-only analysis from the Run receipt", {
   );
   await start.click();
   const createResponse = await createResponsePromise;
-  expect(
-    createResponse.status(),
-    await createResponse.text(),
-  ).toBe(201);
+  const createStatus = createResponse.status();
+  if (createStatus !== 201) {
+    throw new Error(`Job create failed (${createStatus}): ${await createResponse.text()}`);
+  }
+  const created = await createResponse.json() as { job: { id: string } };
 
   await expect(page).toHaveURL(/\/?created=job_/);
   const notice = page.getByText(/Job job_.* durable local queue\./);
   await expect(notice).toBeVisible();
+  await expect.poll(async () => {
+    const response = await page.request.get(
+      `/api/studio/jobs/${encodeURIComponent(created.job.id)}?afterSequence=0&limit=100`,
+    );
+    const detail = await response.json() as {
+      job: { stage: string; terminal?: { code?: string } };
+    };
+    return detail.job.terminal?.code;
+  }, { timeout: 60_000 }).toBe("gemini_request_failed");
+  const terminalResponse = await page.request.get(
+    `/api/studio/jobs/${encodeURIComponent(created.job.id)}?afterSequence=0&limit=100`,
+  );
+  const terminalDetail = await terminalResponse.json() as {
+    job: { terminal?: { code?: string } };
+  };
+  expect(terminalDetail.job.terminal?.code).not.toBe("analysis_failed");
   expect(await page.evaluate(() => ({
     intent: sessionStorage.getItem("frame-of-mind:studio:intent-draft"),
     context: sessionStorage.getItem("frame-of-mind:studio:context-draft"),

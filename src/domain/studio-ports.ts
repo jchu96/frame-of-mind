@@ -173,6 +173,8 @@ export interface AnalysisJobExecutionResult {
 }
 
 export class AnalysisExecutionIndeterminateError extends Error {
+  readonly code = "executor_result_invalid";
+
   constructor() {
     super(
       "Analysis execution completed without a trustworthy publication receipt.",

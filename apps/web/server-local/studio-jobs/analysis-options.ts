@@ -7,6 +7,7 @@ import type {
 import type {
   AnalysisJob,
   ImmutableJobInput,
+  MediaSession,
 } from "../../../../src/domain/studio-schemas.js";
 import {
   loadRecipe,
@@ -18,6 +19,7 @@ import type {
 const DEFAULT_MAX_INCIDENTS = 10;
 
 interface LocalMediaPathResolver {
+  get(mediaSessionId: string): Promise<MediaSession | undefined>;
   resolveInUsePath(
     mediaSessionId: string,
     expectedSha256: string,
@@ -137,6 +139,15 @@ export class LocalStudioAnalyzeOptionsResolver {
       job.input.mediaSessionId,
       job.input.mediaSha256,
     );
+    const mediaSession = await this.options.media.get(
+      job.input.mediaSessionId,
+    );
+    if (
+      !mediaSession
+      || mediaSession.sha256 !== job.input.mediaSha256
+    ) {
+      throw new StudioJobInputUnavailableError("media_receipt_mismatch");
+    }
     const common = {
       recipe: recipe.recipe,
       customRecipe: recipe.custom,
@@ -145,6 +156,7 @@ export class LocalStudioAnalyzeOptionsResolver {
       apiKey,
       model: job.input.model,
       video,
+      videoMimeType: mediaSession.mimeType,
       expectedVideoSha256: job.input.mediaSha256,
       ...(job.input.focus ? { focus: job.input.focus } : {}),
       outputRoot: this.#outputRoot,

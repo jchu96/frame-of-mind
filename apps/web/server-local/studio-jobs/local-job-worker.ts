@@ -19,11 +19,30 @@ import {
 import type {
   AnalysisJobStage,
 } from "../../../../src/domain/studio-types";
+import { MediaStagingError } from "../studio-media/local-media-staging";
+import { StudioJobInputUnavailableError } from "./analysis-options";
+import { StudioMediaReuseError } from "./media-reuse-guard";
 
 const ACTIVE_STAGES = ANALYSIS_JOB_STAGES.filter(
   (stage) => stage !== "queued" && !isAnalysisJobTerminal(stage),
 );
 const PAGE_SIZE = 100;
+const SANITIZED_FAILURE_MESSAGES = {
+  analysis_failed: "Analysis execution failed.",
+  executor_result_invalid:
+    "Execution completed with an invalid publication receipt; explicit retry is required.",
+  gemini_request_failed:
+    "Gemini could not complete the analysis request. Review Connections and try again.",
+  input_unavailable:
+    "Required analysis input is unavailable. Reopen the affected Studio step and try again.",
+  media_unavailable:
+    "The staged recording is unavailable or changed. Review Recording and try again.",
+} as const;
+
+interface SanitizedExecutionFailure {
+  code: string;
+  message: string;
+}
 
 export interface StudioJobReconciliationReport {
   interruptedJobIds: string[];
@@ -224,33 +243,35 @@ export class LocalStudioJobWorker {
           error instanceof AnalysisExecutionIndeterminateError;
         const latest = await this.requireJob(claimed.id);
         const canceled = latest.cancellationRequestedAt !== undefined;
+        const outcome = indeterminate
+          ? "interrupted"
+          : canceled
+            ? "canceled"
+            : controller.signal.aborted
+              ? "interrupted"
+              : "failed";
+        const failure = indeterminate || outcome === "failed"
+          ? sanitizedExecutionFailure(error)
+          : undefined;
+        if (failure) {
+          await this.recordExecutionFailure(claimed.id, failure);
+        }
         await this.finishUnsuccessful(
           claimed.id,
-          indeterminate
-            ? "interrupted"
-            : canceled
-              ? "canceled"
-              : controller.signal.aborted
-                ? "interrupted"
-                : "failed",
-          indeterminate
-            ? {
-                code: "executor_result_invalid",
-                message:
-                  "Execution completed with an invalid publication receipt; explicit retry is required.",
-              }
-            : undefined,
+          outcome,
+          failure,
         );
         return;
       }
 
       const result = analysisJobExecutionResultSchema.safeParse(rawResult);
       if (!result.success) {
-        await this.finishUnsuccessful(claimed.id, "interrupted", {
+        const failure = {
           code: "executor_result_invalid",
-          message:
-            "Execution completed with an invalid publication receipt; explicit retry is required.",
-        });
+          message: SANITIZED_FAILURE_MESSAGES.executor_result_invalid,
+        };
+        await this.recordExecutionFailure(claimed.id, failure);
+        await this.finishUnsuccessful(claimed.id, "interrupted", failure);
         return;
       }
       await this.finishSucceeded(claimed.id, result.data);
@@ -375,6 +396,27 @@ export class LocalStudioJobWorker {
     });
   }
 
+  private async recordExecutionFailure(
+    jobId: string,
+    failure: SanitizedExecutionFailure,
+  ): Promise<void> {
+    console.error("Local Studio analysis failed.", {
+      code: failure.code,
+      jobId,
+    });
+    const job = await this.requireJob(jobId);
+    if (isAnalysisJobTerminal(job.stage)) return;
+    await this.repository.appendEvent({
+      jobId: job.id,
+      attempt: job.attempt,
+      kind: "warning",
+      stage: job.stage,
+      occurredAt: this.timestampAtOrAfter(job.updatedAt),
+      code: failure.code,
+      message: failure.message,
+    });
+  }
+
   private async reconcileInterruptedJobs():
     Promise<StudioJobReconciliationReport> {
     const interruptedJobIds: string[] = [];
@@ -421,4 +463,41 @@ export class LocalStudioJobWorker {
       // A diagnostics sink must not create another worker failure.
     }
   }
+}
+
+function sanitizedExecutionFailure(error: unknown): SanitizedExecutionFailure {
+  const code =
+    error instanceof StudioJobInputUnavailableError
+    || error instanceof StudioMediaReuseError
+    || error instanceof MediaStagingError
+    || error instanceof AnalysisExecutionIndeterminateError
+      ? error.code
+      : "analysis_failed";
+  return { code, message: sanitizedFailureMessage(code) };
+}
+
+function sanitizedFailureMessage(code: string): string {
+  if (code in SANITIZED_FAILURE_MESSAGES) {
+    return SANITIZED_FAILURE_MESSAGES[
+      code as keyof typeof SANITIZED_FAILURE_MESSAGES
+    ];
+  }
+  if (
+    code.startsWith("media_")
+    || code === "digest_mismatch"
+    || code === "mime_mismatch"
+    || code === "staging_inconsistent"
+  ) {
+    return SANITIZED_FAILURE_MESSAGES.media_unavailable;
+  }
+  if (
+    code.startsWith("context_")
+    || code.startsWith("recipe_")
+    || code.endsWith("_not_configured")
+    || code === "unsafe_output_root"
+    || code === "invalid_runtime_bounds"
+  ) {
+    return SANITIZED_FAILURE_MESSAGES.input_unavailable;
+  }
+  return SANITIZED_FAILURE_MESSAGES.analysis_failed;
 }

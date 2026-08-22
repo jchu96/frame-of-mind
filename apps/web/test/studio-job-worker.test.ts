@@ -16,6 +16,15 @@ import {
   StudioJobWorkerError,
 } from "../server-local/studio-jobs/local-job-worker";
 import {
+  StudioJobInputUnavailableError,
+} from "../server-local/studio-jobs/analysis-options";
+import {
+  StudioMediaReuseError,
+} from "../server-local/studio-jobs/media-reuse-guard";
+import {
+  MediaStagingError,
+} from "../server-local/studio-media/local-media-staging";
+import {
   LocalSqliteJobRepository,
 } from "../server-local/studio-jobs/sqlite-job-repository";
 
@@ -143,6 +152,103 @@ describe("LocalStudioJobWorker", () => {
       },
     });
     expect(JSON.stringify(failed)).not.toContain("secret transcript");
+    expect(await repository.events(job.id)).toContainEqual(expect.objectContaining({
+      kind: "warning",
+      code: "analysis_failed",
+      message: "Analysis execution failed.",
+    }));
+  });
+
+  test("preserves every typed execution code in logs, warning events, and terminal state", async () => {
+    const cases = [
+      {
+        label: "input",
+        error: new StudioJobInputUnavailableError("context_file_not_found"),
+        code: "context_file_not_found",
+        outcome: "failed",
+        message:
+          "Required analysis input is unavailable. Reopen the affected Studio step and try again.",
+      },
+      {
+        label: "reuse",
+        error: new StudioMediaReuseError("media_not_reusable"),
+        code: "media_not_reusable",
+        outcome: "failed",
+        message:
+          "The staged recording is unavailable or changed. Review Recording and try again.",
+      },
+      {
+        label: "staging",
+        error: new MediaStagingError(
+          "media_path_unavailable",
+          "private path must not survive",
+        ),
+        code: "media_path_unavailable",
+        outcome: "failed",
+        message:
+          "The staged recording is unavailable or changed. Review Recording and try again.",
+      },
+      {
+        label: "indeterminate",
+        error: new AnalysisExecutionIndeterminateError(),
+        code: "executor_result_invalid",
+        outcome: "interrupted",
+        message:
+          "Execution completed with an invalid publication receipt; explicit retry is required.",
+      },
+    ] as const;
+    const originalConsoleError = console.error;
+    const logged: unknown[][] = [];
+    console.error = (...arguments_: unknown[]) => {
+      logged.push(arguments_);
+    };
+    try {
+      for (const [index, item] of cases.entries()) {
+        const { repository } = createRepository();
+        const job = await createJob(
+          repository,
+          `worker-typed-${item.label}-0001`,
+          index * 60_000,
+        );
+        const executor: AnalysisJobExecutor = {
+          async execute() {
+            throw item.error;
+          },
+        };
+        const worker = new LocalStudioJobWorker(repository, executor, {
+          now: createClock(),
+        });
+
+        await worker.start();
+        await worker.whenIdle();
+
+        expect(await repository.get(job.id)).toMatchObject({
+          stage: item.outcome,
+          terminal: { code: item.code, message: item.message },
+        });
+        const events = await repository.events(job.id);
+        const warningIndex = events.findIndex((event) =>
+          event.kind === "warning" && event.code === item.code
+        );
+        const cleanupIndex = events.findIndex((event) =>
+          event.kind === "transition" && event.stage === "cleaning_up"
+        );
+        expect(warningIndex).toBeGreaterThan(-1);
+        expect(warningIndex).toBeLessThan(cleanupIndex);
+        expect(events[warningIndex]).toMatchObject({
+          kind: "warning",
+          code: item.code,
+          message: item.message,
+        });
+      }
+    } finally {
+      console.error = originalConsoleError;
+    }
+    expect(logged).toEqual(cases.map((item) => [
+      "Local Studio analysis failed.",
+      { code: item.code, jobId: expect.stringMatching(/^job_/) },
+    ]));
+    expect(JSON.stringify(logged)).not.toContain("private path must not survive");
   });
 
   test("aborts the active job on shutdown and leaves later jobs queued", async () => {
