@@ -2,11 +2,24 @@
 import type { StoredRun } from "../../shared/types";
 import type { AnalysisItem } from "../../../../src/domain/types";
 import {
+  alignedTranscriptExcerpt,
   filterReviewFindings,
+  reviewEvidenceTimestamp,
   reviewMarkerPosition,
+  reviewSeekSeconds,
   reviewTimelineSeconds,
   type ReviewFindingFilter,
 } from "./review-filters";
+import {
+  buildReviewBundle,
+  buildReviewMarkdown,
+  reviewBundleFilename,
+} from "./review-export";
+import {
+  reattachReviewMedia,
+  ReviewReattachError,
+  type ReviewReattachPhase,
+} from "./review-reattach";
 
 useSeoMeta({
   title: "Review findings · Frame of Mind",
@@ -44,6 +57,11 @@ const markerDuration = computed(() => videoDuration.value > 0
   ? videoDuration.value
   : fallbackTimelineSeconds.value
 );
+const player = ref<HTMLVideoElement>();
+const selectedTranscript = computed(() => selected.value && run.value
+  ? alignedTranscriptExcerpt(selected.value, run.value.manifest)
+  : undefined
+);
 
 watch(visibleFindings, (entries) => {
   if (!entries.some((entry) => entry.index === selectedIndex.value)) {
@@ -54,6 +72,12 @@ watch(visibleFindings, (entries) => {
 type MediaState = "checking" | "available" | "unavailable";
 const mediaState = ref<MediaState>("checking");
 const mediaUrl = computed(() => `/api/runs/${encodeURIComponent(runId.value)}/media`);
+const reattachInput = ref<HTMLInputElement>();
+const reattaching = ref(false);
+const reattachPhase = ref<ReviewReattachPhase>();
+const reattachConfirmedBytes = ref(0);
+const reattachError = ref<string>();
+const exportMessage = ref<string>();
 
 async function checkRetainedMedia(): Promise<void> {
   mediaState.value = "checking";
@@ -69,6 +93,11 @@ async function checkRetainedMedia(): Promise<void> {
 
 onMounted(() => {
   void checkRetainedMedia();
+  document.addEventListener("keydown", handlePageShortcut);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", handlePageShortcut);
 });
 
 function runTitle(value: StoredRun): string {
@@ -91,8 +120,62 @@ function importanceColor(value: "high" | "medium" | "low") {
   return "neutral";
 }
 
-function selectFinding(index: number): void {
+function selectFinding(index: number, seek = true): void {
   selectedIndex.value = index;
+  if (seek) void nextTick(seekSelectedFinding);
+}
+
+function seekSelectedFinding(): void {
+  if (!selected.value || mediaState.value !== "available" || !player.value) return;
+  try {
+    player.value.currentTime = reviewSeekSeconds(selected.value);
+  } catch {
+    // Some browsers reject seeks until metadata is available; loadedmetadata retries it.
+  }
+}
+
+function moveVisibleSelection(delta: number): void {
+  const current = visibleFindings.value.findIndex(
+    (entry) => entry.index === selectedIndex.value,
+  );
+  if (current < 0 || visibleFindings.value.length === 0) return;
+  const nextIndex = Math.min(
+    visibleFindings.value.length - 1,
+    Math.max(0, current + delta),
+  );
+  const nextEntry = visibleFindings.value[nextIndex];
+  if (!nextEntry) return;
+  selectFinding(nextEntry.index);
+  void nextTick(() => document.getElementById(`review-finding-${nextEntry.index}`)?.focus());
+}
+
+function handleFindingKeydown(event: KeyboardEvent): void {
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    moveVisibleSelection(1);
+  } else if (event.key === "ArrowUp") {
+    event.preventDefault();
+    moveVisibleSelection(-1);
+  } else if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    seekSelectedFinding();
+  }
+}
+
+function handlePageShortcut(event: KeyboardEvent): void {
+  if (
+    event.metaKey || event.ctrlKey || event.altKey
+    || ["INPUT", "TEXTAREA", "SELECT", "VIDEO"].includes(
+      (event.target as HTMLElement | null)?.tagName ?? "",
+    )
+  ) return;
+  if (event.key.toLowerCase() === "j") {
+    event.preventDefault();
+    moveVisibleSelection(1);
+  } else if (event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    moveVisibleSelection(-1);
+  }
 }
 
 function markerLabel(item: AnalysisItem, index: number): string {
@@ -102,6 +185,85 @@ function markerLabel(item: AnalysisItem, index: number): string {
 function readVideoDuration(event: Event): void {
   const duration = (event.currentTarget as HTMLVideoElement).duration;
   videoDuration.value = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  seekSelectedFinding();
+}
+
+function reattachStatus(): string {
+  if (reattachPhase.value === "fingerprinting") return "Binding the selected file in bounded chunks.";
+  if (reattachPhase.value === "uploading") {
+    return `${reattachConfirmedBytes.value} bytes staged and confirmed by the local server.`;
+  }
+  if (reattachPhase.value === "verifying") return "Streaming the staged file through SHA-256 verification.";
+  if (reattachPhase.value === "binding") return "Binding the verified recording to this run.";
+  return "";
+}
+
+async function handleReattachSelection(event: Event): Promise<void> {
+  const input = event.currentTarget as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !run.value || reattaching.value) return;
+  reattaching.value = true;
+  reattachError.value = undefined;
+  reattachConfirmedBytes.value = 0;
+  try {
+    await reattachReviewMedia({
+      runId: run.value.runId,
+      expectedSha256: run.value.manifest.recordingSha256,
+      file,
+      onPhase: (phase) => { reattachPhase.value = phase; },
+      onConfirmedBytes: (bytes) => { reattachConfirmedBytes.value = bytes; },
+    });
+    mediaState.value = "available";
+    await nextTick();
+    player.value?.load();
+  } catch (caught) {
+    mediaState.value = "unavailable";
+    reattachError.value = caught instanceof ReviewReattachError
+      ? caught.message
+      : "Studio could not verify and reattach that recording. Try again.";
+  } finally {
+    reattaching.value = false;
+    reattachPhase.value = undefined;
+  }
+}
+
+async function copyMarkdown(): Promise<void> {
+  if (!run.value) return;
+  exportMessage.value = undefined;
+  const markdown = buildReviewMarkdown(run.value);
+  try {
+    await navigator.clipboard.writeText(markdown);
+    exportMessage.value = "Markdown copied.";
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = markdown;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    exportMessage.value = copied
+      ? "Markdown copied."
+      : "Clipboard access was denied. Use the download instead.";
+  }
+}
+
+function downloadBundle(): void {
+  if (!run.value) return;
+  const blob = new Blob(
+    [JSON.stringify(buildReviewBundle(run.value), null, 2) + "\n"],
+    { type: "application/json" },
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = reviewBundleFilename(run.value.runId);
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  exportMessage.value = "Run bundle downloaded without recording media.";
 }
 </script>
 
@@ -136,6 +298,27 @@ function readVideoDuration(event: Event): void {
         </div>
       </section>
 
+      <section class="mt-5 flex flex-wrap items-center gap-3" aria-label="Run exports">
+        <UButton
+          type="button"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-copy"
+          label="Copy Markdown"
+          @click="copyMarkdown"
+        />
+        <UButton
+          type="button"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-download"
+          label="Download run bundle"
+          @click="downloadBundle"
+        />
+        <p class="text-xs text-muted">Local export only · no GitHub, Asana, or external publishing.</p>
+        <p v-if="exportMessage" class="w-full text-sm text-muted" role="status">{{ exportMessage }}</p>
+      </section>
+
       <section class="mt-8 grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
         <UCard class="min-w-0" :ui="{ body: 'p-0 sm:p-0' }">
           <template #header>
@@ -164,14 +347,24 @@ function readVideoDuration(event: Event): void {
             </div>
           </fieldset>
 
-          <div v-if="visibleFindings.length" class="max-h-[34rem] overflow-y-auto p-2">
+          <div
+            v-if="visibleFindings.length"
+            class="max-h-[34rem] overflow-y-auto p-2"
+            role="listbox"
+            aria-label="Analysis findings"
+            :aria-activedescendant="`review-finding-${selectedIndex}`"
+            @keydown="handleFindingKeydown"
+          >
             <button
               v-for="entry in visibleFindings"
               :key="`${entry.item.candidate.start}-${entry.index}`"
               type="button"
+              role="option"
+              :id="`review-finding-${entry.index}`"
               class="w-full rounded-md p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               :class="selectedIndex === entry.index ? 'bg-elevated' : 'hover:bg-elevated/60'"
-              :aria-current="selectedIndex === entry.index ? 'true' : undefined"
+              :aria-selected="selectedIndex === entry.index"
+              :tabindex="selectedIndex === entry.index ? 0 : -1"
               @click="selectFinding(entry.index)"
             >
               <span class="flex items-center justify-between gap-3">
@@ -217,19 +410,42 @@ function readVideoDuration(event: Event): void {
                 <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">
                   This run used ephemeral media, or its retained copy expired or was deleted.
                 </p>
+                <input
+                  ref="reattachInput"
+                  class="sr-only"
+                  type="file"
+                  accept=".mp4,.m4v,.mov,.webm,video/mp4,video/quicktime,video/webm"
+                  aria-label="Choose original recording"
+                  :disabled="reattaching"
+                  @change="handleReattachSelection"
+                >
                 <UButton
                   class="mt-5"
                   type="button"
                   color="neutral"
                   variant="outline"
                   icon="i-lucide-paperclip"
-                  label="Reattach recording (coming in Task 8.4)"
-                  disabled
+                  label="Reattach original recording"
+                  :loading="reattaching"
+                  :disabled="reattaching"
+                  @click="reattachInput?.click()"
+                />
+                <p v-if="reattaching" class="mt-3 text-sm text-muted" role="status">
+                  {{ reattachStatus() }}
+                </p>
+                <UAlert
+                  v-if="reattachError"
+                  class="mt-4 text-left"
+                  color="error"
+                  variant="soft"
+                  title="Recording was not reattached"
+                  :description="reattachError"
                 />
               </div>
             </div>
             <video
               v-else
+              ref="player"
               :src="mediaUrl"
               controls
               preload="metadata"
@@ -249,7 +465,7 @@ function readVideoDuration(event: Event): void {
                   <p class="fom-kicker text-muted">Timeline</p>
                   <h2 id="candidate-markers-heading" class="mt-2 text-xl font-black">Candidate markers</h2>
                 </div>
-                <p class="text-xs text-muted">Selection only · seeking lands in Task 8.3</p>
+                <p class="text-xs text-muted">Click a marker to seek · J/K moves between findings</p>
               </div>
             </template>
             <div class="relative h-10" role="group" aria-label="Candidate markers">
@@ -290,7 +506,7 @@ function readVideoDuration(event: Event): void {
                   {{ importance(selected) }}
                 </UBadge>
                 <span class="font-mono text-xs text-muted">
-                  {{ selected.result.evidence?.timestamp || selected.candidate.start }}
+                  {{ reviewEvidenceTimestamp(selected) }}
                 </span>
               </div>
               <h3 class="mt-4 text-2xl font-black tracking-tight">{{ selected.result.title }}</h3>
@@ -307,22 +523,32 @@ function readVideoDuration(event: Event): void {
             </dl>
 
             <section
-              v-if="selected.result.evidence?.reporterQuote || selected.result.evidence?.verbatimUiText"
+              v-if="selected.result.evidence?.verbatimUiText"
               aria-labelledby="finding-evidence-heading"
             >
               <h3 id="finding-evidence-heading" class="text-sm font-black">Evidence</h3>
-              <blockquote
-                v-if="selected.result.evidence.reporterQuote"
-                class="mt-2 whitespace-pre-wrap border-l-2 border-primary pl-3 text-sm italic leading-6"
-              >
-                {{ selected.result.evidence.reporterQuote }}
-              </blockquote>
               <p
-                v-if="selected.result.evidence.verbatimUiText"
                 class="mt-3 whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs leading-5"
               >
                 {{ selected.result.evidence.verbatimUiText }}
               </p>
+            </section>
+
+            <section v-if="selectedTranscript" aria-labelledby="aligned-transcript-heading">
+              <h3 id="aligned-transcript-heading" class="text-sm font-black">Aligned transcript excerpt</h3>
+              <p class="mt-1 text-xs text-muted">
+                Video {{ selectedTranscript.videoTimestamp }}
+                <template v-if="selectedTranscript.transcriptTimestamp">
+                  · Transcript {{ selectedTranscript.transcriptTimestamp }}
+                  ({{ selectedTranscript.offsetSeconds! >= 0 ? '+' : '' }}{{ selectedTranscript.offsetSeconds }}s)
+                </template>
+                <template v-else-if="selectedTranscript.offsetSeconds !== undefined">
+                  · Before the aligned transcript begins ({{ selectedTranscript.offsetSeconds }}s)
+                </template>
+              </p>
+              <blockquote class="mt-2 whitespace-pre-wrap border-l-2 border-primary pl-3 text-sm italic leading-6">
+                {{ selectedTranscript.text }}
+              </blockquote>
             </section>
 
             <section v-if="selected.result.steps?.length" aria-labelledby="finding-steps-heading">

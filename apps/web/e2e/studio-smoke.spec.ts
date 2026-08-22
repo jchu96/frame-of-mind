@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { DEFAULT_GEMINI_MODEL } from "../../../src/adapters/gemini-model";
 import { analysisDigest } from "../../../src/domain/integrity";
@@ -509,8 +510,28 @@ test("imports and reviews one synthetic run", {
   const clientErrors = collectClientErrors(page);
   const fixture = runFixture();
   fixture.analysis.items[0]!.result.evidence = {
+    timestamp: "00:00:12",
     reporterQuote: "<script data-synthetic-transcript>not executable</script>",
   };
+  fixture.analysis.items.push({
+    candidate: {
+      start: "00:00:30",
+      end: "00:00:40",
+      summary: "A second synthetic candidate.",
+      kind: "decision",
+      importance: "medium",
+    },
+    result: {
+      accepted: false,
+      kind: "decision",
+      title: "Keep external publishing out of scope",
+      summary: "The local review export does not publish externally.",
+    },
+  });
+  const reviewRecording = syntheticMp4();
+  fixture.manifest.recordingSha256 = createHash("sha256")
+    .update(reviewRecording)
+    .digest("hex");
   fixture.manifest.analysisSha256 = await analysisDigest(fixture.analysis);
 
   await page.goto("/import");
@@ -553,11 +574,35 @@ test("imports and reviews one synthetic run", {
     "<script data-synthetic-transcript>not executable</script>",
     { exact: true },
   )).toBeVisible();
+  await expect(page.getByText("Video 00:00:12 · Transcript 00:00:12 (+0s)"))
+    .toBeVisible();
   await expect(page.locator("script[data-synthetic-transcript]")).toHaveCount(0);
   await expect(page.locator('[data-review-playback="unavailable"]')).toBeVisible();
-  await expect(page.getByRole("button", {
-    name: "Reattach recording (coming in Task 8.4)",
-  })).toBeDisabled();
+  await page.keyboard.press("j");
+  await expect(page.getByRole("heading", {
+    name: "Keep external publishing out of scope",
+    level: 3,
+  })).toBeVisible();
+  await page.keyboard.press("k");
+  await expect(page.getByRole("heading", {
+    name: "Use the portable contract",
+    level: 3,
+  })).toBeVisible();
+
+  await page.getByLabel("Choose original recording").setInputFiles({
+    name: "review.mp4",
+    mimeType: "video/mp4",
+    buffer: reviewRecording,
+  });
+  await expect(page.locator('[data-review-playback="available"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Copy Markdown" }).click();
+  await expect(page.getByText("Markdown copied.")).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download run bundle" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename())
+    .toBe(`frame-of-mind-${fixture.manifest.runId}.run-bundle.json`);
 
   const acceptedFilter = page.getByRole("button", { name: "Accepted", exact: true });
   await acceptedFilter.focus();

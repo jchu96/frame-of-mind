@@ -33,6 +33,7 @@ export const localOnlyForbiddenMarkers = [
   "maintenance_stale_job",
   "/api/runs/:id/media",
   "/api/runs/:id/media-status",
+  "/api/runs/:id/media/reattach",
   "data-studio-review=\"local\"",
 ] as const;
 
