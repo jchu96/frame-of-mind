@@ -56,9 +56,18 @@ import {
 import {
   LocalSqliteJobRepository,
 } from "./sqlite-job-repository.js";
+import {
+  maintenanceConfiguration,
+  type StudioMaintenanceConfiguration,
+} from "../studio-maintenance/config.js";
+import {
+  createStudioMaintenanceController,
+  type StudioMaintenanceController,
+} from "../studio-maintenance/controller.js";
 
 export interface LocalStudioJobRuntime {
   api: StudioJobApi;
+  maintenance: StudioMaintenanceController;
   worker: LocalStudioJobWorker;
   shutdown(): Promise<void>;
 }
@@ -72,6 +81,7 @@ export interface LocalStudioJobRuntimeOptions {
   executor?: AnalysisJobExecutor;
   projection?: AnalysisProjectionPublisher;
   outputRoot?: string;
+  maintenanceConfiguration?: StudioMaintenanceConfiguration;
   onShutdown?: () => Promise<void> | void;
 }
 
@@ -141,14 +151,31 @@ export async function createLocalStudioJobRuntime(
       },
     },
   );
-  await worker.start();
+  await worker.start({ drain: false });
+  const contextFiles = options.contextFiles ?? {
+    maintenanceInventory: async () => [],
+    deleteForMaintenance: async () => false,
+  };
+  const maintenance = createStudioMaintenanceController({
+    configuration: options.maintenanceConfiguration
+      ?? maintenanceConfiguration(),
+    repository,
+    media: options.media,
+    contextFiles,
+    worker,
+  });
+  await maintenance.start();
+  await options.media.reconcile();
+  worker.notify();
   let stopped = false;
   return {
     api,
+    maintenance,
     worker,
     shutdown: async () => {
       if (stopped) return;
       stopped = true;
+      await maintenance.stop();
       await worker.shutdown();
       await options.onShutdown?.();
     },

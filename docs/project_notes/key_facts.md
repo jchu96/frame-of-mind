@@ -119,12 +119,17 @@
 - Local Studio media uses server-advertised fixed-size parts, exact
   `Upload-Offset` receipts, streamed SHA-256/MIME verification, and private
   per-user application-data storage outside the checkout.
-- The local Nitro plugin reconciles interrupted media writes, seals, expiry,
-  and retryable cleanup at startup, then performs a non-overlapping expiry
-  sweep once per minute until Nitro closes; Cloudflare builds exclude the
-  entire implementation.
-- Periodic expiry skips sessions owned by an active writer, revisits them on
-  the next sweep, and automatically retries durable `cleanup_failed` receipts.
+- After the worker is ready, the local Nitro runtime applies one maintenance
+  plan before exposing job routes, reconciles interrupted media writes/seals,
+  then schedules non-overlapping maintenance until Nitro closes; Cloudflare
+  builds exclude the entire implementation.
+- Scheduled maintenance skips live execution leases, revisits failed actions
+  on the next plan, and preserves durable `cleanup_failed` evidence.
+- Local Studio maintenance now owns startup and scheduled media/context cleanup
+  plus stale-job interruption through one pure plan. It targets only
+  Studio-owned staging copies, preserves every live retained receipt and active
+  lease, never inventories the operator's source recording, and exposes only a
+  session-guarded sanitized dry-run plan and last-run summary.
 - The local Recording page keeps the selected `File` component-local, stores
   only an opaque media ID in session storage, and verifies a complete
   bounded-part fingerprint before a refresh-resume sends missing parts.

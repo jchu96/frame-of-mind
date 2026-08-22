@@ -692,3 +692,18 @@
   spend contracts, the release rehearsal, and the 32 MiB streaming spike.
   Hosted flags remain false by default; no live Wrangler file, PR, merge, or
   deployment was created.
+- Completed Local Studio Task 7.5 on 2026-08-22. One pure maintenance planner
+  now joins durable jobs, Studio-owned media/context staging receipts, and the
+  worker heartbeat to identify expired uploads, old orphan copies, and stale
+  unpublished jobs. Its idempotent executor preserves operator-owned source
+  recordings, live retained receipts, and active leases; it records stale jobs
+  with sanitized warning and interruption evidence. The controller runs after
+  worker readiness, before job-route exposure, and on a configurable
+  non-overlapping interval; a session-guarded local-only route exposes the
+  sanitized dry-run plan and last-run summary, while Home reports only changed
+  runs. Also closed the Task 7.4 review NITs by binding the full list-row
+  last-activity accessible text and asserting unknown support-receipt IDs are
+  404. Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite:
+  37 files / 291 tests; Local Studio HTTP, hosted Access/Workflow, builds,
+  Cloudflare boundary, and 32 MiB streaming proof passed) and
+  `bun run test:e2e:smoke` (13 passed).

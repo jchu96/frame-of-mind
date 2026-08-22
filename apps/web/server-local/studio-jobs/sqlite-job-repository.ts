@@ -120,6 +120,13 @@ export interface LocalSqliteJobRepositoryOptions {
   createId?: () => string;
 }
 
+export interface StaleJobMaintenanceInput {
+  jobId: string;
+  expectedStage: AnalysisJobStage;
+  expectedUpdatedAt: string;
+  occurredAt: string;
+}
+
 export class StudioJobRepositoryError extends Error {
   constructor(
     readonly code: string,
@@ -479,6 +486,66 @@ export class LocalSqliteJobRepository implements JobRepository {
       return candidate;
     });
     return this.validateJob(write.immediate());
+  }
+
+  async markStale(input: StaleJobMaintenanceInput): Promise<boolean> {
+    const jobId = parseOpaqueResourceId(input.jobId);
+    const occurredAt = normalizeUtc(input.occurredAt);
+    const expectedUpdatedAt = normalizeUtc(input.expectedUpdatedAt);
+    const write = this.database.transaction(() => {
+      const row = this.findById(jobId);
+      if (!row) return false;
+      const job = this.parseJobRow(row);
+      if (
+        isAnalysisJobTerminal(job.stage)
+        || job.runId
+        || job.stage !== input.expectedStage
+        || job.updatedAt !== expectedUpdatedAt
+      ) {
+        return false;
+      }
+      assertMonotonicTime(job.updatedAt, occurredAt);
+      assertAnalysisJobTransition(job.stage, "interrupted");
+      const warning = analysisJobEventSchema.parse({
+        jobId: job.id,
+        attempt: job.attempt,
+        sequence: this.nextSequence(job.id),
+        kind: "warning",
+        stage: job.stage,
+        occurredAt,
+        code: "maintenance_stale_job",
+        message:
+          "No worker heartbeat was observed within the maintenance horizon.",
+      });
+      const transition = analysisJobEventSchema.parse({
+        jobId: job.id,
+        attempt: job.attempt,
+        sequence: warning.sequence + 1,
+        kind: "transition",
+        previousStage: job.stage,
+        stage: "interrupted",
+        occurredAt,
+        message:
+          "Inactive local work was interrupted; explicit retry is required.",
+      });
+      const candidate = analysisJobSchema.parse({
+        ...job,
+        stage: "interrupted",
+        updatedAt: occurredAt,
+        terminal: {
+          outcome: "interrupted",
+          at: occurredAt,
+          code: "maintenance_stale_job",
+          message:
+            "Inactive local work was interrupted; explicit retry is required.",
+        },
+      });
+      this.updateJob(candidate);
+      this.insertEvent(warning);
+      this.insertEvent(transition);
+      return true;
+    });
+    return write.immediate();
   }
 
   async createLinkedRetry(

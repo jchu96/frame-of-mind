@@ -5,6 +5,9 @@ import type {
 } from "../../../../src/domain/studio-schemas";
 import type { JobListPage } from "../../../../src/domain/studio-ports";
 import type { RunPage, RunSummary } from "../../shared/types";
+import type {
+  StudioMaintenanceDiagnostics,
+} from "../studio-maintenance/controller";
 import { loadIntentDraft } from "./intent-composer";
 import { intentReceiptStatus } from "./run-composer";
 import { useComposerReadiness } from "./use-composer-readiness";
@@ -81,6 +84,12 @@ const {
 } = await useFetch<{
   recipes: Array<{ id: string; label: string; revision: string }>;
 }>("/api/studio/recipes", { server: false });
+const {
+  data: maintenanceDiagnostics,
+  refresh: refreshMaintenance,
+} = await useFetch<StudioMaintenanceDiagnostics>("/api/studio/maintenance", {
+  server: false,
+});
 const route = useRoute();
 const createdJobId = computed(() =>
   typeof route.query.created === "string" ? route.query.created : undefined
@@ -115,6 +124,7 @@ async function refreshAll() {
       refreshJobs(),
       refreshRuns(),
       refreshConfiguration(),
+      refreshMaintenance(),
       refreshReadiness(),
     ]);
     if (typeof sessionStorage !== "undefined") {
@@ -205,6 +215,29 @@ function jobContext(job: AnalysisJob): string {
     ? `${job.input.context.provider} context`
     : "video only";
 }
+
+const maintenanceSummary = computed(() => {
+  const summary = maintenanceDiagnostics.value?.lastRun;
+  if (!summary || summary.applied === 0) return undefined;
+  const elapsedSeconds = Math.max(
+    0,
+    Math.floor((Date.now() - Date.parse(summary.completedAt)) / 1_000),
+  );
+  const ago = elapsedSeconds < 60
+    ? "just now"
+    : elapsedSeconds < 3_600
+      ? `${Math.floor(elapsedSeconds / 60)}m ago`
+      : `${Math.floor(elapsedSeconds / 3_600)}h ago`;
+  const staged = `${summary.removed} staged ${
+    summary.removed === 1 ? "item" : "items"
+  }`;
+  const stale = summary.staleJobs > 0
+    ? ` and marked ${summary.staleJobs} stale ${
+        summary.staleJobs === 1 ? "job" : "jobs"
+      } interrupted`
+    : "";
+  return `Maintenance ran ${ago}, removed ${staged}${stale}.`;
+});
 </script>
 
 <template>
@@ -306,6 +339,15 @@ function jobContext(job: AnalysisJob): string {
       title="Some local status could not be loaded"
       description="Refresh this page. If the problem continues, restart Studio and use its new one-time launch URL."
     />
+
+    <p
+      v-if="maintenanceSummary"
+      class="mt-4 text-sm text-muted"
+      role="status"
+      data-studio-maintenance-summary
+    >
+      {{ maintenanceSummary }}
+    </p>
 
     <section
       class="mt-8 grid gap-4 sm:grid-cols-3"

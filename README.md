@@ -411,6 +411,12 @@ What works today:
   cancel only. Failure banners show only their sanitized operator message;
   successful jobs link to the completed run. A Technical details disclosure
   and copyable v1 support receipt share one privacy-safe closed allowlist.
+- **Maintenance** — one local-only planner runs at startup and on a configurable
+  interval, removes expired or abandoned Studio staging, and marks inactive
+  jobs interrupted only after the stale horizon passes without a worker
+  heartbeat. Live retained receipts and operator-owned source recordings are
+  never deleted. Home shows the last changed run, and the authenticated
+  diagnostics route returns only sanitized IDs, reason codes, and counts.
 
 The CLI remains available for direct analysis, while Local Studio now exposes
 the same shared executor through the deliberate Run receipt. Custom recipe
