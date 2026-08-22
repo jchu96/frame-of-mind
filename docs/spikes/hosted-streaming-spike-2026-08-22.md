@@ -2,23 +2,37 @@
 
 ## Decision
 
-**GO after Task 2.0b:** the built wrapper-entry and Worker-native digest
-workarounds preserve FR-04's browser → Worker → Gemini raw-part contract
-without R2 staging. Tasks 2.1–2.4 are unblocked but remain unimplemented.
+**NO-GO after Task 2.0c:** the built wrapper-entry cannot prove bounded
+browser → Worker → Gemini forwarding when the sink applies backpressure.
+Tasks 2.1–2.4 are blocked. The private-R2 amendment is again the active
+fallback for replanning, but remains unadopted and grants no implementation
+authority.
 
 `apps/web/.output/server/hosted-entry.mjs` imports the stock Nitro artifact and
-intercepts only `POST /api/_spike/stream`. The wrapper reuses the existing
-Cloudflare Access JWT verifier before reading the body, streams the original
-`request.body` into the Content-Range sink, and tees the stream into
-Cloudflare's `crypto.DigestStream("SHA-256")`. Every other request delegates to
-Nitro unchanged. The route remains absent unless its spike environment flag is
-present, and no deployment or production Wrangler configuration changed.
+intercepts only the normalized `POST /api/_spike/stream` path. The wrapper
+reuses the existing Cloudflare Access JWT verifier before reading the body and
+uses one `TransformStream`: each chunk is counted, written to Cloudflare's
+`crypto.DigestStream("SHA-256")`, and enqueued unchanged to the sink. The old
+Nitro spike route was deleted, so trailing, repeated-slash, and percent-encoded
+variants cannot fall through to a prebuffering handler. Every other request
+delegates to Nitro unchanged. The route remains absent unless its spike
+environment flag is present, and no deployment or production Wrangler
+configuration changed.
 
-The workerd oracle passed three consecutive runs. In the decisive full run,
-all three handlers received `bodyUsed=false`; the independent fixture,
-DigestStream, and sink SHA-256 receipts matched; and the two concurrent 8 MiB
-requests added 6,930,496 bytes of inspector backing storage. A repeat measured
-6,926,400 bytes. Both are well below the prior 33,568,143-byte plateau.
+The strengthened workerd oracle invalidated the Task 2.0b fast-sink result.
+With the fake sink delaying its first read for 2,503 ms, an 8 MiB upload added
+8,398,085 bytes of inspector backing storage against a strict 2,097,152-byte
+limit. A separate run without an outbound `Content-Length` briefly reduced the
+delta to 2,158,612 bytes, still over the limit, and a later run again retained
+the full body. The single-pipe shape therefore does not stay bounded under
+sink backpressure.
+
+The over-length workerd check also fails closed incorrectly at the service
+boundary: a request declaring 8 MiB while its source produces 9 MiB reached
+the wrapper as exactly 8 MiB, returned 200, completed the sink, and recorded a
+receipt. The transform contains a byte-at-`contentLength + 1` abort, but the
+runtime truncation means that guard cannot observe the extra byte in this
+production-shaped oracle. This is a second reason not to authorize Phase 2.
 
 Cloudflare documents `DigestStream` as a writable stream that does not retain
 written data, and documents that Workers' WebAssembly instantiation accepts
@@ -26,11 +40,48 @@ precompiled modules. The wrapper therefore avoids both original blockers:
 [Web Crypto `DigestStream`](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/#digeststream)
 and [WebAssembly](https://developers.cloudflare.com/workers/runtime-apis/webassembly/).
 
-The private-R2 amendment is **not needed, not adopted, and kept for reference**
-in
+The private-R2 amendment is **the active fallback for replanning, not adopted,
+and still grants no implementation authority** in
 [`adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`](adr-0018-private-r2-staging-amendment-draft-2026-08-22.md).
 
-## Task 2.0b oracle
+## Task 2.0c oracle
+
+`bun run check:hosted-stream` now additionally:
+
+1. proves the stock Nitro upload handler and its marker are absent;
+2. verifies normalized trailing-slash, repeated-slash, and percent-encoded
+   variants are handled by the wrapper rather than Nitro;
+3. exercises missing, wrong-audience, wrong-issuer, expired, `alg: none`,
+   empty-subject, and service-principal Access assertions;
+4. stalls the sink's first read for at least 2,500 ms and requires inspector
+   backing growth below 2 MiB while the client sends 8 MiB as pull permits;
+5. sends a source that declares 8 MiB and produces 9 MiB, requiring rejection,
+   sink abort, no receipt, and bounded memory; and
+6. aborts a client after partial sink progress and requires sink abort with no
+   digest receipt.
+
+The decisive Task 2.0c receipt is:
+
+```text
+HOSTED_STREAM route_source=PASS single_transform DigestStream byte_cap no_tee no_body_materializer
+HOSTED_STREAM artifact_marker=PASS hosted_entry=true nitro_route_absent=true
+HOSTED_STREAM dark_gate=PASS authenticated_status=404 env_absent
+HOSTED_STREAM access_negatives=PASS missing=403 wrong_aud=403 wrong_iss=403 expired=403 alg_none=403 empty_sub=403 service=403
+HOSTED_STREAM bypass_variants=PASS trailing=wrapper double_slash=wrapper percent_decoded=wrapper nitro_handler=absent
+HOSTED_STREAM slow_sink=FAIL delay_ms=2503 inspector_backing_baseline=2782145 inspector_backing_hold=11180230 inspector_backing_hold_delta=8398085 limit=2097152 bytes=8388608 sha256=d733520471bb97a1d7af3119d85ee9c1438068a1cfeaf83b12f5e8d0c9846a59
+HOSTED_STREAM over_length=FAIL declared_bytes=8388608 sent_bytes=9437184 status=200 sink_bytes=8388608 sink_aborted=false receipt=true inspector_backing_delta=3092515 limit=2097152
+HOSTED_STREAM client_abort=PASS client=AbortError sink_bytes=131072 sink_aborted=true receipt=false
+HOSTED_STREAM single_16m_bytes=PASS bytes=16777216 sink_bytes=16777216
+HOSTED_STREAM concurrent_bytes=PASS uploads=2 bytes_each=8388608 sink_exact=true
+HOSTED_STREAM streaming_path=PASS entry=hosted-entry upstream_body_used=false,false,false,false,false,false,false stock_nitro_prebuffer=true inspector_backing_delta=8399338
+HOSTED_STREAM_SPIKE FAILED reason=slow_sink_unbounded,over_length_contract_failed
+```
+
+The nonzero exit is intentional: all required checks execute, and the command
+passes only if both blockers clear. The separate hosted Access contract passes
+against both the stock and wrapper entries.
+
+## Task 2.0b oracle (superseded fast-sink result)
 
 `bun run check:hosted-stream` now:
 
@@ -67,9 +118,9 @@ HOSTED_STREAM streaming_path=PASS entry=hosted-entry upstream_body_used=false,fa
 HOSTED_STREAM_SPIKE PASSED
 ```
 
-The stock Nitro artifact still contains its prebuffering call; the passing
-contract is specifically the wrapper's exact-path bypass. This is intentional
-and is pinned by both artifact scanning and runtime `bodyUsed` receipts.
+The stock Nitro artifact still contains its general prebuffering call. Task
+2.0c deleted the old upload route and made the wrapper the only spike handler,
+but its slow-sink result supersedes this provisional pass.
 
 ## Task 2.0 NO-GO history
 
@@ -130,9 +181,8 @@ HOSTED_STREAM streaming_path=FAIL nitro_entry=request.arrayBuffer upstream_body_
 HOSTED_STREAM_SPIKE FAILED reason=nitro_cloudflare_module_materializes_request_body,hash_wasm_runtime_compile_disallowed
 ```
 
-The script intentionally exited 1 for this measured historical NO-GO. After
-Task 2.0b it exits 0 only when the wrapper streaming, Access, digest, byte, and
-backing-store receipts all pass. It remains a standalone check rather than a
+The script intentionally exited 1 for this measured historical NO-GO. It
+remains a standalone check rather than a
 `bun run check` step; its full run is approximately nine seconds on the
 measured machine.
 
@@ -180,9 +230,9 @@ materialization. They do not waive either blocker or authorize Task 2.1.
 
 ## Historical re-open criteria
 
-These were the criteria recorded by the original NO-GO. Task 2.0b supplied an
-equivalent spec-preserving path—an exact-route wrapper plus `DigestStream`—
-without adopting R2:
+These were the criteria recorded by the original NO-GO. Task 2.0b appeared to
+supply an equivalent exact-route wrapper plus `DigestStream`, but Task 2.0c's
+slow-sink oracle disproved its bounded-memory assumption:
 
 - a Nitro/workerd combination passes the original-request streaming path and
   a workerd-compatible precompiled SHA-256 module replaces runtime WASM

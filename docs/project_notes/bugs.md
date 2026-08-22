@@ -11,17 +11,23 @@
   `Buffer.from(await request.arrayBuffer())` before `localFetch` creates the H3
   event. Separately, `hash-wasm` 4.12.0 decodes embedded bytes and calls
   `WebAssembly.compile()` at runtime, which workerd disallows.
-- Resolution: Task 2.0b emits a built wrapper entry that authenticates and
-  intercepts only the dark upload path before Nitro, streams the original body
-  to the sink, and hashes the tee with Cloudflare `DigestStream`. The follow-up
-  workerd oracle saw `bodyUsed=false` at all three handlers and reduced the
-  concurrent backing delta from 33,568,143 bytes to 6,930,496 bytes. Task 2.0
-  is GO and Tasks 2.1–2.4 are unblocked; the R2 amendment is not needed and is
-  retained only as a reference fallback.
+- Follow-up: Task 2.0b emitted a built wrapper entry that authenticated and
+  intercepted only the dark upload path before Nitro. Its fast-sink oracle saw
+  `bodyUsed=false` at all three handlers and reduced the concurrent backing
+  delta from 33,568,143 bytes to 6,930,496 bytes, producing a provisional GO.
+  Adversarial Task 2.0c invalidated that conclusion: replacing the tee with one
+  counting/digesting `TransformStream` still added 8,398,085 backing bytes for
+  an 8 MiB upload while the sink delayed its first read for 2,503 ms. A request
+  source that declared 8 MiB and produced 9 MiB was truncated to 8 MiB at the
+  workerd service boundary, returned 200, and recorded a receipt. Task 2.0 is
+  NO-GO, Tasks 2.1–2.4 are blocked, and private R2 is the active unadopted
+  fallback.
 - Prevention: gate hosted upload changes on the built workerd artifact, scan
   the emitted entry as well as route source, inspect backing storage rather
-  than ordinary JS heap alone, and require `DigestStream` or a static
-  precompiled WASM import before claiming Worker-side digest support.
+  than ordinary JS heap alone, stall the sink long enough to exercise
+  backpressure, test over-length behavior through the service boundary, and
+  require `DigestStream` or a static precompiled WASM import before claiming
+  Worker-side digest support.
 
 ## 2026-08-22 — Every Studio-created analysis failed before Gemini upload
 

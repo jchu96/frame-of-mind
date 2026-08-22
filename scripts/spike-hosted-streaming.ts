@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
+import { Miniflare } from "miniflare";
 import { createE2EEnvironment } from "./e2e-environment";
 
 const mebibyte = 1024 * 1024;
@@ -14,7 +15,10 @@ const configPath = join(temporaryRoot, "wrangler.jsonc");
 const persistRoot = join(temporaryRoot, "wrangler-state");
 const routePath = "/api/_spike/stream";
 const priorBackingPlateau = 33_568_143;
+const slowSinkHoldMs = 2_500;
+const slowSinkBackingLimit = 2 * mebibyte;
 const sinkReceipts = new Map<string, SinkReceipt>();
+const sinkStates = new Map<string, SinkState>();
 let lastSinkFailure = "none";
 let jwksServer: ReturnType<typeof Bun.serve> | undefined;
 let sinkServer: ReturnType<typeof Bun.serve> | undefined;
@@ -39,13 +43,14 @@ try {
   const forbiddenRouteCalls = [...routeSource.matchAll(/\b(?:readBody|readRawBody)\s*\(/g)];
   assert(forbiddenRouteCalls.length === 0, "Spike route calls a body-materializing H3 helper.");
   assert(!routeSource.includes(".arrayBuffer()"), "Hosted entry source materializes the request body.");
-  receipt("route_source", true, "raw_stream DigestStream no_body_materializer");
+  assert(!routeSource.includes(".tee()"), "Hosted entry source splits the request body with tee().");
+  receipt("route_source", true, "single_transform DigestStream byte_cap no_tee no_body_materializer");
 
   const artifactScan = await scanBuiltArtifact();
   receipt(
     "artifact_marker",
-    artifactScan.routeMarker && artifactScan.routePath && artifactScan.hostedEntry,
-    `route=${artifactScan.routePath} marker=${artifactScan.routeMarker} hosted_entry=${artifactScan.hostedEntry}`,
+    artifactScan.hostedEntry && artifactScan.nitroRouteAbsent,
+    `hosted_entry=${artifactScan.hostedEntry} nitro_route_absent=${artifactScan.nitroRouteAbsent}`,
   );
 
   const keys = await generateKeyPair("RS256");
@@ -68,7 +73,39 @@ try {
     fetch: receiveAtFakeSink,
   });
   const issuer = `http://127.0.0.1:${jwksServer.port}`;
-  const token = await signAccessToken(keys.privateKey, issuer);
+  const token = await signAccessToken(keys.privateKey, issuer, {
+    sub: "hosted-stream-spike-user",
+    email: "spike@example.test",
+  });
+  const serviceToken = await signAccessToken(keys.privateKey, issuer, {
+    sub: "",
+    common_name: "hosted-stream-spike.access",
+  });
+  const emptySubToken = await signAccessToken(keys.privateKey, issuer, { sub: "" });
+  const wrongAudienceToken = await signAccessToken(
+    keys.privateKey,
+    issuer,
+    { sub: "hosted-stream-spike-user" },
+    { audience: "not-the-spike-audience" },
+  );
+  const wrongIssuerToken = await signAccessToken(
+    keys.privateKey,
+    issuer,
+    { sub: "hosted-stream-spike-user" },
+    { issuer: "https://not-the-spike-issuer.example" },
+  );
+  const expiredToken = await signAccessToken(
+    keys.privateKey,
+    issuer,
+    { sub: "hosted-stream-spike-user" },
+    {
+      issuedAt: Math.floor(Date.now() / 1_000) - 3_600,
+      expirationTime: Math.floor(Date.now() / 1_000) - 60,
+    },
+  );
+  const algNoneToken = unsignedAccessToken(issuer, audience, {
+    sub: "hosted-stream-spike-user",
+  });
 
   const darkPort = await reservePort();
   await writeWranglerConfig({ issuer, enabled: false });
@@ -94,17 +131,135 @@ try {
   const origin = `http://127.0.0.1:${workerPort}`;
   await waitForWorker(origin, activeWrangler.child);
   inspector = await InspectorClient.connect(inspectorPort).catch(() => undefined);
-  await expectStatus(fetch(`${origin}${routePath}`, {
-    method: "POST",
-    headers: {
-      "content-length": String(8 * mebibyte),
-      "content-range": `bytes 0-${8 * mebibyte - 1}/${8 * mebibyte}`,
-      "x-spike-upload-id": "missing-access",
-    },
-    body: fixtureStream(8 * mebibyte, 7),
-    duplex: "half",
-  } as RequestInit & { duplex: "half" }), 403, "enabled spike Access gate");
-  receipt("access_gate", true, "missing_assertion_status=403");
+  const accessNegatives = await Promise.all([
+    expectUploadStatus(origin, undefined, "missing-access", 403),
+    expectUploadStatus(origin, wrongAudienceToken, "wrong-audience", 403),
+    expectUploadStatus(origin, wrongIssuerToken, "wrong-issuer", 403),
+    expectUploadStatus(origin, expiredToken, "expired-token", 403),
+    expectUploadStatus(origin, algNoneToken, "alg-none", 403),
+    expectUploadStatus(origin, emptySubToken, "empty-sub", 403),
+    expectUploadStatus(origin, serviceToken, "service-token", 403),
+  ]);
+  assert(accessNegatives.every((status) => status === 403), "An Access negative reached the upload body.");
+  receipt(
+    "access_negatives",
+    true,
+    "missing=403 wrong_aud=403 wrong_iss=403 expired=403 alg_none=403 empty_sub=403 service=403",
+  );
+
+  const bypassReceipts = await Promise.all([
+    uploadFixture(origin, token, {
+      id: "variant-trailing",
+      bytes: 8 * mebibyte,
+      seed: 3,
+      path: `${routePath}/`,
+    }),
+    uploadFixture(origin, token, {
+      id: "variant-double",
+      bytes: 8 * mebibyte,
+      seed: 5,
+      path: "//api/_spike/stream",
+    }),
+    uploadFixture(origin, token, {
+      id: "variant-encoded",
+      bytes: 8 * mebibyte,
+      seed: 7,
+      path: "/api/_spike/%73tream",
+    }),
+  ]);
+  for (const value of bypassReceipts) assertUploadReceipt(value);
+  receipt(
+    "bypass_variants",
+    true,
+    "trailing=wrapper double_slash=wrapper percent_decoded=wrapper nitro_handler=absent",
+  );
+
+  await Bun.sleep(250);
+  const slowBaseline = await sampleMemory(activeWrangler.child.pid, inspector);
+  const slowUpload = uploadFixture(origin, token, {
+    id: "slow-sink-8m",
+    bytes: 8 * mebibyte,
+    seed: 11,
+  });
+  const slowState = await waitForSinkState("slow-sink-8m", (state) => state.startedAt > 0);
+  const slowHoldSamples = [slowBaseline];
+  const slowDeadline = slowState.startedAt + slowSinkHoldMs + 1_000;
+  while (slowState.firstByteAt === 0 && Date.now() < slowDeadline) {
+    slowHoldSamples.push(await sampleMemory(activeWrangler.child.pid, inspector));
+    await Bun.sleep(50);
+  }
+  assert(slowState.firstByteAt > 0, "Slow sink never drained after its hold.");
+  const slowReceipt = await slowUpload;
+  assertUploadReceipt(slowReceipt);
+  const slowMemory = summarizeMemory(slowHoldSamples);
+  const slowDelay = slowState.firstByteAt - slowState.startedAt;
+  const slowSinkPassed = slowDelay >= slowSinkHoldMs
+    && slowMemory.backingDelta !== null
+    && slowMemory.backingDelta < slowSinkBackingLimit;
+  receipt(
+    "slow_sink",
+    slowSinkPassed,
+    `delay_ms=${slowDelay} `
+      + `inspector_backing_baseline=${formatBytes(slowMemory.backingBaseline)} `
+      + `inspector_backing_hold=${formatBytes(slowMemory.backingPeak)} `
+      + `inspector_backing_hold_delta=${formatBytes(slowMemory.backingDelta)} `
+      + `limit=${slowSinkBackingLimit} bytes=${slowReceipt.bytes} sha256=${slowReceipt.sha256}`,
+  );
+
+  const overLength = await runOverLengthCheck({
+    issuer,
+    sinkUrl: `http://127.0.0.1:${sinkServer.port}/resumable`,
+    token,
+  });
+  const overLengthPassed = (overLength.status === 400 || overLength.status === 413)
+    && overLength.sinkState?.aborted === true
+    && overLength.sinkState.completed === false
+    && !sinkReceipts.has("over-length")
+    && overLength.backingDelta !== null
+    && overLength.backingDelta < slowSinkBackingLimit;
+  receipt(
+    "over_length",
+    overLengthPassed,
+    `declared_bytes=${8 * mebibyte} sent_bytes=${9 * mebibyte} status=${overLength.status} `
+      + `sink_bytes=${overLength.sinkState?.bytes ?? "none"} `
+      + `sink_aborted=${overLength.sinkState?.aborted ?? false} `
+      + `receipt=${sinkReceipts.has("over-length")} `
+      + `inspector_backing_delta=${formatBytes(overLength.backingDelta)} limit=${slowSinkBackingLimit}`,
+  );
+
+  const clientAbort = new AbortController();
+  const clientAbortRequest = uploadResponse(origin, token, {
+    id: "client-abort",
+    bytes: 8 * mebibyte,
+    seed: 13,
+    pullDelayMs: 10,
+    signal: clientAbort.signal,
+  });
+  const clientAbortState = await waitForSinkState("client-abort", (state) => state.bytes > 0);
+  clientAbort.abort();
+  let clientAbortResult = "response";
+  try {
+    const response = await clientAbortRequest;
+    clientAbortResult = `status_${response.status}`;
+  } catch (error) {
+    clientAbortResult = error instanceof Error ? error.name : "threw";
+  }
+  await waitForSinkState(
+    "client-abort",
+    (state) => state.aborted || state.completed,
+  );
+  const clientAbortPassed = clientAbortState.aborted
+    && !clientAbortState.completed
+    && clientAbortState.bytes > 0
+    && clientAbortState.bytes < 8 * mebibyte
+    && !sinkReceipts.has("client-abort");
+  receipt(
+    "client_abort",
+    clientAbortPassed,
+    `client=${clientAbortResult} sink_bytes=${clientAbortState.bytes} `
+      + `sink_aborted=${clientAbortState.aborted} receipt=${sinkReceipts.has("client-abort")}`,
+  );
+  assert(clientAbortPassed, "Client abort left a completed sink receipt.");
 
   const largeBaseline = await sampleMemory(activeWrangler.child.pid, inspector);
   const large = uploadFixture(origin, token, { id: "single-16m", bytes: 16 * mebibyte, seed: 17 });
@@ -133,7 +288,12 @@ try {
     true,
     `a=${concurrentReceipts[0].sha256} b=${concurrentReceipts[1].sha256}`,
   );
-  const allUploadReceipts = [largeReceipt, ...concurrentReceipts];
+  const allUploadReceipts = [
+    ...bypassReceipts,
+    slowReceipt,
+    largeReceipt,
+    ...concurrentReceipts,
+  ];
   const digestPassed = allUploadReceipts.every(
     (value) => value.runtime.hashImplementation === "DigestStream"
       && value.sha256 === value.expected.sha256,
@@ -198,13 +358,20 @@ try {
       + `inspector_backing_delta=${formatBytes(concurrentMemorySummary.backingDelta)}`,
   );
 
-  spikePassed = streamingPathPassed && digestPassed;
+  spikePassed = streamingPathPassed
+    && digestPassed
+    && slowSinkPassed
+    && overLengthPassed
+    && clientAbortPassed;
   console.log(
     spikePassed
       ? "HOSTED_STREAM_SPIKE PASSED"
       : `HOSTED_STREAM_SPIKE FAILED reason=${[
           ...(streamingPathPassed ? [] : ["hosted_entry_streaming_path_failed"]),
           ...(digestPassed ? [] : ["digest_stream_failed"]),
+          ...(slowSinkPassed ? [] : ["slow_sink_unbounded"]),
+          ...(overLengthPassed ? [] : ["over_length_contract_failed"]),
+          ...(clientAbortPassed ? [] : ["client_abort_contract_failed"]),
         ].join(",")}`,
   );
 } catch (error) {
@@ -232,6 +399,14 @@ interface SinkReceipt {
   bytes: number;
   sha256: string;
   contentRange: string;
+}
+
+interface SinkState {
+  startedAt: number;
+  firstByteAt: number;
+  bytes: number;
+  aborted: boolean;
+  completed: boolean;
 }
 
 interface UploadReceipt {
@@ -280,29 +455,46 @@ async function receiveAtFakeSink(request: Request): Promise<Response> {
   const rangeLength = rangeMatch ? Number(rangeMatch[2]) - Number(rangeMatch[1]) + 1 : Number.NaN;
   const declaredLength = contentLengthHeader === null ? rangeLength : Number(contentLengthHeader);
   const hasher = createHash("sha256");
-  let bytes = 0;
+  const state: SinkState = {
+    startedAt: Date.now(),
+    firstByteAt: 0,
+    bytes: 0,
+    aborted: false,
+    completed: false,
+  };
+  sinkStates.set(uploadId, state);
+  if (uploadId === "slow-sink-8m") await Bun.sleep(slowSinkHoldMs);
   const reader = request.body?.getReader();
   if (!reader) {
     lastSinkFailure = "missing_body";
     return new Response("missing body", { status: 400 });
   }
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    hasher.update(value);
-    await Bun.sleep(1);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (state.firstByteAt === 0) state.firstByteAt = Date.now();
+      state.bytes += value.byteLength;
+      hasher.update(value);
+      await Bun.sleep(uploadId === "client-abort" ? 50 : uploadId === "over-length" ? 5 : 1);
+    }
+  } catch {
+    state.aborted = true;
+    lastSinkFailure = `aborted upload_id=${uploadId} bytes=${state.bytes}`;
+    return new Response("aborted", { status: 499 });
   }
-  if (!Number.isSafeInteger(declaredLength) || bytes !== declaredLength) {
-    lastSinkFailure = `length declared=${declaredLength} actual=${bytes}`;
+  if (!Number.isSafeInteger(declaredLength) || state.bytes !== declaredLength) {
+    state.aborted = true;
+    lastSinkFailure = `length declared=${declaredLength} actual=${state.bytes}`;
     return new Response("length mismatch", { status: 422 });
   }
   const result: SinkReceipt = {
     uploadId,
-    bytes,
+    bytes: state.bytes,
     sha256: hasher.digest("hex"),
     contentRange,
   };
+  state.completed = true;
   sinkReceipts.set(uploadId, result);
   return Response.json({ bytes: result.bytes, sha256: result.sha256 });
 }
@@ -310,26 +502,61 @@ async function receiveAtFakeSink(request: Request): Promise<Response> {
 async function uploadFixture(
   origin: string,
   token: string,
-  fixture: { id: string; bytes: number; seed: number },
+  fixture: { id: string; bytes: number; seed: number; path?: string },
 ): Promise<UploadReceipt> {
   const expectedDigest = digestFixture(fixture.bytes, fixture.seed);
-  const response = await fetch(`${origin}${routePath}`, {
-    method: "POST",
-    headers: {
-      "cf-access-jwt-assertion": token,
-      "content-length": String(fixture.bytes),
-      "content-range": `bytes 0-${fixture.bytes - 1}/${fixture.bytes}`,
-      "content-type": "application/octet-stream",
-      "x-spike-upload-id": fixture.id,
-    },
-    body: fixtureStream(fixture.bytes, fixture.seed),
-    duplex: "half",
-  } as RequestInit & { duplex: "half" });
+  const response = await uploadResponse(origin, token, fixture);
   if (response.status !== 200) {
     throw new Error(`${fixture.id}: Worker returned ${response.status}: ${await response.text()}`);
   }
   const result = await response.json() as Omit<UploadReceipt, "expected">;
   return { ...result, expected: { bytes: fixture.bytes, sha256: expectedDigest } };
+}
+
+async function uploadResponse(
+  origin: string,
+  token: string | undefined,
+  fixture: {
+    id: string;
+    bytes: number;
+    seed: number;
+    path?: string;
+    declaredBytes?: number;
+    pullDelayMs?: number;
+    signal?: AbortSignal;
+  },
+): Promise<Response> {
+  const declaredBytes = fixture.declaredBytes ?? fixture.bytes;
+  const headers: Record<string, string> = {
+    "content-length": String(declaredBytes),
+    "content-range": `bytes 0-${declaredBytes - 1}/${declaredBytes}`,
+    "content-type": "application/octet-stream",
+    "x-spike-upload-id": fixture.id,
+  };
+  if (token) headers["cf-access-jwt-assertion"] = token;
+  return await fetch(`${origin}${fixture.path ?? routePath}`, {
+    method: "POST",
+    headers,
+    body: fixtureStream(fixture.bytes, fixture.seed, fixture.pullDelayMs),
+    duplex: "half",
+    signal: fixture.signal,
+  } as RequestInit & { duplex: "half" });
+}
+
+async function expectUploadStatus(
+  origin: string,
+  token: string | undefined,
+  id: string,
+  expected: number,
+): Promise<number> {
+  const response = await uploadResponse(origin, token, {
+    id,
+    bytes: 8 * mebibyte,
+    seed: 19,
+  });
+  await expectStatus(response, expected, id);
+  assert(!sinkStates.has(id), `${id}: denied upload reached the sink.`);
+  return response.status;
 }
 
 function assertUploadReceipt(receiptValue: UploadReceipt): void {
@@ -346,14 +573,15 @@ function assertUploadReceipt(receiptValue: UploadReceipt): void {
   assert(sink?.sha256 === receiptValue.expected.sha256, `${receiptValue.uploadId}: fake sink digest mismatch.`);
 }
 
-function fixtureStream(totalBytes: number, seed: number): ReadableStream<Uint8Array> {
+function fixtureStream(totalBytes: number, seed: number, pullDelayMs = 0): ReadableStream<Uint8Array> {
   let offset = 0;
   return new ReadableStream<Uint8Array>({
-    pull(controller) {
+    async pull(controller) {
       if (offset >= totalBytes) {
         controller.close();
         return;
       }
+      if (pullDelayMs > 0) await Bun.sleep(pullDelayMs);
       const length = Math.min(chunkBytes, totalBytes - offset);
       controller.enqueue(fixtureChunk(offset, length, seed));
       offset += length;
@@ -453,21 +681,126 @@ async function stopWrangler(process: WranglerProcess, printOutput = false): Prom
   }
 }
 
-async function signAccessToken(privateKey: KeyLike, issuer: string): Promise<string> {
-  return new SignJWT({ sub: "hosted-stream-spike-user", email: "spike@example.test" })
+async function signAccessToken(
+  privateKey: KeyLike,
+  issuer: string,
+  claims: Record<string, unknown>,
+  overrides: {
+    audience?: string;
+    issuer?: string;
+    issuedAt?: number;
+    expirationTime?: number | string;
+  } = {},
+): Promise<string> {
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: "RS256", kid: keyId })
-    .setIssuer(issuer)
-    .setAudience(audience)
-    .setIssuedAt()
-    .setExpirationTime("10m")
+    .setIssuer(overrides.issuer ?? issuer)
+    .setAudience(overrides.audience ?? audience)
+    .setIssuedAt(overrides.issuedAt)
+    .setExpirationTime(overrides.expirationTime ?? "10m")
     .sign(privateKey);
 }
 
+function unsignedAccessToken(
+  issuer: string,
+  tokenAudience: string,
+  claims: Record<string, unknown>,
+): string {
+  const now = Math.floor(Date.now() / 1_000);
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode({
+    ...claims,
+    iss: issuer,
+    aud: tokenAudience,
+    iat: now,
+    exp: now + 600,
+  })}.`;
+}
+
+async function runOverLengthCheck(options: {
+  issuer: string;
+  sinkUrl: string;
+  token: string;
+}): Promise<{
+  status: number;
+  sinkState: SinkState | undefined;
+  backingDelta: number | null;
+}> {
+  const inspectorPort = await reservePort();
+  const miniflare = new Miniflare({
+    modules: true,
+    scriptPath: resolve("apps/web/.output/server/hosted-entry.mjs"),
+    compatibilityDate: "2026-07-02",
+    compatibilityFlags: ["nodejs_compat"],
+    inspectorHost: "127.0.0.1",
+    inspectorPort,
+    bindings: {
+      NUXT_AUTH_MODE: "cloudflare-access",
+      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: options.issuer,
+      NUXT_CLOUDFLARE_ACCESS_AUD: audience,
+      NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
+      NUXT_HOSTED_STREAM_SPIKE_ENABLED: "true",
+      NUXT_HOSTED_STREAM_SPIKE_SINK_URL: options.sinkUrl,
+    },
+  });
+  let directInspector: InspectorClient | undefined;
+  try {
+    await miniflare.ready;
+    directInspector = await InspectorClient.connect(inspectorPort);
+    const baseline = await directInspector.heapUsage();
+    const worker = await miniflare.getWorker();
+    const request = new Request(`https://spike.example${routePath}`, {
+      method: "POST",
+      headers: {
+        "cf-access-jwt-assertion": options.token,
+        "content-length": String(8 * mebibyte),
+        "content-range": `bytes 0-${8 * mebibyte - 1}/${8 * mebibyte}`,
+        "content-type": "application/octet-stream",
+        "x-spike-upload-id": "over-length",
+      },
+      body: fixtureStream(9 * mebibyte, 17),
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const responsePromise = worker.fetch(request);
+    let settled = false;
+    void responsePromise.then(
+      () => { settled = true; },
+      () => { settled = true; },
+    );
+    const backingSamples = baseline?.backingStorageSize === null || baseline === null
+      ? []
+      : [baseline.backingStorageSize];
+    while (!settled) {
+      const usage = await directInspector.heapUsage().catch(() => null);
+      if (usage?.backingStorageSize !== null && usage?.backingStorageSize !== undefined) {
+        backingSamples.push(usage.backingStorageSize);
+      }
+      await Bun.sleep(20);
+    }
+    const response = await responsePromise;
+    const sinkState = await waitForSinkState(
+      "over-length",
+      (state) => state.aborted || state.completed,
+    );
+    const backingPeak = backingSamples.length ? Math.max(...backingSamples) : null;
+    const backingBaseline = baseline?.backingStorageSize ?? null;
+    return {
+      status: response.status,
+      sinkState,
+      backingDelta: backingPeak === null || backingBaseline === null
+        ? null
+        : backingPeak - backingBaseline,
+    };
+  } finally {
+    directInspector?.close();
+    await miniflare.dispose();
+  }
+}
+
 async function scanBuiltArtifact(): Promise<{
-  routePath: boolean;
-  routeMarker: boolean;
   hostedEntry: boolean;
   hostedEntryArrayBuffer: boolean;
+  nitroRouteAbsent: boolean;
   requestArrayBuffer: boolean;
   prebufferFile: string;
 }> {
@@ -475,26 +808,28 @@ async function scanBuiltArtifact(): Promise<{
   const artifactFiles = await files(artifactRoot);
   const hostedEntryPath = resolve("apps/web/.output/server/hosted-entry.mjs");
   const hostedEntrySource = await readFile(hostedEntryPath, "utf8");
-  let routePathFound = false;
-  let routeMarkerFound = false;
+  let stockRoutePathFound = false;
+  let stockRouteMarkerFound = false;
   let requestArrayBufferFound = false;
   let prebufferFile = "none";
   for (const path of artifactFiles.filter((value) => value.endsWith(".mjs"))) {
     const contents = await readFile(path, "utf8");
-    routePathFound ||= contents.includes(routePath);
-    routeMarkerFound ||= contents.includes("FRAME_OF_MIND_HOSTED_STREAM_SPIKE_ROUTE_V1");
+    if (path !== hostedEntryPath) {
+      stockRoutePathFound ||= contents.includes(routePath);
+      stockRouteMarkerFound ||= contents.includes("FRAME_OF_MIND_HOSTED_STREAM_SPIKE_ROUTE_V1");
+    }
     if (/\.from\(await\s+\w+\.arrayBuffer\(\)\)[\s\S]{0,1000}?\.localFetch\(/.test(contents)) {
       requestArrayBufferFound = true;
       prebufferFile = path.replace(`${process.cwd()}/`, "");
     }
   }
   return {
-    routePath: routePathFound,
-    routeMarker: routeMarkerFound,
     hostedEntry: hostedEntrySource.includes("FRAME_OF_MIND_HOSTED_STREAM_SPIKE_WRAPPER_V2")
       && hostedEntrySource.includes("./index.mjs")
-      && hostedEntrySource.includes("DigestStream"),
+      && hostedEntrySource.includes("DigestStream")
+      && hostedEntrySource.includes(routePath),
     hostedEntryArrayBuffer: hostedEntrySource.includes(".arrayBuffer()"),
+    nitroRouteAbsent: !stockRoutePathFound && !stockRouteMarkerFound,
     requestArrayBuffer: requestArrayBufferFound,
     prebufferFile,
   };
@@ -550,7 +885,7 @@ async function waitForWorker(origin: string, child: ReturnType<typeof Bun.spawn>
 }
 
 async function expectStatus(
-  responsePromise: Promise<Response>,
+  responsePromise: Promise<Response> | Response,
   expected: number,
   label: string,
 ): Promise<Response> {
@@ -559,6 +894,18 @@ async function expectStatus(
     throw new Error(`${label}: expected HTTP ${expected}, received ${response.status}: ${await response.text()}`);
   }
   return response;
+}
+
+async function waitForSinkState(
+  uploadId: string,
+  predicate: (state: SinkState) => boolean,
+): Promise<SinkState> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const state = sinkStates.get(uploadId);
+    if (state && predicate(state)) return state;
+    await Bun.sleep(25);
+  }
+  throw new Error(`${uploadId}: sink state did not reach the expected condition.`);
 }
 
 async function monitorMemory<T>(

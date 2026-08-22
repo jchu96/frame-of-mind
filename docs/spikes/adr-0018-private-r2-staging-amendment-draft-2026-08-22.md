@@ -1,16 +1,17 @@
 # Reference draft amendment to ADR 0018: stage hosted media in private R2
 
-- Status: Not needed — not adopted; kept for reference
+- Status: Active fallback after Task 2.0c NO-GO — not adopted
 - Date: 2026-08-22
 - Amends: [ADR 0018](../adr/0018-hosted-studio-trust-boundary.md)
-- Historical trigger: Task 2.0 hosted streaming NO-GO
+- Trigger: Task 2.0c hosted streaming NO-GO
 
-Task 2.0b resolved both blockers without changing the storage boundary: a
-built wrapper entry bypasses Nitro only for the authenticated upload path, and
-Cloudflare `DigestStream` supplies the Worker-side streaming digest. This R2
-design is therefore not needed for the current track and grants no
-implementation authority. It remains as a reviewed fallback reference if the
-wrapper contract regresses.
+Task 2.0b provisionally resolved both blockers against a fast sink, but Task
+2.0c's adversarial oracle showed that even a single counting/digesting
+`TransformStream` retained the full 8 MiB request while the sink delayed its
+first read. The same production-shaped check could not reject a source that
+declared 8 MiB and produced 9 MiB because workerd exposed only the declared
+bytes to the wrapper. This R2 design is now the active fallback for replanning,
+but it still grants no implementation or deployment authority until adopted.
 
 ## Preserved invariant
 
@@ -77,11 +78,9 @@ ceiling; this draft does not weaken that requirement silently.
   recording names, or media bytes; and
 - local Studio and durable v2/v3 run contracts remain unchanged.
 
-## Historical consequence before Task 2.0b
+## Current consequence after Task 2.0c
 
-Tasks 2.1–2.4 were blocked by the original NO-GO. Task 2.0b has since unblocked
-them without adopting this amendment. If a future regression causes this
-fallback to be reconsidered, Phase 2 must be replanned around R2 session
+Tasks 2.1–2.4 are blocked by the renewed NO-GO. Phase 2 must be replanned around R2 session
 creation, direct multipart transfer, verified completion, provider streaming,
 and exact cleanup. This draft does not modify ADR 0018 and carries no
 implementation or deployment authority.

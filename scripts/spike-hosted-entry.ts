@@ -34,7 +34,7 @@ export default {
 };
 
 function isHostedUploadRequest(request: Request): boolean {
-  return request.method === "POST" && new URL(request.url).pathname === hostedUploadPath;
+  return request.method === "POST" && normalizePathname(request.url) === hostedUploadPath;
 }
 
 async function handleRawUpload(request: Request, env: HostedStreamEnv): Promise<Response> {
@@ -73,32 +73,77 @@ async function handleRawUpload(request: Request, env: HostedStreamEnv): Promise<
   }).DigestStream;
   if (!digestConstructor) return errorResponse(503, "DigestStream is unavailable.");
 
-  const [sinkBody, digestBody] = request.body.tee();
   const digestStream = new digestConstructor("SHA-256");
+  const digestWriter = digestStream.getWriter();
+  const sinkAbort = new AbortController();
+  let forwardedBytes = 0;
+  let lengthFailure: "over_length" | "under_length" | null = null;
+  const abortSink = () => sinkAbort.abort(request.signal.reason);
+  request.signal.addEventListener("abort", abortSink, { once: true });
+  const forwardingStream = new TransformStream<Uint8Array, Uint8Array>({
+    async transform(chunk, controller) {
+      const nextBytes = forwardedBytes + chunk.byteLength;
+      if (nextBytes > contentLength) {
+        lengthFailure = "over_length";
+        sinkAbort.abort(new Error("hosted_stream_over_length"));
+        await digestWriter.abort(new Error("hosted_stream_over_length")).catch(() => undefined);
+        throw new Error("hosted_stream_over_length");
+      }
+      forwardedBytes = nextBytes;
+      await digestWriter.write(chunk);
+      controller.enqueue(chunk);
+    },
+    async flush() {
+      if (forwardedBytes !== contentLength) {
+        lengthFailure = "under_length";
+        sinkAbort.abort(new Error("hosted_stream_under_length"));
+        await digestWriter.abort(new Error("hosted_stream_under_length")).catch(() => undefined);
+        throw new Error("hosted_stream_under_length");
+      }
+      await digestWriter.close();
+    },
+  });
   let sinkResponse: Response;
   try {
-    [sinkResponse] = await Promise.all([
-      fetch(sinkUrl, {
-        method: "POST",
-        headers: {
-          "content-length": String(contentLength),
-          "content-range": contentRange,
-          "content-type": "application/octet-stream",
-          "x-spike-upload-id": uploadId,
-        },
-        body: sinkBody,
-      }),
-      digestBody.pipeTo(digestStream),
-    ]);
+    sinkResponse = await fetch(sinkUrl, {
+      method: "POST",
+      headers: {
+        "content-range": contentRange,
+        "content-type": "application/octet-stream",
+        "x-spike-upload-id": uploadId,
+      },
+      body: request.body.pipeThrough(forwardingStream),
+      signal: sinkAbort.signal,
+    });
   } catch {
+    sinkAbort.abort();
+    await digestWriter.abort().catch(() => undefined);
+    if (lengthFailure === "over_length") {
+      return errorResponse(413, "The request body exceeds Content-Length.");
+    }
+    if (lengthFailure === "under_length") {
+      return errorResponse(400, "The request body is shorter than Content-Length.");
+    }
     return errorResponse(502, "The hosted streaming spike transfer failed.");
+  } finally {
+    request.signal.removeEventListener("abort", abortSink);
   }
 
+  if (lengthFailure === "over_length") {
+    return errorResponse(413, "The request body exceeds Content-Length.");
+  }
+  if (lengthFailure === "under_length") {
+    return errorResponse(400, "The request body is shorter than Content-Length.");
+  }
   const sinkReceipt = await readSinkReceipt(sinkResponse);
   if (sinkReceipt instanceof Response) return sinkReceipt;
   const bytesWritten = Number(digestStream.bytesWritten);
   const sha256 = toHex(await digestStream.digest);
-  if (bytesWritten !== contentLength || sinkReceipt.bytes !== contentLength) {
+  if (
+    forwardedBytes !== contentLength
+    || bytesWritten !== contentLength
+    || sinkReceipt.bytes !== contentLength
+  ) {
     return errorResponse(502, "Spike sink byte receipt mismatch.");
   }
   if (sinkReceipt.sha256 !== sha256) {
@@ -117,6 +162,16 @@ async function handleRawUpload(request: Request, env: HostedStreamEnv): Promise<
       hashImplementation: "DigestStream",
     },
   });
+}
+
+function normalizePathname(value: string): string | null {
+  try {
+    const decoded = decodeURIComponent(new URL(value).pathname);
+    const collapsed = decoded.replace(/\/{2,}/g, "/");
+    return collapsed.length > 1 ? collapsed.replace(/\/+$/, "") : collapsed;
+  } catch {
+    return null;
+  }
 }
 
 async function authenticateAccessRequest(

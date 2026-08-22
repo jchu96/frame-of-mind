@@ -2,7 +2,7 @@
 
 **Track ID:** `hosted-studio_20260822`
 **Spec:** [spec.md](./spec.md)
-**Status:** Active — Phase 1 and Task 2.0 complete; Phase 2 implementation unblocked
+**Status:** Active — Phase 1 complete; Phase 2 blocked by Task 2.0c NO-GO
 
 ## Overview
 
@@ -152,24 +152,27 @@ to release this security hardening.
       mismatched remote files. Trust-boundary review trigger: provider metadata
       becomes eligible to authorize a Workflow.
 
-**Task 2.0 status (2026-08-22): Complete — GO after 2.0b.** The original run
-remains recorded as a NO-GO: Nitro 2.13.4 materialized the body before H3 and
-`hash-wasm` attempted forbidden runtime WASM compilation. The follow-up built
-`hosted-entry.mjs` beside Nitro and intercepted only the dark upload path. It
-reused the existing Access JWT verifier, forwarded the original request stream,
-and used Cloudflare `DigestStream`. One 16 MiB and two concurrent 8 MiB bodies
-arrived with exact byte and SHA-256 receipts; all handlers observed
-`upstreamBodyUsedAtHandler=false`. Concurrent inspector backing storage rose
-6,930,496 bytes instead of the prior 33,568,143-byte plateau, with a repeat at
-6,926,400 bytes. Tasks 2.1–2.4 are unblocked, but remain unimplemented. The
-decision record and retained, not-needed private-R2 reference draft are in
+**Task 2.0 status (2026-08-22): Complete — NO-GO after 2.0c.** The original
+stock-Nitro run materialized the body before H3 and `hash-wasm` attempted
+forbidden runtime WASM compilation. Task 2.0b's exact-path wrapper and
+`DigestStream` looked bounded against a fast sink, but adversarial review found
+that the tee retained the full request when the sink stalled. Task 2.0c
+replaced it with one counting/digesting `TransformStream`, deleted the old
+Nitro spike route, normalized path variants, and added complete Access,
+over-length, and client-abort checks. Path, Access, digest, exact-byte, and
+client-abort receipts pass. The required 2,503 ms slow-sink check still added
+8,398,085 bytes of inspector backing storage against a 2,097,152-byte limit.
+The over-length workerd check also returned 200 with a receipt because the
+service boundary exposed only the declared 8 MiB to the wrapper. Tasks 2.1–2.4
+remain blocked. The decision record and active, unadopted private-R2 fallback are in
 [`hosted-streaming-spike-2026-08-22.md`](../../../docs/spikes/hosted-streaming-spike-2026-08-22.md)
 and
 [`adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`](../../../docs/spikes/adr-0018-private-r2-staging-amendment-draft-2026-08-22.md).
 
 ### Verification
 
-- [x] Task 2.0 passes with two concurrent streams on the built wrapper entry.
+- [ ] Task 2.0 proves bounded streaming under sink backpressure and rejects an
+      over-length source without recording a receipt.
 - [ ] Bounded-memory browser tests, raw 8 MiB request limits, killed-mid-part
       Gemini-offset resume, overlap denial, provider digest fixtures, mismatch
       cleanup, and cross-principal media denial all pass.
@@ -463,7 +466,7 @@ label; Phases 7-8 carry `tier-b` and remain blocked until the Phase 6 gate.
       Gemini digest mismatch fails closed before Workflow creation.
 - [ ] Upload, Workflow retry/cancel, publication, spend, and cleanup pass a
       production-shaped end-to-end run with sanitized observability.
-- [x] Task 2.0 proves the wrapper keeps two concurrent raw 8 MiB streams out of Nitro;
+- [ ] Task 2.0 proves the wrapper remains bounded under sink backpressure;
       Task 3.0 records the working WorkflowEntrypoint topology.
 - [ ] A crash after Gemini success cannot trigger a second automatic generate,
       and user retry creates a new linked Workflow instance.
