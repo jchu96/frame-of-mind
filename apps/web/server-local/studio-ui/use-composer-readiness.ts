@@ -69,10 +69,10 @@ export function useComposerReadiness() {
 
   const primaryAction = computed(() => {
     if (readiness.value.intent !== "ready") {
-      return { to: "/intent", label: "Define intent" };
+      return { to: "/intent", label: "Start an analysis" };
     }
     if (readiness.value.recording !== "sealed") {
-      return { to: "/recording", label: "Add recording" };
+      return { to: "/recording", label: "Add a recording" };
     }
     if (
       readiness.value.context !== "committed"
@@ -80,7 +80,7 @@ export function useComposerReadiness() {
     ) {
       return { to: "/context", label: "Choose context" };
     }
-    return { to: "/run", label: "Review run receipt" };
+    return { to: "/run", label: "Review your analysis" };
   });
 
   onMounted(() => {

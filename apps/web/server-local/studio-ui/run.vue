@@ -249,7 +249,7 @@ async function startAnalysis(): Promise<void> {
     });
   } catch {
     submitError.value =
-      "The local Studio could not confirm job creation. Retry uses the same key and cannot create a duplicate.";
+      "Studio could not confirm that the analysis started. Retry uses the same key and cannot create a duplicate.";
   } finally {
     submitting.value = false;
   }
@@ -277,7 +277,7 @@ function startFreshReceipt(): void {
     <main class="fom-shell py-10 sm:py-14">
       <section class="grid gap-8 lg:grid-cols-[1fr_0.6fr] lg:items-end">
         <div>
-          <p class="fom-kicker text-primary">Local Studio · Run</p>
+          <p class="fom-kicker text-primary">Run</p>
           <h1 class="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-6xl">
             Review the exact run receipt.
           </h1>
@@ -291,7 +291,7 @@ function startFreshReceipt(): void {
           variant="soft"
           icon="i-lucide-file-check-2"
           title="Nothing transfers until Start analysis"
-          description="The staged recording stays in private local application data until this final action creates one durable local job."
+          description="The staged recording stays in private local application data until this final action starts the analysis."
         />
       </section>
 
@@ -509,7 +509,7 @@ function startFreshReceipt(): void {
             >
               Start analysis
             </UButton>
-            <UButton to="/intent" color="neutral" variant="outline">Review intent</UButton>
+            <UButton to="/intent" color="neutral" variant="outline">Review your recipe</UButton>
             <UButton to="/context" color="neutral" variant="outline">Review context</UButton>
             <UButton to="/recording" color="neutral" variant="outline">Review recording</UButton>
           </div>

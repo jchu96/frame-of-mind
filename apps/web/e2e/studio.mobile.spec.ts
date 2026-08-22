@@ -9,7 +9,7 @@ test("keeps the local Studio usable on a narrow screen", {
   await page.goto("/connections");
   await expect(
     page.getByRole("heading", {
-      name: "Connections, without a credential vault.",
+      name: "Bring your own keys.",
     }),
   ).toBeVisible();
   await expect(page.getByRole("region", { name: "Gemini connection" })).toBeVisible();

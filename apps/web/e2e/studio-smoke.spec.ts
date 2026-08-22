@@ -20,7 +20,7 @@ test("shows local work, connection health, and one clear start action", {
 
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Your local analysis desk." }),
+    page.getByRole("heading", { name: "Turn a recording into findings." }),
   ).toBeVisible();
   await expect(page.locator('[data-studio-home="local"]')).toBeVisible();
   await expect(
@@ -40,7 +40,7 @@ test("shows local work, connection health, and one clear start action", {
   expect(recentSummary).not.toBeNull();
   expect(Math.abs(activeSummary!.y - recentSummary!.y)).toBeLessThanOrEqual(2);
 
-  const newAnalysis = page.getByRole("link", { name: "Define intent" });
+  const newAnalysis = page.getByRole("link", { name: "Start an analysis" });
   await expect(newAnalysis).toHaveCount(1);
   await newAnalysis.click();
   await expect(
@@ -79,7 +79,7 @@ test("manages a temporary Gemini key without reflecting it", {
     response.url().endsWith("/api/studio/configuration/secrets/gemini-api-key")
     && response.request().method() === "PUT"
   );
-  await gemini.getByRole("button", { name: "Use for this launch" }).click();
+  await gemini.getByRole("button", { name: "Use this key" }).click();
   const saveResponse = await saveResponsePromise;
 
   expect(saveResponse.status()).toBe(200);

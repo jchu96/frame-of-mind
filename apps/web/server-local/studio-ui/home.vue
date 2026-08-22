@@ -169,6 +169,25 @@ function providerStatusLabel(provider: ProviderStatus): string {
   return provider.connected ? "Connected" : "Not configured";
 }
 
+function intentReadinessLabel(): string {
+  return intentStatus.value.label
+    === "Intent is missing. Choose and save a built-in recipe."
+    ? "Choose a recipe"
+    : intentStatus.value.label;
+}
+
+function contextReadinessLabel(): string {
+  return readiness.value.context === "none"
+    ? "Optional"
+    : readiness.value.context.replace("-", " ");
+}
+
+function recordingReadinessLabel(): string {
+  return readiness.value.recording === "empty"
+    ? "Add a recording"
+    : readiness.value.recording;
+}
+
 function runTitle(run: RunSummary): string {
   return run.schemaVersion === 2
     ? run.meetingTitle || run.meetingId
@@ -195,13 +214,14 @@ function jobContext(job: AnalysisJob): string {
   >
     <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
       <div>
-        <p class="fom-kicker text-primary">Private local workspace</p>
+        <p class="fom-kicker text-primary">Runs on this machine</p>
         <h1 class="mt-3 max-w-3xl text-4xl font-black tracking-[-0.045em] sm:text-5xl">
-          Your local analysis desk.
+          Turn a recording into findings.
         </h1>
         <p class="mt-4 max-w-2xl text-base leading-7 text-muted">
-          Start with an authorized recording, monitor work that survives the
-          browser tab, and return to completed understanding.
+          Drop in a meeting recording, pick what you want to learn, and get
+          timestamped findings you can act on. Nothing leaves this machine
+          except the recording you send to Gemini.
         </p>
       </div>
       <UButton
@@ -232,9 +252,9 @@ function jobContext(job: AnalysisJob): string {
         <template #header>
           <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p class="fom-kicker text-muted">New analysis composer</p>
+              <p class="fom-kicker text-muted">New analysis</p>
               <h2 id="composer-readiness-heading" class="mt-2 text-2xl font-black">
-                Complete sections in any order
+                Three steps, any order
               </h2>
             </div>
             <UBadge :color="readiness.canRun ? 'success' : 'neutral'" variant="soft">
@@ -253,7 +273,7 @@ function jobContext(job: AnalysisJob): string {
               class="mt-1 text-sm"
               :class="intentStatus.ready ? 'text-muted' : 'text-error'"
             >
-              {{ intentStatus.label }}
+              {{ intentReadinessLabel() }}
             </p>
           </NuxtLink>
           <NuxtLink
@@ -262,7 +282,7 @@ function jobContext(job: AnalysisJob): string {
           >
             <p class="text-xs font-bold uppercase tracking-wider text-muted">Optional</p>
             <p class="mt-2 font-black text-highlighted">Context</p>
-            <p class="mt-1 text-sm capitalize text-muted">{{ readiness.context.replace('-', ' ') }}</p>
+            <p class="mt-1 text-sm capitalize text-muted">{{ contextReadinessLabel() }}</p>
           </NuxtLink>
           <NuxtLink
             to="/recording"
@@ -270,7 +290,7 @@ function jobContext(job: AnalysisJob): string {
           >
             <p class="text-xs font-bold uppercase tracking-wider text-muted">Required</p>
             <p class="mt-2 font-black text-highlighted">Recording</p>
-            <p class="mt-1 text-sm capitalize text-muted">{{ readiness.recording }}</p>
+            <p class="mt-1 text-sm capitalize text-muted">{{ recordingReadinessLabel() }}</p>
           </NuxtLink>
         </div>
       </UCard>
@@ -296,21 +316,21 @@ function jobContext(job: AnalysisJob): string {
         <p class="mt-2 text-3xl font-black text-highlighted">
           {{ initialLoading ? "—" : activeJobs.length }}
         </p>
-        <p class="mt-1 text-sm text-muted">Queued or processing locally</p>
+        <p class="mt-1 text-sm text-muted">Running now</p>
       </UCard>
       <UCard data-testid="recent-runs-summary">
         <p class="text-xs font-bold uppercase tracking-[0.16em] text-muted">Recent runs</p>
         <p class="mt-2 text-3xl font-black text-highlighted">
           {{ initialLoading ? "—" : recentRuns.length }}
         </p>
-        <p class="mt-1 text-sm text-muted">Completed-run projections shown here</p>
+        <p class="mt-1 text-sm text-muted">Finished</p>
       </UCard>
       <UCard>
         <p class="text-xs font-bold uppercase tracking-[0.16em] text-muted">Connections</p>
         <p class="mt-2 text-3xl font-black text-highlighted">
           {{ initialLoading ? "—" : `${connectedProviders}/${providers.length || 3}` }}
         </p>
-        <p class="mt-1 text-sm text-muted">Credentials are never displayed</p>
+        <p class="mt-1 text-sm text-muted">Connected</p>
       </UCard>
     </section>
 
