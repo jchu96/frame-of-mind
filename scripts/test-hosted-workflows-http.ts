@@ -1138,7 +1138,30 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
+// Local D1 queries run as a second Miniflare process against the persisted
+// database while the dev Workers still hold it. Miniflare occasionally answers
+// "internal error" for that overlap; it is a harness race, not a state bug, so
+// the query is retried a bounded number of times before the label fails.
 async function runChecked(
+  command: string[],
+  label: string,
+  additions: Record<string, string> = {},
+): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await runCheckedOnce(command, label, additions);
+    } catch (error) {
+      lastError = error;
+      const text = error instanceof Error ? error.message : String(error);
+      if (!label.startsWith("query ") || !text.includes("internal error")) throw error;
+      await Bun.sleep(250 * attempt);
+    }
+  }
+  throw lastError;
+}
+
+async function runCheckedOnce(
   command: string[],
   label: string,
   additions: Record<string, string> = {},
