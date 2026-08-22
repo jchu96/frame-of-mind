@@ -31,6 +31,65 @@ binding, so the sibling must revalidate a bounded principal-scoped job receipt.
 The passing local/dry-run proof is recorded in
 [`docs/spikes/hosted-workflows-spike-2026-08-22.md`](spikes/hosted-workflows-spike-2026-08-22.md).
 
+Tasks 3.1–3.4 implement that topology behind build and runtime flags. The
+normal Nuxt artifact remains unchanged and hosted creation stays 404-dark.
+Before any future enablement, run:
+
+```bash
+bun run test:hosted-workflows-http
+```
+
+The receipt must end with `HOSTED_WORKFLOW_CONTRACT PASSED` and show
+principal isolation, one provider invocation across the simulated
+success-without-receipt crash, terminal cleanup, and linked retry deduplication.
+
+### Workflows Worker configuration shape
+
+Copy `apps/workflows/wrangler.jsonc.example` to an ignored operator-owned
+`wrangler.jsonc`, then replace only the placeholders with exact infrastructure
+values. Never place `GEMINI_API_KEY` in either config. Store it as a secret on
+the sibling Worker:
+
+```bash
+node apps/web/node_modules/wrangler/bin/wrangler.js secret put GEMINI_API_KEY \
+  --config apps/workflows/wrangler.jsonc
+```
+
+The Workflows Worker shape is:
+
+```json
+{
+  "name": "<INTERNAL_WORKFLOWS_WORKER>",
+  "main": "src/index.ts",
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "<D1_DATABASE_NAME>",
+    "database_id": "<D1_DATABASE_ID>"
+  }],
+  "workflows": [{
+    "binding": "HOSTED_WORKFLOW",
+    "name": "<WORKFLOW_NAME>",
+    "class_name": "HostedAnalysisWorkflow"
+  }]
+}
+```
+
+The public Nuxt Worker caller adds this shape to its operator-owned config:
+
+```json
+{
+  "services": [{
+    "binding": "HOSTED_WORKFLOWS",
+    "service": "<INTERNAL_WORKFLOWS_WORKER>"
+  }]
+}
+```
+
+Deploy order is deliberate: apply migration `0004_hosted_workflows.sql`,
+deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
+caller with the service binding. Enabling hosted routes is a later reviewed
+release task; do not set its flags during this dark Phase 3 deployment shape.
+
 The Cloudflare build uses Nitro's module-format `cloudflare_module` preset.
 The legacy `cloudflare-worker` service-worker preset is incompatible with
 module-bound D1 and produced Wrangler deploy error 100329. Verified Wrangler

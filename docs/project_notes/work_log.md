@@ -550,6 +550,27 @@
   32 MiB streaming proof), the executable topology spike, and the standard
   Cloudflare boundary build (70 forbidden markers absent; 2 hosted review
   markers present).
+- Completed Hosted Studio Tasks 3.1–3.4 on 2026-08-22. The dark Nuxt adapter
+  dispatches one principal-scoped attempt to an internal Workflows Worker;
+  migration 0004 adds immutable attempts, provider receipts/events, and atomic
+  spend reservations. Every provider step uses an explicit 15-minute,
+  zero-retry configuration, reads the sealed media receipt first, and converts
+  success-without-receipt into an indeterminate terminal state after cleanup.
+  The two-Worker fake-JWKS/Gemini contract proves successful publication,
+  foreign-principal denial, one provider call across crash replay, and
+  concurrent retry deduplication. No upload path, deployment, or live route was
+  added.
+- Closed PR #63 Phase 3 review fixes on 2026-08-22. Provider calls now acquire
+  a principal/attempt/step claim and append their `provider_call` event in one
+  D1 batch before invocation; a claim without a result receipt terminates as
+  indeterminate and can only proceed through a user-linked retry. The workerd
+  contract crashes after a successful fake provider response, restarts the
+  exact failed step, and proves one provider call plus completed cleanup. A
+  real `GeminiHostedAnalysisProvider`/`GeminiVideoAnalyzer` contract with fake
+  transport also proves the 10-minute model timeout and Files API deletion for
+  ephemeral success and receipt-failure cleanup paths. Validated by
+  `bun run check` (22 Vitest files / 212 tests; Bun web suite: 271 tests; hosted
+  Workflow, Studio HTTP, Access, builds, and 32 MiB streaming spike passed).
 - Completed Hosted Studio Task 2.0 with a measured NO-GO. A dark,
   Access-authenticated route and fake Content-Range sink proved exact one
   16 MiB and two concurrent 8 MiB transfers on the built Worker, but the
