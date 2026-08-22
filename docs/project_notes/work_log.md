@@ -407,3 +407,14 @@
   index binding across both index variants, charter-aware promptPrefix,
   honest GEMINI_MODEL routing reason, VERSIONING.md row. Fixes in e78658b;
   gate 21 files / 173 tests.
+
+## 2026-08-22
+
+- Implemented Local Studio Task 6.7: authenticated Intent route and sanitized
+  built-in recipe catalog, strict custom-recipe/focus/model draft validation,
+  shared Intent/Context/Recording readiness, explicit recording-only Context,
+  and media-independent Context draft v2 with legacy migration. Home and all
+  composer pages now share the same readiness state and expose order-free
+  navigation. Validated by `bun run check` (Vitest: 21 files / 201 tests; Bun
+  web tests: 196), the production Studio HTTP contract, a clean Cloudflare
+  boundary, and the focused Playwright Intent keyboard/error smoke.

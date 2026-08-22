@@ -11,14 +11,19 @@ const navigation: NavigationMenuItem[] = [
     exact: true,
   },
   {
-    label: "Recording",
-    icon: "i-lucide-video",
-    to: "/recording",
+    label: "Intent",
+    icon: "i-lucide-target",
+    to: "/intent",
   },
   {
     label: "Context",
     icon: "i-lucide-notebook-text",
     to: "/context",
+  },
+  {
+    label: "Recording",
+    icon: "i-lucide-video",
+    to: "/recording",
   },
   {
     label: "Connections",
@@ -35,6 +40,7 @@ const title = computed(() => {
   if (route.path === "/") return "Home";
   if (route.path === "/recording") return "Recording";
   if (route.path === "/context") return "Context";
+  if (route.path === "/intent") return "Intent";
   if (route.path === "/connections") return "Connections";
   if (route.path === "/import") return "Import run";
   if (route.path.startsWith("/runs/")) return "Run detail";
@@ -115,7 +121,7 @@ const title = computed(() => {
           <template #right>
             <UButton
               v-if="route.path !== '/'"
-              to="/recording"
+              to="/intent"
               icon="i-lucide-plus"
               label="New analysis"
               size="sm"

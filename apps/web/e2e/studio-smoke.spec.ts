@@ -43,7 +43,7 @@ test("shows local work, connection health, and one clear start action", {
   await expect(newAnalysis).toHaveCount(1);
   await newAnalysis.click();
   await expect(
-    page.getByRole("heading", { name: "Put one recording in the frame." }),
+    page.getByRole("heading", { name: "Choose what this analysis should find." }),
   ).toBeVisible();
   expect(clientErrors).toEqual([]);
 });
@@ -168,6 +168,44 @@ test("accepts an actual drop and keyboard file selection", {
   ).toBeVisible();
   await page.getByRole("button", { name: "Delete staged copy" }).click();
   await expect(page.getByText("Staged recording deleted.")).toBeVisible();
+  expect(clientErrors).toEqual([]);
+});
+
+test("selects Intent by keyboard and reports strict field errors", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  const clientErrors = collectClientErrors(page);
+  await page.goto("/intent");
+  await expect(
+    page.getByRole("heading", { name: "Choose what this analysis should find." }),
+  ).toBeVisible();
+
+  const requirements = page.getByRole("radio", { name: /Requirements/ });
+  await requirements.focus();
+  await page.keyboard.press("Space");
+  await expect(requirements).toBeChecked();
+
+  await page.getByLabel("Optional focus").fill("x".repeat(10_001));
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.getByText("Focus must be 10,000 characters or fewer."))
+    .toBeVisible();
+
+  await page.getByLabel("Optional focus").fill("Prioritize acceptance criteria.");
+  await page.getByRole("button", { name: "Use a custom recipe" }).click();
+  await page.getByLabel("Custom recipe JSON").fill(JSON.stringify({
+    id: "synthetic-review",
+    label: "Synthetic review",
+    description: "Public-safe browser fixture.",
+    indexInstruction: "Find synthetic evidence.",
+    interrogationInstruction: "Verify synthetic evidence.",
+    unexpected: true,
+  }));
+  await page.getByRole("button", { name: "Validate custom recipe" }).click();
+  await expect(page.locator("#intent-custom-error"))
+    .toContainText(/invalid input|unrecognized key/i);
+  expect(await page.evaluate(() =>
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft")
+  )).toBeNull();
   expect(clientErrors).toEqual([]);
 });
 

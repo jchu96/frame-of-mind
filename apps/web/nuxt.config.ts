@@ -47,6 +47,9 @@ const studioRecordingPage = fileURLToPath(
 const studioContextPage = fileURLToPath(
   new URL("./server-local/studio-ui/context.vue", import.meta.url),
 );
+const studioIntentPage = fileURLToPath(
+  new URL("./server-local/studio-ui/intent.vue", import.meta.url),
+);
 const appFrame = fileURLToPath(
   new URL(
     localStudioEnabled
@@ -102,6 +105,9 @@ const studioContextStatusHandler = fileURLToPath(
 );
 const studioCatalogHandler = fileURLToPath(
   new URL("./server-local/studio-catalog/index.get.ts", import.meta.url),
+);
+const studioRecipeCatalogHandler = fileURLToPath(
+  new URL("./server-local/studio-catalog/recipes.get.ts", import.meta.url),
 );
 const studioJobsListHandler = fileURLToPath(
   new URL("./server-local/studio-jobs/index.get.ts", import.meta.url),
@@ -202,6 +208,11 @@ const localHandlers = [
           handler: studioCatalogHandler,
         },
         {
+          route: "/api/studio/recipes",
+          method: "get",
+          handler: studioRecipeCatalogHandler,
+        },
+        {
           route: "/api/studio/jobs",
           method: "get",
           handler: studioJobsListHandler,
@@ -282,6 +293,11 @@ export default defineNuxtConfig({
           name: "context",
           path: "/context",
           file: studioContextPage,
+        });
+        pages.push({
+          name: "intent",
+          path: "/intent",
+          file: studioIntentPage,
         });
       }
     },

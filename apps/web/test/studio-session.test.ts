@@ -64,6 +64,8 @@ describe("local Studio per-launch session", () => {
     expect(requiresLocalStudioSession("/connections/")).toBe(true);
     expect(requiresLocalStudioSession("/recording")).toBe(true);
     expect(requiresLocalStudioSession("/recording/")).toBe(true);
+    expect(requiresLocalStudioSession("/intent")).toBe(true);
+    expect(requiresLocalStudioSession("/intent/")).toBe(true);
     expect(requiresLocalStudioSession("/context")).toBe(true);
     expect(requiresLocalStudioSession("/context/")).toBe(true);
     expect(requiresLocalStudioSession("/import")).toBe(true);
