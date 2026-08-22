@@ -51,7 +51,7 @@
     "test:e2e:server": "bun --no-env-file scripts/run-studio-e2e-server.ts",
     "test:e2e:smoke": "bun --no-env-file scripts/run-playwright-e2e.ts --grep @smoke",
     "test:studio-http": "bun scripts/test-local-studio-http.ts",
-    "test:hosted-access-http": "bun --no-env-file scripts/test-hosted-access-http.ts",
+    "test:hosted-access-http": "bun --no-env-file scripts/test-hosted-access-http.ts && FRAME_OF_MIND_HOSTED_ACCESS_ENTRY=hosted-entry bun --no-env-file scripts/test-hosted-access-http.ts",
     "test:web": "bun test apps/web/test",
     "test:watch": "vitest",
     "typecheck": "bun run typecheck:cli && bun run typecheck:web",

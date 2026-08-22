@@ -409,8 +409,6 @@ export default defineNuxtConfig({
   runtimeConfig: {
     authMode: "off",
     allowUnauthenticatedRemote: false,
-    hostedStreamSpikeEnabled: false,
-    hostedStreamSpikeSinkUrl: "",
     sqlitePath: ".data/frame-of-mind.sqlite",
     cloudflareAccessTeamDomain: "",
     cloudflareAccessAud: "",

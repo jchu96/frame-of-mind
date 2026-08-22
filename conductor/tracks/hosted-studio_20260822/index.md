@@ -1,7 +1,7 @@
 # Track: Hosted Studio - Team And Tenant Execution
 
 **ID:** `hosted-studio_20260822`
-**Status:** Active — Slice 1, Task 2.0 (GO), and Task 3.0 (topology B) complete; Phases 2 and 3 unblocked
+**Status:** Active — Slice 1 and Task 3.0 (topology B) complete; Phase 2 blocked by Task 2.0c NO-GO
 
 ## Documents
 
@@ -13,7 +13,7 @@
 
 - Phases: 1/8 complete
 - Tasks: 4/33 complete
-- Current focus: implement Tasks 2.1–2.4 behind the dark hosted boundary; Task 3.0
+- Current focus: replan Tasks 2.1–2.4 around the private-R2 fallback; Task 3.0
   selected an internal sibling Workflows Worker reached from Nuxt by service binding.
   Slice 1 principal-scopes the deployed viewer; hosted upload and Workflow
   creation remain dark until their own gates pass.
@@ -22,9 +22,10 @@
 
 Tier A extends the existing Cloudflare Worker, D1, Access application, and
 hostname with principal-scoped hosted creation and durable Workflows. The
-Worker-proxied upload decision passed Task 2.0b through a built exact-path
-wrapper and Cloudflare `DigestStream`; the unadopted private-R2 draft is not
-needed and remains reference-only. Full-file integrity remains
+Task 2.0c invalidated the provisional fast-sink pass: the built exact-path
+wrapper and Cloudflare `DigestStream` still retain an 8 MiB request under sink
+backpressure. The unadopted private-R2 draft is the active replanning fallback,
+but grants no implementation authority. Full-file integrity remains
 incremental in a browser Web Worker, recording retention remains explicit, and
 the local SQLite executor remains untouched. Tier B adds encrypted
 per-principal provider connections only after the Tier A trust boundaries pass

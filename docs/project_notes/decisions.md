@@ -31,13 +31,15 @@ principal fields to durable run bundles or local job/media ports.
 
 Task 2.0 first measured a NO-GO on the stock built Worker: Nitro 2.13.4 consumes
 incoming bodies with `request.arrayBuffer()` before H3, and `hash-wasm` 4.12.0
-attempts runtime WASM compilation that workerd forbids. Task 2.0b then passed
-without changing custody: a built wrapper intercepts only the authenticated,
-dark upload path before Nitro, streams the original body, and hashes its tee
-with Cloudflare `DigestStream`. Two concurrent 8 MiB uploads added about 6.9 MB
-of inspector backing storage instead of the prior 33.6 MB plateau. Task 2.0 is
-GO and Tasks 2.1–2.4 are unblocked but unimplemented. The private-R2 amendment
-is not needed and remains an unadopted reference; ADR 0018 remains Proposed.
+attempts runtime WASM compilation that workerd forbids. Task 2.0b's wrapper and
+`DigestStream` produced a provisional GO against a fast sink. Task 2.0c then
+replaced the tee with one counting/digesting `TransformStream`, deleted the
+fallback Nitro spike handler, normalized path variants, and expanded Access,
+abort, and length tests. The required slow-sink run still retained 8,398,085
+backing bytes for an 8 MiB request against a 2 MiB limit; the production-shaped
+over-length run returned 200 with a receipt because workerd exposed only the
+declared bytes. Task 2.0 is NO-GO and Tasks 2.1–2.4 are blocked. The private-R2
+amendment is the active unadopted fallback; ADR 0018 remains Proposed.
 
 ## 2026-08-11 — Recipes become charters; the executor owns prompt policy
 

@@ -569,3 +569,15 @@
   and is retained only as a reference. No deploy or production Wrangler change
   occurred. Validated with repeated `bun run check:hosted-stream` runs and the
   full `bun run check` gate.
+- Completed Hosted Studio Task 2.0c and re-issued Task 2.0 as NO-GO. Replaced
+  the tee with one counting/digesting `TransformStream`, normalized upload path
+  variants, deleted the fallback Nitro spike route, and expanded the oracle to
+  cover a 2,500 ms slow sink, an over-length source, partial client abort, and
+  all Access-negative claim shapes. Path bypass, Access, digest, exact-byte,
+  and client-abort checks pass. The decisive slow-sink run added 8,398,085
+  inspector backing bytes for an 8 MiB request against a 2,097,152-byte limit;
+  the over-length workerd run returned 200 with a receipt after exposing only
+  the declared 8 MiB. Tasks 2.1–2.4 are blocked and the private-R2 draft is the
+  active unadopted fallback. No deployment or production Wrangler change
+  occurred. `bun run check:hosted-stream` intentionally exits nonzero until
+  both blockers clear; the ordinary repository gate remains separate.
