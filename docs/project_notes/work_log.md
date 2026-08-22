@@ -451,3 +451,14 @@
   226 tests; both builds, Studio HTTP, Cloudflare boundary, and 32 MiB spike),
   `bun run test:e2e:smoke` (12 passed, including `gemini_request_failed`
   terminal-code honesty), and `bun run smoke:gemini` (`Gemini smoke: passed`).
+- Implemented Local Studio Task 7.1 in `f123716`: authenticated `/activity`
+  list and `/activity/:id` detail routes over the existing bounded job APIs,
+  pure five-state grouping and ordered timeline derivation, and one
+  visibility-aware polling controller with bounded backoff and last-good-state
+  retention. Home and sidebar links, sanitized terminal banners, immutable
+  input summaries, HTTP/session and Cloudflare boundary checks, and the real
+  composer-to-timeline browser journey shipped without persistence or
+  executor changes. Validated by `bun run check` (21 Vitest files / 201 tests;
+  Bun web suite, production Studio HTTP contract, local/Cloudflare builds,
+  boundary check, and streaming spike passed) and
+  `bun run test:e2e:smoke` (12 passed).
