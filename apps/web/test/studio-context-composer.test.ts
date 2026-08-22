@@ -76,8 +76,8 @@ describe("Studio Context composer", () => {
   test("persists only typed context receipts and provider identifiers", () => {
     const storage = new MemoryStorage();
     const draft = {
-      schemaVersion: 1 as const,
-      mediaSessionId: "media_01K123456789ABC",
+      schemaVersion: 2 as const,
+      mode: "enriched" as const,
       context: {
         provider: "file" as const,
         transport: "file" as const,
@@ -96,9 +96,78 @@ describe("Studio Context composer", () => {
     expect(serialized).not.toContain("filename");
     expect(serialized).not.toContain("private spoken words");
     expect(serialized).not.toContain("/Users/");
+    expect(serialized).not.toContain("mediaSessionId");
 
     clearContextDraft(storage);
     expect(loadContextDraft(storage)).toEqual({ storageAvailable: true });
+  });
+
+  test("migrates legacy media-coupled drafts without keeping the media receipt", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(CONTEXT_DRAFT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      mediaSessionId: "media_01K123456789ABC",
+      context: {
+        provider: "bluedot",
+        transport: "mcp",
+        meetingId: "synthetic-meeting",
+      },
+      committed: true,
+    }));
+
+    expect(loadContextDraft(storage)).toEqual({
+      draft: {
+        schemaVersion: 2,
+        mode: "enriched",
+        context: {
+          provider: "bluedot",
+          transport: "mcp",
+          meetingId: "synthetic-meeting",
+        },
+        committed: true,
+      },
+      storageAvailable: true,
+    });
+    expect(storage.values.get(CONTEXT_DRAFT_STORAGE_KEY))
+      .not.toContain("mediaSessionId");
+  });
+
+  test("returns a committed migrated draft when migration persistence fails", () => {
+    let persistenceAttempted = false;
+    const storage = new MemoryStorage();
+    storage.values.set(CONTEXT_DRAFT_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      mediaSessionId: "media_01K123456789ABC",
+      context: {
+        provider: "bluedot",
+        transport: "mcp",
+        meetingId: "synthetic-meeting",
+      },
+      committed: true,
+    }));
+    const throwingSetItemStorage = {
+      getItem: storage.getItem.bind(storage),
+      removeItem: storage.removeItem.bind(storage),
+      setItem(_key: string, _value: string): void {
+        persistenceAttempted = true;
+        throw new Error("Synthetic storage quota failure.");
+      },
+    };
+
+    expect(loadContextDraft(throwingSetItemStorage)).toEqual({
+      draft: {
+        schemaVersion: 2,
+        mode: "enriched",
+        context: {
+          provider: "bluedot",
+          transport: "mcp",
+          meetingId: "synthetic-meeting",
+        },
+        committed: true,
+      },
+      storageAvailable: true,
+    });
+    expect(persistenceAttempted).toBe(true);
   });
 
   test("stages, verifies, and deletes only opaque context receipts", async () => {

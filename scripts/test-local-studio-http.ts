@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini";
 
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
 const port = 34_000 + Math.floor(Math.random() * 10_000);
@@ -177,6 +178,16 @@ try {
     "Context page requires a session",
   );
   await expectStatus(
+    await probe.get("/intent"),
+    401,
+    "Intent page requires a session",
+  );
+  await expectStatus(
+    await probe.get("/api/studio/recipes"),
+    401,
+    "recipe catalog requires a Studio session",
+  );
+  await expectStatus(
     await probe.get("/api/studio/session", { host: "attacker.example" }),
     403,
     "hostile Host fails closed",
@@ -279,6 +290,36 @@ try {
     || !contextHtml.includes("Pair the recording with what was said.")
   ) {
     throw new Error("Authenticated Context page did not render its local composer step.");
+  }
+  const intentPage = await expectStatus(
+    await probe.get("/intent"),
+    200,
+    "authenticated Intent page renders",
+  );
+  const intentHtml = await intentPage.text();
+  if (
+    !intentHtml.includes('data-intent-step="local"')
+    || !intentHtml.includes("Choose what this analysis should find.")
+  ) {
+    throw new Error("Authenticated Intent page did not render its local composer step.");
+  }
+  const recipesResponse = await expectStatus(
+    await probe.get("/api/studio/recipes"),
+    200,
+    "authenticated recipe catalog renders",
+  );
+  const recipesText = await recipesResponse.text();
+  const recipesBody = JSON.parse(recipesText) as {
+    defaultModel?: string;
+    recipes?: Array<{ id?: string; label?: string; description?: string; revision?: string }>;
+  };
+  if (
+    recipesBody.defaultModel !== DEFAULT_GEMINI_MODEL
+    || !recipesBody.recipes?.some((recipe) => recipe.id === "requirements")
+    || recipesText.includes("indexInstruction")
+    || recipesText.includes("interrogationInstruction")
+  ) {
+    throw new Error("Recipe catalog exposed an invalid or unsafe projection.");
   }
 
   const fixture = new Uint8Array(20);

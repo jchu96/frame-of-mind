@@ -1283,7 +1283,7 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
-### Local Studio Home, Connections, and Recording preview
+### Local Studio Home, Connections, and analysis composer preview
 
 Launch the authenticated local configuration surface:
 
@@ -1309,13 +1309,17 @@ Operational expectations:
 - OAuth tokens remain in the CLI's private exact-resource files;
 - the Connections API never returns secret values;
 - the Recording page stages authenticated resumable media locally;
+- the Intent page selects one canonical built-in recipe or validates strict
+  custom JSON before saving recipe, optional focus, and model in session
+  storage; built-in drafts pin the selected catalog revision;
+- Home and all three composer sections read one readiness coordinator:
+  Recording and Intent are required, while Context is optional and explicit;
 - the local API stages optional bounded context separately from recordings;
 - selecting or dropping a recording does not start local staging or contact
   Gemini;
 - one local durable job runtime starts with Studio and backs the protected
   `/api/studio/jobs` routes;
-- the remaining composer steps and job-detail controls are not yet exposed in
-  the Studio UI.
+- the Run receipt and job-detail controls are not yet exposed in the Studio UI.
 
 Home refreshes its three status sources when opened and through its Refresh
 action. If one source fails, its section reports that failure without
@@ -1339,10 +1343,33 @@ provider identity. Public diagnostics may include the sanitized failure code,
 never the endpoint query, authorization URL, token, or key.
 
 `bun run web` remains the unauthenticated loopback completed-run viewer.
-`frameofmind analyze` remains the end-user execution path until the composer
+`frameofmind analyze` remains the end-user execution path until the Run receipt
 ships. The protected job API is operational for development and automated
 clients. It accepts exact unexpired local context receipts but still rejects
 custom recipes until their separate staging contract is implemented.
+
+Open **Intent**, **Context**, or **Recording** in any order. A page refresh
+restores only typed browser drafts and opaque receipts; it never restores a
+`File`, provider response, transcript, credential, or prompt catalog. Home's
+primary **New analysis** action routes to Intent until Intent is ready, then to
+Recording until media is sealed. Context status is informational and never
+blocks readiness.
+
+On **Intent**:
+
+1. Select one keyboard-accessible built-in recipe card. Labels and
+   descriptions come from the protected `/api/studio/recipes` projection; the
+   projection never returns recipe instructions.
+2. Optionally add a focus note of at most 10,000 characters.
+3. For a custom recipe, paste instruction-only JSON and select **Validate
+   custom recipe**. Unknown keys, charter fields, and schema errors fail before
+   any browser save. Studio accepts a valid custom recipe as a draft but cannot
+   run it until the custom-recipe staging contract exists.
+4. Open **Advanced model selection** to verify the current default model. No
+   provider key or secret is displayed there.
+5. Select **Save intent**. The
+   `frame-of-mind:studio:intent-draft` value contains exactly `recipe`, optional
+   `focus`, and `model`; a built-in `recipe` contains its `id` and `revision`.
 
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and
@@ -1465,7 +1492,10 @@ Override the root only with an absolute private path outside the checkout:
 FRAME_OF_MIND_CONTEXT_ROOT="/private/path/frame-of-mind-context" bun run studio
 ```
 
-Open **Context** after sealing a recording. Choose exactly one source:
+Open **Context** at any point. First choose either explicit **Recording only**
+or **Context enriched**. Absence, expiry, or failure of enriched context never
+silently becomes recording-only. For enriched analysis, choose exactly one
+source:
 
 - **Bluedot** uses the configured MCP OAuth identity. Use **Browse recent** or
   search when the catalog is available, or enter the exact video ID.
@@ -1495,9 +1525,11 @@ For a local file:
 7. Use **Delete staged context** before replacing it or when it is no longer
    needed.
 
-The browser draft stores only typed identifiers/receipts and the optional
-alignment value. It does not store transcript text, provider responses,
-catalog results, local paths, file names, or preview content.
+The browser draft stores only the explicit context mode, typed
+identifiers/receipts, committed state, and optional alignment value. It does
+not store a media-session ID, transcript text, provider responses, catalog
+results, local paths, file names, or preview content. Deleting or expiring
+staged media therefore leaves valid Intent and Context drafts intact.
 
 The protected backend contract is:
 

@@ -65,9 +65,13 @@ periodic sweep enforce that expiry even when the server remains open after the
 originating tab closes. If session storage is unavailable, the current page
 can finish but Studio explicitly reports that refresh-resume is disabled. The
 immutable job/runtime and completed-run projection support deliberate
-video-only work without provider credentials. The remaining Intent/readiness,
-Run receipt, and job-detail activity UI remain later track tasks; Home already
-reports active work from the protected durable job runtime underneath them.
+video-only work without provider credentials. The authenticated `/intent`
+page, v2 context draft, and shared composer-readiness coordinator are
+shipped: Intent and sealed Recording are required, Context is optional and
+never inferred as video-only from absence, and custom-recipe drafts stay
+unrunnable until Task 6.8. Only the Run receipt and job-detail activity UI
+remain later track tasks; Home already reports composer readiness and active
+work from the protected durable job runtime underneath them.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:

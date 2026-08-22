@@ -407,3 +407,27 @@
   index binding across both index variants, charter-aware promptPrefix,
   honest GEMINI_MODEL routing reason, VERSIONING.md row. Fixes in e78658b;
   gate 21 files / 173 tests.
+
+## 2026-08-22
+
+- Implemented Local Studio Task 6.7: authenticated Intent route and sanitized
+  built-in recipe catalog, strict custom-recipe/focus/model draft validation,
+  shared Intent/Context/Recording readiness, explicit recording-only Context,
+  and media-independent Context draft v2 with legacy migration. Home and all
+  composer pages now share the same readiness state and expose order-free
+  navigation. Validated by `bun run check` (Vitest: 21 files / 201 tests; Bun
+  web tests: 196), the production Studio HTTP contract, a clean Cloudflare
+  boundary, and the focused Playwright Intent keyboard/error smoke.
+- Addressed Task 6.7 adversarial-review findings: Context v1 migration now
+  survives failed write-back, built-in Intent drafts pin recipe revision,
+  catalog failure retains a safe default-model path, and custom drafts disclose
+  their staging limitation without changing readiness. Split the pure composer
+  readiness reducer from its Nuxt state wrapper so direct Bun coverage remains
+  available with an explicit `useState` import. Validated by `bun run check`
+  (Vitest: 21 files / 201 tests; Bun web tests: 199), the production Studio HTTP
+  contract, a clean Cloudflare boundary, and 11 Playwright smoke tests.
+- Closed the final Task 6.7 delta review by moving the default Gemini model to
+  a dependency-free adapter constant, gating its local-only public runtime key,
+  and extending the hosted-artifact boundary marker set. Composer ordering now
+  covers three permutations, and the catalog-failure smoke rejects unexpected
+  client errors while allowing only its synthetic HTTP 500 console message.

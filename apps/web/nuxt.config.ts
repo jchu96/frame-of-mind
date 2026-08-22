@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { DEFAULT_GEMINI_MODEL } from "../../src/adapters/gemini-model";
 import { shouldRegisterLocalStudioRoutes } from "./server-local/studio-session/session";
 
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
@@ -46,6 +47,9 @@ const studioRecordingPage = fileURLToPath(
 );
 const studioContextPage = fileURLToPath(
   new URL("./server-local/studio-ui/context.vue", import.meta.url),
+);
+const studioIntentPage = fileURLToPath(
+  new URL("./server-local/studio-ui/intent.vue", import.meta.url),
 );
 const appFrame = fileURLToPath(
   new URL(
@@ -102,6 +106,9 @@ const studioContextStatusHandler = fileURLToPath(
 );
 const studioCatalogHandler = fileURLToPath(
   new URL("./server-local/studio-catalog/index.get.ts", import.meta.url),
+);
+const studioRecipeCatalogHandler = fileURLToPath(
+  new URL("./server-local/studio-catalog/recipes.get.ts", import.meta.url),
 );
 const studioJobsListHandler = fileURLToPath(
   new URL("./server-local/studio-jobs/index.get.ts", import.meta.url),
@@ -202,6 +209,11 @@ const localHandlers = [
           handler: studioCatalogHandler,
         },
         {
+          route: "/api/studio/recipes",
+          method: "get",
+          handler: studioRecipeCatalogHandler,
+        },
+        {
           route: "/api/studio/jobs",
           method: "get",
           handler: studioJobsListHandler,
@@ -283,6 +295,11 @@ export default defineNuxtConfig({
           path: "/context",
           file: studioContextPage,
         });
+        pages.push({
+          name: "intent",
+          path: "/intent",
+          file: studioIntentPage,
+        });
       }
     },
   },
@@ -307,6 +324,9 @@ export default defineNuxtConfig({
     public: {
       appName: "Frame of Mind",
       appVersion: "0.3.0",
+      ...(localStudioEnabled
+        ? { studioDefaultModel: DEFAULT_GEMINI_MODEL }
+        : {}),
       studioEnabled: localStudioEnabled,
     },
   },

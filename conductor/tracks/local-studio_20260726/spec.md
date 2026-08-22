@@ -80,7 +80,7 @@ treated as an intentional video-only choice.
    - human-readable cards for built-in recipes;
    - optional focus;
    - strict custom-recipe import;
-   - model and sampling details under advanced controls.
+   - model and sampling details under advanced controls. Sampling controls are deferred to Task 6.8 (2026-08-22).
 2. **Context (optional)**
    - explicit video-only or context-enriched choice;
    - Bluedot, Granola MCP/API, or local file when enriched;
