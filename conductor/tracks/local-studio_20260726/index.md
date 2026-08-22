@@ -12,9 +12,9 @@
 ## Progress
 
 - Phases: 8/9 complete
-- Tasks: 46/51 complete
-- Current focus: Task 9.1, reconciling public documentation and operations
-  guidance against the shipped Studio boundary.
+- Tasks: 49/51 complete
+- Current focus: Tasks 9.3 and 9.4, collecting fresh-clone platform evidence
+  and completing the final adversarial release review.
 
 ## Decision
 
@@ -23,8 +23,12 @@ the Studio experience; it does not become the durable execution boundary.
 Recording and Intent are required, Context is an optional explicit enrichment,
 and the composer may begin with any of those sections. Execution resolves
 committed context before media analysis and never fabricates missing context.
-Phase B hosted execution is represented through adapter contracts and a
-roadmap entry, but is not implemented in this track.
+Phase B hosted execution is tracked separately in
+[`hosted-studio_20260822`](../hosted-studio_20260822/). Its Access identity,
+internal Workflow execution, spend, telemetry, and release-preparation slices
+are built but dark; upload materialization and production deployment remain
+pending. ADR 0018's Worker-proxied Gemini boundary supersedes the earlier
+direct-R2 proposal.
 
 ## Quick Links
 

@@ -422,19 +422,30 @@ smoke coverage validate the slice. Phase 9 is next.
 
 ### Tasks
 
-- [ ] Task 9.1: Reconcile README, ADR log, architecture, credentials, privacy,
+- [x] Task 9.1: Reconcile README, ADR log, architecture, credentials, privacy,
       Studio, troubleshooting, backup, and operations runbooks against shipped
       behavior.
-- [ ] Task 9.2: Add a public data-classification table and verify `.gitignore`,
+- [x] Task 9.2: Add a public data-classification table and verify `.gitignore`,
       fixtures, screenshots, logs, examples, and repository history contain no
       sensitive runtime data.
 - [ ] Task 9.3: Add fresh-clone local installation and upgrade tests for macOS,
       Linux, and documented Windows support.
 - [ ] Task 9.4: Run adversarial security, provider, job-state, upload, and
       contract reviews; resolve all grounded blockers.
-- [ ] Task 9.5: Write the separate hosted Studio track proposal covering
-      Access, direct R2 multipart staging, D1 job state, durable execution,
-      secrets, retention, cost, and deletion.
+- [x] Task 9.5: Reconcile the separate
+      [Hosted Studio track](../hosted-studio_20260822/) against what is built
+      and what remains pending. ADR 0018 supersedes the old direct-R2 wording
+      with Worker-proxied Gemini uploads; Amendment 1 in PR #65 proposes the
+      still-pending 4 MiB x 4 materialization bound, while private R2 remains
+      only a second fallback. Built but dark: identity Slice 1, Phases 3 and 4,
+      Tasks 5.3 and 5.4, and Phase 6 release preparation. Pending: Phase 2,
+      Tasks 5.1 and 5.2, and the Phase 6 deployment.
+
+Tasks 9.1, 9.2, and 9.5 closed on 2026-08-22. Public documentation now matches
+the shipped Local Studio Phases 1-8 and the hosted-dark boundary; the repository
+hygiene gate scans tracked and nonignored working-tree files, and a one-time
+all-ref history sweep found no sensitive runtime data. Platform installation,
+upgrade evidence, and the final adversarial review remain Tasks 9.3 and 9.4.
 
 ### Verification
 

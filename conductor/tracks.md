@@ -11,7 +11,7 @@
 
 | Status | Track ID | Title | Created | Updated |
 | ------ | -------- | ----- | ------- | ------- |
-| `[~]` | [`local-studio_20260726`](./tracks/local-studio_20260726/) | Local Studio: Drag-and-Drop Analysis | 2026-07-26 | 2026-07-28 |
+| `[~]` | [`local-studio_20260726`](./tracks/local-studio_20260726/) | Local Studio: Drag-and-Drop Analysis | 2026-07-26 | 2026-08-22 |
 | `[~]` | [`hosted-studio_20260822`](./tracks/hosted-studio_20260822/) | Hosted Studio: Team And Tenant Execution | 2026-08-22 | 2026-08-22 |
 
 ## Roadmap Queue
