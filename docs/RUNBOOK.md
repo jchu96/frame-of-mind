@@ -1385,7 +1385,9 @@ On **Run**:
 2. Verify the sealed recording size and SHA-256 prefix, exact context identity,
    pinned recipe revision, optional focus, model, and staging retention
    deadline. The retention choice was locked when staging began; Run cannot
-   extend it.
+   extend it. If the live retention receipt cannot be converted or the Run
+   retry key cannot be stored, retention reads **Unavailable** beside the live
+   server expiry and **Start analysis** remains disabled.
 3. Read the plain-language Gemini Files transfer and cleanup disclosure.
    Enriched execution resolves and normalizes context during
    `fetching_context`, before recording upload. Context failure terminates the
@@ -1395,7 +1397,9 @@ On **Run**:
    retention from the live media receipt on every mount. A network retry
    reuses that key, so it cannot insert a duplicate job. Reusing the same key
    with different input is rejected as 409 `idempotency_conflict`; it never
-   creates or replays a different job.
+   creates or replays a different job. Run then links Home to the job that may
+   already exist and offers **Start a fresh receipt**; that explicit action
+   replaces only the Run key, preserving Intent, Context, and Recording.
 5. A 201 create or 200 replay clears all composer resume hints and returns Home
    with a success notice naming the durable job ID. A 409/422 keeps every draft
    and links the sanitized recipe, context, or media failure to its section.

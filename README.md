@@ -389,7 +389,9 @@ What works today:
   explicit video-only or committed enriched context, pinned built-in recipe,
   model, focus, and exact server-owned retention lifetime. **Start analysis**
   creates or safely replays one durable local job and then clears the four
-  browser resume hints.
+  browser resume hints. If the retry key is already bound to different input,
+  Run links back Home or offers an explicit fresh receipt that replaces only
+  the Run key and preserves the prepared Intent, Context, and Recording.
 
 The CLI remains available for direct analysis, while Local Studio now exposes
 the same shared executor through the deliberate Run receipt. Custom recipe

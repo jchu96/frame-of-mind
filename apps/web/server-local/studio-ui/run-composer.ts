@@ -48,8 +48,15 @@ export interface RunBlocker {
 }
 
 export interface RunFieldError {
-  section: "intent" | "context" | "recording" | "connections";
+  section: "intent" | "context" | "recording" | "connections" | "home";
   message: string;
+  canStartFreshReceipt?: boolean;
+}
+
+export interface RunRetentionDisplay {
+  mode: MediaRetentionRequest["mode"] | "unavailable";
+  expiresAt?: string;
+  ttlSeconds?: number;
 }
 
 export interface RunRecipeSummary {
@@ -315,6 +322,13 @@ export function retentionRequestForMediaSession(
 export function runFieldErrorForJobCode(
   code: string | undefined,
 ): RunFieldError {
+  if (code === "idempotency_conflict") {
+    return {
+      section: "home",
+      message: "A job already exists under this retry key. Open Home, or start a fresh receipt.",
+      canStartFreshReceipt: true,
+    };
+  }
   if (code === "custom_recipe_staging_unavailable") {
     return { section: "intent", message: "Custom recipes cannot run yet. Choose a built-in Intent." };
   }
@@ -382,6 +396,47 @@ export function clearRunDraft(storage: BrowserStorage): boolean {
   } catch {
     return false;
   }
+}
+
+export function startFreshRunReceipt(
+  storage: BrowserStorage,
+  retention: MediaRetentionRequest,
+  createIdempotencyKey?: () => string,
+): RunDraft {
+  if (!clearRunDraft(storage)) {
+    throw new Error("Run retry state could not be cleared.");
+  }
+  return createOrLoadRunDraft(storage, retention, createIdempotencyKey);
+}
+
+export function runRetentionDisplay(
+  mediaSession: MediaSession | undefined,
+  runDraft: RunDraft | undefined,
+): RunRetentionDisplay {
+  if (!runDraft) {
+    return {
+      mode: "unavailable",
+      ...(mediaSession
+        ? { expiresAt: mediaSession.retention.expiresAt }
+        : {}),
+    };
+  }
+  return {
+    mode: runDraft.retention.mode,
+    ...(runDraft.retention.mode === "retained"
+      ? { ttlSeconds: runDraft.retention.ttlSeconds }
+      : {}),
+    ...(mediaSession
+      ? { expiresAt: mediaSession.retention.expiresAt }
+      : {}),
+  };
+}
+
+export function canStartRunAnalysis(
+  state: Pick<RunReceiptState, "canSubmit"> | undefined,
+  runDraft: RunDraft | undefined,
+): boolean {
+  return Boolean(state?.canSubmit && runDraft);
 }
 
 export function buildComposerPayload(
