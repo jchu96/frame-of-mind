@@ -12,6 +12,7 @@ import type { SealedHostedMediaReceipt } from "../apps/workflows/src/contracts";
 import {
   GeminiHostedAnalysisProvider,
 } from "../apps/workflows/src/provider";
+import { hostedSpendEstimator } from "../apps/workflows/src/spend";
 import { createE2EEnvironment } from "./e2e-environment";
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-workflows-"));
@@ -27,10 +28,24 @@ const audience = "frame-of-mind-hosted-workflow-contract";
 const keyId = "hosted-workflow-contract-key";
 const principalA = "hosted-workflow-principal-a";
 const principalB = "hosted-workflow-principal-b";
+const principalRace = "hosted-workflow-principal-race";
+const principalOverrun = "hosted-workflow-principal-overrun";
+const principalJanitor = "hosted-workflow-principal-janitor";
 const normalMedia = "media_hosted_normal_0001";
 const crashMedia = "media_hosted_crash_0001";
 const cancelMedia = "media_hosted_cancel_0001";
+const overrunMedia = "media_hosted_overrun_0001";
+const janitorMedia = "media_hosted_janitor_0001";
+const janitorAttempt = "attempt_hosted_janitor_0001";
 const mediaSha256 = "a".repeat(64);
+const contractSpendPlan = hostedSpendEstimator.estimate(1, {
+  videoTokensPerSecond: 300,
+  promptOutputHeadroomPerCall: 100,
+  maxInterrogationCalls: 1,
+  principalCapUnits: Number.MAX_SAFE_INTEGER,
+});
+const principalACapUnits = contractSpendPlan.estimatedTokens + 1_999;
+const raceCapUnits = contractSpendPlan.estimatedTokens * 3;
 const wranglerBin = resolve("apps/web/node_modules/wrangler/bin/wrangler.js");
 let webWorker: ReturnType<typeof Bun.spawn> | undefined;
 let workflowWorker: ReturnType<typeof Bun.spawn> | undefined;
@@ -65,9 +80,13 @@ try {
   for (const marker of [
     "/api/hosted/jobs",
     "/api/hosted/composer/jobs",
+    "/api/hosted/spend/janitor",
     "/hosted/activity",
     "data-hosted-studio-shell",
     "Hosted Workflow bindings are unavailable",
+    "hosted-video-v2",
+    "spend_reservation_created",
+    "hosted-workflows.internal/telemetry",
   ]) {
     if (!hostedBundle.includes(marker)) {
       throw new Error(`Hosted Nuxt build omitted ${marker}.`);
@@ -110,7 +129,10 @@ try {
       NUXT_CLOUDFLARE_ACCESS_AUD: audience,
       NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
       NUXT_HOSTED_WORKFLOWS_ENABLED: "true",
-      NUXT_HOSTED_WORKFLOW_RESERVATION_UNITS: "1",
+      NUXT_HOSTED_SPEND_PRINCIPAL_CAP_UNITS: String(principalACapUnits),
+      NUXT_HOSTED_SPEND_VIDEO_TOKENS_PER_SECOND: "300",
+      NUXT_HOSTED_SPEND_PROMPT_OUTPUT_HEADROOM_PER_CALL: "100",
+      NUXT_HOSTED_SPEND_MAX_INTERROGATION_CALLS: "1",
     },
   }, null, 2));
   await writeFile(disabledWebConfigPath, JSON.stringify({
@@ -151,6 +173,7 @@ try {
       HOSTED_FAKE_START_DELAY_MEDIA_ID: cancelMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID: crashMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_STEP: "transcribe",
+      HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID: overrunMedia,
     },
   }, null, 2));
   await runChecked([
@@ -197,6 +220,32 @@ try {
     workflowWorker,
     200,
   );
+  await expectStatus(fetch(`http://127.0.0.1:${workflowPort}/telemetry`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      area: "upload",
+      outcome: "started",
+      code: "hosted_upload_started",
+      routeClass: "hosted_upload",
+      byteCount: 0,
+      studioMode: "hosted",
+    }),
+  }), 202, "codes-only telemetry event");
+  await expectStatus(fetch(`http://127.0.0.1:${workflowPort}/telemetry`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      area: "upload",
+      outcome: "failed",
+      code: "hosted_upload_failed",
+      email: "seat@example.test",
+      studioMode: "hosted",
+    }),
+  }), 400, "telemetry content rejection");
+  console.log(
+    "HOSTED_TELEMETRY contract=PASS codes_and_structural_fields_only dsn_default=off upload=interface_only",
+  );
 
   const workerPort = await reservePort();
   const baseUrl = `http://127.0.0.1:${workerPort}`;
@@ -223,6 +272,9 @@ try {
 
   const tokenA = await signAccessToken(keys.privateKey, issuer, principalA);
   const tokenB = await signAccessToken(keys.privateKey, issuer, principalB);
+  const tokenRace = await signAccessToken(keys.privateKey, issuer, principalRace);
+  const tokenOverrun = await signAccessToken(keys.privateKey, issuer, principalOverrun);
+  const tokenJanitor = await signAccessToken(keys.privateKey, issuer, principalJanitor);
   const disabledPort = await reservePort();
   const disabledOrigin = `http://127.0.0.1:${disabledPort}`;
   disabledWebWorker = Bun.spawn([
@@ -257,7 +309,11 @@ try {
   ]) {
     await expectStatus(authenticatedFetch(disabledOrigin, path, tokenA), 404, `disabled ${path}`);
   }
-  for (const path of ["/api/hosted/jobs", "/api/hosted/composer/jobs"]) {
+  for (const path of [
+    "/api/hosted/jobs",
+    "/api/hosted/composer/jobs",
+    "/api/hosted/spend/janitor",
+  ]) {
     await expectStatus(fetch(`${disabledOrigin}${path}`, {
       method: "POST",
       headers: mutationHeaders(disabledOrigin, tokenA),
@@ -270,6 +326,63 @@ try {
   disabledWebWorker = undefined;
   disabledWebOutput = undefined;
   console.log("HOSTED_WORKFLOW dark=PASS runtime_disabled_routes_404");
+
+  const raceSize = 10;
+  const raceResponses = await Promise.all(
+    Array.from({ length: raceSize }, (_, index) => createJobResponse(
+      baseUrl,
+      tokenRace,
+      cancelMedia,
+      `http-race-${String(index + 1).padStart(2, "0")}`,
+    )),
+  );
+  const admitted = raceResponses.filter((response) => response.status === 201);
+  const rejected = raceResponses.filter((response) => response.status === 429);
+  assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
+  assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
+  for (const response of rejected) {
+    const body = await json<{ data?: { code?: string } }>(response);
+    assertEqual(body.data?.code, "principal_spend_cap_exceeded", "HTTP race cap code");
+  }
+  for (const response of admitted) await response.body?.cancel();
+  assertEqual(
+    await queryCount(
+      "hosted_analysis_attempts",
+      `principal_sub = '${principalRace}' AND idempotency_key LIKE 'http-race-%'`,
+    ),
+    3,
+    "HTTP race created Workflows",
+  );
+  console.log(
+    `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3}`,
+  );
+
+  const janitorResponse = await json<{
+    ok: boolean;
+    released: number;
+    committed: number;
+  }>(await expectStatus(fetch(`${baseUrl}/api/hosted/spend/janitor`, {
+    method: "POST",
+    headers: mutationHeaders(baseUrl, tokenJanitor),
+    body: "{}",
+  }), 200, "expired reservation janitor"));
+  assertEqual(janitorResponse, { ok: true, released: 1, committed: 0 }, "janitor result");
+  const janitorReplay = await json<{
+    ok: boolean;
+    released: number;
+    committed: number;
+  }>(await expectStatus(fetch(`${baseUrl}/api/hosted/spend/janitor`, {
+    method: "POST",
+    headers: mutationHeaders(baseUrl, tokenJanitor),
+    body: "{}",
+  }), 200, "idempotent expired reservation janitor"));
+  assertEqual(janitorReplay, { ok: true, released: 0, committed: 0 }, "janitor replay");
+  assertEqual(
+    (await queryReservation(principalJanitor, janitorAttempt)).state,
+    "released",
+    "janitor released state",
+  );
+
   const normal = await createJob(baseUrl, tokenA, normalMedia, "normal-submit-key");
   const normalTerminal = await waitForTerminal(baseUrl, tokenA, normal.job.id);
   assertEqual(normalTerminal.job.stage, "succeeded", "normal terminal stage");
@@ -285,6 +398,39 @@ try {
     manifest: published.manifest,
   });
   assertEqual(published.runId, normalTerminal.job.runId, "published viewer run ID");
+
+  const overrun = await createJob(
+    baseUrl,
+    tokenOverrun,
+    overrunMedia,
+    "overrun-submit-key",
+  );
+  const overrunTerminal = await waitForTerminal(
+    baseUrl,
+    tokenOverrun,
+    overrun.job.id,
+  );
+  assertEqual(overrunTerminal.job.stage, "indeterminate", "overrun terminal stage");
+  assertEqual(
+    overrunTerminal.job.errorCode,
+    "spend_actual_exceeds_reservation",
+    "overrun terminal code",
+  );
+  assertEqual(overrunTerminal.job.runId, undefined, "overrun publication blocked");
+  const overrunReservation = await queryReservation(
+    principalOverrun,
+    overrun.job.id,
+  );
+  assertEqual(
+    await queryCommittedUnits(principalOverrun),
+    contractSpendPlan.estimatedTokens,
+    "overrun committed ceiling",
+  );
+  if (overrunReservation.actual_units <= overrunReservation.reserved_units) {
+    throw new Error("Overrun fixture did not exceed the reservation.");
+  }
+  console.log("HOSTED_SPEND overrun=PASS actual_gt_reserved=failed_closed");
+
   const listA = await json<{ jobs: JobView[] }>(await expectStatus(
     authenticatedFetch(baseUrl, "/api/hosted/jobs", tokenA),
     200,
@@ -342,6 +488,14 @@ try {
   }), 200, "cancel hosted attempt");
   const canceledTerminal = await waitForTerminal(baseUrl, tokenA, canceled.job.id);
   assertEqual(canceledTerminal.job.stage, "canceled", "canceled terminal stage");
+  assertEqual(
+    (await queryReservation(principalA, canceled.job.id)).state,
+    "released",
+    "zero-claim cancellation reservation",
+  );
+  console.log(
+    "HOSTED_SPEND release=PASS cancel_zero_claims=released janitor=released_expired",
+  );
   const canceledRetry = await json<JobResponse>(await expectOneOf(
     retryJob(baseUrl, tokenA, canceled.job.id, "cancel-retry-key"),
     [200, 201],
@@ -416,6 +570,59 @@ try {
   const parentAfterRetry = await getJob(baseUrl, tokenA, crashed.job.id);
   assertEqual(parentAfterRetry.job.stage, "indeterminate", "prior attempt immutable");
   console.log("HOSTED_WORKFLOW retry=PASS linked_new_attempt double_submit_deduped");
+  const capped = await createJobResponse(
+    baseUrl,
+    tokenA,
+    normalMedia,
+    "cap-exhausted-submit-key",
+  );
+  await expectStatus(capped, 429, "spend-capped create");
+  const cappedBody = await json<{ data?: { code?: string } }>(capped);
+  assertEqual(
+    cappedBody.data?.code,
+    "principal_spend_cap_exceeded",
+    "spend-capped code",
+  );
+  assertEqual(
+    await queryCount(
+      "hosted_analysis_attempts",
+      "idempotency_key = 'cap-exhausted-submit-key'",
+    ),
+    0,
+    "no attempt or Workflow receipt after cap exhaustion",
+  );
+  const cappedComposer = await composerJobResponse(
+    baseUrl,
+    tokenA,
+    normalMedia,
+    "composer-cap-exhausted-submit-key",
+  );
+  await expectStatus(cappedComposer, 429, "spend-capped composer create");
+  const cappedComposerBody = await json<{ data?: { code?: string } }>(
+    cappedComposer,
+  );
+  assertEqual(
+    cappedComposerBody.data?.code,
+    "principal_spend_cap_exceeded",
+    "spend-capped composer code",
+  );
+  assertEqual(
+    await queryCount(
+      "hosted_analysis_attempts",
+      "idempotency_key = 'composer-cap-exhausted-submit-key'",
+    ),
+    0,
+    "no composer attempt or Workflow receipt after cap exhaustion",
+  );
+  assertEqual(
+    await queryCommittedUnits(principalA),
+    2000,
+    "provider-usage spend reconciliation",
+  );
+  console.log(
+    "HOSTED_SPEND reserve=PASS race=unit_contract reconcile=provider_usage create_cap=429 composer_cap=429 workflow_created=false",
+  );
+  console.log("HOSTED_SPEND_CONTRACT PASSED");
   console.log("HOSTED_STUDIO_CONTRACT PASSED");
   console.log("HOSTED_WORKFLOW_CONTRACT PASSED");
 
@@ -464,6 +671,7 @@ interface JobView {
   stage: string;
   cleanupCompleted: boolean;
   runId?: string;
+  errorCode?: string;
 }
 
 interface JobResponse {
@@ -498,6 +706,11 @@ async function verifyRealAdapterContract(): Promise<void> {
               text: "Hosted adapter transport contract.",
             }],
           }),
+          usageMetadata: {
+            promptTokenCount: 80,
+            candidatesTokenCount: 20,
+            totalTokenCount: 100,
+          },
         };
       },
       deleteFile: async (parameters) => {
@@ -528,6 +741,7 @@ async function verifyRealAdapterContract(): Promise<void> {
     sha256: mediaSha256,
     mimeType: "video/mp4",
     retention: "ephemeral",
+    durationSeconds: 1,
     sealedAt: "2026-08-22T00:00:00.000Z",
     expiresAt: "2026-08-29T00:00:00.000Z",
   });
@@ -561,22 +775,70 @@ function d1Binding() {
 function seedSql(): string {
   const sealedAt = "2026-08-22T00:00:00.000Z";
   const expiresAt = "2026-08-29T00:00:00.000Z";
-  const mediaRows = [normalMedia, crashMedia, cancelMedia].map((mediaId) =>
-      `('${principalA}','${mediaId}','files/${mediaId}',`
+  const expiredAt = "2026-08-21T00:00:00.000Z";
+  const mediaFixtures = [
+    { principal: principalA, mediaId: normalMedia, retention: "retained", expiresAt },
+    { principal: principalA, mediaId: crashMedia, retention: "ephemeral", expiresAt },
+    { principal: principalA, mediaId: cancelMedia, retention: "retained", expiresAt },
+    { principal: principalRace, mediaId: cancelMedia, retention: "retained", expiresAt },
+    { principal: principalOverrun, mediaId: overrunMedia, retention: "retained", expiresAt },
+    { principal: principalJanitor, mediaId: janitorMedia, retention: "retained", expiresAt: expiredAt },
+  ];
+  const mediaRows = mediaFixtures.map(({ principal, mediaId, retention, expiresAt: mediaExpiresAt }) =>
+      `('${principal}','${mediaId}','files/${mediaId}',`
       + `'https://generativelanguage.googleapis.test/v1beta/files/${mediaId}',`
-      + `'${mediaSha256}','video/mp4','${mediaId === crashMedia ? "ephemeral" : "retained"}',`
-      + `'${sealedAt}','${expiresAt}')`
-    );
+      + `'${mediaSha256}','video/mp4','${retention}',`
+      + `'${sealedAt}','${mediaExpiresAt}',1)`
+  );
+  const janitorInput = JSON.stringify({
+    mediaId: janitorMedia,
+    mediaSha256,
+    context: { mode: "none" },
+    recipe: {
+      id: "critical-decisions",
+      label: "Critical decisions",
+      revision: "builtin-test",
+      sha256: "b".repeat(64),
+    },
+    model: "gemini-test",
+    retention: "retained",
+    spendPlan: contractSpendPlan,
+  }).replaceAll("'", "''");
   return `
     INSERT INTO hosted_principal_spend (
       principal_sub, principal_email, cap_units, committed_units, updated_at
     ) VALUES
-      ('${principalA}', 'seat@example.test', 20, 0, '${sealedAt}'),
-      ('${principalB}', 'seat@example.test', 20, 0, '${sealedAt}');
+      ('${principalA}', 'seat@example.test', ${principalACapUnits}, 0, '${sealedAt}'),
+      ('${principalB}', 'seat@example.test', ${principalACapUnits}, 0, '${sealedAt}'),
+      ('${principalRace}', 'seat@example.test', ${raceCapUnits}, 0, '${sealedAt}'),
+      ('${principalOverrun}', 'seat@example.test', ${contractSpendPlan.estimatedTokens * 2}, 0, '${sealedAt}'),
+      ('${principalJanitor}', 'seat@example.test', ${contractSpendPlan.estimatedTokens}, 0, '${sealedAt}');
     INSERT INTO hosted_media_receipts (
       principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
-      mime_type, retention, sealed_at, expires_at
+      mime_type, retention, sealed_at, expires_at, duration_seconds
     ) VALUES ${mediaRows.join(",\n")};
+    INSERT INTO hosted_analysis_jobs (
+      principal_sub, job_id, principal_email, media_id, created_at
+    ) VALUES (
+      '${principalJanitor}', 'job_hosted_janitor_0001', 'seat@example.test',
+      '${janitorMedia}', '${sealedAt}'
+    );
+    INSERT INTO hosted_analysis_attempts (
+      principal_sub, attempt_id, job_id, retry_of_attempt_id,
+      attempt_number, idempotency_key, workflow_instance_id,
+      immutable_input_json, stage, spend_reserved_units, created_at, updated_at
+    ) VALUES (
+      '${principalJanitor}', '${janitorAttempt}', 'job_hosted_janitor_0001', NULL,
+      1, 'janitor-expired-key', 'workflow_hosted_janitor_0001',
+      '${janitorInput}', 'queued', ${contractSpendPlan.estimatedTokens},
+      '${sealedAt}', '${sealedAt}'
+    );
+    INSERT INTO hosted_spend_reservations (
+      principal_sub, attempt_id, reserved_units, state, created_at, updated_at
+    ) VALUES (
+      '${principalJanitor}', '${janitorAttempt}', ${contractSpendPlan.estimatedTokens},
+      'reserved', '${sealedAt}', '${sealedAt}'
+    );
   `;
 }
 
@@ -639,7 +901,21 @@ async function createJob(
   idempotencyKey: string,
   expectedStatus = 201,
 ): Promise<JobResponse> {
-  return await json<JobResponse>(await expectStatus(fetch(`${origin}/api/hosted/jobs`, {
+  return await json<JobResponse>(await expectStatus(createJobResponse(
+    origin,
+    token,
+    mediaId,
+    idempotencyKey,
+  ), expectedStatus, `create ${idempotencyKey}`));
+}
+
+function createJobResponse(
+  origin: string,
+  token: string,
+  mediaId: string,
+  idempotencyKey: string,
+): Promise<Response> {
+  return fetch(`${origin}/api/hosted/jobs`, {
     method: "POST",
     headers: mutationHeaders(origin, token),
     body: JSON.stringify({
@@ -648,7 +924,27 @@ async function createJob(
       context: { mode: "none" },
       recipeId: "decisions",
     }),
-  }), expectedStatus, `create ${idempotencyKey}`));
+  });
+}
+
+function composerJobResponse(
+  origin: string,
+  token: string,
+  mediaId: string,
+  idempotencyKey: string,
+): Promise<Response> {
+  return fetch(`${origin}/api/hosted/composer/jobs`, {
+    method: "POST",
+    headers: mutationHeaders(origin, token),
+    body: JSON.stringify({
+      idempotencyKey,
+      mediaSessionId: mediaId,
+      context: { mode: "none" },
+      recipe: { id: "decisions", revision: "builtin-2026-08-11.1" },
+      model: "gemini-3.7-flash",
+      retention: { mode: "retained", ttlSeconds: 7 * 24 * 60 * 60 },
+    }),
+  });
 }
 
 function retryJob(
@@ -731,6 +1027,79 @@ async function queryWorkflowInstanceId(attemptId: string): Promise<string> {
   return workflowInstanceId;
 }
 
+async function queryCount(table: string, predicate: string): Promise<number> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command", `SELECT count(*) AS value FROM ${table} WHERE ${predicate}`,
+    "--json",
+  ], `query ${table} count`);
+  return d1Scalar(stdout);
+}
+
+async function queryCommittedUnits(principalSub: string): Promise<number> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command",
+    `SELECT committed_units AS value FROM hosted_principal_spend WHERE principal_sub = '${principalSub}'`,
+    "--json",
+  ], "query committed spend");
+  return d1Scalar(stdout);
+}
+
+async function queryReservation(
+  principalSub: string,
+  attemptId: string,
+): Promise<{
+  state: string;
+  reserved_units: number;
+  actual_units: number;
+  reconciliation_code: string;
+}> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command",
+    `SELECT state, reserved_units, COALESCE(actual_units, 0) AS actual_units, COALESCE(reconciliation_code, '') AS reconciliation_code FROM hosted_spend_reservations WHERE principal_sub = '${principalSub}' AND attempt_id = '${attemptId}'`,
+    "--json",
+  ], "query spend reservation");
+  const result = JSON.parse(stdout) as Array<{
+    results?: Array<{
+      state?: string;
+      reserved_units?: number;
+      actual_units?: number;
+      reconciliation_code?: string;
+    }>;
+  }>;
+  const row = result[0]?.results?.[0];
+  if (
+    typeof row?.state !== "string"
+    || !Number.isSafeInteger(row.reserved_units)
+    || !Number.isSafeInteger(row.actual_units)
+    || typeof row.reconciliation_code !== "string"
+  ) {
+    throw new Error("Spend reservation receipt was unavailable.");
+  }
+  return row as {
+    state: string;
+    reserved_units: number;
+    actual_units: number;
+    reconciliation_code: string;
+  };
+}
+
+function d1Scalar(stdout: string): number {
+  const result = JSON.parse(stdout) as Array<{
+    results?: Array<{ value?: number }>;
+  }>;
+  const value = result[0]?.results?.[0]?.value;
+  if (!Number.isSafeInteger(value)) {
+    throw new Error("D1 scalar receipt was unavailable.");
+  }
+  return value as number;
+}
+
 async function expectStatus(
   responsePromise: Promise<Response> | Response,
   expected: number,
@@ -769,7 +1138,30 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
+// Local D1 queries run as a second Miniflare process against the persisted
+// database while the dev Workers still hold it. Miniflare occasionally answers
+// "internal error" for that overlap; it is a harness race, not a state bug, so
+// the query is retried a bounded number of times before the label fails.
 async function runChecked(
+  command: string[],
+  label: string,
+  additions: Record<string, string> = {},
+): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await runCheckedOnce(command, label, additions);
+    } catch (error) {
+      lastError = error;
+      const text = error instanceof Error ? error.message : String(error);
+      if (!label.startsWith("query ") || !text.includes("internal error")) throw error;
+      await Bun.sleep(250 * attempt);
+    }
+  }
+  throw lastError;
+}
+
+async function runCheckedOnce(
   command: string[],
   label: string,
   additions: Record<string, string> = {},

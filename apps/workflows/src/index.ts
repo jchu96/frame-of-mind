@@ -30,6 +30,12 @@ import {
   HostedWorkflowRepository,
 } from "./repository.js";
 import {
+  createHostedTelemetry,
+  hostedTelemetryEventSchema,
+  type HostedTelemetryOutcome,
+  type HostedTelemetryPort,
+} from "./telemetry.js";
+import {
   buildHostedPublishedRun,
   publishHostedRun,
 } from "./publication.js";
@@ -43,6 +49,10 @@ interface Env {
   HOSTED_FAKE_GEMINI?: string;
   HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID?: string;
   HOSTED_FAKE_RECEIPT_FAILURE_STEP?: string;
+  HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID?: string;
+  SENTRY_DSN?: string;
+  SENTRY_ENVIRONMENT?: string;
+  SENTRY_RELEASE?: string;
   HOSTED_FAKE_START_DELAY_MEDIA_ID?: string;
 }
 
@@ -70,6 +80,14 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       await step.sleep("contract-start-delay", "1 second");
     }
     const provider = createHostedAnalysisProvider(this.env);
+    const telemetry = createHostedTelemetry(this.env);
+    const startedAt = Date.now();
+    await telemetry.emit(telemetryEvent(attempt, {
+      area: "workflow",
+      outcome: "started",
+      code: "hosted_workflow_started",
+      stage: "queued",
+    }));
     let file: HostedResolvedFile | undefined;
     let meeting: MeetingEvidence | undefined;
     let transcript: HostedTranscriptResult | undefined;
@@ -86,6 +104,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     let runId: string | undefined;
     let acceptedCount = 0;
     let primaryError: unknown;
+    let publicationStarted = false;
 
     try {
       meeting = await this.fetchContext(
@@ -142,8 +161,20 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         attempt,
         file,
       );
+      await telemetry.emit(telemetryEvent(attempt, {
+        area: "cleanup",
+        outcome: "succeeded",
+        code: "hosted_cleanup_succeeded",
+        stage: "cleanup",
+      }));
     } catch (error) {
       cleanupError = error;
+      await telemetry.emit(telemetryEvent(attempt, {
+        area: "cleanup",
+        outcome: "failed",
+        code: "hosted_cleanup_failed",
+        stage: "cleanup",
+      }));
     }
 
     if (
@@ -156,6 +187,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       && details
     ) {
       try {
+        publicationStarted = true;
         const published = await this.publish(
           step,
           repository,
@@ -168,8 +200,22 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
           cleanup,
         );
         runId = published.runId;
+        await telemetry.emit(telemetryEvent(attempt, {
+          area: "publication",
+          outcome: "succeeded",
+          code: "hosted_publication_succeeded",
+          stage: "publish",
+        }));
       } catch (error) {
         primaryError = error;
+        if (publicationStarted && runId === undefined) {
+          await telemetry.emit(telemetryEvent(attempt, {
+            area: "publication",
+            outcome: "failed",
+            code: "hosted_publication_incomplete",
+            stage: "publish",
+          }));
+        }
       }
     }
 
@@ -182,7 +228,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       const terminal = latestAttempt?.cancellationRequestedAt && !cleanupError
         ? { stage: "canceled" as const, code: "operator_canceled" }
         : terminalFailure(primaryError, cleanupError);
-      await repository.finishAttempt({
+      const reconciliation = await repository.finishAttempt({
         principalSub: attempt.principalSub,
         attemptId: attempt.attemptId,
         stage: terminal.stage,
@@ -190,10 +236,18 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         errorCode: terminal.code,
         cleanupCompleted: !cleanupError,
       });
+      await emitTerminalTelemetry(
+        telemetry,
+        attempt,
+        reconciliation.code,
+        terminal.stage,
+        terminal.code,
+        startedAt,
+      );
       throw new NonRetryableError(terminal.code);
     }
     if (!runId) {
-      await repository.finishAttempt({
+      const reconciliation = await repository.finishAttempt({
         principalSub: attempt.principalSub,
         attemptId: attempt.attemptId,
         stage: "indeterminate",
@@ -201,9 +255,17 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         errorCode: "publish_receipt_missing",
         cleanupCompleted: true,
       });
+      await emitTerminalTelemetry(
+        telemetry,
+        attempt,
+        reconciliation.code,
+        "indeterminate",
+        "publish_receipt_missing",
+        startedAt,
+      );
       throw new NonRetryableError("publish_receipt_missing");
     }
-    await repository.finishAttempt({
+    const reconciliation = await repository.finishAttempt({
       principalSub: attempt.principalSub,
       attemptId: attempt.attemptId,
       stage: "succeeded",
@@ -211,6 +273,14 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       runId,
       cleanupCompleted: true,
     });
+    await emitTerminalTelemetry(
+      telemetry,
+      attempt,
+      reconciliation.code,
+      "succeeded",
+      "hosted_workflow_succeeded",
+      startedAt,
+    );
     return { attemptId: attempt.attemptId, runId, acceptedCount };
   }
 
@@ -246,6 +316,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       eventCode: "context_fetch_started",
       attempt,
       env: this.env,
+      provider,
       invoke: async () => sanitizeMeeting(await provider.fetchContext(attempt)),
     });
   }
@@ -275,6 +346,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       eventCode: "gemini_file_resolve_started",
       attempt,
       env: this.env,
+      provider,
       invoke: () => provider.ensureGeminiFile(receipt),
     });
     return { file, receipt };
@@ -319,7 +391,9 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         eventCode: "gemini_transcribe_started",
         attempt,
         env: this.env,
+        provider,
         invoke: () => provider.transcribe(file),
+        usageRequired: true,
       });
       return boundedOutput(resolveHostedTranscript({
         meeting,
@@ -369,6 +443,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       eventCode: "gemini_index_started",
       attempt,
       env: this.env,
+      provider,
       invoke: () => provider.index({
         file,
         meeting,
@@ -376,6 +451,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         recipe,
         ...(attempt.input.focus ? { focus: attempt.input.focus } : {}),
       }),
+      usageRequired: true,
     });
     return boundedOutput({
       matchNotes: indexed.matchNotes,
@@ -406,7 +482,11 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     });
     const recipe = await requireRecipe(attempt);
     const details: AnalysisDetail[] = [];
-    for (const [index, candidate] of moments.entries()) {
+    const selectedMoments = moments.slice(
+      0,
+      attempt.input.spendPlan.callGraph.maxInterrogationCalls,
+    );
+    for (const [index, candidate] of selectedMoments.entries()) {
       const stepName = `interrogate_${String(index + 1).padStart(4, "0")}`;
       details.push(await providerStep({
         step,
@@ -416,6 +496,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         eventCode: "gemini_interrogate_started",
         attempt,
         env: this.env,
+        provider,
         invoke: () => provider.interrogate({
           file,
           candidate,
@@ -423,6 +504,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
           recipe,
           ...(attempt.input.focus ? { focus: attempt.input.focus } : {}),
         }),
+        usageRequired: true,
       }));
     }
     return details;
@@ -450,6 +532,10 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     return await step.do("publish", HOSTED_STATE_STEP_CONFIG, async () => {
       await beginStep(repository, attempt, "publish");
       await repository.assertNotCanceled(attempt.principalSub, attempt.attemptId);
+      await repository.assertSpendWithinReservation(
+        attempt.principalSub,
+        attempt.attemptId,
+      );
       const publishedAt = new Date().toISOString();
       const pair = await buildHostedPublishedRun({
         attempt,
@@ -515,6 +601,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       eventCode: "gemini_cleanup_started",
       attempt,
       env: this.env,
+      provider,
       allowCancellation: true,
       invoke: async () => {
         await provider.cleanup(file, receipt);
@@ -534,6 +621,20 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({ ok: true, service: "frame-of-mind-hosted-workflows" });
     }
+    if (request.method === "POST" && url.pathname === "/telemetry") {
+      const rawTelemetry = await request.text();
+      if (new TextEncoder().encode(rawTelemetry).byteLength > 8_192) {
+        return Response.json({ error: "invalid_telemetry" }, { status: 400 });
+      }
+      const parsedTelemetry = hostedTelemetryEventSchema.safeParse(
+        parseJson(rawTelemetry),
+      );
+      if (!parsedTelemetry.success) {
+        return Response.json({ error: "invalid_telemetry" }, { status: 400 });
+      }
+      await createHostedTelemetry(env).emit(parsedTelemetry.data);
+      return Response.json({ accepted: true }, { status: 202 });
+    }
     if (request.method !== "POST" || url.pathname !== "/attempts/dispatch") {
       return Response.json({ error: "not_found" }, { status: 404 });
     }
@@ -542,13 +643,7 @@ export default {
       return Response.json({ error: "invalid_request" }, { status: 400 });
     }
     const parsed = hostedWorkflowParametersSchema.safeParse(
-      (() => {
-        try {
-          return JSON.parse(rawBody);
-        } catch {
-          return undefined;
-        }
-      })(),
+      parseJson(rawBody),
     );
     if (!parsed.success) {
       return Response.json({ error: "invalid_request" }, { status: 400 });
@@ -602,7 +697,9 @@ async function providerStep<T>(input: {
   eventCode: string;
   attempt: HostedAnalysisAttempt;
   env: Env;
+  provider: HostedAnalysisProvider;
   allowCancellation?: boolean;
+  usageRequired?: boolean;
   invoke(): Promise<T>;
 }): Promise<T> {
   const result = await input.step.do(
@@ -657,8 +754,20 @@ async function providerStep<T>(input: {
           );
           throw new NonRetryableError("provider_success_without_receipt");
         }
+        if (input.usageRequired) input.provider.takeUsage();
         const invoked = await input.invoke();
         providerSucceeded = true;
+        if (input.usageRequired) {
+          const usage = input.provider.takeUsage();
+          if (!usage) throw new Error("provider_usage_unavailable");
+          await input.repository.recordProviderUsage({
+            principalSub: input.attempt.principalSub,
+            attemptId: input.attempt.attemptId,
+            stepName: input.providerStepName,
+            usage,
+            occurredAt: new Date().toISOString(),
+          });
+        }
         const output = boundedOutput(invoked);
         await input.repository.appendEvent(
           input.attempt.principalSub,
@@ -813,6 +922,9 @@ function terminalFailure(
     if (primaryError.code === "operator_canceled") {
       return { stage: "canceled", code: primaryError.code };
     }
+    if (primaryError.code === "spend_actual_exceeds_reservation") {
+      return { stage: "indeterminate", code: primaryError.code };
+    }
     return { stage: "failed", code: primaryError.code };
   }
   if (primaryError instanceof NonRetryableError) {
@@ -838,4 +950,58 @@ function errorMessage(error: unknown): string | undefined {
     && typeof error.message === "string"
     ? error.message
     : undefined;
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function telemetryEvent(
+  attempt: HostedAnalysisAttempt,
+  event: Omit<Parameters<HostedTelemetryPort["emit"]>[0],
+    "jobId" | "recipeId" | "recipeRevision" | "model" | "studioMode">,
+): Parameters<HostedTelemetryPort["emit"]>[0] {
+  return {
+    ...event,
+    jobId: attempt.attemptId,
+    recipeId: attempt.input.recipe.id,
+    recipeRevision: attempt.input.recipe.revision,
+    model: attempt.input.model,
+    studioMode: "hosted",
+  };
+}
+
+async function emitTerminalTelemetry(
+  telemetry: HostedTelemetryPort,
+  attempt: HostedAnalysisAttempt,
+  reconciliationCode: string,
+  stage: "succeeded" | "failed" | "canceled" | "indeterminate",
+  workflowCode: string,
+  startedAt: number,
+): Promise<void> {
+  await telemetry.emit(telemetryEvent(attempt, {
+    area: "spend",
+    outcome: "succeeded",
+    code: reconciliationCode,
+    stage,
+  }));
+  await telemetry.emit(telemetryEvent(attempt, {
+    area: "workflow",
+    outcome: terminalTelemetryOutcome(stage),
+    code: workflowCode,
+    stage,
+    durationMs: Math.max(0, Date.now() - startedAt),
+  }));
+}
+
+function terminalTelemetryOutcome(
+  stage: "succeeded" | "failed" | "canceled" | "indeterminate",
+): HostedTelemetryOutcome {
+  if (stage === "succeeded") return "succeeded";
+  if (stage === "canceled") return "canceled";
+  return "failed";
 }

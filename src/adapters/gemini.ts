@@ -6,6 +6,7 @@ import type {
   File as GeminiFile,
   GenerateContentParameters,
   GenerateContentResponse,
+  GenerateContentResponseUsageMetadata,
   GetFileParameters,
 } from "@google/genai";
 import type {
@@ -33,6 +34,7 @@ import {
   toGeminiProviderSchema,
 } from "./gemini-schema.js";
 import { DEFAULT_GEMINI_MODEL } from "./gemini-model.js";
+import { GEMINI_GENERATION_TRANSPORT_RETRIES } from "./gemini-generation-policy.js";
 
 export { DEFAULT_GEMINI_MODEL } from "./gemini-model.js";
 
@@ -62,7 +64,6 @@ const FILE_REQUEST_TIMEOUT_MS = 30_000;
 // two consecutive 503s before the third attempt succeeded. Linear 1s/2s backoff
 // across two retries was not enough to ride one out, so retries are exponential
 // and go wide enough to outlast a burst without stalling a run for minutes.
-const GENERATION_TRANSPORT_RETRIES = 4;
 const GENERATION_RETRY_BASE_MS = 1_000;
 const GENERATION_RETRY_MAX_MS = 16_000;
 const RETRYABLE_TRANSPORT_STATUSES = new Set([429, 500, 502, 503, 504]);
@@ -140,7 +141,7 @@ export class GeminiVideoAnalyzer {
   private readonly fileUploader: GeminiFileUploader;
   private readonly generateContent: (
     parameters: GenerateContentParameters,
-  ) => Promise<Pick<GenerateContentResponse, "text">>;
+  ) => Promise<Pick<GenerateContentResponse, "text" | "usageMetadata">>;
   private readonly getFile: (
     parameters: GetFileParameters,
   ) => Promise<GeminiFile>;
@@ -149,6 +150,13 @@ export class GeminiVideoAnalyzer {
   ) => Promise<unknown>;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly now: () => number;
+  private pendingUsage: GeminiTokenUsage = {
+    promptTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+  };
+  private pendingUsageAvailable = true;
+  private pendingUsageCalls = 0;
 
   constructor(
     apiKey: string,
@@ -582,16 +590,28 @@ export class GeminiVideoAnalyzer {
     }
   }
 
+  takeUsage(): GeminiTokenUsage | undefined {
+    const usage = this.pendingUsageCalls > 0 && this.pendingUsageAvailable
+      ? { ...this.pendingUsage }
+      : undefined;
+    this.pendingUsage = { promptTokens: 0, outputTokens: 0, totalTokens: 0 };
+    this.pendingUsageAvailable = true;
+    this.pendingUsageCalls = 0;
+    return usage;
+  }
+
   private async generate(
     parameters: GenerateContentParameters,
     phase: "index" | "detail" | "transcribe",
-  ): Promise<Pick<GenerateContentResponse, "text">> {
+  ): Promise<Pick<GenerateContentResponse, "text" | "usageMetadata">> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.generateContent(parameters);
+        const response = await this.generateContent(parameters);
+        this.recordUsage(response.usageMetadata);
+        return response;
       } catch (error) {
         if (
-          attempt < GENERATION_TRANSPORT_RETRIES
+          attempt < GEMINI_GENERATION_TRANSPORT_RETRIES
           && isRetryableTransportError(error)
         ) {
           await this.sleep(generationRetryDelayMs(attempt));
@@ -612,6 +632,30 @@ export class GeminiVideoAnalyzer {
     }
   }
 
+  private recordUsage(
+    metadata: GenerateContentResponseUsageMetadata | undefined,
+  ): void {
+    this.pendingUsageCalls += 1;
+    const totalTokens = metadata?.totalTokenCount;
+    const promptTokens = metadata?.promptTokenCount;
+    if (
+      !Number.isSafeInteger(totalTokens)
+      || !Number.isSafeInteger(promptTokens)
+      || (totalTokens ?? 0) < 1
+      || (promptTokens ?? -1) < 0
+      || (promptTokens ?? 0) > (totalTokens ?? 0)
+    ) {
+      this.pendingUsageAvailable = false;
+      return;
+    }
+    this.pendingUsage.promptTokens += promptTokens as number;
+    this.pendingUsage.outputTokens += (totalTokens as number) - (promptTokens as number);
+    this.pendingUsage.totalTokens += totalTokens as number;
+    if (!Object.values(this.pendingUsage).every(Number.isSafeInteger)) {
+      this.pendingUsageAvailable = false;
+    }
+  }
+
   private async generateStructured<T>(
     parameters: GenerateContentParameters,
     phase: "index" | "detail" | "transcribe",
@@ -623,7 +667,7 @@ export class GeminiVideoAnalyzer {
       return parseGeminiJson(response.text, schema, label);
     } catch (error) {
       if (!(error instanceof GeminiResponseValidationError)) throw error;
-      let repaired: Pick<GenerateContentResponse, "text">;
+      let repaired: Pick<GenerateContentResponse, "text" | "usageMetadata">;
       try {
         repaired = await this.generate(
           withValidationRepairInstruction(parameters, error),
@@ -790,11 +834,17 @@ export interface GeminiAnalyzerDependencies {
   fileUploader?: GeminiFileUploader;
   generateContent?: (
     parameters: GenerateContentParameters,
-  ) => Promise<Pick<GenerateContentResponse, "text">>;
+  ) => Promise<Pick<GenerateContentResponse, "text" | "usageMetadata">>;
   getFile?: (parameters: GetFileParameters) => Promise<GeminiFile>;
   deleteFile?: (parameters: DeleteFileParameters) => Promise<unknown>;
   sleep?: (milliseconds: number) => Promise<void>;
   now?: () => number;
+}
+
+export interface GeminiTokenUsage {
+  promptTokens: number;
+  outputTokens: number;
+  totalTokens: number;
 }
 
 function requireString(value: string | undefined, label: string): string {

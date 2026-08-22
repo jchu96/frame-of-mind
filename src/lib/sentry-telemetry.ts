@@ -1,4 +1,6 @@
-const TELEMETRY_CODE_PATTERN = /^[a-z][a-z0-9_:-]{0,119}$/;
+import { isSafeTelemetryCode } from "./telemetry-code.js";
+
+export { isSafeTelemetryCode } from "./telemetry-code.js";
 
 export const TELEMETRY_TAG_KEYS = [
   "code",
@@ -10,6 +12,11 @@ export const TELEMETRY_TAG_KEYS = [
   "durationMs",
   "studioMode",
   "version",
+  "area",
+  "outcome",
+  "routeClass",
+  "status",
+  "byteCount",
 ] as const;
 
 export type TelemetryTagKey = (typeof TELEMETRY_TAG_KEYS)[number];
@@ -97,11 +104,6 @@ export class SanitizedTelemetryError extends Error {
   constructor(readonly code: string) {
     super(code);
   }
-}
-
-export function isSafeTelemetryCode(value: string): boolean {
-  return TELEMETRY_CODE_PATTERN.test(value)
-    && !SENSITIVE_TEXT_PATTERNS.some((pattern) => pattern.test(value));
 }
 
 export function telemetryCodeFromError(

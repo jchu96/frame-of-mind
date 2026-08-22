@@ -6,9 +6,11 @@ import {
   type HostedAttemptInput,
   type HostedJobCreateRequest,
 } from "../../../workflows/src/contracts.js";
+import { getHostedRouteTelemetry } from "../telemetry.js";
 import { getHostedWorkflowExecutor } from "./executor.js";
 import {
-  hostedReservationUnits,
+  hostedSpendPlan,
+  hostedSpendPolicy,
   newHostedOpaqueId,
 } from "./http.js";
 
@@ -24,6 +26,7 @@ export async function createHostedJob(
     now,
   );
   const recipe = builtInRecipe(request.recipeId);
+  const spendPlan = hostedSpendPlan(event, media.durationSeconds);
   const immutableInput: HostedAttemptInput = {
     mediaId: media.mediaId,
     mediaSha256: media.sha256,
@@ -40,7 +43,17 @@ export async function createHostedJob(
       ? { transcriptOffsetSeconds: request.transcriptOffsetSeconds }
       : {}),
     retention: media.retention,
+    spendPlan,
   };
+  const spendPolicy = hostedSpendPolicy(event);
+  await runtime.repository.ensurePrincipalSpendCap({
+    principalSub: runtime.principalSub,
+    ...(runtime.principalEmail
+      ? { principalEmail: runtime.principalEmail }
+      : {}),
+    capUnits: spendPolicy.principalCapUnits,
+    occurredAt: now,
+  });
   const result = await runtime.repository.createInitialAttempt({
     principalSub: runtime.principalSub,
     ...(runtime.principalEmail
@@ -48,11 +61,21 @@ export async function createHostedJob(
       : {}),
     idempotencyKey: request.idempotencyKey,
     immutableInput,
-    reserveUnits: hostedReservationUnits(event),
     createdAt: now,
     jobId: newHostedOpaqueId("job"),
     attemptId: newHostedOpaqueId("attempt"),
     workflowInstanceId: newHostedOpaqueId("workflow"),
+  });
+  await getHostedRouteTelemetry(event).emit({
+    area: "spend",
+    outcome: "succeeded",
+    code: "spend_reservation_created",
+    stage: "queued",
+    jobId: result.attempt.attemptId,
+    recipeId: result.attempt.input.recipe.id,
+    recipeRevision: result.attempt.input.recipe.revision,
+    model: result.attempt.input.model,
+    studioMode: "hosted",
   });
   const dispatch = await runtime.executor.dispatch(result.attempt.attemptId);
   return {

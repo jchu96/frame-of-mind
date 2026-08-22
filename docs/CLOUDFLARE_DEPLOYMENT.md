@@ -39,9 +39,11 @@ Before any future enablement, run:
 bun run test:hosted-workflows-http
 ```
 
-The receipt must end with `HOSTED_WORKFLOW_CONTRACT PASSED` and show
-principal isolation, one provider invocation across the simulated
-success-without-receipt crash, terminal cleanup, and linked retry deduplication.
+The receipt must include `HOSTED_SPEND_CONTRACT PASSED`, end with
+`HOSTED_WORKFLOW_CONTRACT PASSED`, and show principal isolation, one provider
+invocation across the simulated success-without-receipt crash, terminal
+cleanup, linked retry deduplication, cap exhaustion before Workflow creation,
+provider-usage reconciliation, and codes/structure-only telemetry rejection.
 
 ### Workflows Worker configuration shape
 
@@ -85,10 +87,16 @@ The public Nuxt Worker caller adds this shape to its operator-owned config:
 }
 ```
 
-Deploy order is deliberate: apply migration `0004_hosted_workflows.sql`,
+Deploy order is deliberate: apply migrations `0004_hosted_workflows.sql` and
+`0005_hosted_spend_telemetry.sql`,
 deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
 caller with the service binding. Enabling hosted routes is a later reviewed
 release task; do not set its flags during this dark Phase 3 deployment shape.
+
+Hosted telemetry remains disabled unless `SENTRY_DSN` is set on the sibling
+Workflows Worker. Never set it on the public Nuxt Worker. Spend-policy runtime
+values and their safe defaults are documented in
+[RUNBOOK.md](RUNBOOK.md#hosted-spend-and-telemetry-controls-dark).
 
 The Cloudflare build uses Nitro's module-format `cloudflare_module` preset.
 The legacy `cloudflare-worker` service-worker preset is incompatible with

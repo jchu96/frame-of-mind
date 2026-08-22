@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/bun";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  isSafeTelemetryCode,
   scrubSentryEvent,
   telemetryCodeFromError,
   type ScrubbableSentryEvent,
@@ -186,6 +187,8 @@ describe("Sentry telemetry privacy scrubber", () => {
       new Error("private provider response body"),
       "analysis_failed",
     )).toBe("analysis_failed");
+    expect(isSafeTelemetryCode("a".repeat(64))).toBe(false);
+    expect(isSafeTelemetryCode("analysis_failed")).toBe(true);
   });
 });
 
