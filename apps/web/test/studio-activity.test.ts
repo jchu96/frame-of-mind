@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import type {
   AnalysisJob,
   AnalysisJobEvent,
@@ -276,6 +277,40 @@ describe("Studio Activity state", () => {
       "Requirements moved to Finding relevant moments.",
     );
     expect(activityStageChangeAnnouncement([indexing], [indexing])).toBeUndefined();
+  });
+
+  test("renders elapsed and honest progress in Activity rows", async () => {
+    const source = await readFile(
+      new URL("../server-local/studio-ui/activity.vue", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('data-activity-elapsed');
+    expect(source).toContain('jobProgress(job).elapsed.accessibleText');
+    expect(source).toContain('jobProgress(job).lastActivityText');
+    expect(source).toContain('jobProgress(job).descriptor.kind === \'determinate\'');
+    expect(source).toContain('role="progressbar"');
+    expect(source).toContain(':aria-valuenow="jobProgress(job).descriptor.completed"');
+    expect(source).toContain(':aria-valuemax="jobProgress(job).descriptor.total"');
+  });
+
+  test("renders timing and terminal-freeze metadata in Activity detail", async () => {
+    const source = await readFile(
+      new URL("../server-local/studio-ui/activity-detail.vue", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('data-activity-progress="honest"');
+    expect(source).toContain(':data-elapsed-seconds="activityProgress.elapsed.seconds"');
+    expect(source).toContain(
+      ':data-terminal="activityProgress.descriptor.kind === \'terminal\'"',
+    );
+    expect(source).toContain('activityProgress.elapsed.accessibleText');
+    expect(source).toContain('activityProgress.lastActivityText');
+    expect(source).toContain('activityProgress.currentStageStartedAt');
+    expect(source).toContain("activityProgress.descriptor.kind === 'determinate'");
+    expect(source).toContain(':aria-valuenow="activityProgress.descriptor.completed"');
+    expect(source).toContain(':aria-valuemax="activityProgress.descriptor.total"');
   });
 
   test("orders transitions and keeps cancellation, warning, and cleanup rows", () => {
