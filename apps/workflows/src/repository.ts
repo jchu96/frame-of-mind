@@ -70,9 +70,17 @@ export interface HostedSpendReconciliation {
   reservedUnits: number;
   actualUnits: number;
   committedUnits: number;
+  reservationState: "committed" | "released";
   code:
     | "spend_reconciled_provider_usage"
-    | "spend_reconciled_reservation_fallback";
+    | "spend_reconciled_reservation_fallback"
+    | "spend_actual_exceeds_reservation"
+    | "spend_released_zero_claims";
+}
+
+export interface HostedSpendJanitorResult {
+  released: number;
+  committed: number;
 }
 
 export interface HostedAttemptPage {
@@ -709,6 +717,80 @@ export class HostedWorkflowRepository {
     }));
   }
 
+  async assertSpendWithinReservation(
+    principalSub: string,
+    attemptId: string,
+  ): Promise<void> {
+    const reconciliation = await this.spendReconciliation(
+      principalSub,
+      attemptId,
+      "succeeded",
+    );
+    if (reconciliation.code === "spend_actual_exceeds_reservation") {
+      throw new HostedRepositoryError(reconciliation.code);
+    }
+  }
+
+  async reconcileStaleSpendReservations(input: {
+    principalSub: string;
+    occurredAt: string;
+  }): Promise<HostedSpendJanitorResult> {
+    if (!Number.isFinite(Date.parse(input.occurredAt))) {
+      throw new HostedRepositoryError("spend_janitor_time_invalid");
+    }
+    const candidates = await this.database.prepare(`
+      SELECT attempt.attempt_id, attempt.stage, attempt.error_code,
+        attempt.cleanup_completed_at,
+        (SELECT COUNT(*) FROM hosted_provider_claims claims
+          WHERE claims.principal_sub = attempt.principal_sub
+            AND claims.attempt_id = attempt.attempt_id) AS claimed_calls
+      FROM hosted_spend_reservations reservation
+      JOIN hosted_analysis_attempts attempt
+        ON attempt.principal_sub = reservation.principal_sub
+        AND attempt.attempt_id = reservation.attempt_id
+      WHERE reservation.principal_sub = ? AND reservation.state = 'reserved'
+        AND (
+          attempt.stage IN ('succeeded', 'failed', 'canceled', 'indeterminate')
+          OR EXISTS (
+            SELECT 1 FROM hosted_media_receipts media
+            WHERE media.principal_sub = attempt.principal_sub
+              AND media.media_id = json_extract(attempt.immutable_input_json, '$.mediaId')
+              AND media.expires_at <= ?
+          )
+        )
+      ORDER BY attempt.created_at ASC, attempt.attempt_id ASC
+    `).bind(input.principalSub, input.occurredAt).all<{
+      attempt_id: string;
+      stage: HostedAnalysisAttempt["stage"];
+      error_code: string | null;
+      cleanup_completed_at: string | null;
+      claimed_calls: number;
+    }>();
+    let released = 0;
+    let committed = 0;
+    for (const candidate of candidates.results) {
+      const existingTerminalStage = isTerminalStage(candidate.stage)
+        ? candidate.stage
+        : undefined;
+      const stage = existingTerminalStage
+        ? existingTerminalStage
+        : candidate.claimed_calls === 0 ? "failed" : "indeterminate";
+      const reconciliation = await this.finishAttempt({
+        principalSub: input.principalSub,
+        attemptId: candidate.attempt_id,
+        stage,
+        occurredAt: input.occurredAt,
+        ...(existingTerminalStage && candidate.error_code
+          ? { errorCode: candidate.error_code }
+          : !existingTerminalStage ? { errorCode: "spend_reservation_expired" } : {}),
+        cleanupCompleted: candidate.cleanup_completed_at !== null,
+      });
+      if (reconciliation.reservationState === "released") released += 1;
+      else committed += 1;
+    }
+    return { released, committed };
+  }
+
   async finishAttempt(input: {
     principalSub: string;
     attemptId: string;
@@ -721,7 +803,14 @@ export class HostedWorkflowRepository {
     const reconciliation = await this.spendReconciliation(
       input.principalSub,
       input.attemptId,
+      input.stage,
     );
+    const actualExceededReservation =
+      reconciliation.code === "spend_actual_exceeds_reservation";
+    const terminalStage = actualExceededReservation ? "indeterminate" : input.stage;
+    const terminalErrorCode = actualExceededReservation
+      ? reconciliation.code
+      : input.errorCode;
     await this.database.batch([
       this.database.prepare(`
         UPDATE hosted_principal_spend
@@ -739,10 +828,11 @@ export class HostedWorkflowRepository {
       ),
       this.database.prepare(`
         UPDATE hosted_spend_reservations
-        SET state = 'committed', actual_units = ?, reconciliation_code = ?,
+        SET state = ?, actual_units = ?, reconciliation_code = ?,
             updated_at = ?
         WHERE principal_sub = ? AND attempt_id = ? AND state = 'reserved'
       `).bind(
+        reconciliation.reservationState,
         reconciliation.actualUnits,
         reconciliation.code,
         input.occurredAt,
@@ -756,9 +846,9 @@ export class HostedWorkflowRepository {
         WHERE principal_sub = ? AND attempt_id = ?
           AND stage NOT IN ('succeeded', 'failed', 'canceled', 'indeterminate')
       `).bind(
-        input.stage,
-        input.runId ?? null,
-        input.errorCode ?? null,
+        terminalStage,
+        actualExceededReservation ? null : input.runId ?? null,
+        terminalErrorCode ?? null,
         input.cleanupCompleted ? input.occurredAt : null,
         input.occurredAt,
         input.principalSub,
@@ -787,15 +877,15 @@ export class HostedWorkflowRepository {
         input.attemptId,
         input.principalSub,
         input.attemptId,
-        input.stage,
-        input.stage,
+        terminalStage,
+        terminalStage,
         input.occurredAt,
         input.principalSub,
         input.attemptId,
-        input.stage,
+        terminalStage,
         input.principalSub,
         input.attemptId,
-        input.stage,
+        terminalStage,
       ),
       eventStatement(
         this.database,
@@ -812,6 +902,7 @@ export class HostedWorkflowRepository {
   private async spendReconciliation(
     principalSub: string,
     attemptId: string,
+    terminalStage: "succeeded" | "failed" | "canceled" | "indeterminate",
   ): Promise<HostedSpendReconciliation> {
     const row = await this.database.prepare(`
       SELECT reservation.reserved_units,
@@ -839,10 +930,32 @@ export class HostedWorkflowRepository {
       throw new HostedRepositoryError("spend_reconciliation_unavailable");
     }
     const complete = row.claimed_calls === row.usage_calls;
+    if (row.actual_units > row.reserved_units) {
+      return {
+        reservedUnits: row.reserved_units,
+        actualUnits: row.actual_units,
+        committedUnits: row.reserved_units,
+        reservationState: "committed",
+        code: "spend_actual_exceeds_reservation",
+      };
+    }
+    if (
+      row.claimed_calls === 0
+      && (terminalStage === "failed" || terminalStage === "canceled")
+    ) {
+      return {
+        reservedUnits: row.reserved_units,
+        actualUnits: 0,
+        committedUnits: 0,
+        reservationState: "released",
+        code: "spend_released_zero_claims",
+      };
+    }
     return {
       reservedUnits: row.reserved_units,
       actualUnits: row.actual_units,
       committedUnits: complete ? row.actual_units : row.reserved_units,
+      reservationState: "committed",
       code: complete
         ? "spend_reconciled_provider_usage"
         : "spend_reconciled_reservation_fallback",
@@ -973,4 +1086,10 @@ function assertReplay(
 
 function isRetryableStage(stage: HostedAnalysisAttempt["stage"]): boolean {
   return ["failed", "canceled", "indeterminate"].includes(stage);
+}
+
+function isTerminalStage(
+  stage: HostedAnalysisAttempt["stage"],
+): stage is "succeeded" | "failed" | "canceled" | "indeterminate" {
+  return ["succeeded", "failed", "canceled", "indeterminate"].includes(stage);
 }

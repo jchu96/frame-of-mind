@@ -34,6 +34,7 @@ import {
   toGeminiProviderSchema,
 } from "./gemini-schema.js";
 import { DEFAULT_GEMINI_MODEL } from "./gemini-model.js";
+import { GEMINI_GENERATION_TRANSPORT_RETRIES } from "./gemini-generation-policy.js";
 
 export { DEFAULT_GEMINI_MODEL } from "./gemini-model.js";
 
@@ -63,7 +64,6 @@ const FILE_REQUEST_TIMEOUT_MS = 30_000;
 // two consecutive 503s before the third attempt succeeded. Linear 1s/2s backoff
 // across two retries was not enough to ride one out, so retries are exponential
 // and go wide enough to outlast a burst without stalling a run for minutes.
-const GENERATION_TRANSPORT_RETRIES = 4;
 const GENERATION_RETRY_BASE_MS = 1_000;
 const GENERATION_RETRY_MAX_MS = 16_000;
 const RETRYABLE_TRANSPORT_STATUSES = new Set([429, 500, 502, 503, 504]);
@@ -611,7 +611,7 @@ export class GeminiVideoAnalyzer {
         return response;
       } catch (error) {
         if (
-          attempt < GENERATION_TRANSPORT_RETRIES
+          attempt < GEMINI_GENERATION_TRANSPORT_RETRIES
           && isRetryableTransportError(error)
         ) {
           await this.sleep(generationRetryDelayMs(attempt));

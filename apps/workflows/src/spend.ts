@@ -1,9 +1,13 @@
 import { z } from "zod";
+import {
+  GEMINI_GENERATION_TRANSPORT_ATTEMPTS,
+  GEMINI_STRUCTURED_GENERATIONS_PER_STEP,
+} from "../../../src/adapters/gemini-generation-policy.js";
 
 // Google documents approximately 300 tokens/second for video at default
 // media resolution: https://ai.google.dev/gemini-api/docs/video-understanding
 export const HOSTED_VIDEO_TOKEN_RATE_DEFAULT = 300;
-export const HOSTED_SPEND_POLICY_VERSION = "hosted-video-v1";
+export const HOSTED_SPEND_POLICY_VERSION = "hosted-video-v2";
 export const HOSTED_PROMPT_OUTPUT_HEADROOM_PER_CALL_DEFAULT = 8_192;
 export const HOSTED_MAX_INTERROGATION_CALLS_DEFAULT = 5;
 export const HOSTED_PRINCIPAL_CAP_UNITS_DEFAULT = 10_000_000;
@@ -28,6 +32,8 @@ export const hostedSpendPlanSchema = z.object({
     transcriptionCalls: z.literal(1),
     indexCalls: z.literal(1),
     maxInterrogationCalls: positiveSafeInteger.max(100),
+    structuredGenerationsPerCall: z.literal(GEMINI_STRUCTURED_GENERATIONS_PER_STEP),
+    transportAttemptsPerGeneration: z.literal(GEMINI_GENERATION_TRANSPORT_ATTEMPTS),
   }).strict(),
   estimatedTokens: positiveSafeInteger,
 }).strict();
@@ -53,13 +59,20 @@ export const hostedSpendEstimator: HostedSpendEstimator = {
       throw new HostedSpendPolicyError("spend_duration_unavailable");
     }
     const callCount = 1 + 1 + config.maxInterrogationCalls;
-    if (!Number.isSafeInteger(callCount) || callCount < 3) {
+    const plannedGenerationAttempts = callCount
+      * GEMINI_STRUCTURED_GENERATIONS_PER_STEP
+      * GEMINI_GENERATION_TRANSPORT_ATTEMPTS;
+    if (
+      !Number.isSafeInteger(callCount)
+      || callCount < 3
+      || !Number.isSafeInteger(plannedGenerationAttempts)
+    ) {
       throw new HostedSpendPolicyError("spend_call_graph_unavailable");
     }
     const videoTokensPerCall = Math.ceil(
       durationSeconds * config.videoTokensPerSecond,
     );
-    const estimatedTokens = callCount
+    const estimatedTokens = plannedGenerationAttempts
       * (videoTokensPerCall + config.promptOutputHeadroomPerCall);
     if (!Number.isSafeInteger(estimatedTokens) || estimatedTokens < 1) {
       throw new HostedSpendPolicyError("spend_estimate_unavailable");
@@ -73,6 +86,8 @@ export const hostedSpendEstimator: HostedSpendEstimator = {
         transcriptionCalls: 1,
         indexCalls: 1,
         maxInterrogationCalls: config.maxInterrogationCalls,
+        structuredGenerationsPerCall: GEMINI_STRUCTURED_GENERATIONS_PER_STEP,
+        transportAttemptsPerGeneration: GEMINI_GENERATION_TRANSPORT_ATTEMPTS,
       },
       estimatedTokens,
     });

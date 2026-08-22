@@ -49,6 +49,7 @@ interface Env {
   HOSTED_FAKE_GEMINI?: string;
   HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID?: string;
   HOSTED_FAKE_RECEIPT_FAILURE_STEP?: string;
+  HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID?: string;
   SENTRY_DSN?: string;
   SENTRY_ENVIRONMENT?: string;
   SENTRY_RELEASE?: string;
@@ -531,6 +532,10 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     return await step.do("publish", HOSTED_STATE_STEP_CONFIG, async () => {
       await beginStep(repository, attempt, "publish");
       await repository.assertNotCanceled(attempt.principalSub, attempt.attemptId);
+      await repository.assertSpendWithinReservation(
+        attempt.principalSub,
+        attempt.attemptId,
+      );
       const publishedAt = new Date().toISOString();
       const pair = await buildHostedPublishedRun({
         attempt,
@@ -916,6 +921,9 @@ function terminalFailure(
   if (primaryError instanceof HostedRepositoryError) {
     if (primaryError.code === "operator_canceled") {
       return { stage: "canceled", code: primaryError.code };
+    }
+    if (primaryError.code === "spend_actual_exceeds_reservation") {
+      return { stage: "indeterminate", code: primaryError.code };
     }
     return { stage: "failed", code: primaryError.code };
   }

@@ -3,6 +3,10 @@ import { Miniflare } from "miniflare";
 import { describe, expect, test } from "vitest";
 import { MODEL_REQUEST_TIMEOUT_MS as GEMINI_MODEL_TIMEOUT_MS } from "../../../src/adapters/gemini";
 import {
+  GEMINI_GENERATION_TRANSPORT_ATTEMPTS,
+  GEMINI_STRUCTURED_GENERATIONS_PER_STEP,
+} from "../../../src/adapters/gemini-generation-policy";
+import {
   HOSTED_PROVIDER_STEP_CONFIG,
   HOSTED_WORKFLOW_STEP_TIMEOUT_MS,
   hostedAttemptSchema,
@@ -32,7 +36,7 @@ const spendConfig: HostedSpendPolicyConfig = {
   videoTokensPerSecond: 300,
   promptOutputHeadroomPerCall: 100,
   maxInterrogationCalls: 1,
-  principalCapUnits: 2_399,
+  principalCapUnits: 23_999,
 };
 const spendPlan = hostedSpendEstimator.estimate(1, spendConfig);
 
@@ -42,6 +46,14 @@ describe("hosted Workflow durability", () => {
     expect(HOSTED_WORKFLOW_STEP_TIMEOUT_MS).toBeGreaterThan(
       GEMINI_MODEL_TIMEOUT_MS,
     );
+    expect(spendPlan).toMatchObject({
+      version: "hosted-video-v2",
+      callGraph: {
+        structuredGenerationsPerCall: GEMINI_STRUCTURED_GENERATIONS_PER_STEP,
+        transportAttemptsPerGeneration: GEMINI_GENERATION_TRANSPORT_ATTEMPTS,
+      },
+      estimatedTokens: 12_000,
+    });
   });
 
   test("passes an explicit config to every step.do call", async () => {
@@ -317,6 +329,19 @@ describe("hosted Workflow durability", () => {
         principalA,
         retryOne.attempt.attemptId,
       )).rejects.toMatchObject({ code: "operator_canceled" });
+      const canceled = await repository.finishAttempt({
+        principalSub: principalA,
+        attemptId: retryOne.attempt.attemptId,
+        stage: "canceled",
+        occurredAt: now,
+        errorCode: "operator_canceled",
+        cleanupCompleted: true,
+      });
+      expect(canceled).toMatchObject({
+        committedUnits: 0,
+        reservationState: "released",
+        code: "spend_released_zero_claims",
+      });
       await seedMedia(
         fixture.database,
         principalA,
@@ -372,6 +397,117 @@ describe("hosted Workflow durability", () => {
         WHERE principal_sub = ? AND state = 'reserved'
       `).bind(principalA).first<{ units: number }>();
       expect(active?.units).toBe(capUnits);
+    } finally {
+      await fixture.miniflare.dispose();
+    }
+  });
+
+  test("fails actual spend overrun closed without committing above the reservation", async () => {
+    const fixture = await hostedRepositoryFixture();
+    try {
+      await seedPrincipal(fixture.database, principalA, spendPlan.estimatedTokens * 2);
+      await seedMedia(fixture.database, principalA, "media_overrun_0001");
+      const repository = new HostedWorkflowRepository(
+        fixture.database as unknown as HostedD1Database,
+      );
+      const created = await repository.createInitialAttempt({
+        principalSub: principalA,
+        idempotencyKey: "overrun-key",
+        immutableInput: hostedInput("media_overrun_0001"),
+        createdAt: now,
+        jobId: "job_overrun_0001",
+        attemptId: "attempt_overrun_0001",
+        workflowInstanceId: "workflow_overrun_0001",
+      });
+      await repository.claimProviderCall(
+        principalA,
+        created.attempt.attemptId,
+        "transcribe",
+        "gemini_transcribe_started",
+        now,
+      );
+      await repository.recordProviderUsage({
+        principalSub: principalA,
+        attemptId: created.attempt.attemptId,
+        stepName: "transcribe",
+        usage: {
+          promptTokens: spendPlan.estimatedTokens,
+          outputTokens: 1,
+          totalTokens: spendPlan.estimatedTokens + 1,
+        },
+        occurredAt: now,
+      });
+      await expect(repository.assertSpendWithinReservation(
+        principalA,
+        created.attempt.attemptId,
+      )).rejects.toMatchObject({ code: "spend_actual_exceeds_reservation" });
+      const reconciliation = await repository.finishAttempt({
+        principalSub: principalA,
+        attemptId: created.attempt.attemptId,
+        stage: "succeeded",
+        occurredAt: now,
+        runId: "run_must_not_publish",
+        cleanupCompleted: true,
+      });
+      expect(reconciliation).toMatchObject({
+        actualUnits: spendPlan.estimatedTokens + 1,
+        committedUnits: spendPlan.estimatedTokens,
+        reservationState: "committed",
+        code: "spend_actual_exceeds_reservation",
+      });
+      expect(await repository.getAttempt(principalA, created.attempt.attemptId))
+        .toMatchObject({
+          stage: "indeterminate",
+          errorCode: "spend_actual_exceeds_reservation",
+        });
+      expect((await fixture.database.prepare(`
+        SELECT committed_units FROM hosted_principal_spend WHERE principal_sub = ?
+      `).bind(principalA).first<{ committed_units: number }>())?.committed_units)
+        .toBe(spendPlan.estimatedTokens);
+    } finally {
+      await fixture.miniflare.dispose();
+    }
+  });
+
+  test("releases expired zero-claim reservations with an idempotent principal janitor", async () => {
+    const fixture = await hostedRepositoryFixture();
+    try {
+      await seedPrincipal(fixture.database, principalA, spendPlan.estimatedTokens * 2);
+      await seedMedia(fixture.database, principalA, "media_janitor_0001");
+      const repository = new HostedWorkflowRepository(
+        fixture.database as unknown as HostedD1Database,
+      );
+      const created = await repository.createInitialAttempt({
+        principalSub: principalA,
+        idempotencyKey: "janitor-key",
+        immutableInput: hostedInput("media_janitor_0001"),
+        createdAt: now,
+        jobId: "job_janitor_0001",
+        attemptId: "attempt_janitor_0001",
+        workflowInstanceId: "workflow_janitor_0001",
+      });
+      await fixture.database.prepare(`
+        UPDATE hosted_media_receipts SET expires_at = ?
+        WHERE principal_sub = ? AND media_id = ?
+      `).bind("2026-08-22T11:00:00.000Z", principalA, "media_janitor_0001").run();
+      expect(await repository.reconcileStaleSpendReservations({
+        principalSub: principalA,
+        occurredAt: now,
+      })).toEqual({ released: 1, committed: 0 });
+      expect(await repository.reconcileStaleSpendReservations({
+        principalSub: principalA,
+        occurredAt: now,
+      })).toEqual({ released: 0, committed: 0 });
+      expect(await repository.getAttempt(principalA, created.attempt.attemptId))
+        .toMatchObject({ stage: "failed", errorCode: "spend_reservation_expired" });
+      expect(await fixture.database.prepare(`
+        SELECT state, reconciliation_code FROM hosted_spend_reservations
+        WHERE principal_sub = ? AND attempt_id = ?
+      `).bind(principalA, created.attempt.attemptId).first())
+        .toMatchObject({
+          state: "released",
+          reconciliation_code: "spend_released_zero_claims",
+        });
     } finally {
       await fixture.miniflare.dispose();
     }
