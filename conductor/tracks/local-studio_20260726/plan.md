@@ -430,7 +430,7 @@ smoke coverage validate the slice. Phase 9 is next.
       sensitive runtime data.
 - [x] Task 9.3: Add fresh-clone local installation and upgrade tests for macOS,
       Linux, and documented Windows support.
-- [ ] Task 9.4: Run adversarial security, provider, job-state, upload, and
+- [x] Task 9.4: Run adversarial security, provider, job-state, upload, and
       contract reviews; resolve all grounded blockers.
 - [x] Task 9.5: Reconcile the separate
       [Hosted Studio track](../hosted-studio_20260822/) against what is built
@@ -514,3 +514,14 @@ Each phase can become a public GitHub issue after the specification is approved:
 - [ ] Phase B remains an explicit roadmap, not a partially secured deployment.
 - [ ] Both video-only and context-enriched synthetic runs preserve honest,
       versioned provenance and pass their mapped end-to-end checks.
+
+Task 9.4 is complete (2026-08-22): a whole-surface adversarial review at
+main `0f919e9` (Grok, read-only, executable probes against session/ADR 0006,
+the Gemini adapter's timeouts/retries/cleanup, the SQLite job-state machine
+(ADR 0007), upload/media/context staging (ADR 0011), and the public HTTP and
+hosted viewer contracts) returned PASS with no blockers and no should-fix.
+Its one NIT — the env-gated streaming spike upload route accepted bodies
+without the Studio session when `FRAME_OF_MIND_STUDIO_SPIKE=1` — is closed
+here by adding `/api/__studio-spike/` to `requiresLocalStudioSession`. The
+rolling per-PR adversarial reviews (#59–#72) remain the per-change gate.
+
