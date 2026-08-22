@@ -1,6 +1,10 @@
 import type { MediaSession } from "../../../../src/domain/studio-schemas";
 import { loadContextDraft } from "./context-composer";
 import { loadIntentDraft } from "./intent-composer";
+import {
+  loadMediaResumeReceipt,
+  type MediaStagingTransport,
+} from "./media-upload";
 
 export type IntentReadiness = "empty" | "draft" | "ready";
 export type ContextReadiness =
@@ -44,13 +48,17 @@ export function recordingState(
   return stagingStatuses.has(session.status) ? "staging" : "empty";
 }
 
+function intentState(storage: BrowserStorage): IntentReadiness {
+  const draft = loadIntentDraft(storage).draft;
+  if (!draft) return "empty";
+  return "custom" in draft.recipe ? "draft" : "ready";
+}
+
 export function composerReadinessFromStorage(
   storage: BrowserStorage,
   mediaSession: MediaSession | undefined,
 ): ComposerReadiness {
-  const intent: IntentReadiness = loadIntentDraft(storage).draft
-    ? "ready"
-    : "empty";
+  const intent = intentState(storage);
   const context = contextState(storage);
   const recording = recordingState(mediaSession);
   return {
@@ -59,4 +67,26 @@ export function composerReadinessFromStorage(
     recording,
     canRun: intent === "ready" && recording === "sealed",
   };
+}
+
+export async function refreshComposerReadiness(
+  storage: BrowserStorage,
+  current: ComposerReadiness,
+  transport: Pick<MediaStagingTransport, "status">,
+): Promise<ComposerReadiness> {
+  const receipt = loadMediaResumeReceipt(storage);
+  if (!receipt.mediaSessionId) {
+    return composerReadinessFromStorage(storage, undefined);
+  }
+  try {
+    const mediaSession = await transport.status(receipt.mediaSessionId);
+    return composerReadinessFromStorage(storage, mediaSession);
+  } catch {
+    const next = composerReadinessFromStorage(storage, undefined);
+    return {
+      ...next,
+      recording: current.recording,
+      canRun: next.intent === "ready" && current.recording === "sealed",
+    };
+  }
 }

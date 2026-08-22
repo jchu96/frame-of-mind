@@ -1,6 +1,26 @@
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+const nuxtConfigPath = resolve("apps/web/nuxt.config.ts");
+const nuxtConfig = await Bun.file(nuxtConfigPath).text();
+const geminiImportSpecs = [...nuxtConfig.matchAll(/\bfrom\s+["']([^"']+)["']/g)]
+  .map((match) => match[1])
+  .filter((specifier) => specifier.includes("src/adapters/gemini"));
+const forbiddenGeminiImports = geminiImportSpecs.filter(
+  (specifier) => !specifier.includes("gemini-model"),
+);
+if (forbiddenGeminiImports.length) {
+  throw new Error(
+    `nuxt.config.ts imports the Gemini adapter graph: ${
+      forbiddenGeminiImports.join(", ")
+    }`,
+  );
+}
+console.log(
+  "nuxt.config.ts Gemini import boundary clean: gemini-model only; "
+  + `${geminiImportSpecs.length} allowed import(s).`,
+);
+
 const outputRoot = resolve("apps/web/.output");
 const forbidden = [
   "bun:",

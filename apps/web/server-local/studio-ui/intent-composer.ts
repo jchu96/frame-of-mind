@@ -26,7 +26,9 @@ function fieldErrors(error: z.ZodError): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const issue of error.issues) {
     const root = String(issue.path[0] ?? "intent");
-    const field = root === "recipe" ? "customRecipe" : root;
+    const field = root === "recipe"
+      ? issue.path[1] === "custom" ? "customRecipe" : "recipe"
+      : root;
     errors[field] ??= issue.message;
   }
   return errors;
@@ -83,19 +85,35 @@ export function persistIntentDraft(
 
 export function loadIntentDraft(
   storage: BrowserStorage,
-): { draft?: IntentDraft; storageAvailable: boolean } {
+): { draft?: IntentDraft; storageAvailable: boolean; invalid?: boolean } {
   try {
     const raw = storage.getItem(INTENT_DRAFT_STORAGE_KEY);
     if (!raw) return { storageAvailable: true };
     const parsed = intentDraftSchema.safeParse(JSON.parse(raw));
     if (!parsed.success) {
-      storage.removeItem(INTENT_DRAFT_STORAGE_KEY);
-      return { storageAvailable: true };
+      return { storageAvailable: true, invalid: true };
     }
     return { draft: parsed.data, storageAvailable: true };
   } catch {
     return { storageAvailable: false };
   }
+}
+
+export function reconcileBuiltInIntentDraft(
+  draft: IntentDraft,
+  recipes: readonly { id: string; revision: string }[],
+): {
+  stale: boolean;
+  selectedRecipeId?: string;
+  selectedRecipeRevision?: string;
+} {
+  if ("custom" in draft.recipe) return { stale: false };
+  const current = recipes.find((recipe) => recipe.id === draft.recipe.id);
+  return {
+    stale: !current || current.revision !== draft.recipe.revision,
+    selectedRecipeId: draft.recipe.id,
+    selectedRecipeRevision: current?.revision ?? draft.recipe.revision,
+  };
 }
 
 export function clearIntentDraft(storage: BrowserStorage): boolean {

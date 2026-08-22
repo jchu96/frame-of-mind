@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { CustomRecipe, IntentDraft } from "./intent-composer";
 import {
+  clearIntentDraft,
   loadIntentDraft,
   parseCustomRecipeImport,
   persistIntentDraft,
+  reconcileBuiltInIntentDraft,
   validateIntentDraft,
 } from "./intent-composer";
 import { useComposerReadiness } from "./use-composer-readiness";
@@ -52,11 +54,16 @@ const validatedCustom = shallowRef<CustomRecipe>();
 const validatedCustomSource = ref("");
 const focusError = ref<string>();
 const customError = ref<string>();
+const recipeError = ref<string>();
 const modelError = ref<string>();
 const formError = ref<string>();
 const storageWarning = ref<string>();
+const unreadableDraftNotice = ref<string>();
+const staleRecipeNotice = ref<string>();
 const saved = ref(false);
 const browserMounted = ref(false);
+const advancedOpen = ref(false);
+let catalogReconcilePending = false;
 
 function markDraft(): void {
   saved.value = false;
@@ -84,6 +91,7 @@ function selectBuiltIn(recipe: RecipeSummary): void {
   selectedRecipeRevision.value = recipe.revision;
   customMode.value = false;
   customError.value = undefined;
+  recipeError.value = undefined;
   markDraft();
 }
 
@@ -91,6 +99,7 @@ function useCustomRecipe(): void {
   selectedRecipeId.value = "";
   selectedRecipeRevision.value = "";
   customMode.value = true;
+  recipeError.value = undefined;
   markDraft();
 }
 
@@ -126,9 +135,67 @@ function draftInput(): unknown {
   };
 }
 
+function applyBuiltInDraft(
+  draft: IntentDraft,
+  recipes: RecipeSummary[] | undefined,
+): void {
+  if ("custom" in draft.recipe) return;
+  selectedRecipeId.value = draft.recipe.id;
+  selectedRecipeRevision.value = draft.recipe.revision;
+  if (!recipes) {
+    catalogReconcilePending = true;
+    saved.value = true;
+    setIntentState("ready");
+    return;
+  }
+  catalogReconcilePending = false;
+  const reconciled = reconcileBuiltInIntentDraft(draft, recipes);
+  selectedRecipeId.value = reconciled.selectedRecipeId ?? draft.recipe.id;
+  selectedRecipeRevision.value =
+    reconciled.selectedRecipeRevision ?? draft.recipe.revision;
+  if (reconciled.stale) {
+    saved.value = false;
+    staleRecipeNotice.value =
+      "This recipe changed since it was saved. Review the selection and save again.";
+    setIntentState("draft");
+    return;
+  }
+  saved.value = true;
+  staleRecipeNotice.value = undefined;
+  setIntentState("ready");
+}
+
+function resetFormFields(): void {
+  selectedRecipeId.value = "";
+  selectedRecipeRevision.value = "";
+  focus.value = "";
+  model.value = catalog.value?.defaultModel ?? fallbackModel;
+  customMode.value = false;
+  customText.value = "";
+  validatedCustom.value = undefined;
+  validatedCustomSource.value = "";
+  focusError.value = undefined;
+  customError.value = undefined;
+  recipeError.value = undefined;
+  modelError.value = undefined;
+  formError.value = undefined;
+  staleRecipeNotice.value = undefined;
+  unreadableDraftNotice.value = undefined;
+  saved.value = false;
+  advancedOpen.value = false;
+}
+
+function startOver(): void {
+  clearIntentDraft(sessionStorage);
+  resetFormFields();
+  setIntentState("empty");
+  void refreshReadiness();
+}
+
 function saveIntent(): void {
   focusError.value = undefined;
   customError.value = undefined;
+  recipeError.value = undefined;
   modelError.value = undefined;
   formError.value = undefined;
 
@@ -144,17 +211,26 @@ function saveIntent(): void {
   if (!model.value.trim()) {
     modelError.value = "Choose an analysis model.";
   }
-  if (focusError.value || customError.value || modelError.value) return;
+  if (focusError.value || customError.value || modelError.value) {
+    if (modelError.value) advancedOpen.value = true;
+    return;
+  }
 
   const result = validateIntentDraft(draftInput());
   if (!result.ok) {
+    const missingRecipe = !selectedRecipeId.value && !customMode.value;
     focusError.value = result.fieldErrors.focus;
-    customError.value = result.fieldErrors.customRecipe;
+    recipeError.value = missingRecipe
+      ? "Choose one built-in recipe or validate a custom recipe."
+      : result.fieldErrors.recipe;
+    customError.value = result.fieldErrors.customRecipe
+      ?? (customMode.value ? result.fieldErrors.recipe : undefined);
     modelError.value = result.fieldErrors.model;
     formError.value = result.fieldErrors.intent
-      ?? (!selectedRecipeId.value && !customMode.value
+      ?? (missingRecipe
         ? "Choose one built-in recipe or validate a custom recipe."
         : "Intent needs attention before it can be saved.");
+    if (modelError.value) advancedOpen.value = true;
     return;
   }
   if (!persistIntentDraft(sessionStorage, result.draft)) {
@@ -163,7 +239,9 @@ function saveIntent(): void {
     return;
   }
   saved.value = true;
-  setIntentState("ready");
+  staleRecipeNotice.value = undefined;
+  unreadableDraftNotice.value = undefined;
+  setIntentState("custom" in result.draft.recipe ? "draft" : "ready");
   void refreshReadiness();
   toast.add({
     title: "Intent saved for this analysis",
@@ -181,6 +259,12 @@ watch(catalog, (next) => {
   ) {
     model.value = next.defaultModel;
   }
+  if (catalogReconcilePending && next?.recipes) {
+    const restored = loadIntentDraft(sessionStorage);
+    if (restored.draft && !("custom" in restored.draft.recipe)) {
+      applyBuiltInDraft(restored.draft, next.recipes);
+    }
+  }
 }, { immediate: true });
 
 onMounted(() => {
@@ -189,6 +273,12 @@ onMounted(() => {
   if (!restored.storageAvailable) {
     storageWarning.value =
       "Browser session storage is unavailable. Keep this tab open until the analysis starts.";
+    return;
+  }
+  if (restored.invalid) {
+    unreadableDraftNotice.value =
+      "saved intent could not be read — choose again";
+    setIntentState("empty");
     return;
   }
   if (!restored.draft) {
@@ -203,12 +293,11 @@ onMounted(() => {
     validatedCustom.value = draft.recipe.custom;
     customText.value = JSON.stringify(draft.recipe.custom, null, 2);
     validatedCustomSource.value = customText.value;
-  } else {
-    selectedRecipeId.value = draft.recipe.id;
-    selectedRecipeRevision.value = draft.recipe.revision;
+    saved.value = true;
+    setIntentState("draft");
+    return;
   }
-  saved.value = true;
-  setIntentState("ready");
+  applyBuiltInDraft(draft, catalog.value?.recipes);
 });
 </script>
 
@@ -244,6 +333,22 @@ onMounted(() => {
         title="Refresh-safe draft is limited"
         :description="storageWarning"
       />
+      <UAlert
+        v-if="unreadableDraftNotice"
+        class="mt-6"
+        color="warning"
+        variant="soft"
+        title="Saved intent could not be read"
+        :description="unreadableDraftNotice"
+      />
+      <UAlert
+        v-if="staleRecipeNotice"
+        class="mt-6"
+        color="warning"
+        variant="soft"
+        title="This recipe changed"
+        :description="staleRecipeNotice"
+      />
 
       <section class="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div v-if="browserMounted" class="space-y-6">
@@ -270,7 +375,13 @@ onMounted(() => {
               <UIcon name="i-lucide-loader-circle" class="size-5 animate-spin" />
               Reading the built-in recipe catalog…
             </div>
-            <fieldset v-else aria-describedby="intent-recipe-description">
+            <fieldset
+              v-else
+              :aria-describedby="recipeError
+                ? 'intent-recipe-description intent-recipe-error'
+                : 'intent-recipe-description'"
+              :aria-invalid="recipeError ? true : undefined"
+            >
               <legend class="text-sm font-medium text-highlighted">
                 Analysis recipe <span aria-hidden="true" class="text-error">*</span>
               </legend>
@@ -304,6 +415,13 @@ onMounted(() => {
                   </span>
                 </label>
               </div>
+              <p
+                v-if="recipeError"
+                id="intent-recipe-error"
+                class="mt-2 text-sm text-error"
+              >
+                {{ recipeError }}
+              </p>
             </fieldset>
 
             <div class="mt-5 border-t border-default pt-5">
@@ -389,7 +507,7 @@ onMounted(() => {
           </UCard>
 
           <UCard>
-            <UCollapsible>
+            <UCollapsible v-model:open="advancedOpen">
               <UButton
                 type="button"
                 color="neutral"
@@ -415,10 +533,19 @@ onMounted(() => {
                 </div>
               </template>
             </UCollapsible>
+            <p
+              v-if="modelError"
+              id="intent-model-error"
+              class="mt-3 text-sm text-error"
+              role="alert"
+            >
+              {{ modelError }}
+            </p>
           </UCard>
 
           <UAlert
             v-if="formError"
+            role="alert"
             color="error"
             variant="soft"
             title="Intent needs attention"
@@ -439,6 +566,14 @@ onMounted(() => {
             <UButton to="/recording" color="neutral" variant="outline" icon="i-lucide-video">
               Open recording
             </UButton>
+            <UButton
+              type="button"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-rotate-ccw"
+              label="Start over"
+              @click="startOver"
+            />
             <UButton type="button" icon="i-lucide-save" @click="saveIntent">
               Save intent
             </UButton>

@@ -267,9 +267,10 @@ Intent draft. Home, Intent, Context, and Recording now share one readiness
 coordinator: Intent and sealed Recording are required, while missing,
 committed, or explicitly video-only Context remains informational. Context
 draft v2 removes the media-session coupling while migrating valid legacy
-drafts, so media deletion or expiry cannot discard Intent or Context. Contract,
-component, production HTTP, Cloudflare-boundary, and Playwright smoke coverage
-validate keyboard selection, field errors, order-independent drafts, and
+drafts, so media deletion or expiry cannot discard Intent or Context. Unit
+tests cover order-independent drafts and recording readiness from the persisted
+media receipt through a fake transport. Playwright smoke validates keyboard
+selection, field errors, refresh-safe Intent restore after reload, and
 fail-closed custom imports. Task 6.8's final Run receipt is next.
 
 ### Verification
