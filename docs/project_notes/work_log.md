@@ -536,6 +536,6 @@
   tick, use full-unit text for assistive technology, announce stage changes
   once, and create a progress bar only for an event with a real numerator and
   denominator. Validated by `bun run check` (22 Vitest files / 212 tests; Bun
-  web suite: 256 tests; Studio HTTP, local/Cloudflare builds, boundary check,
+  web suite: 258 tests; Studio HTTP, local/Cloudflare builds, boundary check,
   and 32 MiB streaming spike passed) and `bun run test:e2e:smoke` (13 passed),
   including active elapsed display and terminal elapsed freeze.
