@@ -1,4 +1,4 @@
-import { DEFAULT_GEMINI_MODEL } from "../../../../src/adapters/gemini.js";
+import { DEFAULT_GEMINI_MODEL } from "../../../../src/adapters/gemini-model.js";
 import {
   listBuiltInRecipes,
   loadRecipe,

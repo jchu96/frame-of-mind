@@ -209,7 +209,12 @@ function jobContext(job: AnalysisJob): string {
           >
             <p class="text-xs font-bold uppercase tracking-wider text-muted">Required</p>
             <p class="mt-2 font-black text-highlighted">Intent</p>
-            <p class="mt-1 text-sm capitalize text-muted">{{ readiness.intent }}</p>
+            <p
+              class="mt-1 text-sm"
+              :class="readiness.intent === 'ready' ? 'text-muted' : 'text-error'"
+            >
+              {{ readiness.intent === "ready" ? "Ready" : "Needs attention" }}
+            </p>
           </NuxtLink>
           <NuxtLink
             to="/context"

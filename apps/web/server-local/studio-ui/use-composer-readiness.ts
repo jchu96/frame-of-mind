@@ -2,16 +2,13 @@ import { useState } from "nuxt/app";
 import { computed, onMounted } from "vue";
 import type { MediaSession } from "../../../../src/domain/studio-schemas";
 import {
-  composerReadinessFromStorage,
+  refreshComposerReadiness,
   recordingState,
   type ComposerReadiness,
   type ContextReadiness,
   type IntentReadiness,
 } from "./composer-readiness";
-import {
-  createMediaStagingTransport,
-  loadMediaResumeReceipt,
-} from "./media-upload";
+import { createMediaStagingTransport } from "./media-upload";
 
 export { composerReadinessFromStorage } from "./composer-readiness";
 export type {
@@ -40,18 +37,13 @@ export function useComposerReadiness() {
 
   async function refresh(): Promise<void> {
     if (typeof sessionStorage === "undefined") return;
-    const receipt = loadMediaResumeReceipt(sessionStorage);
-    let mediaSession: MediaSession | undefined;
-    if (receipt.mediaSessionId) {
-      try {
-        mediaSession = await createMediaStagingTransport().status(
-          receipt.mediaSessionId,
-        );
-      } catch {
-        mediaSession = undefined;
-      }
-    }
-    apply(composerReadinessFromStorage(sessionStorage, mediaSession));
+    apply(
+      await refreshComposerReadiness(
+        sessionStorage,
+        readiness.value,
+        createMediaStagingTransport(),
+      ),
+    );
   }
 
   function setRecordingSession(session: MediaSession | null | undefined): void {

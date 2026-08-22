@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { DEFAULT_GEMINI_MODEL } from "../../../src/adapters/gemini";
+import { DEFAULT_GEMINI_MODEL } from "../../../src/adapters/gemini-model";
 import { runFixture, videoRunFixture } from "../test/fixtures";
 import { collectClientErrors } from "./support/client-errors";
 
@@ -182,6 +182,12 @@ test("selects Intent by keyboard and reports strict field errors", {
   ).toBeVisible();
 
   const requirements = page.getByRole("radio", { name: /Requirements/ });
+  await expect(requirements).toBeVisible();
+  await page.getByRole("button", { name: "Save intent" }).click();
+  await expect(page.locator("#intent-recipe-error")).toBeVisible();
+  await expect(page.locator("#intent-recipe-error"))
+    .toContainText("Choose one built-in recipe or validate a custom recipe.");
+
   await requirements.focus();
   await page.keyboard.press("Space");
   await expect(requirements).toBeChecked();
@@ -201,9 +207,26 @@ test("selects Intent by keyboard and reports strict field errors", {
     id: "requirements",
     revision: expect.any(String),
   });
-  await page.evaluate(() =>
-    sessionStorage.removeItem("frame-of-mind:studio:intent-draft")
-  );
+
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Choose what this analysis should find." }),
+  ).toBeVisible();
+  await expect(page.getByRole("radio", { name: /Requirements/ })).toBeChecked();
+  const restoredDraft = await page.evaluate(() => JSON.parse(
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft") || "null",
+  ));
+  expect(restoredDraft).toEqual(builtInDraft);
+  expect(restoredDraft.recipe).toEqual({
+    id: "requirements",
+    revision: expect.any(String),
+  });
+
+  await page.getByRole("button", { name: "Start over" }).click();
+  expect(await page.evaluate(() =>
+    sessionStorage.getItem("frame-of-mind:studio:intent-draft")
+  )).toBeNull();
+  await expect(page.getByRole("radio", { name: /Requirements/ })).not.toBeChecked();
 
   await page.getByRole("button", { name: "Use a custom recipe" }).click();
   await expect(page.getByText("Custom recipes cannot run yet")).toBeVisible();

@@ -14,6 +14,7 @@ import {
 } from "../server-local/studio-ui/media-upload";
 import {
   composerReadinessFromStorage,
+  refreshComposerReadiness,
 } from "../server-local/studio-ui/composer-readiness";
 
 class MemoryStorage implements Pick<Storage, "getItem" | "setItem" | "removeItem"> {
@@ -124,7 +125,7 @@ describe("Studio composer readiness", () => {
       .toBe("video-only");
   });
 
-  test("preserves all composer steps persisted in non-canonical order", () => {
+  test("preserves all composer steps persisted in non-canonical order", async () => {
     const intent = {
       recipe: {
         id: "requirements",
@@ -162,12 +163,103 @@ describe("Studio composer readiness", () => {
       expect(loadIntentDraft(storage).draft).toEqual(intent);
       expect(loadContextDraft(storage).draft).toEqual(context);
       expect(loadMediaResumeReceipt(storage).mediaSessionId).toBe(sealedMedia.id);
-      expect(composerReadinessFromStorage(storage, sealedMedia)).toEqual({
+      const next = await refreshComposerReadiness(
+        storage,
+        {
+          intent: "empty",
+          context: "none",
+          recording: "empty",
+          canRun: false,
+        },
+        {
+          async status(id) {
+            expect(id).toBe(sealedMedia.id);
+            return sealedMedia;
+          },
+        },
+      );
+      expect(next).toEqual({
         intent: "ready",
         context: "committed",
         recording: "sealed",
         canRun: true,
       });
     }
+  });
+
+  test("keeps canRun false for a custom-recipe draft even with sealed media", () => {
+    const storage = new MemoryStorage();
+    persistIntentDraft(storage, {
+      recipe: {
+        custom: {
+          id: "synthetic-review",
+          label: "Synthetic review",
+          description: "Review an invented fixture.",
+          indexInstruction: "Find relevant synthetic moments.",
+          interrogationInstruction: "Verify each synthetic moment.",
+        },
+      },
+      model: "gemini-3.7-flash",
+    });
+
+    expect(composerReadinessFromStorage(storage, media("sealed"))).toEqual({
+      intent: "draft",
+      context: "none",
+      recording: "sealed",
+      canRun: false,
+    });
+  });
+
+  test("refresh() keeps a prior sealed recording when the status GET fails", async () => {
+    const storage = new MemoryStorage();
+    persistIntentDraft(storage, {
+      recipe: {
+        id: "requirements",
+        revision: "builtin-2026-07-27.1",
+      },
+      model: "gemini-3.7-flash",
+    });
+    persistMediaResumeReceipt(storage, "media_01K123456789ABC");
+    const prior = composerReadinessFromStorage(storage, media("sealed"));
+    expect(prior).toEqual({
+      intent: "ready",
+      context: "none",
+      recording: "sealed",
+      canRun: true,
+    });
+
+    const next = await refreshComposerReadiness(
+      storage,
+      prior,
+      {
+        async status() {
+          throw new Error("Synthetic media status failure.");
+        },
+      },
+    );
+    expect(next.recording).toBe("sealed");
+    expect(next.canRun).toBe(true);
+    expect(next.intent).toBe("ready");
+  });
+
+  test("reports recording empty when only a media receipt exists and status fails", async () => {
+    const storage = new MemoryStorage();
+    persistMediaResumeReceipt(storage, "media_01K123456789ABC");
+    const next = await refreshComposerReadiness(
+      storage,
+      {
+        intent: "empty",
+        context: "none",
+        recording: "empty",
+        canRun: false,
+      },
+      {
+        async status() {
+          throw new Error("Synthetic media status failure.");
+        },
+      },
+    );
+    expect(next.recording).toBe("empty");
+    expect(next.canRun).toBe(false);
   });
 });
