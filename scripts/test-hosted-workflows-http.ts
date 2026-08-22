@@ -1,7 +1,9 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { chromium } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
+import { validateVersionedRunImport } from "../src/domain/integrity";
 import {
   GeminiVideoAnalyzer,
   MODEL_REQUEST_TIMEOUT_MS,
@@ -15,6 +17,7 @@ import { createE2EEnvironment } from "./e2e-environment";
 const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-workflows-"));
 const persistRoot = join(temporaryRoot, "wrangler-state");
 const webConfigPath = join(temporaryRoot, "web.wrangler.jsonc");
+const disabledWebConfigPath = join(temporaryRoot, "web-disabled.wrangler.jsonc");
 const workflowConfigPath = join(temporaryRoot, "workflow.wrangler.jsonc");
 const seedPath = join(temporaryRoot, "seed.sql");
 const workflowOutdir = join(temporaryRoot, "workflow-bundle");
@@ -26,13 +29,16 @@ const principalA = "hosted-workflow-principal-a";
 const principalB = "hosted-workflow-principal-b";
 const normalMedia = "media_hosted_normal_0001";
 const crashMedia = "media_hosted_crash_0001";
+const cancelMedia = "media_hosted_cancel_0001";
 const mediaSha256 = "a".repeat(64);
 const wranglerBin = resolve("apps/web/node_modules/wrangler/bin/wrangler.js");
 let webWorker: ReturnType<typeof Bun.spawn> | undefined;
 let workflowWorker: ReturnType<typeof Bun.spawn> | undefined;
+let disabledWebWorker: ReturnType<typeof Bun.spawn> | undefined;
 let jwksServer: ReturnType<typeof Bun.serve> | undefined;
 let webOutput: Promise<[string, string]> | undefined;
 let workflowOutput: Promise<[string, string]> | undefined;
+let disabledWebOutput: Promise<[string, string]> | undefined;
 
 try {
   console.log("HOSTED_WORKFLOW build=START nuxt_and_workflow");
@@ -48,8 +54,22 @@ try {
     resolve("apps/web/.output/server/chunks/nitro/nitro.mjs"),
     "utf8",
   );
-  for (const marker of ["/api/hosted/jobs", "Hosted Workflow bindings are unavailable"]) {
-    if (!nitroBundle.includes(marker)) {
+  const hostedBundleText = [nitroBundle];
+  for await (const path of new Bun.Glob("**/*.mjs").scan({
+    cwd: resolve("apps/web/.output/server"),
+    absolute: true,
+  })) {
+    hostedBundleText.push(await readFile(path, "utf8"));
+  }
+  const hostedBundle = hostedBundleText.join("\n");
+  for (const marker of [
+    "/api/hosted/jobs",
+    "/api/hosted/composer/jobs",
+    "/hosted/activity",
+    "data-hosted-studio-shell",
+    "Hosted Workflow bindings are unavailable",
+  ]) {
+    if (!hostedBundle.includes(marker)) {
       throw new Error(`Hosted Nuxt build omitted ${marker}.`);
     }
   }
@@ -93,6 +113,27 @@ try {
       NUXT_HOSTED_WORKFLOW_RESERVATION_UNITS: "1",
     },
   }, null, 2));
+  await writeFile(disabledWebConfigPath, JSON.stringify({
+    $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
+    name: "frame-of-mind-hosted-web-disabled-contract",
+    main: resolve("apps/web/.output/server/index.mjs"),
+    compatibility_date: "2026-08-18",
+    compatibility_flags: ["nodejs_compat"],
+    assets: { directory: resolve("apps/web/.output/public"), binding: "ASSETS" },
+    d1_databases: [d1Binding()],
+    services: [{
+      binding: "HOSTED_WORKFLOWS",
+      service: "frame-of-mind-hosted-workflow-contract",
+    }],
+    vars: {
+      NUXT_AUTH_MODE: "cloudflare-access",
+      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: issuer,
+      NUXT_CLOUDFLARE_ACCESS_AUD: audience,
+      NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
+      NUXT_HOSTED_WORKFLOWS_ENABLED: "false",
+      NUXT_HOSTED_WORKFLOW_RESERVATION_UNITS: "1",
+    },
+  }, null, 2));
   await writeFile(workflowConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
     name: "frame-of-mind-hosted-workflow-contract",
@@ -107,6 +148,7 @@ try {
     }],
     vars: {
       HOSTED_FAKE_GEMINI: "true",
+      HOSTED_FAKE_START_DELAY_MEDIA_ID: cancelMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID: crashMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_STEP: "transcribe",
     },
@@ -181,16 +223,139 @@ try {
 
   const tokenA = await signAccessToken(keys.privateKey, issuer, principalA);
   const tokenB = await signAccessToken(keys.privateKey, issuer, principalB);
+  const disabledPort = await reservePort();
+  const disabledOrigin = `http://127.0.0.1:${disabledPort}`;
+  disabledWebWorker = Bun.spawn([
+    "node", wranglerBin, "dev", "--local",
+    "--config", disabledWebConfigPath,
+    "--persist-to", persistRoot,
+    "--ip", "127.0.0.1",
+    "--port", String(disabledPort),
+    "--log-level", "error",
+    "--show-interactive-dev-session=false",
+  ], {
+    cwd: process.cwd(),
+    env: createE2EEnvironment(process.env),
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  disabledWebOutput = Promise.all([
+    new Response(disabledWebWorker.stdout).text(),
+    new Response(disabledWebWorker.stderr).text(),
+  ]);
+  await waitForWorker(`${disabledOrigin}/api/health`, disabledWebWorker, 403);
+  for (const path of [
+    "/api/hosted/configuration",
+    "/api/hosted/jobs",
+    "/hosted/new/intent",
+    "/hosted/new/context",
+    "/hosted/new/recording",
+    "/hosted/new/run",
+    "/hosted/activity",
+    "/hosted/activity/attempt_dark_0001",
+  ]) {
+    await expectStatus(authenticatedFetch(disabledOrigin, path, tokenA), 404, `disabled ${path}`);
+  }
+  for (const path of ["/api/hosted/jobs", "/api/hosted/composer/jobs"]) {
+    await expectStatus(fetch(`${disabledOrigin}${path}`, {
+      method: "POST",
+      headers: mutationHeaders(disabledOrigin, tokenA),
+      body: "{}",
+    }), 404, `disabled mutation ${path}`);
+  }
+  disabledWebWorker.kill("SIGTERM");
+  await disabledWebWorker.exited;
+  await disabledWebOutput;
+  disabledWebWorker = undefined;
+  disabledWebOutput = undefined;
+  console.log("HOSTED_WORKFLOW dark=PASS runtime_disabled_routes_404");
   const normal = await createJob(baseUrl, tokenA, normalMedia, "normal-submit-key");
   const normalTerminal = await waitForTerminal(baseUrl, tokenA, normal.job.id);
   assertEqual(normalTerminal.job.stage, "succeeded", "normal terminal stage");
   assertEqual(normalTerminal.job.cleanupCompleted, true, "normal cleanup");
+  if (!normalTerminal.job.runId) throw new Error("Published attempt omitted runId.");
+  const published = await json<StoredRunView>(await expectStatus(
+    authenticatedFetch(baseUrl, `/api/runs/${normalTerminal.job.runId}`, tokenA),
+    200,
+    "principal published run",
+  ));
+  await validateVersionedRunImport({
+    analysis: published.analysis,
+    manifest: published.manifest,
+  });
+  assertEqual(published.runId, normalTerminal.job.runId, "published viewer run ID");
+  const listA = await json<{ jobs: JobView[] }>(await expectStatus(
+    authenticatedFetch(baseUrl, "/api/hosted/jobs", tokenA),
+    200,
+    "principal activity list",
+  ));
+  if (!listA.jobs.some((job) => job.id === normal.job.id)) {
+    throw new Error("Principal activity list omitted the published attempt.");
+  }
+  const listB = await json<{ jobs: JobView[] }>(await expectStatus(
+    authenticatedFetch(baseUrl, "/api/hosted/jobs", tokenB),
+    200,
+    "foreign activity list",
+  ));
+  assertEqual(listB.jobs, [], "foreign activity list isolation");
   await expectStatus(
     authenticatedFetch(baseUrl, `/api/hosted/jobs/${normal.job.id}`, tokenB),
     404,
     "cross-principal hosted detail",
   );
-  console.log("HOSTED_WORKFLOW principal_isolation=PASS foreign_detail=404");
+  await expectStatus(
+    authenticatedFetch(baseUrl, `/api/hosted/jobs/${normal.job.rootJobId}`, tokenB),
+    404,
+    "cross-principal guessed root job",
+  );
+  await expectStatus(
+    authenticatedFetch(baseUrl, `/api/hosted/media/${normalMedia}`, tokenB),
+    404,
+    "cross-principal hosted media",
+  );
+  await expectStatus(
+    authenticatedFetch(baseUrl, `/api/runs/${normalTerminal.job.runId}`, tokenB),
+    404,
+    "cross-principal published run",
+  );
+  await createJob(baseUrl, tokenB, normalMedia, "foreign-media-create", 404);
+  await expectStatus(fetch(`${baseUrl}/api/hosted/composer/jobs`, {
+    method: "POST",
+    headers: mutationHeaders(baseUrl, tokenB),
+    body: JSON.stringify({
+      idempotencyKey: "foreign-media-composer",
+      mediaSessionId: normalMedia,
+      context: { mode: "none" },
+      recipe: { id: "decisions", revision: "builtin-2026-08-11.1" },
+      model: "gemini-3.7-flash",
+      retention: { mode: "ephemeral" },
+    }),
+  }), 404, "cross-principal composer create with foreign media");
+  console.log("HOSTED_WORKFLOW principal_isolation=PASS activity_media_run_foreign_ids=404 create_with_foreign_media=404");
+
+  const canceled = await createJob(baseUrl, tokenA, cancelMedia, "cancel-submit-key");
+  await expectStatus(fetch(`${baseUrl}/api/hosted/jobs/${canceled.job.id}/cancel`, {
+    method: "POST",
+    headers: mutationHeaders(baseUrl, tokenA),
+    body: "{}",
+  }), 200, "cancel hosted attempt");
+  const canceledTerminal = await waitForTerminal(baseUrl, tokenA, canceled.job.id);
+  assertEqual(canceledTerminal.job.stage, "canceled", "canceled terminal stage");
+  const canceledRetry = await json<JobResponse>(await expectOneOf(
+    retryJob(baseUrl, tokenA, canceled.job.id, "cancel-retry-key"),
+    [200, 201],
+    "retry canceled attempt",
+  ));
+  const canceledRetryTerminal = await waitForTerminal(
+    baseUrl,
+    tokenA,
+    canceledRetry.job.id,
+  );
+  assertEqual(canceledRetryTerminal.job.stage, "succeeded", "canceled retry stage");
+  console.log("HOSTED_WORKFLOW cancel_retry=PASS canceled_then_linked_success");
+
+  await verifyHostedBrowserContract(baseUrl, tokenA, normalMedia);
 
   const crashed = await createJob(baseUrl, tokenA, crashMedia, "crash-submit-key");
   const crashTerminal = await waitForTerminal(baseUrl, tokenA, crashed.job.id);
@@ -251,6 +416,7 @@ try {
   const parentAfterRetry = await getJob(baseUrl, tokenA, crashed.job.id);
   assertEqual(parentAfterRetry.job.stage, "indeterminate", "prior attempt immutable");
   console.log("HOSTED_WORKFLOW retry=PASS linked_new_attempt double_submit_deduped");
+  console.log("HOSTED_STUDIO_CONTRACT PASSED");
   console.log("HOSTED_WORKFLOW_CONTRACT PASSED");
 
   webWorker.kill("SIGTERM");
@@ -266,6 +432,10 @@ try {
     workflowWorker.kill("SIGTERM");
     await workflowWorker.exited;
   }
+  if (disabledWebWorker) {
+    disabledWebWorker.kill("SIGTERM");
+    await disabledWebWorker.exited;
+  }
   if (webOutput) {
     const [stdout, stderr] = await webOutput;
     process.stderr.write(`Hosted web workerd output:\n${stdout}\n${stderr}`.slice(0, 10_000));
@@ -273,6 +443,10 @@ try {
   if (workflowOutput) {
     const [stdout, stderr] = await workflowOutput;
     process.stderr.write(`Hosted Workflow workerd output:\n${stdout}\n${stderr}`.slice(0, 10_000));
+  }
+  if (disabledWebOutput) {
+    const [stdout, stderr] = await disabledWebOutput;
+    process.stderr.write(`Disabled hosted web workerd output:\n${stdout}\n${stderr}`.slice(0, 10_000));
   }
   throw error;
 } finally {
@@ -286,8 +460,10 @@ try {
 
 interface JobView {
   id: string;
+  rootJobId: string;
   stage: string;
   cleanupCompleted: boolean;
+  runId?: string;
 }
 
 interface JobResponse {
@@ -296,6 +472,12 @@ interface JobResponse {
 
 interface JobDetail extends JobResponse {
   events: Array<{ code?: string }>;
+}
+
+interface StoredRunView {
+  runId: string;
+  analysis: Parameters<typeof validateVersionedRunImport>[0]["analysis"];
+  manifest: Parameters<typeof validateVersionedRunImport>[0]["manifest"];
 }
 
 async function verifyRealAdapterContract(): Promise<void> {
@@ -379,14 +561,12 @@ function d1Binding() {
 function seedSql(): string {
   const sealedAt = "2026-08-22T00:00:00.000Z";
   const expiresAt = "2026-08-29T00:00:00.000Z";
-  const mediaRows = [principalA, principalB].flatMap((principal) =>
-    [normalMedia, crashMedia].map((mediaId) =>
-      `('${principal}','${mediaId}','files/${mediaId}',`
+  const mediaRows = [normalMedia, crashMedia, cancelMedia].map((mediaId) =>
+      `('${principalA}','${mediaId}','files/${mediaId}',`
       + `'https://generativelanguage.googleapis.test/v1beta/files/${mediaId}',`
       + `'${mediaSha256}','video/mp4','${mediaId === crashMedia ? "ephemeral" : "retained"}',`
       + `'${sealedAt}','${expiresAt}')`
-    )
-  );
+    );
   return `
     INSERT INTO hosted_principal_spend (
       principal_sub, principal_email, cap_units, committed_units, updated_at
@@ -398,6 +578,44 @@ function seedSql(): string {
       mime_type, retention, sealed_at, expires_at
     ) VALUES ${mediaRows.join(",\n")};
   `;
+}
+
+async function verifyHostedBrowserContract(
+  origin: string,
+  token: string,
+  mediaId: string,
+): Promise<void> {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({
+      extraHTTPHeaders: { "cf-access-jwt-assertion": token },
+    });
+    const page = await context.newPage();
+    await page.goto(`${origin}/hosted/new/intent`);
+    await page.getByRole("button", { name: "Save intent" }).click();
+    await page.goto(`${origin}/hosted/new/context`);
+    await page.getByRole("button", { name: "Use video only" }).click();
+    await page.evaluate((id) => {
+      sessionStorage.setItem(
+        "hosted:frame-of-mind:studio:media-upload",
+        JSON.stringify({ schemaVersion: 1, mediaSessionId: id }),
+      );
+    }, mediaId);
+    await page.goto(`${origin}/hosted/new/recording`);
+    await page.locator("[data-hosted-media-ready=true]").waitFor();
+    await page.goto(`${origin}/hosted/new/run`);
+    const start = page.locator("[data-hosted-run-start=true]");
+    await start.waitFor();
+    await start.click();
+    await page.waitForURL(/\/hosted\/activity\/attempt_/);
+    await page.locator("[data-hosted-activity-page=detail]").waitFor();
+    await page.goto(`${origin}/hosted/activity`);
+    await page.locator("[data-hosted-activity-page=list]").waitFor();
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+  console.log("HOSTED_WORKFLOW browser=PASS composer_activity_published_viewer");
 }
 
 async function signAccessToken(
