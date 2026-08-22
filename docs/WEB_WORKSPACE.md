@@ -32,8 +32,8 @@ require that session in addition to Host/peer validation. A rejected or
 replayed link stays on the inert page and starts no dashboard reads.
 
 The Studio-enabled node build selects a local-only Nuxt UI dashboard frame and
-Home route for Home, Intent, Context, Recording, Run, Connections, Import, and
-run detail. Home
+Home route for Home, Intent, Context, Recording, Run, Activity, Connections,
+Import, and run detail. Home
 combines three existing read contracts: operational jobs, rebuildable run
 summaries, and sanitized connection presence. It creates no fourth authority
 or dashboard-only persistence, revalidates after client navigation, and keeps
@@ -78,9 +78,16 @@ authenticated composer route intentionally accepts an explicit
 `{ mode: "none" }` from its caller; at execution, enriched jobs enter through
 the `fetching_context` guard and cannot silently fall back after context
 failure. Custom-recipe drafts remain unrunnable until their private staging
-contract exists. Job-detail activity UI remains a later track task; Home
-already reports composer readiness and active work from the protected durable
-job runtime underneath it.
+contract exists. The authenticated `/activity` page reads the existing bounded
+job list and groups it into Active, Finished, and Needs attention.
+`/activity/:id` reads the existing bounded detail contract, orders durable
+transitions by stage, nests progress under its stage, and keeps cancellation,
+warnings, and cleanup as distinct rows. Both pages poll only while visible and
+work is nonterminal, back off after a failed read, keep the last good result,
+and provide an explicit Refresh action. No Activity page stores another copy
+of job state. The detail receipt summarizes recipe/revision, context mode,
+model, and retention without returning media/context IDs, digests, paths,
+keys, transcripts, or provider payloads.
 
 The Run page re-reads the browser drafts, live media receipt, local context
 receipt when applicable, and sanitized recipe catalog. It shows the exact
