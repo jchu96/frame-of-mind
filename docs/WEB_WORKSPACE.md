@@ -13,11 +13,15 @@ run directory. The invariant is:
 `analysis.json` and `manifest.json` remain authoritative. SQLite and D1 are
 rebuildable projections.
 
-## Local Studio preview
+## Local Studio
 
-The completed-run workspace remains the stable v0.2 surface. A build-time
-isolated local Studio preview now provides per-launch authentication, a local
-Home dashboard, Connections, and private recording staging:
+As of 2026-08-22 the completed-run workspace and Local Studio are both shipped
+local surfaces. The build-time isolated Studio provides per-launch
+authentication, Home, Connections, recording/context staging, the complete
+composer and Run receipt, durable Activity/recovery controls, review,
+reattachment, exports, and maintenance. These claims are exercised by the
+[production HTTP contract](../scripts/test-local-studio-http.ts) and
+[browser smoke suite](../apps/web/e2e/studio-smoke.spec.ts):
 
 ```bash
 cp .env.example .env
@@ -124,7 +128,7 @@ are deleted and expose only a sanitized code. Review can copy an allowlisted
 Markdown rendering or download a JSON pair containing only `analysis` and
 `manifest`; neither action includes media or publishes externally.
 
-The planned Studio distinguishes operational job data from the existing run
+Studio distinguishes operational job data from the existing run
 projection:
 
 - active job/events in SQLite are operational authority until completion;
@@ -147,7 +151,7 @@ and [ADR log](adr/README.md).
 |---|---|---|---|---|
 | Local review | Bun + Nuxt SSR | Bun SQLite | loopback Host/peer guard | browse completed runs |
 | Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | start from Home, configure providers, stage a recording, and monitor active work |
-| Hosted | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | a controlled team workspace |
+| Hosted review (creation dark) | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | principal-scoped completed-run review; hosted creation remains disabled |
 
 The run pages and API contracts are shared. The `RunStore`, Nitro preset, and
 top-level application frame are selected at build time.
@@ -344,7 +348,7 @@ The local server bundle externalizes `bun:sqlite`; run it with Bun, not Node.
 
 ## Backup and restore
 
-Stop the local server before copying the SQLite file:
+For the review-only server, stop the process before copying its SQLite file:
 
 ```bash
 cp .data/frame-of-mind.sqlite "/private/backup/frame-of-mind-$(date +%Y%m%d).sqlite"
@@ -352,6 +356,17 @@ cp .data/frame-of-mind.sqlite "/private/backup/frame-of-mind-$(date +%Y%m%d).sql
 
 Restore by placing a valid copy at `NUXT_SQLITE_PATH`, or delete the projection
 and re-import the authoritative run bundles.
+
+For Local Studio, stop `bun run studio` before copying the configured
+`NUXT_SQLITE_PATH` (the default platform-specific `studio.sqlite`). Back up the
+private run-bundle root separately: it is the completed-analysis authority,
+while SQLite also contains operational job/event state that cannot be rebuilt
+from an unfinished run. Media and context staging are short-lived inputs, not
+backup sources; preserve the operator-owned recording/context instead of
+copying a possibly active staging directory. The default paths and exact
+retention rules are listed in
+[DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md) and the
+[operations runbook](RUNBOOK.md#local-studio-media-staging).
 
 Do not commit a database backup. It contains meeting-derived analysis.
 
@@ -428,10 +443,10 @@ Confirm both files came from the same run directory and use supported schema
 version 2 or 3.
 Do not hand-edit either file: the manifest binds the exact canonical
 `analysis.json` bytes. For a v1 run, rerun the original source analysis under
-v0.2 rather than relabeling the schema.
+the current release rather than relabeling the schema.
 
 Existing v1 projection rows are hidden from list/detail queries, including
-malformed legacy JSON. Re-running and importing the source analysis with v0.2
+malformed legacy JSON. Re-running and importing the source analysis now
 replaces the same run ID in place. If regeneration is impossible, retain the
 authoritative v1 bundle outside the workspace and purge the obsolete projection
 only through the exact-ID backup/purge procedure.
