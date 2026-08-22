@@ -1,5 +1,11 @@
 import { fileURLToPath } from "node:url";
 import { DEFAULT_GEMINI_MODEL } from "../../src/adapters/gemini-model";
+import {
+  HOSTED_MAX_INTERROGATION_CALLS_DEFAULT,
+  HOSTED_PRINCIPAL_CAP_UNITS_DEFAULT,
+  HOSTED_PROMPT_OUTPUT_HEADROOM_PER_CALL_DEFAULT,
+  HOSTED_VIDEO_TOKEN_RATE_DEFAULT,
+} from "../workflows/src/spend";
 import { shouldRegisterLocalStudioRoutes } from "./server-local/studio-session/session";
 
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
@@ -453,7 +459,11 @@ export default defineNuxtConfig({
     cloudflareAccessAud: "",
     cloudflareAccessAllowInsecureTestJwks: false,
     hostedWorkflowsEnabled: false,
-    hostedWorkflowReservationUnits: 0,
+    hostedSpendPrincipalCapUnits: HOSTED_PRINCIPAL_CAP_UNITS_DEFAULT,
+    hostedSpendVideoTokensPerSecond: HOSTED_VIDEO_TOKEN_RATE_DEFAULT,
+    hostedSpendPromptOutputHeadroomPerCall:
+      HOSTED_PROMPT_OUTPUT_HEADROOM_PER_CALL_DEFAULT,
+    hostedSpendMaxInterrogationCalls: HOSTED_MAX_INTERROGATION_CALLS_DEFAULT,
     public: {
       appName: "Frame of Mind",
       appVersion: "0.3.0",

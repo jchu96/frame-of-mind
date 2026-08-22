@@ -12,6 +12,13 @@ import {
   HostedRepositoryError,
 } from "../../../workflows/src/repository.js";
 import { HostedWorkflowDispatchError } from "./executor.js";
+import {
+  hostedSpendEstimator,
+  hostedSpendPolicyConfigSchema,
+  HostedSpendPolicyError,
+  type HostedSpendPlan,
+  type HostedSpendPolicyConfig,
+} from "../../../workflows/src/spend.js";
 
 const MAXIMUM_HOSTED_JOB_JSON_BYTES = 32 * 1_024;
 
@@ -37,16 +44,27 @@ export async function readHostedJobJson(event: H3Event): Promise<unknown> {
   }
 }
 
-export function hostedReservationUnits(event: H3Event): number {
-  const value = Number(useRuntimeConfig(event).hostedWorkflowReservationUnits);
-  if (!Number.isSafeInteger(value) || value < 1 || value > 1_000_000_000) {
-    throw createError({
-      statusCode: 503,
-      statusMessage: "Hosted spend reservation is unavailable.",
-      data: { code: "principal_spend_cap_unavailable" },
-    });
+export function hostedSpendPolicy(event: H3Event): HostedSpendPolicyConfig {
+  const config = useRuntimeConfig(event);
+  const parsed = hostedSpendPolicyConfigSchema.safeParse({
+    principalCapUnits: Number(config.hostedSpendPrincipalCapUnits),
+    videoTokensPerSecond: Number(config.hostedSpendVideoTokensPerSecond),
+    promptOutputHeadroomPerCall: Number(
+      config.hostedSpendPromptOutputHeadroomPerCall,
+    ),
+    maxInterrogationCalls: Number(config.hostedSpendMaxInterrogationCalls),
+  });
+  if (!parsed.success) {
+    throw new HostedSpendPolicyError("spend_policy_unavailable");
   }
-  return value;
+  return parsed.data;
+}
+
+export function hostedSpendPlan(
+  event: H3Event,
+  durationSeconds: number,
+): HostedSpendPlan {
+  return hostedSpendEstimator.estimate(durationSeconds, hostedSpendPolicy(event));
 }
 
 export function throwHostedJobHttpError(error: unknown): never {
@@ -71,6 +89,13 @@ export function throwHostedJobHttpError(error: unknown): never {
     throw createError({
       statusCode,
       statusMessage: "Hosted job request could not be completed.",
+      data: { code: error.code },
+    });
+  }
+  if (error instanceof HostedSpendPolicyError) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: "Hosted spend policy is unavailable.",
       data: { code: error.code },
     });
   }

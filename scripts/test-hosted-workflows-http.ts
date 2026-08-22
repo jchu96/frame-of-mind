@@ -90,7 +90,10 @@ try {
       NUXT_CLOUDFLARE_ACCESS_AUD: audience,
       NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
       NUXT_HOSTED_WORKFLOWS_ENABLED: "true",
-      NUXT_HOSTED_WORKFLOW_RESERVATION_UNITS: "1",
+      NUXT_HOSTED_SPEND_PRINCIPAL_CAP_UNITS: "1999",
+      NUXT_HOSTED_SPEND_VIDEO_TOKENS_PER_SECOND: "300",
+      NUXT_HOSTED_SPEND_PROMPT_OUTPUT_HEADROOM_PER_CALL: "100",
+      NUXT_HOSTED_SPEND_MAX_INTERROGATION_CALLS: "1",
     },
   }, null, 2));
   await writeFile(workflowConfigPath, JSON.stringify({
@@ -251,6 +254,36 @@ try {
   const parentAfterRetry = await getJob(baseUrl, tokenA, crashed.job.id);
   assertEqual(parentAfterRetry.job.stage, "indeterminate", "prior attempt immutable");
   console.log("HOSTED_WORKFLOW retry=PASS linked_new_attempt double_submit_deduped");
+  const capped = await createJobResponse(
+    baseUrl,
+    tokenA,
+    normalMedia,
+    "cap-exhausted-submit-key",
+  );
+  await expectStatus(capped, 429, "spend-capped create");
+  const cappedBody = await json<{ data?: { code?: string } }>(capped);
+  assertEqual(
+    cappedBody.data?.code,
+    "principal_spend_cap_exceeded",
+    "spend-capped code",
+  );
+  assertEqual(
+    await queryCount(
+      "hosted_analysis_attempts",
+      "idempotency_key = 'cap-exhausted-submit-key'",
+    ),
+    0,
+    "no attempt or Workflow receipt after cap exhaustion",
+  );
+  assertEqual(
+    await queryCommittedUnits(principalA),
+    800,
+    "provider-usage spend reconciliation",
+  );
+  console.log(
+    "HOSTED_SPEND reserve=PASS race=unit_contract reconcile=provider_usage cap=429 workflow_created=false",
+  );
+  console.log("HOSTED_SPEND_CONTRACT PASSED");
   console.log("HOSTED_WORKFLOW_CONTRACT PASSED");
 
   webWorker.kill("SIGTERM");
@@ -316,6 +349,11 @@ async function verifyRealAdapterContract(): Promise<void> {
               text: "Hosted adapter transport contract.",
             }],
           }),
+          usageMetadata: {
+            promptTokenCount: 80,
+            candidatesTokenCount: 20,
+            totalTokenCount: 100,
+          },
         };
       },
       deleteFile: async (parameters) => {
@@ -346,6 +384,7 @@ async function verifyRealAdapterContract(): Promise<void> {
     sha256: mediaSha256,
     mimeType: "video/mp4",
     retention: "ephemeral",
+    durationSeconds: 1,
     sealedAt: "2026-08-22T00:00:00.000Z",
     expiresAt: "2026-08-29T00:00:00.000Z",
   });
@@ -384,18 +423,18 @@ function seedSql(): string {
       `('${principal}','${mediaId}','files/${mediaId}',`
       + `'https://generativelanguage.googleapis.test/v1beta/files/${mediaId}',`
       + `'${mediaSha256}','video/mp4','${mediaId === crashMedia ? "ephemeral" : "retained"}',`
-      + `'${sealedAt}','${expiresAt}')`
+      + `'${sealedAt}','${expiresAt}',1)`
     )
   );
   return `
     INSERT INTO hosted_principal_spend (
       principal_sub, principal_email, cap_units, committed_units, updated_at
     ) VALUES
-      ('${principalA}', 'seat@example.test', 20, 0, '${sealedAt}'),
-      ('${principalB}', 'seat@example.test', 20, 0, '${sealedAt}');
+      ('${principalA}', 'seat@example.test', 1999, 0, '${sealedAt}'),
+      ('${principalB}', 'seat@example.test', 1999, 0, '${sealedAt}');
     INSERT INTO hosted_media_receipts (
       principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
-      mime_type, retention, sealed_at, expires_at
+      mime_type, retention, sealed_at, expires_at, duration_seconds
     ) VALUES ${mediaRows.join(",\n")};
   `;
 }
@@ -421,7 +460,21 @@ async function createJob(
   idempotencyKey: string,
   expectedStatus = 201,
 ): Promise<JobResponse> {
-  return await json<JobResponse>(await expectStatus(fetch(`${origin}/api/hosted/jobs`, {
+  return await json<JobResponse>(await expectStatus(createJobResponse(
+    origin,
+    token,
+    mediaId,
+    idempotencyKey,
+  ), expectedStatus, `create ${idempotencyKey}`));
+}
+
+function createJobResponse(
+  origin: string,
+  token: string,
+  mediaId: string,
+  idempotencyKey: string,
+): Promise<Response> {
+  return fetch(`${origin}/api/hosted/jobs`, {
     method: "POST",
     headers: mutationHeaders(origin, token),
     body: JSON.stringify({
@@ -430,7 +483,7 @@ async function createJob(
       context: { mode: "none" },
       recipeId: "decisions",
     }),
-  }), expectedStatus, `create ${idempotencyKey}`));
+  });
 }
 
 function retryJob(
@@ -511,6 +564,38 @@ async function queryWorkflowInstanceId(attemptId: string): Promise<string> {
   const workflowInstanceId = result[0]?.results?.[0]?.workflow_instance_id;
   if (!workflowInstanceId) throw new Error("Crashed Workflow instance ID was unavailable.");
   return workflowInstanceId;
+}
+
+async function queryCount(table: string, predicate: string): Promise<number> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command", `SELECT count(*) AS value FROM ${table} WHERE ${predicate}`,
+    "--json",
+  ], `query ${table} count`);
+  return d1Scalar(stdout);
+}
+
+async function queryCommittedUnits(principalSub: string): Promise<number> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command",
+    `SELECT committed_units AS value FROM hosted_principal_spend WHERE principal_sub = '${principalSub}'`,
+    "--json",
+  ], "query committed spend");
+  return d1Scalar(stdout);
+}
+
+function d1Scalar(stdout: string): number {
+  const result = JSON.parse(stdout) as Array<{
+    results?: Array<{ value?: number }>;
+  }>;
+  const value = result[0]?.results?.[0]?.value;
+  if (!Number.isSafeInteger(value)) {
+    throw new Error("D1 scalar receipt was unavailable.");
+  }
+  return value as number;
 }
 
 async function expectStatus(

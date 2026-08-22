@@ -16,6 +16,10 @@ import type {
   HostedAnalysisAttempt,
   SealedHostedMediaReceipt,
 } from "./contracts.js";
+import {
+  hostedProviderUsageSchema,
+  type HostedProviderUsage,
+} from "./spend.js";
 
 export interface HostedResolvedFile {
   name: string;
@@ -30,6 +34,7 @@ export interface HostedTranscriptResult {
 }
 
 export interface HostedAnalysisProvider {
+  takeUsage(): HostedProviderUsage | undefined;
   fetchContext(attempt: HostedAnalysisAttempt): Promise<MeetingEvidence | undefined>;
   ensureGeminiFile(
     receipt: SealedHostedMediaReceipt,
@@ -68,6 +73,7 @@ export type HostedContextSourceFactory = (
 ) => MeetingContextSource;
 
 export interface HostedGeminiAnalyzer {
+  takeUsage?(): HostedProviderUsage | undefined;
   resolveRetainedFile?(
     name: string,
     expectedSha256: string,
@@ -149,6 +155,11 @@ export class GeminiHostedAnalysisProvider implements HostedAnalysisProvider {
     private readonly analyzer: HostedGeminiAnalyzer,
     private readonly contextSource?: HostedContextSourceFactory,
   ) {}
+
+  takeUsage(): HostedProviderUsage | undefined {
+    const parsed = hostedProviderUsageSchema.safeParse(this.analyzer.takeUsage?.());
+    return parsed.success ? parsed.data : undefined;
+  }
 
   async fetchContext(
     attempt: HostedAnalysisAttempt,
@@ -253,7 +264,15 @@ export class GeminiHostedAnalysisProvider implements HostedAnalysisProvider {
 }
 
 class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
+  private pendingUsage: HostedProviderUsage | undefined;
+
   constructor(private readonly contextSource?: HostedContextSourceFactory) {}
+
+  takeUsage(): HostedProviderUsage | undefined {
+    const usage = this.pendingUsage;
+    this.pendingUsage = undefined;
+    return usage;
+  }
 
   async fetchContext(
     attempt: HostedAnalysisAttempt,
@@ -282,6 +301,7 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   }
 
   async transcribe(): Promise<DerivedTranscriptionSegment[]> {
+    this.pendingUsage = { promptTokens: 80, outputTokens: 20, totalTokens: 100 };
     return [{
       start: "00:00:00",
       end: "00:00:04",
@@ -291,6 +311,7 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   }
 
   async index(): Promise<{ matchNotes: string; moments: IndexedMoment[] }> {
+    this.pendingUsage = { promptTokens: 160, outputTokens: 40, totalTokens: 200 };
     return {
       matchNotes: "Synthetic hosted Workflow fixture matched the selected recording.",
       moments: [{
@@ -306,6 +327,7 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   async interrogate(input: {
     candidate: IndexedMoment;
   }): Promise<AnalysisDetail> {
+    this.pendingUsage = { promptTokens: 240, outputTokens: 60, totalTokens: 300 };
     return {
       accepted: true,
       kind: input.candidate.kind,
