@@ -125,7 +125,6 @@ describe("Studio composer readiness", () => {
   });
 
   test("preserves all composer steps persisted in non-canonical order", () => {
-    const storage = new MemoryStorage();
     const intent = {
       recipe: {
         id: "requirements",
@@ -145,19 +144,30 @@ describe("Studio composer readiness", () => {
       committed: true,
     };
     const sealedMedia = media("sealed");
+    const permutations = [
+      ["intent", "context", "media"],
+      ["media", "context", "intent"],
+      ["context", "media", "intent"],
+    ] as const;
 
-    expect(persistIntentDraft(storage, intent)).toBe(true);
-    expect(persistContextDraft(storage, context)).toBe(true);
-    expect(persistMediaResumeReceipt(storage, sealedMedia.id)).toBe(true);
+    for (const order of permutations) {
+      const storage = new MemoryStorage();
+      const persist = {
+        intent: () => persistIntentDraft(storage, intent),
+        context: () => persistContextDraft(storage, context),
+        media: () => persistMediaResumeReceipt(storage, sealedMedia.id),
+      };
+      for (const step of order) expect(persist[step]()).toBe(true);
 
-    expect(loadIntentDraft(storage).draft).toEqual(intent);
-    expect(loadContextDraft(storage).draft).toEqual(context);
-    expect(loadMediaResumeReceipt(storage).mediaSessionId).toBe(sealedMedia.id);
-    expect(composerReadinessFromStorage(storage, sealedMedia)).toEqual({
-      intent: "ready",
-      context: "committed",
-      recording: "sealed",
-      canRun: true,
-    });
+      expect(loadIntentDraft(storage).draft).toEqual(intent);
+      expect(loadContextDraft(storage).draft).toEqual(context);
+      expect(loadMediaResumeReceipt(storage).mediaSessionId).toBe(sealedMedia.id);
+      expect(composerReadinessFromStorage(storage, sealedMedia)).toEqual({
+        intent: "ready",
+        context: "committed",
+        recording: "sealed",
+        canRun: true,
+      });
+    }
   });
 });

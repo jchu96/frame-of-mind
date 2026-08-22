@@ -36,7 +36,10 @@ const {
   setIntentState,
 } = useComposerReadiness();
 const runtimeConfig = useRuntimeConfig();
-const fallbackModel = runtimeConfig.public.studioDefaultModel;
+const configuredDefaultModel = runtimeConfig.public.studioDefaultModel;
+const fallbackModel = typeof configuredDefaultModel === "string"
+  ? configuredDefaultModel
+  : "";
 const toast = useToast();
 
 const selectedRecipeId = ref("");
@@ -74,7 +77,7 @@ const catalogErrorDescription = computed(() =>
 );
 const modelItems = computed(() => [
   catalog.value?.defaultModel ?? fallbackModel,
-]);
+].filter(Boolean));
 
 function selectBuiltIn(recipe: RecipeSummary): void {
   selectedRecipeId.value = recipe.id;
