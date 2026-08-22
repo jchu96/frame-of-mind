@@ -9,9 +9,25 @@ This runbook deploys the Nuxt SSR workspace to Cloudflare Workers with:
 - Cloudflare Access protecting the whole hostname;
 - application-level validation of `Cf-Access-Jwt-Assertion`;
 - no public meeting-data route;
-- no Gemini or meeting-provider credentials in the Worker.
+- no Gemini or meeting-provider credentials in the current review-only Worker.
 
 The repository does not auto-deploy. Deployment is an operator action.
+
+## Hosted Studio (planned)
+
+The proposed [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/)
+extends this same hostname and Access boundary with principal-scoped creation,
+D1 job state, Cloudflare Workflows, and Worker-proxied Gemini uploads. It is a
+plan, not a deployed capability. Tier A would add `GEMINI_API_KEY` as the only
+Worker secret; provider connections and their separate encryption KEK remain
+Tier B.
+
+The Cloudflare build uses Nitro's module-format `cloudflare_module` preset.
+The legacy `cloudflare-worker` service-worker preset is incompatible with
+module-bound D1 and produced Wrangler deploy error 100329. Verified Wrangler
+output for this deployment shape identifies the module entrypoint, Workers
+Assets, and the D1 `DB` binding; hosted implementation must additionally show
+its Workflow binding before release. It must not report 100329.
 
 ## Security model
 
@@ -190,14 +206,18 @@ Build from the repository root:
 bun run build:web:cloudflare
 ```
 
+That command sets `NITRO_PRESET=cloudflare_module`; do not substitute the
+legacy `cloudflare-worker` preset.
+
 Deploy from `apps/web` so Wrangler paths match the configuration:
 
 ```bash
 bunx wrangler deploy --cwd apps/web --config wrangler.jsonc
 ```
 
-The Worker bundle contains no Gemini, Granola, Bluedot, or Asana secret. The
-review app only imports completed JSON contracts.
+The current review-only Worker bundle contains no Gemini, Granola, Bluedot, or
+Asana secret. The review app only imports completed JSON contracts. The
+planned Hosted Studio secret boundary is specified separately above.
 
 ## 8. Verify fail-closed behavior
 

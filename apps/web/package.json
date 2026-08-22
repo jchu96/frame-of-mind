@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "FRAME_OF_MIND_DB_DRIVER=sqlite NITRO_PRESET=node-server nuxi build",
-    "build:cloudflare": "FRAME_OF_MIND_DB_DRIVER=d1 NITRO_PRESET=cloudflare-worker nuxi build",
+    "build:cloudflare": "FRAME_OF_MIND_DB_DRIVER=d1 NITRO_PRESET=cloudflare_module nuxi build",
     "cloudflare:types": "wrangler types --config wrangler.jsonc",
     "dev": "FRAME_OF_MIND_DB_DRIVER=sqlite nuxi dev --host 127.0.0.1",
     "import": "bun scripts/import-run.ts",
