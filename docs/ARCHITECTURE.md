@@ -866,8 +866,9 @@ identity, exact byte count, and SHA-256, then grants one process-local lease.
 Only the analysis resolver sees the derived private path. The existing
 `FileContextSource` performs normalization; no Studio-specific transcript
 parser is introduced. The executor releases and consumes the lease in its
-`finally` path, while one-hour expiry and a non-overlapping minute janitor
-remove abandoned uploads. External deletion fails while the lease is active.
+`finally` path, while one-hour expiry and the unified non-overlapping local
+maintenance controller remove abandoned uploads. External deletion fails while
+the lease is active.
 See [ADR 0011](adr/0011-ephemeral-local-context-staging.md).
 
 The authenticated Context composer preserves that ownership boundary. Its
@@ -958,9 +959,10 @@ idempotency key, then requires the parent to be retryable and its independent
 media receipt to prove the exact SHA-256 is still retained and unexpired.
 `OrchestratedAnalysisJobExecutor` repeats that guard immediately before a
 linked retry resolves any private path, atomically leases the receipt
-`retained -> in_use`, and releases it after execution. The expiry janitor
-cannot delete an active lease; startup reconciliation repairs an abandoned
-retained lease after a process exit. Receipt validation never copies media
+`retained -> in_use`, and releases it after execution. Unified maintenance
+cannot delete an active lease or a live retained receipt; startup
+reconciliation repairs an abandoned retained lease after a process exit.
+Receipt validation never copies media
 authority into the job database. An indeterminate publication receipt always
 outranks a concurrent cancellation because the run may already exist.
 
@@ -1038,12 +1040,28 @@ server-owned expiry; neither source names nor filesystem paths cross the API.
 Part retries are accepted only when coordinates, length, and SHA-256 match the
 receipt. Completion re-reads the partial file as a stream, validates detected
 MP4/QuickTime/WebM magic and optional expected SHA-256, then atomically renames
-it. A local-only Nitro plugin reconciles uncommitted bytes, interrupted seals,
-expiry, and retryable cleanup before serving Studio work, then runs a
-non-overlapping one-minute expiry sweep until Nitro closes. The sweep uses the
-same per-session ownership boundary as upload, seal, lifecycle transition, and
-delete; busy sessions wait for the next sweep, and cleanup failures remain
+it. After the worker is ready and before job routes are exposed, one local-only
+controller plans and applies expired/orphan cleanup, then reconciles
+uncommitted bytes and interrupted seals. It repeats the plan on a configurable,
+non-overlapping interval until Nitro closes. Every action is idempotent and
+uses the same per-session ownership boundary as upload, seal, lifecycle
+transition, and delete. Every nonterminal job remains a staging reference owner
+until a stale-job CAS succeeds; stale CAS actions run first, then a fresh
+cleanup-only plan may remove newly unreferenced staging. Live retained receipts
+and every `in_use` status are deletion vetoes, and cleanup failures remain
 durable and retryable.
+
+The same planner compares nonterminal unpublished jobs with the configured
+inactivity horizon and the worker's last in-memory heartbeat. Because the
+worker has concurrency one, any recent heartbeat protects queued siblings;
+active non-queued jobs require their own heartbeat. A job old on both relevant
+clocks is atomically given a sanitized warning event and terminal
+`maintenance_stale_job` interruption. A lost stage/update CAS cannot authorize
+cleanup. Published and terminal rows are preserved. The local-session-only
+`GET /api/studio/maintenance` route exposes the current plan and last-run
+summary using sanitized IDs/codes only. Operator-owned source recordings never
+enter this inventory, so maintenance can remove only private Studio staging
+copies.
 
 `bun run studio` generates a capability and places it only in a URL fragment.
 The client removes the fragment before exchanging the capability once for an

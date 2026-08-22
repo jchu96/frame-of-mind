@@ -309,6 +309,7 @@ describe("Studio Activity state", () => {
     expect(source).toContain('data-activity-elapsed');
     expect(source).toContain('jobProgress(job).elapsed.accessibleText');
     expect(source).toContain('jobProgress(job).lastActivityText');
+    expect(source).toContain('jobProgress(job).lastActivityAccessibleText');
     expect(source).toContain('jobProgress(job).descriptor.kind === \'determinate\'');
     expect(source).toContain('role="progressbar"');
     expect(source).toContain(':aria-valuenow="jobProgress(job).descriptor.completed"');

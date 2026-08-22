@@ -1600,6 +1600,59 @@ The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and
 [Conductor track](../conductor/tracks/local-studio_20260726/).
 
+### Local Studio maintenance
+
+Studio starts one maintenance controller after the durable worker is ready and
+before the job API is exposed. The controller first builds a pure dry-run plan
+from the job repository plus the media and context staging inventories, applies
+its stale-job compare-and-swap actions first, and rebuilds a cleanup-only plan
+only after a stale transition succeeds. It then starts a non-overlapping
+interval. Nitro shutdown cancels the timer and waits for an active run.
+
+The defaults are deliberately conservative:
+
+| Variable | Default | Meaning |
+|---|---:|---|
+| `FRAME_OF_MIND_MAINTENANCE_INTERVAL_MS` | `900000` | scheduled-run interval; set to `0` to disable scheduled runs while retaining the startup run |
+| `FRAME_OF_MIND_MAINTENANCE_ORPHAN_GRACE_MS` | `86400000` | minimum age before an unreferenced Studio staging receipt is orphaned |
+| `FRAME_OF_MIND_MAINTENANCE_STALE_JOB_MS` | `86400000` | inactivity horizon before a nonterminal, unpublished job without a recent worker heartbeat is interrupted |
+
+Every plan action carries an opaque sanitized ID and a fixed reason code. It
+may remove an expired Studio media/context copy, remove an old unreferenced
+Studio copy, or atomically append `maintenance_stale_job` warning evidence and
+mark an inactive job `interrupted`. Replays are idempotent. Action logs contain
+only a code and opaque ID; errors never add a path, file name, transcript,
+provider payload, or source content.
+
+These are hard deletion gates:
+
+- an operator-selected local recording is outside the staging inventory and is
+  never a maintenance target;
+- a retained staging receipt whose server-owned expiry is still live is never
+  deleted, even when no job references it;
+- every nonterminal job remains a context/media reference owner until its
+  stale-job compare-and-swap succeeds;
+- every media receipt currently marked `in_use` is preserved, even if it was
+  not in use when the plan was built;
+- a job with a published run receipt is not stale-terminalized.
+
+The worker has concurrency one, so its one recent heartbeat is process-liveness
+evidence for every queued sibling. An old queued job is eligible for stale
+interruption only when no worker heartbeat is recent. Active non-queued jobs
+still require their own recent heartbeat. If a planned stale transition loses
+its stage/update compare-and-swap, no follow-up cleanup is planned for that job.
+
+Use the session-protected, local-only diagnostic read without applying it:
+
+```text
+GET /api/studio/maintenance
+```
+
+The response contains the current dry-run `plan` and the last applied run's
+sanitized counts/failures. It is `no-store`, unavailable without the per-launch
+Studio session, and absent from the Cloudflare artifact. Home renders one line
+(`Maintenance ran …, removed …`) only when the last run changed something.
+
 ### Local Studio media staging
 
 The default staging root is private per-user application data:
@@ -1658,27 +1711,25 @@ Browser procedure:
 The browser stores only the opaque resumable media ID in per-tab session
 storage. It does not store the recording name, path, bytes, or `File` object.
 Closing the tab loses the browser receipt, but the private server session
-remains subject to its server-owned expiry. Studio enforces that expiry during
-startup reconciliation and once per minute while the local server remains
-open.
+remains subject to its server-owned expiry. Unified Studio maintenance enforces
+that expiry at startup and on the configured schedule.
 Ephemeral media uses the upload lifetime as a sealed-media cleanup backstop;
 retained media uses the explicit one-hour, one-day, or seven-day choice.
 Session-storage denial does not fail a live upload, but the page warns that
 refresh-resume is unavailable and should remain open until seal or deletion.
 
-On startup, Studio reconciles each durable receipt with its partial or sealed
-file. Extra bytes from an interrupted part are truncated to the last receipt;
-an interrupted atomic seal is completed; expired/aborted entries are cleaned;
-and retryable permission failures remain `cleanup_failed` instead of being
-reported as deleted. Never edit `session.json` manually.
+On startup, Studio first plans and applies expired/orphan cleanup, then
+reconciles each remaining durable receipt with its partial or sealed file.
+Extra bytes from an interrupted part are truncated to the last receipt; an
+interrupted atomic seal is completed; retryable permission failures remain
+`cleanup_failed` instead of being reported as deleted. Never edit
+`session.json` manually.
 
-After startup, a lifecycle-owned janitor performs non-overlapping expiry
-sweeps. A slow sweep is never stacked with another, a sanitized error code is
-logged without a path or recording name, and later sweeps continue. Nitro
-shutdown cancels the interval and waits for any active sweep to finish. An
-expiry deletion that cannot prove byte removal remains `cleanup_failed`,
-emits only a sanitized failure count/code, and is retried by the next sweep;
-repeated failures require operator intervention.
+After startup, the unified lifecycle-owned controller performs non-overlapping
+maintenance runs. A slow run is never stacked with another, and Nitro shutdown
+waits for it. A deletion that cannot prove byte removal remains
+`cleanup_failed`, emits only a sanitized code/opaque ID, and is retried by the
+next plan; repeated failures require operator intervention.
 
 | Symptom                                 | Meaning                                                   | Operator action                                                     |
 |---|---|---|
@@ -1705,7 +1756,7 @@ opaque receipt, and a single execution lease:
   `%LOCALAPPDATA%\Frame of Mind\staging\context`;
 - maximum declared and received size: 8 MiB;
 - receipt lifetime before execution: one hour;
-- expiry sweep: once per minute, non-overlapping;
+- expiry cleanup: unified startup and configured maintenance schedule;
 - execution cleanup: delete in the executor `finally` path after success,
   failure, or cancellation;
 - durable job storage: opaque context ID and expected SHA-256 only—never body,
@@ -1809,10 +1860,9 @@ Maintainers validate the production-built boundary with:
 
 ```bash
 bun test apps/web/test/local-context-staging.test.ts
-bun test apps/web/test/studio-context-expiry-janitor.test.ts
+bun test apps/web/test/studio-maintenance.test.ts
 bun test apps/web/test/studio-job-runtime.test.ts
 bun test apps/web/test/studio-media-staging.test.ts
-bun test apps/web/test/studio-media-expiry-janitor.test.ts
 bun test apps/web/test/studio-media-upload.test.ts
 bun test apps/web/test/studio-media-controller.test.ts
 bun run test:studio-http

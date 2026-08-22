@@ -692,3 +692,32 @@
   spend contracts, the release rehearsal, and the 32 MiB streaming spike.
   Hosted flags remain false by default; no live Wrangler file, PR, merge, or
   deployment was created.
+- Completed Local Studio Task 7.5 on 2026-08-22. One pure maintenance planner
+  now joins durable jobs, Studio-owned media/context staging receipts, and the
+  worker heartbeat to identify expired uploads, old orphan copies, and stale
+  unpublished jobs. Its idempotent executor preserves operator-owned source
+  recordings, live retained receipts, and active leases; it records stale jobs
+  with sanitized warning and interruption evidence. The controller runs after
+  worker readiness, before job-route exposure, and on a configurable
+  non-overlapping interval; a session-guarded local-only route exposes the
+  sanitized dry-run plan and last-run summary, while Home reports only changed
+  runs. Also closed the Task 7.4 review NITs by binding the full list-row
+  last-activity accessible text and asserting unknown support-receipt IDs are
+  404. Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite:
+  37 files / 291 tests; Local Studio HTTP, hosted Access/Workflow, builds,
+  Cloudflare boundary, and 32 MiB streaming proof passed) and
+  `bun run test:e2e:smoke` (13 passed).
+- Closed PR #69 review SF1 for Local Studio Task 7.5 on 2026-08-22. Maintenance
+  now treats any recent single-concurrency worker heartbeat as liveness for old
+  queued siblings, and every nonterminal job remains a staging-reference owner
+  until its stale-job stage/update CAS succeeds. Stale CAS actions run before
+  cleanup; any successful transition triggers a fresh cleanup-only plan, while
+  a lost CAS cannot authorize deletion. The executor independently vetoes
+  every `in_use` receipt, closing the plan-to-claim race. Added live-worker,
+  no-worker, CAS-win, CAS-loss, and claim-race coverage. Also fixed the cheap
+  review NIT so the hosted-release boundary receipt counts all 13 forbidden
+  markers; the startup-timeout NIT remains open because safe cancellation is a
+  separate design change. Validated by `bun run check` (22 Vitest files / 212
+  tests; Bun web suite: 37 files / 294 tests; Local Studio HTTP, hosted
+  Access/Workflow, hosted release rehearsal, builds, and 32 MiB streaming proof
+  passed) and `bun run test:e2e:smoke` (13 passed).

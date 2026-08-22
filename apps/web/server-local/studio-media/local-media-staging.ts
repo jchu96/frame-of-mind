@@ -40,6 +40,9 @@ import {
   assertMediaSessionTransition,
   type ValidatedMediaTransition,
 } from "../../../../src/domain/studio-state";
+import type {
+  MaintenanceMediaSnapshot,
+} from "../studio-maintenance/plan";
 
 const storedMediaSessionSchema = z.object({
   schemaVersion: z.literal(1),
@@ -546,6 +549,20 @@ export class LocalMediaStagingAdapter implements MediaStagingAdapter {
   async get(id: string): Promise<MediaSession | undefined> {
     await this.#ensureRoot();
     return (await this.#readStored(this.#parseId(id)))?.session;
+  }
+
+  async maintenanceInventory(): Promise<MaintenanceMediaSnapshot[]> {
+    return (await this.#storedSessions()).map(({ session }) => ({
+      id: session.id,
+      ownership: "studio_staged_copy" as const,
+      status: session.status,
+      retention: session.retention,
+      ...(session.uploadExpiresAt
+        ? { uploadExpiresAt: session.uploadExpiresAt }
+        : {}),
+      updatedAt: session.updatedAt,
+      ...(session.sha256 ? { sha256: session.sha256 } : {}),
+    }));
   }
 
   /**

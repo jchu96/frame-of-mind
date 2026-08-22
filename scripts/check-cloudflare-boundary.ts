@@ -24,6 +24,15 @@ export const ad11ForbiddenMarkers = [
   "bun:sqlite",
 ] as const;
 
+// Local-only surfaces added after AD-11 was frozen. They extend the forbidden
+// scan without changing the AD-11 set the release rehearsal reports.
+export const localOnlyForbiddenMarkers = [
+  "server-local/studio-maintenance",
+  "/api/studio/maintenance",
+  "FRAME_OF_MIND_MAINTENANCE_INTERVAL_MS",
+  "maintenance_stale_job",
+] as const;
+
 export const hostedWrapperMarker = "FRAME_OF_MIND_HOSTED_ENTRY_V1";
 const wrapperSensitiveMarkers = [
   "GEMINI_API_KEY",
@@ -54,7 +63,7 @@ export async function checkCloudflareBoundary(
   const foundRequiredMarkers = new Set<string>();
   for (const path of artifactFiles) {
     const contents = await readFile(path, "utf8");
-    for (const marker of ad11ForbiddenMarkers) {
+    for (const marker of [...ad11ForbiddenMarkers, ...localOnlyForbiddenMarkers]) {
       if (contents.includes(marker)) {
         matches.push(`${relative(resolvedOutputRoot, path)}: ${marker}`);
       }
@@ -100,7 +109,8 @@ export async function checkCloudflareBoundary(
     outputRoot: resolvedOutputRoot,
     filesScanned: artifactFiles.length,
     requiredMarkers: ad11RequiredMarkers.length,
-    forbiddenMarkers: ad11ForbiddenMarkers.length,
+    forbiddenMarkers:
+      ad11ForbiddenMarkers.length + localOnlyForbiddenMarkers.length,
   };
 }
 
@@ -135,7 +145,7 @@ async function files(directory: string): Promise<string[]> {
 if (import.meta.main) {
   const receipt = await checkCloudflareBoundary(process.argv[2]);
   console.log(
-    `Cloudflare boundary clean: ${receipt.forbiddenMarkers} AD-11 forbidden markers absent; `
+    `Cloudflare boundary clean: ${receipt.forbiddenMarkers} forbidden markers absent; `
     + `${receipt.requiredMarkers} AD-11 required markers present; `
     + `${receipt.filesScanned} artifact files scanned; hosted wrapper clean.`,
   );
