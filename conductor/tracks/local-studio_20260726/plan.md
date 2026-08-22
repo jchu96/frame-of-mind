@@ -428,7 +428,7 @@ smoke coverage validate the slice. Phase 9 is next.
 - [x] Task 9.2: Add a public data-classification table and verify `.gitignore`,
       fixtures, screenshots, logs, examples, and repository history contain no
       sensitive runtime data.
-- [ ] Task 9.3: Add fresh-clone local installation and upgrade tests for macOS,
+- [x] Task 9.3: Add fresh-clone local installation and upgrade tests for macOS,
       Linux, and documented Windows support.
 - [ ] Task 9.4: Run adversarial security, provider, job-state, upload, and
       contract reviews; resolve all grounded blockers.
@@ -441,11 +441,15 @@ smoke coverage validate the slice. Phase 9 is next.
       Tasks 5.3 and 5.4, and Phase 6 release preparation. Pending: Phase 2,
       Tasks 5.1 and 5.2, and the Phase 6 deployment.
 
-Tasks 9.1, 9.2, and 9.5 closed on 2026-08-22. Public documentation now matches
-the shipped Local Studio Phases 1-8 and the hosted-dark boundary; the repository
-hygiene gate scans tracked and nonignored working-tree files, and a one-time
-all-ref history sweep found no sensitive runtime data. Platform installation,
-upgrade evidence, and the final adversarial review remain Tasks 9.3 and 9.4.
+Tasks 9.1, 9.2, 9.3, and 9.5 closed on 2026-08-22. Public documentation now
+matches the shipped Local Studio Phases 1-8 and the hosted-dark boundary; the
+repository hygiene gate scans tracked and nonignored working-tree files, and a
+one-time all-ref history sweep found no sensitive runtime data. A depth-one
+`file://` clone now proves the frozen install, CLI/web builds, CLI help, and
+authenticated Studio boot on macOS/Linux, while an install-only Windows lane
+keeps LF and does not overclaim Studio boot. Upgrade mode booted v0.2.1, then
+fast-forwarded to current HEAD and reopened the same SQLite database under the
+current schema. The final adversarial review remains Task 9.4.
 
 ### Verification
 
