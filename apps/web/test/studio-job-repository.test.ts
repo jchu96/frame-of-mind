@@ -488,6 +488,26 @@ describe("LocalSqliteJobRepository", () => {
         createdAt: "2026-07-27T12:05:00.000Z",
       }),
     ).rejects.toMatchObject({ code: "job_not_retryable" });
+
+    let canceledParent = await createJob(repository, "request-canceled-parent-0001");
+    canceledParent = await repository.transition({
+      jobId: canceledParent.id,
+      expectedStage: "queued",
+      nextStage: "cleaning_up",
+      occurredAt: oneMinuteLater,
+    });
+    canceledParent = await repository.transition({
+      jobId: canceledParent.id,
+      expectedStage: "cleaning_up",
+      nextStage: "canceled",
+      occurredAt: twoMinutesLater,
+      code: "operator_canceled",
+    });
+    await expect(repository.createLinkedRetry({
+      parentJobId: canceledParent.id,
+      idempotencyKey: "request-canceled-retry-0001",
+      createdAt: "2026-07-27T12:03:00.000Z",
+    })).rejects.toMatchObject({ code: "job_not_retryable" });
   });
 
   test("lists stable filtered pages and detects persisted digest corruption", async () => {

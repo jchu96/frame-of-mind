@@ -91,10 +91,18 @@ export function derivePermittedActivityActions(
     });
   }
 
+  const whyNot =
+    (job.stage === "failed" || job.stage === "interrupted")
+      && retryDeniedCode
+      ? retryWhyNot(retryDeniedCode)
+      : actions.length === 0
+        ? whyNoAction(job, retryDeniedCode)
+        : undefined;
+
   return {
     actions,
     ...(retryDeniedCode ? { retryDeniedCode } : {}),
-    ...(actions.length === 0 ? { whyNot: whyNoAction(job, retryDeniedCode) } : {}),
+    ...(whyNot ? { whyNot } : {}),
   };
 }
 
