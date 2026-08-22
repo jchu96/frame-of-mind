@@ -42,9 +42,9 @@ even derive its own transcript from the recording's audio.
   [Local Studio plan](conductor/tracks/local-studio_20260726/plan.md) and
   [Studio browser suite](apps/web/e2e/studio-smoke.spec.ts).
 - Phase 9 release hardening is in progress. Documentation, classification,
-  repository hygiene, and hosted-track reconciliation are complete in this
-  slice; fresh-clone platform testing (9.3) and the operator/adversarial release
-  gate (9.4) remain pending in the
+  repository hygiene, fresh-clone platform testing, and hosted-track
+  reconciliation are complete in this slice; only the operator/adversarial
+  release gate (9.4) remains pending in the
   [Phase 9 checklist](conductor/tracks/local-studio_20260726/plan.md#phase-9-public-release-hardening-and-phase-b-roadmap).
 - Hosted Studio remains dark and undeployed. Principal scoping (Slice 1),
   durable Workflows (Phase 3), composer/activity/publication (Phase 4), spend
