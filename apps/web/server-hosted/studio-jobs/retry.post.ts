@@ -19,8 +19,8 @@ export default defineEventHandler(async (event) => {
   assertTrustedJsonMutation(event);
   const telemetry = getHostedRouteTelemetry(event);
   try {
-    const request = hostedRetryRequestSchema.parse(await readHostedJobJson(event));
     const runtime = getHostedWorkflowExecutor(event);
+    const request = hostedRetryRequestSchema.parse(await readHostedJobJson(event));
     const now = new Date().toISOString();
     const spendPolicy = hostedSpendPolicy(event);
     await runtime.repository.ensurePrincipalSpendCap({

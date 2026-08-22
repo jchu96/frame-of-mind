@@ -4,6 +4,7 @@ import {
   type H3Event,
 } from "h3";
 import { z } from "zod";
+import { StudioJobInputUnavailableError } from "../../../../src/domain/studio-errors.js";
 import {
   readLimitedText,
   RequestBodyTooLargeError,
@@ -76,7 +77,12 @@ export function throwHostedJobHttpError(error: unknown): never {
     });
   }
   if (error instanceof HostedRepositoryError) {
+    // A foreign media id and a missing one are the same query for the caller's
+    // principal, so both answer 404: a 422 would confirm another principal's
+    // media exists.
     const statusCode = error.code === "hosted_attempt_not_found"
+      || error.code === "hosted_media_not_found"
+      || error.code === "sealed_media_receipt_missing"
       ? 404
       : error.code === "hosted_idempotency_conflict"
         || error.code === "hosted_attempt_create_conflict"
@@ -96,6 +102,13 @@ export function throwHostedJobHttpError(error: unknown): never {
     throw createError({
       statusCode: 503,
       statusMessage: "Hosted spend policy is unavailable.",
+      data: { code: error.code },
+    });
+  }
+  if (error instanceof StudioJobInputUnavailableError) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: "Hosted composer receipt is invalid.",
       data: { code: error.code },
     });
   }
@@ -124,6 +137,7 @@ export function hostedJobErrorCode(error: unknown): string {
   if (
     error instanceof HostedRepositoryError
     || error instanceof HostedSpendPolicyError
+    || error instanceof StudioJobInputUnavailableError
     || error instanceof HostedWorkflowDispatchError
   ) {
     return error.code;

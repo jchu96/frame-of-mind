@@ -622,7 +622,33 @@
   incomplete. The internal Workflows Worker now owns an optional ADR-0017
   codes-only telemetry envelope port for Access, upload-interface, Workflow,
   spend, publication, and cleanup outcomes; the normal review build resolves
-  it to a no-op. Targeted tests, the normal Cloudflare boundary build, and the
-  two-Worker HTTP contract passed; Tasks 5.1/5.2 remain Phase-2-dependent and
-  the complete `bun run check` gate passed; Tasks 5.1/5.2 remain
-  Phase-2-dependent and no deployment occurred.
+  it to a no-op. Targeted tests, the normal Cloudflare boundary build, the
+  two-Worker HTTP contract, and the complete `bun run check` gate passed;
+  Tasks 5.1/5.2 remain Phase-2-dependent and no deployment occurred.
+- Completed Hosted Studio Tasks 4.1–4.4 on 2026-08-22. The gated hosted shell
+  reuses the local Studio composer/activity derivations through shared pure
+  modules and a hosted data adapter; Recording consumes only an existing
+  sealed principal receipt and states that upload is unavailable. Activity,
+  cancel, retry, media, and publication reads are principal-bound and expose
+  only opaque IDs plus sanitized receipts/codes. The Workflow now cleans up
+  before constructing immutable provenance, validates a real analysis/manifest
+  pair, and projects it atomically through the existing D1 `RunStore`; the
+  existing viewer resolves the resulting run without any share or ownership-
+  transfer path. The focused two-Worker contract prints
+  `HOSTED_STUDIO_CONTRACT PASSED` after runtime-dark 404s, two-principal guessed-
+  ID denial, cancel/retry, browser composer/activity, and published-viewer
+  checks. Pair mismatch and forced D1 partial-write fixtures fail with zero
+  projection rows. Validated by `bun run check` (22 Vitest files / 212 tests;
+  Bun web suite: 272 tests; local Studio, hosted Access, hosted Studio/Workflow,
+  builds, boundary, and 32 MiB streaming contracts passed) and
+  `bun run test:e2e:smoke` (13 passed).
+- Integrated the merged Phase 4 composer/activity/publication slice into the
+  Phase 5a spend/telemetry branch on 2026-08-22. Raw and composer creates now
+  share one trusted-duration spend-plan and atomic-reservation service; linked
+  retries retain their immutable plan. The two-Worker contract preserves the
+  Phase 4 browser, cancellation, foreign-media 404, cleanup-before-publication,
+  and viewer checks while proving both create surfaces return sanitized 429
+  with no attempt or Workflow receipt after cap exhaustion. `bun run check`
+  passed all hosted Access, Studio, Workflow, spend, and telemetry contracts;
+  `bun run test:e2e:smoke` passed 13 tests. No deployment or production
+  Wrangler change occurred.

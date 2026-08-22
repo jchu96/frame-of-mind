@@ -3,7 +3,7 @@ import type {
   AnalysisRunV3,
   RunManifest,
   RunManifestV3,
-} from "../../../src/domain/types";
+} from "../../../src/domain/types.js";
 
 interface RunSummaryBase {
   runId: string;
