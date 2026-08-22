@@ -16,8 +16,8 @@ import {
 export default defineEventHandler(async (event) => {
   assertTrustedJsonMutation(event);
   try {
-    const request = hostedRetryRequestSchema.parse(await readHostedJobJson(event));
     const runtime = getHostedWorkflowExecutor(event);
+    const request = hostedRetryRequestSchema.parse(await readHostedJobJson(event));
     const result = await runtime.repository.createLinkedRetry({
       principalSub: runtime.principalSub,
       parentAttemptId: parseOpaqueResourceId(getRouterParam(event, "id")),

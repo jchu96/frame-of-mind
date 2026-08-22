@@ -4,6 +4,7 @@ import {
   type H3Event,
 } from "h3";
 import { z } from "zod";
+import { StudioJobInputUnavailableError } from "../../../../src/domain/studio-errors.js";
 import {
   readLimitedText,
   RequestBodyTooLargeError,
@@ -59,6 +60,7 @@ export function throwHostedJobHttpError(error: unknown): never {
   }
   if (error instanceof HostedRepositoryError) {
     const statusCode = error.code === "hosted_attempt_not_found"
+      || error.code === "hosted_media_not_found"
       ? 404
       : error.code === "hosted_idempotency_conflict"
         || error.code === "hosted_attempt_create_conflict"
@@ -71,6 +73,13 @@ export function throwHostedJobHttpError(error: unknown): never {
     throw createError({
       statusCode,
       statusMessage: "Hosted job request could not be completed.",
+      data: { code: error.code },
+    });
+  }
+  if (error instanceof StudioJobInputUnavailableError) {
+    throw createError({
+      statusCode: 422,
+      statusMessage: "Hosted composer receipt is invalid.",
       data: { code: error.code },
     });
   }
