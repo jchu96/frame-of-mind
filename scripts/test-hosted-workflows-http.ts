@@ -2,6 +2,14 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
+import {
+  GeminiVideoAnalyzer,
+  MODEL_REQUEST_TIMEOUT_MS,
+} from "../src/adapters/gemini";
+import type { SealedHostedMediaReceipt } from "../apps/workflows/src/contracts";
+import {
+  GeminiHostedAnalysisProvider,
+} from "../apps/workflows/src/provider";
 import { createE2EEnvironment } from "./e2e-environment";
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-workflows-"));
@@ -108,6 +116,7 @@ try {
     "--outdir", workflowOutdir,
   ], "Workflow Worker dry run");
   console.log("HOSTED_WORKFLOW build=PASS nuxt_and_workflow");
+  await verifyRealAdapterContract();
 
   const migrationArgs = [
     "node", wranglerBin, "d1", "migrations", "apply", databaseName,
@@ -192,22 +201,33 @@ try {
     1,
     "provider invocation count after receipt crash",
   );
-  const replay = await createJob(
+  const workflowInstanceId = await queryWorkflowInstanceId(
+    crashed.job.id,
+  );
+  await runChecked([
+    "node", wranglerBin, "workflows", "instances", "restart",
+    "frame-of-mind-analysis-contract", workflowInstanceId,
+    "--local", "--port", String(workflowPort),
+    "--config", workflowConfigPath,
+    "--from-step-name", "transcribe",
+    "--from-step-type", "do",
+  ], "restart crashed Workflow from provider step");
+  const afterReplay = await waitForEvent(
     baseUrl,
     tokenA,
-    crashMedia,
-    "crash-submit-key",
-    200,
+    crashed.job.id,
+    "provider_claim_without_receipt",
   );
-  assertEqual(replay.job.id, crashed.job.id, "initial double-submit identity");
-  await Bun.sleep(250);
-  const afterReplay = await getJob(baseUrl, tokenA, crashed.job.id);
   assertEqual(
     afterReplay.events.filter((event) => event.code === "gemini_transcribe_started").length,
     1,
     "no second provider invocation after replay",
   );
-  console.log("HOSTED_WORKFLOW crash_replay=PASS provider_calls=1 cleanup=true");
+  assertEqual(afterReplay.job.stage, "indeterminate", "replayed crash stage");
+  assertEqual(afterReplay.job.cleanupCompleted, true, "replayed crash cleanup");
+  console.log(
+    "HOSTED_WORKFLOW crash_after_provider=PASS provider_calls=1 indeterminate=true cleanup=true",
+  );
 
   const [retryOneResponse, retryTwoResponse] = await Promise.all([
     retryJob(baseUrl, tokenA, crashed.job.id, "retry-submit-key"),
@@ -278,6 +298,75 @@ interface JobDetail extends JobResponse {
   events: Array<{ code?: string }>;
 }
 
+async function verifyRealAdapterContract(): Promise<void> {
+  let requestTimeout: number | undefined;
+  const deletedFiles: string[] = [];
+  const analyzer = new GeminiVideoAnalyzer(
+    "hosted-contract-fake-key",
+    "gemini-hosted-contract",
+    {
+      generateContent: async (parameters) => {
+        requestTimeout = parameters.config?.httpOptions?.timeout;
+        return {
+          text: JSON.stringify({
+            segments: [{
+              start: "00:00:00",
+              end: "00:00:01",
+              speaker: "Speaker 1",
+              text: "Hosted adapter transport contract.",
+            }],
+          }),
+        };
+      },
+      deleteFile: async (parameters) => {
+        deletedFiles.push(parameters.name);
+        return {};
+      },
+    },
+  );
+  const provider = new GeminiHostedAnalysisProvider(analyzer);
+  const file = (suffix: string) => ({
+    name: `files/adapter_${suffix}`,
+    uri: `https://generativelanguage.googleapis.test/v1beta/files/adapter_${suffix}`,
+    mimeType: "video/mp4",
+  });
+  await provider.transcribe(file("timeout"));
+  assertEqual(
+    requestTimeout,
+    MODEL_REQUEST_TIMEOUT_MS,
+    "real hosted adapter model timeout",
+  );
+  console.log("HOSTED_WORKFLOW adapter_timeout=PASS");
+
+  const ephemeralReceipt = (suffix: string): SealedHostedMediaReceipt => ({
+    principalSub: principalA,
+    mediaId: `media_adapter_${suffix}`,
+    geminiFileName: `files/adapter_${suffix}`,
+    geminiFileUri: `https://generativelanguage.googleapis.test/v1beta/files/adapter_${suffix}`,
+    sha256: mediaSha256,
+    mimeType: "video/mp4",
+    retention: "ephemeral",
+    sealedAt: "2026-08-22T00:00:00.000Z",
+    expiresAt: "2026-08-29T00:00:00.000Z",
+  });
+  await provider.cleanup(
+    file("success"),
+    ephemeralReceipt("success"),
+  );
+  await provider.cleanup(
+    file("receipt_failure"),
+    ephemeralReceipt("receipt_failure"),
+  );
+  assertEqual(
+    deletedFiles,
+    ["files/adapter_success", "files/adapter_receipt_failure"],
+    "real hosted adapter ephemeral Files API deletes",
+  );
+  console.log(
+    "HOSTED_WORKFLOW ephemeral_delete=PASS success=true failure=true",
+  );
+}
+
 function d1Binding() {
   return {
     binding: "DB",
@@ -294,7 +383,8 @@ function seedSql(): string {
     [normalMedia, crashMedia].map((mediaId) =>
       `('${principal}','${mediaId}','files/${mediaId}',`
       + `'https://generativelanguage.googleapis.test/v1beta/files/${mediaId}',`
-      + `'${mediaSha256}','video/mp4','retained','${sealedAt}','${expiresAt}')`
+      + `'${mediaSha256}','video/mp4','${mediaId === crashMedia ? "ephemeral" : "retained"}',`
+      + `'${sealedAt}','${expiresAt}')`
     )
   );
   return `
@@ -393,6 +483,36 @@ async function waitForTerminal(
   throw new Error(`Hosted attempt ${id} did not become terminal.`);
 }
 
+async function waitForEvent(
+  origin: string,
+  token: string,
+  id: string,
+  code: string,
+): Promise<JobDetail> {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    const detail = await getJob(origin, token, id);
+    if (detail.events.some((event) => event.code === code)) return detail;
+    await Bun.sleep(100);
+  }
+  throw new Error(`Hosted attempt ${id} did not record ${code}.`);
+}
+
+async function queryWorkflowInstanceId(attemptId: string): Promise<string> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command",
+    `SELECT workflow_instance_id FROM hosted_analysis_attempts WHERE attempt_id = '${attemptId}'`,
+    "--json",
+  ], "query crashed Workflow instance ID");
+  const result = JSON.parse(stdout) as Array<{
+    results?: Array<{ workflow_instance_id?: string }>;
+  }>;
+  const workflowInstanceId = result[0]?.results?.[0]?.workflow_instance_id;
+  if (!workflowInstanceId) throw new Error("Crashed Workflow instance ID was unavailable.");
+  return workflowInstanceId;
+}
+
 async function expectStatus(
   responsePromise: Promise<Response> | Response,
   expected: number,
@@ -435,7 +555,7 @@ async function runChecked(
   command: string[],
   label: string,
   additions: Record<string, string> = {},
-): Promise<void> {
+): Promise<string> {
   const child = Bun.spawn(command, {
     cwd: process.cwd(),
     env: createE2EEnvironment(process.env, additions),
@@ -451,6 +571,7 @@ async function runChecked(
   if (exitCode !== 0) {
     throw new Error(`${label} failed (${exitCode}):\n${stdout}\n${stderr}`.slice(0, 20_000));
   }
+  return stdout;
 }
 
 async function reservePort(): Promise<number> {

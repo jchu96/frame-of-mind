@@ -560,3 +560,14 @@
   foreign-principal denial, one provider call across crash replay, and
   concurrent retry deduplication. No upload path, deployment, or live route was
   added.
+- Closed PR #63 Phase 3 review fixes on 2026-08-22. Provider calls now acquire
+  a principal/attempt/step claim and append their `provider_call` event in one
+  D1 batch before invocation; a claim without a result receipt terminates as
+  indeterminate and can only proceed through a user-linked retry. The workerd
+  contract crashes after a successful fake provider response, restarts the
+  exact failed step, and proves one provider call plus completed cleanup. A
+  real `GeminiHostedAnalysisProvider`/`GeminiVideoAnalyzer` contract with fake
+  transport also proves the 10-minute model timeout and Files API deletion for
+  ephemeral success and receipt-failure cleanup paths. Validated by
+  `bun run check` (22 Vitest files / 212 tests; Bun web suite: 271 tests; hosted
+  Workflow, Studio HTTP, Access, builds, and 32 MiB streaming spike passed).
