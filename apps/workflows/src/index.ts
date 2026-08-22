@@ -35,6 +35,10 @@ import {
   type HostedTelemetryOutcome,
   type HostedTelemetryPort,
 } from "./telemetry.js";
+import {
+  buildHostedPublishedRun,
+  publishHostedRun,
+} from "./publication.js";
 
 const MAX_WORKFLOW_OUTPUT_BYTES = 800 * 1_024;
 
@@ -48,6 +52,7 @@ interface Env {
   SENTRY_DSN?: string;
   SENTRY_ENVIRONMENT?: string;
   SENTRY_RELEASE?: string;
+  HOSTED_FAKE_START_DELAY_MEDIA_ID?: string;
 }
 
 interface HostedWorkflowOutput {
@@ -70,6 +75,9 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     if (attempt.workflowInstanceId !== event.instanceId) {
       throw new NonRetryableError("workflow_instance_receipt_mismatch");
     }
+    if (this.env.HOSTED_FAKE_START_DELAY_MEDIA_ID === attempt.input.mediaId) {
+      await step.sleep("contract-start-delay", "1 second");
+    }
     const provider = createHostedAnalysisProvider(this.env);
     const telemetry = createHostedTelemetry(this.env);
     const startedAt = Date.now();
@@ -80,13 +88,25 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       stage: "queued",
     }));
     let file: HostedResolvedFile | undefined;
+    let meeting: MeetingEvidence | undefined;
+    let transcript: HostedTranscriptResult | undefined;
+    let indexed: {
+      matchNotes: string;
+      moments: IndexedMoment[];
+      transcriptAlignment?: {
+        offsetSeconds: number;
+        confidence: "high" | "medium" | "low" | "none";
+        rationale: string;
+      };
+    } | undefined;
+    let details: AnalysisDetail[] | undefined;
     let runId: string | undefined;
     let acceptedCount = 0;
     let primaryError: unknown;
     let publicationStarted = false;
 
     try {
-      const meeting = await this.fetchContext(
+      meeting = await this.fetchContext(
         step,
         repository,
         provider,
@@ -99,7 +119,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         attempt,
       );
       file = ensured.file;
-      const transcript = await this.transcribe(
+      transcript = await this.transcribe(
         step,
         repository,
         provider,
@@ -107,7 +127,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         meeting,
         file,
       );
-      const indexed = await this.index(
+      indexed = await this.index(
         step,
         repository,
         provider,
@@ -116,7 +136,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         transcript,
         file,
       );
-      const details = await this.interrogate(
+      details = await this.interrogate(
         step,
         repository,
         provider,
@@ -126,36 +146,14 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         file,
       );
       acceptedCount = details.filter((detail) => detail.accepted).length;
-      publicationStarted = true;
-      const published = await this.publish(
-        step,
-        repository,
-        attempt,
-        indexed.matchNotes,
-        details,
-      );
-      runId = published.runId;
-      await telemetry.emit(telemetryEvent(attempt, {
-        area: "publication",
-        outcome: "succeeded",
-        code: "hosted_publication_succeeded",
-        stage: "publish",
-      }));
     } catch (error) {
       primaryError = error;
-      if (publicationStarted && runId === undefined) {
-        await telemetry.emit(telemetryEvent(attempt, {
-          area: "publication",
-          outcome: "failed",
-          code: "hosted_publication_incomplete",
-          stage: "publish",
-        }));
-      }
     }
 
     let cleanupError: unknown;
+    let cleanup: { deleted: boolean; completedAt: string } | undefined;
     try {
-      await this.cleanup(
+      cleanup = await this.cleanup(
         step,
         repository,
         provider,
@@ -178,9 +176,57 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       }));
     }
 
+    if (
+      !primaryError
+      && !cleanupError
+      && cleanup
+      && file
+      && transcript
+      && indexed
+      && details
+    ) {
+      try {
+        publicationStarted = true;
+        const published = await this.publish(
+          step,
+          repository,
+          attempt,
+          meeting,
+          transcript,
+          indexed,
+          details,
+          file,
+          cleanup,
+        );
+        runId = published.runId;
+        await telemetry.emit(telemetryEvent(attempt, {
+          area: "publication",
+          outcome: "succeeded",
+          code: "hosted_publication_succeeded",
+          stage: "publish",
+        }));
+      } catch (error) {
+        primaryError = error;
+        if (publicationStarted && runId === undefined) {
+          await telemetry.emit(telemetryEvent(attempt, {
+            area: "publication",
+            outcome: "failed",
+            code: "hosted_publication_incomplete",
+            stage: "publish",
+          }));
+        }
+      }
+    }
+
     const finishedAt = new Date().toISOString();
     if (primaryError || cleanupError) {
-      const terminal = terminalFailure(primaryError, cleanupError);
+      const latestAttempt = await repository.getAttempt(
+        attempt.principalSub,
+        attempt.attemptId,
+      );
+      const terminal = latestAttempt?.cancellationRequestedAt && !cleanupError
+        ? { stage: "canceled" as const, code: "operator_canceled" }
+        : terminalFailure(primaryError, cleanupError);
       const reconciliation = await repository.finishAttempt({
         principalSub: attempt.principalSub,
         attemptId: attempt.attemptId,
@@ -243,12 +289,12 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     provider: HostedAnalysisProvider,
     attempt: HostedAnalysisAttempt,
   ): Promise<MeetingEvidence | undefined> {
-    await beginStep(repository, attempt, "fetch_context");
     if ("mode" in attempt.input.context) {
       return await step.do(
         "fetch_context",
         HOSTED_STATE_STEP_CONFIG,
         async () => {
+          await beginStep(repository, attempt, "fetch_context");
           await repository.assertNotCanceled(attempt.principalSub, attempt.attemptId);
           await repository.putReceipt(
             attempt.principalSub,
@@ -265,6 +311,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       step,
       repository,
       providerStepName: "fetch_context",
+      stage: "fetch_context",
       eventCode: "context_fetch_started",
       attempt,
       env: this.env,
@@ -282,7 +329,6 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     file: HostedResolvedFile;
     receipt: SealedHostedMediaReceipt;
   }> {
-    await beginStep(repository, attempt, "ensure_gemini_file");
     const receipt = await repository.requireUsableMediaReceipt(
       attempt.principalSub,
       attempt.input.mediaId,
@@ -295,6 +341,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       step,
       repository,
       providerStepName: "ensure_gemini_file",
+      stage: "ensure_gemini_file",
       eventCode: "gemini_file_resolve_started",
       attempt,
       env: this.env,
@@ -312,13 +359,13 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     meeting: MeetingEvidence | undefined,
     file: HostedResolvedFile,
   ): Promise<HostedTranscriptResult> {
-    await beginStep(repository, attempt, "transcribe");
     const contextual = resolveHostedTranscript({ meeting });
     if (contextual.origin !== "none") {
       return await step.do(
         "transcribe",
         HOSTED_STATE_STEP_CONFIG,
         async () => {
+          await beginStep(repository, attempt, "transcribe");
           await repository.assertNotCanceled(attempt.principalSub, attempt.attemptId);
           await repository.putReceipt(
             attempt.principalSub,
@@ -339,6 +386,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         step,
         repository,
         providerStepName: "transcribe",
+        stage: "transcribe",
         eventCode: "gemini_transcribe_started",
         attempt,
         env: this.env,
@@ -376,13 +424,21 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     meeting: MeetingEvidence | undefined,
     transcript: HostedTranscriptResult,
     file: HostedResolvedFile,
-  ): Promise<{ matchNotes: string; moments: IndexedMoment[] }> {
-    await beginStep(repository, attempt, "index");
+  ): Promise<{
+    matchNotes: string;
+    moments: IndexedMoment[];
+    transcriptAlignment?: {
+      offsetSeconds: number;
+      confidence: "high" | "medium" | "low" | "none";
+      rationale: string;
+    };
+  }> {
     const recipe = await requireRecipe(attempt);
     const indexed = await providerStep({
       step,
       repository,
       providerStepName: "index",
+      stage: "index",
       eventCode: "gemini_index_started",
       attempt,
       env: this.env,
@@ -411,8 +467,8 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     transcript: HostedTranscriptResult,
     file: HostedResolvedFile,
   ): Promise<AnalysisDetail[]> {
-    await beginStep(repository, attempt, "interrogate");
     await step.do("interrogate", HOSTED_STATE_STEP_CONFIG, async () => {
+      await beginStep(repository, attempt, "interrogate");
       await repository.assertNotCanceled(attempt.principalSub, attempt.attemptId);
       await repository.putReceipt(
         attempt.principalSub,
@@ -435,6 +491,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         step,
         repository,
         providerStepName: stepName,
+        stage: "interrogate",
         eventCode: "gemini_interrogate_started",
         attempt,
         env: this.env,
@@ -456,26 +513,61 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     step: WorkflowStep,
     repository: HostedWorkflowRepository,
     attempt: HostedAnalysisAttempt,
-    matchNotes: string,
+    meeting: MeetingEvidence | undefined,
+    transcript: HostedTranscriptResult,
+    indexed: {
+      matchNotes: string;
+      moments: IndexedMoment[];
+      transcriptAlignment?: {
+        offsetSeconds: number;
+        confidence: "high" | "medium" | "low" | "none";
+        rationale: string;
+      };
+    },
     details: AnalysisDetail[],
+    file: HostedResolvedFile,
+    cleanup: { deleted: boolean; completedAt: string },
   ): Promise<{ runId: string }> {
-    await beginStep(repository, attempt, "publish");
     return await step.do("publish", HOSTED_STATE_STEP_CONFIG, async () => {
+      await beginStep(repository, attempt, "publish");
       await repository.assertNotCanceled(attempt.principalSub, attempt.attemptId);
-      const runId = `hosted_${attempt.attemptId}`;
+      const publishedAt = new Date().toISOString();
+      const pair = await buildHostedPublishedRun({
+        attempt,
+        meeting,
+        transcript,
+        ...(indexed.transcriptAlignment
+          ? { transcriptAlignment: indexed.transcriptAlignment }
+          : {}),
+        matchNotes: indexed.matchNotes,
+        moments: indexed.moments,
+        details,
+        file,
+        cleanup,
+        publishedAt,
+      });
+      const projected = await publishHostedRun(
+        this.env.DB,
+        attempt.principalSub,
+        pair,
+      );
       await repository.putReceipt(
         attempt.principalSub,
         attempt.attemptId,
         "publish",
         {
-          runId,
-          matchNotesSha256: await sha256(matchNotes),
+          runId: projected.runId,
+          analysisSha256: pair.manifest.analysisSha256,
+          manifestSha256: await sha256(JSON.stringify(pair.manifest)),
+          mediaSha256: attempt.input.mediaSha256,
+          model: attempt.input.model,
+          contextMode: pair.analysis.schemaVersion === 3 ? "none" : "meeting",
           acceptedCount: details.filter((detail) => detail.accepted).length,
           rejectedCount: details.filter((detail) => !detail.accepted).length,
         },
-        new Date().toISOString(),
+        publishedAt,
       );
-      return { runId };
+      return { runId: projected.runId };
     });
   }
 
@@ -485,8 +577,7 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     provider: HostedAnalysisProvider,
     attempt: HostedAnalysisAttempt,
     resolvedFile: HostedResolvedFile | undefined,
-  ): Promise<void> {
-    await beginStep(repository, attempt, "cleanup");
+  ): Promise<{ deleted: boolean; completedAt: string }> {
     const receipt = await repository.requireUsableMediaReceipt(
       attempt.principalSub,
       attempt.input.mediaId,
@@ -497,10 +588,11 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       uri: receipt.geminiFileUri,
       mimeType: receipt.mimeType,
     };
-    await providerStep({
+    const result = await providerStep({
       step,
       repository,
       providerStepName: "cleanup",
+      stage: "cleanup",
       eventCode: "gemini_cleanup_started",
       attempt,
       env: this.env,
@@ -511,6 +603,10 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
         return { deleted: receipt.retention === "ephemeral" };
       },
     });
+    return {
+      deleted: result.deleted,
+      completedAt: new Date().toISOString(),
+    };
   }
 }
 
@@ -592,6 +688,7 @@ async function providerStep<T>(input: {
   step: WorkflowStep;
   repository: HostedWorkflowRepository;
   providerStepName: string;
+  stage: HostedAnalysisAttempt["stage"];
   eventCode: string;
   attempt: HostedAnalysisAttempt;
   env: Env;
@@ -604,6 +701,7 @@ async function providerStep<T>(input: {
     input.providerStepName,
     HOSTED_PROVIDER_STEP_CONFIG,
     async (): Promise<any> => {
+      await beginStep(input.repository, input.attempt, input.stage);
       let providerSucceeded = false;
       try {
         const receipt = await input.repository.requireUsableMediaReceipt(
@@ -627,7 +725,10 @@ async function providerStep<T>(input: {
         );
         if (existing) {
           if (input.providerStepName === "cleanup") {
-            return { status: "ok", output: undefined };
+            return {
+              status: "ok",
+              output: { deleted: receipt.retention === "ephemeral" },
+            };
           }
           throw new NonRetryableError("provider_receipt_without_step_output");
         }
@@ -736,19 +837,11 @@ async function beginStep(
   attempt: HostedAnalysisAttempt,
   stage: HostedAnalysisAttempt["stage"],
 ): Promise<void> {
-  const occurredAt = new Date().toISOString();
-  await repository.setStage(
+  await repository.beginStage(
     attempt.principalSub,
     attempt.attemptId,
     stage,
-    occurredAt,
-  );
-  await repository.appendEvent(
-    attempt.principalSub,
-    attempt.attemptId,
-    "stage",
-    stage,
-    occurredAt,
+    new Date().toISOString(),
   );
 }
 
@@ -817,6 +910,9 @@ function terminalFailure(
   code: string;
 } {
   if (cleanupError) return { stage: "failed", code: "terminal_cleanup_failed" };
+  if (errorMessage(primaryError) === "operator_canceled") {
+    return { stage: "canceled", code: "operator_canceled" };
+  }
   if (primaryError instanceof HostedRepositoryError) {
     if (primaryError.code === "operator_canceled") {
       return { stage: "canceled", code: primaryError.code };

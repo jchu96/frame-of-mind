@@ -100,6 +100,10 @@ const forbidden = [
   "hosted-video-v1",
   "spend_reservation_created",
   "hosted-workflows.internal/telemetry",
+  "/api/hosted/composer/jobs",
+  "data-hosted-studio-shell",
+  "data-hosted-activity-page",
+  "data-hosted-composer",
 ];
 const requiredReviewMarkers = [
   "Primary navigation",

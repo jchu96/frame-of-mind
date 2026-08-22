@@ -2,7 +2,7 @@ import {
   isRunImportV2,
   isRunImportV3,
   type VersionedRunImport,
-} from "../../../../src/domain/schemas";
+} from "../../../../src/domain/schemas.js";
 
 export const schemaSql = `
 PRAGMA foreign_keys = ON;

@@ -5,8 +5,11 @@ import { MODEL_REQUEST_TIMEOUT_MS as GEMINI_MODEL_TIMEOUT_MS } from "../../../sr
 import {
   HOSTED_PROVIDER_STEP_CONFIG,
   HOSTED_WORKFLOW_STEP_TIMEOUT_MS,
+  hostedAttemptSchema,
   type HostedAttemptInput,
 } from "../../workflows/src/contracts";
+import { buildHostedPublishedRun } from "../../workflows/src/publication";
+import { validateVersionedRunImport } from "../../../src/domain/integrity";
 import {
   resolveHostedTranscript,
 } from "../../workflows/src/provider";
@@ -79,6 +82,74 @@ describe("hosted Workflow durability", () => {
       }],
     })).toMatchObject({ origin: "gemini-audio" });
     expect(resolveHostedTranscript({})).toEqual({ origin: "none" });
+  });
+
+  test("builds a real validated pair and rejects mismatched publication input", async () => {
+    const attempt = hostedAttemptSchema.parse({
+      principalSub: principalA,
+      attemptId: "attempt_publication_0001",
+      jobId: "job_publication_0001",
+      attemptNumber: 1,
+      idempotencyKey: "publication-test-key",
+      workflowInstanceId: "workflow_publication_0001",
+      input: {
+        ...hostedInput("media_publication_0001"),
+        recipe: {
+          id: "decisions",
+          label: "Decisions",
+          revision: "builtin-2026-08-11.1",
+          sha256: "b".repeat(64),
+        },
+      },
+      stage: "publish",
+      spendReservedUnits: 1,
+      cleanupCompletedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const candidate = {
+      start: "00:00:01",
+      end: "00:00:02",
+      summary: "A decision was made.",
+      kind: "decision",
+      importance: "high" as const,
+    };
+    const result = {
+      accepted: true,
+      kind: "decision",
+      title: "Use the durable pair",
+      summary: "The run bundle remains authoritative.",
+      importance: "high" as const,
+    };
+    const base = {
+      attempt,
+      transcript: { origin: "none" as const },
+      matchNotes: "Recording-only evidence.",
+      moments: [candidate],
+      details: [result],
+      file: { name: "files/publication", uri: "https://example.test/files/publication", mimeType: "video/mp4" },
+      cleanup: { deleted: false, completedAt: now },
+      publishedAt: later,
+    };
+    const pair = await buildHostedPublishedRun(base);
+    await expect(validateVersionedRunImport(pair)).resolves.toEqual(pair);
+    expect(pair.manifest).toMatchObject({
+      runId: `hosted_${attempt.attemptId}`,
+      remoteFile: { name: "files/publication", deleted: false },
+      artifacts: ["analysis.json", "manifest.json"],
+    });
+    await expect(buildHostedPublishedRun({ ...base, details: [] }))
+      .rejects.toThrow("hosted_publication_item_count_mismatch");
+    const invalid = structuredClone(pair);
+    invalid.manifest.analysisSha256 = "0".repeat(64);
+    await expect(validateVersionedRunImport(invalid)).rejects.toThrow();
+    const schemaMismatch = structuredClone(pair) as unknown as {
+      analysis: typeof pair.analysis;
+      manifest: Record<string, unknown>;
+    };
+    schemaMismatch.manifest.schemaVersion = 2;
+    await expect(validateVersionedRunImport(schemaMismatch as never))
+      .rejects.toThrow();
   });
 
   test("fails migration 0004 closed when a legacy sentinel exists", async () => {

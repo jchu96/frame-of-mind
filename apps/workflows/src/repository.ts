@@ -75,6 +75,10 @@ export interface HostedSpendReconciliation {
     | "spend_reconciled_reservation_fallback";
 }
 
+export interface HostedAttemptPage {
+  attempts: HostedAnalysisAttempt[];
+}
+
 export interface HostedD1PreparedStatement {
   bind(...values: unknown[]): HostedD1PreparedStatement;
   first<T>(): Promise<T | null>;
@@ -375,18 +379,70 @@ export class HostedWorkflowRepository {
     return row ? attemptFromRow(row) : undefined;
   }
 
-  async setStage(
+  async listAttempts(
+    principalSub: string,
+    limit = 100,
+  ): Promise<HostedAttemptPage> {
+    const result = await this.database.prepare(`
+      SELECT * FROM hosted_analysis_attempts
+      WHERE principal_sub = ?
+      ORDER BY created_at DESC, attempt_id DESC
+      LIMIT ?
+    `).bind(
+      principalSub,
+      Math.min(100, Math.max(1, limit)),
+    ).all<AttemptRow>();
+    return { attempts: result.results.map(attemptFromRow) };
+  }
+
+  async beginStage(
     principalSub: string,
     attemptId: string,
     stage: HostedAnalysisAttempt["stage"],
     occurredAt: string,
   ): Promise<void> {
-    await this.database.prepare(`
-      UPDATE hosted_analysis_attempts
-      SET stage = ?, updated_at = ?
-      WHERE principal_sub = ? AND attempt_id = ?
-        AND stage NOT IN ('succeeded', 'failed', 'canceled', 'indeterminate')
-    `).bind(stage, occurredAt, principalSub, attemptId).run();
+    await this.database.batch([
+      this.database.prepare(`
+        UPDATE hosted_analysis_attempts
+        SET stage = ?, updated_at = ?
+        WHERE principal_sub = ? AND attempt_id = ?
+          AND stage <> ?
+          AND stage NOT IN ('succeeded', 'failed', 'canceled', 'indeterminate')
+      `).bind(stage, occurredAt, principalSub, attemptId, stage),
+      this.database.prepare(`
+        INSERT INTO hosted_analysis_events (
+          principal_sub, attempt_id, sequence, stage, event_kind, code,
+          occurred_at
+        )
+        SELECT ?, ?, COALESCE((
+            SELECT MAX(sequence) + 1 FROM hosted_analysis_events
+            WHERE principal_sub = ? AND attempt_id = ?
+          ), 1), ?, 'stage', ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM hosted_analysis_attempts
+          WHERE principal_sub = ? AND attempt_id = ? AND stage = ?
+        )
+          AND NOT EXISTS (
+            SELECT 1 FROM hosted_analysis_events
+            WHERE principal_sub = ? AND attempt_id = ?
+              AND event_kind = 'stage' AND code = ?
+          )
+      `).bind(
+        principalSub,
+        attemptId,
+        principalSub,
+        attemptId,
+        stage,
+        stage,
+        occurredAt,
+        principalSub,
+        attemptId,
+        stage,
+        principalSub,
+        attemptId,
+        stage,
+      ),
+    ]);
   }
 
   async requestCancellation(
@@ -707,6 +763,39 @@ export class HostedWorkflowRepository {
         input.occurredAt,
         input.principalSub,
         input.attemptId,
+      ),
+      this.database.prepare(`
+        INSERT INTO hosted_analysis_events (
+          principal_sub, attempt_id, sequence, stage, event_kind, code,
+          occurred_at
+        )
+        SELECT ?, ?, COALESCE((
+            SELECT MAX(sequence) + 1 FROM hosted_analysis_events
+            WHERE principal_sub = ? AND attempt_id = ?
+          ), 1), ?, 'stage', ?, ?
+        WHERE EXISTS (
+          SELECT 1 FROM hosted_analysis_attempts
+          WHERE principal_sub = ? AND attempt_id = ? AND stage = ?
+        )
+          AND NOT EXISTS (
+            SELECT 1 FROM hosted_analysis_events
+            WHERE principal_sub = ? AND attempt_id = ?
+              AND event_kind = 'stage' AND code = ?
+          )
+      `).bind(
+        input.principalSub,
+        input.attemptId,
+        input.principalSub,
+        input.attemptId,
+        input.stage,
+        input.stage,
+        input.occurredAt,
+        input.principalSub,
+        input.attemptId,
+        input.stage,
+        input.principalSub,
+        input.attemptId,
+        input.stage,
       ),
       eventStatement(
         this.database,

@@ -14,8 +14,8 @@ export const HOSTED_WORKFLOW_STEPS = [
   "transcribe",
   "index",
   "interrogate",
-  "publish",
   "cleanup",
+  "publish",
 ] as const;
 
 export type HostedWorkflowStepName = (typeof HOSTED_WORKFLOW_STEPS)[number];
@@ -81,6 +81,28 @@ export const sealedHostedMediaReceiptSchema = z.object({
 export type SealedHostedMediaReceipt = z.infer<
   typeof sealedHostedMediaReceiptSchema
 >;
+
+export interface HostedMediaView {
+  id: string;
+  sha256: string;
+  mimeType: SealedHostedMediaReceipt["mimeType"];
+  retention: SealedHostedMediaReceipt["retention"];
+  sealedAt: string;
+  expiresAt: string;
+}
+
+export function hostedMediaView(
+  receipt: SealedHostedMediaReceipt,
+): HostedMediaView {
+  return {
+    id: receipt.mediaId,
+    sha256: receipt.sha256,
+    mimeType: receipt.mimeType,
+    retention: receipt.retention,
+    sealedAt: receipt.sealedAt,
+    expiresAt: receipt.expiresAt,
+  };
+}
 
 export const hostedJobCreateRequestSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
@@ -192,6 +214,20 @@ export interface HostedJobView {
   cancellationRequestedAt?: string;
   createdAt: string;
   updatedAt: string;
+  receipt: {
+    recipe: {
+      id: string;
+      label: string;
+      revision: string;
+    };
+    context: {
+      mode: "none" | "meeting";
+      provider?: "bluedot" | "granola" | "file";
+      transport?: "mcp" | "api" | "file";
+    };
+    model: string;
+    retention: "ephemeral" | "retained";
+  };
 }
 
 export function hostedJobView(attempt: HostedAnalysisAttempt): HostedJobView {
@@ -211,6 +247,22 @@ export function hostedJobView(attempt: HostedAnalysisAttempt): HostedJobView {
       : {}),
     createdAt: attempt.createdAt,
     updatedAt: attempt.updatedAt,
+    receipt: {
+      recipe: {
+        id: attempt.input.recipe.id,
+        label: attempt.input.recipe.label,
+        revision: attempt.input.recipe.revision,
+      },
+      context: "mode" in attempt.input.context
+        ? { mode: "none" }
+        : {
+            mode: "meeting",
+            provider: attempt.input.context.provider,
+            transport: attempt.input.context.transport,
+          },
+      model: attempt.input.model,
+      retention: attempt.input.retention,
+    },
   };
 }
 

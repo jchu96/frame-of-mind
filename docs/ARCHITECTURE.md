@@ -701,7 +701,7 @@ Local unauthenticated mode is loopback-only. Hosted mode combines a
 Cloudflare Access policy over the complete hostname with in-Worker validation
 of the Access JWT signature, issuer, audience, and algorithm.
 
-### Hosted execution topology (dark)
+### Hosted execution and Studio topology (dark)
 
 Task 3.0 proved the hosted Workflows boundary under the pinned toolchain. Nitro
 2.13.4's `cloudflare_module` output remains the public Nuxt Worker, while an
@@ -751,6 +751,23 @@ fields only. The Nuxt caller forwards Access and spend outcomes internally;
 the Workflows sibling owns optional Sentry delivery, publication/cleanup
 outcomes, and stays inert without its own `SENTRY_DSN`. Upload exposes only the
 telemetry interface until Phase 2 implements media transfer.
+
+Phase 4 places the hosted composer and activity pages behind those same two
+gates. Browser drafts reuse the pure Studio intent, context, readiness, run,
+activity-state, progress, and action modules through a hosted adapter; the
+Recording step can resolve only a pre-existing sealed media receipt and has no
+upload capability. HTTP views expose opaque IDs, immutable recipe/model/
+context/retention receipts, and codes-only failure state. Every lookup binds
+the Access principal in SQL and returns 404 for absent or foreign resources.
+
+The Workflow cleans up the exact Gemini file before it constructs publication
+provenance. It then creates and validates a schema-v2 or schema-v3
+`analysis.json`/`manifest.json` pair with immutable attempt, recipe, model,
+recording digest, remote-file cleanup, and prompt provenance. The principal-
+bound D1 `RunStore` imports that pair in one transactional batch, so a registry,
+run, or item write cannot survive alone. Only after that projection succeeds
+does the attempt become `succeeded` with a run ID; the existing viewer reads it
+through the same principal-bound `RunStore` and adds no share or transfer path.
 
 ### Local Studio
 
