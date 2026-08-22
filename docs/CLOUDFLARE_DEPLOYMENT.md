@@ -9,18 +9,21 @@ This runbook deploys the Nuxt SSR workspace to Cloudflare Workers with:
 - Cloudflare Access protecting the whole hostname;
 - application-level validation of `Cf-Access-Jwt-Assertion`;
 - no public meeting-data route;
-- no Gemini or meeting-provider credentials in the current review-only Worker.
+- no provider credential in the public Worker; and
+- `GEMINI_API_KEY` as the only Tier A secret, held by the internal Workflows
+  Worker only.
 
 The repository does not auto-deploy. Deployment is an operator action.
 
-## Hosted Studio (planned)
+## Hosted Studio (dark release shape)
 
 The proposed [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/)
 extends this same hostname and Access boundary with principal-scoped creation,
-D1 job state, Cloudflare Workflows, and Worker-proxied Gemini uploads. It is a
-plan, not a deployed capability. Tier A would add `GEMINI_API_KEY` as the only
-Worker secret; provider connections and their separate encryption KEK remain
-Tier B.
+D1 job state, Cloudflare Workflows, and Worker-proxied Gemini uploads. The
+production artifact and binding shape are prepared but not deployed, and the
+hosted routes remain 404-dark by default. Tier A adds `GEMINI_API_KEY` as the
+only secret on the internal Worker; provider connections and their separate
+encryption KEK remain Tier B.
 
 Task 3.0 selected a sibling, internal-only Workflows Worker because pinned
 Nitro 2.13.4 has no supported `WorkflowEntrypoint` export seam. The Nuxt Worker
@@ -32,7 +35,10 @@ The passing local/dry-run proof is recorded in
 [`docs/spikes/hosted-workflows-spike-2026-08-22.md`](spikes/hosted-workflows-spike-2026-08-22.md).
 
 Tasks 3.1–3.4 implement that topology behind build and runtime flags. The
-normal Nuxt artifact remains unchanged and hosted creation stays 404-dark.
+production Nuxt artifact contains the hosted implementation, but its runtime
+flag defaults to false and hosted creation stays 404-dark. The generated
+`hosted-entry.mjs` wrapper intercepts the future raw upload-part route before
+Nitro and returns 404 until Phase 2 supplies the bounded forwarding handler.
 Before any future enablement, run:
 
 ```bash
@@ -49,8 +55,8 @@ provider-usage reconciliation, and codes/structure-only telemetry rejection.
 
 Copy `apps/workflows/wrangler.jsonc.example` to an ignored operator-owned
 `wrangler.jsonc`, then replace only the placeholders with exact infrastructure
-values. Never place `GEMINI_API_KEY` in either config. Store it as a secret on
-the sibling Worker:
+values. Never place a secret in either config. For the Phase 6 Tier A shape,
+`GEMINI_API_KEY` is the only secret and belongs on the sibling Worker:
 
 ```bash
 node apps/web/node_modules/wrangler/bin/wrangler.js secret put GEMINI_API_KEY \
@@ -76,14 +82,28 @@ The Workflows Worker shape is:
 }
 ```
 
-The public Nuxt Worker caller adds this shape to its operator-owned config:
+The committed `apps/web/wrangler.jsonc.example` is the complete public shape,
+including module entry, Workers Assets, D1, and the service binding:
 
 ```json
 {
+  "main": ".output/server/hosted-entry.mjs",
+  "assets": {
+    "directory": ".output/public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "<D1_DATABASE_NAME>",
+    "database_id": "<D1_DATABASE_ID>"
+  }],
   "services": [{
     "binding": "HOSTED_WORKFLOWS",
     "service": "<INTERNAL_WORKFLOWS_WORKER>"
-  }]
+  }],
+  "vars": {
+    "NUXT_HOSTED_WORKFLOWS_ENABLED": "false"
+  }
 }
 ```
 
@@ -93,9 +113,10 @@ deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
 caller with the service binding. Enabling hosted routes is a later reviewed
 release task; do not set its flags during this dark Phase 3 deployment shape.
 
-Hosted telemetry remains disabled unless `SENTRY_DSN` is set on the sibling
-Workflows Worker. Never set it on the public Nuxt Worker. Spend-policy runtime
-values and their safe defaults are documented in
+Hosted telemetry remains disabled for the Tier A release shape because adding
+`SENTRY_DSN` would violate the one-secret gate. Never set a telemetry secret
+on the public Nuxt Worker. Spend-policy runtime values and their safe defaults
+are documented in
 [RUNBOOK.md](RUNBOOK.md#hosted-spend-and-telemetry-controls-dark).
 
 The Cloudflare build uses Nitro's module-format `cloudflare_module` preset.
@@ -105,6 +126,36 @@ output for this deployment shape identifies the module entrypoint, Workers
 Assets, and the D1 `DB` binding; hosted implementation must additionally show
 the Nuxt service binding and the sibling Workflows binding in separate dry-run
 receipts before release. Neither may report 100329.
+
+Run the complete local release rehearsal before any operator action:
+
+```bash
+bun run rehearse:hosted-release
+```
+
+It builds the previous review-only and current hosted artifacts, applies D1
+migrations `0001` through `0004` to an isolated local clone and replays them as
+an idempotent no-op, validates both Worker binding graphs, scans the boundary,
+runs the local byte-stability import regression, and dry-runs both the current
+and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.
+The 2026-08-22 baseline completes in under 60 seconds on the maintainer
+workstation, so it is part of `bun run check`.
+
+### Zone plan and request-body ceiling
+
+Wrangler cannot report the active zone's request-body override. Immediately
+before the canary, open **Cloudflare Dashboard → the production zone →
+Network → Maximum Upload Size** and record the plan and displayed ceiling in
+the private release receipt. Record only the plan label and byte ceiling, not
+an account or zone ID. Stop if the dashboard value is below 4 MiB.
+
+Cloudflare's current [Workers limits documentation](https://developers.cloudflare.com/workers/platform/limits/)
+lists 100 MB as the lowest request-body ceiling (Free and Pro; Business is
+200 MB and Enterprise defaults to 500 MB) and notes that a zone owner can
+configure a lower maximum. The 4 MiB part fixed by proposed ADR 0018 Amendment
+1 ([PR #65](https://github.com/jchu96/frame-of-mind/pull/65)) is below that
+lowest documented tier. The dashboard check remains mandatory because the
+account-specific override, not the documentation table, governs production.
 
 ## Security model
 
@@ -167,7 +218,7 @@ bun run build:web:cloudflare
 The expected Worker entrypoint is:
 
 ```text
-apps/web/.output/server/index.mjs
+apps/web/.output/server/hosted-entry.mjs
 ```
 
 The expected static assets are:
@@ -216,11 +267,13 @@ Edit these values:
 | `database_id` | exact ID returned by D1 create |
 | `NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN` | `https://<team>.cloudflareaccess.com` |
 | `NUXT_CLOUDFLARE_ACCESS_AUD` | Access application audience from step 6 |
+| `services[0].service` | exact internal Workflows Worker name |
 
 Keep:
 
 ```json
-"NUXT_AUTH_MODE": "cloudflare-access"
+"NUXT_AUTH_MODE": "cloudflare-access",
+"NUXT_HOSTED_WORKFLOWS_ENABLED": "false"
 ```
 
 If the audience or team domain is missing, the application fails closed.
@@ -329,7 +382,23 @@ bun run build:web:cloudflare
 ```
 
 That command sets `NITRO_PRESET=cloudflare_module`; do not substitute the
-legacy `cloudflare-worker` preset.
+legacy `cloudflare-worker` preset. It also emits `hosted-entry.mjs`
+deterministically and runs the AD-11 artifact gate.
+
+Before a deploy, produce both module dry-run receipts without contacting the
+deployment API:
+
+```bash
+bunx wrangler deploy --dry-run --outdir "<PRIVATE_TEMP_DIRECTORY>/fom-public-bundle" \
+  --cwd apps/web --config wrangler.jsonc
+node apps/web/node_modules/wrangler/bin/wrangler.js deploy \
+  --dry-run --outdir "<PRIVATE_TEMP_DIRECTORY>/fom-workflow-bundle" \
+  --config apps/workflows/wrangler.jsonc
+```
+
+The public receipt must name `hosted-entry.mjs`, `ASSETS`, `DB`, and
+`HOSTED_WORKFLOWS`; the sibling receipt must name `DB` and `HOSTED_WORKFLOW`.
+Stop if either includes error `100329`.
 
 Deploy from `apps/web` so Wrangler paths match the configuration:
 
@@ -337,9 +406,9 @@ Deploy from `apps/web` so Wrangler paths match the configuration:
 bunx wrangler deploy --cwd apps/web --config wrangler.jsonc
 ```
 
-The current review-only Worker bundle contains no Gemini, Granola, Bluedot, or
-Asana secret. The review app only imports completed JSON contracts. The
-planned Hosted Studio secret boundary is specified separately above.
+The public Worker bundle contains no Gemini, Granola, Bluedot, Asana, or
+telemetry secret. The internal Workflows Worker receives only
+`GEMINI_API_KEY` through Wrangler's secret store for the Tier A release shape.
 
 ## 8. Verify fail-closed behavior
 
@@ -479,15 +548,25 @@ Before upgrading Nuxt, Nuxt UI, Wrangler, `jose`, Bun, or Workers types:
 
 Application rollback:
 
-1. identify the last known-good Git tag or commit;
-2. build its Cloudflare target;
-3. deploy that exact output;
+1. identify the last known-good Git tag or commit and recover its previous
+   known-good artifact from the release receipt;
+2. dry-run that exact artifact with its matching configuration;
+3. deploy that exact output only after the dry-run names the expected module
+   entry, Assets, D1, and service bindings without `100329`;
 4. verify Access and API denial before importing data.
 
 Database rollback:
 
-- prefer a forward migration;
-- use D1 Time Travel or a reviewed export restoration when necessary;
+- D1 has no down migrations; prefer a reviewed forward repair migration;
+- before every remote migration, create a sensitive backup with
+  `wrangler d1 export` as shown above and record its checksum outside the
+  repository;
+- when a schema rollback is unavoidable, create a replacement D1 database,
+  restore the reviewed export into that empty database with
+  `wrangler d1 execute <REPLACEMENT_DATABASE> --remote --file <EXPORT.sql>`,
+  verify sentinel and row counts, then repoint both Worker `DB` bindings in one
+  reviewed release; D1 Time Travel is the alternative when its recovery window
+  covers the incident;
 - never delete the D1 database as an application rollback;
 - preserve the portable run bundles independently.
 
