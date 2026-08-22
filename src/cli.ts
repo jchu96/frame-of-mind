@@ -14,6 +14,7 @@ import {
 } from "./services/analyze.js";
 import { BluedotClient, DEFAULT_BLUEDOT_MCP_URL } from "./adapters/bluedot-mcp.js";
 import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.js";
+import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
 import type { ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
 import { redactUrlForDisplay } from "./lib/http.js";
@@ -120,7 +121,7 @@ program
   .option("--transcript-offset <timestamp>", "Transcript time corresponding to video 00:00, for example 01:02:47")
   .option("--focus <instruction>", "Prioritize a specific repository, workflow, or UX concern")
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
-  .option("--model <id>", "Gemini model ID, for example gemini-3.6-flash or gemini-pro-latest")
+  .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
   .option("--max-moments <count>", "Maximum candidate moments to interrogate", "10")
   .option("--no-screenshots", "Skip ffmpeg screenshots")
@@ -209,7 +210,7 @@ export async function buildAnalyzeOptions(
     : undefined;
   if (modelResult && !modelResult.success) {
     throw new Error(
-      "--model must be a Gemini model ID such as gemini-3.6-flash or gemini-pro-latest.",
+      `--model must be a Gemini model ID such as ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest.`,
     );
   }
   const model = modelResult?.data;

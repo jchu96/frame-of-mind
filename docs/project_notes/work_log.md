@@ -410,6 +410,13 @@
 
 ## 2026-08-22
 
+- Addressed PR #72's release-hygiene review findings. The scanner now detects
+  Cloudflare token/global-key assignments, AWS and Azure signed URLs, and
+  SRT/VTT dialogue blocks; allowlisted placeholders exempt only the overlapping
+  pattern occurrence. Added an 11-fixture embedded self-test to the normal
+  repository gate and replaced the CLI's stale model examples with the shared
+  default-model constant. The focused self-test, working-tree and all-ref
+  history scans, CLI typecheck, and CLI tests passed.
 - Completed Local Studio Tasks 9.1, 9.2, and 9.5. Reconciled the public and
   operator documentation against shipped Local Studio Phases 1-8 and the
   hosted-dark Access, Workflow, spend, telemetry, and release-preparation
