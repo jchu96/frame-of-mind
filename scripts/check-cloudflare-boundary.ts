@@ -35,6 +35,9 @@ export const localOnlyForbiddenMarkers = [
   "/api/runs/:id/media-status",
   "/api/runs/:id/media/reattach",
   "data-studio-review=\"local\"",
+  "server-local/studio-spike",
+  "/api/__studio-spike/",
+  "FRAME_OF_MIND_STUDIO_SPIKE",
 ] as const;
 
 export const hostedWrapperMarker = "FRAME_OF_MIND_HOSTED_ENTRY_V1";
