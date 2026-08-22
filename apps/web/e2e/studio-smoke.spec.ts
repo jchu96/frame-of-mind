@@ -376,11 +376,16 @@ test("creates and cancels one video-only analysis from Activity", {
     `a[href="/activity/${createdJob.job.id}"]`,
   );
   await expect(activeJob).toBeVisible();
+  const activeRow = activeJob.locator("xpath=ancestor::tr");
+  await expect(activeRow.locator("[data-activity-elapsed] > [aria-hidden=true]")).toHaveText(
+    /\d+(?:h|m|s)/,
+  );
+  await expect(activeRow).toContainText("In progress");
+  await expect(activeRow).toContainText("of 7");
   const cancelButton = activeSection.getByRole("button", {
     name: "Cancel Requirements attempt 1",
   });
   await cancelButton.click();
-  const activeRow = cancelButton.locator("xpath=ancestor::tr");
   await expect(activeRow.getByText("Cancel this analysis?")).toBeVisible();
   await activeRow.getByRole("button", { name: "Confirm Cancel" }).click();
   await expect.poll(async () => {
@@ -398,6 +403,31 @@ test("creates and cancels one video-only analysis from Activity", {
   await expect(timeline.getByText("Cancellation requested", { exact: true }))
     .toBeVisible({ timeout: 15_000 });
   await expect(timeline.getByText("Canceled", { exact: true })).toBeVisible();
+  const terminalResponse = await page.request.get(
+    `/api/studio/jobs/${encodeURIComponent(createdJob.job.id)}?afterSequence=0&limit=100`,
+  );
+  const terminalDetail = await terminalResponse.json() as {
+    job: { createdAt: string; terminal: { at: string } };
+  };
+  const frozenElapsedSeconds = Math.floor(
+    (Date.parse(terminalDetail.job.terminal.at) - Date.parse(terminalDetail.job.createdAt))
+      / 1_000,
+  );
+  const timing = page.locator('[data-activity-progress="honest"]');
+  await expect(timing.getByText("Elapsed", { exact: true })).toBeVisible();
+  await expect(timing.getByText("Last activity", { exact: true })).toBeVisible();
+  await expect(timing.getByText("Current stage started", { exact: true })).toBeVisible();
+  await expect(timing.getByText("Progress", { exact: true })).toBeVisible();
+  await expect(timing.locator("[data-elapsed-seconds]")).toHaveAttribute(
+    "data-elapsed-seconds",
+    String(frozenElapsedSeconds),
+  );
+  await expect(timing.locator("[data-elapsed-seconds]")).toHaveAttribute(
+    "data-terminal",
+    "true",
+  );
+  await expect(timing.getByText("Canceled", { exact: true })).toBeVisible();
+  await expect(timing.getByRole("progressbar")).toHaveCount(0);
   expect(clientErrors).toEqual([]);
 });
 

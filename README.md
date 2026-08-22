@@ -397,11 +397,15 @@ What works today:
   Run links back Home or offers an explicit fresh receipt that replaces only
   the Run key and preserves the prepared Intent, Context, and Recording.
 - **Activity** — every bounded local job grouped as Active, Finished, or Needs
-  attention, with a plain-language stage, relative last activity, and a
-  complete paged job-detail timeline. List polling stays live while Activity is
-  visible, including for empty or all-terminal lists; detail polling stops at a
-  terminal job. Both pause in hidden tabs, back off after errors, and preserve
-  the last good result. Detail offers only state-permitted actions: cancel,
+  attention, with elapsed time, relative last activity, and honest progress:
+  real counts render as counted values, while stages without counts say In
+  progress and show their place in the seven-stage flow. Detail adds the current
+  stage start and a complete paged job timeline. All timing and progress values
+  include full text for assistive technology. List polling stays live while
+  Activity is visible, including for empty or all-terminal lists; detail polling
+  stops at a terminal job, freezing elapsed time at that transition. Both pause
+  in hidden tabs, back off after errors, and preserve the last good result.
+  Detail offers only state-permitted actions: cancel,
   retained-recording retry, exact-provider reconnect, completed-results
   re-import, or failed-cleanup retry; each confirms inline and list rows expose
   cancel only. Failed jobs show only their sanitized operator message;

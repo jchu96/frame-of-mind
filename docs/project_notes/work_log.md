@@ -530,3 +530,12 @@
   proves zero sentinel rows on an empty D1. The built workerd contract signs
   two same-email/different-sub JWTs and proves isolated list/detail/import,
   service/missing-header denial, and hosted-creation darkness.
+- Implemented Local Studio Task 7.3 with one pure activity-progress derivation
+  for elapsed time, latest activity, current stage start, terminal freeze, and
+  counted progress. Activity list/detail update time values on the shared poll
+  tick, use full-unit text for assistive technology, announce stage changes
+  once, and create a progress bar only for an event with a real numerator and
+  denominator. Validated by `bun run check` (22 Vitest files / 212 tests; Bun
+  web suite: 258 tests; Studio HTTP, local/Cloudflare builds, boundary check,
+  and 32 MiB streaming spike passed) and `bun run test:e2e:smoke` (13 passed),
+  including active elapsed display and terminal elapsed freeze.
