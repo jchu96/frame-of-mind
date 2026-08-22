@@ -15,6 +15,16 @@ This runbook deploys the Nuxt SSR workspace to Cloudflare Workers with:
 
 The repository does not auto-deploy. Deployment is an operator action.
 
+Status as of 2026-08-22: the principal-scoped completed-run review surface is
+the deployable product. Hosted creation remains dark and undeployed. Phases
+3–4, spend/telemetry Tasks 5.3–5.4, and Phase 6 release-preparation artifacts
+are contract-tested, while ADR 0018 Amendment 1 (PR #65), upload Tasks
+2.1–2.4, retention/capture Tasks 5.1–5.2, and every Phase 6 deployment gate are
+pending. The exact checklist lives in the
+[Hosted Studio plan](../conductor/tracks/hosted-studio_20260822/plan.md), and
+the data handled by any deployment is classified in
+[DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md).
+
 ## Hosted Studio (dark release shape)
 
 The proposed [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/)
@@ -141,7 +151,7 @@ bun run rehearse:hosted-release
 ```
 
 It builds the previous review-only and current hosted artifacts, applies D1
-migrations `0001` through `0004` to an isolated local clone and replays them as
+migrations `0001` through `0005` to an isolated local clone and replays them as
 an idempotent no-op, validates both Worker binding graphs, scans the boundary,
 runs the local byte-stability import regression, and dry-runs both the current
 and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.
@@ -452,7 +462,7 @@ Use the browser import page after authentication. Import only reviewed bundles
 that are approved for the hosted workspace.
 
 Do not bulk-upload a local runs directory. The absence of automatic sync is a
-privacy feature in v0.2.0.
+privacy feature in the current release.
 
 ## 10. Operations
 
@@ -497,15 +507,24 @@ never scans every JSON blob into Worker memory.
 
 Before deploying, the workspace owner must choose and document a retention
 period. Thirty days is the recommended starting point for a review workspace
-unless policy or an active work item requires less or more. Version 0.2.0 does
-not automate expiry.
+unless policy or an active work item requires less or more. The current
+release does not automate completed-projection expiry.
 
-To purge one reviewed run, first copy its exact route-safe run ID from the UI.
-Validate and preview it before deletion:
+To purge one reviewed run, first copy its exact route-safe run ID from the UI
+and resolve the owning `principal_sub` privately from D1. Display email may
+help select the candidate but is never ownership authority. Validate and
+preview the composite key before deletion:
 
 ```bash
-RUN_ID="2026-07-25T12-00-00-000Z-example"
-case "$RUN_ID" in
+FOM_PRINCIPAL_SUB="<EXACT_ACCESS_SUB>"
+FOM_RUN_ID="<EXACT_RUN_ID>"
+case "$FOM_PRINCIPAL_SUB" in
+  ""|*[!a-zA-Z0-9._:@/-]*)
+    echo "Refusing an empty or unsafe principal" >&2
+    exit 1
+    ;;
+esac
+case "$FOM_RUN_ID" in
   ""|*[!a-zA-Z0-9._:-]*)
     echo "Refusing an empty or unsafe run ID" >&2
     exit 1
@@ -515,26 +534,27 @@ esac
 bunx wrangler d1 execute frame-of-mind \
   --remote \
   --config apps/web/wrangler.jsonc \
-  --command "SELECT run_id, meeting_id, completed_at FROM analysis_runs WHERE run_id = '$RUN_ID';"
+  --command "SELECT principal_sub, run_id, schema_version FROM analysis_run_registry WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID';"
 ```
 
 Stop if the preview does not identify exactly the intended run. Export a backup
-when policy requires recovery, then delete the child projection and run row:
+when policy requires recovery, then delete both possible child families, the
+registry row, and both possible parent families for that composite key:
 
 ```bash
 bunx wrangler d1 execute frame-of-mind \
   --remote \
   --config apps/web/wrangler.jsonc \
-  --command "DELETE FROM analysis_items WHERE run_id = '$RUN_ID'; DELETE FROM analysis_runs WHERE run_id = '$RUN_ID';"
+  --command "DELETE FROM analysis_items WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID'; DELETE FROM video_analysis_items WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID'; DELETE FROM analysis_run_registry WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID'; DELETE FROM analysis_runs WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID'; DELETE FROM video_analysis_runs WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID';"
 ```
 
-Verify that both counts are zero:
+Verify that all five counts sum to zero:
 
 ```bash
 bunx wrangler d1 execute frame-of-mind \
   --remote \
   --config apps/web/wrangler.jsonc \
-  --command "SELECT (SELECT COUNT(*) FROM analysis_runs WHERE run_id = '$RUN_ID') AS runs, (SELECT COUNT(*) FROM analysis_items WHERE run_id = '$RUN_ID') AS items;"
+  --command "SELECT (SELECT COUNT(*) FROM analysis_runs WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') + (SELECT COUNT(*) FROM video_analysis_runs WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') + (SELECT COUNT(*) FROM analysis_items WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') + (SELECT COUNT(*) FROM video_analysis_items WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') + (SELECT COUNT(*) FROM analysis_run_registry WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') AS remaining_rows;"
 ```
 
 Do not interpolate meeting titles, email addresses, or arbitrary strings into
@@ -597,8 +617,8 @@ storage.
 
 ### Tables do not exist
 
-Apply all pending migrations through `0003_principal_scope.sql` to the same
-database ID bound to the Worker.
+Apply all pending migrations through `0005_hosted_spend_telemetry.sql` to the
+same database ID bound to both Workers.
 Check `wrangler d1 migrations list ... --remote`.
 
 ### Import is rejected
