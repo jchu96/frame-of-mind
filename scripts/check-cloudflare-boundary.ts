@@ -44,6 +44,8 @@ const forbidden = [
   "Private local process",
   "Studio navigation",
   "Turn a recording into findings",
+  "/activity",
+  "Activity · Frame of Mind",
   "Launch link expired",
   "/__studio/launch",
   "server-local/studio-media",

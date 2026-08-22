@@ -1283,7 +1283,7 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
-### Local Studio Home, Connections, and analysis composer
+### Local Studio Home, Activity, Connections, and analysis composer
 
 Launch the authenticated local configuration surface:
 
@@ -1321,7 +1321,10 @@ Operational expectations:
   `/api/studio/jobs` routes;
 - the authenticated Run page revalidates all composer receipts and creates or
   replays one job through `POST /api/studio/composer/jobs`;
-- job-detail controls remain a Phase 7 surface.
+- the Activity list and detail pages read that existing bounded job API,
+  preserve the last good read after polling errors, pause in hidden tabs, and
+  stop polling when visible jobs are terminal;
+- cancel and retry controls remain a later Phase 7 surface.
 
 Home refreshes its three status sources when opened and through its Refresh
 action. If one source fails, its section reports that failure without
@@ -1407,6 +1410,26 @@ On **Run**:
 5. A 201 create or 200 replay clears all composer resume hints and returns Home
    with a success notice naming the durable job ID. A 409/422 keeps every draft
    and links the sanitized recipe, context, or media failure to its section.
+
+On **Activity**:
+
+1. Open **Activity** from the sidebar, Home's Active jobs card, an active Home
+   row, or the post-create success notice.
+2. Confirm the job appears under **Active**, **Finished**, or **Needs
+   attention**. Each row shows the recipe, creation time, current stage in
+   plain words, and relative last activity; its group derives only from the
+   durable job stage.
+3. Open the row to inspect its ordered transition timeline. Progress messages
+   remain nested under their stage; cancellation requests, warnings, and
+   cleanup outcomes remain separate timestamped rows. No completion percentage
+   or progress bar is inferred.
+4. For a succeeded job, use **Open completed run**. For failed, canceled, or
+   interrupted jobs, Activity displays only the sanitized operator message.
+   Provider payloads, codes, paths, keys, transcripts, and media identifiers
+   are not shown.
+5. If automatic refresh fails, the last good result remains visible with a
+   notice. Use **Refresh** once. A hidden browser tab pauses polling; a list
+   with only terminal jobs and a terminal detail stop polling automatically.
 
 The accepted boundaries and phased plan are in the
 [ADR log](adr/README.md) and
