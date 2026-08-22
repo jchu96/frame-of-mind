@@ -19,9 +19,12 @@
 - Granola MCP advertises `get_meetings` and paid-plan `get_meeting_transcript` tools.
 - Granola also documents `GET https://public-api.granola.ai/v1/notes/{note_id}?include=transcript` for API-key automation.
 - Frame of Mind exposes Granola REST only through explicit `--granola-transport api`; MCP remains the default.
-- As verified on 2026-07-27, the repository and npm latest both use the
-  official `@google/genai` 2.13.0 package; the analyzer defaults to
-  `gemini-3.6-flash`.
+- As of 2026-08-22 the repository pins the official `@google/genai` 2.17.1
+  package (PR #50; 2.13.0 before that) and the analyzer defaults to
+  `gemini-3.7-flash` (b38f8f2; 3.6 flaked at the detail phase). The SDK's
+  core client retry (`httpOptions.retryOptions`, 2.15+) is opt-in and not
+  used; transport retry remains the adapter's own (PR #47/#48). Verified by
+  fault-injection probe and `bun run smoke:gemini` under Bun before merge.
 - Version 0.2.1 uses Google's documented two-step resumable Files upload
   protocol under Bun and retains `@google/genai` for polling, stable
   `generateContent`, and deletion.
