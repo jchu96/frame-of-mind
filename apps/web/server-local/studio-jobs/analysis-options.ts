@@ -15,6 +15,8 @@ import {
 import type {
   AnalyzeOptions,
 } from "../../../../src/services/analyze.js";
+export { StudioJobInputUnavailableError } from "../../../../src/domain/studio-errors.js";
+import { StudioJobInputUnavailableError } from "../../../../src/domain/studio-errors.js";
 
 const DEFAULT_MAX_INCIDENTS = 10;
 
@@ -49,13 +51,6 @@ export interface LocalStudioAnalyzeOptionsResolverOptions {
   outputRoot?: string;
   screenshots?: boolean;
   maxIncidents?: number;
-}
-
-export class StudioJobInputUnavailableError extends Error {
-  constructor(readonly code: string) {
-    super("Local Studio analysis input is unavailable.");
-    this.name = "StudioJobInputUnavailableError";
-  }
 }
 
 /**
