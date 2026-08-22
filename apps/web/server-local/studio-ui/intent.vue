@@ -629,7 +629,7 @@ onMounted(() => {
             color="primary"
             variant="soft"
             icon="i-lucide-route"
-            title="Complete sections in any order"
+            title="Three steps, any order"
             description="Intent and Recording are required. Context is optional and remains an independent explicit choice."
           />
         </aside>

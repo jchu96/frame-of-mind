@@ -306,7 +306,7 @@ function formatDate(value: string | undefined): string {
                 variant="outline"
                 icon="i-lucide-file-check-2"
               >
-                Review run receipt
+                Review your analysis
               </UButton>
               <UButton
                 v-if="phase === 'selected' || phase === 'aborted' || (phase === 'failed' && !session)"
