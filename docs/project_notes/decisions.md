@@ -16,6 +16,17 @@ and cross-request server hashing were rejected as unbounded and unnecessarily
 stateful, respectively. Tier B separately adds principal-bound encrypted
 provider connections. See proposed ADR 0018 and `hosted-studio_20260822`.
 
+Adversarial review R1 hardened the proposal before implementation: the existing
+viewer/import surface becomes Slice 1 and is principal-scoped while hosted
+creation stays dark; hosted uploads use raw 8 MiB parts only after a measured
+two-concurrent-stream Nitro spike; provider Workflow steps use explicit
+15-minute configs with zero platform retry; and parent, item, and registry rows
+all use composite principal keys. Workflow export topology is resolved only by
+Task 3.0, with a sibling Worker/service binding as the fixed fallback. Local
+SQLite uses reserved `local:single-user` so shared RunStore SQL stays in
+lockstep without adding principal fields to durable run bundles or local
+job/media ports.
+
 ## 2026-08-11 — Recipes become charters; the executor owns prompt policy
 
 Proposed: recipe intent decomposes into named, bounded slots (stance, allowed

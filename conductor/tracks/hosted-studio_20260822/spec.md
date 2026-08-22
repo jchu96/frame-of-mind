@@ -40,14 +40,24 @@ begins.
 
 Current platform facts used by this proposal are linked rather than assumed:
 
-- [Workers request-body limits](https://developers.cloudflare.com/workers/platform/limits/)
-  are account-plan limits; Free and Pro currently allow 100 MB, so hosted
-  chunks are capped at 95 MB and the deployment gate verifies the account has
-  not configured a lower upload ceiling.
+- [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
+  set 128 MB per isolate, not per request, and make request-body size an account
+  plan limit: Free and Pro currently allow 100 MB. Hosted parts are fixed at
+  8 MiB. Before deployment an operator must check the zone/account plan and any
+  lower upload ceiling in the dashboard because Wrangler cannot read that
+  setting; 8 MiB remains below the lowest documented tier.
+- [Workers Streams](https://developers.cloudflare.com/workers/runtime-apis/streams/)
+  documents streaming as the way to avoid buffering inside the isolate, but it
+  does not prove Nitro/H3 preserves the request stream. Task 2.0 measures that
+  exact `cloudflare_module` path before the upload contract can proceed.
 - [Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/)
-  allow unlimited wall time per step subject to CPU limits, while the existing
-  ten-minute model timeout remains below Cloudflare's recommended thirty-minute
-  maximum configured step timeout.
+  allow unlimited wall time per step subject to CPU limits and permit up to
+  10,000 retries per step. The current
+  [sleeping and retrying guide](https://developers.cloudflare.com/workflows/build/sleeping-and-retrying/)
+  documents defaults of `timeout: "10 minutes"` and `retries.limit: 5` with
+  exponential backoff. Those defaults are forbidden here: every `step.do` has
+  explicit config, and provider steps use a 15-minute timeout—strictly greater
+  than `MODEL_REQUEST_TIMEOUT_MS`—with `retries.limit: 0`.
 - [D1 limits](https://developers.cloudflare.com/d1/platform/limits/) retain a
   2,000,000-byte maximum string/BLOB/row, 100 bound parameters per query, and a
   thirty-second query-duration ceiling; existing 1.8 MB row and 900 KB
@@ -155,6 +165,11 @@ service-token `sub`, middleware derives the non-user principal
 routes are explicitly allowlisted; they never inherit browser management
 routes or a user's provider connection.
 
+Cloudflare documents that a user's `sub` can change when a seat is removed and
+re-added. The new subject never inherits the old subject's rows automatically;
+seat restoration requires a reviewed ownership-migration receipt that names
+both verified subjects. Email match alone cannot transfer data.
+
 **Rationale.** `sub` is the stable account-scoped user identifier available to
 the origin. Separating display email prevents address changes from silently
 transferring ownership. A normalized service principal preserves the same
@@ -175,6 +190,18 @@ principal during a one-time fail-closed bootstrap before hosted creation is
 enabled. New rows always include `principal_sub TEXT NOT NULL` and optional
 `principal_email` display provenance.
 
+The shared `RunStore` stays SQL-lockstep across D1 and SQLite by binding a
+principal when the store is constructed: Access `sub` for D1 and the reserved
+synthetic value `local:single-user` for local SQLite. Route payloads and run
+bundles remain byte-stable and never carry a principal. The local-facing
+`JobRepository` and `MediaStagingAdapter` ports remain principal-free; hosted
+adapters wrap them with principal-scoped repositories rather than widening the
+local contracts.
+
+`GET /api/runs`, `GET /api/runs/:id`, and `POST /api/runs` remain the shared
+viewer/import routes. Their store is principal-bound at construction, so local
+HTTP payloads stay byte-stable and hosted callers cannot select an owner.
+
 **Rationale.** Access at the hostname prevents anonymous reachability but does
 not prevent one authenticated user from reading another user's row through an
 unscoped query. Repository contracts and composite indexes make ownership an
@@ -187,10 +214,21 @@ the need for application authorization.
 
 ### Architectural Decision 4 - Proxy Gemini Resumable Upload Through The Worker
 
-**Decision.** The browser sends ordered chunks of at most 95 MB to
-`POST /api/hosted/media/:id/parts`. The Worker validates the Access principal,
-offset, length, upload state, and replay receipt, then streams the body into a
-Gemini resumable session opened with the Worker-secret `GEMINI_API_KEY`.
+**Decision.** The browser sends raw-body parts of exactly 8 MiB except for the
+final shorter part to `POST /api/hosted/media/:id/parts`. Metadata is carried
+in bounded `Content-Length`, upload-offset, part-number, and part-digest
+headers; multipart encoding is forbidden. The Worker validates the Access
+principal and headers, then streams `request.body` into a Gemini resumable
+session opened with the Worker-secret `GEMINI_API_KEY`.
+
+On every part start or retry, the Worker queries Gemini's resumable session for
+its provider-accepted offset and forwards only the remaining suffix from that
+offset. D1 receipts record completed parts but never authorize an overlapping
+replay. Task 2.0 must first prove the exact Nitro/H3 path does not call
+`readBody()` or otherwise buffer, using two concurrent synthetic uploads of at
+least the hosted part size. Failure keeps the route dark and changes this
+contract—smaller parts or private R2 staging require an ADR amendment before
+Tasks 2.1+ proceed.
 
 The Gemini resumable-session URL is a bearer capability. It is never returned
 to browser code or stored in plaintext. In Tier A the Worker seals it for short
@@ -198,6 +236,11 @@ term D1 storage using an AES-GCM key derived from `GEMINI_API_KEY` with
 domain-separated HKDF information; rotating that secret invalidates active
 uploads, which fail closed and restart. Tier B provider-token encryption uses a
 separate KEK and does not reuse this derived key.
+
+The Tier A rotation procedure disables new uploads, marks every active media
+session aborting, attempts deletion of each exact Gemini file, clears only the
+corresponding encrypted session ciphertext, rotates `GEMINI_API_KEY`, and then
+reenables uploads. An unclean abort remains fail-closed and operator-visible.
 
 **Rationale.** The browser cannot receive the Gemini API key, while streaming
 through the Worker keeps memory bounded and avoids mandatory R2 storage.
@@ -207,6 +250,10 @@ starting the resumable session requires the API key and returning a provider
 capability would widen the browser boundary. Mandatory browser-to-R2 staging is
 rejected because ephemeral analysis does not require durable recording
 retention.
+
+This hosted browser → Worker → Gemini decision supersedes the local Studio
+Phase B browser → R2 sketch. It does not change local
+`MAX_MEDIA_PART_BYTES` (64 MiB) or `DEFAULT_MEDIA_PART_SIZE_BYTES` (8 MiB).
 
 ### Architectural Decision 5 - Hash Incrementally In A Dedicated Web Worker
 
@@ -246,6 +293,10 @@ future retained-media implementation adopts Cloudflare Stream, Stream
 thumbnails may replace canvas capture. The manifest records source, timestamp,
 digest, and capture method.
 
+Ephemeral review deliberately has no playback or screenshot capture after the
+originating tab loses its `File`. Evidence capture after tab close requires
+retained R2 media or a digest-verified reattachment of the original bytes.
+
 **Rationale.** Ephemeral processing preserves the local-first deletion posture;
 retained playback is an explicit product feature with a separate cost and
 retention receipt.
@@ -260,12 +311,23 @@ method is rejected because canvas and provider thumbnails are not equivalent.
 **Decision.** Each job owns one Workflow instance whose idempotent steps are
 `fetch_context`, `ensure_gemini_file`, `transcribe`, `index`, `interrogate`,
 `publish`, and `cleanup`. Model operations retain the existing ten-minute
-timeout. Each step checks durable completion receipts before side effects.
+timeout. Every `step.do` supplies an explicit `WorkflowStepConfig` with a
+15-minute timeout. Provider steps set `retries.limit: 0`, check the
+principal-scoped durable receipt before every Gemini call, and throw
+`NonRetryableError` when Gemini succeeded but its receipt could not be
+committed. A crash after Gemini success must never cause a second automatic
+generate; the attempt becomes indeterminate and only explicit user retry may
+create a new Workflow instance.
 Cancellation writes a D1 flag checked between steps and before publication;
 retry creates a new linked job, attempt, and Workflow instance.
 
 `AnalysisJobExecutor` gains a hosted Workflows adapter. The local Bun/SQLite
 executor and its startup/restart behavior remain untouched.
+
+Task 3.0 resolves whether the Nitro `cloudflare_module` output can export the
+required `WorkflowEntrypoint`. Until it passes, runtime topology is residual.
+The decided fallback is a sibling Workflows Worker reached through a service
+binding while browser/API traffic remains on the same Access hostname.
 
 **Rationale.** Workflows persist step progress and retry independently of
 browser or HTTP lifetime. One instance per attempt maps directly to existing
@@ -301,8 +363,13 @@ because provider credentials must survive independent Gemini-key rotation.
 
 ### Architectural Decision 9 - Fail Closed On Per-Principal Spend
 
-**Decision.** Every job reserves an estimated Gemini-call budget in D1 before
-Workflow creation, records sanitized call-count/usage receipts per attempt,
+**Decision.** Every job reserves estimated input tokens in D1 before Workflow
+creation. The estimate multiplies each planned video-bearing Gemini call by
+the recording duration and the currently documented worst-case default video
+rate of approximately 300 tokens/second, then adds versioned prompt/output
+headroom. Each principal has a token ceiling; unknown duration, call graph, or
+rate configuration fails closed. The job records sanitized estimated/actual
+usage receipts per attempt,
 and reconciles the reservation at terminal cleanup. Starting work beyond the
 principal's cap fails with `principal_spend_cap_exceeded`. Missing or corrupt
 cap state also fails closed.
@@ -332,13 +399,18 @@ privacy contract.
 
 ### Architectural Decision 11 - Invert The Cloudflare Bundle Gate
 
-**Decision.** The Cloudflare artifact gate becomes an allow/deny pair. It must
-find hosted markers such as `/api/hosted/media`, `/api/hosted/jobs`,
-`HostedWorkflowAnalysisJobExecutor`, `principal_spend_cap_exceeded`, and the
-hosted Studio shell. It must still reject local markers including
-`/__studio/bootstrap`, `server-local/studio-session`,
-`LocalMediaStagingAdapter`, `server-local/studio-media`, `bun:sqlite`, and
-`LocalSqliteJobRepository`.
+**Decision.** The Cloudflare artifact gate becomes a concrete allow/deny pair.
+Required markers are `/api/hosted/media`, `/api/hosted/jobs`,
+`/hosted/activity`, `HostedWorkflowAnalysisJobExecutor`,
+`principal_spend_cap_exceeded`, and the hosted Studio shell. Forbidden markers
+are `/__studio/bootstrap`, `/api/studio/jobs`,
+`server-local/studio-session`, `server-local/studio-media`,
+`server-local/studio-ui/activity`, `LocalMediaStagingAdapter`,
+`LocalSqliteJobRepository`, `OrchestratedAnalysisJobExecutor`, and
+`bun:sqlite`. Generic `/activity` is removed from the deny list so the explicit
+hosted route can exist; the local source-path marker remains forbidden. The
+hosted adapter may reuse domain orchestration contracts but never imports the
+local `OrchestratedAnalysisJobExecutor` implementation.
 
 **Rationale.** Once hosted creation is intended, proving only that local code is
 absent can green-light a review-only bundle with no hosted implementation.
@@ -392,13 +464,19 @@ or migration query in normal runtime code that omits principal scope.
 ### FR-04 - Worker-Proxied Media Upload
 
 - `POST /api/hosted/media` creates an opaque principal-owned media session.
-- `POST /api/hosted/media/:id/parts` accepts at most 95 MB, exact offset,
-  length, part number, and replay digest, then streams to Gemini.
+- `POST /api/hosted/media/:id/parts` accepts one raw-body 8 MiB part (or the
+  shorter final part) with bounded `Content-Length`, upload-offset,
+  part-number, and part-digest headers; it never accepts multipart bytes.
+- Every start/retry queries Gemini's accepted resumable offset and forwards
+  only the unaccepted suffix; D1 never authorizes overlapping replay.
 - The Worker never buffers the complete chunk or recording.
 - The browser maintains bounded upload concurrency and reconciles from the
   server receipt after refresh.
 - The provider session capability is encrypted and never returned or logged.
 - Default uploads do not create an R2 object.
+- Task 2.0 is a hard stop/go measurement. If Nitro/H3 buffers or two concurrent
+  parts exceed the isolate budget, this part contract changes before Tasks
+  2.1+; no implementation may wave the spike through.
 
 ### FR-05 - End-To-End Media Integrity
 
@@ -418,6 +496,13 @@ API, or local context identities. Tier B lets each user add/delete their own
 encrypted provider credential. The UI reports connection presence and last
 verification only. Provider failure cannot authorize video-only execution.
 
+The hosted transcript ladder is provider transcript, bounded operator context,
+Gemini-audio derived transcript directly from the already uploaded Gemini file,
+then none. Hosted execution never invokes ffmpeg. The derived rung records the
+existing `gemini-audio` origin and zero alignment only when that Gemini
+transcription actually succeeds; failure is nonfatal and never fabricates
+provider or derived provenance.
+
 ### FR-07 - Durable Workflow Execution
 
 One Workflow instance maps to one immutable job attempt. The step sequence is:
@@ -432,9 +517,13 @@ publish
 cleanup
 ```
 
-Each step checks a principal-scoped durable receipt before repeating a side
-effect, returns only bounded state, and emits codes-only events. Model calls use
-the existing ten-minute timeout. `ensure_gemini_file` accepts only a sealed,
+Every `step.do` has an explicit `WorkflowStepConfig` with a 15-minute timeout,
+strictly above `MODEL_REQUEST_TIMEOUT_MS`. Provider steps use
+`retries.limit: 0`, check a principal-scoped durable receipt before any Gemini
+call, and raise `NonRetryableError` after provider success without a committed
+receipt. A crash-after-Gemini test must prove the platform never issues a
+second generate. Steps return only bounded state and emit codes-only events.
+`ensure_gemini_file` accepts only a sealed,
 digest-matched media receipt. `publish` validates the analysis/manifest pair
 and atomically records the projection. `cleanup` runs after success, failure,
 or cancellation and never rewrites published provenance.
@@ -444,16 +533,19 @@ or cancellation and never rewrites published provenance.
 Cancellation commits a durable timestamp and event before the Workflow sees
 it. Every step boundary checks the flag; a provider call already in flight is
 allowed to return its exact cleanup identity before cancellation settles.
-Terminal jobs never reopen. Retry creates a new linked attempt, spend
+Terminal and indeterminate jobs never reopen. User retry creates a new linked attempt, spend
 reservation, and Workflow ID; it cannot reuse an expired ephemeral recording.
 
 ### FR-09 - Spend And Quota
 
-Job creation atomically compares the principal's configured cap with committed
-usage plus active reservations. Reservation, provider-call count, adjustment,
-and terminal release are auditable by sanitized code and opaque IDs. Cap state
-is never inferred from browser totals. Provider quota/billing errors remain
-distinct from the application spend-cap code.
+Job creation atomically compares the principal's estimated-token ceiling with
+committed usage plus active reservations. Each video-bearing call reserves
+`duration_seconds × 300` input tokens plus versioned text/output headroom; the
+300 tokens/second conservative default follows the current
+[Gemini video token guidance](https://ai.google.dev/gemini-api/docs/video-understanding).
+Reservation, adjustment, and terminal release are auditable by sanitized code
+and opaque IDs. Missing rate/duration/call-graph data fails closed. Provider
+quota/billing errors remain distinct from the application spend-cap code.
 
 ### FR-10 - Publication And Review
 
@@ -469,14 +561,19 @@ stored in R2. Retained media is private, principal-prefixed, time-bounded,
 manually deletable, and governed by R2 lifecycle rules. The browser captures
 screenshots at evidence timestamps through a canvas only after explicit media
 access; the manifest records `client-canvas` provenance, timestamp, and digest.
-Stream thumbnail provenance is a separately labeled future option.
+Stream thumbnail provenance is a separately labeled future option. After the
+uploading tab closes, ephemeral runs have no playback or screenshot source;
+retained R2 media or digest-verified reattachment is required before evidence
+capture, and the manifest records which source was used.
 
 ### FR-12 - Observability And Bundle Isolation
 
 Logs and telemetry carry route class, status, opaque job ID, stage, duration,
 byte count, and sanitized code only. The Cloudflare build fails unless every
 required hosted marker is present and every local-only marker is absent. Local
-Studio tests and execution adapters remain unchanged.
+Studio job/media ports remain principal-free. Shared RunStore SQL uses the
+synthetic `local:single-user` principal in SQLite so local imports and bundles
+remain byte-stable while the D1 build binds Access `sub`.
 
 ### FR-13 - Accessibility And Responsiveness
 
@@ -525,12 +622,31 @@ migrations. This concrete sketch is design input, not an applied migration:
 ALTER TABLE analysis_runs
   ADD COLUMN principal_sub TEXT NOT NULL DEFAULT '__legacy_unclaimed__';
 ALTER TABLE analysis_runs ADD COLUMN principal_email TEXT;
+ALTER TABLE analysis_items
+  ADD COLUMN principal_sub TEXT NOT NULL DEFAULT '__legacy_unclaimed__';
+ALTER TABLE analysis_items ADD COLUMN principal_email TEXT;
 ALTER TABLE analysis_run_registry
   ADD COLUMN principal_sub TEXT NOT NULL DEFAULT '__legacy_unclaimed__';
 ALTER TABLE analysis_run_registry ADD COLUMN principal_email TEXT;
 ALTER TABLE video_analysis_runs
   ADD COLUMN principal_sub TEXT NOT NULL DEFAULT '__legacy_unclaimed__';
 ALTER TABLE video_analysis_runs ADD COLUMN principal_email TEXT;
+ALTER TABLE video_analysis_items
+  ADD COLUMN principal_sub TEXT NOT NULL DEFAULT '__legacy_unclaimed__';
+ALTER TABLE video_analysis_items ADD COLUMN principal_email TEXT;
+
+-- SQLite cannot alter a PRIMARY KEY or FOREIGN KEY in place. The applied
+-- migration rebuilds all five projection tables plus the registry so their
+-- authoritative constraints are exactly:
+-- analysis_runs PRIMARY KEY (principal_sub, run_id)
+-- analysis_run_registry PRIMARY KEY (principal_sub, run_id)
+-- video_analysis_runs PRIMARY KEY (principal_sub, run_id)
+-- analysis_items PRIMARY KEY (principal_sub, run_id, item_index)
+--   FOREIGN KEY (principal_sub, run_id)
+--     REFERENCES analysis_runs (principal_sub, run_id) ON DELETE CASCADE
+-- video_analysis_items PRIMARY KEY (principal_sub, run_id, item_index)
+--   FOREIGN KEY (principal_sub, run_id)
+--     REFERENCES video_analysis_runs (principal_sub, run_id) ON DELETE CASCADE
 
 CREATE UNIQUE INDEX analysis_runs_principal_run_idx
   ON analysis_runs (principal_sub, run_id);
@@ -542,6 +658,10 @@ CREATE UNIQUE INDEX video_runs_principal_run_idx
   ON video_analysis_runs (principal_sub, run_id);
 CREATE INDEX video_runs_principal_completed_idx
   ON video_analysis_runs (principal_sub, completed_at DESC);
+CREATE INDEX analysis_items_principal_run_idx
+  ON analysis_items (principal_sub, run_id, item_index);
+CREATE INDEX video_items_principal_run_idx
+  ON video_analysis_items (principal_sub, run_id, item_index);
 
 CREATE TABLE hosted_media_sessions (
   media_id TEXT NOT NULL,
@@ -637,19 +757,38 @@ The rollout coordinator validates one Access user, binds that user's verified
 UPDATE analysis_runs
 SET principal_sub = ?1, principal_email = ?2
 WHERE principal_sub = '__legacy_unclaimed__';
+UPDATE analysis_items
+SET principal_sub = ?1, principal_email = ?2
+WHERE principal_sub = '__legacy_unclaimed__';
 UPDATE analysis_run_registry
 SET principal_sub = ?1, principal_email = ?2
 WHERE principal_sub = '__legacy_unclaimed__';
 UPDATE video_analysis_runs
 SET principal_sub = ?1, principal_email = ?2
 WHERE principal_sub = '__legacy_unclaimed__';
+UPDATE video_analysis_items
+SET principal_sub = ?1, principal_email = ?2
+WHERE principal_sub = '__legacy_unclaimed__';
 ```
 
 Hosted routes remain disabled until the coordinator proves no sentinel rows
-remain and all three tables contain only that first principal. A follow-up
-migration rebuilds the three tables without the sentinel default, retaining
+remain and both run tables, both item tables, and the registry contain only
+that first principal. Production D1 is expected to be empty, so a non-empty legacy
+row count fails closed for operator review rather than silently assigning
+ownership. A follow-up
+migration rebuilds the tables without the sentinel default, retaining
 `principal_sub TEXT NOT NULL`; this ensures future inserts cannot omit the
 principal. Rollback never maps rows back to email or removes ownership.
+
+Shared import SQL inserts and resolves the registry by
+`(principal_sub, run_id)`, deletes/inserts children with both predicates, and
+uses `ON CONFLICT(principal_sub, run_id) DO UPDATE`. Before mutation, an
+explicit query for the same `run_id` under any different `principal_sub`
+returns `run_principal_conflict`; import never overwrites, deletes, or adopts
+that row. List cursors encode principal-bound state, and detail reads require
+both columns. Local SQLite runs the same SQL with `local:single-user`; tests
+prove the submitted v2/v3 bundle and HTTP import payload remain byte-for-byte
+unchanged.
 
 D1 stores operational job/events/media state while work is active. Recording,
 transcript, provider payload, API keys, OAuth plaintext, Gemini session URL,
@@ -662,13 +801,15 @@ enter these operational rows.
 |---|---|
 | Missing, invalid, or wrong-audience Access JWT | Reject before repository or body access |
 | Service token reaches a browser-only route | Reject even when the Service Auth assertion is valid |
-| Browser refresh during upload | Rehydrate owned receipt and resume exact missing offsets |
-| Duplicate or conflicting chunk | Replay exact receipt or fail closed; never double-forward |
-| Request exceeds 95 MB or account upload ceiling | Return bounded 413 guidance; no provider state advance |
+| Browser refresh during upload | Query Gemini offset, rehydrate owned receipt, and resume only the unaccepted suffix |
+| D1/Gemini upload offsets disagree | Gemini offset is transfer authority; never overlap replay; repair D1 only after completed-part proof |
+| Duplicate or conflicting chunk | Replay exact completed receipt or fail closed; never double-forward |
+| Raw part exceeds 8 MiB or account upload ceiling | Return bounded 413 guidance; no provider state advance |
 | Hash worker stops | Preserve upload receipt, require a fresh complete digest pass before seal |
 | Client/Gemini digest mismatch | Record `media_digest_mismatch`, clean remote file, block Workflow |
 | Gemini key rotates during upload | Active encrypted session becomes unreadable; clean/restart explicitly |
-| Workflow step restarts | Check durable idempotency receipt before repeating side effects |
+| Workflow provider step restarts | Explicit retries.limit 0; check receipt before call; never automatic second generate |
+| Gemini succeeds but D1 receipt fails | Throw NonRetryableError, mark attempt indeterminate, require new user-linked Workflow |
 | Ten-minute model timeout | Preserve exact cleanup identity and offer linked retry |
 | User cancellation | Persist flag, finish safe in-flight receipt, skip later work, run cleanup |
 | Retry requested | Create a new linked job and Workflow; never reopen the old attempt |
@@ -677,6 +818,8 @@ enter these operational rows.
 | Publication succeeds but projection warns | Preserve validated run authority and expose re-import action |
 | Ephemeral cleanup fails | Preserve a sanitized cleanup-failed receipt and retry explicitly |
 | R2 lifecycle is missing or broader than policy | Disable retained mode; ephemeral mode may continue |
+| Access user is removed and re-added | New sub receives no old rows; require reviewed old/new-sub ownership migration |
+| Import uses another principal's run ID | Reject as run_principal_conflict before any parent or child mutation |
 | Unscoped repository call is attempted | Type/test/build gate fails; no runtime fallback |
 | Hosted marker absent or local marker present | Fail Cloudflare build and release |
 
@@ -690,6 +833,9 @@ enter these operational rows.
   memory or Workflow state.
 - Treat Gemini resumable URLs, Access assertions, provider tokens, and R2
   object keys as sensitive capabilities; never log or return them.
+- Treat a D1 export as a secret-bearing artifact because encrypted Gemini
+  session URLs remain bearer capabilities if the derived key is also exposed;
+  restrict exports, storage, retention, and deletion accordingly.
 - Keep `GEMINI_API_KEY` as the only Tier A Worker secret.
 - Encrypt Tier B provider credentials with AES-GCM, a separate KEK, unique IVs,
   explicit key version, and `principal_sub` associated data.
@@ -744,25 +890,31 @@ adapters behind the same domain and principal-scoped repository contracts.
       list, detail, event, media, retry, and projection tests fail closed.
 - [ ] Existing single-tenant D1 rows are assigned to the first principal before
       hosted routes enable, and no sentinel/default-owned row remains.
-- [ ] Browser chunks never exceed 95 MB, stream through the Worker to Gemini,
-      and never expose the Gemini key or resumable-session URL.
+- [ ] Raw browser parts are 8 MiB or the shorter final part, query Gemini offset
+      before forwarding, pass the two-concurrent-upload streaming spike, and
+      never expose the Gemini key or resumable-session URL.
 - [ ] `hash-wasm` computes the complete file digest with bounded memory in a
       Web Worker; WebCrypto verifies small fixtures; Gemini digest mismatch
       blocks analysis with `media_digest_mismatch`.
 - [ ] Ephemeral mode stores no complete recording in R2; retained mode is
       explicit, principal-owned, lifecycle-bound, visible, and deletable.
 - [ ] Hosted screenshots use client canvas or explicitly adopted Stream
-      thumbnails, never ffmpeg, and record exact provenance in the manifest.
+      thumbnails, never ffmpeg, and record exact provenance in the manifest;
+      ephemeral review after tab close discloses that no media is available.
 - [ ] One Workflow per attempt runs the seven idempotent steps with existing
-      ten-minute model timeouts, durable cancellation, and linked retries.
+      ten-minute model timeouts inside explicit 15-minute step configs,
+      provider `retries.limit: 0`, durable cancellation, and linked user retry.
+- [ ] A crash after a successful Gemini generate but before receipt persistence
+      never causes a second automatic generate.
 - [ ] `AnalysisJobExecutor` has a Workflows adapter while the local
       Bun/SQLite executor and its tests remain unchanged.
 - [ ] Tier A deploys with only `GEMINI_API_KEY`; Tier B credentials are
       AES-GCM ciphertext under a separate KEK with principal associated data.
 - [ ] Connections shows only connected/not connected, verification state, and
       actions; no credential or ciphertext reaches browser state.
-- [ ] Per-principal spend reservation prevents concurrent jobs from exceeding
-      the configured cap and fails closed with a sanitized code.
+- [ ] Per-principal estimated-token reservation prevents concurrent jobs from
+      exceeding the configured token ceiling and fails closed with a sanitized
+      code when rate, duration, call graph, or cap state is unknown.
 - [ ] Telemetry conforms to ADR 0017 and contains codes only.
 - [ ] The Cloudflare bundle contains every hosted marker and none of the local
       session, staging, executor, or `bun:sqlite` markers.
@@ -774,8 +926,8 @@ adapters behind the same domain and principal-scoped repository contracts.
 
 ## Dependencies
 
-- Accepted ADRs 0006-0016 and the separately landing ADR 0017 telemetry
-  contract
+- Accepted ADRs 0006-0017, including the codes-only telemetry contract now on
+  main at the Attempt 2 base
 - Proposed [ADR 0018](../../../docs/adr/0018-hosted-studio-trust-boundary.md)
 - Existing `AnalysisOrchestrator`, `AnalysisJobExecutor`, job schemas, and run
   pair validators
@@ -813,10 +965,14 @@ adapters behind the same domain and principal-scoped repository contracts.
   boundaries, not Workflow state.
 - R2 lifecycle rules are a deletion backstop, not immediate cleanup evidence;
   application deletion still records its exact result.
+- Wrangler cannot report the zone's configured request-body ceiling. Phase 6
+  records a dashboard/operator receipt for the active plan before route
+  enablement even though the fixed 8 MiB part is below every documented tier.
+- Task 2.0 is the only resolver for Nitro/H3 upload streaming; Task 3.0 is the
+  only resolver for same-module versus sibling-Worker Workflow topology.
 - The marker gate is a release instrument. Every new hosted route or adapter
   family must add a stable required marker, and every local-only family must
   retain a forbidden marker.
-- This specification resolves all architecture decisions required for plan
-  review; implementation may refine names and schemas only without reopening
-  the accepted trust, retention, identity, upload, execution, or secret
-  boundaries.
+- All residual decisions are fixed here or assigned to Task 2.0/3.0. An
+  implementation may refine names and schemas only without reopening the
+  accepted trust, retention, identity, upload, execution, or secret boundaries.

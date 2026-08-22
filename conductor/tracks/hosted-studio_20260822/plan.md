@@ -35,39 +35,79 @@ cross-principal tests pass.
 
 ### Tasks
 
-- [ ] Task 1.1: Add failing authorization tests proving user `sub`, display-only
-      `email`, normalized service-token principals, and denial of absent or
-      malformed Access claims. Trust-boundary review trigger: middleware begins
-      creating hosted principals from externally asserted identity.
-- [ ] Task 1.2: Add the reviewed D1 migration with `principal_sub TEXT NOT NULL`,
-      `principal_email`, composite principal indexes, hosted media/job/event/
-      spend tables, and a disabled-route legacy backfill procedure.
-      Trust-boundary review trigger: existing single-tenant rows acquire a durable owner.
-- [ ] Task 1.3: Refactor D1 repositories so every operation requires an
-      immutable principal and every SQL predicate includes `principal_sub`;
-      delete or make unreachable every unscoped method.
-      Trust-boundary review trigger: repository authorization becomes the row-isolation boundary.
-- [ ] Task 1.4: Rewrite the Cloudflare bundle gate as an allow/deny pair for
-      hosted route/adapter markers versus local bootstrap, media staging,
-      executor, and `bun:sqlite` markers. Trust-boundary review trigger: hosted
-      creation code becomes deployable while local authority must stay absent.
+- [ ] Task 1.1: Make validated Access identity executable: extend
+      `apps/web/server/utils/access.ts:5-20` to return user `sub` plus
+      display-only email and normalized empty-sub service principals; bind it
+      once in `apps/web/server/middleware/00.auth.ts:42-48`; keep
+      `GET /api/session` (`apps/web/server/api/session.get.ts:1-2`) display-only
+      and never a principal override. Add missing/malformed/recycled-sub and
+      service-route denial fixtures. Trust-boundary review trigger: middleware
+      begins deriving durable ownership from an external Access assertion.
+- [ ] Task 1.2: Add the reviewed D1 migration for `principal_sub TEXT NOT NULL`
+      and `principal_email` on both run tables, both item tables, and the
+      registry, with composite parent/child keys and indexes. Rehearse against
+      an empty D1: a non-empty legacy count fails closed for operator review,
+      the sentinel is removed through table rebuild, and hosted creation stays
+      dark. Add the reserved SQLite principal `local:single-user` to the same
+      shared schema without changing v2/v3 import bytes.
+      Trust-boundary review trigger: existing projection rows and shared local SQL acquire an owner.
+- [ ] Task 1.3: Scope every existing viewer/import path below and delete or make
+      unreachable every unscoped alternative:
+      - list route `apps/web/server/api/runs/index.get.ts:12-16`, D1 pagination
+        `apps/web/server/data/d1.ts:45-69`, and union SQL
+        `apps/web/server/data/sql.ts:210-232`: bind principal in both union arms
+        and bind the cursor to that same principal;
+      - detail route `apps/web/server/api/runs/[id].get.ts:9-11` and D1 reads
+        `apps/web/server/data/d1.ts:72-100`: query by
+        `(principal_sub, run_id)` for both schema versions;
+      - import route `apps/web/server/api/runs/index.post.ts:46-49`, D1 import
+        `apps/web/server/data/d1.ts:103-155`, and shared SQL
+        `apps/web/server/data/sql.ts:105-202`: bind the authenticated principal,
+        use composite registry/parent conflicts, scope every child delete and
+        insert, and reject `run_principal_conflict` before touching another
+        principal's matching run ID;
+      - registry lookup `apps/web/server/data/d1.ts:145-149` and existence
+        probes `apps/web/server/data/d1.ts:106-111`: require the principal in
+        every predicate;
+      - SQLite twins `apps/web/server/data/sqlite.ts:82-185` and shared
+        `schemaSql` at `apps/web/server/data/sql.ts:7-103`: run identical SQL
+        under `local:single-user` while preserving import request and bundle
+        bytes;
+      - `GET /api/session` remains display-only and `GET /api/health`
+        (`apps/web/server/api/health.get.ts:1-5`) remains data-free.
+      Add built-Worker HTTP contracts where two principals import distinct runs
+      and cannot list, detail, overwrite, or delete each other's parent or item
+      rows through any route. Trust-boundary review trigger: the existing
+      deployed viewer/import surface becomes a row-level authorization boundary.
 
 ### Verification
 
-- [ ] Migration tests, repository cross-principal tests, Access claim fixtures,
-      and the allow/deny artifact scan pass; no hosted route is enabled during
-      legacy backfill.
+- [ ] Access claim fixtures, empty-DB migration/backfill rehearsal, shared
+      D1/SQLite schema parity, byte-stable local v2/v3 import fixtures, and the
+      complete two-principal built-Worker HTTP contract pass. Hosted creation
+      routes remain dark; only the already-deployed viewer/import surface ships.
 
 ### Stop/Go Gate
 
-Stop unless an adversarial reviewer can prove no unscoped D1 access remains,
-the first-principal backfill is explicit and reversible, and the bundle holds
-only hosted runtime authority.
+Stop unless two principals cannot see or mutate each other's runs, proven by an
+HTTP contract against a built Worker. Tasks 1.1–1.3 are Slice 1 and must be
+shippable/deployable alone with hosted creation dark; no Phase 2 work is needed
+to release this security hardening.
 
 ## Phase 2: Bounded Upload And Media Integrity
 
 ### Tasks
 
+- [ ] Task 2.0: Stop/go spike the real `cloudflare_module` route with a
+      synthetic body at least 8 MiB: pipe `request.body` directly into a
+      Gemini-compatible resumable sink, prove H3/Nitro never calls `readBody()`
+      or materializes the part, and measure isolate memory with two concurrent
+      uploads. Record heap/WASM/total isolate evidence and exact failure shape.
+      Failure changes FR-04 to smaller parts or private R2 staging through an
+      ADR amendment before any Task 2.1+ work; Tasks 2.1–2.4 are blocked until
+      the spike receipt is passing. Trust-boundary review trigger:
+      the platform is asked to carry untrusted recording bytes through a
+      shared 128 MB isolate.
 - [ ] Task 2.1: Add the browser hashing worker using `hash-wasm`
       `createSHA256().update()/digest()` over bounded `Blob.slice()` chunks,
       with cancellation/progress and small-fixture WebCrypto oracle tests.
@@ -75,11 +115,15 @@ only hosted runtime authority.
       into the digest that gates remote execution.
 - [ ] Task 2.2: Implement principal-scoped media session creation and sealed
       Gemini resumable-session receipts without returning provider URLs or
-      keys. Trust-boundary review trigger: the Worker creates provider-side
-      upload authority on a user's behalf.
-- [ ] Task 2.3: Implement `POST /api/hosted/media/:id/parts` with ≤95 MB bodies,
-      ordered/resumable offsets, MIME/size limits, replay-safe receipts, and
-      direct Worker forwarding to Gemini. Trust-boundary review trigger:
+      keys, plus the documented key-rotation abort procedure.
+      Trust-boundary review trigger: the Worker creates and encrypts
+      provider-side upload authority on a user's behalf.
+- [ ] Task 2.3: Implement `POST /api/hosted/media/:id/parts` as a raw-body
+      8 MiB-or-final-shorter request with bounded Content-Length, offset, part,
+      and digest headers—never multipart. On every start/retry query Gemini's
+      accepted offset and forward only the unaccepted suffix; D1 completed-part
+      receipts never authorize overlap. Leave shared `MAX_MEDIA_PART_BYTES`
+      untouched. Trust-boundary review trigger:
       recording bytes cross browser → Worker → provider without persistence.
 - [ ] Task 2.4: Finalize by normalizing and comparing client SHA-256 with
       Gemini `sha256Hash`, fail closed as `media_digest_mismatch`, and delete
@@ -88,32 +132,47 @@ only hosted runtime authority.
 
 ### Verification
 
-- [ ] Bounded-memory browser tests, upload resume/replay tests, 95 MB route
-      limit tests, provider digest-encoding fixtures, mismatch cleanup, and
-      cross-principal media denial all pass.
+- [ ] Task 2.0 passes with two concurrent streams; bounded-memory browser tests,
+      raw 8 MiB request limits, killed-mid-part Gemini-offset resume, overlap
+      denial, provider digest fixtures, mismatch cleanup, and cross-principal
+      media denial all pass.
 
 ### Stop/Go Gate
 
-Stop unless the full-file digest is incremental, one-shot WebCrypto is test
-only, the Worker never buffers the recording, and no Workflow can start from
-an unsealed or mismatched receipt.
+Stop immediately if Task 2.0 does not prove bounded two-upload streaming on the
+built Worker. Otherwise continue only when the full-file digest is incremental,
+one-shot WebCrypto is test-only, Gemini offset is resume authority, and no
+Workflow can start from an unsealed or mismatched receipt.
 
 ## Phase 3: Durable Workflow Execution
 
 ### Tasks
 
+- [ ] Task 3.0: Spike whether Nitro's `cloudflare_module` output can export a
+      `WorkflowEntrypoint` class and bind it in the generated Wrangler module.
+      Record the module/dry-run receipt. If it fails, freeze the decided fallback:
+      a sibling Workflows Worker reached through a service binding while the
+      Nuxt Worker remains on the same Access hostname.
+      Trust-boundary review trigger: deployment topology begins granting durable execution authority.
 - [ ] Task 3.1: Implement a Cloudflare Workflows `AnalysisJobExecutor` adapter
       while leaving the local SQLite executor selection and behavior untouched.
       Trust-boundary review trigger: durable execution authority moves from one
       Bun process to Cloudflare.
 - [ ] Task 3.2: Implement one Workflow per job with idempotent `fetch_context`,
       `ensure_gemini_file`, `transcribe`, `index`, `interrogate`, `publish`, and
-      `cleanup` steps. Trust-boundary review trigger: retryable step state may
-      invoke providers and mutate durable job state.
-- [ ] Task 3.3: Apply the existing ten-minute model-operation timeout, bounded
-      step receipts, stable idempotency keys, and cancellation-flag checks
-      between steps. Trust-boundary review trigger: timeout and cancellation
-      must not orphan provider data or duplicate billable calls.
+      `cleanup` steps. The hosted transcript ladder uses provider/operator
+      context, then Gemini-audio directly from the uploaded file, then none;
+      it never invokes ffmpeg or fabricates provenance.
+      Trust-boundary review trigger: durable step state may invoke providers and mutate job state.
+- [ ] Task 3.3: Give every `step.do` an explicit `WorkflowStepConfig` with a
+      15-minute timeout, strictly greater than `MODEL_REQUEST_TIMEOUT_MS`.
+      Provider steps use `retries.limit: 0`, check the durable principal-scoped
+      receipt before any Gemini call, and throw `NonRetryableError` after
+      success-without-receipt. Add a crash-after-Gemini regression that proves
+      no second generate occurs; mark the attempt indeterminate for operator
+      replay only. Keep bounded receipts, stable idempotency keys, and
+      cancellation checks between steps. Trust-boundary review trigger:
+      platform defaults could otherwise duplicate a billable provider call.
 - [ ] Task 3.4: Implement retry as a new linked attempt with immutable prior
       receipts, an atomic spend reservation, and no Workflow-instance reuse.
       Trust-boundary review trigger: a user reauthorizes cost and provider work
@@ -121,15 +180,18 @@ an unsealed or mismatched receipt.
 
 ### Verification
 
-- [ ] Workflow emulator/contract tests cover every step, duplicate delivery,
-      timeout, cancellation, restart, linked retry, spend contention, and
-      terminal cleanup while local executor tests remain unchanged.
+- [ ] Task 3.0 resolves and records one deployment topology. Workflow contracts
+      cover every explicit StepConfig, crash-after-Gemini, success-without-
+      receipt, timeout, cancellation, linked user retry, Gemini-file expiry,
+      transcript provenance, and terminal cleanup; local executor tests and
+      principal-free job/media ports remain unchanged.
 
 ### Stop/Go Gate
 
-Stop unless every external action has a stable idempotency boundary, cleanup
-is terminal-path safe, and an interrupted Workflow can resume without widening
-principal authority or duplicating publication.
+Stop unless Task 3.0 proves the chosen export/service-binding topology and every
+external action has a durable receipt boundary. A missing provider receipt may
+require a new user-linked Workflow but may never trigger an automatic second
+generate; cleanup remains terminal-path safe.
 
 ## Phase 4: Hosted Composer, Activity, And Publication
 
@@ -174,10 +236,15 @@ transcripts, and signed URLs.
       provider operation for the first time.
 - [ ] Task 5.2: Implement client-canvas evidence captures with manifest source
       and timestamp provenance, plus a gated Stream-thumbnail adapter if Stream
-      is later adopted. Trust-boundary review trigger: derived image evidence
-      leaves the local playback surface and enters the durable contract.
-- [ ] Task 5.3: Enforce per-principal Gemini-call caps through atomic D1
-      reservation/reconciliation and fail closed with a stable sanitized code.
+      is later adopted. Disclose and test that an ephemeral run has no
+      playback/screenshots after tab close until retained media or exact-digest
+      reattachment is available. Trust-boundary review trigger: derived image
+      evidence leaves the playback surface and enters the durable contract.
+- [ ] Task 5.3: Enforce per-principal estimated-token ceilings through atomic D1
+      reservation/reconciliation. Estimate each video-bearing call at recording
+      duration × the documented conservative 300 tokens/second plus versioned
+      prompt/output headroom; fail closed when duration, call graph, rate, or
+      cap state is unknown.
       Trust-boundary review trigger: shared Worker credentials incur spend for
       user-initiated work.
 - [ ] Task 5.4: Emit ADR-0017 codes-only telemetry for Access, upload, Workflow,
@@ -201,16 +268,23 @@ contains codes and structural fields only.
 
 ### Tasks
 
-- [ ] Task 6.1: Wire Worker + D1 + Workflows + Access on the existing hostname
+- [ ] Task 6.1: Wire Worker + D1 + the Task-3.0-resolved Workflows topology +
+      Access on the existing hostname
       with `GEMINI_API_KEY` as the only Worker secret and module-format Nitro
-      output. Trust-boundary review trigger: hosted creation reaches the
-      internet-facing deployment boundary.
+      output. Rewrite the artifact gate with the exact AD-11 required/forbidden
+      markers: hosted `/hosted/activity` is allowed, generic `/activity` is not
+      denied, and local activity source plus `OrchestratedAnalysisJobExecutor`
+      remain forbidden. Trust-boundary review trigger: hosted creation reaches
+      the internet-facing deployment and bundle boundary.
 - [ ] Task 6.2: Configure Google and One-time PIN login, email allowlist policy,
       and a separate service-token policy through the same principal middleware.
       Trust-boundary review trigger: Access policy begins granting real users
       and agents creation authority.
 - [ ] Task 6.3: Run module-output dry-run checks, migration rehearsal on a D1
-      clone, Workflow binding validation, boundary scanning, and rollback drills.
+      clone, Workflow binding validation, boundary scanning, local byte-stable
+      import regression, and rollback drills. Record the active Cloudflare zone
+      plan/body ceiling from the dashboard because Wrangler cannot read it; the
+      fixed 8 MiB part must remain below the lowest documented tier.
       Trust-boundary review trigger: release configuration can bind production
       data and durable execution resources.
 - [ ] Task 6.4: Complete adversarial Tier A review, synthetic canary run,
@@ -310,10 +384,10 @@ label; Phases 7-8 carry `tier-b` and remain blocked until the Phase 6 gate.
 |---|---|---|
 | Cross-principal data access | Principal-required repositories and exhaustive denial fixtures | Query audit plus two-principal suite |
 | Recording corruption or substitution | Incremental client digest and Gemini hash cross-check | Encoding fixtures and mismatch cleanup |
-| Duplicate calls/spend on retries | Workflow idempotency and atomic spend reservations | Replay and concurrency suite |
+| Duplicate calls/spend on retries | Zero provider-step retries, indeterminate receipt failures, and atomic token reservations | Crash-after-Gemini and concurrency suite |
 | Orphaned provider/R2 data | Terminal cleanup, reconciliation, lifecycle backstop | Failure/cancel cleanup receipts |
 | Secret or content leakage | Worker-only secrets, encrypted tenant tokens, codes-only telemetry | Bundle/log/response scans |
-| Cloudflare runtime mismatch | Module preset, allow/deny markers, dry-run binding inspection | Wrangler output without 100329 |
+| Cloudflare runtime mismatch | Task 2.0/3.0 spikes, module preset, concrete allow/deny markers, zone-plan receipt | Streaming/export receipts and Wrangler output without 100329 |
 | Tier B weakens Tier A | Feature gates and separate acceptance suites | Tier A regression gate in every Tier B PR |
 
 ## Rollback And Compatibility
@@ -323,6 +397,9 @@ label; Phases 7-8 carry `tier-b` and remain blocked until the Phase 6 gate.
   to the recorded first principal and never become public during rollback.
 - Workflow deployments are versioned; in-flight instances finish on their
   compatible implementation or enter explicit operator recovery.
+- Replacing `GEMINI_API_KEY` first disables uploads, aborts/cleans exact active
+  Gemini sessions, clears only their ciphertext, rotates the secret, and then
+  reenables uploads; unconfirmed cleanup stays operator-visible.
 - Disabling retained media prevents new R2 writes without deleting existing
   objects before their declared lifecycle.
 - Disabling Tier B leaves Tier A Gemini-only execution and all local Studio
@@ -334,10 +411,16 @@ label; Phases 7-8 carry `tier-b` and remain blocked until the Phase 6 gate.
 
 - [ ] All eight phase gates have named review receipts and no open blocker.
 - [ ] Every hosted route and D1 repository is covered by cross-principal denial.
+- [ ] Slice 1 alone passes the built-Worker two-principal HTTP contract with
+      hosted creation dark and local v2/v3 imports byte-stable.
 - [ ] Browser hashing stays bounded and matches the small-file WebCrypto oracle;
       Gemini digest mismatch fails closed before Workflow creation.
 - [ ] Upload, Workflow retry/cancel, publication, spend, and cleanup pass a
       production-shaped end-to-end run with sanitized observability.
+- [ ] Task 2.0 proves two concurrent raw 8 MiB streams do not buffer in Nitro;
+      Task 3.0 records the working WorkflowEntrypoint topology.
+- [ ] A crash after Gemini success cannot trigger a second automatic generate,
+      and user retry creates a new linked Workflow instance.
 - [ ] The built Cloudflare bundle contains all hosted required markers and no
       local bootstrap, local staging, local executor, or `bun:sqlite` marker.
 - [ ] Wrangler reports module output, Workers Assets, D1, and Workflows without

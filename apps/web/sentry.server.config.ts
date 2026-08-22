@@ -3,7 +3,8 @@ import { scrubSentryEvent } from "../../src/lib/sentry-telemetry";
 
 const dsn = process.env.SENTRY_DSN?.trim() ?? "";
 const localStudio = process.env.FRAME_OF_MIND_STUDIO === "1"
-  && process.env.NITRO_PRESET !== "cloudflare-worker";
+  && process.env.NITRO_PRESET !== "cloudflare-worker"
+  && process.env.NITRO_PRESET !== "cloudflare_module";
 
 if (dsn) {
   Sentry.init({

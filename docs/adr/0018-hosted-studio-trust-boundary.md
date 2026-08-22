@@ -32,9 +32,10 @@ Hosted Studio uses the existing Cloudflare hostname and Access application:
 - service tokens use a separate Access policy and the same middleware, which
   normalizes the documented empty `sub` plus `common_name` claim into a
   service-principal namespace;
-- recording bytes travel browser → Worker → Gemini through bounded resumable
+- recording bytes travel browser → Worker → Gemini through raw 8 MiB resumable
   requests and are never stored by Frame of Mind unless the user explicitly
-  chooses retained media;
+  chooses retained media; this supersedes local Studio's provisional Phase B
+  browser → R2 sketch without changing local media-part constants;
 - retained media is private, principal-owned R2 data with a visible lifecycle;
   ephemeral media is cleaned from Gemini on every terminal path;
 - the browser computes the full recording SHA-256 incrementally in a dedicated
@@ -42,7 +43,8 @@ Hosted Studio uses the existing Cloudflare hostname and Access application:
   `Blob.slice()` chunks; one-shot WebCrypto is a bounded small-fixture oracle;
   the server cross-checks Gemini `sha256Hash` and fails closed on mismatch;
 - each analysis job runs as one Cloudflare Workflow with idempotent steps,
-  durable cancellation, linked retry attempts, and terminal cleanup;
+  explicit 15-minute `WorkflowStepConfig`, zero provider-step retries, durable
+  cancellation, linked user retry attempts, and terminal cleanup;
 - D1 stores principal-scoped operational state and review projections while
   the validated analysis/manifest bundle remains the durable run contract;
 - `GEMINI_API_KEY` is the only Tier A Worker secret. Tier B provider tokens
@@ -52,6 +54,16 @@ Hosted Studio uses the existing Cloudflare hostname and Access application:
 
 The phased implementation and exact route/data contracts live in the
 [Hosted Studio track](../../conductor/tracks/hosted-studio_20260822/).
+
+## Threat Controls
+
+| Threat | Decision |
+|---|---|
+| Isolate-memory DoS | Task 2.0 must prove raw 8 MiB request streaming and two concurrent uploads within the 128 MB per-isolate limit; failure changes the contract before implementation. |
+| Workflow default retries | Every step has explicit config; provider steps use `retries.limit: 0`, durable pre-call receipt checks, and `NonRetryableError` after success-without-receipt. |
+| D1 export of encrypted session URLs | D1 exports are secret-bearing artifacts; exports and derived keys have separate custody, and rotation aborts active sessions before ciphertext removal. |
+| Access `sub` recycle | A re-added user's new subject receives no old rows automatically; email never transfers ownership, and an explicit old/new-sub migration is required. |
+| Import-overwrite IDOR | Parent, child, and registry keys include `principal_sub`; import rejects another principal's matching run ID before any mutation. |
 
 ## Consequences
 

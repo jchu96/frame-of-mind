@@ -1,14 +1,16 @@
-# Local Studio Threat Model
+# Studio Threat Model
 
-Status: Phase 1 implementation baseline
+Status: Local implementation baseline plus proposed hosted extension
 
-Last reviewed: 2026-07-26
+Last reviewed: 2026-08-22
 
 This model covers the local Bun-controlled Studio defined by ADRs
 [0006](adr/0006-local-studio-execution-and-session-boundary.md),
 [0007](adr/0007-separate-media-job-and-run-lifecycles.md), and
 [0008](adr/0008-local-secret-resolution.md). Those decisions are accepted
-implementation constraints. Hosted execution remains out of scope.
+implementation constraints. The proposed hosted extension is governed by
+[ADR 0018](adr/0018-hosted-studio-trust-boundary.md) and remains disabled
+until its phase gates pass.
 
 ## Security Invariants
 
@@ -32,6 +34,21 @@ a new event from a closed allowlist, and never permits
 transcripts, recordings, findings, filenames, provider meeting IDs,
 credentials, bodies, query-bearing URLs, email addresses, or IP addresses.
 See [ADR 0017](adr/0017-opt-in-sentry-telemetry.md).
+
+## Hosted Studio Extension (Proposed)
+
+Hosted creation adds Access identity, D1 ownership, Worker-proxied Gemini
+upload, Cloudflare Workflows, and optional retained R2 media. The local controls
+below remain active for local mode; this table adds the hosted threats that must
+be proven before hosted creation can leave dark deployment.
+
+| Threat | Required control | Verification |
+|---|---|---|
+| Isolate-memory denial of service from buffered or concurrent upload parts | Fix hosted raw parts at 8 MiB; reject multipart; Task 2.0 must pipe `request.body` without H3 `readBody()` and measure two concurrent uploads against the 128 MB per-isolate limit | Built-Worker streaming spike with memory receipt, short/long body, concurrency, and disconnect cases |
+| Cloudflare's default Workflow retry repeats a billable Gemini call | Every `step.do` has explicit 15-minute config; provider steps set `retries.limit: 0`, check a durable principal receipt before calling, and use `NonRetryableError` after success-without-receipt | Crash-after-Gemini test proves no second generate; user retry creates a new Workflow instance |
+| D1 export exposes encrypted Gemini resumable-session URLs | Treat exports as secret-bearing, restrict and expire backups, never export the derived key with ciphertext, and abort/clear active sessions before Gemini-key rotation | Export/log scan plus rotation drill with exact deletion receipts |
+| Access `sub` changes after seat removal/re-addition | Never key ownership by email or auto-adopt old rows; require a reviewed migration naming both verified old/new subjects | Removed/re-added identity fixture cannot see old rows until explicit migration |
+| Import-overwrite IDOR reuses another principal's `run_id` | Parent, registry, and item keys include `principal_sub`; every list/detail/import/delete/insert predicate includes it; preflight rejects `run_principal_conflict` before mutation | Built-Worker two-principal HTTP suite covers list, detail, overwrite, child delete, and child insert |
 
 ## Data Flow And Trust Boundaries
 
