@@ -12,9 +12,9 @@
 ## Progress
 
 - Phases: 6/9 complete
-- Tasks: 39/51 complete
-- Current focus: Task 7.4, adding sanitized technical details and copyable
-  support receipts that exclude private content.
+- Tasks: 40/51 complete
+- Current focus: Task 7.5, adding startup and scheduled maintenance for
+  expired uploads and stale job records with dry-run diagnostics.
 
 ## Decision
 

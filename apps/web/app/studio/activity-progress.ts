@@ -191,7 +191,10 @@ function toMilliseconds(value: string | number | Date): number {
     : typeof value === "number"
       ? value
       : Date.parse(value);
-  return Number.isFinite(milliseconds) ? milliseconds : Date.now();
+  if (!Number.isFinite(milliseconds)) {
+    throw new RangeError("Activity clock must be a valid timestamp.");
+  }
+  return milliseconds;
 }
 
 function latestEvent(

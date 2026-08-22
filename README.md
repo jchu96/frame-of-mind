@@ -408,8 +408,9 @@ What works today:
   Detail offers only state-permitted actions: cancel,
   retained-recording retry, exact-provider reconnect, completed-results
   re-import, or failed-cleanup retry; each confirms inline and list rows expose
-  cancel only. Failed jobs show only their sanitized operator message;
-  successful jobs link to the completed run.
+  cancel only. Failure banners show only their sanitized operator message;
+  successful jobs link to the completed run. A Technical details disclosure
+  and copyable v1 support receipt share one privacy-safe closed allowlist.
 
 The CLI remains available for direct analysis, while Local Studio now exposes
 the same shared executor through the deliberate Run receipt. Custom recipe
