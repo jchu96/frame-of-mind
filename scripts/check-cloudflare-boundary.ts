@@ -93,6 +93,8 @@ const forbidden = [
   "FRAME_OF_MIND_HOSTED_WORKFLOW_SPIKE",
   "/api/__hosted-workflow-spike",
   "HOSTED_WORKFLOWS",
+  "HostedWorkflowAnalysisJobExecutor",
+  "/api/hosted/jobs",
 ];
 const requiredReviewMarkers = [
   "Primary navigation",

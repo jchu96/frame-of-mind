@@ -12,6 +12,9 @@ declare module "h3" {
       request: Request;
       env: {
         DB: D1Database;
+        HOSTED_WORKFLOWS?: {
+          fetch(input: Request | string, init?: RequestInit): Promise<Response>;
+        };
       };
       context: ExecutionContext;
     };
