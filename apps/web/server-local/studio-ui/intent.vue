@@ -60,6 +60,7 @@ const formError = ref<string>();
 const storageWarning = ref<string>();
 const unreadableDraftNotice = ref<string>();
 const staleRecipeNotice = ref<string>();
+const missingRecipeNotice = ref<string>();
 const saved = ref(false);
 const browserMounted = ref(false);
 const advancedOpen = ref(false);
@@ -92,6 +93,7 @@ function selectBuiltIn(recipe: RecipeSummary): void {
   customMode.value = false;
   customError.value = undefined;
   recipeError.value = undefined;
+  missingRecipeNotice.value = undefined;
   markDraft();
 }
 
@@ -100,6 +102,7 @@ function useCustomRecipe(): void {
   selectedRecipeRevision.value = "";
   customMode.value = true;
   recipeError.value = undefined;
+  missingRecipeNotice.value = undefined;
   markDraft();
 }
 
@@ -140,9 +143,10 @@ function applyBuiltInDraft(
   recipes: RecipeSummary[] | undefined,
 ): void {
   if ("custom" in draft.recipe) return;
-  selectedRecipeId.value = draft.recipe.id;
-  selectedRecipeRevision.value = draft.recipe.revision;
   if (!recipes) {
+    selectedRecipeId.value = draft.recipe.id;
+    selectedRecipeRevision.value = draft.recipe.revision;
+    // Catalog never loads → reconciliation never runs → optimistic ready.
     catalogReconcilePending = true;
     saved.value = true;
     setIntentState("ready");
@@ -150,9 +154,19 @@ function applyBuiltInDraft(
   }
   catalogReconcilePending = false;
   const reconciled = reconcileBuiltInIntentDraft(draft, recipes);
-  selectedRecipeId.value = reconciled.selectedRecipeId ?? draft.recipe.id;
-  selectedRecipeRevision.value =
-    reconciled.selectedRecipeRevision ?? draft.recipe.revision;
+  if (reconciled.missing) {
+    selectedRecipeId.value = "";
+    selectedRecipeRevision.value = "";
+    saved.value = false;
+    staleRecipeNotice.value = undefined;
+    missingRecipeNotice.value =
+      "That recipe is no longer available — choose another.";
+    setIntentState("draft");
+    return;
+  }
+  selectedRecipeId.value = reconciled.selectedRecipeId ?? "";
+  selectedRecipeRevision.value = reconciled.selectedRecipeRevision ?? "";
+  missingRecipeNotice.value = undefined;
   if (reconciled.stale) {
     saved.value = false;
     staleRecipeNotice.value =
@@ -180,6 +194,7 @@ function resetFormFields(): void {
   modelError.value = undefined;
   formError.value = undefined;
   staleRecipeNotice.value = undefined;
+  missingRecipeNotice.value = undefined;
   unreadableDraftNotice.value = undefined;
   saved.value = false;
   advancedOpen.value = false;
@@ -240,6 +255,7 @@ function saveIntent(): void {
   }
   saved.value = true;
   staleRecipeNotice.value = undefined;
+  missingRecipeNotice.value = undefined;
   unreadableDraftNotice.value = undefined;
   setIntentState("custom" in result.draft.recipe ? "draft" : "ready");
   void refreshReadiness();
@@ -348,6 +364,14 @@ onMounted(() => {
         variant="soft"
         title="This recipe changed"
         :description="staleRecipeNotice"
+      />
+      <UAlert
+        v-if="missingRecipeNotice"
+        class="mt-6"
+        color="warning"
+        variant="soft"
+        title="That recipe is no longer available"
+        :description="missingRecipeNotice"
       />
 
       <section class="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
