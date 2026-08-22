@@ -150,6 +150,25 @@ If the audience or team domain is missing, the application fails closed.
 
 ## 5. Apply the D1 migration
 
+Migration `0003_principal_scope.sql` is a fail-closed table rebuild. It adds
+`principal_sub` and display-only `principal_email` to both run tables, both
+item tables, and the registry, then installs composite ownership keys and
+indexes. Wrangler supplies the migration transaction; D1 does not allow an
+explicit `BEGIN`/`COMMIT` inside the migration file.
+
+Before applying it, confirm the projection tables are empty. If any legacy row
+exists, the migration intentionally stops with:
+
+```text
+CHECK constraint failed: principal_scope_requires_empty_legacy_tables
+```
+
+That message means ownership must be reviewed by an operator. Do not delete
+rows, substitute email for `sub`, or bypass the guard. Restore the pre-migration
+state if needed, produce a reviewed old-sub/new-sub ownership receipt, and only
+then prepare a separate assignment migration. Production is expected to be
+empty for Slice 1, but the migration never assumes that fact.
+
 Test against Wrangler's local D1 first:
 
 ```bash
@@ -176,6 +195,32 @@ bunx wrangler d1 migrations apply frame-of-mind \
 
 Wrangler defaults have changed historically. Always spell out `--local` or
 `--remote`.
+
+Run the built-Worker two-principal stop/go before the remote apply:
+
+```bash
+bun run test:hosted-access-http
+```
+
+The final receipt must include `HOSTED_ACCESS_CONTRACT PASSED`, isolated list
+and 404 detail lines for both principals, a 409 `run_principal_conflict`, and
+403 denials for both a service principal and a missing assertion. The contract
+also applies all migrations twice against an empty local D1 and proves hosted
+creation remains 404-dark.
+
+After migration, verify no sentinel survived:
+
+```bash
+bunx wrangler d1 execute frame-of-mind \
+  --remote \
+  --config apps/web/wrangler.jsonc \
+  --command "SELECT (SELECT count(*) FROM analysis_runs WHERE principal_sub = '__legacy_unclaimed__') + (SELECT count(*) FROM analysis_items WHERE principal_sub = '__legacy_unclaimed__') + (SELECT count(*) FROM analysis_run_registry WHERE principal_sub = '__legacy_unclaimed__') + (SELECT count(*) FROM video_analysis_runs WHERE principal_sub = '__legacy_unclaimed__') + (SELECT count(*) FROM video_analysis_items WHERE principal_sub = '__legacy_unclaimed__') AS sentinel_rows"
+```
+
+Stop unless `sentinel_rows` is exactly `0`. Then verify with two real allowlisted
+user sessions: each list contains only its own imported run, foreign detail is
+404, a reused foreign run ID is 409 `run_principal_conflict`, and
+`GET /api/session` exposes display email but no `sub` or principal.
 
 ## 6. Create the Access application
 
@@ -389,7 +434,8 @@ storage.
 
 ### Tables do not exist
 
-Apply migration `0001_initial.sql` to the same database ID bound to the Worker.
+Apply all pending migrations through `0003_principal_scope.sql` to the same
+database ID bound to the Worker.
 Check `wrangler d1 migrations list ... --remote`.
 
 ### Import is rejected

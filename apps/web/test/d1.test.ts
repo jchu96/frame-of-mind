@@ -3,13 +3,18 @@ import { describe, expect, test } from "bun:test";
 import { Miniflare } from "miniflare";
 import { createD1RunStore } from "../server/data/d1";
 import {
+  importValues,
   itemJsonBatches,
   MAX_D1_JSON_PARAMETER_BYTES,
 } from "../server/data/sql";
 import type { RunRow } from "../server/data/types";
 import { RunProjectionVersionConflictError } from "../server/data/types";
+import { RunPrincipalConflictError } from "../server/data/types";
 import { runFixture, videoRunFixture } from "./fixtures";
 import { analysisDigest } from "../../../src/domain/integrity";
+
+const principalA = { principal: "user-subject-a", email: "same@example.test" };
+const principalB = { principal: "user-subject-b", email: "same@example.test" };
 
 class FakeStatement {
   values: unknown[] = [];
@@ -22,36 +27,59 @@ class FakeStatement {
   }
 
   async all<T>() {
+    const principal = String(this.values[0]);
     return {
       results: [
         ...this.database.runs.values(),
         ...this.database.videoRuns.values(),
-      ] as T[],
+      ].filter((row) => row.principal_sub === principal) as T[],
     };
   }
 
   async first<T>() {
+    if (this.sql.includes("UNION ALL") && this.sql.includes("principal_sub <>")) {
+      const runId = String(this.values[0]);
+      const principal = String(this.values[1]);
+      const registration = this.database.registry.get(runId);
+      const row = this.database.runs.get(runId) ?? this.database.videoRuns.get(runId);
+      const owner = registration?.principal ?? row?.principal_sub;
+      return (owner && owner !== principal ? { principal_sub: owner } : null) as T | null;
+    }
     if (this.sql.startsWith("SELECT schema_version FROM analysis_run_registry")) {
-      const schemaVersion = this.database.registry.get(String(this.values[0]));
-      return (schemaVersion ? { schema_version: schemaVersion } : null) as T | null;
+      const registration = this.database.registry.get(String(this.values[1]));
+      return (registration?.principal === String(this.values[0])
+        ? { schema_version: registration.schemaVersion }
+        : null) as T | null;
+    }
+    if (this.sql.includes("SELECT principal_sub FROM analysis_run_registry")) {
+      const registration = this.database.registry.get(String(this.values[0]));
+      return (registration && registration.principal !== String(this.values[1])
+        ? { principal_sub: registration.principal }
+        : null) as T | null;
     }
     if (this.sql.startsWith("SELECT 1 AS found")) {
       const rows = this.sql.includes("video_analysis_runs")
         ? this.database.videoRuns
         : this.database.runs;
-      return (rows.has(String(this.values[0])) ? { found: 1 } : null) as T | null;
+      const row = rows.get(String(this.values[1]));
+      return (row?.principal_sub === String(this.values[0]) ? { found: 1 } : null) as T | null;
     }
     const rows = this.sql.includes("video_analysis_runs")
       ? this.database.videoRuns
       : this.database.runs;
-    return (rows.get(String(this.values[0])) || null) as T | null;
+    const row = rows.get(String(this.values[1]));
+    return (row?.principal_sub === String(this.values[0]) ? row : null) as T | null;
   }
 }
 
 class FakeD1 {
   readonly runs = new Map<string, RunRow>();
   readonly videoRuns = new Map<string, RunRow>();
-  readonly registry = new Map<string, 2 | 3>();
+  readonly registry = new Map<string, {
+    principal: string;
+    schemaVersion: 2 | 3;
+    email: string | null;
+  }>();
   readonly items = new Map<string, unknown[][]>();
   lastBatchLength = 0;
 
@@ -63,76 +91,90 @@ class FakeD1 {
     this.lastBatchLength = statements.length;
     for (const statement of statements) {
       if (statement.sql.startsWith("INSERT OR IGNORE INTO analysis_run_registry")) {
-        const runId = String(statement.values[0]);
+        const runId = String(statement.values[1]);
         if (!this.registry.has(runId)) {
-          this.registry.set(runId, statement.values[1] as 2 | 3);
+          this.registry.set(runId, {
+            principal: String(statement.values[0]),
+            email: statement.values[2] === null ? null : String(statement.values[2]),
+            schemaVersion: statement.values[3] as 2 | 3,
+          });
         }
       } else if (statement.sql.includes("INSERT INTO analysis_runs")) {
         const value = statement.values;
-        if (this.registry.get(String(value[0])) !== 2) continue;
-        this.runs.set(String(value[0]), {
+        const registration = this.registry.get(String(value[2]));
+        if (registration?.principal !== String(value[0]) || registration.schemaVersion !== 2) continue;
+        this.runs.set(String(value[2]), {
+          principal_sub: String(value[0]),
+          principal_email: value[1] === null ? null : String(value[1]),
           schema_version: 2,
           context_mode: "meeting",
-          run_id: String(value[0]),
-          meeting_id: String(value[1]),
-          meeting_title: value[2] === null ? null : String(value[2]),
-          provider: value[3] as RunRow["provider"],
-          transport: value[4] as RunRow["transport"],
-          recipe_id: String(value[5]),
-          recipe_label: String(value[6]),
-          model: String(value[7]),
-          started_at: String(value[8]),
-          completed_at: String(value[9]),
-          match_notes: String(value[10]),
-          accepted_count: Number(value[11]),
-          rejected_count: Number(value[12]),
-          analysis_json: String(value[13]),
-          manifest_json: String(value[14]),
-          imported_at: String(value[15]),
-          imported_by: value[16] === null ? null : String(value[16]),
+          run_id: String(value[2]),
+          meeting_id: String(value[3]),
+          meeting_title: value[4] === null ? null : String(value[4]),
+          provider: value[5] as RunRow["provider"],
+          transport: value[6] as RunRow["transport"],
+          recipe_id: String(value[7]),
+          recipe_label: String(value[8]),
+          model: String(value[9]),
+          started_at: String(value[10]),
+          completed_at: String(value[11]),
+          match_notes: String(value[12]),
+          accepted_count: Number(value[13]),
+          rejected_count: Number(value[14]),
+          analysis_json: String(value[15]),
+          manifest_json: String(value[16]),
+          imported_at: String(value[17]),
+          imported_by: value[18] === null ? null : String(value[18]),
         });
       } else if (statement.sql.includes("INSERT INTO video_analysis_runs")) {
         const value = statement.values;
-        if (this.registry.get(String(value[0])) !== 3) continue;
-        this.videoRuns.set(String(value[0]), {
+        const registration = this.registry.get(String(value[2]));
+        if (registration?.principal !== String(value[0]) || registration.schemaVersion !== 3) continue;
+        this.videoRuns.set(String(value[2]), {
+          principal_sub: String(value[0]),
+          principal_email: value[1] === null ? null : String(value[1]),
           schema_version: 3,
           context_mode: "none",
-          run_id: String(value[0]),
+          run_id: String(value[2]),
           meeting_id: null,
           meeting_title: null,
           provider: null,
           transport: null,
-          recipe_id: String(value[1]),
-          recipe_label: String(value[2]),
-          model: String(value[3]),
-          started_at: String(value[4]),
-          completed_at: String(value[5]),
-          match_notes: String(value[6]),
-          accepted_count: Number(value[7]),
-          rejected_count: Number(value[8]),
-          analysis_json: String(value[9]),
-          manifest_json: String(value[10]),
-          imported_at: String(value[11]),
-          imported_by: value[12] === null ? null : String(value[12]),
+          recipe_id: String(value[3]),
+          recipe_label: String(value[4]),
+          model: String(value[5]),
+          started_at: String(value[6]),
+          completed_at: String(value[7]),
+          match_notes: String(value[8]),
+          accepted_count: Number(value[9]),
+          rejected_count: Number(value[10]),
+          analysis_json: String(value[11]),
+          manifest_json: String(value[12]),
+          imported_at: String(value[13]),
+          imported_by: value[14] === null ? null : String(value[14]),
         });
       } else if (
         statement.sql.includes("DELETE FROM analysis_items")
         || statement.sql.includes("DELETE FROM video_analysis_items")
       ) {
-        const runId = String(statement.values[0]);
+        const principal = String(statement.values[0]);
+        const runId = String(statement.values[1]);
         const expectedVersion = statement.sql.includes("video_analysis_items") ? 3 : 2;
-        if (this.registry.get(runId) === expectedVersion) {
+        const registration = this.registry.get(runId);
+        if (registration?.principal === principal && registration.schemaVersion === expectedVersion) {
           this.items.set(runId, []);
         }
       } else if (
         statement.sql.includes("INSERT INTO analysis_items")
         || statement.sql.includes("INSERT INTO video_analysis_items")
       ) {
-        const rows = JSON.parse(String(statement.values[0])) as Array<Record<string, unknown>>;
+        const principal = String(statement.values[0]);
+        const rows = JSON.parse(String(statement.values[2])) as Array<Record<string, unknown>>;
         const expectedVersion = statement.sql.includes("video_analysis_items") ? 3 : 2;
         for (const row of rows) {
           const runId = String(row.runId);
-          if (this.registry.get(runId) !== expectedVersion) continue;
+          const registration = this.registry.get(runId);
+          if (registration?.principal !== principal || registration.schemaVersion !== expectedVersion) continue;
           this.items.set(runId, [...(this.items.get(runId) || []), Object.values(row)]);
         }
       }
@@ -144,7 +186,7 @@ class FakeD1 {
 describe("D1 projection contract", () => {
   test("imports, lists, reads, and refreshes through the shared RunStore API", async () => {
     const database = new FakeD1();
-    const store = createD1RunStore(database as unknown as D1Database);
+    const store = createD1RunStore(database as unknown as D1Database, principalA);
     const input = runFixture();
 
     expect(await store.importRun(input, "tester@example.com")).toEqual({
@@ -164,7 +206,7 @@ describe("D1 projection contract", () => {
 
   test("keeps video-only v3 projection behavior in parity with SQLite", async () => {
     const database = new FakeD1();
-    const store = createD1RunStore(database as unknown as D1Database);
+    const store = createD1RunStore(database as unknown as D1Database, principalA);
     const input = await videoRunFixture();
 
     expect(await store.importRun(input, "tester@example.com")).toEqual({
@@ -189,7 +231,7 @@ describe("D1 projection contract", () => {
 
   test("rejects a run ID reused across v2 and v3 projection tables", async () => {
     const database = new FakeD1();
-    const store = createD1RunStore(database as unknown as D1Database);
+    const store = createD1RunStore(database as unknown as D1Database, principalA);
     const meeting = runFixture();
     const video = await videoRunFixture();
     video.analysis.runId = meeting.analysis.runId;
@@ -205,7 +247,7 @@ describe("D1 projection contract", () => {
 
   test("uses a bounded transactional batch for 1000 small analysis items", async () => {
     const database = new FakeD1();
-    const store = createD1RunStore(database as unknown as D1Database);
+    const store = createD1RunStore(database as unknown as D1Database, principalA);
     const input = runFixture();
     input.analysis.items = Array.from({ length: 1_000 }, () => structuredClone(input.analysis.items[0]!));
     input.manifest.analysisSha256 = await analysisDigest(input.analysis);
@@ -232,7 +274,7 @@ describe("D1 projection contract", () => {
 
   test("imports a sub-2 MiB analysis through multiple bounded item expansions", async () => {
     const database = new FakeD1();
-    const store = createD1RunStore(database as unknown as D1Database);
+    const store = createD1RunStore(database as unknown as D1Database, principalA);
     const input = runFixture();
     input.analysis.items = Array.from({ length: 700 }, (_, index) => {
       const item = structuredClone(input.analysis.items[0]!);
@@ -249,11 +291,32 @@ describe("D1 projection contract", () => {
 
   test("rejects a normalized projection that diverges from its bound bundle", async () => {
     const database = new FakeD1();
-    const store = createD1RunStore(database as unknown as D1Database);
+    const store = createD1RunStore(database as unknown as D1Database, principalA);
     const input = runFixture();
     await store.importRun(input);
     database.runs.get(input.manifest.runId)!.model = "tampered-projection";
     expect(store.getRun(input.manifest.runId)).rejects.toThrow(/projection/);
+  });
+
+  test("isolates two principals and rejects cross-principal run ID reuse", async () => {
+    const database = new FakeD1();
+    const storeA = createD1RunStore(database as unknown as D1Database, principalA);
+    const storeB = createD1RunStore(database as unknown as D1Database, principalB);
+    const runA = runFixture();
+    const runB = await videoRunFixture();
+
+    await storeA.importRun(runA, principalA.email);
+    expect((await storeB.listRuns({ limit: 10 })).runs).toEqual([]);
+    await expect(storeB.getRun(runA.manifest.runId)).resolves.toBeNull();
+    await expect(storeB.importRun(runA, principalB.email)).rejects.toBeInstanceOf(
+      RunPrincipalConflictError,
+    );
+
+    await storeB.importRun(runB, principalB.email);
+    expect((await storeA.listRuns({ limit: 10 })).runs.map((run) => run.runId))
+      .toEqual([runA.manifest.runId]);
+    expect((await storeB.listRuns({ limit: 10 })).runs.map((run) => run.runId))
+      .toEqual([runB.manifest.runId]);
   });
 
   test("uses real local D1 semantics for migrations, mixed versions, and collisions", async () => {
@@ -267,6 +330,7 @@ describe("D1 projection contract", () => {
       const migrations = await Promise.all([
         "0001_initial.sql",
         "0002_video_only_projection.sql",
+        "0003_principal_scope.sql",
       ].map((name) => readFile(
         new URL(`../db/migrations/${name}`, import.meta.url),
         "utf8",
@@ -274,7 +338,17 @@ describe("D1 projection contract", () => {
       for (const migration of migrations) {
         await applyD1Migration(database, migration);
       }
-      const store = createD1RunStore(database as unknown as D1Database);
+      const sentinel = await database.prepare(`
+        SELECT
+          (SELECT count(*) FROM analysis_runs WHERE principal_sub = '__legacy_unclaimed__')
+          + (SELECT count(*) FROM analysis_items WHERE principal_sub = '__legacy_unclaimed__')
+          + (SELECT count(*) FROM analysis_run_registry WHERE principal_sub = '__legacy_unclaimed__')
+          + (SELECT count(*) FROM video_analysis_runs WHERE principal_sub = '__legacy_unclaimed__')
+          + (SELECT count(*) FROM video_analysis_items WHERE principal_sub = '__legacy_unclaimed__')
+          AS count
+      `).first<{ count: number }>();
+      expect(sentinel?.count).toBe(0);
+      const store = createD1RunStore(database as unknown as D1Database, principalA);
       const meeting = runFixture();
       const video = await videoRunFixture();
 
@@ -300,27 +374,80 @@ describe("D1 projection contract", () => {
       );
 
       const itemsBefore = await database.prepare(
-        "SELECT candidate_json, result_json FROM analysis_items WHERE run_id = ? ORDER BY item_index",
-      ).bind(meeting.manifest.runId).all();
+        `SELECT candidate_json, result_json FROM analysis_items
+         WHERE principal_sub = ? AND run_id = ? ORDER BY item_index`,
+      ).bind(principalA.principal, meeting.manifest.runId).all();
       const runBefore = await database.prepare(
-        "SELECT analysis_json FROM analysis_runs WHERE run_id = ?",
-      ).bind(meeting.manifest.runId).first<{ analysis_json: string }>();
+        `SELECT analysis_json FROM analysis_runs
+         WHERE principal_sub = ? AND run_id = ?`,
+      ).bind(principalA.principal, meeting.manifest.runId).first<{ analysis_json: string }>();
       await database.prepare(
-        "UPDATE analysis_run_registry SET schema_version = 3 WHERE run_id = ?",
-      ).bind(meeting.manifest.runId).run();
+        `UPDATE analysis_run_registry SET schema_version = 3
+         WHERE principal_sub = ? AND run_id = ?`,
+      ).bind(principalA.principal, meeting.manifest.runId).run();
       meeting.analysis.items[0]!.result.summary = "must not be projected";
       meeting.manifest.analysisSha256 = await analysisDigest(meeting.analysis);
       await expect(store.importRun(meeting)).rejects.toBeInstanceOf(
         RunProjectionVersionConflictError,
       );
       const itemsAfter = await database.prepare(
-        "SELECT candidate_json, result_json FROM analysis_items WHERE run_id = ? ORDER BY item_index",
-      ).bind(meeting.manifest.runId).all();
+        `SELECT candidate_json, result_json FROM analysis_items
+         WHERE principal_sub = ? AND run_id = ? ORDER BY item_index`,
+      ).bind(principalA.principal, meeting.manifest.runId).all();
       const runAfter = await database.prepare(
-        "SELECT analysis_json FROM analysis_runs WHERE run_id = ?",
-      ).bind(meeting.manifest.runId).first<{ analysis_json: string }>();
+        `SELECT analysis_json FROM analysis_runs
+         WHERE principal_sub = ? AND run_id = ?`,
+      ).bind(principalA.principal, meeting.manifest.runId).first<{ analysis_json: string }>();
       expect(itemsAfter.results).toEqual(itemsBefore.results);
       expect(runAfter?.analysis_json).toBe(runBefore?.analysis_json);
+    } finally {
+      await miniflare.dispose();
+    }
+  });
+
+  test("fails the D1 principal migration closed with a named legacy-row error", async () => {
+    const miniflare = new Miniflare({
+      modules: true,
+      script: "export default { fetch() { return new Response('ok'); } }",
+      d1Databases: { DB: "frame-of-mind-legacy-migration-test" },
+    });
+    try {
+      const database = await miniflare.getD1Database("DB");
+      const [initial, video, principalMigration] = await Promise.all([
+        "0001_initial.sql",
+        "0002_video_only_projection.sql",
+        "0003_principal_scope.sql",
+      ].map((name) => readFile(
+        new URL(`../db/migrations/${name}`, import.meta.url),
+        "utf8",
+      )));
+      await applyD1Migration(database, initial!);
+      const input = runFixture();
+      const legacyValues = importValues(
+        input,
+        principalA.principal,
+        principalA.email,
+        "legacy@example.test",
+      ).slice(2, -2);
+      await database.prepare(`
+        INSERT INTO analysis_runs (
+          run_id, meeting_id, meeting_title, provider, transport, recipe_id,
+          recipe_label, model, started_at, completed_at, match_notes,
+          accepted_count, rejected_count, analysis_json, manifest_json,
+          imported_at, imported_by
+        ) VALUES (${Array.from({ length: 17 }, () => "?").join(", ")})
+      `).bind(...legacyValues).run();
+      await applyD1Migration(database, video!);
+      await expect(applyD1Migration(database, principalMigration!)).rejects.toThrow(
+        /principal_scope_requires_empty_legacy_tables/,
+      );
+      const columns = await database.prepare(
+        "SELECT name FROM pragma_table_info('analysis_runs') WHERE name = 'principal_sub'",
+      ).all();
+      expect(columns.results).toEqual([]);
+      expect((await database.prepare(
+        "SELECT count(*) AS count FROM analysis_runs",
+      ).first<{ count: number }>())?.count).toBe(1);
     } finally {
       await miniflare.dispose();
     }
