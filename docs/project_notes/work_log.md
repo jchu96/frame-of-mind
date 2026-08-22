@@ -499,3 +499,13 @@
   Validated by `bun run check` (Vitest: 22 files / 212 tests; Bun web suite:
   223; Studio HTTP, Cloudflare boundary, and 32 MiB streaming spike passed),
   `bun run test:e2e:smoke` (12 passed), and `bun run smoke:gemini`.
+- Revised the Hosted Studio track after adversarial review r1: made principal
+  scoping the first independently deployable slice, added hard streaming and
+  Workflow-export spikes, fixed the raw 8 MiB resumable-part and Gemini-offset
+  contracts, made Workflow retries and receipts explicit, and closed every
+  listed security/threat-model residual. Rebasing ADR 0017 exposed that its
+  Sentry preset guard named only the legacy Cloudflare preset; the guard now
+  also excludes the deployed `cloudflare_module` preset. Validated by
+  `bun run check` (Vitest: 22 files / 212 tests; Bun web suite passed; Studio
+  HTTP passed; Cloudflare boundary: 63 forbidden markers absent and 2 required
+  markers present; 32 MiB streaming spike passed with atomic seal).

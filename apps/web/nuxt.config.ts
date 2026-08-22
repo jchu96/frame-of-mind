@@ -4,7 +4,8 @@ import { shouldRegisterLocalStudioRoutes } from "./server-local/studio-session/s
 
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
 const nitroPreset = process.env.NITRO_PRESET || "node-server";
-const sentryNuxtEnabled = nitroPreset !== "cloudflare-worker";
+const sentryNuxtEnabled = nitroPreset !== "cloudflare-worker"
+  && nitroPreset !== "cloudflare_module";
 const studioSpikeEnabled = databaseDriver === "sqlite"
   && nitroPreset === "node-server"
   && process.env.FRAME_OF_MIND_STUDIO_SPIKE === "1";

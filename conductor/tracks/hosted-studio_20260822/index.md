@@ -7,12 +7,14 @@
 
 - [Specification](./spec.md)
 - [Implementation Plan](./plan.md)
+- [Adversarial Plan Review R1](./review.md)
 
 ## Progress
 
 - Phases: 0/8 complete
-- Tasks: 0/32 complete
-- Current focus: adversarial review of the complete Tier A and Tier B plan
+- Tasks: 0/33 complete
+- Current focus: revised plan review; Slice 1 principal-scopes the deployed
+  viewer before upload or Workflow implementation
 
 ## Decision
 
