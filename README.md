@@ -42,9 +42,9 @@ even derive its own transcript from the recording's audio.
   [Local Studio plan](conductor/tracks/local-studio_20260726/plan.md) and
   [Studio browser suite](apps/web/e2e/studio-smoke.spec.ts).
 - Phase 9 release hardening is in progress. Documentation, classification,
-  repository hygiene, and hosted-track reconciliation are complete in this
-  slice; fresh-clone platform testing (9.3) and the operator/adversarial release
-  gate (9.4) remain pending in the
+  repository hygiene, fresh-clone platform testing, and hosted-track
+  reconciliation are complete in this slice; only the operator/adversarial
+  release gate (9.4) remains pending in the
   [Phase 9 checklist](conductor/tracks/local-studio_20260726/plan.md#phase-9-public-release-hardening-and-phase-b-roadmap).
 - Hosted Studio remains dark and undeployed. Principal scoping (Slice 1),
   durable Workflows (Phase 3), composer/activity/publication (Phase 4), spend
@@ -179,18 +179,37 @@ runs but is a mutable alias, so it is less reproducible than a pinned model.
 gh repo clone jchu96/frame-of-mind
 cd frame-of-mind
 bun install --frozen-lockfile
-bun run check
-bun run build
+bun run build:cli
+bun run build:web
 bun link
 ```
 
 Verify:
 
 ```bash
+frameofmind --help
 frameofmind --version
 frameofmind recipes
 frameofmind doctor
 ```
+
+Contributors should also run the complete repository gate:
+
+```bash
+bun run check
+```
+
+The full fresh-clone Studio boot is continuously tested on macOS and Linux.
+On Windows, use WSL or Git Bash with Bun 1.3.14+ and keep the checkout on LF:
+
+```bash
+git config --global core.autocrlf false
+git config --global core.eol lf
+```
+
+Windows CI repeats the frozen install, CLI/web builds, and CLI help check, but
+does not yet boot Local Studio; the headless Studio boot contract currently
+runs on macOS and Linux only.
 
 Maintainers can verify upload, both structured model passes, and exact remote
 cleanup with generated media before processing a real meeting:

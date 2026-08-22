@@ -12,9 +12,8 @@
 ## Progress
 
 - Phases: 8/9 complete
-- Tasks: 49/51 complete
-- Current focus: Tasks 9.3 and 9.4, collecting fresh-clone platform evidence
-  and completing the final adversarial release review.
+- Tasks: 50/51 complete
+- Current focus: Task 9.4, completing the final adversarial release review.
 
 ## Decision
 

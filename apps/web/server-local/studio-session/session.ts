@@ -121,7 +121,11 @@ export function requiresLocalStudioSession(pathname: string): boolean {
     || pathname.startsWith("/api/runs/")
     || pathname === "/api/context-files"
     || pathname.startsWith("/api/context-files/")
-    || pathname.startsWith("/api/studio/");
+    || pathname.startsWith("/api/studio/")
+    // The env-gated streaming spike upload is local-only and off by default,
+    // but when enabled it must still require the Studio session like every
+    // other body-accepting local route (review 9.4 N1).
+    || pathname.startsWith("/api/__studio-spike/");
 }
 
 export function redactStudioBootstrap(
