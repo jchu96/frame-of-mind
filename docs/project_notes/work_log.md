@@ -509,3 +509,10 @@
   `bun run check` (Vitest: 22 files / 212 tests; Bun web suite passed; Studio
   HTTP passed; Cloudflare boundary: 63 forbidden markers absent and 2 required
   markers present; 32 MiB streaming spike passed with atomic seal).
+- Implemented Local Studio Task 7.2: a pure action-permission table now gates
+  cancel, linked retry, exact-provider reconnect, completed-results re-import,
+  and failed-cleanup retry from the authoritative job/media/run receipts.
+  Activity detail provides inline confirmations and pending/error states while
+  list rows expose cancel only. Added local-only session-guarded re-import and
+  cleanup-retry routes, state-machine rejection coverage, authenticated HTTP
+  cases, Cloudflare markers, and a browser composer-to-list cancellation smoke.

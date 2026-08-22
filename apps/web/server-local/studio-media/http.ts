@@ -9,6 +9,7 @@ import {
   RequestBodyTooLargeError,
 } from "../../server/utils/request-body.js";
 import { MediaStagingError } from "./local-media-staging.js";
+import { StudioMediaCleanupRetryError } from "./cleanup-retry.js";
 
 const maximumMediaJsonBytes = 16 * 1_024;
 
@@ -39,6 +40,7 @@ const statusByMediaError: Readonly<Record<string, number>> = {
   insufficient_disk: 507,
   disk_exhausted: 507,
   cleanup_failed: 503,
+  media_cleanup_not_retryable: 409,
   unsafe_staging_root: 500,
   unsafe_staging_file: 500,
   staging_inconsistent: 500,
@@ -70,10 +72,15 @@ export async function readMediaJson(
 }
 
 export function throwMediaHttpError(error: unknown): never {
-  if (error instanceof MediaStagingError) {
+  if (
+    error instanceof MediaStagingError
+    || error instanceof StudioMediaCleanupRetryError
+  ) {
+    const statusCode = statusByMediaError[error.code] ?? 500;
     throw createError({
-      statusCode: statusByMediaError[error.code] ?? 500,
+      statusCode,
       statusMessage: error.message,
+      ...(statusCode < 500 ? { data: { code: error.code } } : {}),
     });
   }
   if (error instanceof z.ZodError) {

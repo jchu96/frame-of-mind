@@ -106,6 +106,9 @@ const studioMediaCompleteHandler = fileURLToPath(
 const studioMediaAbortHandler = fileURLToPath(
   new URL("./server-local/studio-media/abort.delete.ts", import.meta.url),
 );
+const studioMediaCleanupRetryHandler = fileURLToPath(
+  new URL("./server-local/studio-media/cleanup-retry.post.ts", import.meta.url),
+);
 const studioContextCreateHandler = fileURLToPath(
   new URL("./server-local/studio-context/create.post.ts", import.meta.url),
 );
@@ -138,6 +141,9 @@ const studioJobCancelHandler = fileURLToPath(
 );
 const studioJobRetryHandler = fileURLToPath(
   new URL("./server-local/studio-jobs/retry.post.ts", import.meta.url),
+);
+const studioJobReimportHandler = fileURLToPath(
+  new URL("./server-local/studio-jobs/reimport.post.ts", import.meta.url),
 );
 
 const localHandlers = [
@@ -203,6 +209,11 @@ const localHandlers = [
           handler: studioMediaAbortHandler,
         },
         {
+          route: "/api/studio/media/:id/cleanup-retry",
+          method: "post",
+          handler: studioMediaCleanupRetryHandler,
+        },
+        {
           route: "/api/context-files",
           method: "post",
           handler: studioContextCreateHandler,
@@ -256,6 +267,11 @@ const localHandlers = [
           route: "/api/studio/jobs/:id/retry",
           method: "post",
           handler: studioJobRetryHandler,
+        },
+        {
+          route: "/api/studio/jobs/:id/reimport",
+          method: "post",
+          handler: studioJobReimportHandler,
         },
       ]
     : []),

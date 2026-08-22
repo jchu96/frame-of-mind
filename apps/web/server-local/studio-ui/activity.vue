@@ -13,6 +13,12 @@ import {
   createJobActivityTransport,
   useJobActivity,
 } from "./use-job-activity";
+import {
+  activityActionErrorMessage,
+  ActivityActionRequestError,
+  createActivityActionTransport,
+} from "./activity-action-client";
+import { derivePermittedActivityActions } from "./activity-actions";
 
 useSeoMeta({
   title: "Activity · Frame of Mind",
@@ -37,6 +43,10 @@ const { data: recipeCatalog } = await useFetch<{
   recipes: Array<{ id: string; label: string }>;
 }>("/api/studio/recipes", { server: false });
 const now = ref(Date.now());
+const actionTransport = createActivityActionTransport();
+const confirmingCancel = ref<string>();
+const pendingCancel = ref<string>();
+const cancelError = ref<{ jobId: string; message: string }>();
 
 watch(jobPage, () => {
   now.value = Date.now();
@@ -88,6 +98,46 @@ function formatDate(value: string): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function canCancel(job: AnalysisJob): boolean {
+  return derivePermittedActivityActions({
+    job,
+    media: undefined,
+    projection: "unknown",
+    now: new Date().toISOString(),
+  }).actions.some((action) => action.id === "cancel");
+}
+
+function requestCancel(jobId: string): void {
+  if (pendingCancel.value) return;
+  confirmingCancel.value = jobId;
+  cancelError.value = undefined;
+}
+
+async function confirmCancel(job: AnalysisJob): Promise<void> {
+  if (pendingCancel.value) return;
+  pendingCancel.value = job.id;
+  cancelError.value = undefined;
+  try {
+    const updated = await actionTransport.cancel(job.id);
+    jobPage.value = {
+      ...jobPage.value,
+      jobs: jobPage.value.jobs.map((item) => item.id === updated.id ? updated : item),
+    };
+    confirmingCancel.value = undefined;
+    await refresh();
+  } catch (error) {
+    cancelError.value = {
+      jobId: job.id,
+      message: activityActionErrorMessage(
+        "cancel",
+        error instanceof ActivityActionRequestError ? error.code : undefined,
+      ),
+    };
+  } finally {
+    pendingCancel.value = undefined;
+  }
 }
 </script>
 
@@ -166,6 +216,7 @@ function formatDate(value: string): string {
                   <th scope="col" class="px-4 pb-2">Created</th>
                   <th scope="col" class="px-4 pb-2">Current stage</th>
                   <th scope="col" class="pb-2 pl-4">Last activity</th>
+                  <th scope="col" class="pb-2 pl-4">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-default">
@@ -195,6 +246,59 @@ function formatDate(value: string): string {
                   </td>
                   <td class="py-4 pl-4 text-sm text-muted">
                     {{ formatRelativeActivity(job.updatedAt, now) }}
+                  </td>
+                  <td class="py-4 pl-4 text-sm">
+                    <template v-if="canCancel(job)">
+                      <UButton
+                        type="button"
+                        size="sm"
+                        color="neutral"
+                        variant="outline"
+                        :loading="pendingCancel === job.id"
+                        :disabled="Boolean(pendingCancel)"
+                        :aria-label="`Cancel ${recipeLabel(job)} attempt ${job.attempt}`"
+                        @click="requestCancel(job.id)"
+                      >
+                        Cancel
+                      </UButton>
+                      <div
+                        v-if="confirmingCancel === job.id"
+                        class="mt-2 min-w-48 rounded-lg border border-default bg-elevated p-3"
+                        role="group"
+                        :aria-label="`Cancel ${recipeLabel(job)} confirmation`"
+                      >
+                        <p class="text-xs font-semibold">Cancel this analysis?</p>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                          <UButton
+                            type="button"
+                            size="xs"
+                            color="error"
+                            :loading="pendingCancel === job.id"
+                            :disabled="Boolean(pendingCancel)"
+                            @click="confirmCancel(job)"
+                          >
+                            Confirm Cancel
+                          </UButton>
+                          <UButton
+                            type="button"
+                            size="xs"
+                            color="neutral"
+                            variant="ghost"
+                            :disabled="Boolean(pendingCancel)"
+                            @click="confirmingCancel = undefined"
+                          >
+                            Keep running
+                          </UButton>
+                        </div>
+                      </div>
+                    </template>
+                    <p
+                      v-if="cancelError?.jobId === job.id"
+                      class="mt-2 min-w-48 text-xs font-semibold text-error"
+                      role="alert"
+                    >
+                      {{ cancelError.message }}
+                    </p>
                   </td>
                 </tr>
               </tbody>

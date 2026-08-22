@@ -8,6 +8,28 @@ useSeoMeta({
 
 type ProviderName = "gemini" | "bluedot" | "granola";
 type SecretProviderName = "gemini" | "granola";
+const route = useRoute();
+const selectedProvider = computed<"bluedot" | "granola" | undefined>(() => {
+  const value = Array.isArray(route.query.provider)
+    ? route.query.provider[0]
+    : route.query.provider;
+  return value === "bluedot" || value === "granola" ? value : undefined;
+});
+const returnTo = computed(() => {
+  const value = Array.isArray(route.query.returnTo)
+    ? route.query.returnTo[0]
+    : route.query.returnTo;
+  return typeof value === "string" && /^\/activity\/[a-zA-Z0-9_-]+$/.test(value)
+    ? value
+    : undefined;
+});
+const providerNames = computed<ProviderName[]>(() => {
+  const names: ProviderName[] = ["gemini", "bluedot", "granola"];
+  const selected = selectedProvider.value;
+  return selected
+    ? [selected, ...names.filter((name) => name !== selected)]
+    : names;
+});
 
 const { data: configuration, error, refresh, status } =
   await useFetch<ConfigurationStatus>("/api/studio/configuration", {
@@ -174,6 +196,22 @@ async function connectOAuth(name: "bluedot" | "granola") {
       />
 
       <UAlert
+        v-if="selectedProvider"
+        class="mt-8"
+        color="primary"
+        variant="soft"
+        icon="i-lucide-key-round"
+        :title="`Reconnect ${selectedProvider === 'bluedot' ? 'Bluedot' : 'Granola'}`"
+        description="Finish the connection here, refresh its status, then return to the stopped attempt."
+      >
+        <template v-if="returnTo" #actions>
+          <UButton :to="returnTo" color="neutral" variant="outline" size="sm">
+            Return to job
+          </UButton>
+        </template>
+      </UAlert>
+
+      <UAlert
         v-else-if="error"
         class="mt-8"
         color="error"
@@ -184,10 +222,12 @@ async function connectOAuth(name: "bluedot" | "granola") {
 
       <section v-else class="mt-10 grid gap-5 lg:grid-cols-2 xl:grid-cols-4" aria-label="Provider connections and telemetry">
         <UCard
-          v-for="name in (['gemini', 'bluedot', 'granola'] as ProviderName[])"
+          v-for="name in providerNames"
           :key="name"
           role="region"
           :aria-labelledby="`provider-heading-${name}`"
+          :data-selected-provider="selectedProvider === name ? name : undefined"
+          :class="selectedProvider === name ? 'ring-2 ring-primary' : undefined"
         >
           <template #header>
             <div class="flex items-start justify-between gap-4">
@@ -254,6 +294,7 @@ async function connectOAuth(name: "bluedot" | "granola") {
                 v-model="secretInput[name]"
                 class="w-full"
                 type="password"
+                :aria-label="`${name === 'gemini' ? 'Gemini' : 'Granola'} API key`"
                 autocomplete="off"
                 placeholder="Paste a temporary key"
                 :disabled="provider(name)?.source === 'environment'"
