@@ -16,6 +16,15 @@ import {
 import {
   LocalSqliteJobRepository,
 } from "../server-local/studio-jobs/sqlite-job-repository";
+import {
+  StudioJobInputUnavailableError,
+} from "../server-local/studio-jobs/analysis-options";
+import {
+  resolveComposerRecipe,
+} from "../server-local/studio-jobs/composer-recipe";
+import {
+  jobErrorResponse,
+} from "../server-local/studio-jobs/job-error-response";
 
 const databases: Database[] = [];
 
@@ -78,6 +87,42 @@ describe("Local Studio job HTTP contracts", () => {
     expect(getStudioJobApi()).toBe(api);
     clearStudioJobApi(api);
     expect(() => getStudioJobApi()).toThrow(StudioJobApiUnavailableError);
+  });
+
+  test("returns public codes only for mapped 4xx job errors", () => {
+    const publicError = jobErrorResponse(
+      new StudioJobInputUnavailableError("invalid_check_time"),
+    );
+    expect(publicError?.statusCode).toBe(422);
+    expect(publicError?.data).toEqual({ code: "invalid_check_time" });
+
+    for (const code of [
+      "media_initial_guard_required",
+      "unsafe_output_root",
+      "invalid_runtime_bounds",
+      "corrupt_job",
+    ]) {
+      const internalError = jobErrorResponse(
+        new StudioJobInputUnavailableError(code),
+      );
+      expect(internalError?.statusCode).toBe(500);
+      expect(internalError?.data).toBeUndefined();
+    }
+    const unmapped = jobErrorResponse(
+      new StudioJobInputUnavailableError("unmapped_internal_failure"),
+    );
+    expect(unmapped?.statusCode).toBe(500);
+    expect(unmapped?.data).toBeUndefined();
+  });
+
+  test("distinguishes unknown recipes from internal recipe failures", async () => {
+    await expect(resolveComposerRecipe("not-a-built-in-recipe"))
+      .rejects.toMatchObject({ code: "recipe_not_found" });
+
+    const internal = new Error("synthetic recipe compiler failure");
+    await expect(resolveComposerRecipe("requirements", async () => {
+      throw internal;
+    })).rejects.toBe(internal);
   });
 
   test("creates or replays once and keyset-pages bounded event history", async () => {

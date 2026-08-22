@@ -5,6 +5,8 @@ import {
   clearRunDraft,
   createOrLoadRunDraft,
   deriveRunReceiptState,
+  retentionRequestForMediaSession,
+  runFieldErrorForJobCode,
   RUN_DRAFT_STORAGE_KEY,
 } from "../server-local/studio-ui/run-composer";
 
@@ -178,24 +180,41 @@ describe("Studio Run receipt state", () => {
     expect(payload.context).not.toEqual({ mode: "none" });
   });
 
-  test("persists only one reusable idempotency key and retention request", () => {
+  test("keeps one reusable idempotency key while recomputing live retention", () => {
     const storage = new MemoryStorage();
-    const first = createOrLoadRunDraft(
-      storage,
-      { mode: "ephemeral" },
-      () => "studio-run-generated-0001",
-    );
-    const second = createOrLoadRunDraft(
+    storage.setItem(RUN_DRAFT_STORAGE_KEY, JSON.stringify({
+      idempotencyKey: "studio-run-generated-0001",
+      retention: { mode: "ephemeral" },
+    }));
+    const draft = createOrLoadRunDraft(
       storage,
       { mode: "retained", ttlSeconds: 60 * 60 },
       () => "studio-run-generated-0002",
     );
-    expect(first).toEqual(second);
+    expect(draft).toEqual({
+      idempotencyKey: "studio-run-generated-0001",
+      retention: { mode: "retained", ttlSeconds: 60 * 60 },
+    });
     expect(JSON.parse(storage.getItem(RUN_DRAFT_STORAGE_KEY)!)).toEqual({
       idempotencyKey: "studio-run-generated-0001",
-      retention: { mode: "ephemeral" },
     });
     expect(clearRunDraft(storage)).toBe(true);
     expect(storage.getItem(RUN_DRAFT_STORAGE_KEY)).toBeNull();
+  });
+
+  test("rejects a retained media lifetime below the request floor", () => {
+    const retained = media();
+    retained.retention = {
+      mode: "retained",
+      expiresAt: "2026-08-22T11:30:00.000Z",
+    };
+    expect(() => retentionRequestForMediaSession(retained)).toThrow();
+  });
+
+  test("maps changed recording retention back to Recording and Run", () => {
+    expect(runFieldErrorForJobCode("media_retention_mismatch")).toEqual({
+      section: "recording",
+      message: "The recording's retention changed. Reopen Run to refresh the exact receipt.",
+    });
   });
 });

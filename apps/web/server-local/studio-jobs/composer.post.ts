@@ -2,11 +2,11 @@ import { defineEventHandler, setResponseStatus } from "h3";
 import {
   composerPayloadSchema,
 } from "../../../../src/domain/studio-schemas.js";
-import { loadRecipe } from "../../../../src/recipes/index.js";
 import { assertTrustedJsonMutation } from "../../server/utils/request-security.js";
 import { getLocalMediaStaging } from "../studio-media/service.js";
 import { StudioJobInputUnavailableError } from "./analysis-options.js";
 import { getStudioJobApi } from "./api-service.js";
+import { resolveComposerRecipe } from "./composer-recipe.js";
 import { translateComposerJob } from "./composer-translate.js";
 import { readJobJson, throwJobHttpError } from "./http.js";
 
@@ -20,12 +20,7 @@ export default defineEventHandler(async (event) => {
       );
     }
     const now = new Date().toISOString();
-    let resolvedRecipe;
-    try {
-      resolvedRecipe = await loadRecipe(payload.recipe.id);
-    } catch {
-      throw new StudioJobInputUnavailableError("recipe_not_found");
-    }
+    const resolvedRecipe = await resolveComposerRecipe(payload.recipe.id);
     const mediaSession = await (await getLocalMediaStaging()).get(
       payload.mediaSessionId,
     );

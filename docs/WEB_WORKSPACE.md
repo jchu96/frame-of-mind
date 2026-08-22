@@ -71,18 +71,25 @@ page, v2 context draft, shared composer-readiness coordinator, and final Run
 receipt are shipped. Intent and sealed Recording are required; the final
 receipt additionally requires Context to be explicitly committed as enriched
 or video-only. Missing, unreadable, expired, or uncommitted context blocks job
-creation and is never inferred as video-only. Custom-recipe drafts remain
-unrunnable until their private staging contract exists. Job-detail activity UI
-remains a later track task; Home already reports composer readiness and active
-work from the protected durable job runtime underneath it.
+creation in the browser and is never inferred as video-only there:
+`deriveContext` blocks every non-committed state, and `buildComposerPayload`
+emits `{ mode: "none" }` only from a committed video-only draft. The local,
+authenticated composer route intentionally accepts an explicit
+`{ mode: "none" }` from its caller; at execution, enriched jobs enter through
+the `fetching_context` guard and cannot silently fall back after context
+failure. Custom-recipe drafts remain unrunnable until their private staging
+contract exists. Job-detail activity UI remains a later track task; Home
+already reports composer readiness and active work from the protected durable
+job runtime underneath it.
 
 The Run page re-reads the browser drafts, live media receipt, local context
 receipt when applicable, and sanitized recipe catalog. It shows the exact
 recipe revision, model, optional focus, media digest prefix, context identity,
 and server-owned retention deadline. Browser session storage contains only
-`{ idempotencyKey, retention }` for the Run retry hint. A network retry reuses
-that key. A successful 201 create or 200 replay clears the Intent, Context,
-media-resume, and Run hints and returns Home with the durable job ID.
+`{ idempotencyKey }` for the Run retry hint; retention is recomputed from the
+live media receipt on every mount. A network retry reuses that key. A
+successful 201 create or 200 replay clears the Intent, Context, media-resume,
+and Run hints and returns Home with the durable job ID.
 
 The planned Studio distinguishes operational job data from the existing run
 projection:

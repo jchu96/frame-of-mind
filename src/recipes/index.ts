@@ -218,10 +218,17 @@ const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
   },
 };
 
+export class UnknownBuiltInRecipeError extends Error {
+  constructor(readonly recipeId: string, availableIds: readonly string[]) {
+    super(`Unknown recipe '${recipeId}'. Available recipes: ${availableIds.join(", ")}.`);
+    this.name = "UnknownBuiltInRecipeError";
+  }
+}
+
 export function builtInRecipe(id: string): AnalysisRecipe {
   const recipe = recipes[id as BuiltInRecipeId];
   if (!recipe) {
-    throw new Error(`Unknown recipe '${id}'. Available recipes: ${Object.keys(recipes).join(", ")}.`);
+    throw new UnknownBuiltInRecipeError(id, Object.keys(recipes));
   }
   return recipe;
 }

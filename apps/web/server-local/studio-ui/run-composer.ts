@@ -14,12 +14,19 @@ export const RUN_DRAFT_STORAGE_KEY = "frame-of-mind:studio:run-draft";
 
 type BrowserStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const runDraftSchema = z.object({
+const storedRunDraftSchema = z.object({
+  idempotencyKey: idempotencyKeySchema,
+}).strict();
+
+const legacyRunDraftSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
   retention: mediaRetentionRequestSchema,
 }).strict();
 
-export type RunDraft = z.infer<typeof runDraftSchema>;
+export interface RunDraft {
+  idempotencyKey: string;
+  retention: MediaRetentionRequest;
+}
 export type RunBlockerCode =
   | "intent_missing"
   | "intent_unreadable"
@@ -38,6 +45,11 @@ export interface RunBlocker {
   code: RunBlockerCode;
   message: string;
   link: "/intent" | "/context" | "/recording";
+}
+
+export interface RunFieldError {
+  section: "intent" | "context" | "recording" | "connections";
+  message: string;
 }
 
 export interface RunRecipeSummary {
@@ -300,26 +312,67 @@ export function retentionRequestForMediaSession(
   });
 }
 
+export function runFieldErrorForJobCode(
+  code: string | undefined,
+): RunFieldError {
+  if (code === "custom_recipe_staging_unavailable") {
+    return { section: "intent", message: "Custom recipes cannot run yet. Choose a built-in Intent." };
+  }
+  if (code === "recipe_receipt_mismatch" || code === "recipe_not_found") {
+    return { section: "intent", message: "The recipe changed or is unavailable. Review Intent." };
+  }
+  if (code === "media_retention_mismatch") {
+    return {
+      section: "recording",
+      message: "The recording's retention changed. Reopen Run to refresh the exact receipt.",
+    };
+  }
+  if (code?.startsWith("context_")) {
+    return { section: "context", message: "Context is unavailable or changed. Review Context." };
+  }
+  if (
+    code === "gemini_not_configured"
+    || code === "granola_api_not_configured"
+    || code?.endsWith("_oauth_not_configured")
+  ) {
+    return { section: "connections", message: "The exact analysis connection is not configured. Review Connections." };
+  }
+  return { section: "recording", message: "The staged recording is unavailable, changed, or expired. Review Recording." };
+}
+
 export function createOrLoadRunDraft(
   storage: BrowserStorage,
   retention: MediaRetentionRequest,
   createIdempotencyKey: () => string = () => `studio-run:${crypto.randomUUID()}`,
 ): RunDraft {
-  try {
-    const raw = storage.getItem(RUN_DRAFT_STORAGE_KEY);
-    if (raw) {
-      const parsed = runDraftSchema.safeParse(JSON.parse(raw));
-      if (parsed.success) return parsed.data;
+  const raw = storage.getItem(RUN_DRAFT_STORAGE_KEY);
+  if (raw) {
+    let stored: { idempotencyKey: string } | undefined;
+    try {
+      const value: unknown = JSON.parse(raw);
+      const current = storedRunDraftSchema.safeParse(value);
+      const legacy = legacyRunDraftSchema.safeParse(value);
+      stored = current.success
+        ? current.data
+        : legacy.success
+          ? { idempotencyKey: legacy.data.idempotencyKey }
+          : undefined;
+    } catch {
+      // Replace unreadable optional browser state below.
     }
-  } catch {
-    // Replace unreadable optional browser state below.
+    if (stored) {
+      const serialized = JSON.stringify(stored);
+      if (serialized !== raw) {
+        storage.setItem(RUN_DRAFT_STORAGE_KEY, serialized);
+      }
+      return { ...stored, retention };
+    }
   }
-  const draft = runDraftSchema.parse({
+  const stored = storedRunDraftSchema.parse({
     idempotencyKey: createIdempotencyKey(),
-    retention,
   });
-  storage.setItem(RUN_DRAFT_STORAGE_KEY, JSON.stringify(draft));
-  return draft;
+  storage.setItem(RUN_DRAFT_STORAGE_KEY, JSON.stringify(stored));
+  return { ...stored, retention };
 }
 
 export function clearRunDraft(storage: BrowserStorage): boolean {
