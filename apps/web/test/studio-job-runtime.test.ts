@@ -44,11 +44,14 @@ afterEach(async () => {
 });
 
 describe("Local Studio job runtime", () => {
-  test("resolves immutable built-in input to private execution options", async () => {
+  test("studio jobs resolve the staged recording mime type from the session, not the path", async () => {
     const recipe = await loadRecipe("issue-review");
     const mediaPath = "/private/synthetic/media.sealed";
     const resolver = new LocalStudioAnalyzeOptionsResolver({
       media: {
+        async get() {
+          return stagedMediaSession();
+        },
         async resolveInUsePath(id, digest) {
           expect(id).toBe("media_01K123456789ABC");
           expect(digest).toBe("a".repeat(64));
@@ -85,6 +88,7 @@ describe("Local Studio job runtime", () => {
       interactiveProviderAuth: false,
       model: "gemini-3.6-flash",
       video: mediaPath,
+      videoMimeType: "video/webm",
       outputRoot: "/private/synthetic/runs",
       maxIncidents: 7,
       screenshots: false,
@@ -99,6 +103,9 @@ describe("Local Studio job runtime", () => {
     let resolvedMedia = false;
     const resolver = new LocalStudioAnalyzeOptionsResolver({
       media: {
+        async get() {
+          return stagedMediaSession();
+        },
         async resolveInUsePath() {
           resolvedMedia = true;
           return "/private/synthetic/media.sealed";
@@ -123,6 +130,7 @@ describe("Local Studio job runtime", () => {
       contextMode: "none",
       apiKey: "synthetic-gemini-key",
       video: "/private/synthetic/media.sealed",
+      videoMimeType: "video/webm",
     });
     expect(resolvedMedia).toBe(true);
     expect(immutableJobInputSchema.safeParse({
@@ -135,6 +143,9 @@ describe("Local Studio job runtime", () => {
     const recipe = await loadRecipe("issue-review");
     const resolver = new LocalStudioAnalyzeOptionsResolver({
       media: {
+        async get() {
+          throw new Error("must not read media for rejected input");
+        },
         async resolveInUsePath() {
           throw new Error("must not resolve media for rejected input");
         },
@@ -164,6 +175,9 @@ describe("Local Studio job runtime", () => {
     }), "custom_recipe_staging_unavailable");
     const withGemini = new LocalStudioAnalyzeOptionsResolver({
       media: {
+        async get() {
+          throw new Error("must not read media for rejected input");
+        },
         async resolveInUsePath() {
           throw new Error("must not resolve media for rejected input");
         },
@@ -187,6 +201,9 @@ describe("Local Studio job runtime", () => {
     }), "context_file_staging_unavailable");
     const withMismatchedContext = new LocalStudioAnalyzeOptionsResolver({
       media: {
+        async get() {
+          throw new Error("must not read media for rejected input");
+        },
         async resolveInUsePath() {
           throw new Error("must not resolve media for rejected input");
         },
@@ -234,6 +251,9 @@ describe("Local Studio job runtime", () => {
     const contextFileId = "context_01K123456789ABC";
     const resolver = new LocalStudioAnalyzeOptionsResolver({
       media: {
+        async get() {
+          return stagedMediaSession();
+        },
         async resolveInUsePath() {
           return "/private/synthetic/media.sealed";
         },
@@ -442,6 +462,25 @@ function analysisJob(
     inputDigest: "b".repeat(64),
     stage: "fetching_context",
     input: { ...immutableInput(input), ...overrides },
+    createdAt: "2026-07-27T12:00:00.000Z",
+    updatedAt: "2026-07-27T12:00:01.000Z",
+  };
+}
+
+function stagedMediaSession() {
+  return {
+    id: "media_01K123456789ABC",
+    status: "sealed" as const,
+    expectedBytes: 64,
+    receivedBytes: 64,
+    partSizeBytes: 8 * 1_024 * 1_024,
+    parts: [],
+    mimeType: "video/webm" as const,
+    sha256: "a".repeat(64),
+    retention: {
+      mode: "retained" as const,
+      expiresAt: "2026-07-28T12:00:00.000Z",
+    },
     createdAt: "2026-07-27T12:00:00.000Z",
     updatedAt: "2026-07-27T12:00:01.000Z",
   };

@@ -1,5 +1,22 @@
 # Bugs and Failure History
 
+## 2026-08-22 — Every Studio-created analysis failed before Gemini upload
+
+- Symptom: valid Studio jobs moved through `fetching_context` and failed in
+  roughly 50 ms with only the generic `analysis_failed` terminal code.
+- Cause: private staging deliberately stores the authorized recording as
+  `media.sealed`, but the Studio resolver passed only that path and digest.
+  The shared analyzer therefore tried to infer MIME from `.sealed` instead of
+  using the media session's already-validated MIME receipt. The worker then
+  discarded the typed error while terminalizing the job.
+- Fix: propagate the sealed session MIME through `AnalyzeOptions`, prefer it
+  before path inference, and preserve recognized sanitized error codes in a
+  warning event, terminal metadata, and bounded console line. The Run receipt
+  can also commit the existing explicit video-only choice in place.
+- Prevention: focused tests pin `.sealed` MIME propagation through the Studio
+  resolver and shared analyzer, all typed worker failure branches, the Run
+  action, and the browser job's non-generic credential failure code.
+
 ## 2026-08-11 — Derived transcription failed on every long recording
 
 - Symptom: three consecutive runs on real recordings (50 min and 28 min) all

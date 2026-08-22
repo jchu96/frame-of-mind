@@ -443,3 +443,11 @@
   Studio HTTP contract passed; Gemini import and Cloudflare boundaries clean)
   and `bun run test:e2e:smoke` (12 passed), including the complete synthetic
   Intent → Recording → video-only Context → Run → Start flow.
+- Hotfixed Studio execution so the sealed media session's validated MIME
+  reaches the shared analyzer instead of being inferred from `media.sealed`.
+  Typed worker failures now retain sanitized codes in logs, warning events,
+  and terminal metadata; Run can commit explicit recording-only context in
+  place. Validated by `bun run check` (Vitest: 21 files / 202 tests; Bun web:
+  226 tests; both builds, Studio HTTP, Cloudflare boundary, and 32 MiB spike),
+  `bun run test:e2e:smoke` (12 passed, including `gemini_request_failed`
+  terminal-code honesty), and `bun run smoke:gemini` (`Gemini smoke: passed`).

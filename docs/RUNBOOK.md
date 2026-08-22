@@ -1382,6 +1382,10 @@ On **Run**:
    as video-only in the browser composer. The authenticated local route accepts
    an explicit `{ mode: "none" }` as caller intent; `deriveContext` and
    `buildComposerPayload` are the creation-time guard against inventing it.
+   For an absent or uncommitted Context, **Continue without context** commits
+   that same explicit recording-only receipt and re-evaluates Run in place;
+   **Open context** remains available for enrichment. This action is not shown
+   for an expired or unreadable enriched-context receipt.
 2. Verify the sealed recording size and SHA-256 prefix, exact context identity,
    pinned recipe revision, optional focus, model, and staging retention
    deadline. The retention choice was locked when staging began; Run cannot
