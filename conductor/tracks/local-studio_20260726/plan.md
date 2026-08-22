@@ -319,7 +319,7 @@ context-before-upload ordering. Phase 6 is closed; Task 7.1 is next.
       cleanup-remediation actions only where the state machine permits them.
 - [x] Task 7.3: Add elapsed-time, last-activity, progress, and accessible text
       equivalents without fabricated completion percentages.
-- [ ] Task 7.4: Add sanitized technical details and copyable support receipts
+- [x] Task 7.4: Add sanitized technical details and copyable support receipts
       that exclude private content.
 - [ ] Task 7.5: Add startup and scheduled maintenance for expired uploads and
       stale job records with dry-run diagnostics.
@@ -356,6 +356,17 @@ existing poll tick for time updates, terminal elapsed time stops at the terminal
 transition, stage-change announcements do not repeat on unchanged polls, and
 all timing/progress values have full text equivalents. Unit, type, production
 build, and browser smoke coverage validate the slice. Task 7.4 is next.
+
+Task 7.4 is complete: Activity detail now exposes a native Technical details
+disclosure and a versioned plain-text support receipt built from one closed
+allowlist of job/stage codes, normalized timestamps, transition-derived stage
+durations, provider/recipe IDs, media retention, and cleanup state. The copy
+action uses the Clipboard API and reveals a selected fallback textarea when
+clipboard access is unavailable; the same receipt is available from a
+session-guarded local-only GET route. Adversarial fixtures prove transcripts,
+paths, URLs, tokens, emails, meeting IDs, and raw provider errors cannot enter
+either projection. Unit, type, production HTTP, Cloudflare boundary, and
+Playwright smoke coverage validate the slice. Task 7.5 is next.
 
 ### Verification
 

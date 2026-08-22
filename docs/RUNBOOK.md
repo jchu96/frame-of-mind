@@ -1529,11 +1529,18 @@ On **Activity**:
    original detail. Re-import reads the existing completed run files; it never
    reruns analysis. Cleanup retry reports the media adapter's actual result and
    never claims deletion early.
-6. For a succeeded job, use **Open completed run**. Terminal jobs show only the
-   sanitized operator message and permitted recovery controls. Provider
-   payloads, codes, paths, keys, transcripts, and media identifiers are not
+6. Expand **Technical details** for allowlisted codes, timestamps, stage
+   durations, provider/recipe IDs, retention, and cleanup state. **Copy support
+   receipt** writes the same v1 plain-text allowlist through the Clipboard API;
+   if clipboard access is unavailable, copy the selected visible fallback
+   text. `GET /api/studio/jobs/:id/support-receipt` returns that same receipt
+   only inside the current local Studio session. Never add transcripts, paths,
+   URLs, tokens, emails, meeting IDs, or raw provider errors to this contract.
+7. For a succeeded job, use **Open completed run**. Failure banners show only
+   the sanitized operator message and permitted recovery controls. Raw provider
+   payloads/errors, paths, keys, transcripts, and media identifiers are not
    shown.
-7. If automatic refresh fails, the last good result remains visible with a
+8. If automatic refresh fails, the last good result remains visible with a
    notice. Use **Refresh** once. A hidden browser tab pauses polling. While the
    Activity list is visible it keeps polling every three seconds, even when it
    is empty or all jobs are terminal; a terminal detail stops automatically.
