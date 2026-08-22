@@ -571,3 +571,46 @@
   ephemeral success and receipt-failure cleanup paths. Validated by
   `bun run check` (22 Vitest files / 212 tests; Bun web suite: 271 tests; hosted
   Workflow, Studio HTTP, Access, builds, and 32 MiB streaming spike passed).
+- Completed Hosted Studio Task 2.0 with a measured NO-GO. A dark,
+  Access-authenticated route and fake Content-Range sink proved exact one
+  16 MiB and two concurrent 8 MiB transfers on the built Worker, but the
+  emitted Nitro entry materialized each request with `request.arrayBuffer()`;
+  inspector backing storage rose by about 32 MiB for the concurrent pair.
+  workerd also rejected `hash-wasm` 4.12.0 runtime compilation. Tasks 2.1–2.4
+  remain blocked, and an unadopted ADR 0018 amendment proposes short-lived
+  private R2 staging rather than silently accepting smaller buffered parts.
+- Completed Hosted Studio Task 2.0b and re-issued Task 2.0 as GO. A build step
+  emits `hosted-entry.mjs`, which reuses Access JWT verification and bypasses
+  Nitro only for the dark upload path; every other request still delegates to
+  Nitro. The workerd oracle delivered exact 16 MiB and concurrent 8 MiB bodies,
+  matched Cloudflare `DigestStream` SHA-256 to independent fixtures, observed
+  `bodyUsed=false` at all three handlers, and reduced concurrent inspector
+  backing growth from 33,568,143 bytes to 6,930,496 bytes (repeat: 6,926,400).
+  Tasks 2.1–2.4 are unblocked but unimplemented; the R2 amendment is not needed
+  and is retained only as a reference. No deploy or production Wrangler change
+  occurred. Validated with repeated `bun run check:hosted-stream` runs and the
+  full `bun run check` gate.
+- Completed Hosted Studio Task 2.0c and re-issued Task 2.0 as NO-GO. Replaced
+  the tee with one counting/digesting `TransformStream`, normalized upload path
+  variants, deleted the fallback Nitro spike route, and expanded the oracle to
+  cover a 2,500 ms slow sink, an over-length source, partial client abort, and
+  all Access-negative claim shapes. Path bypass, Access, digest, exact-byte,
+  and client-abort checks pass. The decisive slow-sink run added 8,398,085
+  inspector backing bytes for an 8 MiB request against a 2,097,152-byte limit;
+  the over-length workerd run returned 200 with a receipt after exposing only
+  the declared 8 MiB. Tasks 2.1–2.4 are blocked and the private-R2 draft is the
+  active unadopted fallback. No deployment or production Wrangler change
+  occurred. `bun run check:hosted-stream` intentionally exits nonzero until
+  both blockers clear; the ordinary repository gate remains separate.
+- Completed Hosted Studio Task 2.0d and re-issued Task 2.0 as GO at 4 MiB
+  parts with at most four concurrent parts per principal, pending an ADR 0018
+  amendment. The oracle starts a fresh Wrangler process for every 1, 2, and
+  4 MiB × concurrency-two/four combination so allocator reuse cannot suppress
+  the delta. All six slow-sink combinations passed their
+  `part × concurrency × 1.5` hold bounds and the 24 MiB full-run backing cap;
+  4 MiB × 4 measured 2,842,764 bytes for hold and peak growth. Runtime
+  truncation now authorizes a receipt only for the exact forwarded bytes; an
+  early-close short part was rejected with no sink receipt, and partial client
+  abort still aborted the sink at 131,072 bytes with no receipt. Private R2 is
+  the second fallback. No ADR, deployment, or production Wrangler
+  configuration was changed. Validated by `bun run check:hosted-stream`.
