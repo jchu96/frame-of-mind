@@ -1,5 +1,24 @@
 # Bugs and Failure History
 
+## 2026-08-22 — Maintenance could delete media queued behind live work
+
+- Symptom: an old queued job sharing a single-concurrency worker with an active
+  sibling was planned stale, and its sealed ephemeral media was deleted before
+  the stale-job compare-and-swap ran.
+- Cause: worker liveness was modeled only as a heartbeat for the active job;
+  the planner removed every planned-stale job from the live-reference set, and
+  lexical action ordering put deletion before interruption. The executor also
+  treated an ephemeral `in_use` session as permission to delete rather than as
+  a lease veto if a claim raced the plan.
+- Fix: any recent worker heartbeat now protects queued siblings; all
+  nonterminal jobs remain media/context reference owners until a stale CAS
+  succeeds. Stale CAS actions execute first, a successful CAS triggers a fresh
+  cleanup-only plan, and every `in_use` status vetoes maintenance deletion.
+- Prevention: planner fixtures cover both a live worker with an old queued
+  sibling and a no-worker stale queue; repository-backed controller tests pin
+  CAS-win/CAS-loss ordering, and a claim-race fixture proves `in_use` cannot be
+  deleted.
+
 ## 2026-08-22 — Built hosted upload route materialized every request body
 
 - Symptom: a route-local `TransformStream` delivered exact 16 MiB and

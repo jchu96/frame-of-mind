@@ -11,10 +11,11 @@
 
 ## Progress
 
-- Phases: 6/9 complete
-- Tasks: 40/51 complete
-- Current focus: Task 7.5, adding startup and scheduled maintenance for
-  expired uploads and stale job records with dry-run diagnostics.
+- Phases: 7/9 complete
+- Tasks: 41/51 complete
+- Current focus: Task 8.1, adding a local-session-protected opaque-ID
+  byte-range media route with traversal, expiry, content-type, and hostile-
+  request coverage.
 
 ## Decision
 

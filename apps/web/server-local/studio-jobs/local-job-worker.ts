@@ -24,6 +24,7 @@ import { MediaStagingError } from "../studio-media/local-media-staging";
 import { captureStudioException } from "../telemetry";
 import { StudioJobInputUnavailableError } from "./analysis-options";
 import { StudioMediaReuseError } from "./media-reuse-guard";
+import type { MaintenanceHeartbeat } from "../studio-maintenance/plan";
 
 const ACTIVE_STAGES = ANALYSIS_JOB_STAGES.filter(
   (stage) => stage !== "queued" && !isAnalysisJobTerminal(stage),
@@ -52,6 +53,7 @@ export interface StudioJobReconciliationReport {
 
 export interface LocalStudioJobWorkerOptions {
   now?: () => string;
+  heartbeatNow?: () => string;
   onWorkerError?: (error: StudioJobWorkerError) => Promise<void> | void;
   captureTelemetry?: (
     code: string,
@@ -87,6 +89,7 @@ export class LocalStudioJobWorker {
   private readonly captureTelemetry: NonNullable<
     LocalStudioJobWorkerOptions["captureTelemetry"]
   >;
+  private readonly heartbeatNow: () => string;
   private started = false;
   private stopping = false;
   private wakeRequested = false;
@@ -97,6 +100,7 @@ export class LocalStudioJobWorker {
   private active:
     | { jobId: string; controller: AbortController }
     | undefined;
+  private lastHeartbeat: MaintenanceHeartbeat | undefined;
 
   constructor(
     private readonly repository: JobRepository,
@@ -104,6 +108,8 @@ export class LocalStudioJobWorker {
     options: LocalStudioJobWorkerOptions = {},
   ) {
     this.now = options.now ?? (() => new Date().toISOString());
+    this.heartbeatNow = options.heartbeatNow
+      ?? (() => new Date().toISOString());
     this.onWorkerError = options.onWorkerError ?? (() => undefined);
     this.captureTelemetry = options.captureTelemetry ?? captureStudioException;
   }
@@ -112,14 +118,19 @@ export class LocalStudioJobWorker {
     return this.active?.jobId;
   }
 
-  async start(): Promise<StudioJobReconciliationReport> {
+  get maintenanceHeartbeat(): MaintenanceHeartbeat | undefined {
+    return this.lastHeartbeat ? { ...this.lastHeartbeat } : undefined;
+  }
+
+  async start(options: { drain?: boolean } = {}):
+  Promise<StudioJobReconciliationReport> {
     if (this.started || this.startupPromise) {
       throw new StudioJobWorkerError("worker_already_started");
     }
     if (this.stopping) {
       throw new StudioJobWorkerError("worker_stopped");
     }
-    const startup = this.startInternal();
+    const startup = this.startInternal(options.drain ?? true);
     this.startupPromise = startup;
     try {
       return await startup;
@@ -165,11 +176,12 @@ export class LocalStudioJobWorker {
     await this.whenIdle();
   }
 
-  private async startInternal(): Promise<StudioJobReconciliationReport> {
+  private async startInternal(drain: boolean):
+  Promise<StudioJobReconciliationReport> {
     const report = await this.reconcileInterruptedJobs();
     if (this.stopping) return report;
     this.started = true;
-    this.notify();
+    if (drain) this.notify();
     return report;
   }
 
@@ -225,6 +237,7 @@ export class LocalStudioJobWorker {
     const startedAt = Date.now();
     const controller = new AbortController();
     this.active = { jobId: queuedJob.id, controller };
+    this.touchHeartbeat(queuedJob.id);
     try {
       const claimed = await this.repository.transition({
         jobId: queuedJob.id,
@@ -293,13 +306,17 @@ export class LocalStudioJobWorker {
       }
       await this.finishSucceeded(claimed.id, result.data);
     } finally {
-      if (this.active?.jobId === queuedJob.id) this.active = undefined;
+      if (this.active?.jobId === queuedJob.id) {
+        this.active = undefined;
+        this.lastHeartbeat = undefined;
+      }
     }
   }
 
   private progressReporter(job: AnalysisJob): ProgressReporter {
     return {
       report: async (event) => {
+        this.touchHeartbeat(job.id);
         this.assertBoundProgressEvent(job, event);
         if (event.kind === "transition") {
           await this.repository.transition({
@@ -314,6 +331,10 @@ export class LocalStudioJobWorker {
         await this.repository.appendEvent(event);
       },
     };
+  }
+
+  private touchHeartbeat(jobId: string): void {
+    this.lastHeartbeat = { jobId, observedAt: this.heartbeatNow() };
   }
 
   private assertBoundProgressEvent(

@@ -34,6 +34,9 @@ import {
   type OpaqueResourceId,
 } from "../../../../src/domain/studio-identifiers";
 import { parseCaptionTranscript } from "../../../../src/adapters/file-context.js";
+import type {
+  MaintenanceContextSnapshot,
+} from "../studio-maintenance/plan";
 
 const DEFAULT_CONTEXT_TTL_SECONDS = 60 * 60;
 const MAX_CONTEXT_TTL_SECONDS = 24 * 60 * 60;
@@ -463,6 +466,47 @@ export class LocalContextFileStagingAdapter
       );
     }
     await this.#deleteParsed(parsedId);
+  }
+
+  async deleteForMaintenance(id: string): Promise<boolean> {
+    let parsedId: OpaqueResourceId;
+    try {
+      parsedId = this.#parseId(id);
+    } catch {
+      return false;
+    }
+    if (this.#activeLeases.has(parsedId)) return false;
+    if (!(await optionalStat(this.#fileDirectory(parsedId)))) return false;
+    await this.#deleteParsed(parsedId);
+    return true;
+  }
+
+  async maintenanceInventory(): Promise<MaintenanceContextSnapshot[]> {
+    await this.#ensureRoot();
+    const inventory: MaintenanceContextSnapshot[] = [];
+    for (
+      const entry of await readdir(this.#filesDirectory, {
+        withFileTypes: true,
+      })
+    ) {
+      if (!entry.isDirectory() || entry.name.startsWith(".stage-")) continue;
+      let id: OpaqueResourceId;
+      try {
+        id = this.#parseId(entry.name);
+      } catch {
+        continue;
+      }
+      const stored = await this.#readStored(id);
+      if (!stored) continue;
+      const receiptStat = await lstat(this.#receiptPath(id));
+      inventory.push({
+        id,
+        ownership: "studio_staged_copy",
+        expiresAt: stored.receipt.expiresAt,
+        updatedAt: receiptStat.mtime.toISOString(),
+      });
+    }
+    return inventory;
   }
 
   async expire(): Promise<string[]> {
