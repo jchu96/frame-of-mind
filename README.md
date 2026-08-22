@@ -548,7 +548,7 @@ bun run test:e2e:smoke
 bun run build
 bun run build:web:cloudflare
 bun run test:hosted-access-http
-bun run check:hosted-stream                 # expected nonzero while Task 2.0 is NO-GO
+bun run check:hosted-stream                 # built-Worker wrapper, digest, and memory oracle
 bun run check
 ```
 

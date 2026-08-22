@@ -558,3 +558,14 @@
   workerd also rejected `hash-wasm` 4.12.0 runtime compilation. Tasks 2.1–2.4
   remain blocked, and an unadopted ADR 0018 amendment proposes short-lived
   private R2 staging rather than silently accepting smaller buffered parts.
+- Completed Hosted Studio Task 2.0b and re-issued Task 2.0 as GO. A build step
+  emits `hosted-entry.mjs`, which reuses Access JWT verification and bypasses
+  Nitro only for the dark upload path; every other request still delegates to
+  Nitro. The workerd oracle delivered exact 16 MiB and concurrent 8 MiB bodies,
+  matched Cloudflare `DigestStream` SHA-256 to independent fixtures, observed
+  `bodyUsed=false` at all three handlers, and reduced concurrent inspector
+  backing growth from 33,568,143 bytes to 6,930,496 bytes (repeat: 6,926,400).
+  Tasks 2.1–2.4 are unblocked but unimplemented; the R2 amendment is not needed
+  and is retained only as a reference. No deploy or production Wrangler change
+  occurred. Validated with repeated `bun run check:hosted-stream` runs and the
+  full `bun run check` gate.

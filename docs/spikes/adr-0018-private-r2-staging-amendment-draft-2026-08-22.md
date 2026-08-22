@@ -1,9 +1,16 @@
-# Draft amendment to ADR 0018: stage hosted media in private R2
+# Reference draft amendment to ADR 0018: stage hosted media in private R2
 
-- Status: Draft — not adopted
+- Status: Not needed — not adopted; kept for reference
 - Date: 2026-08-22
 - Amends: [ADR 0018](../adr/0018-hosted-studio-trust-boundary.md)
-- Trigger: Task 2.0 hosted streaming NO-GO
+- Historical trigger: Task 2.0 hosted streaming NO-GO
+
+Task 2.0b resolved both blockers without changing the storage boundary: a
+built wrapper entry bypasses Nitro only for the authenticated upload path, and
+Cloudflare `DigestStream` supplies the Worker-side streaming digest. This R2
+design is therefore not needed for the current track and grants no
+implementation authority. It remains as a reviewed fallback reference if the
+wrapper contract regresses.
 
 ## Preserved invariant
 
@@ -70,9 +77,11 @@ ceiling; this draft does not weaken that requirement silently.
   recording names, or media bytes; and
 - local Studio and durable v2/v3 run contracts remain unchanged.
 
-## Consequence for the current track
+## Historical consequence before Task 2.0b
 
-Tasks 2.1–2.4 remain blocked. If this amendment is adopted, Phase 2 must be
-replanned around R2 session creation, direct multipart transfer, verified
-completion, provider streaming, and exact cleanup. This draft does not modify
-ADR 0018 and carries no implementation or deployment authority.
+Tasks 2.1–2.4 were blocked by the original NO-GO. Task 2.0b has since unblocked
+them without adopting this amendment. If a future regression causes this
+fallback to be reconsidered, Phase 2 must be replanned around R2 session
+creation, direct multipart transfer, verified completion, provider streaming,
+and exact cleanup. This draft does not modify ADR 0018 and carries no
+implementation or deployment authority.

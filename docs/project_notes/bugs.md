@@ -11,12 +11,17 @@
   `Buffer.from(await request.arrayBuffer())` before `localFetch` creates the H3
   event. Separately, `hash-wasm` 4.12.0 decodes embedded bytes and calls
   `WebAssembly.compile()` at runtime, which workerd disallows.
-- Decision: Task 2.0 is NO-GO; keep hosted creation dark and block Tasks
-  2.1–2.4. The unadopted ADR 0018 amendment draft proposes private R2 staging.
+- Resolution: Task 2.0b emits a built wrapper entry that authenticates and
+  intercepts only the dark upload path before Nitro, streams the original body
+  to the sink, and hashes the tee with Cloudflare `DigestStream`. The follow-up
+  workerd oracle saw `bodyUsed=false` at all three handlers and reduced the
+  concurrent backing delta from 33,568,143 bytes to 6,930,496 bytes. Task 2.0
+  is GO and Tasks 2.1–2.4 are unblocked; the R2 amendment is not needed and is
+  retained only as a reference fallback.
 - Prevention: gate hosted upload changes on the built workerd artifact, scan
   the emitted entry as well as route source, inspect backing storage rather
-  than ordinary JS heap alone, and require Worker-compatible precompiled WASM
-  before claiming `hash-wasm` support.
+  than ordinary JS heap alone, and require `DigestStream` or a static
+  precompiled WASM import before claiming Worker-side digest support.
 
 ## 2026-08-22 — Every Studio-created analysis failed before Gemini upload
 
