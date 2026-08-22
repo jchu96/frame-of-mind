@@ -396,8 +396,10 @@ What works today:
   the Run key and preserves the prepared Intent, Context, and Recording.
 - **Activity** — every bounded local job grouped as Active, Finished, or Needs
   attention, with a plain-language stage, relative last activity, and a
-  job-detail timeline. Polling pauses in hidden tabs, backs off after errors,
-  preserves the last good result, and stops after visible work is terminal.
+  complete paged job-detail timeline. List polling stays live while Activity is
+  visible, including for empty or all-terminal lists; detail polling stops at a
+  terminal job. Both pause in hidden tabs, back off after errors, and preserve
+  the last good result.
   Failed jobs show only their sanitized operator message; successful jobs link
   to the completed run.
 

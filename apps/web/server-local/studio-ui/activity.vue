@@ -9,6 +9,7 @@ import {
   type ActivityGroup,
 } from "./activity-state";
 import {
+  activityListTerminal,
   createJobActivityTransport,
   useJobActivity,
 } from "./use-job-activity";
@@ -30,9 +31,7 @@ const {
 } = useJobActivity({
   initial: { jobs: [] },
   load: () => transport.list(),
-  terminal: (page) => page.jobs.every((job) =>
-    ["succeeded", "failed", "canceled", "interrupted"].includes(job.stage)
-  ),
+  terminal: activityListTerminal,
 });
 const { data: recipeCatalog } = await useFetch<{
   recipes: Array<{ id: string; label: string }>;

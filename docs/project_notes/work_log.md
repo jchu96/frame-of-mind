@@ -462,3 +462,11 @@
   Bun web suite, production Studio HTTP contract, local/Cloudflare builds,
   boundary check, and streaming spike passed) and
   `bun run test:e2e:smoke` (12 passed).
+- Addressed the Task 7.1 fix-round findings: the visible Activity list now
+  keeps its three-second poll alive when empty or all-terminal, detail loading
+  follows the event cursor through a bounded 20 pages, and UI event parsing
+  strips additive fields while retaining the shared domain validation and
+  sanitized warning message. Added direct regressions for cross-window list
+  discovery, three-page event ordering, additive warning fields,
+  cancellation-request timeline rows, authenticated detail SSR, and the
+  grouped-row smoke click.
