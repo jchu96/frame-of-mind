@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AnalysisJob } from "../../../../src/domain/studio-schemas";
+import ActivityActionPanel from "./activity-action-panel.vue";
 import {
   activityDisplayState,
   activityStageLabel,
@@ -152,7 +153,7 @@ function terminalMessage(job: AnalysisJob): string {
         variant="soft"
         icon="i-lucide-check-circle"
         title="Analysis completed"
-        description="The durable run is ready to review."
+        description="Your results are ready to review."
         :actions="detail.job.runId ? [{ label: 'Open completed run', to: `/runs/${encodeURIComponent(detail.job.runId)}` }] : []"
       />
       <UAlert
@@ -229,10 +230,7 @@ function terminalMessage(job: AnalysisJob): string {
             <template #header>
               <h2 id="job-actions-heading" class="text-lg font-black">Actions</h2>
             </template>
-            <p class="text-sm text-muted">
-              Cancel and retry actions arrive in Task 7.2. This space is kept
-              open for controls that follow the job state safely.
-            </p>
+            <ActivityActionPanel :detail="detail" @refresh="refresh" />
           </UCard>
         </div>
       </section>

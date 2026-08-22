@@ -11,11 +11,10 @@
 
 ## Progress
 
-- Phases: 5/9 complete
-- Tasks: 34/51 complete
-- Current focus: Task 6.7, building the Intent step and shared readiness
-  coordinator so Recording and Intent are required while Context remains an
-  explicit optional enrichment.
+- Phases: 6/9 complete
+- Tasks: 38/51 complete
+- Current focus: Task 7.3, adding honest elapsed-time, last-activity, and
+  progress text without fabricated completion percentages.
 
 ## Decision
 

@@ -1454,11 +1454,24 @@ On **Activity**:
    remain nested under their stage; cancellation requests, warnings, and
    cleanup outcomes remain separate timestamped rows. No completion percentage
    or progress bar is inferred.
-4. For a succeeded job, use **Open completed run**. For failed, canceled, or
-   interrupted jobs, Activity displays only the sanitized operator message.
-   Provider payloads, codes, paths, keys, transcripts, and media identifiers
-   are not shown.
-5. If automatic refresh fails, the last good result remains visible with a
+4. The detail offers only actions allowed by the current receipts and state:
+   **Cancel** for active unpublished work; **Retry** for failed or interrupted
+   work whose retained recording still matches; **Reconnect Bluedot** or
+   **Reconnect Granola** for that provider's connection failure; **Re-import
+   results** when completed results are absent from the review workspace; and
+   **Retry cleanup** only after local recording deletion failed. Each action
+   confirms in the page and remains disabled while its request is running.
+   Active list rows expose **Cancel** only.
+5. A retry creates or replays a linked attempt and opens that attempt. Provider
+   recovery opens Connections with the provider selected and returns to the
+   original detail. Re-import reads the existing completed run files; it never
+   reruns analysis. Cleanup retry reports the media adapter's actual result and
+   never claims deletion early.
+6. For a succeeded job, use **Open completed run**. Terminal jobs show only the
+   sanitized operator message and permitted recovery controls. Provider
+   payloads, codes, paths, keys, transcripts, and media identifiers are not
+   shown.
+7. If automatic refresh fails, the last good result remains visible with a
    notice. Use **Refresh** once. A hidden browser tab pauses polling. While the
    Activity list is visible it keeps polling every three seconds, even when it
    is empty or all jobs are terminal; a terminal detail stops automatically.

@@ -1,14 +1,21 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini-model";
+import { verifyImmutableJobInput } from "../src/domain/studio-schemas";
+import { LocalSqliteJobRepository } from "../apps/web/server-local/studio-jobs/sqlite-job-repository";
+import { publishedRunDirectory } from "../apps/web/server-local/studio-jobs/run-reimport";
+import { videoRunFixture } from "../apps/web/test/fixtures";
 
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
 const port = 34_000 + Math.floor(Math.random() * 10_000);
 const baseUrl = `http://127.0.0.1:${port}`;
 const webRoot = join(process.cwd(), "apps", "web");
 const mediaRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-http-media-"));
+const outputRoot = join(mediaRoot, "runs");
+const databasePath = join(mediaRoot, "studio.sqlite");
 const environment = {
   ...process.env,
   FRAME_OF_MIND_STUDIO: "1",
@@ -20,7 +27,8 @@ const environment = {
   NITRO_HOST: "127.0.0.1",
   PORT: String(port),
   NITRO_PORT: String(port),
-  NUXT_SQLITE_PATH: join(mediaRoot, "studio.sqlite"),
+  NUXT_SQLITE_PATH: databasePath,
+  FRAME_OF_MIND_OUTPUT: outputRoot,
   XDG_CONFIG_HOME: join(mediaRoot, "config"),
 };
 delete environment.NITRO_UNIX_SOCKET;
@@ -135,6 +143,76 @@ if (await build.exited !== 0) {
   throw new Error("Local Studio contract fixture build failed.");
 }
 
+const runFixture = await videoRunFixture();
+const seedDatabase = new Database(databasePath);
+let seededSucceededJobId: string;
+try {
+  const repository = new LocalSqliteJobRepository(seedDatabase, {
+    createId: () => "job_http_reimport_0001",
+  });
+  const baseTime = Date.now() + 2_000;
+  const createdAt = new Date(baseTime).toISOString();
+  const verifiedInput = await verifyImmutableJobInput({
+    mediaSessionId: "media_http_reimport_0001",
+    mediaSha256: runFixture.manifest.recordingSha256,
+    context: { mode: "none" },
+    recipe: {
+      id: runFixture.manifest.recipe.id,
+      custom: runFixture.manifest.recipe.custom,
+      revision: runFixture.manifest.recipe.revision,
+      sha256: runFixture.manifest.recipe.sha256,
+    },
+    model: runFixture.manifest.model,
+    retention: {
+      mode: "ephemeral",
+      expiresAt: new Date(baseTime + 24 * 60 * 60 * 1_000).toISOString(),
+    },
+  });
+  const seeded = await repository.createOrReplay({
+    idempotencyKey: "studio-http-reimport-job-0001",
+    verifiedInput,
+    createdAt,
+  });
+  await repository.transition({
+    jobId: seeded.job.id,
+    expectedStage: "queued",
+    nextStage: "fetching_context",
+    occurredAt: new Date(baseTime + 1).toISOString(),
+    message: "Synthetic HTTP fixture claimed.",
+  });
+  await repository.transition({
+    jobId: seeded.job.id,
+    expectedStage: "fetching_context",
+    nextStage: "cleaning_up",
+    occurredAt: new Date(baseTime + 2).toISOString(),
+    message: "Synthetic HTTP fixture published.",
+  });
+  const succeeded = await repository.transition({
+    jobId: seeded.job.id,
+    expectedStage: "cleaning_up",
+    nextStage: "succeeded",
+    occurredAt: new Date(baseTime + 3).toISOString(),
+    message: "Synthetic HTTP fixture completed.",
+    runId: runFixture.manifest.runId,
+    projectionWarning: "Synthetic import warning.",
+  });
+  seededSucceededJobId = succeeded.id;
+  const runDirectory = publishedRunDirectory(succeeded, outputRoot);
+  await mkdir(runDirectory, { recursive: true });
+  await Promise.all([
+    writeFile(
+      join(runDirectory, "analysis.json"),
+      JSON.stringify(runFixture.analysis),
+    ),
+    writeFile(
+      join(runDirectory, "manifest.json"),
+      JSON.stringify(runFixture.manifest),
+    ),
+  ]);
+} finally {
+  seedDatabase.close();
+}
+
 const server = Bun.spawn([
   "bun",
   "--preload",
@@ -235,6 +313,24 @@ try {
     "job detail requires a Studio session",
   );
   await expectStatus(
+    await probe.mutate(
+      "/api/studio/jobs/job_01K123456789ABC/reimport",
+      "POST",
+      {},
+    ),
+    401,
+    "job re-import requires a Studio session",
+  );
+  await expectStatus(
+    await probe.mutate(
+      "/api/studio/media/media_01K123456789ABC/cleanup-retry",
+      "POST",
+      {},
+    ),
+    401,
+    "media cleanup retry requires a Studio session",
+  );
+  await expectStatus(
     await probe.mutate("/api/studio/composer/jobs", "POST", {}),
     401,
     "composer job creation requires a Studio session",
@@ -281,9 +377,13 @@ try {
     200,
     "job runtime starts before authenticated routes accept work",
   );
-  const jobsBody = await jobs.json() as { jobs?: unknown[] };
-  if (!Array.isArray(jobsBody.jobs) || jobsBody.jobs.length !== 0) {
-    throw new Error("Fresh Studio job runtime did not return an empty queue.");
+  const jobsBody = await jobs.json() as { jobs?: Array<{ id?: string }> };
+  if (
+    !Array.isArray(jobsBody.jobs)
+    || jobsBody.jobs.length !== 1
+    || jobsBody.jobs[0]?.id !== seededSucceededJobId
+  ) {
+    throw new Error("Fresh Studio job runtime did not preserve the terminal fixture.");
   }
   await expectStatus(
     await probe.mutate(
@@ -440,6 +540,60 @@ try {
     || media.partSizeBytes < fixture.byteLength
   ) {
     throw new Error("Media creation returned an invalid resumable receipt.");
+  }
+  const cleanupFixtureResponse = await expectStatus(
+    await probe.mutate("/api/studio/media", "POST", {
+      ...createMediaBody,
+      idempotencyKey: "studio-http-media-cleanup-0001",
+    }),
+    201,
+    "cleanup fixture creates a media receipt",
+  );
+  const cleanupFixture = await cleanupFixtureResponse.json() as { id: string };
+  const cleanupRetryForbidden = await expectStatus(
+    await probe.mutate(
+      `/api/studio/media/${cleanupFixture.id}/cleanup-retry`,
+      "POST",
+      {},
+    ),
+    409,
+    "cleanup retry rejects a media session without a cleanup failure",
+  );
+  if (!(await cleanupRetryForbidden.text()).includes("media_cleanup_not_retryable")) {
+    throw new Error("Cleanup retry state rejection omitted its sanitized code.");
+  }
+  const obstructingPath = join(
+    mediaRoot,
+    "sessions",
+    cleanupFixture.id,
+    "media.partial",
+  );
+  await mkdir(obstructingPath);
+  await expectStatus(
+    await probe.mutate(`/api/studio/media/${cleanupFixture.id}`, "DELETE", {}),
+    503,
+    "failed deletion preserves a cleanup failure receipt",
+  );
+  const failedCleanupStatus = await expectStatus(
+    await probe.get(`/api/studio/media/${cleanupFixture.id}`),
+    200,
+    "cleanup failure remains readable",
+  );
+  if ((await failedCleanupStatus.json() as { status?: string }).status !== "cleanup_failed") {
+    throw new Error("Failed deletion did not preserve cleanup_failed state.");
+  }
+  await rm(obstructingPath, { recursive: true, force: true });
+  const cleanupRetried = await expectStatus(
+    await probe.mutate(
+      `/api/studio/media/${cleanupFixture.id}/cleanup-retry`,
+      "POST",
+      {},
+    ),
+    200,
+    "cleanup retry deletes only after the adapter confirms deletion",
+  );
+  if ((await cleanupRetried.json() as { status?: string }).status !== "deleted") {
+    throw new Error("Cleanup retry claimed success without a deleted receipt.");
   }
   await expectStatus(
     await probe.upload(
@@ -600,7 +754,7 @@ try {
     200,
     "rejected composer inputs do not insert jobs",
   );
-  if ((await beforeCreate.json() as { jobs: unknown[] }).jobs.length !== 0) {
+  if ((await beforeCreate.json() as { jobs: unknown[] }).jobs.length !== 1) {
     throw new Error("Rejected composer input inserted a job.");
   }
 
@@ -617,7 +771,7 @@ try {
     200,
     "unconfigured composer input does not insert a job",
   );
-  if ((await afterUnconfigured.json() as { jobs: unknown[] }).jobs.length !== 0) {
+  if ((await afterUnconfigured.json() as { jobs: unknown[] }).jobs.length !== 1) {
     throw new Error("Unconfigured composer input inserted a job.");
   }
 
@@ -647,6 +801,18 @@ try {
       || JSON.stringify(createdJob.job.input.context) !== JSON.stringify({ mode: "none" })
     ) {
       throw new Error("Composer creation returned an invalid job receipt.");
+    }
+    const reimportRejected = await expectStatus(
+      await probe.mutate(
+        `/api/studio/jobs/${createdJob.job.id}/reimport`,
+        "POST",
+        {},
+      ),
+      409,
+      "re-import rejects a job that did not succeed",
+    );
+    if (!(await reimportRejected.text()).includes("job_not_succeeded")) {
+      throw new Error("Re-import state rejection omitted its sanitized code.");
     }
     const composerReplay = await expectStatus(
       await probe.mutate("/api/studio/composer/jobs", "POST", composerBody),
@@ -715,6 +881,33 @@ try {
     await probe.mutate(`/api/studio/media/${unsealedMedia.id}`, "DELETE", {}),
     200,
     "unsealed composer fixture is deleted",
+  );
+
+  const imported = await expectStatus(
+    await probe.mutate(
+      `/api/studio/jobs/${seededSucceededJobId}/reimport`,
+      "POST",
+      {},
+    ),
+    200,
+    "succeeded job re-imports its existing result files",
+  );
+  if ((await imported.json() as { runId?: string }).runId !== runFixture.manifest.runId) {
+    throw new Error("Re-import did not return the succeeded job's run ID.");
+  }
+  await expectStatus(
+    await probe.mutate(
+      `/api/studio/jobs/${seededSucceededJobId}/reimport`,
+      "POST",
+      {},
+    ),
+    200,
+    "re-import is idempotent",
+  );
+  await expectStatus(
+    await probe.get(`/api/runs/${runFixture.manifest.runId}`),
+    200,
+    "re-import restores the review workspace result",
   );
 
   const composerMediaCleanup = await probe.mutate(

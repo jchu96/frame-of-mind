@@ -765,6 +765,15 @@ rebuildable from a run that does not exist yet. After success,
 `analysis.json`/`manifest.json` become authoritative and their run/item
 projection remains disposable.
 
+Activity recovery preserves those ownership boundaries. A pure permission
+table derives controls from the job, current media receipt, context provider,
+and run-projection availability. Cancel and linked retry delegate to job
+control; provider reconnect delegates to Connections; re-import reads the
+already-rendered atomic run pair and calls `RunStore.importRun`; cleanup retry
+delegates to the media adapter's deletion transition. None of these paths lets
+a terminal job re-enter a nonterminal stage, and the two recovery routes exist
+only in the Studio-enabled local server.
+
 The local-only `LocalSqliteJobRepository` owns `studio_analysis_jobs` and
 `studio_analysis_job_events` in the same private SQLite file as the rebuildable
 run projection, but through a separate migration and interface. Its tables are

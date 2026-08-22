@@ -32,6 +32,11 @@ const statusByJobError: Readonly<Record<string, number>> = {
   unsafe_output_root: 500,
   invalid_runtime_bounds: 500,
   corrupt_job: 500,
+  job_not_succeeded: 409,
+  run_bundle_not_found: 409,
+  run_bundle_invalid: 409,
+  run_bundle_job_mismatch: 409,
+  run_projection_version_conflict: 409,
 };
 
 export interface JobErrorResponse {

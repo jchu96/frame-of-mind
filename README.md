@@ -401,9 +401,11 @@ What works today:
   complete paged job-detail timeline. List polling stays live while Activity is
   visible, including for empty or all-terminal lists; detail polling stops at a
   terminal job. Both pause in hidden tabs, back off after errors, and preserve
-  the last good result.
-  Failed jobs show only their sanitized operator message; successful jobs link
-  to the completed run.
+  the last good result. Detail offers only state-permitted actions: cancel,
+  retained-recording retry, exact-provider reconnect, completed-results
+  re-import, or failed-cleanup retry; each confirms inline and list rows expose
+  cancel only. Failed jobs show only their sanitized operator message;
+  successful jobs link to the completed run.
 
 The CLI remains available for direct analysis, while Local Studio now exposes
 the same shared executor through the deliberate Run receipt. Custom recipe

@@ -396,3 +396,8 @@
   recording analyzed with authorization stays link-free and non-redistributable
   (2026-07-28: a class recording was initially mislabeled public in an
   evaluation write-up and had to be corrected).
+- A browser smoke that must cancel a queued Studio job cannot race the
+  synthetic Gemini worker: the worker may publish a provider failure before
+  Activity renders. Seed a matching queued idempotency receipt in the isolated
+  E2E database, then exercise composer replay and browser cancellation through
+  the real HTTP routes.

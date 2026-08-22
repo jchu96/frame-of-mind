@@ -315,7 +315,7 @@ context-before-upload ordering. Phase 6 is closed; Task 7.1 is next.
 - [x] Task 7.1: Build the Activity list and job-detail timeline from bounded
       polling with clear active, failed, canceled, interrupted, and succeeded
       states.
-- [ ] Task 7.2: Add cancel, retry, reconnect-provider, re-import-projection, and
+- [x] Task 7.2: Add cancel, retry, reconnect-provider, re-import-projection, and
       cleanup-remediation actions only where the state machine permits them.
 - [ ] Task 7.3: Add elapsed-time, last-activity, progress, and accessible text
       equivalents without fabricated completion percentages.
@@ -335,6 +335,17 @@ surface; successful jobs link to completed runs, while terminal failures show
 only the sanitized operator message. Pure state/polling tests, authenticated
 HTTP coverage, Cloudflare exclusion checks, and the synthetic composer-to-
 timeline Playwright journey cover the slice. Task 7.2 is next.
+
+Task 7.2 is complete: one pure permission table derives the exact actions from
+job stage, sanitized terminal code, retained-media receipt, context provider,
+completed-run availability, and media cleanup state. Activity detail renders
+only those actions with inline confirmation and in-flight state; list rows
+expose cancel only. Cancel and linked retry consume the existing job-control
+routes, provider recovery returns through Connections, and local-only,
+session-guarded routes re-import an already-rendered run pair or retry a failed
+media cleanup without weakening either state machine. Unit/component-state,
+route, authenticated HTTP, Cloudflare-exclusion, and browser cancellation
+coverage validate the slice. Task 7.3 is next.
 
 ### Verification
 

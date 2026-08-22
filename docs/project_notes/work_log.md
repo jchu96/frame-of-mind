@@ -509,3 +509,16 @@
   `bun run check` (Vitest: 22 files / 212 tests; Bun web suite passed; Studio
   HTTP passed; Cloudflare boundary: 63 forbidden markers absent and 2 required
   markers present; 32 MiB streaming spike passed with atomic seal).
+- Implemented Local Studio Task 7.2: a pure action-permission table now gates
+  cancel, linked retry, exact-provider reconnect, completed-results re-import,
+  and failed-cleanup retry from the authoritative job/media/run receipts.
+  Activity detail provides inline confirmations and pending/error states while
+  list rows expose cancel only. Added local-only session-guarded re-import and
+  cleanup-retry routes, state-machine rejection coverage, authenticated HTTP
+  cases, Cloudflare markers, and a browser composer-to-list cancellation smoke.
+- Closed the Task 7.2 review round after rebasing onto the opt-in Sentry merge:
+  provider reconnect guidance is additive to the still-visible cards, denied
+  retry explanations remain visible beside other recovery actions, and the
+  repository now rejects canceled parents as well as the UI. Expanded the
+  action-table cross product, added a preselected-provider browser check, and
+  asserted the exact cancellation-request and canceled timeline rows.
