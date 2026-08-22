@@ -2,6 +2,10 @@ import { analysisJobEventSchema, analysisJobSchema } from "../../../../src/domai
 import type { JobListPage } from "../../../../src/domain/studio-ports";
 import { z } from "zod";
 import { onMounted, onUnmounted, ref, shallowRef } from "vue";
+import {
+  loadActivityActionSnapshot,
+  type ActivityActionSnapshot,
+} from "./activity-action-client";
 
 const jobListPageSchema = z.object({
   jobs: z.array(analysisJobSchema),
@@ -31,7 +35,9 @@ const jobDetailSchema = z.object({
 
 const MAX_JOB_DETAIL_PAGES = 20;
 
-export type StudioJobDetail = z.infer<typeof jobDetailSchema>;
+export type StudioJobDetail = z.infer<typeof jobDetailSchema> & {
+  actionSnapshot: ActivityActionSnapshot;
+};
 
 export interface JobActivityTransport {
   list(): Promise<JobListPage>;
@@ -92,7 +98,14 @@ export function createJobActivityTransport(
         );
         events.push(...page.events);
         if (page.nextAfterSequence === undefined) {
-          return { ...page, events };
+          return {
+            ...page,
+            events,
+            actionSnapshot: await loadActivityActionSnapshot(
+              page.job,
+              fetchImplementation,
+            ),
+          };
         }
         if (
           afterSequence !== undefined

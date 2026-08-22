@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { DEFAULT_GEMINI_MODEL } from "../../../src/adapters/gemini-model";
 import { runFixture, videoRunFixture } from "../test/fixtures";
 import { collectClientErrors } from "./support/client-errors";
@@ -248,7 +250,7 @@ test("selects Intent by keyboard and reports strict field errors", {
   expect(clientErrors).toEqual([]);
 });
 
-test("creates one video-only analysis and opens its activity timeline", {
+test("creates and cancels one video-only analysis from Activity", {
   tag: "@smoke",
 }, async ({ page }) => {
   const clientErrors = collectClientErrors(page, {
@@ -294,6 +296,41 @@ test("creates one video-only analysis and opens its activity timeline", {
   expect(keyResponse.status()).toBe(200);
   const start = page.getByRole("button", { name: "Start analysis" });
   await expect(start).toBeEnabled();
+  const drafts = await page.evaluate(() => ({
+    media: JSON.parse(
+      sessionStorage.getItem("frame-of-mind:studio:media-upload") || "null",
+    ) as { mediaSessionId: string },
+    run: JSON.parse(
+      sessionStorage.getItem("frame-of-mind:studio:run-draft") || "null",
+    ) as { idempotencyKey: string },
+  }));
+  const mediaResponse = await page.request.get(
+    `/api/studio/media/${encodeURIComponent(drafts.media.mediaSessionId)}`,
+  );
+  expect(mediaResponse.status()).toBe(200);
+  const mediaReceipt = await mediaResponse.json() as {
+    id: string;
+    sha256: string;
+    retention: { mode: "ephemeral"; expiresAt: string };
+  };
+  const e2eRoot = process.env.FRAME_OF_MIND_E2E_TEMP_ROOT;
+  if (!e2eRoot) throw new Error("E2E temporary root is unavailable.");
+  const seeded = spawnSync(
+    "bun",
+    ["apps/web/e2e/support/seed-cancelable-job.ts"],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      input: JSON.stringify({
+        databasePath: join(e2eRoot, "studio.sqlite"),
+        idempotencyKey: drafts.run.idempotencyKey,
+        mediaReceipt,
+      }),
+    },
+  );
+  if (seeded.status !== 0) {
+    throw new Error(`Cancelable job fixture failed: ${seeded.stderr}`);
+  }
   const createResponsePromise = page.waitForResponse((response) =>
     response.url().endsWith("/api/studio/composer/jobs")
     && response.request().method() === "POST"
@@ -301,7 +338,7 @@ test("creates one video-only analysis and opens its activity timeline", {
   await start.click();
   const createResponse = await createResponsePromise;
   const createStatus = createResponse.status();
-  if (createStatus !== 201) {
+  if (createStatus !== 200 && createStatus !== 201) {
     throw new Error(`Job create failed (${createStatus}): ${await createResponse.text()}`);
   }
   const createdJob = await createResponse.json() as { job: { id: string } };
@@ -309,22 +346,6 @@ test("creates one video-only analysis and opens its activity timeline", {
   await expect(page).toHaveURL(/\/?created=job_/);
   const notice = page.getByText(/Job job_.* durable local queue\./);
   await expect(notice).toBeVisible();
-  await expect.poll(async () => {
-    const response = await page.request.get(
-      `/api/studio/jobs/${encodeURIComponent(createdJob.job.id)}?afterSequence=0&limit=100`,
-    );
-    const detail = await response.json() as {
-      job: { stage: string; terminal?: { code?: string } };
-    };
-    return detail.job.terminal?.code;
-  }, { timeout: 60_000 }).toBe("gemini_request_failed");
-  const terminalResponse = await page.request.get(
-    `/api/studio/jobs/${encodeURIComponent(createdJob.job.id)}?afterSequence=0&limit=100`,
-  );
-  const terminalDetail = await terminalResponse.json() as {
-    job: { terminal?: { code?: string } };
-  };
-  expect(terminalDetail.job.terminal?.code).not.toBe("analysis_failed");
   expect(await page.evaluate(() => ({
     intent: sessionStorage.getItem("frame-of-mind:studio:intent-draft"),
     context: sessionStorage.getItem("frame-of-mind:studio:context-draft"),
@@ -338,17 +359,30 @@ test("creates one video-only analysis and opens its activity timeline", {
     level: 1,
   }))
     .toBeVisible();
-  const activeJob = page.locator(
-    'section[aria-labelledby="activity-active"]',
-  ).locator(`a[href="/activity/${createdJob.job.id}"]`);
-  const attentionJob = page.locator(
-    'section[aria-labelledby="activity-needs-attention"]',
-  ).locator(`a[href="/activity/${createdJob.job.id}"]`);
-  const groupedJob = activeJob.or(attentionJob);
-  await expect(groupedJob).toBeVisible();
-  await groupedJob.click();
+  const activeSection = page.locator('section[aria-labelledby="activity-active"]');
+  const activeJob = activeSection.locator(
+    `a[href="/activity/${createdJob.job.id}"]`,
+  );
+  await expect(activeJob).toBeVisible();
+  const cancelButton = activeSection.getByRole("button", {
+    name: "Cancel Requirements attempt 1",
+  });
+  await cancelButton.click();
+  const activeRow = cancelButton.locator("xpath=ancestor::tr");
+  await expect(activeRow.getByText("Cancel this analysis?")).toBeVisible();
+  await activeRow.getByRole("button", { name: "Confirm Cancel" }).click();
+  await expect.poll(async () => {
+    const response = await page.request.get(
+      `/api/studio/jobs/${encodeURIComponent(createdJob.job.id)}?afterSequence=0&limit=100`,
+    );
+    const detail = await response.json() as { job: { stage: string } };
+    return detail.job.stage;
+  }, { timeout: 60_000 }).toBe("canceled");
+
+  await page.goto(`/activity/${createdJob.job.id}`);
   await expect(page).toHaveURL(`/activity/${createdJob.job.id}`);
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
+  await expect(page.getByText("Canceled", { exact: true }).first()).toBeVisible();
   await expect(page.locator('ol[aria-label="Job stage timeline"], ol').first().locator("li").first())
     .toBeVisible({ timeout: 15_000 });
   expect(clientErrors).toEqual([]);
