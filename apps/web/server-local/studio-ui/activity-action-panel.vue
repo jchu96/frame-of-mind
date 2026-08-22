@@ -124,7 +124,7 @@ async function confirmAction(action: PermittedActivityAction): Promise<void> {
     <p v-if="decision.whyNot" class="text-sm leading-6 text-muted">
       {{ decision.whyNot }}
     </p>
-    <ul v-else class="space-y-4" aria-label="Permitted job actions">
+    <ul v-if="decision.actions.length" class="space-y-4" aria-label="Permitted job actions">
       <li v-for="action in decision.actions" :key="action.id">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <p class="max-w-xs text-sm leading-6 text-muted">

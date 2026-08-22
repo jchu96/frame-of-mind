@@ -95,6 +95,18 @@ test("manages a temporary Gemini key without reflecting it", {
   expect(clientErrors).toEqual([]);
 });
 
+test("keeps Bluedot reconnect controls visible when preselected", {
+  tag: "@smoke",
+}, async ({ page }) => {
+  await page.goto(
+    "/connections?provider=bluedot&returnTo=/activity/job_reconnect_0000001",
+  );
+  await expect(page.getByText("Reconnect Bluedot", { exact: true })).toBeVisible();
+  const bluedot = page.locator('[data-selected-provider="bluedot"]');
+  await expect(bluedot).toBeVisible();
+  await expect(bluedot.getByRole("button", { name: /OAuth/ })).toBeVisible();
+});
+
 test("stages and deletes one synthetic recording through the browser", {
   tag: "@smoke",
 }, async ({ page }) => {
@@ -382,9 +394,10 @@ test("creates and cancels one video-only analysis from Activity", {
   await page.goto(`/activity/${createdJob.job.id}`);
   await expect(page).toHaveURL(`/activity/${createdJob.job.id}`);
   await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
-  await expect(page.getByText("Canceled", { exact: true }).first()).toBeVisible();
-  await expect(page.locator('ol[aria-label="Job stage timeline"], ol').first().locator("li").first())
+  const timeline = page.locator('ol[aria-label="Job stage timeline"]');
+  await expect(timeline.getByText("Cancellation requested", { exact: true }))
     .toBeVisible({ timeout: 15_000 });
+  await expect(timeline.getByText("Canceled", { exact: true })).toBeVisible();
   expect(clientErrors).toEqual([]);
 });
 

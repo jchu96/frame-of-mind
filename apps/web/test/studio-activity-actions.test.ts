@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import type {
   AnalysisJob,
   MediaSession,
@@ -249,6 +250,127 @@ describe("Studio Activity permitted action table", () => {
     }
   });
 
+  test("preserves every action invariant across stage, code, media, provider, and publication state", () => {
+    const mediaStatuses: MediaSession["status"][] = [
+      "created",
+      "uploading",
+      "sealed",
+      "in_use",
+      "retained",
+      "expired",
+      "aborted",
+      "deleting",
+      "cleanup_failed",
+      "deleted",
+      "failed",
+    ];
+    const terminalCodes = [
+      undefined,
+      "bluedot_oauth_not_configured",
+      "granola_oauth_not_configured",
+      "granola_api_not_configured",
+      "gemini_not_configured",
+    ];
+    const contexts: Array<{
+      context: AnalysisJob["input"]["context"];
+      provider?: "bluedot" | "granola" | "file";
+    }> = [
+      { context: { mode: "none" } },
+      {
+        provider: "bluedot",
+        context: { provider: "bluedot", transport: "mcp", meetingId: "meeting-actions" },
+      },
+      {
+        provider: "granola",
+        context: { provider: "granola", transport: "mcp", meetingId: "meeting-actions" },
+      },
+      {
+        provider: "file",
+        context: {
+          provider: "file",
+          transport: "file",
+          contextFileId: "context_actions_0001",
+          contextFileSha256: "f".repeat(64),
+        },
+      },
+    ];
+    const publications = [
+      { projection: "present" as const, warning: undefined, recoverable: false },
+      { projection: "missing" as const, warning: undefined, recoverable: true },
+      { projection: "present" as const, warning: "Import unavailable.", recoverable: true },
+    ];
+
+    for (const stage of ANALYSIS_JOB_STAGES) {
+      for (const code of terminalCodes) {
+        for (const { context, provider } of contexts) {
+          for (const status of mediaStatuses) {
+            for (const publication of publications) {
+              const decision = derivePermittedActivityActions({
+                job: job(stage, {
+                  ...(code ? { code } : {}),
+                  context,
+                  ...(publication.warning
+                    ? { projectionWarning: publication.warning }
+                    : {}),
+                }),
+                media: media(status, status === "cleanup_failed"
+                  ? { cleanupFailureCode: "eacces" }
+                  : {}),
+                projection: publication.projection,
+                now: NOW,
+              });
+              const ids = actionIds(decision);
+              expect(ids.includes("cancel")).toBe(
+                !["succeeded", "failed", "canceled", "interrupted"].includes(stage),
+              );
+              expect(ids.includes("retry")).toBe(
+                (stage === "failed" || stage === "interrupted")
+                && status === "retained",
+              );
+              expect(ids.includes("reconnect-provider")).toBe(
+                stage === "failed"
+                && (
+                  (provider === "bluedot" && code === "bluedot_oauth_not_configured")
+                  || (provider === "granola" && (
+                    code === "granola_oauth_not_configured"
+                    || code === "granola_api_not_configured"
+                  ))
+                ),
+              );
+              expect(ids.includes("reimport-results")).toBe(
+                stage === "succeeded" && publication.recoverable,
+              );
+              expect(ids.includes("retry-cleanup"))
+                .toBe(status === "cleanup_failed");
+            }
+          }
+        }
+      }
+    }
+  });
+
+  test("shows retry why-not beside reconnect when provider auth failed without retained media", () => {
+    const decision = derivePermittedActivityActions({
+      job: job("failed", {
+        code: "bluedot_oauth_not_configured",
+        context: {
+          provider: "bluedot",
+          transport: "mcp",
+          meetingId: "meeting-actions",
+        },
+        retained: false,
+      }),
+      media: media(),
+      projection: "unknown",
+      now: NOW,
+    });
+
+    expect(actionIds(decision)).toEqual(["reconnect-provider"]);
+    expect(decision.retryDeniedCode).toBe("media_not_retained");
+    expect(decision.whyNot)
+      .toBe("Retry needs a recording that was kept after the first attempt.");
+  });
+
   test("uses the required plain-language labels and explanations", () => {
     const actions = [
       ...derivePermittedActivityActions({
@@ -385,5 +507,23 @@ describe("Studio Activity action panel states", () => {
       confirming: "retry",
       fieldMessage: "The recording can no longer be retried.",
     });
+  });
+});
+
+describe("Studio Connections reconnect component", () => {
+  test("keeps the reconnect banner additive so preselected provider cards retain OAuth controls", async () => {
+    const source = await readFile(
+      new URL("../server-local/studio-ui/connections.vue", import.meta.url),
+      "utf8",
+    );
+    const banner = source.indexOf('v-if="selectedProvider"');
+    const configurationError = source.indexOf('v-if="error"', banner);
+    const providerCards = source.indexOf("<section v-else", configurationError);
+
+    expect(banner).toBeGreaterThan(-1);
+    expect(configurationError).toBeGreaterThan(banner);
+    expect(providerCards).toBeGreaterThan(configurationError);
+    expect(source.slice(banner, configurationError)).not.toContain("v-else-if");
+    expect(source).toContain('@click="connectOAuth(name)"');
   });
 });

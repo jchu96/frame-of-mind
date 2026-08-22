@@ -212,7 +212,7 @@ async function connectOAuth(name: "bluedot" | "granola") {
       </UAlert>
 
       <UAlert
-        v-else-if="error"
+        v-if="error"
         class="mt-8"
         color="error"
         variant="soft"

@@ -516,3 +516,9 @@
   list rows expose cancel only. Added local-only session-guarded re-import and
   cleanup-retry routes, state-machine rejection coverage, authenticated HTTP
   cases, Cloudflare markers, and a browser composer-to-list cancellation smoke.
+- Closed the Task 7.2 review round after rebasing onto the opt-in Sentry merge:
+  provider reconnect guidance is additive to the still-visible cards, denied
+  retry explanations remain visible beside other recovery actions, and the
+  repository now rejects canceled parents as well as the UI. Expanded the
+  action-table cross product, added a preselected-provider browser check, and
+  asserted the exact cancellation-request and canceled timeline rows.
