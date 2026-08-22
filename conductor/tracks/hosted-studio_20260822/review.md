@@ -290,3 +290,249 @@ revised proposal resolves each finding; they do not change the original
 | Shared versus hosted run routes | Shared `/api/runs` routes remain and receive a principal-bound store; payloads stay byte-stable (`spec.md:201-205`). |
 | ADR 0017 | Accepted on the Attempt 2 base `8ce93fa`; no telemetry appendix substitute is needed. |
 | Gemini-key rotation | Disable uploads, abort/delete exact active sessions, clear their ciphertext, rotate, then reenable; unconfirmed cleanup stays visible (`spec.md:240-245`). |
+
+---
+
+## Re-review checkpoint: r2
+
+The following adversarial re-review is appended verbatim from the fleet artifact
+`~/.herdr-fleet/frame-of-mind/assets/hosted-plan-review-r2.md`. It evaluates the
+revised plan at its pinned head and authorizes Slice 1 only.
+
+# Adversarial Plan Re-Review r2: Hosted Studio
+
+**Track:** `hosted-studio_20260822`
+**Reviewed:** 2026-08-22
+**Head SHA:** `a4a93f48e80f23116d3a8591bc477fd95930500a`
+**Base:** `8ce93fa391a01528cdb81ebbd7021ee031738433`
+**Worktree:** `~/repos/fom-hosted-review` (detached, read-only)
+**r1 SHA:** `c3dc88bbd46fc30f4ef8041fc5daff4a5c2303e8` (historical checkpoint in `conductor/tracks/hosted-studio_20260822/review.md`)
+
+> Gate: same bar as r1. Attack is on the revised plan's executable assumptions.
+> Cloudflare Workflows `StepConfig` defaults and Workers body/memory limits were
+> re-fetched on 2026-08-22, not taken from r1 or training data.
+
+## Executive Summary
+
+The revision encoded the hub resolutions. All four r1 blockers and all ten
+should-fixes are **RESOLVED** in the spec/plan text. Live Cloudflare docs still
+match the cited defaults (`timeout: "10 minutes"`, `retries.limit: 5`, Free/Pro
+body **100 MB**, isolate memory **128 MB**). Task 1.3 now lists every production
+viewer/import SQL path in `apps/web/server/api/runs/*.ts`, `server/data/*.ts`,
+and `sql.ts`; none of those runtime statements is still missing.
+
+**Slice 1 (Tasks 1.1–1.3) is SAFE_TO_IMPLEMENT and deployable to
+`fom.flickerventures.com` now**, independent of Phases 2–8, once its own
+stop/go passes: two principals cannot see or mutate each other's runs, proven
+by HTTP contract against a built Worker, with hosted creation dark. That slice
+is security hardening of the already-deployed viewer, not a Studio.
+
+Phases 2–8 remain gated on Task 2.0 / 3.0. One new Phase 3 should-fix: uncaught
+`NonRetryableError` fails the Workflow instance and skips later steps, which
+collides with the cleanup-always-runs requirement. It does not affect Slice 1.
+
+## Grounded Findings — r1 Rows Re-Verified
+
+| Sev | r1 finding | Rating | Revised evidence |
+|---|---|---|---|
+| Blocker | Unproven Worker/Nitro streaming of large parts | **RESOLVED** | Task 2.0 is a hard stop/go: synthetic body ≥ 8 MiB, pipe `request.body`, prove H3/Nitro never `readBody()`, measure two concurrent uploads, contract-change-on-failure before Tasks 2.1+. `spec.md:43-51`, `spec.md:217-231`, `spec.md:477-479`, `plan.md:101-109`, `plan.md:142-146` |
+| Blocker | Wrong Workflows timeout/retry assumption vs current docs | **RESOLVED** | Spec cites the sleeping-and-retrying guide URL and the live defaults `timeout: "10 minutes"` / `retries.limit: 5` with exponential backoff. Every `step.do` gets explicit 15-minute config, strictly greater than `MODEL_REQUEST_TIMEOUT_MS` (still `10 * 60_000` at `src/adapters/gemini.ts:57`). Provider steps use `retries.limit: 0`, pre-call receipt, `NonRetryableError` after success-without-receipt, crash-after-Gemini must not generate twice, user retry = new instance. `spec.md:52-60`, `spec.md:309-321`, `spec.md:520-525`, `plan.md:167-182`. See New Finding N1 for cleanup interaction — not a regression of this blocker. |
+| Blocker | Incomplete principal scoping / unenumerated viewer IDOR | **RESOLVED** | Item tables and registry gain `principal_sub`, composite PKs/FKs, `ON CONFLICT(principal_sub, run_id)`, explicit `run_principal_conflict` before mutation, empty-DB fail-closed backfill, two-principal built-Worker test. Task 1.3 enumerates every r1 checklist path by file:line (see path table below). `spec.md:184-206`, `spec.md:456-462`, `spec.md:619-791`, `plan.md:38-94` |
+| Blocker | 95 MB hosted part vs local 64 MiB cap and 128 MB isolate | **RESOLVED** | Hosted raw parts fixed at 8 MiB (or shorter final); `MAX_MEDIA_PART_BYTES` remains 64 MiB (`src/domain/studio-schemas.ts:12`); `DEFAULT_MEDIA_PART_SIZE_BYTES` is already 8 MiB. ADR 0018 records browser → Worker → Gemini as superseding local Phase B R2. `spec.md:217-256`, `spec.md:464-479`, `plan.md:121-137`, `docs/adr/0018-hosted-studio-trust-boundary.md:35-38` |
+| Should fix | Gemini offset is resume authority, not D1 receipts | **RESOLVED** | `spec.md:222-227`, `spec.md:466-471`, `plan.md:121-127` |
+| Should fix | Nitro `WorkflowEntrypoint` export unproven | **RESOLVED** | Task 3.0 is the sole topology resolver; fallback is sibling Workflows Worker + service binding on the same Access hostname. `spec.md:327-331`, `plan.md:151-156`, `plan.md:191-195` |
+| Should fix | ADR 0017 missing at r1 SHA | **RESOLVED** | Attempt 2 rebased onto `8ce93fa`; ADR 0017 exists and is Accepted. `docs/adr/README.md:38-39`, `docs/adr/0017-opt-in-sentry-telemetry.md`, `spec.md:385-391`, `spec.md:929-931`, `plan.md:250-253` |
+| Should fix | Call-count spend cap is not a dollar bound | **RESOLVED** | Per-principal estimated-token ceiling: duration × documented 300 tokens/s × video-bearing calls + versioned headroom; unknown inputs fail closed. `spec.md:364-375`, `spec.md:541-548`, `plan.md:243-249` |
+| Should fix | Ephemeral hosted review has no playback/screenshots after tab close | **RESOLVED** | Stated plainly; retained R2 or digest-verified reattachment required; provenance recorded. `spec.md:296-298`, `spec.md:564-567`, `plan.md:237-242` |
+| Should fix | Hosted transcript ladder unnamed | **RESOLVED** | Provider → operator context → Gemini-audio from the uploaded file → none; no ffmpeg; no fabricated provenance. `spec.md:499-504`, `plan.md:161-166` |
+| Should fix | Local SQLite / RunStore lockstep | **RESOLVED** | Reserved `local:single-user`; shared RunStore SQL; local `JobRepository` / `MediaStagingAdapter` stay principal-free behind hosted wrappers; v2/v3 import bytes unchanged. `spec.md:193-205`, `spec.md:573-576`, `spec.md:789-791`, `plan.md:46-79` |
+| Should fix | Threat model / ADR 0018 missing hosted rows | **RESOLVED** | Isolate-memory DoS, Workflow default retries, D1 export of encrypted session URLs, Access `sub` recycle, import-overwrite IDOR. `docs/THREAT_MODEL.md:38-51`, `docs/adr/0018-hosted-studio-trust-boundary.md:58-66` |
+| Should fix | Bundle gate collides with hosted activity/executor | **RESOLVED** | AD-11 names required hosted markers including `/hosted/activity` and `HostedWorkflowAnalysisJobExecutor`; forbids local activity source and `OrchestratedAnalysisJobExecutor`; generic `/activity` leaves the deny list in Task 6.1. `spec.md:400-413`, `plan.md:271-278` |
+| Should fix | Part POST encoding unspecified | **RESOLVED** | Raw body plus Content-Length / offset / part / digest headers; multipart forbidden. `spec.md:217-221`, `spec.md:466-469`, `plan.md:121-124` |
+
+## Slice 1 Question
+
+**Yes. Slice 1 (Tasks 1.1–1.3) is safe to implement and deploy to
+`fom.flickerventures.com` now, independent of Phases 2–8**, after — not
+instead of — Phase 1's stop/go.
+
+What ships:
+
+- Task 1.1: Access middleware returns validated `sub` (display email only);
+  empty-sub service tokens become `service:<common_name>` and are denied on
+  browser viewer/import routes (`plan.md:38-45`, `spec.md:154-166`).
+- Task 1.2: D1/SQLite principal columns on both run tables, both item tables,
+  and the registry; composite keys; empty-DB rehearsal fails closed on a
+  non-empty legacy count; sentinel removed by rebuild; hosted creation stays
+  dark (`plan.md:46-53`, `spec.md:774-781`).
+- Task 1.3: every existing viewer/import path scoped; two-principal HTTP
+  contract against a built Worker (`plan.md:54-81`, `plan.md:90-95`).
+
+Why this is independent of the rest:
+
+- No upload, Workflow, composer, spend, or hosted table writes are required
+  for the already-deployed review/import surface to become principal-scoped.
+- Task 2.0 / 3.0 spikes do not gate identity or viewer SQL.
+- Production D1 is still expected empty; a non-empty sentinel count fails
+  closed rather than auto-assigning (`spec.md:776-778`). The operator empty-D1
+  fact is not in the repository; the fail-closed check is.
+
+Deploy constraints (Slice 1 only):
+
+1. Apply the **principal-scope** migration (run/item/registry rebuild) with the
+   Worker that contains the scoped SQL. Do not wait for, or require, the
+   `hosted_*` tables that appear later in the same spec sketch.
+2. Stop unless the built-Worker two-principal contract passes
+   (`plan.md:90-95`).
+3. Keep hosted creation routes absent. Slice 1 is not a Studio.
+4. Service tokens that today reach `GET/POST /api/runs` with an empty `sub`
+   will be denied. That is specified, not an accident (`spec.md:801-803`).
+
+## Viewer / Import Query Paths
+
+Plan Task 1.3 (`plan.md:54-77`) now enumerates:
+
+| Path | Plan citation | Head SHA actual | Scoped change named |
+|---|---|---|---|
+| `GET /api/runs` | `apps/web/server/api/runs/index.get.ts:12-16` | store at 12, `listRuns` 13-16 | bind principal |
+| D1 list/pagination | `apps/web/server/data/d1.ts:45-69` | `listRuns` 45-69 | principal in both union arms + cursor |
+| Union SQL | `apps/web/server/data/sql.ts:210-232` | `supportedRunSummariesSql` 210-232 | principal in both arms |
+| `GET /api/runs/:id` | `apps/web/server/api/runs/[id].get.ts:9-11` | store 9, `getRun` 10 | `(principal_sub, run_id)` |
+| D1 detail | `d1.ts:72-100` | `getRun` 72-101 | both schema versions |
+| `POST /api/runs` | `index.post.ts:46-49` | store 46, `importRun(..., email)` 49 | bind authenticated principal (replace email-as-actor ACL) |
+| D1 import | `d1.ts:103-155` | `importRun` 103-155 | composite conflict, scoped child delete/insert, `run_principal_conflict` |
+| Shared upsert/items SQL | `sql.ts:105-202` | upsert 105-157, insert items 159-189, delete items 191-202 | `ON CONFLICT(principal_sub, run_id)`; child predicates |
+| Registry lookup | `d1.ts:145-149` | SELECT 145-147 | principal in predicate |
+| Existence probes | `d1.ts:106-111` | 106-111 | principal in predicate |
+| SQLite twins | `sqlite.ts:82-185` | `listRuns` 82-105, `getRun` 107-136, `importRun` 138-186 including registry INSERT 154-155 and registry SELECT 156-158 | identical SQL under `local:single-user` |
+| Shared schema | `sql.ts:7-103` | `schemaSql` 7-103 | composite keys; bootstrap registry copy includes principal |
+| `GET /api/session` | `session.get.ts:1-2` | 1-3 | display-only; never a principal override |
+| `GET /api/health` | `health.get.ts:1-5` | 1-5 | data-free |
+
+**Still missing from Task 1.3's file:line list?** No production SQL statement
+on `analysis_runs` / `video_analysis_runs` / `analysis_items` /
+`video_analysis_items` / `analysis_run_registry` in
+`apps/web/server/api/runs/*.ts` or `apps/web/server/data/{d1,sqlite,sql}.ts`
+is omitted. Registry INSERT at `d1.ts:119-121` sits inside the listed import
+range. SQLite existence/registry statements sit inside `sqlite.ts:82-185`.
+
+Not query statements, but implementers must still touch them (wiring, not a
+leftover IDOR path):
+
+- `createD1RunStore` / `getRunStore` at `d1.ts:32-43` and
+  `createLocalRunStoreFromDatabase` at `sqlite.ts:75-80` currently take no
+  principal. Spec AD-3 binds the store at construction (`spec.md:193-203`)
+  because `RunStore` methods in `types.ts:14-18` have no principal argument.
+- `encodeRunCursor` / `decodeRunCursor` at `types.ts:29-40` are a 3-tuple of
+  `(completed_at, imported_at, run_id)`. Spec requires principal-bound cursor
+  state (`spec.md:788-789`); SQL `principal_sub = ?` already prevents
+  cross-principal leakage if the store is closed over the caller.
+
+Test-only unscoped SQL in `apps/web/test/sqlite.test.ts` and `d1.test.ts`
+(including `SELECT ... FROM analysis_items WHERE run_id = ?`) is outside the
+r1 production checklist. It must be updated in the same slice or it will keep
+passing against unscoped helpers.
+
+## Plan Viability By Slice
+
+### Slice 1 — Tasks 1.1–1.3 (identity, migration, scoped viewer/import)
+
+**Viable to implement and deploy now** after the built-Worker two-principal
+gate. Hosted creation remains dark. This is the first shippable cut.
+
+### Slice 2 — Phase 2 upload
+
+Still gated on Task 2.0. Part size and encoding are corrected; streaming is
+not yet measured. Not authorized by this verdict.
+
+### Slice 3 — Phase 3 Workflows
+
+StepConfig defaults are now cited correctly and Task 3.0 exists. Still gated
+on that spike plus New Finding N1 (cleanup vs `NonRetryableError`). Not
+authorized by this verdict.
+
+### Slice 4 — Phases 4–6 team-mode Studio
+
+Depends on Slices 1–3. First usable hosted composer → activity → review loop.
+
+### Slice 5 — Phases 7–8 Tier B
+
+Still correctly blocked on the Phase 6 gate.
+
+## Research Findings (re-fetched 2026-08-22)
+
+- [Sleeping and retrying](https://developers.cloudflare.com/workflows/build/sleeping-and-retrying/)
+  (updated 2026-07-09): default `WorkflowStepConfig` is still
+  `{ retries: { limit: 5, delay: 10000, backoff: "exponential" }, timeout: "10 minutes" }`.
+  `"30 minutes"` remains a custom-config example. `NonRetryableError` "will
+  fail immediately, no further steps will be invoked, and the Workflow will
+  not be retried." Rollback handlers and `try...catch` around a step are the
+  documented ways to still run cleanup. Spec citations at `spec.md:52-60`
+  match the defaults.
+- [Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/)
+  (updated 2026-06-15): wall clock per step unlimited; CPU per step default
+  30 seconds / max 5 minutes; non-stream step result 1 MiB; max retries per
+  step 10,000. Spec `spec.md:53-55` and `spec.md:963-965` remain correct.
+- [Workers limits](https://developers.cloudflare.com/workers/platform/limits/):
+  request body is an **account plan** limit — Free/Pro **100 MB**, Business
+  200 MB, Enterprise 500 MB default. Isolate memory **128 MB per isolate, not
+  per request**. Paid CPU default 30 seconds, configurable to 5 minutes. HTTP
+  duration unlimited while the client stays connected. Spec `spec.md:43-48`
+  matches; 8 MiB is below the lowest documented body tier. Zone/account
+  ceiling still requires a dashboard check because Wrangler cannot read it
+  (`spec.md:968-970`, `plan.md:283-288`).
+
+## New Findings
+
+| Sev | Finding | Evidence | Slice impact |
+|---|---|---|---|
+| Should fix | **N1.** Uncaught `NonRetryableError` aborts the Workflow instance and skips later steps, including `cleanup`. The revision added the r1-required non-retryable pattern (`spec.md:316-318`, `spec.md:523-524`, `plan.md:170-171`) without reconciling FR-07's "cleanup runs after success, failure, or cancellation" (`spec.md:528-529`). Current Cloudflare docs say no further steps run unless the throw is caught or a rollback handler is registered. A crashed-after-Gemini-success path can therefore skip Gemini-file deletion until the 48-hour Files API expiry. | [Sleeping and retrying](https://developers.cloudflare.com/workflows/build/sleeping-and-retrying/) fetched 2026-08-22 | Phase 3 only. Wrap provider steps so cleanup still runs, or register rollback. Does not block Slice 1. |
+| Nit | **N2.** API surface table lists `GET /api/runs` and `GET /api/runs/:id` but omits `POST /api/runs` (`spec.md:604-606`), while AD-3 and Task 1.3 keep import as a shared principal-bound route (`spec.md:201-203`, `plan.md:63-68`). | Spec table vs AD-3 | Docs only. |
+
+No new blocker. The revision does not reintroduce 95 MB parts, unscoped
+viewer SQL, silent Workflow retries, or an unproven-as-gated streaming
+contract.
+
+## Residuals
+
+Former r1 residuals remain decided or assigned to Task 2.0 / 3.0
+(`spec.md:968-978`, `review.md:279-292`). Additional notes for implementers,
+none blocking Slice 1:
+
+- Slice 1's D1 migration is the principal-scope rebuild of the five projection
+  tables plus registry (`plan.md:46-53`). The `hosted_media_sessions` /
+  `hosted_analysis_jobs` / spend / connections tables in the same spec sketch
+  (`spec.md:666-741`) wait for later phases even if they share the sketch
+  filename.
+- Bind principal in the store constructors (`d1.ts:32-43`, `sqlite.ts:75-80`),
+  not only in the listed SQL ranges. Local CLI (`apps/web/scripts/import-run.ts`)
+  and `server-local/studio-jobs/runtime.ts` keep working if SQLite closes over
+  `local:single-user`.
+- At Task 3.3, confirm against `@cloudflare/workers-types` that
+  `retries.limit: 0` means zero retries (one attempt), matching the field name
+  rather than the example comment "total number of attempts".
+- Update test-only unscoped item SELECTs in `apps/web/test/{sqlite,d1}.test.ts`
+  in the same slice as the schema change.
+
+## Author-Side Reader Checks
+
+| Reader question | Canonical answer |
+|---|---|
+| Can Slice 1 land on `fom.flickerventures.com` without upload/Workflows code? | Yes, after the two-principal built-Worker gate. Creation stays dark. |
+| Are any r1 viewer/import SQL paths still unlisted? | No. See path table. Constructors/cursors are wiring, not missing queries. |
+| Do cited Workflows/Workers numbers still match live docs? | Yes. Defaults `timeout: "10 minutes"`, `retries.limit: 5`; body Free/Pro 100 MB; isolate 128 MB; 8 MiB under the lowest tier. |
+| Is the whole hosted Studio safe to implement? | No. Only Slice 1. Phases 2–8 stay behind Task 2.0 / 3.0 and N1. |
+| What identifies a user after Slice 1? | Validated Access JWT `sub`. Email is display/`imported_by` only. |
+| Does local Studio keep working? | Yes if shared SQL uses `local:single-user` and job/media ports stay principal-free. |
+
+## Review Verdict
+
+**SAFE_TO_IMPLEMENT (Slice 1 only)**
+
+Authorize implementation and production deploy of Tasks 1.1–1.3 (Access
+principal middleware, empty-DB fail-closed principal migration, fully scoped
+viewer + import) on `fom.flickerventures.com` after Phase 1's stop/go.
+Do not authorize Phase 2+ until Task 2.0 and Task 3.0 pass, and fold N1 into
+Phase 3 before Workflows run against Gemini.
+
+DONE fom-hosted-plan-review-r2
