@@ -48,7 +48,13 @@ try {
     resolve("apps/web/.output/server/chunks/nitro/nitro.mjs"),
     "utf8",
   );
-  for (const marker of ["/api/hosted/jobs", "Hosted Workflow bindings are unavailable"]) {
+  for (const marker of [
+    "/api/hosted/jobs",
+    "Hosted Workflow bindings are unavailable",
+    "hosted-video-v1",
+    "spend_reservation_created",
+    "hosted-workflows.internal/telemetry",
+  ]) {
     if (!nitroBundle.includes(marker)) {
       throw new Error(`Hosted Nuxt build omitted ${marker}.`);
     }

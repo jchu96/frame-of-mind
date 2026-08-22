@@ -1302,15 +1302,59 @@ model ID, duration, version/mode, and platform. It never sends transcripts,
 recordings, findings or analysis output, paths, filenames, meeting IDs, keys or
 tokens, request/response bodies, query-bearing URLs, emails, or IP addresses.
 Tracing, Replay, profiling, logs, and user feedback remain disabled.
-The current Cloudflare review build excludes the Sentry Nuxt module and DSN;
-hosted telemetry remains deferred because v10 server-config injection is not
-compatible with the current code-split Nitro Worker artifact.
+The current Cloudflare review build excludes the Sentry Nuxt module and DSN.
+The dark hosted execution build uses a separate strict event port: Nuxt
+forwards codes/structural fields over its internal service binding, and only
+the sibling Workflows Worker may send a Sentry envelope. Hosted telemetry is
+off unless `SENTRY_DSN` is set on that sibling Worker; do not set it on the
+public Nuxt Worker.
 
 Disable telemetry by removing `SENTRY_DSN` from `.env` and the process
 environment, then restart Studio or rerun the CLI. No local database or run
 bundle contains the DSN or a telemetry payload. The complete boundary and
 scrubbing policy are recorded in
 [ADR 0017](adr/0017-opt-in-sentry-telemetry.md#disable-telemetry).
+
+### Hosted spend and telemetry controls (dark)
+
+Task 5a is implemented but not deployed. Apply D1 migration
+`0005_hosted_spend_telemetry.sql` only as part of a reviewed hosted release.
+The public Nuxt Worker reads these runtime values; the shown defaults are safe
+global defaults for a newly seen principal and never overwrite an existing
+principal-specific D1 cap:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `NUXT_HOSTED_SPEND_PRINCIPAL_CAP_UNITS` | `10000000` | initial per-principal estimated-token ceiling |
+| `NUXT_HOSTED_SPEND_VIDEO_TOKENS_PER_SECOND` | `300` | conservative default-resolution video rate |
+| `NUXT_HOSTED_SPEND_PROMPT_OUTPUT_HEADROOM_PER_CALL` | `8192` | versioned text/output reserve per planned call |
+| `NUXT_HOSTED_SPEND_MAX_INTERROGATION_CALLS` | `5` | enforced interrogation-call maximum in the reserved call graph |
+
+The 300 tokens/second figure follows Google's current
+[Gemini video understanding guidance](https://ai.google.dev/gemini-api/docs/video-understanding).
+If duration, rate, headroom, call graph, cap state, or estimate is invalid, job
+creation fails closed. Cap exhaustion returns
+`principal_spend_cap_exceeded` before dispatch, so no Workflow instance is
+created. Linked retries reserve the immutable prior attempt plan. Terminal
+cleanup commits provider usage when every billable claim has a usage receipt;
+otherwise it commits the full reservation rather than understating spend.
+
+To opt the internal Workflows Worker into hosted telemetry, set
+`SENTRY_DSN` on that Worker only using the operator-owned secret/config flow.
+Optional `SENTRY_ENVIRONMENT` and `SENTRY_RELEASE` values must be structural
+identifiers. Removing the DSN and restarting the Worker disables delivery.
+Never put the DSN or these hosted spend values in browser state, committed
+Wrangler files, or per-user source code.
+
+Verify both controls before any release:
+
+```bash
+bun test apps/web/test/hosted-workflows.test.ts apps/web/test/hosted-telemetry.test.ts
+bun run test:hosted-workflows-http
+```
+
+The second command must print `HOSTED_SPEND_CONTRACT PASSED` and confirm the
+telemetry contract accepts codes/structural fields while rejecting content.
 
 ### Local Studio Home, Connections, and analysis composer
 
