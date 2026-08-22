@@ -16,7 +16,7 @@ reviewed GitHub issue, use
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
 | Current version   | `0.3.0`                                     |
-| Default model     | `gemini-3.6-flash`                          |
+| Default model     | `gemini-3.7-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
 | Durable outputs   | local `analysis.json` and `manifest.json`   |
@@ -33,6 +33,17 @@ upload wrapper with Google's documented resumable protocol and derives a
 provider-safe response schema from the authoritative local Zod contract. Run
 the synthetic canary in section 1.5 before the first sensitive analysis and
 after model, SDK, runtime, or upload changes.
+
+Status as of 2026-08-22: Local Studio Phases 1–8 are shipped, including the
+composer, durable execution, Activity recovery, retained playback,
+digest-verified reattachment, local exports, and unified maintenance. The
+[Local Studio plan](../conductor/tracks/local-studio_20260726/plan.md) maps each
+claim to focused and full-gate receipts. Hosted creation is implemented only in
+dark slices and is not deployed; its pending upload, retention/capture, and
+deployment gates remain in the
+[Hosted Studio plan](../conductor/tracks/hosted-studio_20260822/plan.md).
+Use [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md) for storage, retention,
+visibility, and repository-hygiene rules.
 
 ## Responsibility matrix
 
@@ -309,7 +320,7 @@ Read [RECIPES.md](RECIPES.md) when uncertain.
 
 ### 3.2 Choose context
 
-The CLI has no fetch-only or transcript-preview command in v0.2. Use the
+The CLI has no fetch-only or transcript-preview command in v0.3. Use the
 authorized provider UI, the provider's MCP tools in a compatible client, or an
 existing local export to inspect timestamps before a scoped run. Calling
 `frameofmind analyze` proceeds from context fetch to upload.
@@ -519,8 +530,9 @@ Do not rerun Gemini merely to repair SQLite or D1.
 ### 3.8 Inspect local job persistence
 
 The Studio job repository and executor are local-only. Their protected API is
-available under `/api/studio/jobs`; job activity and composer pages are still
-future UI work. Operational tables live in the configured local SQLite file:
+available under `/api/studio/jobs`; the shipped Run composer creates jobs and
+the Activity list/detail pages expose bounded progress and state-permitted
+recovery actions. Operational tables live in the configured local SQLite file:
 
 ```text
 studio_job_schema_migrations
@@ -606,8 +618,9 @@ deletes ephemeral staging and returns retained staging to `retained`.
 External media deletion returns conflict while that lease is active. The
 executor rechecks the current recording SHA-256 before Gemini upload and uses
 a separate local-only capability to release ephemeral leased media.
-The CLI remains the supported user-facing execution entry point until the
-composer UI lands.
+The CLI and the authenticated Local Studio composer are both supported
+execution entry points; they share `AnalysisOrchestrator` rather than invoking
+one another.
 
 ## 4. Review procedure
 
@@ -1092,13 +1105,13 @@ cleanup.
 4. ensure an unmanaged directory did not block installation;
 5. on Windows, distinguish copied skill files from repository symlinks.
 
-### 6.24 A v1 workspace run disappeared after upgrading to v0.2
+### 6.24 A v1 workspace run disappeared after upgrading to schema v2+
 
-This is fail-closed compatibility behavior. v0.2 list/detail queries hide v1
+This is fail-closed compatibility behavior. Current list/detail queries hide v1
 and malformed projection rows rather than attempting to render them as v2.
 
 1. preserve the original v1 run bundle;
-2. rerun the authorized source analysis with v0.2;
+2. rerun the authorized source analysis with the current release;
 3. import the resulting v2 pair, which replaces the same run ID when retained;
 4. verify the v2 detail page and digest;
 5. back up, then purge any obsolete exact-ID projection row only when policy
@@ -1213,6 +1226,7 @@ Do not apply forced audit fixes without reviewing breaking changes.
 | Cloudflare/D1 Nuxt build          | every web or deployment change |
 | Access missing/invalid JWT denial | every auth change              |
 | No tracked sensitive artifacts    | every release                  |
+| Repository hygiene checker        | every `bun run check`          |
 
 ## 10. Release procedure
 
@@ -1229,6 +1243,8 @@ Pre-release:
 - audit reviewed;
 - `npm pack --dry-run` contains only intended files;
 - no credentials, recordings, transcripts, provider payloads, or runs tracked.
+- `bun run check:repo-hygiene` passes; run the documented history sweep for a
+  new public-release baseline.
 
 ## 11. Complete removal
 
@@ -1283,7 +1299,6 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
-### Local Studio Home, Activity, Connections, and analysis composer
 ### Opt-in error telemetry
 
 Telemetry is off by default. To opt one local Studio or CLI process into
