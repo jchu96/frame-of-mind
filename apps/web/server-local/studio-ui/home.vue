@@ -242,6 +242,7 @@ function jobContext(job: AnalysisJob): string {
       icon="i-lucide-check-circle"
       title="Analysis job started"
       :description="`Job ${createdJobId} is in the durable local queue.`"
+      :actions="[{ label: 'Open job activity', to: `/activity/${encodeURIComponent(createdJobId)}` }]"
     />
 
     <section
@@ -311,13 +312,15 @@ function jobContext(job: AnalysisJob): string {
       aria-label="Studio summary"
       aria-live="polite"
     >
-      <UCard data-testid="active-jobs-summary">
-        <p class="text-xs font-bold uppercase tracking-[0.16em] text-muted">Active jobs</p>
-        <p class="mt-2 text-3xl font-black text-highlighted">
-          {{ initialLoading ? "—" : activeJobs.length }}
-        </p>
-        <p class="mt-1 text-sm text-muted">Running now</p>
-      </UCard>
+      <NuxtLink to="/activity" aria-label="Open activity">
+        <UCard data-testid="active-jobs-summary" class="h-full transition hover:bg-elevated">
+          <p class="text-xs font-bold uppercase tracking-[0.16em] text-muted">Active jobs</p>
+          <p class="mt-2 text-3xl font-black text-highlighted">
+            {{ initialLoading ? "—" : activeJobs.length }}
+          </p>
+          <p class="mt-1 text-sm text-muted">Running now</p>
+        </UCard>
+      </NuxtLink>
       <UCard data-testid="recent-runs-summary">
         <p class="text-xs font-bold uppercase tracking-[0.16em] text-muted">Recent runs</p>
         <p class="mt-2 text-3xl font-black text-highlighted">
@@ -390,10 +393,12 @@ function jobContext(job: AnalysisJob): string {
           description="The local job runtime did not return status."
         />
         <div v-else-if="activeJobs.length" class="divide-y divide-default">
-          <article
+          <NuxtLink
             v-for="job in activeJobs"
             :key="job.id"
+            :to="`/activity/${encodeURIComponent(job.id)}`"
             class="grid gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            :aria-label="`${job.input.recipe.id}, ${stageLabel(job)}`"
           >
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
@@ -411,7 +416,7 @@ function jobContext(job: AnalysisJob): string {
             <time :datetime="job.updatedAt" class="text-xs text-muted">
               Updated {{ formatDate(job.updatedAt) }}
             </time>
-          </article>
+          </NuxtLink>
         </div>
         <div v-else class="py-6">
           <p class="font-semibold text-highlighted">Nothing is running.</p>

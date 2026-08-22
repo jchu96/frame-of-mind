@@ -105,6 +105,9 @@ export function requiresLocalStudioSession(pathname: string): boolean {
     || pathname === "/intent/"
     || pathname === "/run"
     || pathname === "/run/"
+    || pathname === "/activity"
+    || pathname === "/activity/"
+    || pathname.startsWith("/activity/")
     || pathname === "/import"
     || pathname === "/import/"
     || pathname === "/runs"

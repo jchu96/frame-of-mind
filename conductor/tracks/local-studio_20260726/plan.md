@@ -312,7 +312,7 @@ context-before-upload ordering. Phase 6 is closed; Task 7.1 is next.
 
 ### Tasks
 
-- [ ] Task 7.1: Build the Activity list and job-detail timeline from bounded
+- [x] Task 7.1: Build the Activity list and job-detail timeline from bounded
       polling with clear active, failed, canceled, interrupted, and succeeded
       states.
 - [ ] Task 7.2: Add cancel, retry, reconnect-provider, re-import-projection, and
@@ -323,6 +323,18 @@ context-before-upload ordering. Phase 6 is closed; Task 7.1 is next.
       that exclude private content.
 - [ ] Task 7.5: Add startup and scheduled maintenance for expired uploads and
       stale job records with dry-run diagnostics.
+
+Task 7.1 is complete: the authenticated local-only `/activity` route groups
+the existing bounded job list into Active, Finished, and Needs attention, and
+`/activity/:id` renders the durable transition timeline with progress nested
+under its stage and warning, cancellation, and cleanup events preserved as
+distinct rows. One shared poller pauses in hidden tabs, backs off after failed
+reads without clearing the last good state, supports explicit refresh, and
+stops when visible work is terminal. Home and the Studio sidebar link into the
+surface; successful jobs link to completed runs, while terminal failures show
+only the sanitized operator message. Pure state/polling tests, authenticated
+HTTP coverage, Cloudflare exclusion checks, and the synthetic composer-to-
+timeline Playwright journey cover the slice. Task 7.2 is next.
 
 ### Verification
 

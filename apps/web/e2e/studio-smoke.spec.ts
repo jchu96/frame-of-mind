@@ -248,7 +248,7 @@ test("selects Intent by keyboard and reports strict field errors", {
   expect(clientErrors).toEqual([]);
 });
 
-test("creates one video-only analysis from the Run receipt", {
+test("creates one video-only analysis and opens its activity timeline", {
   tag: "@smoke",
 }, async ({ page }) => {
   const clientErrors = collectClientErrors(page, {
@@ -304,14 +304,14 @@ test("creates one video-only analysis from the Run receipt", {
   if (createStatus !== 201) {
     throw new Error(`Job create failed (${createStatus}): ${await createResponse.text()}`);
   }
-  const created = await createResponse.json() as { job: { id: string } };
+  const createdJob = await createResponse.json() as { job: { id: string } };
 
   await expect(page).toHaveURL(/\/?created=job_/);
   const notice = page.getByText(/Job job_.* durable local queue\./);
   await expect(notice).toBeVisible();
   await expect.poll(async () => {
     const response = await page.request.get(
-      `/api/studio/jobs/${encodeURIComponent(created.job.id)}?afterSequence=0&limit=100`,
+      `/api/studio/jobs/${encodeURIComponent(createdJob.job.id)}?afterSequence=0&limit=100`,
     );
     const detail = await response.json() as {
       job: { stage: string; terminal?: { code?: string } };
@@ -319,7 +319,7 @@ test("creates one video-only analysis from the Run receipt", {
     return detail.job.terminal?.code;
   }, { timeout: 60_000 }).toBe("gemini_request_failed");
   const terminalResponse = await page.request.get(
-    `/api/studio/jobs/${encodeURIComponent(created.job.id)}?afterSequence=0&limit=100`,
+    `/api/studio/jobs/${encodeURIComponent(createdJob.job.id)}?afterSequence=0&limit=100`,
   );
   const terminalDetail = await terminalResponse.json() as {
     job: { terminal?: { code?: string } };
@@ -331,6 +331,26 @@ test("creates one video-only analysis from the Run receipt", {
     media: sessionStorage.getItem("frame-of-mind:studio:media-upload"),
     run: sessionStorage.getItem("frame-of-mind:studio:run-draft"),
   }))).toEqual({ intent: null, context: null, media: null, run: null });
+
+  await page.goto("/activity");
+  await expect(page.getByRole("main").getByRole("heading", {
+    name: "Activity",
+    level: 1,
+  }))
+    .toBeVisible();
+  const activeJob = page.locator(
+    'section[aria-labelledby="activity-active"]',
+  ).locator(`a[href="/activity/${createdJob.job.id}"]`);
+  const attentionJob = page.locator(
+    'section[aria-labelledby="activity-needs-attention"]',
+  ).locator(`a[href="/activity/${createdJob.job.id}"]`);
+  const groupedJob = activeJob.or(attentionJob);
+  await expect(groupedJob).toBeVisible();
+  await groupedJob.click();
+  await expect(page).toHaveURL(`/activity/${createdJob.job.id}`);
+  await expect(page.getByRole("heading", { name: "Timeline" })).toBeVisible();
+  await expect(page.locator('ol[aria-label="Job stage timeline"], ol').first().locator("li").first())
+    .toBeVisible({ timeout: 15_000 });
   expect(clientErrors).toEqual([]);
 });
 

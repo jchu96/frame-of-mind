@@ -68,6 +68,8 @@ describe("local Studio per-launch session", () => {
     expect(requiresLocalStudioSession("/intent/")).toBe(true);
     expect(requiresLocalStudioSession("/run")).toBe(true);
     expect(requiresLocalStudioSession("/run/")).toBe(true);
+    expect(requiresLocalStudioSession("/activity")).toBe(true);
+    expect(requiresLocalStudioSession("/activity/job_01K123")).toBe(true);
     expect(requiresLocalStudioSession("/context")).toBe(true);
     expect(requiresLocalStudioSession("/context/")).toBe(true);
     expect(requiresLocalStudioSession("/import")).toBe(true);

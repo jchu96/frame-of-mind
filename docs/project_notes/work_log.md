@@ -451,3 +451,22 @@
   226 tests; both builds, Studio HTTP, Cloudflare boundary, and 32 MiB spike),
   `bun run test:e2e:smoke` (12 passed, including `gemini_request_failed`
   terminal-code honesty), and `bun run smoke:gemini` (`Gemini smoke: passed`).
+- Implemented Local Studio Task 7.1 in `f123716`: authenticated `/activity`
+  list and `/activity/:id` detail routes over the existing bounded job APIs,
+  pure five-state grouping and ordered timeline derivation, and one
+  visibility-aware polling controller with bounded backoff and last-good-state
+  retention. Home and sidebar links, sanitized terminal banners, immutable
+  input summaries, HTTP/session and Cloudflare boundary checks, and the real
+  composer-to-timeline browser journey shipped without persistence or
+  executor changes. Validated by `bun run check` (21 Vitest files / 201 tests;
+  Bun web suite, production Studio HTTP contract, local/Cloudflare builds,
+  boundary check, and streaming spike passed) and
+  `bun run test:e2e:smoke` (12 passed).
+- Addressed the Task 7.1 fix-round findings: the visible Activity list now
+  keeps its three-second poll alive when empty or all-terminal, detail loading
+  follows the event cursor through a bounded 20 pages, and UI event parsing
+  strips additive fields while retaining the shared domain validation and
+  sanitized warning message. Added direct regressions for cross-window list
+  discovery, three-page event ordering, additive warning fields,
+  cancellation-request timeline rows, authenticated detail SSR, and the
+  grouped-row smoke click.
