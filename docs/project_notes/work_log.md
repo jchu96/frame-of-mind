@@ -417,7 +417,7 @@
   repository gate and replaced the CLI's stale model examples with the shared
   default-model constant. The focused self-test, working-tree and all-ref
   history scans, CLI typecheck, and CLI tests passed.
-- Completed Local Studio Tasks 9.1, 9.2, and 9.5. Reconciled the public and
+- Completed Local Studio Tasks 9.1, 9.2, 9.3, and 9.5. Reconciled the public and
   operator documentation against shipped Local Studio Phases 1-8 and the
   hosted-dark Access, Workflow, spend, telemetry, and release-preparation
   boundary. Added the public data-classification contract and a repeatable
@@ -429,7 +429,13 @@
   materialization limit, Phase 2, Tasks 5.1/5.2, and production deployment
   explicitly pending. `bun run check` passed the repository scan, typechecks,
   tests, builds, Local Studio HTTP contract, hosted Access/Workflow contracts,
-  release rehearsal, and 32 MiB streaming spike. Tasks 9.3 and 9.4 remain open.
+  release rehearsal, and 32 MiB streaming spike. Task 9.3 added a depth-one
+  fresh-clone install/build/CLI/Studio proof, a v0.2.1-to-HEAD upgrade proof
+  that reopens and migrates the same temporary SQLite database, macOS/Linux CI
+  boot coverage, and an honest Windows install-only lane with LF checkout.
+  Exact-HEAD receipts were `FRESH_CLONE install=PASS build=PASS
+  studio_boot=PASS` and `UPGRADE install=PASS build=PASS studio_boot=PASS
+  migration=PASS`. Task 9.4 remains open.
 - Created the proposed `hosted-studio_20260822` Conductor track, eight-phase
   Tier A/Tier B plan, and ADR 0018 for principal-scoped Cloudflare creation.
   The approved upload design hashes incrementally in a dedicated browser Web
@@ -766,3 +772,13 @@
   release rehearsal, and 32 MiB streaming proof passed) and
   `bun run test:e2e:smoke` (13 passed), including offset/export, matching and
   mismatching reattachment, Cloudflare exclusion, and browser review coverage.
+- Closed Local Studio Task 9.4 review SF1 on 2026-08-22. The env-gated
+  node-server streaming spike now registers the Studio bootstrap and session
+  middleware even when the full Studio surface is off. Its executable proof
+  rejects an unauthenticated upload before writing bytes, exchanges the
+  one-time launch capability, and preserves the authenticated 32 MiB streaming
+  and range contract. The production HTTP contract covers both session states,
+  and the hosted artifact gate forbids spike route, source, and flag markers.
+  Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40
+  files / 303 tests; Local Studio HTTP, hosted contracts, release rehearsal,
+  and streaming spike passed).

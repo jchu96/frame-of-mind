@@ -428,9 +428,9 @@ smoke coverage validate the slice. Phase 9 is next.
 - [x] Task 9.2: Add a public data-classification table and verify `.gitignore`,
       fixtures, screenshots, logs, examples, and repository history contain no
       sensitive runtime data.
-- [ ] Task 9.3: Add fresh-clone local installation and upgrade tests for macOS,
+- [x] Task 9.3: Add fresh-clone local installation and upgrade tests for macOS,
       Linux, and documented Windows support.
-- [ ] Task 9.4: Run adversarial security, provider, job-state, upload, and
+- [x] Task 9.4: Run adversarial security, provider, job-state, upload, and
       contract reviews; resolve all grounded blockers.
 - [x] Task 9.5: Reconcile the separate
       [Hosted Studio track](../hosted-studio_20260822/) against what is built
@@ -441,11 +441,15 @@ smoke coverage validate the slice. Phase 9 is next.
       Tasks 5.3 and 5.4, and Phase 6 release preparation. Pending: Phase 2,
       Tasks 5.1 and 5.2, and the Phase 6 deployment.
 
-Tasks 9.1, 9.2, and 9.5 closed on 2026-08-22. Public documentation now matches
-the shipped Local Studio Phases 1-8 and the hosted-dark boundary; the repository
-hygiene gate scans tracked and nonignored working-tree files, and a one-time
-all-ref history sweep found no sensitive runtime data. Platform installation,
-upgrade evidence, and the final adversarial review remain Tasks 9.3 and 9.4.
+Tasks 9.1, 9.2, 9.3, and 9.5 closed on 2026-08-22. Public documentation now
+matches the shipped Local Studio Phases 1-8 and the hosted-dark boundary; the
+repository hygiene gate scans tracked and nonignored working-tree files, and a
+one-time all-ref history sweep found no sensitive runtime data. A depth-one
+`file://` clone now proves the frozen install, CLI/web builds, CLI help, and
+authenticated Studio boot on macOS/Linux, while an install-only Windows lane
+keeps LF and does not overclaim Studio boot. Upgrade mode booted v0.2.1, then
+fast-forwarded to current HEAD and reopened the same SQLite database under the
+current schema. The final adversarial review remains Task 9.4.
 
 ### Verification
 
@@ -510,3 +514,19 @@ Each phase can become a public GitHub issue after the specification is approved:
 - [ ] Phase B remains an explicit roadmap, not a partially secured deployment.
 - [ ] Both video-only and context-enriched synthetic runs preserve honest,
       versioned provenance and pass their mapped end-to-end checks.
+
+Task 9.4 is complete (2026-08-22): a whole-surface adversarial review at
+main `0f919e9` (Grok, read-only, executable probes against session/ADR 0006,
+the Gemini adapter's timeouts/retries/cleanup, the SQLite job-state machine
+(ADR 0007), upload/media/context staging (ADR 0011), and the public HTTP and
+hosted viewer contracts) returned PASS with no blockers and no should-fix.
+Its one NIT — the env-gated streaming spike upload route accepted bodies
+without the Studio session when `FRAME_OF_MIND_STUDIO_SPIKE=1` — is closed
+by matching the spike surface in `requiresLocalStudioSession`, registering
+the bootstrap and session middleware whenever the node-server spike handlers
+are built, and making the streaming proof exchange the one-time bootstrap
+capability before upload. The production HTTP contract proves an
+unauthenticated spike upload returns 401 without writing partial or sealed
+bytes and an authenticated upload preserves the byte/digest contract; the
+Cloudflare boundary gate forbids the spike route, source, and flag markers.
+The rolling per-PR adversarial reviews (#59–#72) remain the per-change gate.

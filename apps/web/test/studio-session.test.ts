@@ -61,6 +61,7 @@ describe("local Studio per-launch session", () => {
   test("protects Studio data surfaces while leaving only launch bootstrap inert", () => {
     expect(requiresLocalStudioSession("/")).toBe(true);
     expect(requiresLocalStudioSession("/connections")).toBe(true);
+    expect(requiresLocalStudioSession("/api/__studio-spike/upload")).toBe(true);
     expect(requiresLocalStudioSession("/connections/")).toBe(true);
     expect(requiresLocalStudioSession("/recording")).toBe(true);
     expect(requiresLocalStudioSession("/recording/")).toBe(true);

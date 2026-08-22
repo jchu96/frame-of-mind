@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -19,12 +19,15 @@ const port = 34_000 + Math.floor(Math.random() * 10_000);
 const baseUrl = `http://127.0.0.1:${port}`;
 const webRoot = join(process.cwd(), "apps", "web");
 const mediaRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-http-media-"));
+const spikeRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-studio-spike-http-"));
 const outputRoot = join(mediaRoot, "runs");
 const databasePath = join(mediaRoot, "studio.sqlite");
 const environment = {
   ...process.env,
   FRAME_OF_MIND_STUDIO: "1",
   FRAME_OF_MIND_STUDIO_BOOTSTRAP_TOKEN: bootstrapToken,
+  FRAME_OF_MIND_STUDIO_SPIKE: "1",
+  FRAME_OF_MIND_STUDIO_SPIKE_DIR: spikeRoot,
   FRAME_OF_MIND_CHECKOUT_ROOT: process.cwd(),
   FRAME_OF_MIND_MEDIA_ROOT: mediaRoot,
   FRAME_OF_MIND_CONTEXT_ROOT: join(mediaRoot, "context"),
@@ -497,6 +500,27 @@ try {
     401,
     "context-file staging requires a Studio session",
   );
+  const spikeFixture = new Uint8Array([0x00, 0x01, 0x02, 0x03]);
+  await expectStatus(
+    await probe.upload("/api/__studio-spike/upload", spikeFixture),
+    401,
+    "spike upload requires a Studio session",
+  );
+  for (const path of [
+    join(spikeRoot, "stream-upload.partial"),
+    join(spikeRoot, "stream-upload.sealed"),
+  ]) {
+    try {
+      await stat(path);
+      throw new Error("Unauthenticated spike upload wrote bytes.");
+    } catch (error) {
+      if (
+        !(error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+      ) {
+        throw error;
+      }
+    }
+  }
   await expectStatus(
     await probe.bootstrap(bootstrapToken, {
       origin: "https://attacker.example",
@@ -613,6 +637,24 @@ try {
     200,
     "session cookie authorizes Studio APIs",
   );
+  const spikeUpload = await expectStatus(
+    await probe.upload("/api/__studio-spike/upload", spikeFixture),
+    200,
+    "session cookie authorizes the spike upload",
+  );
+  const spikeReceipt = await spikeUpload.json() as {
+    receivedBytes?: number;
+    sha256?: string;
+  };
+  if (
+    spikeReceipt.receivedBytes !== spikeFixture.byteLength
+    || spikeReceipt.sha256
+      !== createHash("sha256").update(spikeFixture).digest("hex")
+    || (await stat(join(spikeRoot, "stream-upload.sealed"))).size
+      !== spikeFixture.byteLength
+  ) {
+    throw new Error("Authenticated spike upload did not preserve its byte contract.");
+  }
   const retainedMediaPath = `/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media`;
   const retainedStatus = await expectStatus(
     await probe.get(`/api/runs/${encodeURIComponent(runFixture.manifest.runId)}/media-status`),
@@ -1481,5 +1523,8 @@ try {
 } finally {
   server.kill("SIGTERM");
   await server.exited;
-  await rm(mediaRoot, { recursive: true, force: true });
+  await Promise.all([
+    rm(mediaRoot, { recursive: true, force: true }),
+    rm(spikeRoot, { recursive: true, force: true }),
+  ]);
 }
