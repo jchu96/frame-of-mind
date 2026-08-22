@@ -153,6 +153,10 @@
   media, provider, and completed-run receipts. Re-import republishes an
   existing atomic run pair into `RunStore`; cleanup retry delegates to the
   media adapter and returns its actual status.
+- Local Studio retained playback resolves from a successful job's opaque run
+  ID, media receipt, and exact digest. The authenticated local route streams
+  the private sealed file without returning its path; expired, ephemeral,
+  cleaned, unknown, or mismatched media is unavailable.
 - Gemini detail failures are repaired once and isolated per candidate only when
   they cross the typed provider-response boundary; strict Zod remains local
   authority.
