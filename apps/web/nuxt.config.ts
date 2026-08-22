@@ -191,6 +191,9 @@ const studioReviewMediaHandler = fileURLToPath(
 const studioReviewMediaStatusHandler = fileURLToPath(
   new URL("./server-local/studio-media/review-status.get.ts", import.meta.url),
 );
+const studioReviewMediaReattachHandler = fileURLToPath(
+  new URL("./server-local/studio-media/reattach.post.ts", import.meta.url),
+);
 const studioContextCreateHandler = fileURLToPath(
   new URL("./server-local/studio-context/create.post.ts", import.meta.url),
 );
@@ -309,6 +312,11 @@ const localHandlers = [
           route: "/api/runs/:id/media-status",
           method: "get",
           handler: studioReviewMediaStatusHandler,
+        },
+        {
+          route: "/api/runs/:id/media/reattach",
+          method: "post",
+          handler: studioReviewMediaReattachHandler,
         },
         {
           route: "/api/context-files",

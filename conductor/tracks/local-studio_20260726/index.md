@@ -11,10 +11,10 @@
 
 ## Progress
 
-- Phases: 7/9 complete
-- Tasks: 43/51 complete
-- Current focus: Task 8.3, seeking retained playback from canonical evidence
-  timestamps and showing aligned transcript excerpts as literal text.
+- Phases: 8/9 complete
+- Tasks: 46/51 complete
+- Current focus: Task 9.1, reconciling public documentation and operations
+  guidance against the shipped Studio boundary.
 
 ## Decision
 
