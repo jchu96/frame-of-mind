@@ -614,3 +614,20 @@
   abort still aborted the sink at 131,072 bytes with no receipt. Private R2 is
   the second fallback. No ADR, deployment, or production Wrangler
   configuration was changed. Validated by `bun run check:hosted-stream`.
+- Completed Hosted Studio Tasks 4.1–4.4 on 2026-08-22. The gated hosted shell
+  reuses the local Studio composer/activity derivations through shared pure
+  modules and a hosted data adapter; Recording consumes only an existing
+  sealed principal receipt and states that upload is unavailable. Activity,
+  cancel, retry, media, and publication reads are principal-bound and expose
+  only opaque IDs plus sanitized receipts/codes. The Workflow now cleans up
+  before constructing immutable provenance, validates a real analysis/manifest
+  pair, and projects it atomically through the existing D1 `RunStore`; the
+  existing viewer resolves the resulting run without any share or ownership-
+  transfer path. The focused two-Worker contract prints
+  `HOSTED_STUDIO_CONTRACT PASSED` after runtime-dark 404s, two-principal guessed-
+  ID denial, cancel/retry, browser composer/activity, and published-viewer
+  checks. Pair mismatch and forced D1 partial-write fixtures fail with zero
+  projection rows. Validated by `bun run check` (22 Vitest files / 212 tests;
+  Bun web suite: 272 tests; local Studio, hosted Access, hosted Studio/Workflow,
+  builds, boundary, and 32 MiB streaming contracts passed) and
+  `bun run test:e2e:smoke` (13 passed).
