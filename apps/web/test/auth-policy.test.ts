@@ -63,6 +63,7 @@ describe("authentication policy", () => {
       "/sign-in",
       "/api/auth/sign-in/social",
       "/_nuxt/app.js",
+      "/api/_nuxt_icon/lucide.json",
       "/favicon.svg",
       "/favicon.ico",
       "/robots.txt",
@@ -104,11 +105,26 @@ describe("authentication policy", () => {
 });
 
 test("Better Auth public paths are exact and reject traversal", () => {
-  for (const path of ["/favicons", "/favicon", "/_nuxt", "/_nuxt/..%2fapi/hosted/jobs", "/_nuxt/../api/hosted/jobs", "/sign-in/", "/Sign-In"]) {
+  for (const path of [
+    "/favicons",
+    "/favicon",
+    "/_nuxt",
+    "/_nuxt/..%2fapi/hosted/jobs",
+    "/_nuxt/../api/hosted/jobs",
+    "/api/_nuxt_icon/..%2fapi/session",
+    "/api/_nuxt_icon/../api/session",
+    "/sign-in/",
+    "/Sign-In",
+  ]) {
     expect(isBetterAuthPublicPath(path)).toBe(false);
   }
-  for (const path of ["/favicon.ico", "/favicon.svg", "/_nuxt/entry.js", "/sign-in"]) {
+  for (const path of [
+    "/favicon.ico",
+    "/favicon.svg",
+    "/_nuxt/entry.js",
+    "/api/_nuxt_icon/lucide.json",
+    "/sign-in",
+  ]) {
     expect(isBetterAuthPublicPath(path)).toBe(true);
   }
 });
-

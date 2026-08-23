@@ -1,5 +1,23 @@
 # Bugs and Failure History
 
+## 2026-08-23 — Better Auth rate limiting collapsed Worker traffic into one bucket
+
+- Symptom: production logged that Better Auth could not determine a client IP,
+  so the three-per-fifteen-minute magic-link limit became one shared per-path
+  bucket. Anonymous sign-in also received `403` for the Nuxt Icon API used by
+  the mail-sent state.
+- Cause: Better Auth defaults to `x-forwarded-for`, while Cloudflare Workers
+  supplies the trusted client address as `cf-connecting-ip`; the Better Auth
+  public-path allowlist also covered built assets but not `/api/_nuxt_icon/`.
+- Fix: configure the documented
+  [`advanced.ipAddress.ipAddressHeaders`](https://better-auth.com/docs/reference/options)
+  option with only Cloudflare's edge-set `cf-connecting-ip`, and admit the
+  exact icon prefix behind the existing traversal and encoding rejections.
+- Prevention: a real Better Auth limiter contract proves independent client-IP
+  buckets plus a limited no-header fallback. The built-workerd sign-in contract
+  proves anonymous icon delivery, traversal denial, and absence of the shared-
+  bucket warning in captured Worker output.
+
 ## 2026-08-23 — Better Auth broke two consolidated E2E harness seams
 
 - Symptom: the Better Auth hosted journey rendered an empty context page and

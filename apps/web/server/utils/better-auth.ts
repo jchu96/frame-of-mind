@@ -5,6 +5,7 @@ import { magicLink } from "better-auth/plugins/magic-link";
 import type { D1Database, SendEmail } from "@cloudflare/workers-types";
 import { toWebRequest, type H3Event } from "h3";
 import { getHostedRouteTelemetry } from "#frame-hosted-telemetry";
+import { BETTER_AUTH_IP_ADDRESS_OPTIONS } from "./better-auth-ip";
 import { createMagicLinkMailer } from "./magic-link-mailer";
 
 const INVITE_ERROR_CODE = "EMAIL_NOT_INVITED";
@@ -345,6 +346,7 @@ export function createBetterAuth(event: H3Event) {
       },
     },
     advanced: {
+      ipAddress: BETTER_AUTH_IP_ADDRESS_OPTIONS,
       useSecureCookies: new URL(baseURL).protocol === "https:",
       defaultCookieAttributes: {
         httpOnly: true,
