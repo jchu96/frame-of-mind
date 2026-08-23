@@ -5,10 +5,13 @@ const repositoryRoot = resolve(import.meta.dir, "..");
 
 export const ad11RequiredMarkers = [
   "/api/hosted/media",
+  "/api/hosted/media/:id/seal",
   "/api/hosted/jobs",
   "/hosted/activity",
   "HostedWorkflowAnalysisJobExecutor",
   "principal_spend_cap_exceeded",
+  "hosted_media_open_session_cap_exceeded",
+  "media_seal_mismatch",
   "data-hosted-studio-shell",
 ] as const;
 
@@ -46,7 +49,7 @@ export const localOnlyForbiddenMarkers = [
   "FRAME_OF_MIND_STUDIO_SPIKE",
 ] as const;
 
-export const hostedWrapperMarker = "FRAME_OF_MIND_HOSTED_ENTRY_V1";
+export const hostedWrapperMarker = "FRAME_OF_MIND_HOSTED_ENTRY_V2_DELEGATING";
 const wrapperSensitiveMarkers = [
   "GEMINI_API_KEY",
   "geminiFileUri",

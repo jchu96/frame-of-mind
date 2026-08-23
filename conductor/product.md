@@ -70,8 +70,9 @@ pipeline.
 
 ### Phase B - Hosted Studio
 
-Cloudflare Access, D1 metadata, private R2 multipart staging, durable hosted job
-orchestration, explicit retention, and server-managed secrets. Phase B must
+Cloudflare Access, D1 metadata, direct browser-to-Gemini resumable upload,
+durable hosted job orchestration, explicit retention, and server-managed
+secrets. Phase B must
 reuse Phase A's job, media, analysis, and run contracts rather than fork the
 product.
 

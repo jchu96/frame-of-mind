@@ -1,5 +1,6 @@
 import type { File as GeminiFile } from "@google/genai";
 import { GeminiVideoAnalyzer } from "../../../src/adapters/gemini.js";
+import { GeminiFileError } from "../../../src/adapters/gemini-files.js";
 import type {
   AnalysisDetail,
   AnalysisRecipe,
@@ -25,6 +26,13 @@ export interface HostedResolvedFile {
   name: string;
   uri: string;
   mimeType: string;
+}
+
+export class HostedProviderError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = "HostedProviderError";
+  }
 }
 
 export interface HostedTranscriptResult {
@@ -77,6 +85,7 @@ export interface HostedGeminiAnalyzer {
   resolveRetainedFile?(
     name: string,
     expectedSha256: string,
+    expectedSizeBytes: number,
   ): Promise<GeminiFile>;
   transcribe?(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
   index(
@@ -110,6 +119,7 @@ export interface HostedProviderEnv {
   GEMINI_API_KEY?: string;
   HOSTED_FAKE_GEMINI?: string;
   HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID?: string;
+  HOSTED_FAKE_FILE_MISSING_HASH_MEDIA_ID?: string;
 }
 
 export function createHostedAnalysisProvider(
@@ -120,6 +130,7 @@ export function createHostedAnalysisProvider(
     return new FakeHostedAnalysisProvider(
       options.contextSource,
       env.HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID,
+      env.HOSTED_FAKE_FILE_MISSING_HASH_MEDIA_ID,
     );
   }
   const apiKey = env.GEMINI_API_KEY?.trim();
@@ -189,10 +200,7 @@ export class GeminiHostedAnalysisProvider implements HostedAnalysisProvider {
     if (!this.analyzer.resolveRetainedFile) {
       throw new Error("hosted_gemini_file_resolution_unavailable");
     }
-    const file = await this.analyzer.resolveRetainedFile(
-      receipt.geminiFileName,
-      receipt.sha256,
-    );
+    const file = await resolveSealedFile(this.analyzer, receipt);
     return resolvedFile(file, receipt);
   }
 
@@ -273,6 +281,7 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   constructor(
     private readonly contextSource?: HostedContextSourceFactory,
     private readonly overrunMediaId?: string,
+    private readonly missingHashMediaId?: string,
   ) {}
 
   takeUsage(): HostedProviderUsage | undefined {
@@ -300,6 +309,19 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
   async ensureGeminiFile(
     receipt: SealedHostedMediaReceipt,
   ): Promise<HostedResolvedFile> {
+    if (receipt.mediaId === this.missingHashMediaId) {
+      const analyzer = new GeminiVideoAnalyzer("contract-fixture", "contract-fixture", {
+        getFile: async () => ({
+          name: receipt.geminiFileName,
+          uri: receipt.geminiFileUri,
+          mimeType: receipt.mimeType,
+          sizeBytes: String(receipt.sizeBytes),
+          state: "ACTIVE" as GeminiFile["state"],
+        }),
+      });
+      const file = await resolveSealedFile(analyzer, receipt);
+      return resolvedFile(file, receipt);
+    }
     return {
       name: receipt.geminiFileName,
       uri: receipt.geminiFileUri,
@@ -364,6 +386,30 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
       outputTokens: outputTokens * multiplier,
       totalTokens: (promptTokens + outputTokens) * multiplier,
     };
+  }
+}
+
+async function resolveSealedFile(
+  analyzer: Pick<HostedGeminiAnalyzer, "resolveRetainedFile">,
+  receipt: SealedHostedMediaReceipt,
+): Promise<GeminiFile> {
+  if (!analyzer.resolveRetainedFile) {
+    throw new Error("hosted_gemini_file_resolution_unavailable");
+  }
+  try {
+    return await analyzer.resolveRetainedFile(
+      receipt.geminiFileName,
+      receipt.sha256,
+      receipt.sizeBytes,
+    );
+  } catch (error) {
+    if (
+      error instanceof GeminiFileError
+      && error.telemetryCode === "media_seal_mismatch"
+    ) {
+      throw new HostedProviderError("media_seal_mismatch");
+    }
+    throw error;
   }
 }
 

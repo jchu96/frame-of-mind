@@ -261,13 +261,14 @@ export class GeminiVideoAnalyzer {
 
   /**
    * Resolves an operator-supplied retained upload instead of re-uploading.
-   * The file must exist, be ACTIVE, and (when the provider reports a digest)
-   * match the local recording's SHA-256. This adapter never created the file,
+   * The file must exist, be ACTIVE, and exactly match the expected byte size
+   * and SHA-256. This adapter never created the file,
    * so every failure reports `not_obtained` and cleanup is never attempted.
    */
   async resolveRetainedFile(
     name: string,
-    expectedSha256Hex?: string,
+    expectedSha256Hex: string,
+    expectedSizeBytes: number,
   ): Promise<GeminiFile> {
     let file: GeminiFile;
     try {
@@ -299,14 +300,20 @@ export class GeminiVideoAnalyzer {
       );
     }
     const remoteSha256 = (file as { sha256Hash?: unknown }).sha256Hash;
-    if (expectedSha256Hex && typeof remoteSha256 === "string" && remoteSha256) {
-      if (!remoteDigestMatchesHex(remoteSha256, expectedSha256Hex)) {
-        throw new GeminiFileError(
-          "The retained Gemini file does not match the local recording digest.",
-          name,
-          "not_obtained",
-        );
-      }
+    const remoteSizeBytes = Number((file as { sizeBytes?: unknown }).sizeBytes);
+    if (
+      typeof remoteSha256 !== "string"
+      || !remoteSha256
+      || !remoteDigestMatchesHex(remoteSha256, expectedSha256Hex)
+      || !Number.isSafeInteger(remoteSizeBytes)
+      || remoteSizeBytes !== expectedSizeBytes
+    ) {
+      throw new GeminiFileError(
+        "The retained Gemini file does not match the sealed recording receipt.",
+        name,
+        "not_obtained",
+        "media_seal_mismatch",
+      );
     }
     return file;
   }

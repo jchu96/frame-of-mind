@@ -26,7 +26,7 @@ try {
   console.log("CLOUDFLARE_BOUNDARY_FIXTURE forbidden=PASS");
 
   const missingRoot = join(temporaryRoot, "missing");
-  await writeFixture(missingRoot, requiredMarkers.slice(1).join("\n"));
+  await writeFixture(missingRoot, requiredMarkers.slice(0, -1).join("\n"));
   await expectFailure(missingRoot, "hosted required markers");
   console.log("CLOUDFLARE_BOUNDARY_FIXTURE missing=PASS");
 

@@ -822,6 +822,35 @@
   32 MiB streaming proof passed). An initial full run hit the pre-existing
   intermittent workerd hang; the isolated contract and fresh full gate passed,
   and the harness follow-up is recorded in `bugs.md`.
+- Completed Hosted Studio Phase 2 direct media upload on 2026-08-23 without
+  deployment. Added principal-scoped D1 pending sessions, cap-before-provider
+  admission, encrypted capability custody, browser incremental hashing and
+  direct resumable upload, reload/query resume, exact Files metadata seal, and
+  cancel/expiry cleanup with a seal-race grace. Retired the proxy-entry upload
+  interception and fixed-part spike. The built-workerd Workflow harness now
+  serializes retryable local dispatch failures and recognizes an exact local
+  dispatch failure as an admitted spend-race result while still requiring the
+  D1 admission count and separate end-to-end Workflow receipts. Validated under
+  the machine-wide `gate-lock` with `bun run check` (22 Vitest files / 212
+  tests; Bun web suite: 41 files / 309 tests; default and Better Auth hosted
+  Access/Workflow contracts; hosted auth; `HOSTED_MEDIA_CONTRACT PASSED`;
+  release migration range 0001..0007; and the 32 MiB streaming proof) and
+  `bun run test:e2e:smoke` (13 passed). The hosted media contract used a built
+  workerd Worker, fake Files API, and real Chromium to cover cap 429,
+  key/capability boundaries, reload/query resume, two-tab exclusion, exact
+  seal, three mismatch deletions, principal 404, cancellation, janitor cleanup,
+  and seal/janitor concurrency.
+- Addressed PR #82 Phase 2 review findings on 2026-08-23. Workflow retained-file
+  resolution now fails closed unless provider size and SHA-256 both equal the
+  sealed receipt, including a missing-hash Workflow fixture with the sanitized
+  `media_seal_mismatch` code. The fake Files API now matches live identity
+  timing: pre-final cancel/expiry abandons D1 and relies on provider TTL without
+  a nonexistent delete. Added principal-scoped open-session recovery, explicit
+  Resume/Discard, page-exit keepalive cancellation, and a Chromium close/new-tab
+  contract that proves resume and cap release after discard. Validated by the
+  machine-wide locked `bun run check`: 22 Vitest files / 213 tests, 41 Bun web
+  files / 313 tests, both hosted Workflow auth modes, the hosted media contract,
+  release migrations 0001..0007, and the 32 MiB streaming proof all passed.
 - Added the hosted `/sign-in` surface on 2026-08-23 with GitHub OAuth,
   optional magic-link email, friendly invitation/configuration failures,
   same-origin relative return paths, and both server and SPA-navigation
