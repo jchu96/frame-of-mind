@@ -632,3 +632,21 @@ is reviewed.
 Static Workers Assets do not contain meeting data. Inspect Worker logs and the
 D1 binding. Confirm the request reached the Worker and carried a validated
 Access assertion.
+
+## Managing who can sign in
+
+Access membership lives in one Access **group** ("Frame of Mind testers") that
+the application policy points at. Adding or removing a tester never edits the
+policy. Use the CLI instead of the dashboard:
+
+```bash
+export FRAME_OF_MIND_ACCESS_ENV=~/secrets/frameofmind/access.env   # token, account id, group id — never committed
+bun scripts/access-users.ts list
+bun scripts/access-users.ts add someone@example.com
+bun scripts/access-users.ts remove someone@example.com
+```
+
+The token needs `Access: Organizations, Identity Providers, and Groups: Edit`.
+The CLI refuses to remove the last member. Login methods (Google, One-time PIN,
+GitHub) are configured once as identity providers; membership is by email,
+which works for any provider that returns a verified email.
