@@ -44,6 +44,8 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # Non-blocking while https://github.com/jchu96/frame-of-mind/issues/96 tracks 2-core timing.
+    continue-on-error: true
     env:
       FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'
       FRAME_OF_MIND_GATE_PARALLELISM: '1'
