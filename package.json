@@ -1,6 +1,6 @@
 {
   "name": "frameofmind",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Video in. Understanding out. Run recipe-driven analysis over Bluedot, Granola, or local meeting recordings with Gemini.",
   "license": "MIT",
