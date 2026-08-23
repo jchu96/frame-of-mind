@@ -1,25 +1,24 @@
 import {
   cp,
   mkdir,
-  mkdtemp,
   readFile,
-  rm,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { checkCloudflareBoundary } from "./check-cloudflare-boundary";
 import { createE2EEnvironment } from "./e2e-environment";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 
 const startedAt = performance.now();
 const repositoryRoot = resolve(import.meta.dir, "..");
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-release-"));
+const isolation = await createE2EIsolation("hosted-release");
+const temporaryRoot = isolation.root;
 const previousOutput = join(temporaryRoot, "previous-output");
 const migrationDirectory = join(temporaryRoot, "migrations-0001-through-0004");
-const persistRoot = join(temporaryRoot, "wrangler-state");
+const persistRoot = isolation.persistRoot;
 const wranglerBin = resolve(repositoryRoot, "apps/web/node_modules/wrangler/bin/wrangler.js");
-const databaseName = "frame-of-mind-hosted-release-rehearsal";
-const databaseId = "00000000-0000-0000-0000-000000000006";
+const databaseName = isolation.databaseName;
+const databaseId = isolation.databaseId;
 const safeEnvironment = createE2EEnvironment(process.env);
 
 try {
@@ -177,7 +176,7 @@ try {
   console.log(`HOSTED_RELEASE runtime_seconds=${elapsedSeconds.toFixed(2)}`);
   console.log("HOSTED_RELEASE_REHEARSAL PASSED");
 } finally {
-  await rm(temporaryRoot, { recursive: true, force: true });
+  await isolation.cleanup();
 }
 
 async function readJson(path: string): Promise<Record<string, unknown>> {
