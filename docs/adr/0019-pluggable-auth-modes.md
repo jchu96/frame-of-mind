@@ -31,20 +31,34 @@ proved the principal.
 
 The stacked mode records the first validated Access `sub` on the Better Auth
 user. Later attempts with a different `sub` fail closed. Access remains an
-outer perimeter and is not the row owner.
+outer perimeter and is not the row owner. Access subjects beginning with
+`ba:` are invalid so the Access and Better Auth principal namespaces cannot
+overlap. The built-Worker proof records
+`HOSTED_AUTH stacked_rebind=PASS mismatch_denied=true` after verifying that a
+different Access subject creates neither a cookie nor a second session.
 
 Better Auth uses the public Worker's D1 binding and migration
 `0006_better_auth.sql`. Email invitations are principal-independent and are
 claimed by the first admitted user ID. Email can admit a user but cannot
-transfer an existing `principal_sub` row.
+transfer an existing `principal_sub` row. A global Better Auth before-hook
+checks that a magic-link email has a free invite or the matching claimed user
+before the plugin writes verification state or calls the mailer; session
+creation checks and claims it again to close the race.
 
 Session cookies are `HttpOnly`, `SameSite=Lax`, `Path=/`, and `Secure` on HTTPS.
 The session lasts seven days and carries a signed compact five-minute cookie
 cache; revocation can therefore take up to five minutes to be observed by a
 cached request. OAuth state and Better Auth's trusted-origin checks defend its
 auth mutations. Application JSON mutations continue to require the exact
-request `Origin` through the existing trusted-mutation guard. None of these
-controls permits state-changing GET routes.
+request `Origin` through the existing trusted-mutation guard.
+
+Magic-link verification is the explicit exception to mutation-by-POST:
+`GET /api/auth/magic-link/verify?token=...` atomically consumes the one-time
+token on its first fetch and mints a session before redirecting. Email link
+scanners and prefetchers can therefore consume the link before the person does.
+The token expires after five minutes and cannot be replayed, but those controls
+do not remove scanner consumption; a scanner-resistant confirmation POST is a
+future production-hardening choice, not a property of this proposed design.
 
 Secret custody is mode-specific:
 

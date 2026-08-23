@@ -97,8 +97,36 @@ async function manageBetterAuth(command: string, values: string[]): Promise<void
     ).join("; ");
   } else {
     const targets = emails(values).map(sqlLiteral).join(", ");
-    statement = `DELETE FROM hosted_auth_invites WHERE email IN (${targets}) `
-      + `AND EXISTS (SELECT 1 FROM hosted_auth_invites WHERE email NOT IN (${targets}))`;
+    const current = await executeBetterAuthD1Json(
+      database,
+      target,
+      config,
+      "SELECT email FROM hosted_auth_invites ORDER BY email",
+    );
+    const requested = new Set(emails(values));
+    const members = current
+      .map((row) => typeof row.email === "string" ? row.email.toLowerCase() : "")
+      .filter(Boolean);
+    const removed = members.filter((email) => requested.has(email));
+    if (!removed.length) {
+      console.log("Nothing to remove; no listed email is a member.");
+      return;
+    }
+    if (removed.length === members.length) {
+      throw new Error("Refusing to remove the last member; the app would lock everyone out.");
+    }
+    const deleted = await executeBetterAuthD1Json(
+      database,
+      target,
+      config,
+      `DELETE FROM hosted_auth_invites WHERE email IN (${targets}) `
+      + `AND EXISTS (SELECT 1 FROM hosted_auth_invites WHERE email NOT IN (${targets})) RETURNING email`,
+    );
+    if (deleted.length !== removed.length) {
+      throw new Error("Membership changed concurrently; removal was not fully applied. Retry the command.");
+    }
+    console.log(`Removed ${deleted.length}.`);
+    return;
   }
   const child = Bun.spawn([
     "bunx", "wrangler", "d1", "execute", database,
@@ -114,6 +142,41 @@ async function manageBetterAuth(command: string, values: string[]): Promise<void
   });
   const code = await child.exited;
   if (code !== 0) throw new Error(`Wrangler D1 membership command failed (${code}).`);
+}
+
+async function executeBetterAuthD1Json(
+  database: string,
+  target: "--local" | "--remote",
+  config: string,
+  statement: string,
+): Promise<Array<Record<string, unknown>>> {
+  const child = Bun.spawn([
+    "bunx", "wrangler", "d1", "execute", database,
+    target,
+    "--config", config,
+    "--command", statement,
+    "--json",
+  ], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (code !== 0) throw new Error(`Wrangler D1 membership command failed (${code}): ${stderr.trim()}`);
+  const batches = JSON.parse(stdout) as Array<{
+    results?: Array<Record<string, unknown>>;
+    success?: boolean;
+  }>;
+  if (!Array.isArray(batches) || batches.some((batch) => batch.success === false)) {
+    throw new Error("Wrangler D1 membership command returned an invalid result.");
+  }
+  return batches.flatMap((batch) => batch.results ?? []);
 }
 
 async function manageAccess(command: string, values: string[]): Promise<void> {
