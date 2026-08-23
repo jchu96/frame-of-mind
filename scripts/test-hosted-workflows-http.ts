@@ -227,6 +227,7 @@ try {
     vars: {
       HOSTED_FAKE_GEMINI: "true",
       HOSTED_FAKE_START_DELAY_MEDIA_ID: cancelMedia,
+      HOSTED_FAKE_SKIP_DISPATCH_MEDIA_ID: cancelMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID: crashMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_STEP: "transcribe",
       HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID: overrunMedia,
@@ -843,8 +844,8 @@ try {
   );
   // Keep the intentionally concurrent admission burst last. Its contract is
   // the atomic HTTP admission result; successful Workflow completion is
-  // already covered above. Stop the fake Workflow Worker after the receipts
-  // so Linux workerd's SQLite-backed D1 scheduling cannot alter that oracle.
+  // already covered above. These exact fixture keys receive a dispatch receipt
+  // without launching instances, so local D1 scheduling cannot alter the oracle.
   const raceSize = 10;
   const raceResponses = await Promise.all(
     Array.from({ length: raceSize }, (_, index) => createJobResponse(
@@ -887,9 +888,6 @@ try {
     const body = await json<{ data?: { code?: string } }>(response);
     assertEqual(body.data?.code, "principal_spend_cap_exceeded", "HTTP race cap code");
   }
-  await stopContractWorker(workflowWorker, workflowOutput);
-  workflowWorker = undefined;
-  workflowOutput = undefined;
   assertEqual(
     await queryCount(
       "hosted_analysis_attempts",
@@ -899,7 +897,7 @@ try {
     "HTTP race created durable attempts",
   );
   console.log(
-    `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3}`,
+    `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3} dispatch=noop_fixture`,
   );
   console.log("HOSTED_SPEND_CONTRACT PASSED");
   console.log("HOSTED_STUDIO_CONTRACT PASSED");
@@ -908,6 +906,9 @@ try {
   await stopContractWorker(webWorker, webOutput);
   webWorker = undefined;
   webOutput = undefined;
+  await stopContractWorker(workflowWorker, workflowOutput);
+  workflowWorker = undefined;
+  workflowOutput = undefined;
 } catch (error) {
   if (webWorker) {
     webWorker.kill("SIGTERM");
