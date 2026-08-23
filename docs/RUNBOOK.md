@@ -1367,7 +1367,7 @@ bundle contains the DSN or a telemetry payload. The complete boundary and
 scrubbing policy are recorded in
 [ADR 0017](adr/0017-opt-in-sentry-telemetry.md#disable-telemetry).
 
-### Hosted authentication modes (proposed, not deployed)
+### Hosted authentication modes (ADR 0019 accepted; deployment remains explicit)
 
 The public Worker recognizes `cloudflare-access`, `better-auth`, and
 `cloudflare-access+better-auth`. Keep the value explicit whenever hosted
@@ -1376,11 +1376,12 @@ production example remains Access-only.
 
 For Better Auth modes, apply D1 migration `0006_better_auth.sql`, set
 `NUXT_BETTER_AUTH_URL` to the exact HTTPS application origin, and store
-`NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
-`NUXT_BETTER_AUTH_MAILER_KEY` as public-Worker secrets. Keep the GitHub client
-ID and mailer HTTPS origin as non-secret configuration. Never place these
-secrets on the internal Workflows Worker; conversely, never place
-`GEMINI_API_KEY` on the public Worker.
+`NUXT_BETTER_AUTH_SECRET` and `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` as
+public-Worker secrets. To enable magic-link email, also store
+`NUXT_BETTER_AUTH_MAILER_KEY` there and configure the mailer HTTPS origin.
+Keep the GitHub client ID and mailer HTTPS origin as non-secret configuration.
+Never place these secrets on the internal Workflows Worker; conversely, never
+place `GEMINI_API_KEY` on the public Worker.
 
 Manage app-owned membership through the D1 invite table:
 
@@ -1395,6 +1396,14 @@ target account. Commands default to remote D1; set
 `FRAME_OF_MIND_D1_LOCAL=1` only for an isolated local rehearsal. The legacy
 `scripts/access-users.ts` entry remains Access-only. In stacked mode, manage
 both the outer Access group and the Better Auth invite list.
+
+In Better Auth modes, anonymous HTML page requests redirect to
+`/sign-in?next=<same-origin-relative-path>`. The page offers GitHub OAuth and a
+magic-link form. If the mailer is not configured, the form reports that email
+sign-in is unavailable without exposing configuration details; GitHub remains
+available. API requests, including `/api/session`, continue to return a JSON
+403 with `better_auth_session_missing`. The stacked mode still requires a
+valid Access assertion before any sign-in page or auth endpoint is served.
 
 Before any reviewed release, require all three receipts:
 
