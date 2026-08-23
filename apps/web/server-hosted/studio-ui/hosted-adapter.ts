@@ -150,7 +150,18 @@ function isTerminal(stage: AnalysisJobStage): stage is
 }
 
 function stageMessage(stage: AnalysisJobStage): string {
-  return stage === "cleaning_up"
-    ? "Finalizing cleanup and the durable run."
-    : "Hosted analysis advanced to the next stage.";
+  const messages: Record<AnalysisJobStage, string> = {
+    queued: "Waiting for analysis to begin.",
+    fetching_context: "Checking the selected sources.",
+    uploading_to_gemini: "Sending the recording securely.",
+    indexing: "Finding the moments that match the selected goal.",
+    interrogating: "Reviewing the selected moments in detail.",
+    rendering: "Preparing the results.",
+    cleaning_up: "Removing the Gemini upload and publishing results.",
+    succeeded: "Results are ready.",
+    failed: "Analysis stopped before results were ready.",
+    canceled: "Analysis was canceled.",
+    interrupted: "Analysis was interrupted.",
+  };
+  return messages[stage];
 }

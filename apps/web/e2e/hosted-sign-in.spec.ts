@@ -61,6 +61,39 @@ test.describe(`hosted sign-in (${mode})`, () => {
     await page.waitForURL((url) => url.origin === origin && url.pathname === "/");
   });
 
+  test("signs out and removes the authenticated session", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("button", { name: "Continue with GitHub" }).click();
+    await page.waitForURL((url) => url.origin === origin && url.pathname === "/");
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.waitForURL((url) => url.origin === origin && url.pathname === "/sign-in");
+
+    const sessionResponse = await page.request.get("/api/session", {
+      headers: { accept: "application/json" },
+      maxRedirects: 0,
+    });
+    expect(sessionResponse.status()).toBe(403);
+    expect(await sessionResponse.json()).toMatchObject({
+      data: { code: "better_auth_session_missing" },
+    });
+  });
+
+  test("keeps the session visible when sign-out fails", async ({ page }) => {
+    await page.goto("/sign-in");
+    await page.getByRole("button", { name: "Continue with GitHub" }).click();
+    await page.waitForURL((url) => url.origin === origin && url.pathname === "/");
+    await page.route("**/api/auth/sign-out", async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "SIGN_OUT_UNAVAILABLE" }),
+      });
+    });
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.getByText("Could not sign out", { exact: true })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe("/");
+  });
+
   test("renders friendly email sign-in failures", async ({ page }) => {
     await page.goto("/sign-in");
     await page.route("**/api/auth/sign-in/magic-link", async (route) => {

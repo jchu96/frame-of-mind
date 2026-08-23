@@ -218,6 +218,8 @@ const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
   },
 };
 
+const DEFAULT_BUILT_IN_RECIPE_REVISION = "builtin-2026-07-27.1";
+
 export class UnknownBuiltInRecipeError extends Error {
   constructor(readonly recipeId: string, availableIds: readonly string[]) {
     super(`Unknown recipe '${recipeId}'. Available recipes: ${availableIds.join(", ")}.`);
@@ -235,6 +237,10 @@ export function builtInRecipe(id: string): AnalysisRecipe {
 
 export function listBuiltInRecipes(): AnalysisRecipe[] {
   return Object.values(recipes);
+}
+
+export function builtInRecipeRevision(id: string): string {
+  return builtInRecipe(id).revision ?? DEFAULT_BUILT_IN_RECIPE_REVISION;
 }
 
 function canonicalize(value: unknown): unknown {
@@ -278,7 +284,7 @@ export async function loadRecipe(id: string, recipeFile?: string): Promise<{
     recipe,
     custom: Boolean(recipeFile),
     sha256: await digestRecipe(recipe),
-    revision: recipe.revision || (recipeFile ? "content-addressed" : "builtin-2026-07-27.1"),
+    revision: recipeFile ? recipe.revision || "content-addressed" : builtInRecipeRevision(id),
   };
 }
 
