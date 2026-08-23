@@ -154,7 +154,7 @@ function deriveIntent(
   if (!loaded.draft) {
     return blockedIntent(
       "intent_missing",
-      "Intent is missing. Choose and save a built-in recipe.",
+      "Choose what to look for first.",
     );
   }
   if ("custom" in loaded.draft.recipe) {
@@ -224,7 +224,7 @@ function deriveContext(
       label: "Context blocked",
       blocker: {
         code: "context_missing",
-        message: "Context is not committed. Choose enriched or explicit video-only.",
+        message: "Confirm which sources to use.",
         link: "/context",
       },
     };
@@ -278,7 +278,7 @@ function deriveRecording(
     return {
       blocker: {
         code: "recording_missing",
-        message: "Recording receipt is missing. Stage a recording.",
+        message: "Add a recording first.",
         link: "/recording",
       },
     };

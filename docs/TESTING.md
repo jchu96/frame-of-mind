@@ -10,7 +10,7 @@ Worker fixtures are disposable projections.
 |---|---|---|
 | CLI/unit | `bun run test` | recipes, providers, contracts, orchestration |
 | Web/unit | `bun run test:web` | SQLite/D1, Studio services, UI state modules |
-| HTTP contracts | `bun run test:studio-http`, `bun run test:hosted-access-http`, `bun run test:hosted-workflows-http` | built server and Worker request contracts without browser control |
+| HTTP contracts | `bun run test:studio-http`, `bun run test:hosted-access-http`, `bun run test:hosted-workflows-http` | built server and Worker request contracts; the hosted Workflow contract also captures its first-user browser UX receipt |
 | Smoke E2E | `bun run test:e2e` | the 13 Local Studio browser journeys |
 | Hosted E2E | `bun run test:e2e:hosted` | composer → activity → publication → viewer against built Nuxt and Workflows Workers |
 | Adversarial E2E | `bun run test:e2e:adversarial` | recurring reviewer regressions tagged `@adversarial` |
@@ -35,8 +35,10 @@ Playwright projects map directly to these folders:
 - `apps/web/e2e/canary/`: deployed, read-only checks;
 - `apps/web/e2e/support/`: boot, identity, fixtures, and isolation.
 
-The HTTP contract scripts retain their request assertions. They do not launch
-or drive a browser.
+The HTTP contract scripts retain their request assertions. The hosted Workflow
+contract additionally drives the #83 first-time-user journey against the same
+built, isolated two-Worker topology; the other HTTP contracts remain
+browser-free.
 
 ## Boot the built Workers
 
@@ -96,6 +98,33 @@ The printed Access helper URL is a loopback reverse proxy that injects only the
 generated principal-A assertion. Removing the `tester@example.test` invite
 from the Better Auth seed is discriminating: the fake GitHub sign-in must end
 with `EMAIL_NOT_INVITED`.
+
+Run the hosted two-Worker, two-principal contract and its first-time-user
+browser journey:
+
+```bash
+bun run test:e2e:hosted
+```
+
+The Cloudflare Access pass refreshes desktop (1280×900) and mobile (390×844)
+visual receipts in
+`apps/web/e2e/__screenshots__/ux-pass-2/`. The journey covers Intent, Context,
+Recording empty and ready states, Review and start, Activity detail and list,
+the published viewer, hosted review workspace, Results, Import, and the branded
+not-found state. The same contract also proves own-principal review and support
+access plus foreign-principal 404 denial. The Better Auth variant runs in the
+full `bun run check` gate without replacing the Access screenshots.
+
+Verify the live Gemini upload, index, detail, and cleanup boundary separately
+with generated media:
+
+```bash
+bun run smoke:gemini
+```
+
+This command requires a locally configured `GEMINI_API_KEY`, is intentionally
+outside CI, prints no provider payload or remote identifier, and removes its
+temporary local and remote files.
 
 ## Fixtures
 

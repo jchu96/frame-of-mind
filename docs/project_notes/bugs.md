@@ -499,3 +499,24 @@
   redirect anonymous HTML pages while preserving JSON 403 responses for APIs.
 - Prevention: the built-workerd browser spec runs in Better Auth and stacked
   modes and fails when the `/sign-in` exemption is removed.
+
+## 2026-08-23 — Hosted catalog receipts could not start five built-in goals
+
+- Symptom: every built-in goal except Issue review failed composer submission
+  with `recipe_receipt_mismatch`.
+- Cause: the catalog used the historical default revision while two hosted
+  creation paths replaced a missing recipe revision with the newer Issue
+  review revision.
+- Fix: `builtInRecipeRevision(id)` is the single built-in revision resolver for
+  loading, catalog display, composer validation, and hosted creation.
+- Prevention: the built-workerd contract reads the hosted catalog and starts
+  every ID returned by `listBuiltInRecipes()`.
+
+## 2026-08-23 — Hosted sign-out omitted the JSON mutation body
+
+- Symptom: Sign out returned HTTP 415 and left the browser session active with
+  no feedback.
+- Cause: the POST omitted a JSON body required by the mutation boundary.
+- Fix: send `{}` and show an error toast when sign-out fails.
+- Prevention: built-workerd browser coverage requires redirect to `/sign-in`
+  and a subsequent `/api/session` JSON 403.
