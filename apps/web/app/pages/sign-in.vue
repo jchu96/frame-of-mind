@@ -48,6 +48,9 @@ function friendlyAuthMessage(code: string | undefined): string {
   if (code === "EMAIL_NOT_INVITED") {
     return "This email has not been invited to Frame of Mind.";
   }
+  if (code === "EMAIL_NOT_FOUND") {
+    return "GitHub did not share an email address for your account. Allow the Frame of Mind app to read your email addresses, or sign in with an account that has a verified email, then try again.";
+  }
   return "Sign-in could not be started. Please try again.";
 }
 
@@ -60,7 +63,9 @@ if (callbackError) {
   feedback.value = friendlyAuthMessage(
     callbackError.toUpperCase().includes("EMAIL_NOT_INVITED")
       ? "EMAIL_NOT_INVITED"
-      : callbackError,
+      : callbackError.toUpperCase().includes("EMAIL_NOT_FOUND")
+        ? "EMAIL_NOT_FOUND"
+        : callbackError,
   );
 }
 
