@@ -12,6 +12,20 @@ export function usesBetterAuth(mode: AuthMode): boolean {
   return mode === "better-auth" || mode === "cloudflare-access+better-auth";
 }
 
+export function isBetterAuthPublicPath(path: string): boolean {
+  // Exact files and a single build-asset prefix; anything that could walk out
+  // of the asset tree (".." or an encoded slash) is not public.
+  if (path.includes("..") || /%2f/i.test(path) || path.includes("\\")) return false;
+  return path === "/sign-in"
+    || path === "/api/auth"
+    || path.startsWith("/api/auth/")
+    || path.startsWith("/_nuxt/")
+    || path === "/favicon.ico"
+    || path === "/favicon.svg"
+    || path === "/robots.txt"
+    || path === "/__nuxt_error";
+}
+
 export function parseAuthMode(value: unknown): AuthMode {
   if (
     value === "off"

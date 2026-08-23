@@ -289,12 +289,13 @@ is disabled; Nuxt app/Vue error hooks can only pass a synthetic code. The
 durable boundary and disable procedure are
 canonical in [ADR 0017](../adr/0017-opt-in-sentry-telemetry.md).
 
-## 2026-08-23 — Pluggable hosted authentication remains proposed
+## 2026-08-23 — Pluggable hosted authentication is accepted
 
-The implementation spike supports Access-only, Better-Auth-only, and stacked
-perimeters while keeping one downstream principal seam. This is not an adopted
-production mode change; the committed Wrangler example remains Access-only.
-The proposed cookie, CSRF, secret-custody, membership, and principal-migration
+ADR 0019 accepts Better Auth with GitHub login as the live mode, with a stacked
+Access-plus-Better-Auth cutover option and Access-only compatibility. Every
+mode keeps one downstream principal seam; the committed Wrangler example
+remains Access-only until an explicit deployment configuration change.
+The accepted cookie, CSRF, secret-custody, membership, and principal-migration
 rules are canonical in [ADR 0019](../adr/0019-pluggable-auth-modes.md).
 
 ## 2026-08-23 — Hosted recording upload goes directly to Gemini

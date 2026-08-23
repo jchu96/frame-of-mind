@@ -840,3 +840,10 @@
   key/capability boundaries, reload/query resume, two-tab exclusion, exact
   seal, three mismatch deletions, principal 404, cancellation, janitor cleanup,
   and seal/janitor concurrency.
+- Added the hosted `/sign-in` surface on 2026-08-23 with GitHub OAuth,
+  optional magic-link email, friendly invitation/configuration failures,
+  same-origin relative return paths, and both server and SPA-navigation
+  guards. The built-workerd Playwright spec passes in Better Auth and stacked
+  modes; temporarily removing the `/sign-in` exemption made all five browser
+  checks fail with a redirect loop, proving the render oracle discriminates.
+  The existing auth spike and isolated Better Auth Workflow contract pass.
