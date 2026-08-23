@@ -332,6 +332,7 @@ Edit these values:
 | `database_id` | exact ID returned by D1 create |
 | `NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN` | `https://<team>.cloudflareaccess.com` |
 | `NUXT_CLOUDFLARE_ACCESS_AUD` | Access application audience from step 6 |
+| `NUXT_BETTER_AUTH_MAILER_FROM` | onboarded sender, for example `sign-in@<domain>` |
 | `services[0].service` | exact internal Workflows Worker name |
 
 Keep:
@@ -349,10 +350,11 @@ committed production default. They additionally require:
 
 - migration `0006_better_auth.sql` on the public Worker's D1 database;
 - `NUXT_BETTER_AUTH_URL` set to the exact HTTPS custom origin;
-- GitHub client ID and the HTTPS mailer origin as Worker variables; and
+- GitHub client ID, magic-link sender, and optional fallback HTTPS mailer
+  origin as Worker variables; and
 - `NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
-  `NUXT_BETTER_AUTH_MAILER_KEY` set with `wrangler secret put` on the public
-  Nuxt Worker only.
+  the optional fallback `NUXT_BETTER_AUTH_MAILER_KEY` set with `wrangler
+  secret put` on the public Nuxt Worker only.
 
 Use at least 32 random bytes for the Better Auth secret. Never put these
 secrets in Wrangler JSON, the browser, or the internal Workflows Worker. The
@@ -735,6 +737,52 @@ does not reassign or delete existing `ba:<userId>` rows and is not by itself a
 session revocation; account/session removal needs a separately reviewed
 operator action.
 
+### Enable magic-link email
+
+Email sign-in uses the public Worker's Cloudflare Email Service binding first.
+The HTTPS mailer remains a compatibility fallback only when the binding is
+absent. To enable the binding path:
+
+1. Onboard the sender domain to Cloudflare Email Service.
+2. Add `"send_email": [{ "name": "EMAIL" }]` to the public Worker's Wrangler
+   configuration.
+3. Set `NUXT_BETTER_AUTH_MAILER_FROM=sign-in@<onboarded-domain>`. An empty
+   value keeps the binding path disabled.
+4. Redeploy, request a link for an invited email, and verify the five-minute
+   one-time link arrives with both plain-text and HTML parts.
+
+For the first canary, restrict the binding to the exact invited addresses.
+Keep this operator-managed list synchronized with the D1 invite list:
+
+```jsonc
+"send_email": [{
+  "name": "EMAIL",
+  "allowed_destination_addresses": [
+    "invited-person@example.com"
+  ]
+}]
+```
+
+Do not copy that restriction into the generic example because every deployment
+has a different invite list. Never set `remote: true` in test or example
+configuration: Wrangler's local simulator must capture messages without
+sending real email.
+
+All binding failures return the public `MAILER_UNAVAILABLE` error. Hosted
+telemetry records only the provider code, never the recipient, link, token, or
+message ID:
+
+| Email Service code | Operator action |
+|---|---|
+| `E_VALIDATION_ERROR`, `E_FIELD_MISSING`, `E_TOO_MANY_RECIPIENTS`, `E_CONTENT_TOO_LARGE` | Correct the composed request or limits. |
+| `E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE` | Complete sender-domain onboarding and verify `NUXT_BETTER_AUTH_MAILER_FROM`. |
+| `E_RECIPIENT_NOT_ALLOWED` | Add the invited address to the canary binding allowlist. |
+| `E_RECIPIENT_SUPPRESSED` | Review the Email Service suppression state before retrying. |
+| `E_RATE_LIMIT_EXCEEDED`, `E_DAILY_LIMIT_EXCEEDED` | Wait for the applicable limit or request a reviewed limit change. |
+| any other binding failure | Use the code-only `E_EMAIL_SEND_FAILED` receipt and inspect Cloudflare operational state. |
+
+Every row above maps to `MAILER_UNAVAILABLE`; GitHub sign-in remains available.
+
 ## Cutover to `better-auth` with GitHub login (ADR 0019, accepted 2026-08-23)
 
 Prerequisites already applied to production on 2026-08-23: migration
@@ -752,14 +800,17 @@ better-auth add <email>`).
    NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`; in `wrangler.jsonc` vars set
    `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID`, `NUXT_BETTER_AUTH_URL=https://fom.flickerventures.com`,
    and `NUXT_AUTH_MODE=cloudflare-access+better-auth` (stacked) for the first deploy.
-3. **Deploy stacked** and verify: Access still 302s anonymous traffic; behind
+3. **Optional email sign-in**: onboard the sending domain, add the `EMAIL`
+   binding, set `NUXT_BETTER_AUTH_MAILER_FROM`, and redeploy. Use the restricted
+   canary binding above until every invited address has been exercised.
+4. **Deploy stacked** and verify: Access still 302s anonymous traffic; behind
    Access, `/sign-in` shows "Continue with GitHub"; a sign-in with an invited
    email lands on the viewer with `GET /api/session` showing a `ba:` principal
    and the Access `sub` bound; an uninvited account is refused with
    `EMAIL_NOT_INVITED`.
-4. **Flip**: set `NUXT_AUTH_MODE=better-auth`, deploy, then set the Access
+5. **Flip**: set `NUXT_AUTH_MODE=better-auth`, deploy, then set the Access
    application policy to *bypass* (or delete the app) so anonymous traffic
    reaches the Worker's own sign-in page. Re-verify: anonymous `/api/runs`
    → 401/redirect to `/sign-in`, GitHub sign-in works, `access-users.ts` is
    no longer authoritative (membership is the D1 invite table).
-5. Record the cutover in `work_log.md`.
+6. Record the cutover in `work_log.md`.

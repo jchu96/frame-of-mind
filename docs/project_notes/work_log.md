@@ -2,6 +2,12 @@
 
 ## 2026-08-23
 
+- Added binding-first Better Auth magic-link delivery through Cloudflare Email
+  Service with explicit sender configuration, dual-part five-minute sign-in
+  copy, HTTP fallback, and code-only fail-closed telemetry. The hosted-auth
+  spike now proves the local `send_email` simulator and HTTP variants while
+  retaining the zero-delivery uninvited-email receipt.
+
 - Added the long-lived `bun run hosted:local` reviewer topology: isolated
   built Workers, fake GitHub/Gemini/mailer, seeded Better Auth invites when
   that adapter is present, and a generated Access-header proxy fallback on
