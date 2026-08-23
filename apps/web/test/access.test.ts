@@ -90,7 +90,7 @@ describe("Cloudflare Access principal identity", () => {
       issuer,
       audience,
     )).rejects.toThrow(/service identity/);
-    for (const sub of ["service:forged", "local:single-user", "__legacy_unclaimed__"]) {
+    for (const sub of ["service:forged", "local:single-user", "ba:forged", "__legacy_unclaimed__"]) {
       await expect(verifyCloudflareAccessJwt(
         await token({ sub, email: "same@example.test" }),
         issuer,

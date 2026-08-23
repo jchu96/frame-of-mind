@@ -447,3 +447,27 @@
   milliseconds, overlong fields, partial and all-detail failure, unexpected
   whole-run failure, provider-transport aborts, payload redaction, and cleanup
   provenance when upload processing fails after an exact remote ID is known.
+
+## 2026-08-23 — Better Auth lost request state in the Cloudflare bundle
+
+- Symptom: the first OAuth request in a built `cloudflare_module` Worker failed
+  with `No request state found` although workerd enabled Node compatibility.
+- Cause: Nitro bundled unenv's `AsyncLocalStorage` shim; its `run()` clears the
+  store before an asynchronous handler settles.
+- Fix: leave `node:async_hooks` external in Cloudflare builds so workerd supplies
+  the native implementation.
+- Prevention: the hosted-auth spike performs GitHub and magic-link login in a
+  real browser against the built Worker and requires `HOSTED_AUTH runtime=PASS`.
+
+## 2026-08-23 — Hosted workflow workerd fixture can hang intermittently
+
+- Status: Open; observed outside the authentication seam.
+- Symptom: a one-shot `bun run check` reached the Better Auth hosted Workflow
+  browser stage after `cancel_retry=PASS`, then its two Wrangler dev processes
+  remained alive without producing another receipt for several minutes.
+- Evidence: the isolated Better Auth Workflow contract passed every receipt
+  immediately after cleanup, and a fresh serialized `bun run check` passed the
+  default and Better Auth Workflow contracts and exited zero.
+- Follow-up: give each fixture request a bounded abort/deadline and preserve
+  Wrangler/workerd output on timeout so a future failure identifies the exact
+  dispatch rather than hanging the whole repository gate.

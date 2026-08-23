@@ -12,6 +12,12 @@ export const ad11RequiredMarkers = [
   "data-hosted-studio-shell",
 ] as const;
 
+export const hostedAuthRequiredMarkers = [
+  "/api/auth",
+  "better_auth_user",
+  "EMAIL_NOT_INVITED",
+] as const;
+
 export const ad11ForbiddenMarkers = [
   "/__studio/bootstrap",
   "/api/studio/jobs",
@@ -75,7 +81,7 @@ export async function checkCloudflareBoundary(
         matches.push(`${relative(resolvedOutputRoot, path)}: ${marker}`);
       }
     }
-    for (const marker of ad11RequiredMarkers) {
+    for (const marker of [...ad11RequiredMarkers, ...hostedAuthRequiredMarkers]) {
       if (contents.includes(marker)) foundRequiredMarkers.add(marker);
     }
   }
@@ -85,12 +91,12 @@ export async function checkCloudflareBoundary(
       `Cloudflare artifact contains AD-11 forbidden markers:\n${matches.join("\n")}`,
     );
   }
-  const missingRequiredMarkers = ad11RequiredMarkers.filter(
+  const missingRequiredMarkers = [...ad11RequiredMarkers, ...hostedAuthRequiredMarkers].filter(
     (marker) => !foundRequiredMarkers.has(marker),
   );
   if (missingRequiredMarkers.length) {
     throw new Error(
-      "Cloudflare artifact is missing AD-11 required markers: "
+      "Cloudflare artifact is missing hosted required markers: "
       + missingRequiredMarkers.join(", "),
     );
   }
@@ -115,7 +121,7 @@ export async function checkCloudflareBoundary(
   return {
     outputRoot: resolvedOutputRoot,
     filesScanned: artifactFiles.length,
-    requiredMarkers: ad11RequiredMarkers.length,
+    requiredMarkers: ad11RequiredMarkers.length + hostedAuthRequiredMarkers.length,
     forbiddenMarkers:
       ad11ForbiddenMarkers.length + localOnlyForbiddenMarkers.length,
   };

@@ -48,6 +48,7 @@ export async function verifyCloudflareAccessJwt(
     || sub === "__legacy_unclaimed__"
     || sub.startsWith("service:")
     || sub.startsWith("local:")
+    || sub.startsWith("ba:")
   ) {
     throw new Error("Cloudflare Access user subject is invalid.");
   }

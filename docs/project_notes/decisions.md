@@ -288,3 +288,11 @@ SDK auto-capture for Nitro errors, tracing, transactions, and package metadata
 is disabled; Nuxt app/Vue error hooks can only pass a synthetic code. The
 durable boundary and disable procedure are
 canonical in [ADR 0017](../adr/0017-opt-in-sentry-telemetry.md).
+
+## 2026-08-23 — Pluggable hosted authentication remains proposed
+
+The implementation spike supports Access-only, Better-Auth-only, and stacked
+perimeters while keeping one downstream principal seam. This is not an adopted
+production mode change; the committed Wrangler example remains Access-only.
+The proposed cookie, CSRF, secret-custody, membership, and principal-migration
+rules are canonical in [ADR 0019](../adr/0019-pluggable-auth-modes.md).

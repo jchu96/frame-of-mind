@@ -587,6 +587,13 @@ export default defineNuxtConfig({
     preset: nitroPreset,
     handlers: localHandlers,
     plugins: localStudioEnabled ? [studioJobsStartup] : [],
+    ...(nitroPreset === "cloudflare_module" || nitroPreset === "cloudflare-worker"
+      ? {
+          // Better Auth requires the workerd implementation. Nitro's unenv
+          // AsyncLocalStorage shim clears its store before async handlers settle.
+          rollupConfig: { external: ["__STATIC_CONTENT_MANIFEST", "node:async_hooks"] },
+        }
+      : {}),
   },
   runtimeConfig: {
     authMode: "off",
@@ -595,6 +602,14 @@ export default defineNuxtConfig({
     cloudflareAccessTeamDomain: "",
     cloudflareAccessAud: "",
     cloudflareAccessAllowInsecureTestJwks: false,
+    betterAuthSecret: "",
+    betterAuthUrl: "",
+    betterAuthGithubClientId: "",
+    betterAuthGithubClientSecret: "",
+    betterAuthGithubTestOrigin: "",
+    betterAuthMailerOrigin: "",
+    betterAuthMailerKey: "",
+    betterAuthAllowInsecureTestProviders: false,
     hostedWorkflowsEnabled: false,
     hostedSpendPrincipalCapUnits: HOSTED_PRINCIPAL_CAP_UNITS_DEFAULT,
     hostedSpendVideoTokensPerSecond: HOSTED_VIDEO_TOKEN_RATE_DEFAULT,
