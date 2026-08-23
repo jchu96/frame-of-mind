@@ -1,5 +1,14 @@
 # Key Facts
 
+- A 2026-08-23 live Chromium spike proved that a Gemini resumable session
+  started with the API key in a header returns upload/control URLs containing
+  only `upload_id` and `upload_protocol`; direct browser PUT, restart/query,
+  and exact 20 MiB finalization work without browser credentials. The final
+  browser response was indeterminate (`NetworkError` and `TimeoutError` were
+  both observed), but Worker query recovered the
+  `final` File receipt and exact size/digest for verification and deletion.
+  Direct hosted upload therefore requires Worker reconciliation and remains an
+  ADR 0018 Amendment 2 proposal, not implementation authority.
 - Local context staging accepts only JSON, text, Markdown, SRT, or VTT up to
   8 MiB, returns no path/body/name, expires after one hour, and is absent from
   Cloudflare builds.
@@ -196,3 +205,14 @@
   remains 404 and body-unread until Phase 2 lands; the public Worker has no
   secret and the internal Workflows Worker permits only `GEMINI_API_KEY` in
   the Tier A release shape.
+- Better Auth 1.7.1 is workerd-compatible through the direct D1 adapter when
+  the Cloudflare bundle externalizes `node:async_hooks`. D1 migration 0006
+  stores Better Auth dates as ISO text and invitations as normalized email.
+- Hosted auth binds one principal in middleware: Access uses its validated
+  subject; Better Auth uses `ba:<userId>`; stacked mode still uses the Better
+  Auth principal and records the outer Access subject separately. Access JWT
+  subjects cannot begin with the reserved `ba:` prefix.
+- Better Auth 1.7.1 magic-link verification is a session-minting GET that
+  atomically consumes its token on the first fetch. The hosted integration
+  rejects uninvited sends in a before-hook so no verification row or mail is
+  created, then rechecks the invite before session insertion.

@@ -214,7 +214,11 @@ the need for application authorization.
 
 ### Architectural Decision 4 - Proxy Gemini Resumable Upload Through The Worker
 
-**Decision.** The browser sends raw-body parts of exactly 8 MiB except for the
+**Decision (revised by ADR 0018 Amendment 2).** The Worker opens a Gemini
+resumable session with the secret key and returns only the write-only session
+URL; the browser uploads the recording directly to Google and the Worker
+never proxies bytes. The original text below describes the superseded
+Worker-proxied design: the browser sends raw-body parts of exactly 8 MiB except for the
 final shorter part to `POST /api/hosted/media/:id/parts`. Metadata is carried
 in bounded `Content-Length`, upload-offset, part-number, and part-digest
 headers; multipart encoding is forbidden. The Worker validates the Access
@@ -476,7 +480,9 @@ or migration query in normal runtime code that omits principal scope.
   part-number, and part-digest headers; it never accepts multipart bytes.
 - Every start/retry queries Gemini's accepted resumable offset and forwards
   only the unaccepted suffix; D1 never authorizes overlapping replay.
-- The Worker never buffers the complete chunk or recording.
+- The Worker never carries recording bytes: the browser uploads directly to a
+  Worker-minted, write-only Gemini resumable session (ADR 0018 Amendment 2);
+  seal requires `files.get` size and SHA-256 to equal the declared values.
 - The browser maintains bounded upload concurrency and reconciles from the
   server receipt after refresh.
 - The provider session capability is encrypted and never returned or logged.

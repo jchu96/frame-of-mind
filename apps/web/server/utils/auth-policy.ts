@@ -1,8 +1,28 @@
-export type AuthMode = "off" | "cloudflare-access";
+export type AuthMode =
+  | "off"
+  | "cloudflare-access"
+  | "better-auth"
+  | "cloudflare-access+better-auth";
+
+export function usesCloudflareAccess(mode: AuthMode): boolean {
+  return mode === "cloudflare-access" || mode === "cloudflare-access+better-auth";
+}
+
+export function usesBetterAuth(mode: AuthMode): boolean {
+  return mode === "better-auth" || mode === "cloudflare-access+better-auth";
+}
 
 export function parseAuthMode(value: unknown): AuthMode {
-  if (value === "off" || value === "cloudflare-access") return value;
-  throw new Error("NUXT_AUTH_MODE must be 'off' or 'cloudflare-access'.");
+  if (
+    value === "off"
+    || value === "cloudflare-access"
+    || value === "better-auth"
+    || value === "cloudflare-access+better-auth"
+  ) return value;
+  throw new Error(
+    "NUXT_AUTH_MODE must be 'off', 'cloudflare-access', 'better-auth', or "
+    + "'cloudflare-access+better-auth'.",
+  );
 }
 
 export function isLoopbackHost(hostHeader: string | undefined): boolean {

@@ -1367,6 +1367,49 @@ bundle contains the DSN or a telemetry payload. The complete boundary and
 scrubbing policy are recorded in
 [ADR 0017](adr/0017-opt-in-sentry-telemetry.md#disable-telemetry).
 
+### Hosted authentication modes (proposed, not deployed)
+
+The public Worker recognizes `cloudflare-access`, `better-auth`, and
+`cloudflare-access+better-auth`. Keep the value explicit whenever hosted
+workflows are enabled; unset or unknown values fail closed. The committed
+production example remains Access-only.
+
+For Better Auth modes, apply D1 migration `0006_better_auth.sql`, set
+`NUXT_BETTER_AUTH_URL` to the exact HTTPS application origin, and store
+`NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
+`NUXT_BETTER_AUTH_MAILER_KEY` as public-Worker secrets. Keep the GitHub client
+ID and mailer HTTPS origin as non-secret configuration. Never place these
+secrets on the internal Workflows Worker; conversely, never place
+`GEMINI_API_KEY` on the public Worker.
+
+Manage app-owned membership through the D1 invite table:
+
+```bash
+bun scripts/studio-users.ts --mode better-auth list
+bun scripts/studio-users.ts --mode better-auth add someone@example.com
+bun scripts/studio-users.ts --mode better-auth remove someone@example.com
+```
+
+Set `FRAME_OF_MIND_WRANGLER_CONFIG` and `FRAME_OF_MIND_D1_DATABASE` for the
+target account. Commands default to remote D1; set
+`FRAME_OF_MIND_D1_LOCAL=1` only for an isolated local rehearsal. The legacy
+`scripts/access-users.ts` entry remains Access-only. In stacked mode, manage
+both the outer Access group and the Better Auth invite list.
+
+Before any reviewed release, require all three receipts:
+
+```bash
+bun run check:hosted-auth
+bun run test:hosted-access-http:better-auth
+bun run test:hosted-workflows-http:better-auth
+```
+
+Session cookies are HttpOnly, SameSite=Lax, Secure on HTTPS, and cached in a
+signed cookie for five minutes. Account revocation can therefore take up to
+five minutes to reach a cached request; remove the invite/session and outer
+Access membership where applicable, then wait through that bound before
+calling revocation complete.
+
 ### Hosted spend and telemetry controls (dark)
 
 Task 5a is implemented but not deployed. Apply D1 migration

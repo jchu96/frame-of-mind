@@ -12,7 +12,19 @@ test.beforeEach(({}, testInfo) => {
 
 test("hosted composer publishes a reviewable run", async ({ browser, hosted }) => {
   const session = await hosted.session("a");
-  const context = await browser.newContext({ extraHTTPHeaders: session.headers });
+  const context = await browser.newContext(session.mode === "cloudflare-access"
+    ? { extraHTTPHeaders: session.headers }
+    : undefined);
+  if (session.mode === "better-auth") {
+    await context.addCookies(session.headers.cookie.split("; ").map((part) => {
+      const separator = part.indexOf("=");
+      return {
+        name: part.slice(0, separator),
+        value: part.slice(separator + 1),
+        url: hosted.baseUrl,
+      };
+    }));
+  }
   const page = await context.newPage();
 
   await page.goto(`${hosted.baseUrl}/hosted/new/intent`);

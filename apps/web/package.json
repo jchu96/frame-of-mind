@@ -10,12 +10,14 @@
     "cloudflare:types": "wrangler types --config wrangler.jsonc",
     "dev": "FRAME_OF_MIND_DB_DRIVER=sqlite nuxi dev --host 127.0.0.1",
     "import": "bun scripts/import-run.ts",
-    "preview": "bun --preload .output/server/sentry.server.config.mjs .output/server/index.mjs",
+    "preview": "bun --preload ./.output/server/sentry.server.config.mjs ./.output/server/index.mjs",
     "typecheck": "nuxi typecheck && tsc -p tsconfig.server-local.json --noEmit"
   },
   "dependencies": {
+    "@better-auth/core": "1.7.1",
     "@nuxt/ui": "4.10.0",
     "@sentry/nuxt": "10.70.0",
+    "better-auth": "1.7.1",
     "hash-wasm": "^4.12.0",
     "jose": "6.2.8",
     "nuxt": "4.5.2",

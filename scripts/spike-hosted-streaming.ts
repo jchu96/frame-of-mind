@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
-import { Miniflare } from "miniflare";
+import { Miniflare, type ModuleDefinition } from "miniflare";
 import { createE2EEnvironment } from "./e2e-environment";
 
 const mebibyte = 1024 * 1024;
@@ -26,6 +26,10 @@ let sinkServer: ReturnType<typeof Bun.serve> | undefined;
 let activeWrangler: WranglerProcess | undefined;
 let inspector: InspectorClient | undefined;
 let spikePassed = false;
+let builtMiniflareModules: Promise<{
+  modules: ModuleDefinition[];
+  modulesRoot: string;
+}> | undefined;
 
 try {
   receipt("build", true, "START cloudflare_module");
@@ -805,9 +809,9 @@ async function runDirectLengthCheck(options: {
   status: number;
   sinkState: SinkState | undefined;
 }> {
+  const moduleSource = await loadBuiltMiniflareModules();
   const miniflare = new Miniflare({
-    modules: true,
-    scriptPath: resolve("apps/web/.output/server/hosted-entry.mjs"),
+    ...moduleSource,
     compatibilityDate: "2026-07-02",
     compatibilityFlags: ["nodejs_compat"],
     bindings: {
@@ -846,6 +850,26 @@ async function runDirectLengthCheck(options: {
   } finally {
     await miniflare.dispose();
   }
+}
+
+async function loadBuiltMiniflareModules(): Promise<{
+  modules: ModuleDefinition[];
+  modulesRoot: string;
+}> {
+  builtMiniflareModules ??= (async () => {
+    const modulesRoot = resolve("apps/web/.output/server");
+    const entryPath = join(modulesRoot, "hosted-entry.mjs");
+    const modulePaths = (await files(modulesRoot))
+      .filter((path) => path.endsWith(".mjs") && path !== entryPath);
+    return {
+      modulesRoot,
+      modules: [entryPath, ...modulePaths].map((path) => ({
+        type: "ESModule" as const,
+        path,
+      })),
+    };
+  })();
+  return builtMiniflareModules;
 }
 
 async function scanBuiltArtifact(): Promise<{

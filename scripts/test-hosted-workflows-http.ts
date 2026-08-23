@@ -13,6 +13,13 @@ import {
 import { hostedSpendEstimator } from "../apps/workflows/src/spend";
 import { createE2EEnvironment } from "./e2e-environment";
 import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
+import {
+  betterAuthBrowserLogins,
+  betterAuthFixtureVars,
+  hostedAuthHeaders,
+  hostedContractAuthMode,
+  startFakeGithub,
+} from "./hosted-auth-fixture";
 
 const isolation = await createE2EIsolation("hosted-workflows");
 const temporaryRoot = isolation.root;
@@ -27,11 +34,11 @@ const databaseId = isolation.databaseId;
 const workflowServiceName = isolation.workerName("hosted-workflow");
 const audience = "frame-of-mind-hosted-workflow-contract";
 const keyId = "hosted-workflow-contract-key";
-const principalA = "hosted-workflow-principal-a";
-const principalB = "hosted-workflow-principal-b";
-const principalRace = "hosted-workflow-principal-race";
-const principalOverrun = "hosted-workflow-principal-overrun";
-const principalJanitor = "hosted-workflow-principal-janitor";
+let principalA = "hosted-workflow-principal-a";
+let principalB = "hosted-workflow-principal-b";
+let principalRace = "hosted-workflow-principal-race";
+let principalOverrun = "hosted-workflow-principal-overrun";
+let principalJanitor = "hosted-workflow-principal-janitor";
 const normalMedia = "media_hosted_normal_0001";
 const crashMedia = "media_hosted_crash_0001";
 const cancelMedia = "media_hosted_cancel_0001";
@@ -52,6 +59,7 @@ let webWorker: ReturnType<typeof Bun.spawn> | undefined;
 let workflowWorker: ReturnType<typeof Bun.spawn> | undefined;
 let disabledWebWorker: ReturnType<typeof Bun.spawn> | undefined;
 let jwksServer: ReturnType<typeof Bun.serve> | undefined;
+let fakeGithub: ReturnType<typeof startFakeGithub> | undefined;
 let webOutput: Promise<[string, string]> | undefined;
 let workflowOutput: Promise<[string, string]> | undefined;
 let disabledWebOutput: Promise<[string, string]> | undefined;
@@ -109,12 +117,33 @@ try {
     },
   });
   const issuer = `http://127.0.0.1:${jwksServer.port}`;
+  const workerPort = await isolation.reservePort();
+  const baseUrl = `http://127.0.0.1:${workerPort}`;
+  const disabledPort = await isolation.reservePort();
+  const disabledOrigin = `http://127.0.0.1:${disabledPort}`;
+  fakeGithub = hostedContractAuthMode === "better-auth"
+    ? startFakeGithub([
+        { id: "workflow-a", email: "workflow-a@example.test" },
+        { id: "workflow-b", email: "workflow-b@example.test" },
+        { id: "workflow-race", email: "workflow-race@example.test" },
+        { id: "workflow-overrun", email: "workflow-overrun@example.test" },
+        { id: "workflow-janitor", email: "workflow-janitor@example.test" },
+      ])
+    : undefined;
+  const authVars = hostedContractAuthMode === "better-auth"
+    ? betterAuthFixtureVars(baseUrl, fakeGithub!.origin)
+    : {
+        NUXT_AUTH_MODE: "cloudflare-access",
+        NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: issuer,
+        NUXT_CLOUDFLARE_ACCESS_AUD: audience,
+        NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
+      };
   await writeFile(webConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
     name: isolation.workerName("hosted-web"),
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
-    compatibility_flags: ["nodejs_compat"],
+    compatibility_flags: ["nodejs_compat", "nodejs_als"],
     assets: {
       directory: resolve("apps/web/.output/public"),
       binding: "ASSETS",
@@ -125,10 +154,7 @@ try {
       service: workflowServiceName,
     }],
     vars: {
-      NUXT_AUTH_MODE: "cloudflare-access",
-      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: issuer,
-      NUXT_CLOUDFLARE_ACCESS_AUD: audience,
-      NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
+      ...authVars,
       NUXT_HOSTED_WORKFLOWS_ENABLED: "true",
       NUXT_HOSTED_SPEND_PRINCIPAL_CAP_UNITS: String(principalACapUnits),
       NUXT_HOSTED_SPEND_VIDEO_TOKENS_PER_SECOND: "300",
@@ -141,7 +167,7 @@ try {
     name: isolation.workerName("hosted-web-disabled"),
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
-    compatibility_flags: ["nodejs_compat"],
+    compatibility_flags: ["nodejs_compat", "nodejs_als"],
     assets: { directory: resolve("apps/web/.output/public"), binding: "ASSETS" },
     d1_databases: [d1Binding()],
     services: [{
@@ -149,10 +175,9 @@ try {
       service: workflowServiceName,
     }],
     vars: {
-      NUXT_AUTH_MODE: "cloudflare-access",
-      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: issuer,
-      NUXT_CLOUDFLARE_ACCESS_AUD: audience,
-      NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
+      ...(hostedContractAuthMode === "better-auth"
+        ? betterAuthFixtureVars(disabledOrigin, fakeGithub!.origin)
+        : authVars),
       NUXT_HOSTED_WORKFLOWS_ENABLED: "false",
       NUXT_HOSTED_WORKFLOW_RESERVATION_UNITS: "1",
     },
@@ -189,12 +214,20 @@ try {
     "--local", "--config", webConfigPath, "--persist-to", persistRoot,
   ];
   await runChecked(migrationArgs, "hosted Workflow D1 migrations");
-  await writeFile(seedPath, seedSql());
-  await runChecked([
-    "node", wranglerBin, "d1", "execute", databaseName,
-    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
-    "--file", seedPath,
-  ], "hosted Workflow fixture seed");
+  if (hostedContractAuthMode === "better-auth") {
+    await runChecked([
+      "node", wranglerBin, "d1", "execute", databaseName,
+      "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+      "--command", "INSERT INTO hosted_auth_invites (email, invited_at) VALUES "
+        + "('workflow-a@example.test','2026-08-23T00:00:00.000Z'),"
+        + "('workflow-b@example.test','2026-08-23T00:00:00.000Z'),"
+        + "('workflow-race@example.test','2026-08-23T00:00:00.000Z'),"
+        + "('workflow-overrun@example.test','2026-08-23T00:00:00.000Z'),"
+        + "('workflow-janitor@example.test','2026-08-23T00:00:00.000Z')",
+    ], "hosted Workflow Better Auth invites");
+  } else {
+    await writeSeed();
+  }
 
   const workflowPort = await isolation.reservePort();
   workflowWorker = Bun.spawn([
@@ -248,8 +281,6 @@ try {
     "HOSTED_TELEMETRY contract=PASS codes_and_structural_fields_only dsn_default=off upload=interface_only",
   );
 
-  const workerPort = await isolation.reservePort();
-  const baseUrl = `http://127.0.0.1:${workerPort}`;
   webWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
     "--config", webConfigPath,
@@ -271,13 +302,38 @@ try {
   ]);
   await waitForWorker(`${baseUrl}/api/health`, webWorker, 403);
 
-  const tokenA = await signAccessToken(keys.privateKey, issuer, principalA);
-  const tokenB = await signAccessToken(keys.privateKey, issuer, principalB);
-  const tokenRace = await signAccessToken(keys.privateKey, issuer, principalRace);
-  const tokenOverrun = await signAccessToken(keys.privateKey, issuer, principalOverrun);
-  const tokenJanitor = await signAccessToken(keys.privateKey, issuer, principalJanitor);
-  const disabledPort = await isolation.reservePort();
-  const disabledOrigin = `http://127.0.0.1:${disabledPort}`;
+  const betterAuthCredentials = hostedContractAuthMode === "better-auth"
+    ? await betterAuthBrowserLogins(baseUrl, [
+        "workflow-a@example.test",
+        "workflow-b@example.test",
+        "workflow-race@example.test",
+        "workflow-overrun@example.test",
+        "workflow-janitor@example.test",
+      ])
+    : undefined;
+  const tokenA = hostedContractAuthMode === "better-auth"
+    ? betterAuthCredentials!.get("workflow-a@example.test")!
+    : await signAccessToken(keys.privateKey, issuer, principalA);
+  const tokenB = hostedContractAuthMode === "better-auth"
+    ? betterAuthCredentials!.get("workflow-b@example.test")!
+    : await signAccessToken(keys.privateKey, issuer, principalB);
+  const tokenRace = hostedContractAuthMode === "better-auth"
+    ? betterAuthCredentials!.get("workflow-race@example.test")!
+    : await signAccessToken(keys.privateKey, issuer, principalRace);
+  const tokenOverrun = hostedContractAuthMode === "better-auth"
+    ? betterAuthCredentials!.get("workflow-overrun@example.test")!
+    : await signAccessToken(keys.privateKey, issuer, principalOverrun);
+  const tokenJanitor = hostedContractAuthMode === "better-auth"
+    ? betterAuthCredentials!.get("workflow-janitor@example.test")!
+    : await signAccessToken(keys.privateKey, issuer, principalJanitor);
+  if (hostedContractAuthMode === "better-auth") {
+    principalA = await betterAuthPrincipal("workflow-a@example.test");
+    principalB = await betterAuthPrincipal("workflow-b@example.test");
+    principalRace = await betterAuthPrincipal("workflow-race@example.test");
+    principalOverrun = await betterAuthPrincipal("workflow-overrun@example.test");
+    principalJanitor = await betterAuthPrincipal("workflow-janitor@example.test");
+    await writeSeed();
+  }
   disabledWebWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
     "--config", disabledWebConfigPath,
@@ -689,8 +745,9 @@ try {
     process.stderr.write(`Disabled hosted web workerd output:\n${stdout}\n${stderr}`.slice(0, 10_000));
   }
   throw error;
-} finally {
+  } finally {
   jwksServer?.stop(true);
+  fakeGithub?.stop();
   if (process.env.KEEP_HOSTED_WORKFLOW_TEMP === "1") {
     console.error(`Hosted Workflow temp retained at ${temporaryRoot}`);
   } else {
@@ -803,6 +860,28 @@ function d1Binding() {
     database_id: databaseId,
     migrations_dir: resolve("apps/web/db/migrations"),
   };
+}
+
+async function writeSeed(): Promise<void> {
+  await writeFile(seedPath, seedSql());
+  await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--file", seedPath,
+  ], "hosted Workflow fixture seed");
+}
+
+async function betterAuthPrincipal(email: string): Promise<string> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command", `SELECT id FROM better_auth_user WHERE email = '${email}'`,
+    "--json",
+  ], `query Better Auth principal for ${email}`);
+  const result = JSON.parse(stdout) as Array<{ results?: Array<{ id?: string }> }>;
+  const id = result[0]?.results?.[0]?.id;
+  if (!id) throw new Error(`Better Auth principal was unavailable for ${email}.`);
+  return `ba:${id}`;
 }
 
 function seedSql(): string {
@@ -956,16 +1035,12 @@ function retryJob(
 }
 
 function mutationHeaders(origin: string, token: string): Record<string, string> {
-  return {
-    "cf-access-jwt-assertion": token,
-    "content-type": "application/json",
-    origin,
-  };
+  return hostedAuthHeaders(token, origin);
 }
 
 function authenticatedFetch(origin: string, path: string, token: string): Promise<Response> {
   return fetch(`${origin}${path}`, {
-    headers: { "cf-access-jwt-assertion": token },
+    headers: hostedAuthHeaders(token),
   });
 }
 

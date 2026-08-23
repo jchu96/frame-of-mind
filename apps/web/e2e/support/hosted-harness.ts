@@ -70,6 +70,7 @@ export async function startHostedHarness(
   const workerOutputs: Array<Promise<[string, string]>> = [];
   const servers: Server[] = [];
   const capturedMail: unknown[] = [];
+  const betterAuthSessions = new Map<"a" | "b", HostedPrincipalSession>();
 
   try {
     const keys = await generateKeyPair("RS256");
@@ -268,11 +269,33 @@ export async function startHostedHarness(
           if (principal === "service") {
             throw new Error("Better Auth does not mint service principals.");
           }
-          return {
+          const existing = betterAuthSessions.get(principal);
+          if (existing) return existing;
+          const email = PRINCIPAL_EMAILS[principal];
+          const cookie = await mintBetterAuthCookie(baseUrl, email);
+          const principalSub = await queryBetterAuthPrincipal({
+            databaseName: isolation.databaseName,
+            email,
+            persistRoot: isolation.persistRoot,
+            webConfig,
+            wranglerBin,
+          });
+          await runChecked([
+            "node", wranglerBin, "d1", "execute", isolation.databaseName,
+            "--local", "--config", webConfig, "--persist-to", isolation.persistRoot,
+            "--command", hostedPrincipalSeedSql([[
+              principalSub,
+              email,
+              principal === "a" ? "media_e2e_principal_a_0001" : "media_e2e_principal_b_0001",
+            ]]),
+          ], `hosted Better Auth ${principal} principal seed`);
+          const session: HostedPrincipalSession = {
             mode: authMode,
             principal,
-            headers: { cookie: await mintBetterAuthCookie(baseUrl, PRINCIPAL_EMAILS[principal]) },
+            headers: { cookie },
           };
+          betterAuthSessions.set(principal, session);
+          return session;
         }
         return {
           mode: authMode,
@@ -291,13 +314,25 @@ export async function startHostedHarness(
 }
 
 function hostedSeedSql(authMode: HostedAuthMode): string {
-  const sealedAt = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 6 * 86_400_000).toISOString();
-  const digest = "a".repeat(64);
-  const rows = [
+  const accessRows = [
     [PRINCIPALS.a, "principal-a@example.test", "media_e2e_principal_a_0001"],
     [PRINCIPALS.b, "principal-b@example.test", "media_e2e_principal_b_0001"],
   ];
+  return `
+    ${authMode === "cloudflare-access" ? hostedPrincipalSeedSql(accessRows) : ""}
+    ${authMode === "better-auth" ? `
+      INSERT INTO hosted_auth_invites (email, invited_at) VALUES
+        ('principal-a@example.test','${new Date().toISOString()}'),
+        ('principal-b@example.test','${new Date().toISOString()}'),
+        ('tester@example.test','${new Date().toISOString()}');
+    ` : ""}
+  `;
+}
+
+function hostedPrincipalSeedSql(rows: string[][]): string {
+  const sealedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 6 * 86_400_000).toISOString();
+  const digest = "a".repeat(64);
   return `
     INSERT INTO hosted_principal_spend (
       principal_sub, principal_email, cap_units, committed_units, updated_at
@@ -312,13 +347,26 @@ function hostedSeedSql(authMode: HostedAuthMode): string {
       + `'https://generativelanguage.googleapis.test/v1beta/files/${mediaId}',`
       + `'${digest}','video/mp4','retained','${sealedAt}','${expiresAt}',1)`
     ).join(",")};
-    ${authMode === "better-auth" ? `
-      INSERT INTO hosted_auth_invites (email, invited_at) VALUES
-        ('principal-a@example.test','${sealedAt}'),
-        ('principal-b@example.test','${sealedAt}'),
-        ('tester@example.test','${sealedAt}');
-    ` : ""}
   `;
+}
+
+async function queryBetterAuthPrincipal(options: {
+  databaseName: string;
+  email: string;
+  persistRoot: string;
+  webConfig: string;
+  wranglerBin: string;
+}): Promise<string> {
+  const stdout = await runChecked([
+    "node", options.wranglerBin, "d1", "execute", options.databaseName,
+    "--local", "--config", options.webConfig, "--persist-to", options.persistRoot,
+    "--command", `SELECT id FROM better_auth_user WHERE email = '${options.email}'`,
+    "--json",
+  ], `query Better Auth principal for ${options.email}`);
+  const result = JSON.parse(stdout) as Array<{ results?: Array<{ id?: string }> }>;
+  const id = result[0]?.results?.[0]?.id;
+  if (!id) throw new Error(`Better Auth principal was unavailable for ${options.email}.`);
+  return `ba:${id}`;
 }
 
 function spawnWrangler(config: string, persistRoot: string, port: number): {

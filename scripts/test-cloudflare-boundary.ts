@@ -5,32 +5,35 @@ import {
   ad11ForbiddenMarkers,
   ad11RequiredMarkers,
   checkCloudflareBoundary,
+  hostedAuthRequiredMarkers,
 } from "./check-cloudflare-boundary";
+
+const requiredMarkers = [...ad11RequiredMarkers, ...hostedAuthRequiredMarkers];
 
 const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-boundary-"));
 try {
   const positiveRoot = join(temporaryRoot, "positive");
-  await writeFixture(positiveRoot, ad11RequiredMarkers.join("\n"));
+  await writeFixture(positiveRoot, requiredMarkers.join("\n"));
   await checkCloudflareBoundary(positiveRoot);
   console.log("CLOUDFLARE_BOUNDARY_FIXTURE positive=PASS");
 
   const forbiddenRoot = join(temporaryRoot, "forbidden");
   await writeFixture(
     forbiddenRoot,
-    `${ad11RequiredMarkers.join("\n")}\n${ad11ForbiddenMarkers[0]}`,
+    `${requiredMarkers.join("\n")}\n${ad11ForbiddenMarkers[0]}`,
   );
   await expectFailure(forbiddenRoot, "AD-11 forbidden markers");
   console.log("CLOUDFLARE_BOUNDARY_FIXTURE forbidden=PASS");
 
   const missingRoot = join(temporaryRoot, "missing");
-  await writeFixture(missingRoot, ad11RequiredMarkers.slice(1).join("\n"));
-  await expectFailure(missingRoot, "AD-11 required markers");
+  await writeFixture(missingRoot, requiredMarkers.slice(1).join("\n"));
+  await expectFailure(missingRoot, "hosted required markers");
   console.log("CLOUDFLARE_BOUNDARY_FIXTURE missing=PASS");
 
   const sensitiveRoot = join(temporaryRoot, "wrapper-sensitive");
   await writeFixture(
     sensitiveRoot,
-    ad11RequiredMarkers.join("\n"),
+    requiredMarkers.join("\n"),
     "\nconst leakedProviderBinding = 'GEMINI_API_KEY';\n",
   );
   await expectFailure(sensitiveRoot, "provider-sensitive markers");

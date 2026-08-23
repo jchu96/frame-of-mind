@@ -712,9 +712,12 @@ one or more byte-bounded `json_each` bulk item expansions. The 2 MiB request
 cap, 1.8 MB projected-row cap, and 900 KB parameter cap keep row/value/query
 limits explicit even for the contract maximum of 1,000 findings.
 
-Local unauthenticated mode is loopback-only. Hosted mode combines a
-Cloudflare Access policy over the complete hostname with in-Worker validation
-of the Access JWT signature, issuer, audience, and algorithm.
+Local unauthenticated mode is loopback-only. The committed hosted mode combines
+a Cloudflare Access policy over the complete hostname with in-Worker validation
+of the Access JWT signature, issuer, audience, and algorithm. The proposed
+[ADR 0019](adr/0019-pluggable-auth-modes.md) spike proves that the same single
+middleware seam can instead bind `ba:<userId>` from Better Auth, optionally
+behind Access. This is not yet an accepted deployment constraint.
 
 ### Hosted execution and Studio topology (dark)
 
@@ -729,7 +732,7 @@ the Nuxt caller and durable sibling as separate deployable artifacts.
 ```mermaid
 flowchart LR
     Browser[Browser]
-    Access[Cloudflare Access]
+    Access[Configured outer perimeter]
     Nuxt[Nuxt Worker]
     WorkflowService[Internal Workflows Worker]
     Workflow[Workflow instance]
@@ -773,7 +776,8 @@ activity-state, progress, and action modules through a hosted adapter; the
 Recording step can resolve only a pre-existing sealed media receipt and has no
 upload capability. HTTP views expose opaque IDs, immutable recipe/model/
 context/retention receipts, and codes-only failure state. Every lookup binds
-the Access principal in SQL and returns 404 for absent or foreign resources.
+the middleware principal in SQL and returns 404 for absent or foreign
+resources.
 
 The Workflow cleans up the exact Gemini file before it constructs publication
 provenance. It then creates and validates a schema-v2 or schema-v3
