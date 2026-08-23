@@ -123,6 +123,9 @@
   executing; cleanup deletes ephemeral staging or restores retained staging.
 - Studio media sessions, analysis jobs, and durable runs have separate
   lifecycles and authority boundaries.
+- Hosted direct-upload receipts bind size and SHA-256 twice: seal validates
+  Gemini metadata, then `ensure_gemini_file` requires both fields again before
+  analysis. Missing provider hash or size mismatch is `media_seal_mismatch`.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds
   no plaintext API-key store.
 - Local Studio media uses server-advertised fixed-size parts, exact
@@ -201,10 +204,11 @@
   be analyzed but never becomes a shared test fixture.
 - The production Cloudflare build emits `hosted-entry.mjs`, includes the
   AD-11 hosted implementation, and defaults
-  `NUXT_HOSTED_WORKFLOWS_ENABLED=false`. Its pre-Nitro upload-part intercept
-  remains 404 and body-unread until Phase 2 lands; the public Worker has no
-  secret and the internal Workflows Worker permits only `GEMINI_API_KEY` in
-  the Tier A release shape.
+  `NUXT_HOSTED_WORKFLOWS_ENABLED=false`. The entry is a pure Nitro delegator;
+  it has no upload interception. Phase 2 direct upload requires the same sole
+  Tier A `GEMINI_API_KEY` secret on the public session-minting Worker and the
+  internal analysis Worker, while browser code receives only one short-lived
+  write-only Files capability.
 - Better Auth 1.7.1 is workerd-compatible through the direct D1 adapter when
   the Cloudflare bundle externalizes `node:async_hooks`. D1 migration 0006
   stores Better Auth dates as ISO text and invitations as normalized email.

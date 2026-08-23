@@ -221,7 +221,8 @@ export interface AnalysisVideoAnalyzer {
   upload(path: string, mimeType: string): Promise<GeminiFile>;
   resolveRetainedFile?(
     name: string,
-    expectedSha256Hex?: string,
+    expectedSha256Hex: string,
+    expectedSizeBytes: number,
   ): Promise<GeminiFile>;
   index(
     file: GeminiFile,
@@ -372,7 +373,8 @@ export class AnalysisOrchestrator {
             "Audio-only calls have no visual UI evidence to interrogate.",
         );
       }
-      if ((await stat(localVideo)).size > MAX_RECORDING_BYTES) {
+      const recordingSizeBytes = (await stat(localVideo)).size;
+      if (recordingSizeBytes > MAX_RECORDING_BYTES) {
         throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
       }
       const recordingSha256 = await sha256File(localVideo);
@@ -558,6 +560,7 @@ export class AnalysisOrchestrator {
           remote = await analyzer.resolveRetainedFile(
             options.remoteFileName,
             recordingSha256,
+            recordingSizeBytes,
           );
         } else {
           remote = await analyzer.upload(localVideo, mimeType);

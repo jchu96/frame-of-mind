@@ -1363,6 +1363,7 @@ describe("AnalysisOrchestrator", () => {
     expect(resolveRetainedFile).toHaveBeenCalledWith(
       "files/retained-test",
       expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.any(Number),
     );
     expect(result.manifest.remoteFile).toMatchObject({
       name: "files/retained-test",

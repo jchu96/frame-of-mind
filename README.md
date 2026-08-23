@@ -570,6 +570,13 @@ focused browser contract with `bun run test:hosted-workflows-http`; the earlier
 topology proof remains in the
 [spike receipt](docs/spikes/hosted-workflows-spike-2026-08-22.md).
 
+Direct hosted uploads are recoverable beyond one tab's session storage. The
+Recording step lists only the authenticated principal's unexpired open
+sessions, then offers Resume (with a provider offset query) or Discard. A page
+exit sends a best-effort keepalive cancellation. Gemini exposes no File name or
+documented revoke before finalize, so pre-final cancel/expiry abandons D1 and
+relies on the bounded provider TTL; finalized exact-name Files are deleted.
+
 The same dark path now reserves a versioned conservative token estimate before
 each initial or linked attempt and reconciles it from Gemini usage receipts on
 terminal cleanup. The v2 plan includes the maximum schema-repair generation
@@ -670,8 +677,8 @@ bun run test:e2e:smoke
 bun run build
 bun run build:web:cloudflare
 bun run test:hosted-access-http
+bun run test:hosted-media-http              # fake Files API + real Chromium direct-upload contract
 bun run rehearse:hosted-release
-bun run check:hosted-stream                 # 1/2/4 MiB materialization-bound Worker oracle
 bun run check
 ```
 
