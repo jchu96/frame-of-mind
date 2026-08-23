@@ -5,6 +5,8 @@ import {
   isTrustedLoopbackRequest,
   normalizeTeamDomain,
   parseAuthMode,
+  usesBetterAuth,
+  usesCloudflareAccess,
 } from "../server/utils/auth-policy";
 
 describe("authentication policy", () => {
@@ -37,8 +39,21 @@ describe("authentication policy", () => {
   });
 
   test("accepts only explicit auth modes", () => {
+    expect(parseAuthMode("off")).toBe("off");
     expect(parseAuthMode("cloudflare-access")).toBe("cloudflare-access");
+    expect(parseAuthMode("better-auth")).toBe("better-auth");
+    expect(parseAuthMode("cloudflare-access+better-auth"))
+      .toBe("cloudflare-access+better-auth");
     expect(() => parseAuthMode("maybe")).toThrow();
+  });
+
+  test("composes the inner and outer auth boundaries explicitly", () => {
+    expect(usesCloudflareAccess("cloudflare-access")).toBe(true);
+    expect(usesCloudflareAccess("cloudflare-access+better-auth")).toBe(true);
+    expect(usesCloudflareAccess("better-auth")).toBe(false);
+    expect(usesBetterAuth("better-auth")).toBe(true);
+    expect(usesBetterAuth("cloudflare-access+better-auth")).toBe(true);
+    expect(usesBetterAuth("cloudflare-access")).toBe(false);
   });
 
   test("accepts only Cloudflare Access team origins", () => {
