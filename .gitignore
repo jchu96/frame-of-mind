@@ -26,6 +26,7 @@ skills-lock.json
 .claude/skills/
 .claude/tsc-cache/
 apps/web/wrangler.jsonc
+apps/workflows/wrangler.jsonc
 
 # Local credentials, downloads, and generated analyses
 .frame-of-mind/
