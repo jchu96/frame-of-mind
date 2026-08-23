@@ -96,6 +96,45 @@ describe("hosted Workflow durability", () => {
     expect(resolveHostedTranscript({})).toEqual({ origin: "none" });
   });
 
+  test("batch-loads display receipts while omitting an invalid legacy row", async () => {
+    const fixture = await hostedRepositoryFixture();
+    try {
+      await seedMedia(fixture.database, principalA, "media_display_valid_0001");
+      await fixture.database.prepare(`
+        INSERT INTO hosted_media_receipts (
+          principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
+          mime_type, retention, sealed_at, expires_at, duration_seconds, size_bytes
+        ) VALUES (?, ?, ?, ?, ?, 'video/mp4', 'retained', ?, ?, 20, NULL)
+      `).bind(
+        principalA,
+        "media_display_legacy_0001",
+        "files/media_display_legacy_0001",
+        "https://generativelanguage.googleapis.test/v1beta/files/media_display_legacy_0001",
+        sha256,
+        now,
+        later,
+      ).run();
+      const repository = new HostedWorkflowRepository(
+        fixture.database as unknown as HostedD1Database,
+      );
+      const receipts = await repository.getMediaReceiptsForDisplay(
+        principalA,
+        [
+          "media_display_valid_0001",
+          "media_display_legacy_0001",
+          "media_display_valid_0001",
+        ],
+      );
+      expect([...receipts.keys()]).toEqual(["media_display_valid_0001"]);
+      expect(receipts.get("media_display_valid_0001")).toMatchObject({
+        durationSeconds: 1,
+        sizeBytes: 1024,
+      });
+    } finally {
+      await fixture.miniflare.dispose();
+    }
+  });
+
   test("builds a real validated pair and rejects mismatched publication input", async () => {
     const attempt = hostedAttemptSchema.parse({
       principalSub: principalA,

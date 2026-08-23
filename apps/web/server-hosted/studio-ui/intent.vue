@@ -79,10 +79,12 @@ watch(focus, () => { if (!restoring && selected.value) save(); });
     <UFormField
       class="mt-6"
       name="focus"
+      for="hosted-optional-focus"
       label="Optional focus"
       help="Optional. Narrows what the analysis pays attention to."
     >
       <UTextarea
+        id="hosted-optional-focus"
         v-model="focus"
         :maxlength="10000"
         class="w-full"

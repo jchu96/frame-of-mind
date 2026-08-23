@@ -71,9 +71,9 @@ const terminal = computed(() => progress.value?.descriptor.kind === "terminal");
 const terminalFailure = computed(() =>
   job.value?.stage === "failed" || job.value?.stage === "interrupted"
 );
-function statusColor(value: AnalysisJob): "primary" | "success" | "error" | "warning" | "neutral" {
+function statusColor(value: AnalysisJob): "info" | "success" | "error" | "warning" | "neutral" {
   const state = activityDisplayState(value.stage);
-  if (state === "active") return "primary";
+  if (state === "active") return "info";
   if (state === "succeeded") return "success";
   if (state === "failed" || state === "interrupted") return "error";
   if (state === "canceled") return "neutral";
