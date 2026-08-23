@@ -101,3 +101,13 @@ describe("authentication policy", () => {
     expect(() => normalizeTeamDomain("https://example.com")).toThrow();
   });
 });
+
+test("Better Auth public paths are exact and reject traversal", () => {
+  for (const path of ["/favicons", "/favicon", "/_nuxt", "/_nuxt/..%2fapi/hosted/jobs", "/_nuxt/../api/hosted/jobs", "/sign-in/", "/Sign-In"]) {
+    expect(isBetterAuthPublicPath(path)).toBe(false);
+  }
+  for (const path of ["/favicon.ico", "/favicon.svg", "/_nuxt/entry.js", "/sign-in"]) {
+    expect(isBetterAuthPublicPath(path)).toBe(true);
+  }
+});
+
