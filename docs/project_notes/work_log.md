@@ -1089,3 +1089,13 @@
   `/sign-in` and `/robots.txt` and `403` for every data and hosted route.
   Membership is the D1 invite table; `access-users.ts` is no longer
   authoritative. Hosted creation remains dark.
+- Email sign-in went live on 2026-08-23 after PR #91: the public Worker was
+  redeployed (version `2bf0861d…`) with a restricted `send_email` binding
+  (`allowed_destination_addresses` = the invited maintainer addresses),
+  `NUXT_BETTER_AUTH_MAILER_FROM` on the onboarded domain, and migration
+  `0009` applied remotely. The maintainer's live test succeeded: magic-link
+  request `200` → verify `302` → `/` `200` → `/api/session` `200`. The tail
+  surfaced two follow-ups dispatched immediately: Better Auth could not read
+  the client IP on Workers (`cf-connecting-ip`), so the per-route rate limit
+  was a single shared bucket; and `/api/_nuxt_icon/*` was not a public path,
+  so the sign-in page's icon request returned `403` before login.
