@@ -1,18 +1,24 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
+import { retryBrowserReadiness } from "./browser-readiness";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 import { createE2EEnvironment } from "./e2e-environment";
 import { analysisDigest } from "../src/domain/integrity";
 import type { VersionedAnalysisRun } from "../src/domain/types";
 
-const root = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-media-"));
-const persistRoot = join(root, "wrangler-state");
+const isolation = await createE2EIsolation(
+  "hosted-media",
+  process.env.FRAME_OF_MIND_E2E_TEMP_ROOT,
+);
+const root = isolation.root;
+const persistRoot = isolation.persistRoot;
 const configPath = join(root, "wrangler.jsonc");
-const databaseName = "frame-of-mind-hosted-media-contract";
-const databaseId = "00000000-0000-0000-0000-000000000007";
+const databaseName = isolation.databaseName;
+const databaseId = isolation.databaseId;
+const workerName = isolation.workerName("hosted-media-contract");
 const audience = "frame-of-mind-hosted-media-contract";
 const keyId = "hosted-media-contract-key";
 const fixtureKey = "fixture-only-gemini-key";
@@ -26,6 +32,7 @@ let worker: ReturnType<typeof Bun.spawn> | undefined;
 let workerOutput: Promise<[string, string]> | undefined;
 
 try {
+  console.log(`HOSTED_MEDIA isolation=PASS worker=${workerName} database=${databaseName}`);
   console.log("HOSTED_MEDIA build=START cloudflare_module");
   await runChecked(
     ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare"],
@@ -49,11 +56,11 @@ try {
     },
   });
   const issuer = `http://127.0.0.1:${jwks.port}`;
-  const port = await reservePort();
+  const port = await isolation.reservePort();
   const origin = `http://127.0.0.1:${port}`;
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-media-contract",
+    name: workerName,
     main: resolve("apps/web/.output/server/hosted-entry.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
@@ -365,7 +372,7 @@ try {
   }
   jwks?.stop(true);
   filesApi?.stop(true);
-  await rm(root, { recursive: true, force: true });
+  await isolation.cleanup();
 }
 
 interface SessionResponse {
@@ -494,13 +501,45 @@ async function fakeFilesFetch(request: Request): Promise<Response> {
   return new Response("not found", { status: 404, headers: cors });
 }
 
+async function launchReadyBrowser(origin: string, token: string) {
+  return await retryBrowserReadiness(async (attempt) => {
+    const browser = await chromium.launch({ headless: true, timeout: 30_000 });
+    try {
+      const context = await browser.newContext({
+        extraHTTPHeaders: { "cf-access-jwt-assertion": token },
+      });
+      try {
+        const page = await context.newPage();
+        const response = await page.goto(`${origin}/api/health`);
+        if (!response?.ok()) {
+          throw new Error(
+            `Hosted media browser readiness failed with ${response?.status() ?? "no response"}.`,
+          );
+        }
+      } finally {
+        await context.close().catch(() => undefined);
+      }
+      if (!browser.isConnected()) {
+        throw new Error("Browser has been closed during hosted media readiness.");
+      }
+      console.log(`HOSTED_MEDIA browser_readiness=PASS attempts=${attempt}`);
+      return browser;
+    } catch (error) {
+      await browser.close().catch(() => undefined);
+      throw error;
+    }
+  }, ({ attempt }) => {
+    console.log(`HOSTED_MEDIA browser_readiness=RETRY attempt=${attempt}`);
+  });
+}
+
 async function browserResumeContract(
   origin: string,
   token: string,
   session: SessionResponse,
   payload: Uint8Array,
 ): Promise<void> {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchReadyBrowser(origin, token);
   try {
     const context = await browser.newContext({ extraHTTPHeaders: { "cf-access-jwt-assertion": token } });
     const first = await context.newPage();
@@ -585,7 +624,7 @@ async function browserRecoveryContract(
     "browser recovery full cap",
   );
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchReadyBrowser(origin, token);
   try {
     const context = await browser.newContext({
       extraHTTPHeaders: { "cf-access-jwt-assertion": token },
@@ -672,7 +711,7 @@ async function browserEvidenceCaptureContract(
   runId: string,
   png: Uint8Array,
 ): Promise<void> {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchReadyBrowser(origin, token);
   try {
     const context = await browser.newContext({
       extraHTTPHeaders: { "cf-access-jwt-assertion": token },
@@ -689,7 +728,7 @@ async function browserEvidenceCaptureContract(
         callback(new Blob([Uint8Array.from(raw, (value) => value.charCodeAt(0))], { type: "image/png" }));
       };
     }, Buffer.from(png).toString("base64"));
-    await page.goto(`${origin}/hosted/review/${runId}`);
+    await page.goto(`${origin}/review/${runId}`);
     const button = page.getByRole("button", { name: "Capture current frame" });
     await button.waitFor();
     await button.click();
@@ -706,13 +745,13 @@ async function browserEphemeralDisclosureContract(
   token: string,
   runId: string,
 ): Promise<void> {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchReadyBrowser(origin, token);
   try {
     const context = await browser.newContext({
       extraHTTPHeaders: { "cf-access-jwt-assertion": token },
     });
     const page = await context.newPage();
-    await page.goto(`${origin}/hosted/review/${runId}`);
+    await page.goto(`${origin}/review/${runId}`);
     await page.locator("[data-hosted-ephemeral-disclosure]").waitFor();
     assert(await page.locator("video").count() === 0, "ephemeral review exposed playback");
     assert(await page.getByRole("button", { name: "Capture current frame" }).count() === 0, "ephemeral review exposed capture");
@@ -1009,13 +1048,6 @@ async function runChecked(command: string[], label: string): Promise<string> {
     await Bun.sleep(100 * attempt);
   }
   throw new Error(`${label} failed:\n${last}`.slice(0, 20_000));
-}
-
-async function reservePort(): Promise<number> {
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("reserved") });
-  const port = server.port;
-  server.stop(true);
-  return port;
 }
 
 async function waitForWorker(url: string, child: ReturnType<typeof Bun.spawn>, expected: number): Promise<void> {

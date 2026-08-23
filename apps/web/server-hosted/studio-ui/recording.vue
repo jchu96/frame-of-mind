@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { loadIntentDraft } from "../../app/studio/intent-composer.js";
+import { hostedStorage } from "./hosted-adapter";
+import HostedComposerStepper from "./composer-stepper.vue";
 import { useHostedMediaUpload } from "./use-hosted-media-upload";
 
 useSeoMeta({
-  title: "Recording · Frame of Mind",
-  description: "Upload one recording with an explicit ephemeral or retained policy.",
+  title: "Add a recording · Frame of Mind",
+  description: "Add the recording for a hosted analysis.",
 });
 
 const { error } = await useFetch("/api/hosted/media/configuration", {
@@ -16,17 +19,23 @@ const {
   openSessions, operationError, pause, phase, progressBytes, resumeOpenSession,
   retention, start, statusMessage, totalBytes,
 } = useHostedMediaUpload();
+const route = useRoute();
+const intentReady = ref(false);
+
+onMounted(() => {
+  intentReady.value = Boolean(loadIntentDraft(hostedStorage(sessionStorage)).draft);
+});
 
 const retentionOptions = [
   {
-    label: "Ephemeral",
+    label: "Delete after analysis",
     value: "ephemeral",
-    description: "Delete the Gemini file after analysis or abandoned-session cleanup.",
+    description: "Delete the recording from Gemini after this analysis or an abandoned upload.",
   },
   {
-    label: "Retained",
+    label: "Keep temporarily",
     value: "retained",
-    description: "Also keep a private principal-owned R2 copy for playback and evidence capture (30 days by default).",
+    description: "Keep a private copy for playback and evidence capture for 30 days by default.",
   },
 ];
 
@@ -36,20 +45,42 @@ function formatBytes(bytes: number): string {
   const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1_024)), 3);
   return `${(bytes / 1_024 ** unit).toFixed(unit ? 1 : 0)} ${units[unit]}`;
 }
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("en", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "UTC",
+      }).format(date);
+}
 </script>
 
 <template>
   <main class="fom-shell py-8" data-hosted-composer="recording">
+    <HostedComposerStepper current="recording" :intent-ready="intentReady" :recording-ready="Boolean(media)" />
+    <UAlert v-if="typeof route.query.reason === 'string' && !media" class="mb-6" color="warning" variant="soft" :description="route.query.reason" />
     <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <UForm :state="{ retention }" class="space-y-6" @submit="start">
         <header>
-          <p class="fom-kicker text-primary">Step 3 of 4</p>
-          <h1 class="mt-3 text-4xl font-black text-highlighted">Upload the recording</h1>
+          <h1 class="text-4xl font-black text-highlighted">Add your recording</h1>
           <p class="mt-4 max-w-2xl text-default">
-            Your browser hashes the complete file and sends it to one short-lived
-            Gemini upload session. Retained mode also sends the same committed
-            bytes through a single-use capability to your private R2 object.
+            Your browser checks the complete file, then sends it directly to a
+            short-lived Gemini upload session. In retained mode, the same
+            committed bytes also go through a single-use capability to your
+            private recording copy.
           </p>
+          <UButton
+            v-if="!media && !draft"
+            class="mt-4"
+            to="/hosted/activity"
+            label="Back to Activity"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-arrow-left"
+          />
         </header>
 
         <UCard v-if="openSessions.length" data-hosted-open-sessions>
@@ -57,8 +88,8 @@ function formatBytes(bytes: number): string {
             <div>
               <h2 class="text-xl font-black text-highlighted">Unfinished uploads</h2>
               <p class="mt-1 text-sm text-muted">
-                These principal-bound Gemini sessions are still open. Resume one
-                after reselecting its recording, or discard it to free capacity.
+                These uploads are still open for your account. Resume one after
+                choosing the same recording, or discard it to free capacity.
               </p>
             </div>
           </template>
@@ -72,7 +103,8 @@ function formatBytes(bytes: number): string {
               <div>
                 <p class="font-semibold text-default">{{ formatBytes(session.declaredSizeBytes) }} recording</p>
                 <p class="mt-1 text-sm text-muted">
-                  {{ session.retention }} · expires {{ new Date(session.sessionExpiresAt).toLocaleString() }}
+                  <template v-if="session.retention === 'ephemeral'">Delete after analysis</template><template v-else>Keep temporarily</template>
+                  · expires <time :datetime="session.sessionExpiresAt" :title="session.sessionExpiresAt">{{ formatDate(session.sessionExpiresAt) }}</time>
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -126,7 +158,7 @@ function formatBytes(bytes: number): string {
             class="mt-6"
             name="retention"
             label="Retention"
-            description="This choice is bound into the upload declaration."
+            description="Choose how long Gemini may keep this recording."
           >
             <URadioGroup
               v-model="retention"
@@ -140,7 +172,7 @@ function formatBytes(bytes: number): string {
         <UCard v-if="phase !== 'idle'" :data-hosted-media-ready="media ? 'true' : undefined">
           <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
-              <h2 class="text-xl font-black text-highlighted">Direct upload</h2>
+              <h2 class="text-xl font-black text-highlighted">Upload progress</h2>
               <UBadge
                 role="status"
                 :color="phase === 'sealed' ? 'success' : phase === 'failed' ? 'error' : phase === 'paused' || phase === 'reselect-required' ? 'warning' : 'primary'"
@@ -184,7 +216,7 @@ function formatBytes(bytes: number): string {
               icon="i-lucide-cloud-upload"
               :disabled="!fileModel"
             >
-              {{ draft ? 'Resume direct upload' : 'Start direct upload' }}
+              {{ draft ? 'Resume upload' : 'Start upload' }}
             </UButton>
             <UButton
               v-if="['hashing', 'uploading'].includes(phase)"
@@ -211,7 +243,7 @@ function formatBytes(bytes: number): string {
               to="/hosted/new/run"
               trailing-icon="i-lucide-arrow-right"
             >
-              Continue to run
+              Continue
             </UButton>
           </div>
         </UCard>
@@ -222,8 +254,8 @@ function formatBytes(bytes: number): string {
           color="primary"
           variant="soft"
           icon="i-lucide-shield-check"
-          title="Keyless browser transfer"
-          description="The browser receives one write-only session URL, never the Gemini API key. Size and SHA-256 must match before analysis can start."
+          title="Direct browser upload"
+          description="Your browser receives a write-only upload address, never the Gemini API key. File size and fingerprint must match before analysis can start."
         />
         <UAlert
           color="neutral"
@@ -236,15 +268,15 @@ function formatBytes(bytes: number): string {
           color="neutral"
           variant="outline"
           icon="i-lucide-refresh-cw"
-          title="Refresh-safe resume"
-          description="This tab stores only the bounded upload receipt and last confirmed offset. After refresh, reselect the same file and Gemini reports the authoritative offset."
+          title="Resume after refresh"
+          description="This tab stores only the upload receipt and last confirmed position. After refreshing, choose the same file to resume."
         />
         <UAlert
           color="warning"
           variant="soft"
           icon="i-lucide-shield-alert"
-          title="Authorized recordings only"
-          description="Use media you are authorized to process. Upload capabilities and recording content must never enter logs, run bundles, or Git."
+          title="Use authorized recordings only"
+          description="Upload only recordings you are allowed to process. Upload addresses and recording content are never stored in logs, run bundles, or Git."
         />
       </aside>
     </section>

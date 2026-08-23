@@ -1,5 +1,21 @@
 # Bugs and Failure History
 
+## 2026-08-23 — Better Auth broke two consolidated E2E harness seams
+
+- Symptom: the Better Auth hosted journey rendered an empty context page and
+  timed out, while the hosted-stream adversarial probe failed when Miniflare
+  encountered the built Nitro bundle's dynamic route imports.
+- Cause: the journey supplied a Better Auth session as a fixed request header
+  instead of browser cookies and seeded media under the old Access subject
+  before the generated `ba:<userId>` was known. The Miniflare length oracle
+  also relied on automatic module traversal, which cannot discover dynamic
+  specifiers introduced by the Better Auth route graph.
+- Fix: install Better Auth cookies in the browser context, resolve and seed the
+  generated principal after login, and pass Miniflare the complete built ESM
+  graph with `hosted-entry.mjs` as the entry module.
+- Prevention: the normal `check` gate now runs both hosted auth journeys and
+  the recurring streaming probe through the consolidated E2E project.
+
 ## 2026-08-22 — Maintenance could delete media queued behind live work
 
 - Symptom: an old queued job sharing a single-concurrency worker with an active
@@ -483,3 +499,37 @@
   redirect anonymous HTML pages while preserving JSON 403 responses for APIs.
 - Prevention: the built-workerd browser spec runs in Better Auth and stacked
   modes and fails when the `/sign-in` exemption is removed.
+
+## 2026-08-23 — Hosted catalog receipts could not start five built-in goals
+
+- Symptom: every built-in goal except Issue review failed composer submission
+  with `recipe_receipt_mismatch`.
+- Cause: the catalog used the historical default revision while two hosted
+  creation paths replaced a missing recipe revision with the newer Issue
+  review revision.
+- Fix: `builtInRecipeRevision(id)` is the single built-in revision resolver for
+  loading, catalog display, composer validation, and hosted creation.
+- Prevention: the built-workerd contract reads the hosted catalog and starts
+  every ID returned by `listBuiltInRecipes()`.
+
+## 2026-08-23 — Hosted sign-out omitted the JSON mutation body
+
+- Symptom: Sign out returned HTTP 415 and left the browser session active with
+  no feedback.
+- Cause: the POST omitted a JSON body required by the mutation boundary.
+- Fix: send `{}` and show an error toast when sign-out fails.
+- Prevention: built-workerd browser coverage requires redirect to `/sign-in`
+  and a subsequent `/api/session` JSON 403.
+
+## 2026-08-23 — Fresh auth Chromium disconnect looked like an auth failure
+
+- Symptom: two clean, serialized hub gates passed the stacked sign-in-page
+  contract, then failed at `githubLogin()` with `Target page, context or
+  browser has been closed` on the fresh browser's first navigation.
+- Cause: the first navigation on each newly launched browser also began the
+  stateful login probe. A transient Chromium process disconnect therefore had
+  no side-effect-free readiness boundary and was reported as an auth failure.
+- Fix: navigate a temporary context to `/api/health` before auth mutation and
+  retry only the exact TargetClosed error family once with explicit receipts.
+- Prevention: deterministic tests require one TargetClosed retry, refuse to
+  retry HTTP-like failures, and surface a second disconnect.

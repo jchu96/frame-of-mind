@@ -8,10 +8,12 @@ The local Studio trust boundaries and abuse cases are maintained in the
 Local Studio Phases 1–8 are implemented and verified through the
 [phase plan](../conductor/tracks/local-studio_20260726/plan.md), the
 [production HTTP contract](../scripts/test-local-studio-http.ts), and the
-[browser smoke suite](../apps/web/e2e/studio-smoke.spec.ts). Hosted Studio is a
-separate dark track: principal scoping and Phases 2–5 ship behind disabled
-build/runtime gates and Phase 6 preparation is present, but the deployment
-gate remains pending. Nothing in the hosted creation path is
+[browser smoke suite](../apps/web/e2e/smoke/studio-smoke.spec.ts). Hosted Studio is a
+separate dark track: principal scoping, direct recording upload, durable
+Workflows, composer/activity/publication, and retention, evidence, spend, and
+telemetry Tasks 5.1–5.4 ship behind disabled build/runtime gates. Phase 6
+preparation is present, but the deployment gate remains pending. Nothing in
+the hosted creation path is
 deployed or enabled by this repository state. See the
 [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/) and
 [data classification](DATA_CLASSIFICATION.md).

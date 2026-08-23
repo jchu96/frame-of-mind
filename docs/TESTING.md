@@ -1,84 +1,122 @@
-# Testing Strategy
+# Testing
 
-## Invariant
+Frame of Mind tests are layered around the product authority boundaries. A
+portable run pair remains authoritative; test databases, browser state, and
+Worker fixtures are disposable projections.
 
-> Browser tests prove that independently tested contracts work together through
-> the interface a colleague actually uses.
+## Test layers
 
-The E2E suite is not a second copy of every schema, storage, security, or
-provider test. Fast lower-level tests own exhaustive permutations. Playwright
-owns the few seams that exist only in a real browser: hydration, accessible
-interaction, file selection, cookie behavior, redirects, responsive layout,
-and complete user journeys.
-
-```mermaid
-flowchart TB
-    Unit[Domain and component tests]
-    Contract[Storage, route, auth, and streaming contract tests]
-    Browser[Playwright browser journeys]
-    Live[Explicit maintainer-only provider check]
-
-    Unit --> Contract
-    Contract --> Browser
-    Browser --> Live
-```
-
-## Test Layers
-
-| Layer | Owns | Must not own |
+| Layer | Command | Owns |
 |---|---|---|
-| Domain/unit | schemas, state transitions, recipes, normalization | browser layout |
-| Adapter/contract | SQLite/D1 parity, auth denial, request limits, media state | Nuxt interaction |
-| Built HTTP | production Nitro routing, session exchange, Host/Origin policy | visual behavior |
-| Playwright | hydration, cookie/redirect flow, accessible controls, responsive journeys | exhaustive provider/error permutations |
-| Live maintainer | current Gemini compatibility with generated media | pull-request CI and meeting data |
+| CLI/unit | `bun run test` | recipes, providers, contracts, orchestration |
+| Web/unit | `bun run test:web` | SQLite/D1, Studio services, UI state modules |
+| HTTP contracts | `bun run test:studio-http`, `bun run test:hosted-access-http`, `bun run test:hosted-workflows-http` | built server and Worker request contracts; the hosted Workflow contract also captures its first-user browser UX receipt |
+| Smoke E2E | `bun run test:e2e` | the 13 Local Studio browser journeys |
+| Hosted E2E | `bun run test:e2e:hosted` | composer → activity → publication → viewer against built Nuxt and Workflows Workers |
+| Adversarial E2E | `bun run test:e2e:adversarial` | recurring reviewer regressions tagged `@adversarial` |
+| Canary | `bun run test:e2e:canary` | read-only checks against a deployed Access hostname |
 
-## Current Browser Baseline
+`bun run test:e2e:all` selects every project. The canary prints a clear SKIP
+when its deployment credentials are absent. `bun run check:e2e` selects hosted
+and adversarial projects and is part of `bun run check`. CI uses
+`bun run test:e2e:ci`, which adds smoke and fails on flaky retries.
 
-[`playwright.config.ts`](../playwright.config.ts) starts a production Nuxt build
-with Bun and a disposable local environment. It runs with one worker because
-the Studio intentionally has one process session and mutable process-secret
-state:
+The quarantine file is
+[`apps/web/e2e/flaky-quarantine.json`](../apps/web/e2e/flaky-quarantine.json).
+It must remain an explicit JSON array; zero entries is the normal state.
 
-| Project | Coverage |
-|---|---|
-| `setup` | exchanges the one-use URL fragment, verifies clean redirect and HttpOnly cookie, writes ignored storage state |
-| `unauthenticated` | proves protected Studio page/API denial without a session |
-| `bootstrap-replay` | proves the consumed launch capability cannot create another session or mount a data-fetching dashboard |
-| `chromium` | verifies Studio Home empty state, connection health, one primary action, desktop columns, and return-after-import revalidation; manages a synthetic process key; stages/deletes a synthetic recording; refreshes, reselects, verifies, and resumes an unfinished upload; imports/reviews a synthetic run |
-| `mobile-chromium` | verifies the Connections surface and navigation remain usable without horizontal overflow |
+## Browser layout
 
-The browser and server runners:
+Playwright projects map directly to these folders:
 
-- launch Playwright workers and browser processes with an explicit environment
-  allowlist instead of inheriting shell or dotenv secrets;
-- inject parent-process canaries and assert they never reach the test worker;
-- supplies an empty dotenv file;
-- disable Bun's automatic dotenv loading for Playwright, the Nuxt build, and
-  the production server;
-- uses a temporary `XDG_CONFIG_HOME` so real OAuth files are not read;
-- uses a temporary SQLite database;
-- binds only to `127.0.0.1`;
-- make the outer runner own temp cleanup so it works after success, failure,
-  and Playwright's forceful Windows web-server shutdown;
-- never calls Gemini, Bluedot, or Granola.
+- `apps/web/e2e/smoke/`: Local Studio bootstrap and 13 existing journeys;
+- `apps/web/e2e/hosted/`: hosted browser journey and publication atomicity;
+- `apps/web/e2e/adversarial/`: reviewer-derived security and preservation probes;
+- `apps/web/e2e/canary/`: deployed, read-only checks;
+- `apps/web/e2e/support/`: boot, identity, fixtures, and isolation.
 
-## Commands
+The HTTP contract scripts retain their request assertions. The hosted Workflow
+contract additionally drives the #83 first-time-user journey against the same
+built, isolated two-Worker topology; the other HTTP contracts remain
+browser-free.
 
-Install Chromium once:
+## Boot the built Workers
+
+A reviewer boots and exercises the complete synthetic hosted topology with one
+command:
 
 ```bash
-bunx playwright install chromium
+bun run test:e2e:hosted
 ```
 
-Run the fast browser gate:
+The shared hosted fixture builds the Nuxt `cloudflare_module` artifact, dry-runs
+the Workflows Worker, applies migrations to a unique local D1 name, seeds
+principal-bound sealed-media receipts, then starts both Workers under workerd.
+It also starts a fake Access JWKS issuer, fake GitHub OAuth endpoint, captured
+mailer, and fake Gemini port. Provider calls remain offline.
+
+Better Auth has a named Playwright project and a `HostedAuthMode` fixture seam.
+When `apps/web/server/utils/better-auth.ts` is absent, that project skips with
+the PR #75 reason rather than pretending the mode ran.
+
+## Principals and sessions
+
+Tests obtain identities from the hosted fixture:
+
+```ts
+const principalA = await hosted.session("a");
+const principalB = await hosted.session("b");
+const service = await hosted.session("service");
+```
+
+In Access mode these are short-lived RS256 JWTs signed by the fixture JWKS.
+The session method is the single seam for adding Better Auth cookies when that
+adapter lands. Never print the returned headers. Principal A and B deliberately
+use different subjects so ID-sweep tests can distinguish ownership without
+using real participant data.
+
+## Click through hosted Studio locally
+
+Run the long-lived local topology and leave it open while you drive the browser:
 
 ```bash
-bun run test:e2e:smoke
+bun run hosted:local
 ```
 
-Verify the live Gemini upload, index, detail, and cleanup boundary with
-generated media:
+It prints `HOSTED LOCAL http://127.0.0.1:<port>` and the synthetic GitHub user
+`tester@example.test`, then stays up until Ctrl+C. It uses Better Auth, seeds
+that invite, starts fake GitHub and Gemini services, and prints captured
+fixture magic links. On a base where the Better Auth PR is not present, the
+same command prints a clear skip reason and falls back to the Access helper so
+the hosted Studio remains human-driveable. To select that path explicitly:
+
+```bash
+bun run hosted:local -- --mode cloudflare-access
+```
+
+The printed Access helper URL is a loopback reverse proxy that injects only the
+generated principal-A assertion. Removing the `tester@example.test` invite
+from the Better Auth seed is discriminating: the fake GitHub sign-in must end
+with `EMAIL_NOT_INVITED`.
+
+Run the hosted two-Worker, two-principal contract and its first-time-user
+browser journey:
+
+```bash
+bun run test:e2e:hosted
+```
+
+The Cloudflare Access pass refreshes desktop (1280×900) and mobile (390×844)
+visual receipts in
+`apps/web/e2e/__screenshots__/ux-pass-2/`. The journey covers Intent, Context,
+Recording empty and ready states, Review and start, Activity detail and list,
+the published viewer, hosted review workspace, Results, Import, and the branded
+not-found state. The same contract also proves own-principal review and support
+access plus foreign-principal 404 denial. The Better Auth variant runs in the
+full `bun run check` gate without replacing the Access screenshots.
+
+Verify the live Gemini upload, index, detail, and cleanup boundary separately
+with generated media:
 
 ```bash
 bun run smoke:gemini
@@ -88,143 +126,78 @@ This command requires a locally configured `GEMINI_API_KEY`, is intentionally
 outside CI, prints no provider payload or remote identifier, and removes its
 temporary local and remote files.
 
-Run all browser projects:
+## Fixtures
+
+`apps/web/e2e/support/fixtures.ts` owns public-safe fixture families:
+
+- sealed media receipts for principals A and B;
+- schema-valid run pairs with distinct run IDs;
+- adversarial transcript/path/URL/token/email/provider-error trap strings.
+
+The built-Worker fixture seeds only opaque media metadata and generated
+digests. No recording, transcript, provider credential, signed URL, or real
+analysis is loaded.
+
+## Isolation
+
+`apps/web/e2e/support/isolation.ts` is required by every E2E harness and the
+hosted HTTP/release scripts. Each invocation receives:
+
+- random free listener ports;
+- a unique `mkdtemp` root under the OS temp directory;
+- a private Wrangler persistence directory;
+- a unique local D1 database name and UUID.
+
+The outer runner removes its exact temporary tree on success and failure.
+Playwright reports remain under ignored, run-ID-specific `test-results/` and
+`playwright-report/` directories so concurrent gates do not overwrite one
+another.
+
+Top-level local E2E runners also hold one machine-wide runtime lease for their
+complete workerd/Chromium lifetime. Per-run paths isolate state, but they do
+not isolate CPU and process capacity: overlapping hosted gates can make local
+Workflow dispatch return 503 or terminate a Chromium context. Nested hosted
+fixtures reuse their outer runner's lease. A dead owner is detected by PID and
+reaped, so an interrupted gate does not leave the machine permanently locked.
+Wrangler Worker, service, and Workflow names are also derived from the run ID;
+fixed names can collide with stale entries in Wrangler's local service registry
+even after the prior child process exits. Concurrent HTTP fixtures must consume
+their admitted responses and wait for the resulting Workflows to settle before
+starting a later scenario in the same emulator lifetime.
+
+On shared fleet machines that provide `gate-lock`, invoke the outer gate through
+that wrapper too (for example, `gate-lock bun run check`). It coordinates this
+repository with other worktrees and repositories before the in-process lease
+exists.
+
+## Discriminating regressions
+
+These tests are intentionally coupled to named failure modes:
+
+- foreign sealed media must map to 404;
+- `/api/__studio-spike/` must remain in the local session matcher;
+- hosted publication must validate its pair and D1 partial writes must roll
+  back registry, run, and item rows together;
+- support receipts must remain a closed projection;
+- maintenance must preserve an old queued sibling while any worker heartbeat
+  is recent;
+- the dark upload spike must retain slow-sink, over-length, and short-part
+  receipts.
+
+Review briefs should link this file and the exact spec rather than reconstruct
+the boot sequence in prose.
+
+## Deployed canary
+
+The canary is read-only and not part of `bun run check`. Configure it only in a
+release shell:
 
 ```bash
-bun run test:e2e
+FRAME_OF_MIND_CANARY_URL="https://<hostname>" \
+CF_ACCESS_CLIENT_ID="<service-token-id>" \
+CF_ACCESS_CLIENT_SECRET="<service-token-secret>" \
+bun run test:e2e:canary
 ```
 
-Run one spec without bypassing environment isolation:
-
-```bash
-bun run test:e2e -- apps/web/e2e/studio-smoke.spec.ts
-```
-
-Debug with a visible browser:
-
-```bash
-bun run test:e2e:smoke -- --headed
-```
-
-Inspect a failed run:
-
-```bash
-bunx playwright show-report
-```
-
-Traces, screenshots, videos, reports, and authenticated storage state are
-ignored by Git. The temporary database lives outside the checkout and the
-runner removes its complete temp directory.
-
-CI uses `bun run test:e2e:ci`, keeps bounded retries for diagnostic artifacts,
-and passes `--fail-on-flaky-tests`. A test that fails once and passes on retry
-still fails the job.
-
-## Authoring Rules
-
-- Use invented fixtures only.
-- Prefer `getByRole`, `getByLabel`, and visible names.
-- Add semantic labels before adding test IDs.
-- Use Playwright web-first assertions and response/event waits; never fixed
-  sleeps.
-- Assert the outcome visible to the operator and one authoritative server
-  receipt where relevant.
-- End every state-changing test in a known state.
-- Make retries idempotent: establish the expected precondition first and clean
-  mutations at the end. The one-use authentication setup itself is not retried.
-- Fail on unexpected browser console errors and uncaught page errors. Narrowly
-  allowlist only an error that the test explicitly causes and verifies.
-- Keep one happy browser journey per feature; put combinatorial cases below
-  the browser.
-- Never make a real provider request from CI.
-- Retain trace, screenshot, and video only on failure/retry.
-
-## Phase 3 Recording Drop Zone
-
-Nuxt UI's `UFileUpload` is the selection surface. The upload composable and
-media-session API remain the transfer authority. The implemented split is
-tested at three levels:
-
-### Browser-client contract — implemented
-
-- extension, size, and browser-declared MIME validation independent of
-  `accept`;
-- opaque-ID-only session-storage serialization;
-- graceful degradation when session storage throws;
-- complete-file fingerprint verification before resume, with abort checkpoints
-  between bounded hashes;
-- missing-part-only upload with receipt-confirmed progress;
-- explicit mismatch failure rather than silent continuation.
-
-`apps/web/test/studio-media-upload.test.ts` owns the pure client contract.
-`apps/web/test/studio-media-controller.test.ts` owns ambiguous create-key
-reuse, pause/reconcile/resume, cleanup retry, and delete-before-restart state
-transitions. The selected `File` stays in a component-local `shallowRef`; it
-never enters Nuxt SSR state.
-
-### Media contract — implemented
-
-- create, part receipt, out-of-order/concurrent rejection, retry, resume,
-  digest mismatch, seal, abort, retention, expiry, and cleanup;
-- bounded streaming and disk-space behavior;
-- sealed-ephemeral expiry independent of browser state, complete-file binding,
-  and delete-versus-seal writer exclusion;
-- synthetic bytes only, outside the checkout.
-
-`apps/web/test/studio-media-staging.test.ts` owns the adapter matrix.
-`apps/web/test/studio-media-expiry-janitor.test.ts` owns the long-lived server
-cleanup contract: periodic scheduling, non-overlap, sanitized failure
-reporting, cleanup retry, active-writer exclusion, continued operation, and
-shutdown draining.
-`bun run test:studio-http` builds the real local Nitro target and verifies
-session denial, same-origin enforcement, raw streamed upload, exact-offset
-resume/replay, sealing, status, and cleanup. The Cloudflare boundary build
-proves that the complete local media implementation and route strings are
-absent.
-
-### Context-file contract — implemented
-
-`apps/web/test/local-context-staging.test.ts` owns the distinct small-input
-matrix:
-
-- JSON, text, Markdown, SRT, and VTT acceptance and shared
-  `FileContextSource` normalization;
-- 8 MiB/declaration, UTF-8, JSON, and caption validation;
-- opaque receipts without body or path disclosure;
-- digest and regular-file identity verification;
-- execution lease versus manual deletion;
-- single-use release cleanup, abandoned expiry, and unsafe-root rejection.
-
-`studio-job-runtime.test.ts` verifies that immutable file-context input resolves
-only through an exact receipt and that the private path exists only in
-execution options. `orchestrated-job-executor.test.ts` proves context cleanup
-runs in `finally`, before media release, without masking the analysis outcome.
-The production `bun run test:studio-http` probe covers session denial,
-same-origin rejection, format/MIME agreement, streamed creation, sanitized
-receipt shape, and idempotent private deletion. The Cloudflare boundary gate
-forbids the adapter, root override, janitor, and route markers.
-
-### Browser journey — implemented
-
-1. `studio-smoke.spec.ts` exercises native input, actual DataTransfer drop, and
-   keyboard file-dialog/action paths; it stages a small synthetic MP4 through
-   the real local API, observes confirmed progress, seals it, and deletes it.
-2. `studio-upload.spec.ts` seeds one real confirmed 8 MiB part, reloads the
-   page, observes `reselect-required`, reselects the same synthetic recording,
-   verifies the receipt, sends the missing part, seals, and deletes.
-3. Lower-level browser-client tests own mismatched re-selection and
-   missing-part assertions so those checks do not depend on browser timing.
-4. The mobile Chromium project guards the responsive Studio header against
-   horizontal overflow.
-
-The browser suite will not call Gemini for this flow. Later composer tests use
-an injected synthetic executor at the existing port boundary. A separate,
-explicit maintainer check covers live Gemini/provider compatibility.
-
-## Browser Matrix
-
-Chromium desktop plus mobile emulation is the pull-request baseline. Firefox
-and WebKit remain a release-hardening expansion once the complete composer and
-media playback surface lands. Keep projects identical and do not add
-browser-specific application behavior unless a documented platform limitation
-requires it.
+It emits only `CANARY <check>=PASS|FAIL` receipts. Never commit or paste the
+service-token values.

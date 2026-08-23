@@ -5,12 +5,12 @@ import {
   LOCAL_STUDIO_BOOTSTRAP_FRAGMENT,
   LOCAL_STUDIO_COOKIE_NAME,
   LOCAL_STUDIO_LAUNCH_PATH,
-} from "../server-local/studio-session/contract";
+} from "../../server-local/studio-session/contract";
 import {
   E2E_BOOTSTRAP_TOKEN,
   E2E_STORAGE_STATE,
-} from "./support/constants";
-import { collectClientErrors } from "./support/client-errors";
+} from "../support/constants";
+import { collectClientErrors } from "../support/client-errors";
 
 setup("exchanges the one-time launch fragment for a local session", {
   tag: "@smoke",

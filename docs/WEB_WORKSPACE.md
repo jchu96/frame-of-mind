@@ -21,7 +21,7 @@ authentication, Home, Connections, recording/context staging, the complete
 composer and Run receipt, durable Activity/recovery controls, review,
 reattachment, exports, and maintenance. These claims are exercised by the
 [production HTTP contract](../scripts/test-local-studio-http.ts) and
-[browser smoke suite](../apps/web/e2e/studio-smoke.spec.ts):
+[browser smoke suite](../apps/web/e2e/smoke/studio-smoke.spec.ts):
 
 ```bash
 cp .env.example .env

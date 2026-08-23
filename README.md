@@ -40,7 +40,7 @@ even derive its own transcript from the recording's audio.
   digest-verified reattachment, local exports, and unified maintenance. The
   implementation receipts and verification commands are recorded in the
   [Local Studio plan](conductor/tracks/local-studio_20260726/plan.md) and
-  [Studio browser suite](apps/web/e2e/studio-smoke.spec.ts).
+  [Studio browser suite](apps/web/e2e/smoke/studio-smoke.spec.ts).
 - Phase 9 release hardening is in progress. Documentation, classification,
   repository hygiene, fresh-clone platform testing, and hosted-track
   reconciliation are complete in this slice; only the operator/adversarial
@@ -555,12 +555,17 @@ and [accepted ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
 
 The dark hosted execution path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. When explicitly
-built and enabled, an Access-authenticated user can choose intent and
-video-only context, use an existing sealed recording receipt, start analysis,
-follow sanitized activity, cancel or retry eligible attempts, and open the
-validated published run in the existing viewer. Recording upload is not
-available in hosted Studio yet; the Recording page says so and contains no
-upload implementation.
+built and enabled, an authenticated user enters through one **New analysis**
+navigation item, follows the What to find → Recording → Review & start flow,
+reviews the goal, recording-only sources, and recording in one summary, starts
+analysis, follows plain-language activity, and opens the published output or
+its timestamped evidence workspace. Results, Activity, Import, account, and
+sign-out controls share one hosted navigation. Recording upload is not
+available in hosted Studio yet; the Recording page says so and links back to
+Activity and to the desktop Studio instructions without presenting a disabled
+primary action. The hosted copy contract
+and internal-to-plain-language glossary live in
+[docs/UX_COPY.md](docs/UX_COPY.md).
 
 Hosted jobs, media receipts, activity, and published runs are bound to the
 validated middleware principal. IDs owned by another principal resolve as not
@@ -569,7 +574,7 @@ validates the exact `analysis.json`/`manifest.json` pair, then projects it into
 D1 in one atomic batch. These routes remain absent from the normal Worker build
 and return not found when the hosted runtime flag is off. They are implemented
 but are not deployed or enabled. Verify the two-Worker, two-principal, and
-focused browser contract with `bun run test:hosted-workflows-http`; the earlier
+focused browser contract with `bun run test:e2e:hosted`; the earlier
 topology proof remains in the
 [spike receipt](docs/spikes/hosted-workflows-spike-2026-08-22.md).
 
@@ -676,7 +681,11 @@ bun install --frozen-lockfile
 bun run typecheck
 bun run test
 bun run test:web
-bun run test:e2e:smoke
+bun run test:e2e                     # Local Studio smoke
+bun run test:e2e:hosted              # built Nuxt + Workflows Workers
+bun run test:e2e:adversarial         # reviewer-derived regressions
+bun run test:e2e:canary              # deployed, read-only; env-gated
+bun run hosted:local                 # human-driveable hosted Workers; Ctrl+C to stop
 bun run build
 bun run build:web:cloudflare
 bun run test:hosted-access-http
@@ -684,6 +693,10 @@ bun run test:hosted-media-http              # fake Files API + real Chromium dir
 bun run rehearse:hosted-release
 bun run check
 ```
+
+Local E2E and hosted-contract runners serialize their resource-heavy
+workerd/Chromium lifetimes across worktrees while retaining private ports,
+temporary state, D1/Worker/Workflow names, and report directories per run.
 
 Do not upgrade `@google/genai` or `@modelcontextprotocol/sdk` without
 verifying official authentication, Files upload, structured output, video

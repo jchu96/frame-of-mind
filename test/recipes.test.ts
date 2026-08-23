@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   builtInRecipe,
+  builtInRecipeRevision,
   listBuiltInRecipes,
   loadRecipe,
   renderCharterInstruction,
@@ -161,9 +162,11 @@ describe("analysis recipes", () => {
   });
 
   it("scopes the revision bump to the migrated recipe only", async () => {
-    expect((await loadRecipe("issue-review")).revision).toBe("builtin-2026-08-11.1");
+    expect(builtInRecipeRevision("issue-review")).toBe("builtin-2026-08-11.1");
+    expect((await loadRecipe("issue-review")).revision).toBe(builtInRecipeRevision("issue-review"));
     for (const id of ["decisions", "requirements", "action-items", "repo-plan", "communication-coaching"]) {
-      expect((await loadRecipe(id)).revision).toBe("builtin-2026-07-27.1");
+      expect(builtInRecipeRevision(id)).toBe("builtin-2026-07-27.1");
+      expect((await loadRecipe(id)).revision).toBe(builtInRecipeRevision(id));
     }
   });
 
