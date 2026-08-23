@@ -5,14 +5,58 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  check:
+  gate-policy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
+    outputs:
+      tier: ${{ steps.tier.outputs.tier }}
+      lanes: ${{ steps.tier.outputs.lanes }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Select required gate tier
+        id: tier
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            tier=$(bun scripts/run-check-sharded.ts --tier pr --base "origin/$BASE_REF" --print-tier)
+          else
+            tier=sharded
+          fi
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          if [ "$tier" = "sharded" ]; then
+            echo 'lanes=["fast","local","hosted"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'lanes=["fast","local"]' >> "$GITHUB_OUTPUT"
+          fi
+
+  gate-lanes:
+    needs: gate-policy
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: ${{ fromJSON(needs.gate-policy.outputs.lanes) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - name: Check out repository
@@ -26,11 +70,32 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run typechecks, tests, and local and Cloudflare builds
-        run: bun run check
+      - name: Run ${{ matrix.lane }} gate lane
+        run: bun run check:lane:${{ matrix.lane }}
 
       - name: Reject high or critical production advisories
+        if: matrix.lane == 'fast'
         run: bun audit --production --audit-level=high
+
+  serial-check:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run serial fallback gate
+        run: bun run check
 
   fresh-clone:
     strategy:

@@ -1101,6 +1101,28 @@
   `/sign-in` and `/robots.txt` and `403` for every data and hosted route.
   Membership is the D1 invite table; `access-users.ts` is no longer
   authoritative. Hosted creation remains dark.
+- Sharded the 16-step repository gate on 2026-08-23 without reducing logical
+  coverage. Fast, local, and hosted lanes now build each required preset once,
+  consume fail-closed marked artifacts, isolate outputs, enforce per-step
+  process-group deadlines, and cache the five newest content-addressed builds.
+  The locked complete sharded gate passed in 324.47 seconds (fast 20.17, local
+  38.81, hosted 324.46); hosted was dominated by the two Workflows HTTP modes
+  at 62.61 and 95.19 seconds. A separate known Better Auth stall proved the
+  single retry and exact 1,200-second `step_timeout` receipt.
+- Closed the PR #94 false-green review blockers on 2026-08-23. Build cache keys
+  now cover the Git-visible implementation tree and the scrubbed content
+  environment, so `src/**` and build-script changes invalidate artifacts while
+  Markdown does not; caller `NUXT_*` and `FRAME_OF_MIND_*` values no longer
+  enter build children. The PR tier defaults to `origin/main`, fails closed
+  when that ref is unavailable, and stays reduced only when every path is on
+  the documented safe allowlist. The focused discriminator passed 6/6,
+  including cache-key mutation, ambient-environment, tier-selection,
+  step-set-equality, preset-mismatch, and owned-process timeout coverage.
+  A first simultaneous two-worktree proof then exposed per-step timeout clocks
+  starting while sibling contracts waited on the machine-wide workerd/Chromium
+  lease. The local and hosted lanes now own that lease once per lane, and child
+  contracts inherit only its verified token, keeping both intra-gate and
+  cross-worktree waiting outside step timers.
 - Email sign-in went live on 2026-08-23 after PR #91: the public Worker was
   redeployed with a restricted `send_email` binding
   (`allowed_destination_addresses` = the invited maintainer addresses),
