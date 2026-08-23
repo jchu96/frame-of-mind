@@ -558,9 +558,10 @@ reviews the goal, recording-only sources, and recording in one summary, starts
 analysis, follows plain-language activity, and opens the published output or
 its timestamped evidence workspace. Results, Activity, Import, account, and
 sign-out controls share one hosted navigation. The Recording step sends the
-file directly from the browser to Gemini, shows the configured size limit in
-plain language, supports pause and recovery, and collapses a completed upload
-into one recording summary with a Replace action. Activity and Results identify
+file directly from the browser to Gemini, shows the configured size limit and
+retention duration in plain language, supports pause and recovery, and
+collapses a completed upload into one recording summary with a Replace action.
+Activity and Results identify
 video-only analyses with the recording duration and size, while start failures
 pair a specific next action with a support code. The hosted copy contract
 and internal-to-plain-language glossary live in

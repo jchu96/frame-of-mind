@@ -117,6 +117,25 @@ export class HostedWorkflowRepository {
     return media;
   }
 
+  async getMediaReceiptsForDisplay(
+    principalSub: string,
+    mediaIds: readonly string[],
+  ): Promise<Map<string, SealedHostedMediaReceipt>> {
+    const uniqueMediaIds = [...new Set(mediaIds)];
+    if (uniqueMediaIds.length === 0) return new Map();
+    const placeholders = uniqueMediaIds.map(() => "?").join(", ");
+    const result = await this.database.prepare(`
+      SELECT * FROM hosted_media_receipts
+      WHERE principal_sub = ? AND media_id IN (${placeholders})
+    `).bind(principalSub, ...uniqueMediaIds).all<MediaRow>();
+    const receipts = new Map<string, SealedHostedMediaReceipt>();
+    for (const row of result.results) {
+      const receipt = mediaFromRow(row);
+      if (receipt) receipts.set(receipt.mediaId, receipt);
+    }
+    return receipts;
+  }
+
   async requireUsableMediaReceipt(
     principalSub: string,
     mediaId: string,

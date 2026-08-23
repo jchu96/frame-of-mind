@@ -22,6 +22,26 @@ export function formatRecordingBytes(bytes: number): string {
   return `${value.toFixed(unit > 0 && value < 10 ? 1 : 0)} ${units[unit]}`;
 }
 
+export function formatRetentionDuration(seconds: number): string | undefined {
+  if (!Number.isSafeInteger(seconds) || seconds <= 0) return undefined;
+  const units = [
+    { seconds: 86_400, singular: "day", plural: "days" },
+    { seconds: 3_600, singular: "hour", plural: "hours" },
+    { seconds: 60, singular: "minute", plural: "minutes" },
+    { seconds: 1, singular: "second", plural: "seconds" },
+  ];
+  const unit = units.find((candidate) => seconds % candidate.seconds === 0)!;
+  const value = seconds / unit.seconds;
+  return `${value} ${value === 1 ? unit.singular : unit.plural}`;
+}
+
+export function recordingFieldHelp(maxBytes?: number): string {
+  const formats = "MP4, MOV, M4V or WebM";
+  return maxBytes && Number.isFinite(maxBytes) && maxBytes > 0
+    ? `${formats}, up to ${formatRecordingBytes(maxBytes)}`
+    : formats;
+}
+
 export function recordingDisplayLabel(
   metadata: RecordingDisplayMetadata,
   name = "Recording",

@@ -14,7 +14,10 @@ import type { HostedJobView, HostedMediaView } from "../../../workflows/src/cont
 import { hostedMediaSession, hostedStorage } from "./hosted-adapter";
 import HostedComposerStepper from "./composer-stepper.vue";
 import { recordingDisplayLabel } from "../../app/studio/recording-display";
-import { hostedRunStartErrorCopy } from "./run-start-error";
+import {
+  hostedRunStartErrorCopy,
+  type HostedRunStartErrorAction,
+} from "./run-start-error";
 
 interface Recipe { id: string; label: string; revision: string }
 useSeoMeta({
@@ -29,6 +32,7 @@ const submitting = ref(false);
 const submitError = ref("");
 const submitNextAction = ref("");
 const submitErrorCode = ref("");
+const submitErrorAction = ref<HostedRunStartErrorAction>();
 const summary = ref<{
   recipe: string;
   focus: string;
@@ -105,6 +109,7 @@ async function start(): Promise<void> {
   submitError.value = "";
   submitNextAction.value = "";
   submitErrorCode.value = "";
+  submitErrorAction.value = undefined;
   try {
     const response = await $fetch<{ job: HostedJobView }>("/api/hosted/composer/jobs", {
       method: "POST",
@@ -122,8 +127,23 @@ async function start(): Promise<void> {
     submitError.value = copy.message;
     submitNextAction.value = copy.nextAction;
     submitErrorCode.value = typeof code === "string" ? code : "start_failed";
+    submitErrorAction.value = copy.action;
   } finally {
     submitting.value = false;
+  }
+}
+
+async function handleSubmitErrorAction(): Promise<void> {
+  if (submitErrorAction.value?.kind === "retry") {
+    await start();
+    return;
+  }
+  if (submitErrorAction.value?.kind === "refresh") {
+    reloadNuxtApp({ force: true });
+    return;
+  }
+  if (submitErrorAction.value?.kind === "contact-support") {
+    await navigator.clipboard.writeText(submitErrorCode.value);
   }
 }
 
@@ -186,8 +206,23 @@ function formatDate(value: string): string {
       <p v-if="submitErrorCode" class="mt-3 text-sm text-muted">
         Support code: <code>{{ submitErrorCode }}</code>
       </p>
-      <UButton v-if="submitErrorCode === 'recipe_receipt_mismatch' || submitErrorCode === 'recipe_not_found'" class="mt-3" to="/hosted/new/intent" color="neutral" variant="outline" label="Choose what to find" />
-      <UButton v-else-if="submitErrorCode && submitErrorCode !== 'principal_spend_cap_exceeded'" class="mt-3" to="/hosted/new/recording" color="neutral" variant="outline" label="Upload recording again" />
+      <UButton
+        v-if="submitErrorAction && 'to' in submitErrorAction"
+        class="mt-3"
+        :to="submitErrorAction.to"
+        color="neutral"
+        variant="outline"
+        :label="submitErrorAction.label"
+      />
+      <UButton
+        v-else-if="submitErrorAction"
+        class="mt-3"
+        type="button"
+        color="neutral"
+        variant="outline"
+        :label="submitErrorAction.label"
+        @click="handleSubmitErrorAction"
+      />
     </div>
   </main>
 </template>
