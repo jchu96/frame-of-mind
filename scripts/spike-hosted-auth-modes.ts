@@ -298,7 +298,9 @@ async function githubLogin(
     await expectSession(origin, cookie, email, accessToken ? "cloudflare-access+better-auth" : "better-auth", accessToken);
     return cookie;
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -327,7 +329,9 @@ async function magicLinkLogin(
     if (!cookie) throw new Error("Magic-link fixture did not issue a session.");
     return cookie;
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -364,7 +368,9 @@ async function expectUninvitedMagicLinkDenied(
       throw new Error(`Uninvited magic-link request wrote verification state: ${verificationRows}`);
     }
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -406,7 +412,9 @@ async function expectStackedRebindDenied(
     const sessionCookie = (await context.cookies(origin)).find((cookie) => cookie.name.includes("session_token"));
     if (sessionCookie) throw new Error("Stacked identity mismatch received a session cookie.");
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -433,7 +441,9 @@ async function expectUnknownLoginDenied(
     }
     if (await cookieHeader(context, origin)) throw new Error("Unknown email received a session cookie.");
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
