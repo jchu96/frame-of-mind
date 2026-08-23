@@ -1,6 +1,6 @@
 # ADR 0018: Host Studio creation behind principal-scoped Cloudflare execution
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-22
 
 ## Invariant
@@ -134,7 +134,7 @@ retention. R2 is opt-in for retained media only.
 Rejected because local process state and request lifetime are not durable
 hosted execution boundaries. The port receives a Workflows adapter instead.
 
-## Amendment 2 (proposed 2026-08-23, not yet adopted): browser → Gemini direct upload
+## Amendment 2 (adopted 2026-08-23): browser → Gemini direct upload
 
 **Supersedes Amendment 1.** Amendment 1 (4 MiB proxied parts, PR #65) is
 withdrawn; the Worker leaves the recording byte path entirely.
@@ -149,7 +149,7 @@ to that one file (it cannot create, list, or read files); the session has a
 provider-side TTL and supports offset query/resume after a client restart;
 `files.get` returns `sizeBytes` and `sha256Hash` of the uploaded bytes.
 
-**Decision (proposed).**
+**Decision.**
 - `POST /api/hosted/media` creates a principal-owned media session with a
   declared size, declared SHA-256, and MIME type, opens the Gemini resumable
   session server-side, stores the Gemini file name, and returns the session
@@ -179,8 +179,7 @@ Workflows-Worker / Nuxt-Worker secret and is never sent to the browser.
 by part size × concurrency and measured to materialize in isolate memory.
 Private R2 staging: adds a second custody of ephemeral recordings.
 
-**Adoption.** Takes effect when the maintainer merges this amendment; Phase 2
-is then re-planned as: 2.1 media session + cap, 2.2 browser direct upload +
-resume, 2.3 seal with size+digest verification, 2.4 abandoned-session
-cleanup — each with built-Worker contracts using a fake Files API.
-
+**Adoption.** Adopted for Phase 2 on 2026-08-23. Phase 2 is re-planned as:
+2.1 media session + cap, 2.2 browser direct upload + resume, 2.3 seal with
+size+digest verification, and 2.4 abandoned-session cleanup. The built-Worker
+contract uses a fake Files API and real Chromium.

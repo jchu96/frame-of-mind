@@ -430,3 +430,7 @@
   too late; use a `/sign-in/magic-link` before-hook when denial must precede
   both storage and delivery. The verify URL is a first-fetch, session-minting
   GET, so mail scanners can consume it.
+- Cloudflare/workerd `fetch` rejects `redirect: "error"`; use
+  `redirect: "manual"` for Gemini Files calls and treat every non-2xx response
+  (including redirects) as a provider error. Browser/Bun fetch acceptance is
+  not sufficient evidence for the deployed edge runtime.

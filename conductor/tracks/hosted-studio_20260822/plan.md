@@ -2,7 +2,7 @@
 
 **Track ID:** `hosted-studio_20260822`
 **Spec:** [spec.md](./spec.md)
-**Status:** Active — Phases 1, 3, and 4 complete; Phase 5 spend/telemetry complete
+**Status:** Active — Phases 1–4 complete; Phase 5 spend/telemetry complete
 
 ## Overview
 
@@ -130,31 +130,28 @@ to release this security hardening.
       Trust-boundary review trigger:
       the platform is asked to carry untrusted recording bytes through a
       shared 128 MB isolate.
-- [ ] Task 2.1: Add the browser hashing worker using `hash-wasm`
-      `createSHA256().update()/digest()` over bounded `Blob.slice()` chunks,
-      with cancellation/progress and small-fixture WebCrypto oracle tests.
-      Trust-boundary review trigger: untrusted recording bytes are summarized
-      into the digest that gates remote execution.
-- [ ] Task 2.2: Implement principal-scoped media session creation and sealed
-      Gemini resumable-session receipts without returning provider URLs or
-      keys, plus the documented key-rotation abort procedure.
-      Trust-boundary review trigger: the Worker creates and encrypts
-      provider-side upload authority on a user's behalf.
-- [ ] Task 2.3: Implement `POST /api/hosted/media/:id/parts` as a raw-body
-      request capped by the adopted hosted limit (Task 2.0d proposes 4 MiB,
-      including a final shorter part) with bounded Content-Length, offset,
-      part, and digest headers—never multipart. On every start/retry query Gemini's
-      accepted offset and forward only the unaccepted suffix; D1 completed-part
-      receipts never authorize overlap. Keep this hosted cap distinct from and
-      leave shared local `MAX_MEDIA_PART_BYTES` untouched. Trust-boundary review trigger:
-      recording bytes cross browser → Worker → provider without persistence.
-- [ ] Task 2.4: Finalize by normalizing and comparing client SHA-256 with
-      Gemini `sha256Hash`, fail closed as `media_digest_mismatch`, and delete
-      mismatched remote files. Trust-boundary review trigger: provider metadata
-      becomes eligible to authorize a Workflow.
+- [x] Task 2.1: Create a principal-owned pending media row atomically before
+      calling Gemini, enforce the configured open-session cap (default 2),
+      size ceiling, and bounded session TTL, then return only the opaque media
+      ID, write-only resumable URL, and provider-aligned part hint. Encrypt the
+      capability in D1 and never return the API key.
+- [x] Task 2.2: Hash the complete recording incrementally in a Web Worker,
+      upload browser → Gemini in provider-aligned chunks, persist confirmed
+      offset in a session-scoped draft, query Gemini after reload, and exclude
+      a second tab with `navigator.locks`. Explicit cancellation abandons the
+      session; progress distinguishes hashing from confirmed upload bytes.
+- [x] Task 2.3: Seal only after an independent Files API query and `files.get`.
+      Require exact declared size, MIME, and present SHA-256 after hex/base64
+      normalization; mismatch returns `media_seal_mismatch`, deletes the exact
+      Gemini file, and writes no sealed receipt. A D1 compare-and-set gives one
+      seal caller authority.
+- [x] Task 2.4: Delete canceled and expired unsealed sessions, retry failed
+      cleanup through the principal-scoped media janitor, and keep a short
+      grace window around an active seal. `ensure_gemini_file` continues to
+      accept only the sealed-media table; upload sessions grant no Workflow
+      authority.
 
-**Task 2.0 status (2026-08-22): Complete — GO at 4 MiB parts pending ADR
-amendment after 2.0d.** The original
+**Task 2.0 status (2026-08-22): Complete — superseded by Amendment 2.** The original
 stock-Nitro run materialized the body before H3 and `hash-wasm` attempted
 forbidden runtime WASM compilation. Task 2.0b's exact-path wrapper and
 `DigestStream` looked bounded against a fast sink, but adversarial review found
@@ -172,9 +169,10 @@ parts at concurrency 2 and 4. All six combinations stayed below both the
 cap; the largest 4 MiB × 4 case measured 2,842,764 bytes for both hold and
 peak growth. Runtime truncation is legitimate when forwarded bytes equal the
 declaration; a 7 MiB short source declared as 8 MiB was rejected with no sink
-receipt. The proposed contract is 4 MiB parts with at most four concurrent
-parts per principal. Tasks 2.1–2.4 remain blocked until ADR 0018 adopts that
-amendment. The decision record and second-fallback private-R2 draft are in
+receipt. The measured proxy proposal was 4 MiB parts with at most four
+concurrent parts per principal. The 2026-08-23 real-API spike then proved the
+safer direct capability boundary, and ADR 0018 Amendment 2 retired the proxy
+design. The historical evidence and second-fallback private-R2 draft remain in
 [`hosted-streaming-spike-2026-08-22.md`](../../../docs/spikes/hosted-streaming-spike-2026-08-22.md)
 and
 [`adr-0018-private-r2-staging-amendment-draft-2026-08-22.md`](../../../docs/spikes/adr-0018-private-r2-staging-amendment-draft-2026-08-22.md).
@@ -183,18 +181,18 @@ and
 
 - [x] Task 2.0 proves a materialization-tolerant 4 MiB × 4 construction bound,
       exact forwarded-byte receipts, short-part denial, and partial abort.
-- [ ] Bounded-memory browser tests, raw 8 MiB request limits, killed-mid-part
-      Gemini-offset resume, overlap denial, provider digest fixtures, mismatch
-      cleanup, and cross-principal media denial all pass.
+- [x] `scripts/test-hosted-media-http.ts` exercises the built Worker with a fake
+      Files API and real Chromium: cap-before-provider admission, keyless direct
+      upload, reload/query resume, two-tab exclusion, exact seal, size/digest/
+      missing-hash rejection, foreign-principal 404, cancel, expired cleanup,
+      and the seal/janitor race. Focused tests make provider offset authoritative
+      and compare incremental hashing with an independent SHA-256 oracle.
 
 ### Stop/Go Gate
 
-Stop immediately if Task 2.0 does not prove the adopted part/concurrency bound
-on the built Worker. Task 2.0d's 4 MiB × 4 result is proposal evidence, not an
-adopted contract: Tasks 2.1–2.4 cannot start until ADR 0018 is amended.
-Thereafter continue only when the full-file digest is incremental, one-shot
-WebCrypto is test-only, Gemini offset is resume authority, and no Workflow can
-start from an unsealed or mismatched receipt.
+Complete. The full-file digest is incremental, Gemini offset is resume
+authority, the Worker never carries recording bytes, and no Workflow can start
+from an unsealed or mismatched receipt.
 
 ## Phase 3: Durable Workflow Execution
 
@@ -413,10 +411,9 @@ prove retention, expiry, playback, and screenshot provenance.
       and agents creation authority.
 - [ ] Task 6.3: Run module-output dry-run checks, migration rehearsal on a D1
       clone, Workflow binding validation, boundary scanning, local byte-stable
-      import regression, and rollback drills. Record the active Cloudflare zone
-      plan/body ceiling from the dashboard because Wrangler cannot read it; the
-      fixed 4 MiB part from ADR 0018 Amendment 1 must remain below the lowest
-      documented tier.
+      import regression, and rollback drills. Record the direct-upload session
+      cap, declared-size ceiling, and TTL; confirm the ceiling remains within
+      the current Gemini Files limit and approved product policy.
       Trust-boundary review trigger: release configuration can bind production
       data and durable execution resources.
 - [ ] Task 6.4: Complete adversarial Tier A review, synthetic canary run,
