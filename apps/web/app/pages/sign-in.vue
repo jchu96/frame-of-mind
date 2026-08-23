@@ -4,7 +4,7 @@ import type { FormSubmitEvent } from "@nuxt/ui";
 import type { SessionInfo } from "../../shared/types";
 
 definePageMeta({ layout: false });
-useHead({ title: "Sign in" });
+useHead({ title: "Sign in · Frame of Mind" });
 
 const route = useRoute();
 const next = computed(() => safeHostedNext(route.query.next));

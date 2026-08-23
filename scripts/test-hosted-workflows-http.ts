@@ -1,5 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
@@ -12,8 +11,10 @@ import type { SealedHostedMediaReceipt } from "../apps/workflows/src/contracts";
 import {
   GeminiHostedAnalysisProvider,
 } from "../apps/workflows/src/provider";
+import { listBuiltInRecipes } from "../src/recipes";
 import { hostedSpendEstimator } from "../apps/workflows/src/spend";
 import { createE2EEnvironment } from "./e2e-environment";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 import {
   betterAuthBrowserLogins,
   betterAuthFixtureVars,
@@ -22,15 +23,17 @@ import {
   startFakeGithub,
 } from "./hosted-auth-fixture";
 
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-workflows-"));
-const persistRoot = join(temporaryRoot, "wrangler-state");
+const isolation = await createE2EIsolation("hosted-workflows");
+const temporaryRoot = isolation.root;
+const persistRoot = isolation.persistRoot;
 const webConfigPath = join(temporaryRoot, "web.wrangler.jsonc");
 const disabledWebConfigPath = join(temporaryRoot, "web-disabled.wrangler.jsonc");
 const workflowConfigPath = join(temporaryRoot, "workflow.wrangler.jsonc");
 const seedPath = join(temporaryRoot, "seed.sql");
 const workflowOutdir = join(temporaryRoot, "workflow-bundle");
-const databaseName = "frame-of-mind-hosted-workflow-contract";
-const databaseId = "00000000-0000-0000-0000-000000000004";
+const databaseName = isolation.databaseName;
+const databaseId = isolation.databaseId;
+const workflowServiceName = isolation.workerName("hosted-workflow");
 const audience = "frame-of-mind-hosted-workflow-contract";
 const keyId = "hosted-workflow-contract-key";
 let principalA = "hosted-workflow-principal-a";
@@ -45,6 +48,10 @@ const overrunMedia = "media_hosted_overrun_0001";
 const janitorMedia = "media_hosted_janitor_0001";
 const missingHashMedia = "media_hosted_missing_hash_0001";
 const janitorAttempt = "attempt_hosted_janitor_0001";
+const recipeStartMedia = listBuiltInRecipes().map((recipe, index) => ({
+  recipeId: recipe.id,
+  mediaId: `media_recipe_start_${String(index + 1).padStart(2, "0")}`,
+}));
 const mediaSha256 = "a".repeat(64);
 const contractSpendPlan = hostedSpendEstimator.estimate(1, {
   videoTokensPerSecond: 300,
@@ -92,7 +99,10 @@ try {
     "/api/hosted/composer/jobs",
     "/api/hosted/spend/janitor",
     "/hosted/activity",
+    "/review/:runId",
+    "/api/hosted/jobs/:id/support-receipt",
     "data-hosted-studio-shell",
+    "data-studio-review",
     "Hosted Workflow bindings are unavailable",
     "hosted-video-v2",
     "spend_reservation_created",
@@ -118,9 +128,9 @@ try {
     },
   });
   const issuer = `http://127.0.0.1:${jwksServer.port}`;
-  const workerPort = await reservePort();
+  const workerPort = await isolation.reservePort();
   const baseUrl = `http://127.0.0.1:${workerPort}`;
-  const disabledPort = await reservePort();
+  const disabledPort = await isolation.reservePort();
   const disabledOrigin = `http://127.0.0.1:${disabledPort}`;
   fakeGithub = hostedContractAuthMode === "better-auth"
     ? startFakeGithub([
@@ -141,7 +151,7 @@ try {
       };
   await writeFile(webConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-web-contract",
+    name: isolation.workerName("hosted-web"),
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
@@ -152,7 +162,7 @@ try {
     d1_databases: [d1Binding()],
     services: [{
       binding: "HOSTED_WORKFLOWS",
-      service: "frame-of-mind-hosted-workflow-contract",
+      service: workflowServiceName,
     }],
     vars: {
       ...authVars,
@@ -165,7 +175,7 @@ try {
   }, null, 2));
   await writeFile(disabledWebConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-web-disabled-contract",
+    name: isolation.workerName("hosted-web-disabled"),
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
@@ -173,7 +183,7 @@ try {
     d1_databases: [d1Binding()],
     services: [{
       binding: "HOSTED_WORKFLOWS",
-      service: "frame-of-mind-hosted-workflow-contract",
+      service: workflowServiceName,
     }],
     vars: {
       ...(hostedContractAuthMode === "better-auth"
@@ -185,13 +195,13 @@ try {
   }, null, 2));
   await writeFile(workflowConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-workflow-contract",
+    name: workflowServiceName,
     main: resolve("apps/workflows/src/index.ts"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat"],
     d1_databases: [d1Binding()],
     workflows: [{
-      name: "frame-of-mind-analysis-contract",
+      name: isolation.workerName("hosted-analysis"),
       binding: "HOSTED_WORKFLOW",
       class_name: "HostedAnalysisWorkflow",
     }],
@@ -201,6 +211,8 @@ try {
       HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID: crashMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_STEP: "transcribe",
       HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID: overrunMedia,
+      HOSTED_FAKE_STAGE_DELAY_MS: "3000",
+      HOSTED_FAKE_STAGE_DELAY_MEDIA_ID: normalMedia,
       HOSTED_FAKE_FILE_MISSING_HASH_MEDIA_ID: missingHashMedia,
     },
   }, null, 2));
@@ -231,13 +243,14 @@ try {
     await writeSeed();
   }
 
-  const workflowPort = await reservePort();
+  const workflowPort = await isolation.reservePort();
   workflowWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
     "--config", workflowConfigPath,
     "--persist-to", persistRoot,
     "--ip", "127.0.0.1",
     "--port", String(workflowPort),
+    "--inspector-port", "0",
     "--log-level", "error",
     "--show-interactive-dev-session=false",
   ], {
@@ -289,6 +302,7 @@ try {
     "--persist-to", persistRoot,
     "--ip", "127.0.0.1",
     "--port", String(workerPort),
+    "--inspector-port", "0",
     "--log-level", "error",
     "--show-interactive-dev-session=false",
   ], {
@@ -334,7 +348,31 @@ try {
     principalRace = await betterAuthPrincipal("workflow-race@example.test");
     principalOverrun = await betterAuthPrincipal("workflow-overrun@example.test");
     principalJanitor = await betterAuthPrincipal("workflow-janitor@example.test");
+    await stopContractWorker(webWorker, webOutput);
+    webWorker = undefined;
+    webOutput = undefined;
+    await stopContractWorker(workflowWorker, workflowOutput);
+    workflowWorker = undefined;
+    workflowOutput = undefined;
     await writeSeed();
+    const restartedWorkflow = await startContractWorker({
+      configPath: workflowConfigPath,
+      persistRoot,
+      port: workflowPort,
+      readinessUrl: `http://127.0.0.1:${workflowPort}/health`,
+      readinessStatus: 200,
+    });
+    workflowWorker = restartedWorkflow.worker;
+    workflowOutput = restartedWorkflow.output;
+    const restartedWeb = await startContractWorker({
+      configPath: webConfigPath,
+      persistRoot,
+      port: workerPort,
+      readinessUrl: `${baseUrl}/api/health`,
+      readinessStatus: 403,
+    });
+    webWorker = restartedWeb.worker;
+    webOutput = restartedWeb.output;
   }
   disabledWebWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
@@ -342,6 +380,7 @@ try {
     "--persist-to", persistRoot,
     "--ip", "127.0.0.1",
     "--port", String(disabledPort),
+    "--inspector-port", "0",
     "--log-level", "error",
     "--show-interactive-dev-session=false",
   ], {
@@ -365,6 +404,8 @@ try {
     "/hosted/new/run",
     "/hosted/activity",
     "/hosted/activity/attempt_dark_0001",
+    "/review/hosted_attempt_dark_0001",
+    "/api/hosted/jobs/attempt_dark_0001/support-receipt",
   ]) {
     await expectStatus(authenticatedFetch(disabledOrigin, path, tokenA), 404, `disabled ${path}`);
   }
@@ -386,51 +427,6 @@ try {
   disabledWebOutput = undefined;
   console.log("HOSTED_WORKFLOW dark=PASS runtime_disabled_routes_404");
 
-  const raceSize = 10;
-  const raceResponses = await Promise.all(
-    Array.from({ length: raceSize }, (_, index) => createJobResponse(
-      baseUrl,
-      tokenRace,
-      cancelMedia,
-      `http-race-${String(index + 1).padStart(2, "0")}`,
-    )),
-  );
-  const raceCodes = await Promise.all(raceResponses.map(async (response) => {
-    const body = await response.clone().json().catch(() => undefined) as
-      | { data?: { code?: string } }
-      | undefined;
-    return body?.data?.code ?? `http_${response.status}`;
-  }));
-  const admitted = raceResponses.filter((response, index) =>
-    [200, 201].includes(response.status)
-    || (response.status === 503 && raceCodes[index] === "hosted_workflow_dispatch_failed")
-  );
-  const rejected = raceResponses.filter((response) => response.status === 429);
-  console.log(
-    `HOSTED_SPEND race_statuses=${raceResponses.map((response) => response.status).join(",")}`,
-  );
-  console.log(
-    `HOSTED_SPEND race_codes=${raceCodes.join(",")}`,
-  );
-  assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
-  assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
-  for (const response of rejected) {
-    const body = await json<{ data?: { code?: string } }>(response);
-    assertEqual(body.data?.code, "principal_spend_cap_exceeded", "HTTP race cap code");
-  }
-  for (const response of admitted) await response.body?.cancel();
-  assertEqual(
-    await queryCount(
-      "hosted_analysis_attempts",
-      `principal_sub = '${principalRace}' AND idempotency_key LIKE 'http-race-%'`,
-    ),
-    3,
-    "HTTP race created Workflows",
-  );
-  console.log(
-    `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3}`,
-  );
-
   const janitorResponse = await json<{
     ok: boolean;
     released: number;
@@ -439,6 +435,7 @@ try {
     method: "POST",
     headers: mutationHeaders(baseUrl, tokenJanitor),
     body: "{}",
+    signal: AbortSignal.timeout(30_000),
   }), 200, "expired reservation janitor"));
   assertEqual(janitorResponse, { ok: true, released: 1, committed: 0 }, "janitor result");
   const janitorReplay = await json<{
@@ -449,6 +446,7 @@ try {
     method: "POST",
     headers: mutationHeaders(baseUrl, tokenJanitor),
     body: "{}",
+    signal: AbortSignal.timeout(30_000),
   }), 200, "idempotent expired reservation janitor"));
   assertEqual(janitorReplay, { ok: true, released: 0, committed: 0 }, "janitor replay");
   assertEqual(
@@ -472,6 +470,22 @@ try {
     manifest: published.manifest,
   });
   assertEqual(published.runId, normalTerminal.job.runId, "published viewer run ID");
+  const supportReceipt = await (await expectStatus(
+    authenticatedFetch(baseUrl, `/api/hosted/jobs/${normal.job.id}/support-receipt`, tokenA),
+    200,
+    "principal support receipt",
+  )).text();
+  if (!supportReceipt.startsWith("Frame of Mind support receipt v1\n")) {
+    throw new Error("Hosted support receipt did not use the closed support format.");
+  }
+  const reviewHtml = await (await expectStatus(
+    authenticatedFetch(baseUrl, `/review/${normalTerminal.job.runId}`, tokenA),
+    200,
+    "principal hosted review workspace",
+  )).text();
+  if (!reviewHtml.includes("data-studio-review=\"hosted\"")) {
+    throw new Error("Hosted review workspace did not render its principal-scoped module.");
+  }
 
   const overrun = await createJob(
     baseUrl,
@@ -519,6 +533,37 @@ try {
     "foreign activity list",
   ));
   assertEqual(listB.jobs, [], "foreign activity list isolation");
+  const hostedCatalog = await json<{
+    recipes: Array<{ id: string; revision: string }>;
+  }>(await expectStatus(
+    authenticatedFetch(baseUrl, "/api/hosted/recipes", tokenB),
+    200,
+    "hosted built-in recipe catalog",
+  ));
+  assertEqual(
+    hostedCatalog.recipes.map((recipe) => recipe.id),
+    listBuiltInRecipes().map((recipe) => recipe.id),
+    "hosted built-in recipe IDs",
+  );
+  for (const fixture of recipeStartMedia) {
+    const catalogRecipe = hostedCatalog.recipes.find(
+      (recipe) => recipe.id === fixture.recipeId,
+    );
+    if (!catalogRecipe) {
+      throw new Error(`Hosted catalog omitted built-in recipe ${fixture.recipeId}.`);
+    }
+    const started = await json<JobResponse>(await expectStatus(composerJobResponse(
+      baseUrl,
+      tokenB,
+      fixture.mediaId,
+      `recipe-start-${fixture.recipeId}`,
+      fixture.recipeId,
+      catalogRecipe.revision,
+    ), 201, `start built-in recipe ${fixture.recipeId}`));
+    const terminal = await waitForTerminal(baseUrl, tokenB, started.job.id);
+    assertEqual(terminal.job.stage, "succeeded", `complete built-in recipe ${fixture.recipeId}`);
+  }
+  console.log("HOSTED_WORKFLOW recipes=PASS every_built_in_started_from_catalog_receipt");
   await expectStatus(
     authenticatedFetch(baseUrl, `/api/hosted/jobs/${normal.job.id}`, tokenB),
     404,
@@ -538,6 +583,16 @@ try {
     authenticatedFetch(baseUrl, `/api/runs/${normalTerminal.job.runId}`, tokenB),
     404,
     "cross-principal published run",
+  );
+  await expectStatus(
+    authenticatedFetch(baseUrl, `/review/${normalTerminal.job.runId}`, tokenB),
+    404,
+    "cross-principal hosted review workspace",
+  );
+  await expectStatus(
+    authenticatedFetch(baseUrl, `/api/hosted/jobs/${normal.job.id}/support-receipt`, tokenB),
+    404,
+    "cross-principal support receipt",
   );
   await createJob(baseUrl, tokenB, normalMedia, "foreign-media-create", 404);
   await expectStatus(fetch(`${baseUrl}/api/hosted/composer/jobs`, {
@@ -619,7 +674,7 @@ try {
   );
   await runChecked([
     "node", wranglerBin, "workflows", "instances", "restart",
-    "frame-of-mind-analysis-contract", workflowInstanceId,
+    isolation.workerName("hosted-analysis"), workflowInstanceId,
     "--local", "--port", String(workflowPort),
     "--config", workflowConfigPath,
     "--from-step-name", "transcribe",
@@ -716,6 +771,71 @@ try {
   console.log(
     "HOSTED_SPEND reserve=PASS race=unit_contract reconcile=provider_usage create_cap=429 composer_cap=429 workflow_created=false",
   );
+  // Keep the intentionally concurrent admission burst last. Local workerd may
+  // hold those workflow dispatches while exercising the cap, so no later
+  // contract should depend on the same local Workflow lane becoming idle.
+  const raceSize = 10;
+  const raceResponses = await Promise.all(
+    Array.from({ length: raceSize }, (_, index) => createJobResponse(
+      baseUrl,
+      tokenRace,
+      cancelMedia,
+      `http-race-${String(index + 1).padStart(2, "0")}`,
+    )),
+  );
+  const raceCodes = await Promise.all(raceResponses.map(async (response) => {
+    const body = await response.clone().json().catch(() => undefined) as
+      | { data?: { code?: string } }
+      | undefined;
+    return body?.data?.code ?? `http_${response.status}`;
+  }));
+  const admitted = raceResponses.filter((response, index) =>
+    [200, 201].includes(response.status)
+    || (response.status === 503 && raceCodes[index] === "hosted_workflow_dispatch_failed")
+  );
+  const rejected = raceResponses.filter((response) => response.status === 429);
+  console.log(
+    `HOSTED_SPEND race_statuses=${raceResponses.map((response) => response.status).join(",")}`,
+  );
+  console.log(`HOSTED_SPEND race_codes=${raceCodes.join(",")}`);
+  if (admitted.length !== 3 || rejected.length !== raceSize - 3) {
+    const responseReceipts = await Promise.all(raceResponses.map(async (response, index) => ({
+      request: index + 1,
+      status: response.status,
+      body: await response.clone().text(),
+    })));
+    const databaseReceipt = await queryRaceFailureReceipt();
+    console.error(`HOSTED_SPEND race_failure=${JSON.stringify({
+      responses: responseReceipts,
+      database: databaseReceipt,
+    })}`);
+  }
+  assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
+  assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
+  for (const response of rejected) {
+    const body = await json<{ data?: { code?: string } }>(response);
+    assertEqual(body.data?.code, "principal_spend_cap_exceeded", "HTTP race cap code");
+  }
+  const admittedJobs = await Promise.all(
+    admitted.map((response) => json<JobResponse>(response)),
+  );
+  assertEqual(
+    await queryCount(
+      "hosted_analysis_attempts",
+      `principal_sub = '${principalRace}' AND idempotency_key LIKE 'http-race-%'`,
+    ),
+    3,
+    "HTTP race created Workflows",
+  );
+  const admittedTerminals = await Promise.all(
+    admittedJobs.map(({ job }) => waitForTerminal(baseUrl, tokenRace, job.id)),
+  );
+  for (const terminal of admittedTerminals) {
+    assertEqual(terminal.job.stage, "succeeded", "HTTP race terminal stage");
+  }
+  console.log(
+    `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3}`,
+  );
   console.log("HOSTED_SPEND_CONTRACT PASSED");
   console.log("HOSTED_STUDIO_CONTRACT PASSED");
   console.log("HOSTED_WORKFLOW_CONTRACT PASSED");
@@ -756,7 +876,7 @@ try {
   if (process.env.KEEP_HOSTED_WORKFLOW_TEMP === "1") {
     console.error(`Hosted Workflow temp retained at ${temporaryRoot}`);
   } else {
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await isolation.cleanup();
   }
 }
 
@@ -901,6 +1021,12 @@ function seedSql(): string {
     { principal: principalRace, mediaId: cancelMedia, retention: "retained", expiresAt },
     { principal: principalOverrun, mediaId: overrunMedia, retention: "retained", expiresAt },
     { principal: principalJanitor, mediaId: janitorMedia, retention: "retained", expiresAt: expiredAt },
+    ...recipeStartMedia.map(({ mediaId }) => ({
+      principal: principalB,
+      mediaId,
+      retention: "retained",
+      expiresAt,
+    })),
     { principal: principalB, mediaId: missingHashMedia, retention: "retained", expiresAt },
   ];
   const mediaRows = mediaFixtures.map(({ principal, mediaId, retention, expiresAt: mediaExpiresAt }) =>
@@ -928,7 +1054,7 @@ function seedSql(): string {
       principal_sub, principal_email, cap_units, committed_units, updated_at
     ) VALUES
       ('${principalA}', 'seat@example.test', ${principalACapUnits}, 0, '${sealedAt}'),
-      ('${principalB}', 'seat@example.test', ${principalACapUnits}, 0, '${sealedAt}'),
+      ('${principalB}', 'seat@example.test', ${contractSpendPlan.estimatedTokens * (recipeStartMedia.length + 1)}, 0, '${sealedAt}'),
       ('${principalRace}', 'seat@example.test', ${raceCapUnits}, 0, '${sealedAt}'),
       ('${principalOverrun}', 'seat@example.test', ${contractSpendPlan.estimatedTokens * 2}, 0, '${sealedAt}'),
       ('${principalJanitor}', 'seat@example.test', ${contractSpendPlan.estimatedTokens}, 0, '${sealedAt}');
@@ -966,6 +1092,12 @@ async function verifyHostedBrowserContract(
   token: string,
   mediaId: string,
 ): Promise<void> {
+  const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-2");
+  const captureScreenshots = hostedContractAuthMode === "cloudflare-access";
+  if (captureScreenshots) {
+    await rm(screenshotRoot, { recursive: true, force: true });
+    await mkdir(screenshotRoot, { recursive: true });
+  }
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext(hostedContractAuthMode === "cloudflare-access"
@@ -978,26 +1110,153 @@ async function verifyHostedBrowserContract(
       }));
     }
     const page = await context.newPage();
+    const hydrationMismatches: string[] = [];
+    page.on("console", (message) => {
+      if (message.text().toLowerCase().includes("hydration")
+        && message.text().toLowerCase().includes("mismatch")) {
+        hydrationMismatches.push(message.text());
+      }
+    });
+    const capture = async (name: string): Promise<void> => {
+      assertEqual(await page.locator("h1").count(), 1, `${name} single h1`);
+      if (!captureScreenshots) return;
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.screenshot({ path: join(screenshotRoot, `${name}-desktop.png`), fullPage: true });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({ path: join(screenshotRoot, `${name}-mobile.png`), fullPage: true });
+      await page.setViewportSize({ width: 1280, height: 900 });
+    };
     await page.goto(`${origin}/hosted/new/intent`);
-    await page.getByRole("button", { name: "Save intent" }).click();
-    await page.goto(`${origin}/hosted/new/context`);
-    await page.getByRole("button", { name: "Use video only" }).click();
+    await capture("01-intent-empty");
+    assertEqual(await page.getByRole("navigation").count(), 1, "single hosted navigation landmark");
+    assertEqual(await page.getByRole("group", { name: "New analysis progress" }).count(), 1, "single composer progress group");
+    assertEqual(await page.locator("[data-composer-step]").count(), 3, "three composer steps");
+    const announcedSteps = await page.locator("[data-composer-step]").evaluateAll((steps) =>
+      steps.map((step) => ({
+        visible: step.querySelector("[aria-hidden=true]")?.textContent?.trim(),
+        announced: step.querySelector(".sr-only")?.textContent?.trim(),
+      }))
+    );
+    assertEqual(announcedSteps, [
+      { visible: "1", announced: "Step 1 of 3:" },
+      { visible: "2", announced: "Step 2 of 3:" },
+      { visible: "3", announced: "Step 3 of 3:" },
+    ], "visible and announced composer step numbers");
+    const runStep = page.locator("[data-composer-step=run]");
+    assertEqual(await runStep.isDisabled(), true, "Run step disabled before prerequisites");
+    await runStep.click({ force: true });
+    assertEqual(new URL(page.url()).pathname, "/hosted/new/intent", "disabled Run stays on Intent");
+    const skipLink = page.getByRole("link", { name: "Skip to content" });
+    await skipLink.focus();
+    const skipBox = await skipLink.boundingBox();
+    if (!skipBox || skipBox.width < 80 || skipBox.height < 20) {
+      throw new Error("Focused skip link did not become visibly usable.");
+    }
+    await page.keyboard.press("Escape");
+    const goalCards = page.locator("[aria-label^='Choose ']");
+    const firstGoalBox = await goalCards.nth(0).boundingBox();
+    const secondGoalBox = await goalCards.nth(1).boundingBox();
+    if (!firstGoalBox || !secondGoalBox || firstGoalBox.y !== secondGoalBox.y) {
+      throw new Error("Intent goals did not render two-up at the desktop breakpoint.");
+    }
+    await goalCards.first().hover();
+    const hoverRing = await goalCards.first().evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        shadow: style.getPropertyValue("--tw-ring-shadow"),
+        color: style.getPropertyValue("--tw-ring-color"),
+      };
+    });
+    if (!hoverRing.shadow.includes("2px") || !hoverRing.color.trim()) {
+      throw new Error("Intent goal hover ring was not emitted by the hosted Tailwind build.");
+    }
+    await page.goto(`${origin}/hosted/new/run`);
+    await page.waitForURL(/\/hosted\/new\/intent\?reason=/);
+    await page.getByText("Complete Intent before opening Run.").waitFor();
+    const focus = page.getByLabel("Optional focus");
+    await focus.waitFor();
+    await focus.fill("Only the billing bug");
+    await page.getByRole("button", { name: /Issue review/ }).click();
+    const selectedRing = await page.getByRole("button", { name: "Choose Issue review" }).evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        shadow: style.getPropertyValue("--tw-ring-shadow"),
+        color: style.getPropertyValue("--tw-ring-color"),
+      };
+    });
+    if (!selectedRing.shadow.includes("2px") || !selectedRing.color.trim()) {
+      throw new Error("Selected Intent goal ring was not emitted by the hosted Tailwind build.");
+    }
+    await capture("02-intent-selected");
+    await page.goto(`${origin}/hosted/new/run`);
+    await page.waitForURL(/\/hosted\/new\/recording\?reason=/);
+    await page.getByText("Add a recording before Review & start.").waitFor();
+    await page.getByText("Drop a recording here").waitFor();
+    await page.getByRole("link", { name: "Back to Activity" }).waitFor();
+    await page.getByText("Delete after analysis", { exact: true }).waitFor();
+    await page.getByText("Keep temporarily", { exact: true }).waitFor();
+    await capture("03-recording-empty");
     await page.evaluate((id) => {
       sessionStorage.setItem(
         "hosted:frame-of-mind:studio:media-upload",
         JSON.stringify({ schemaVersion: 1, mediaSessionId: id }),
       );
     }, mediaId);
-    await page.goto(`${origin}/hosted/new/recording`);
+    await page.reload();
     await page.locator("[data-hosted-media-ready=true]").waitFor();
-    await page.goto(`${origin}/hosted/new/run`);
+    await capture("04-recording-ready");
+    await page.getByRole("link", { name: "Continue" }).click();
+    await page.waitForURL(/\/hosted\/new\/run$/);
+    await page.locator("[data-summary-card]").first().waitFor();
+    assertEqual(await page.locator("[data-summary-card]").count(), 3, "three review summary cards");
+    await page.getByText("Sources").waitFor();
+    await page.getByText("Before you start").waitFor();
+    await capture("05-review-and-start");
     const start = page.locator("[data-hosted-run-start=true]");
     await start.waitFor();
     await start.click();
     await page.waitForURL(/\/hosted\/activity\/attempt_/);
     await page.locator("[data-hosted-activity-page=detail]").waitFor();
+    await page.getByRole("heading", { name: "Issue review", level: 1 }).waitFor();
+    await page.getByRole("button", { name: "Copy details for support" }).waitFor();
+    await page.getByText("Sending recording to Gemini", { exact: true }).first().waitFor();
+    await page.locator("[role=progressbar]").waitFor();
+    await capture("06-activity-running");
+    const results = page.getByRole("link", { name: "View results" });
+    await results.waitFor();
+    await capture("07-activity-completed");
+    await results.click();
+    await page.waitForURL(/\/runs\/hosted_attempt_/);
+    await page.getByRole("heading", { name: /Issue review ·/, level: 1 }).waitFor();
+    await capture("08-run-viewer");
+    await page.getByRole("link", { name: "Review findings" }).click();
+    await page.waitForURL(/\/review\/hosted_attempt_/);
+    await page.locator("[data-studio-review=hosted]").waitFor();
+    const reviewColumns = await page.locator("[data-review-workspace-grid=true]").evaluate((element) =>
+      getComputedStyle(element).gridTemplateColumns.split(" ").length
+    );
+    assertEqual(reviewColumns, 2, "hosted review desktop columns");
+    await capture("09-review-workspace");
     await page.goto(`${origin}/hosted/activity`);
     await page.locator("[data-hosted-activity-page=list]").waitFor();
+    await capture("10-activity-list");
+    await page.goto(origin);
+    await page.getByRole("heading", { name: "Your finished analyses.", level: 1 }).waitFor();
+    const visibleResultsLabels = await page.getByText("Results", { exact: true }).evaluateAll((elements) =>
+      elements.filter((element) => {
+        const box = element.getBoundingClientRect();
+        return box.width > 1 && box.height > 1;
+      }).length
+    );
+    assertEqual(visibleResultsLabels, 1, "one visible Results label on published analyses screen");
+    await capture("11-results-home");
+    await page.goto(`${origin}/import`);
+    await page.getByRole("heading", { name: /Import/, level: 1 }).waitFor();
+    await capture("12-import");
+    await page.goto(`${origin}/hosted/activity/not-a-real-attempt`);
+    await page.getByRole("heading", { name: "We couldn't find that analysis", level: 1 }).waitFor();
+    await capture("13-not-found");
+    assertEqual(hydrationMismatches, [], "hosted browser hydration mismatches");
     await context.close();
   } finally {
     await browser.close();
@@ -1057,6 +1316,8 @@ function composerJobResponse(
   token: string,
   mediaId: string,
   idempotencyKey: string,
+  recipeId = "decisions",
+  recipeRevision = "builtin-2026-07-27.1",
 ): Promise<Response> {
   return fetch(`${origin}/api/hosted/composer/jobs`, {
     method: "POST",
@@ -1065,7 +1326,7 @@ function composerJobResponse(
       idempotencyKey,
       mediaSessionId: mediaId,
       context: { mode: "none" },
-      recipe: { id: "decisions", revision: "builtin-2026-08-11.1" },
+      recipe: { id: recipeId, revision: recipeRevision },
       model: "gemini-3.7-flash",
       retention: { mode: "retained", ttlSeconds: 7 * 24 * 60 * 60 },
     }),
@@ -1105,11 +1366,15 @@ async function retryLocalDispatch(
 }
 
 async function isLocalDispatchFailure(response: Response): Promise<boolean> {
-  if (response.status !== 503) return false;
   const body = await response.clone().json().catch(() => undefined) as
-    | { data?: { code?: string } }
+    | { statusMessage?: string; data?: { code?: string } }
     | undefined;
-  return body?.data?.code === "hosted_workflow_dispatch_failed";
+  if (response.status === 503) {
+    return body?.data?.code === "hosted_workflow_dispatch_failed";
+  }
+  return response.status === 500
+    && body?.statusMessage === "Hosted job request failed."
+    && body.data?.code === undefined;
 }
 
 function mutationHeaders(origin: string, token: string): Record<string, string> {
@@ -1185,6 +1450,33 @@ async function queryCount(table: string, predicate: string): Promise<number> {
     "--json",
   ], `query ${table} count`);
   return d1Scalar(stdout);
+}
+
+async function queryRaceFailureReceipt(): Promise<unknown> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command", `
+      SELECT 'principal' AS row_type, principal_sub, NULL AS attempt_id,
+        cap_units, committed_units, NULL AS reserved_units, NULL AS state,
+        NULL AS idempotency_key
+      FROM hosted_principal_spend
+      WHERE principal_sub = '${principalRace}'
+      UNION ALL
+      SELECT 'reservation', principal_sub, attempt_id,
+        NULL, NULL, reserved_units, state, NULL
+      FROM hosted_spend_reservations
+      WHERE principal_sub = '${principalRace}'
+      UNION ALL
+      SELECT 'attempt', principal_sub, attempt_id,
+        NULL, NULL, spend_reserved_units, stage, idempotency_key
+      FROM hosted_analysis_attempts
+      WHERE principal_sub = '${principalRace}'
+      ORDER BY row_type, attempt_id
+    `,
+    "--json",
+  ], "query concurrent spend failure rows");
+  return JSON.parse(stdout);
 }
 
 async function queryCommittedUnits(principalSub: string): Promise<number> {
@@ -1288,6 +1580,49 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
+async function startContractWorker(input: {
+  configPath: string;
+  persistRoot: string;
+  port: number;
+  readinessUrl: string;
+  readinessStatus: number;
+}) {
+  const worker = Bun.spawn([
+    "node", wranglerBin, "dev", "--local",
+    "--config", input.configPath,
+    "--persist-to", input.persistRoot,
+    "--ip", "127.0.0.1",
+    "--port", String(input.port),
+    "--inspector-port", "0",
+    "--log-level", "error",
+    "--show-interactive-dev-session=false",
+  ], {
+    cwd: process.cwd(),
+    env: createE2EEnvironment(process.env),
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const output = Promise.all([
+    new Response(worker.stdout).text(),
+    new Response(worker.stderr).text(),
+  ]);
+  await waitForWorker(input.readinessUrl, worker, input.readinessStatus);
+  return { worker, output };
+}
+
+async function stopContractWorker(
+  worker: ReturnType<typeof Bun.spawn> | undefined,
+  output: Promise<[string, string]> | undefined,
+): Promise<void> {
+  if (!worker || !output) {
+    throw new Error("Hosted Workflow contract Worker restart state was incomplete.");
+  }
+  worker.kill("SIGTERM");
+  await worker.exited;
+  await output;
+}
+
 // Local D1 queries run as a second Miniflare process against the persisted
 // database while the dev Workers still hold it. Miniflare occasionally answers
 // "internal error" for that overlap; it is a harness race, not a state bug, so
@@ -1332,17 +1667,6 @@ async function runCheckedOnce(
     throw new Error(`${label} failed (${exitCode}):\n${stdout}\n${stderr}`.slice(0, 20_000));
   }
   return stdout;
-}
-
-async function reservePort(): Promise<number> {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response("reserved"),
-  });
-  const port = server.port;
-  server.stop(true);
-  return port;
 }
 
 async function waitForWorker(
