@@ -858,3 +858,18 @@
   modes; temporarily removing the `/sign-in` exemption made all five browser
   checks fail with a redirect loop, proving the render oracle discriminates.
   The existing auth spike and isolated Better Auth Workflow contract pass.
+- Completed Hosted Studio retention and evidence Tasks 5.1–5.2 on 2026-08-23
+  without deployment. Retained mode now creates a private principal-scoped R2
+  multipart upload behind a one-way, single-use application capability; seal
+  verifies the complete R2 size and SHA-256 against the independently verified
+  Gemini file. Added a visible 30-day default kept-until receipt, explicit
+  owner delete with an active-analysis veto, expired-object and incomplete-
+  multipart janitor cleanup, retained range playback, and client-canvas PNG
+  evidence in an append-only sidecar stamped with run-manifest, recording, and
+  timestamp provenance. The immutable run pair remains unchanged and the
+  Stream-thumbnail port is disabled with no dependency. The built-workerd
+  contract printed `HOSTED_RETENTION_CONTRACT PASSED` and
+  `HOSTED_EVIDENCE_CONTRACT PASSED`; reverting the R2 digest comparison or
+  provenance checks makes the named wrong-bytes/missing-source cases fail.
+  Locked typecheck and the 313-test web suite passed; the full gate receipt is
+  recorded in the worker status after final verification.

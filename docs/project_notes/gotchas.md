@@ -440,3 +440,8 @@
   `redirect: "manual"` for Gemini Files calls and treat every non-2xx response
   (including redirects) as a provider error. Browser/Bun fetch acceptance is
   not sufficient evidence for the deployed edge runtime.
+- Nitro's H3 request stream does not preserve the fixed-length marker required
+  by R2 multipart `uploadPart`. Passing it directly compiles but fails at
+  runtime. Require `Content-Length`, pipe through workerd `FixedLengthStream`,
+  and give its readable side to R2; this keeps the part streaming without
+  materializing it in application memory.
