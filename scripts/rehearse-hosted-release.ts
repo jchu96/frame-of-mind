@@ -15,7 +15,7 @@ const startedAt = performance.now();
 const repositoryRoot = resolve(import.meta.dir, "..");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-release-"));
 const previousOutput = join(temporaryRoot, "previous-output");
-const migrationDirectory = join(temporaryRoot, "migrations-0001-through-0007");
+const migrationDirectory = join(temporaryRoot, "migrations-0001-through-0008");
 const persistRoot = join(temporaryRoot, "wrangler-state");
 const wranglerBin = resolve(repositoryRoot, "apps/web/node_modules/wrangler/bin/wrangler.js");
 const databaseName = "frame-of-mind-hosted-release-rehearsal";
@@ -142,6 +142,7 @@ try {
     "0005_hosted_spend_telemetry.sql",
     "0006_better_auth.sql",
     "0007_hosted_direct_media.sql",
+    "0008_hosted_retention_evidence.sql",
   ]) {
     await cp(
       resolve(repositoryRoot, "apps/web/db/migrations", name),
@@ -160,15 +161,15 @@ try {
     "node", wranglerBin, "d1", "migrations", "apply", databaseName,
     "--local", "--config", migrationConfig, "--persist-to", persistRoot,
   ];
-  const firstMigration = await runChecked(migrationCommand, "D1 0001 through 0007 migration");
-  for (const name of ["0001_initial.sql", "0002_video_only_projection.sql", "0003_principal_scope.sql", "0004_hosted_workflows.sql", "0005_hosted_spend_telemetry.sql", "0006_better_auth.sql", "0007_hosted_direct_media.sql"]) {
+  const firstMigration = await runChecked(migrationCommand, "D1 0001 through 0008 migration");
+  for (const name of ["0001_initial.sql", "0002_video_only_projection.sql", "0003_principal_scope.sql", "0004_hosted_workflows.sql", "0005_hosted_spend_telemetry.sql", "0006_better_auth.sql", "0007_hosted_direct_media.sql", "0008_hosted_retention_evidence.sql"]) {
     if (!firstMigration.includes(name)) throw new Error(`D1 rehearsal omitted ${name}.`);
   }
   const replayMigration = await runChecked(migrationCommand, "D1 migration replay");
   if (!/no migrations to apply/i.test(replayMigration)) {
     throw new Error("D1 migration replay did not report an idempotent no-op.");
   }
-  console.log("HOSTED_RELEASE migrations=PASS range=0001..0007 replay=idempotent");
+  console.log("HOSTED_RELEASE migrations=PASS range=0001..0008 replay=idempotent");
 
   await runChecked(
     [

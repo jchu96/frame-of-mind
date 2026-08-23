@@ -9,8 +9,8 @@ export default defineEventHandler(async (event) => {
   assertTrustedJsonMutation(event);
   try {
     const runtime = getHostedMediaRuntime(event);
-    const abandoned = await runtime.service.sweep(runtime.principalSub);
-    return { ok: true, abandoned };
+    const swept = await runtime.service.sweep(runtime.principalSub);
+    return { ok: true, ...swept };
   } catch (error) {
     throwHostedMediaHttpError(error);
   }

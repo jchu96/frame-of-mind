@@ -3,7 +3,7 @@ import { useHostedMediaUpload } from "./use-hosted-media-upload";
 
 useSeoMeta({
   title: "Recording · Frame of Mind",
-  description: "Upload one recording directly to a principal-bound Gemini session.",
+  description: "Upload one recording with an explicit ephemeral or retained policy.",
 });
 
 const { error } = await useFetch("/api/hosted/media/configuration", {
@@ -26,7 +26,7 @@ const retentionOptions = [
   {
     label: "Retained",
     value: "retained",
-    description: "Keep the sealed provider file until its bounded receipt expires.",
+    description: "Also keep a private principal-owned R2 copy for playback and evidence capture (30 days by default).",
   },
 ];
 
@@ -46,9 +46,9 @@ function formatBytes(bytes: number): string {
           <p class="fom-kicker text-primary">Step 3 of 4</p>
           <h1 class="mt-3 text-4xl font-black text-highlighted">Upload the recording</h1>
           <p class="mt-4 max-w-2xl text-default">
-            Your browser hashes the complete file, then sends its bytes directly
-            to one short-lived Gemini upload session. The Frame of Mind Worker
-            never carries the recording bytes.
+            Your browser hashes the complete file and sends it to one short-lived
+            Gemini upload session. Retained mode also sends the same committed
+            bytes through a single-use capability to your private R2 object.
           </p>
         </header>
 
@@ -152,6 +152,9 @@ function formatBytes(bytes: number): string {
           </template>
 
           <p aria-live="polite" class="font-semibold text-default">{{ statusMessage }}</p>
+          <p v-if="media?.keptUntil" class="mt-2 text-sm text-muted" data-hosted-kept-until>
+            Private retained copy kept until {{ new Date(media.keptUntil).toLocaleString() }} unless you delete it sooner.
+          </p>
           <div v-if="totalBytes" class="mt-5">
             <UProgress
               :model-value="progressBytes"
@@ -221,6 +224,13 @@ function formatBytes(bytes: number): string {
           icon="i-lucide-shield-check"
           title="Keyless browser transfer"
           description="The browser receives one write-only session URL, never the Gemini API key. Size and SHA-256 must match before analysis can start."
+        />
+        <UAlert
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-image-off"
+          title="Ephemeral review limits"
+          description="Ephemeral runs have no playback or screenshot capture after this tab closes. Those features require retained media or exact-digest reattachment."
         />
         <UAlert
           color="neutral"

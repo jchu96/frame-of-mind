@@ -69,6 +69,10 @@ export const sealedHostedMediaReceiptSchema = z.object({
   durationSeconds: z.number().finite().positive().max(86_400),
   sealedAt: utcDateTimeSchema,
   expiresAt: utcDateTimeSchema,
+  retainedObjectKey: z.string().min(20).max(1_024).optional(),
+  retainedUntil: utcDateTimeSchema.optional(),
+  retainedDeleteRequestedAt: utcDateTimeSchema.optional(),
+  retainedDeletedAt: utcDateTimeSchema.optional(),
 }).strict().superRefine((receipt, context) => {
   if (Date.parse(receipt.expiresAt) <= Date.parse(receipt.sealedAt)) {
     context.addIssue({
@@ -90,6 +94,8 @@ export interface HostedMediaView {
   retention: SealedHostedMediaReceipt["retention"];
   sealedAt: string;
   expiresAt: string;
+  keptUntil?: string;
+  playbackAvailable: boolean;
 }
 
 export function hostedMediaView(
@@ -102,6 +108,12 @@ export function hostedMediaView(
     retention: receipt.retention,
     sealedAt: receipt.sealedAt,
     expiresAt: receipt.expiresAt,
+    ...(receipt.retainedUntil ? { keptUntil: receipt.retainedUntil } : {}),
+    playbackAvailable: receipt.retention === "retained"
+      && Boolean(receipt.retainedObjectKey)
+      && !receipt.retainedDeleteRequestedAt
+      && !receipt.retainedDeletedAt
+      && Boolean(receipt.retainedUntil && Date.parse(receipt.retainedUntil) > Date.now()),
   };
 }
 

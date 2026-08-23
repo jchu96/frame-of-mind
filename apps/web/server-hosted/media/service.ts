@@ -9,30 +9,39 @@ import type {
 import { HostedWorkflowRepository } from "../../../workflows/src/repository.js";
 import { HostedGeminiFilesClient } from "./provider.js";
 import { opaqueIdSchema } from "../../../../src/domain/studio-identifiers.js";
+import type { HostedD1Database } from "../../../workflows/src/repository.js";
+import {
+  digestR2Object,
+  HostedMediaServiceError,
+  type HostedR2Bucket,
+  principalObjectPrefix,
+  randomCapability,
+  requireRetainedSession,
+  sha256Hex,
+  type HostedR2UploadedPart,
+} from "./retention.js";
+
+export { HostedMediaServiceError } from "./retention.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const STALE_SEAL_GRACE_MS = 2 * 60_000;
-
-export class HostedMediaServiceError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-    this.name = "HostedMediaServiceError";
-  }
-}
 
 export class HostedMediaService {
   private readonly uploads: HostedMediaRepository;
   private readonly receipts: HostedWorkflowRepository;
 
   constructor(
-    database: ConstructorParameters<typeof HostedMediaRepository>[0],
+    private readonly database: HostedD1Database,
     private readonly provider: HostedGeminiFilesClient,
     private readonly apiKey: string,
+    private readonly bucket: HostedR2Bucket | undefined,
+    private readonly origin: string,
     private readonly config: {
       openSessionCap: number;
       maxBytes: number;
       sessionTtlSeconds: number;
+      retentionDays: number;
     },
   ) {
     this.uploads = new HostedMediaRepository(database);
@@ -61,7 +70,16 @@ export class HostedMediaService {
       sessionExpiresAt,
     });
     let started: Awaited<ReturnType<HostedGeminiFilesClient["start"]>> | undefined;
+    let retained: { key: string; uploadId: string; capability: string } | undefined;
     try {
+      if (declaration.retention === "retained") {
+        if (!this.bucket) {
+          throw new HostedMediaServiceError("hosted_retention_binding_unavailable");
+        }
+        const key = `${await principalObjectPrefix(principalSub)}/media/${crypto.randomUUID()}`;
+        const multipart = await this.bucket.createMultipartUpload(key);
+        retained = { key, uploadId: multipart.uploadId, capability: randomCapability() };
+      }
       started = await this.provider.start({
         mediaId,
         sizeBytes: declaration.declaredSizeBytes,
@@ -82,6 +100,13 @@ export class HostedMediaService {
         ...(started.geminiFileName
           ? { geminiFileName: started.geminiFileName }
           : {}),
+        ...(retained
+          ? {
+              r2ObjectKey: retained.key,
+              r2UploadId: retained.uploadId,
+              r2CapabilityHash: await sha256Hex(retained.capability),
+            }
+          : {}),
         updatedAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -93,18 +118,76 @@ export class HostedMediaService {
             started.geminiFileName,
           );
         }
+        if (retained && this.bucket) {
+          await this.bucket.resumeMultipartUpload(retained.key, retained.uploadId)
+            .abort().catch(() => undefined);
+          await this.bucket.delete(retained.key).catch(() => undefined);
+        }
         await this.uploads.abandon(principalSub, mediaId, failedAt);
       } catch {
         await this.uploads.markCleanupFailed(principalSub, mediaId, failedAt);
       }
       throw error;
     }
+    const retainedBase = retained
+      ? `${this.origin}/api/hosted/media/${encodeURIComponent(mediaId)}/retained`
+      : undefined;
     return {
       mediaId: opaqueIdSchema.parse(mediaId),
       uploadUrl: started.uploadUrl,
       partBytes: started.partBytes,
       sessionExpiresAt,
+      ...(retained && retainedBase
+        ? {
+            retainedUpload: {
+              partUrl: `${retainedBase}/parts?cap=${retained.capability}`,
+              completeUrl: `${retainedBase}/complete?cap=${retained.capability}`,
+            },
+          }
+        : {}),
     };
+  }
+
+  async uploadRetainedPart(input: {
+    principalSub: string;
+    mediaId: string;
+    capability: string;
+    partNumber: number;
+    body: ReadableStream;
+  }): Promise<HostedR2UploadedPart> {
+    const now = new Date().toISOString();
+    const session = await this.uploads.get(input.principalSub, input.mediaId);
+    requireRetainedSession(session, now);
+    if (await sha256Hex(input.capability) !== session.r2CapabilityHash) {
+      throw new HostedMediaServiceError("hosted_retained_capability_unavailable");
+    }
+    if (!this.bucket) throw new HostedMediaServiceError("hosted_retention_binding_unavailable");
+    return await this.bucket.resumeMultipartUpload(session.r2ObjectKey, session.r2UploadId)
+      .uploadPart(input.partNumber, input.body);
+  }
+
+  async completeRetainedUpload(input: {
+    principalSub: string;
+    mediaId: string;
+    capability: string;
+    parts: HostedR2UploadedPart[];
+  }): Promise<void> {
+    const now = new Date().toISOString();
+    const session = await this.uploads.get(input.principalSub, input.mediaId);
+    requireRetainedSession(session, now);
+    const capabilityHash = await sha256Hex(input.capability);
+    if (capabilityHash !== session.r2CapabilityHash) {
+      throw new HostedMediaServiceError("hosted_retained_capability_unavailable");
+    }
+    if (!this.bucket) throw new HostedMediaServiceError("hosted_retention_binding_unavailable");
+    await this.bucket.resumeMultipartUpload(session.r2ObjectKey, session.r2UploadId)
+      .complete(input.parts);
+    await this.uploads.markRetainedComplete(
+      input.principalSub,
+      input.mediaId,
+      capabilityHash,
+      now,
+    );
   }
 
   async seal(
@@ -152,6 +235,23 @@ export class HostedMediaService {
       await this.uploads.abandon(principalSub, mediaId, new Date().toISOString());
       throw new HostedMediaServiceError("media_seal_mismatch");
     }
+    if (session.retention === "retained") {
+      if (!this.bucket || !session.r2ObjectKey || !session.r2CompletedAt) {
+        await this.mismatch(session, uploadUrl);
+        throw new HostedMediaServiceError("hosted_retained_upload_incomplete");
+      }
+      const retainedObject = await this.bucket.get(session.r2ObjectKey);
+      if (
+        !retainedObject
+        || retainedObject.size !== session.declaredSizeBytes
+        || await digestR2Object(retainedObject) !== session.declaredSha256
+      ) {
+        await this.bucket.delete(session.r2ObjectKey).catch(() => undefined);
+        await this.provider.deleteFile(name).catch(() => undefined);
+        await this.uploads.abandon(principalSub, mediaId, new Date().toISOString());
+        throw new HostedMediaServiceError("retained_media_seal_mismatch");
+      }
+    }
     const expiresAt = boundedExpiry(
       session.sessionExpiresAt,
       file.expirationTime,
@@ -162,6 +262,13 @@ export class HostedMediaService {
       geminiFileUri: file.uri,
       sealedAt: now,
       expiresAt,
+      ...(session.retention === "retained"
+        ? {
+            retainedUntil: new Date(
+              Date.parse(now) + this.config.retentionDays * 86_400_000,
+            ).toISOString(),
+          }
+        : {}),
     });
   }
 
@@ -170,7 +277,9 @@ export class HostedMediaService {
       principalSub,
       new Date().toISOString(),
     );
-    return await Promise.all(sessions.map(async (session) => {
+    return await Promise.all(sessions.filter(
+      (session) => session.retention === "ephemeral",
+    ).map(async (session) => {
       if (!session.providerPartBytes) {
         throw new HostedMediaServiceError("hosted_media_capability_missing");
       }
@@ -198,6 +307,7 @@ export class HostedMediaService {
           session.geminiFileName,
         );
       }
+      await this.cleanupRetainedSession(session);
       await this.uploads.abandon(principalSub, mediaId, now);
     } catch (error) {
       await this.uploads.markCleanupFailed(
@@ -209,7 +319,7 @@ export class HostedMediaService {
     }
   }
 
-  async sweep(principalSub: string): Promise<number> {
+  async sweep(principalSub: string): Promise<{ abandoned: number; retained: number }> {
     const instant = new Date();
     const now = instant.toISOString();
     const staleSealBefore = new Date(
@@ -236,13 +346,82 @@ export class HostedMediaService {
             session.geminiFileName,
           );
         }
+        await this.cleanupRetainedSession(session);
         await this.uploads.abandon(principalSub, session.mediaId, now);
         deleted += 1;
       } catch {
         await this.uploads.markCleanupFailed(principalSub, session.mediaId, now);
       }
     }
-    return deleted;
+    let retained = 0;
+    const expired = await this.database.prepare(`
+      SELECT media_id, retained_object_key FROM hosted_media_receipts
+      WHERE principal_sub = ? AND retained_object_key IS NOT NULL
+        AND retained_deleted_at IS NULL
+        AND (retained_delete_requested_at IS NOT NULL OR retained_until <= ?)
+      LIMIT 100
+    `).bind(principalSub, now).all<{ media_id: string; retained_object_key: string }>();
+    for (const receipt of expired.results) {
+      if (!this.bucket) break;
+      await this.database.prepare(`
+        UPDATE hosted_media_receipts
+        SET retained_delete_requested_at = COALESCE(retained_delete_requested_at, ?)
+        WHERE principal_sub = ? AND media_id = ? AND retained_deleted_at IS NULL
+      `).bind(now, principalSub, receipt.media_id).run();
+      try {
+        await this.deleteRetainedObjects(
+          principalSub,
+          receipt.media_id,
+          receipt.retained_object_key,
+        );
+      } catch {
+        continue;
+      }
+      await this.database.prepare(`
+        UPDATE hosted_media_receipts SET retained_deleted_at = ?
+        WHERE principal_sub = ? AND media_id = ? AND retained_deleted_at IS NULL
+      `).bind(now, principalSub, receipt.media_id).run();
+      await this.database.prepare(`
+        DELETE FROM hosted_evidence_captures
+        WHERE principal_sub = ? AND media_id = ?
+      `).bind(principalSub, receipt.media_id).run();
+      retained += 1;
+    }
+    return { abandoned: deleted, retained };
+  }
+
+  async deleteRetained(principalSub: string, mediaId: string): Promise<void> {
+    const receipt = await this.receipts.getMediaReceipt(principalSub, mediaId);
+    if (!receipt?.retainedObjectKey || receipt.retainedDeleteRequestedAt || receipt.retainedDeletedAt) {
+      throw new HostedMediaServiceError("hosted_media_not_found");
+    }
+    const active = await this.database.prepare(`
+      SELECT 1 AS found FROM hosted_analysis_jobs job
+      JOIN hosted_analysis_attempts attempt
+        ON attempt.principal_sub = job.principal_sub AND attempt.job_id = job.job_id
+      WHERE job.principal_sub = ? AND job.media_id = ?
+        AND attempt.stage NOT IN ('succeeded','failed','canceled','indeterminate') LIMIT 1
+    `).bind(principalSub, mediaId).first<{ found: number }>();
+    if (active) throw new HostedMediaServiceError("hosted_retained_media_in_use");
+    if (!this.bucket) throw new HostedMediaServiceError("hosted_retention_binding_unavailable");
+    const requestedAt = new Date().toISOString();
+    const claim = await this.database.prepare(`
+      UPDATE hosted_media_receipts SET retained_delete_requested_at = ?
+      WHERE principal_sub = ? AND media_id = ?
+        AND retained_delete_requested_at IS NULL AND retained_deleted_at IS NULL
+    `).bind(requestedAt, principalSub, mediaId).run();
+    if (d1Changes(claim) !== 1) {
+      throw new HostedMediaServiceError("hosted_media_not_found");
+    }
+    await this.deleteRetainedObjects(principalSub, mediaId, receipt.retainedObjectKey);
+    await this.database.prepare(`
+      UPDATE hosted_media_receipts SET retained_deleted_at = ?
+      WHERE principal_sub = ? AND media_id = ? AND retained_deleted_at IS NULL
+    `).bind(new Date().toISOString(), principalSub, mediaId).run();
+    await this.database.prepare(`
+      DELETE FROM hosted_evidence_captures
+      WHERE principal_sub = ? AND media_id = ?
+    `).bind(principalSub, mediaId).run();
   }
 
   private async mismatch(
@@ -251,11 +430,37 @@ export class HostedMediaService {
   ): Promise<void> {
     await this.provider.abandon(uploadUrl, session.geminiFileName)
       .catch(() => undefined);
+    await this.cleanupRetainedSession(session);
     await this.uploads.abandon(
       session.principalSub,
       session.mediaId,
       new Date().toISOString(),
     );
+  }
+
+  private async cleanupRetainedSession(session: HostedMediaUploadSession): Promise<void> {
+    if (!this.bucket || !session.r2ObjectKey) return;
+    if (session.r2UploadId && !session.r2CompletedAt) {
+      await this.bucket.resumeMultipartUpload(session.r2ObjectKey, session.r2UploadId)
+        .abort().catch(() => undefined);
+    }
+    await this.bucket.delete(session.r2ObjectKey).catch(() => undefined);
+  }
+
+  private async deleteRetainedObjects(
+    principalSub: string,
+    mediaId: string,
+    mediaObjectKey: string,
+  ): Promise<void> {
+    if (!this.bucket) throw new HostedMediaServiceError("hosted_retention_binding_unavailable");
+    const captures = await this.database.prepare(`
+      SELECT object_key FROM hosted_evidence_captures
+      WHERE principal_sub = ? AND media_id = ? LIMIT 500
+    `).bind(principalSub, mediaId).all<{ object_key: string }>();
+    await this.bucket.delete([
+      mediaObjectKey,
+      ...captures.results.map((capture) => capture.object_key),
+    ]);
   }
 
   private async decryptSessionUrl(
@@ -272,6 +477,13 @@ export class HostedMediaService {
       session.mediaId,
     );
   }
+}
+
+function d1Changes(result: unknown): number {
+  if (!result || typeof result !== "object" || !("meta" in result)) return 0;
+  const meta = result.meta;
+  return meta && typeof meta === "object" && "changes" in meta
+    && typeof meta.changes === "number" ? meta.changes : 0;
 }
 
 async function capabilityKey(apiKey: string): Promise<CryptoKey> {
