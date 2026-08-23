@@ -11,6 +11,10 @@ import {
   type E2EIsolation,
   withE2EBuildLock,
 } from "./isolation";
+import {
+  resolvePrebuiltWebOutput,
+  resolvePrebuiltWorkflowsOutput,
+} from "../../../../scripts/prebuilt-artifact";
 
 export type HostedAuthMode = "cloudflare-access" | "better-auth";
 
@@ -61,6 +65,8 @@ export async function startHostedHarness(
   }
   const parentRoot = process.env.FRAME_OF_MIND_E2E_TEMP_ROOT;
   const isolation = await createE2EIsolation(`hosted-${authMode}`, parentRoot);
+  const prebuiltOutput = await resolvePrebuiltWebOutput("cloudflare_module");
+  const prebuiltWorkflows = await resolvePrebuiltWorkflowsOutput();
   const wranglerBin = resolve("apps/web/node_modules/wrangler/bin/wrangler.js");
   const webConfig = join(isolation.root, "web.wrangler.jsonc");
   const workflowConfig = join(isolation.root, "workflow.wrangler.jsonc");
@@ -144,8 +150,12 @@ export async function startHostedHarness(
     });
     servers.push(mailer.server);
 
-    const webOutput = join(isolation.root, "web-output");
-    await buildHostedArtifact(webOutput);
+    const webOutput = prebuiltOutput ?? join(isolation.root, "web-output");
+    if (prebuiltOutput) {
+      console.log("HOSTED_E2E build=SKIP prebuilt=cloudflare_module");
+    } else {
+      await buildHostedArtifact(webOutput);
+    }
 
     const workflowServiceName = isolation.workerName("workflow");
     const webPort = await isolation.reservePort();
@@ -188,7 +198,9 @@ export async function startHostedHarness(
     await writeFile(workflowConfig, JSON.stringify({
       $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
       name: workflowServiceName,
-      main: resolve("apps/workflows/src/index.ts"),
+      main: prebuiltWorkflows
+        ? join(prebuiltWorkflows, "index.js")
+        : resolve("apps/workflows/src/index.ts"),
       compatibility_date: "2026-08-18",
       compatibility_flags: ["nodejs_compat"],
       d1_databases: [d1Binding],
@@ -203,10 +215,14 @@ export async function startHostedHarness(
       },
     }, null, 2));
 
-    await runChecked(
-      ["node", wranglerBin, "deploy", "--dry-run", "--config", workflowConfig, "--outdir", workflowOutdir],
-      "hosted Workflow dry run",
-    );
+    if (prebuiltWorkflows) {
+      console.log("HOSTED_E2E workflow_build=SKIP prebuilt=cloudflare-workflows");
+    } else {
+      await runChecked(
+        ["node", wranglerBin, "deploy", "--dry-run", "--config", workflowConfig, "--outdir", workflowOutdir],
+        "hosted Workflow dry run",
+      );
+    }
     await runChecked([
       "node", wranglerBin, "d1", "migrations", "apply", isolation.databaseName,
       "--local", "--config", webConfig, "--persist-to", isolation.persistRoot,

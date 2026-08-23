@@ -12,6 +12,7 @@ import {
   hostedContractAuthMode,
   startFakeGithub,
 } from "./hosted-auth-fixture";
+import { resolvePrebuiltWebOutput } from "./prebuilt-artifact";
 
 const isolation = await createE2EIsolation("hosted-access");
 const temporaryRoot = isolation.root;
@@ -25,6 +26,8 @@ if (entrySelection !== "index" && entrySelection !== "hosted-entry") {
   throw new Error("FRAME_OF_MIND_HOSTED_ACCESS_ENTRY must be 'index' or 'hosted-entry'.");
 }
 const entryFile = entrySelection === "hosted-entry" ? "hosted-entry.mjs" : "index.mjs";
+const prebuiltOutput = await resolvePrebuiltWebOutput("cloudflare_module");
+const webOutput = prebuiltOutput ?? resolve("apps/web/.output");
 let wrangler: ReturnType<typeof Bun.spawn> | undefined;
 let jwksServer: ReturnType<typeof Bun.serve> | undefined;
 let fakeGithub: ReturnType<typeof startFakeGithub> | undefined;
@@ -32,10 +35,14 @@ let wranglerOutput: Promise<[string, string]> | undefined;
 
 try {
   console.log("HOSTED_ACCESS build=START cloudflare_module");
-  await runChecked(
-    ["bun", "--no-env-file", "run", "build:web:cloudflare"],
-    "Cloudflare artifact build",
-  );
+  if (prebuiltOutput) {
+    console.log("HOSTED_ACCESS build=SKIP prebuilt=cloudflare_module");
+  } else {
+    await runChecked(
+      ["bun", "--no-env-file", "run", "build:web:cloudflare"],
+      "Cloudflare artifact build",
+    );
+  }
   console.log("HOSTED_ACCESS build=PASS cloudflare_module");
 
   const keys = await generateKeyPair("RS256");
@@ -65,11 +72,11 @@ try {
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("node_modules/wrangler/config-schema.json"),
     name: isolation.workerName(`hosted-access-${entryFile}`),
-    main: resolve(`apps/web/.output/server/${entryFile}`),
+    main: join(webOutput, `server/${entryFile}`),
     compatibility_date: "2026-07-02",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
     assets: {
-      directory: resolve("apps/web/.output/public"),
+      directory: join(webOutput, "public"),
       binding: "ASSETS",
     },
     d1_databases: [{

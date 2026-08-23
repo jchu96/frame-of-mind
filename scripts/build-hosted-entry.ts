@@ -4,8 +4,11 @@ import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const sourcePath = resolve(repositoryRoot, "scripts/hosted-entry.mjs");
-const outputPath = resolve(repositoryRoot, "apps/web/.output/server/hosted-entry.mjs");
-const indexPath = resolve(repositoryRoot, "apps/web/.output/server/index.mjs");
+const outputRoot = process.env.FRAME_OF_MIND_BUILD_OUTPUT?.trim()
+  ? resolve(process.env.FRAME_OF_MIND_BUILD_OUTPUT)
+  : resolve(repositoryRoot, "apps/web/.output");
+const outputPath = resolve(outputRoot, "server/hosted-entry.mjs");
+const indexPath = resolve(outputRoot, "server/index.mjs");
 
 if (!(await Bun.file(indexPath).exists())) {
   throw new Error("Build the Cloudflare Nitro artifact before emitting hosted-entry.mjs.");
