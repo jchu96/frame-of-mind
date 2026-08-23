@@ -8,7 +8,7 @@ import {
 
 const email = " Invited@Example.Test ";
 const normalizedEmail = "invited@example.test";
-const url = "https://fom.example.test/api/auth/magic-link/verify?token=fixture-token";
+const url = "https://fom.example.test/api/auth/magic-link/verify?token=fixture-token&callbackURL=%2F";
 
 describe("magic-link mailer", () => {
   test("uses the Cloudflare binding first with normalized, dual-part content", async () => {
@@ -68,6 +68,33 @@ describe("magic-link mailer", () => {
     });
   });
 
+  test("fails closed when the binding is present but its sender is unset", async () => {
+    const logged: unknown[] = [];
+    let bindingCalls = 0;
+    let httpCalls = 0;
+    const emailBinding = {
+      async send() {
+        bindingCalls += 1;
+        return { messageId: "fixture-message" };
+      },
+    } as unknown as SendEmail;
+    const mailer = createMagicLinkMailer({
+      emailBinding,
+      httpOrigin: "https://mailer.example.test",
+      httpKey: "fixture-key",
+      failureLogger: (providerCode) => logged.push(providerCode),
+      fetch: async () => {
+        httpCalls += 1;
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await expectMailerUnavailable(mailer.send({ email, url }));
+    expect(bindingCalls).toBe(0);
+    expect(httpCalls).toBe(0);
+    expect(logged).toEqual(["E_MAILER_FROM_UNSET"]);
+  });
+
   test("fails closed when neither delivery path is configured", async () => {
     const mailer = createMagicLinkMailer({ from: "sign-in@example.test" });
     await expectMailerUnavailable(mailer.send({ email, url }));
@@ -101,8 +128,9 @@ describe("magic-link mailer", () => {
     }
   });
 
-  test("uses a stable code when a binding error has no safe E_ code", async () => {
+  test("does not fall through to HTTP when a binding error has no safe E_ code", async () => {
     const logged: unknown[] = [];
+    let httpCalls = 0;
     const emailBinding = {
       async send() {
         throw new Error(`sensitive ${email} ${url}`);
@@ -110,12 +138,19 @@ describe("magic-link mailer", () => {
     } as unknown as SendEmail;
     const mailer = createMagicLinkMailer({
       emailBinding,
+      httpOrigin: "https://mailer.example.test",
+      httpKey: "fixture-key",
       from: "sign-in@example.test",
       failureLogger: (providerCode) => logged.push(providerCode),
+      fetch: async () => {
+        httpCalls += 1;
+        return new Response(null, { status: 204 });
+      },
     });
 
     await expectMailerUnavailable(mailer.send({ email, url }));
     expect(logged).toEqual(["E_EMAIL_SEND_FAILED"]);
+    expect(httpCalls).toBe(0);
   });
 });
 

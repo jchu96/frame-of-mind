@@ -181,7 +181,7 @@ after the D1 cap reservation commits. D1 stores that URL as principal/media-
 bound AES-GCM ciphertext.
 
 Deploy order is deliberate: apply migrations through
-`0008_hosted_retention_evidence.sql`,
+`0009_magic_link_cooldown.sql`,
 deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
 caller with the service binding. Enabling hosted routes is a later reviewed
 release task; do not set its flags during this dark Phase 3 deployment shape.
@@ -207,7 +207,7 @@ bun run rehearse:hosted-release
 ```
 
 It builds the previous review-only and current hosted artifacts, applies D1
-migrations `0001` through `0008` to an isolated local clone and replays them as
+migrations `0001` through `0009` to an isolated local clone and replays them as
 an idempotent no-op, validates both Worker binding graphs, scans the boundary,
 runs the local byte-stability import regression, and dry-runs both the current
 and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.
@@ -348,7 +348,8 @@ Proposed ADR 0019 also permits `better-auth` or
 `cloudflare-access+better-auth`. These modes are spike-proven but not the
 committed production default. They additionally require:
 
-- migration `0006_better_auth.sql` on the public Worker's D1 database;
+- migrations `0006_better_auth.sql` and `0009_magic_link_cooldown.sql` on the
+  public Worker's D1 database;
 - `NUXT_BETTER_AUTH_URL` set to the exact HTTPS custom origin;
 - GitHub client ID, magic-link sender, and optional fallback HTTPS mailer
   origin as Worker variables; and
@@ -684,7 +685,7 @@ storage.
 
 ### Tables do not exist
 
-Apply all pending migrations through `0006_better_auth.sql` to the
+Apply all pending migrations through `0009_magic_link_cooldown.sql` to the
 same database ID bound to both Workers.
 Check `wrangler d1 migrations list ... --remote`.
 
@@ -747,7 +748,8 @@ absent. To enable the binding path:
 2. Add `"send_email": [{ "name": "EMAIL" }]` to the public Worker's Wrangler
    configuration.
 3. Set `NUXT_BETTER_AUTH_MAILER_FROM=sign-in@<onboarded-domain>`. An empty
-   value keeps the binding path disabled.
+   value with a present binding fails closed as `E_MAILER_FROM_UNSET`; it never
+   enables the HTTP fallback.
 4. Redeploy, request a link for an invited email, and verify the five-minute
    one-time link arrives with both plain-text and HTML parts.
 
@@ -774,6 +776,7 @@ message ID:
 
 | Email Service code | Operator action |
 |---|---|
+| `E_MAILER_FROM_UNSET` | Set `NUXT_BETTER_AUTH_MAILER_FROM` to the exact onboarded sender and redeploy. |
 | `E_VALIDATION_ERROR`, `E_FIELD_MISSING`, `E_TOO_MANY_RECIPIENTS`, `E_CONTENT_TOO_LARGE` | Correct the composed request or limits. |
 | `E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE` | Complete sender-domain onboarding and verify `NUXT_BETTER_AUTH_MAILER_FROM`. |
 | `E_RECIPIENT_NOT_ALLOWED` | Add the invited address to the canary binding allowlist. |
@@ -782,6 +785,10 @@ message ID:
 | any other binding failure | Use the code-only `E_EMAIL_SEND_FAILED` receipt and inspect Cloudflare operational state. |
 
 Every row above maps to `MAILER_UNAVAILABLE`; GitHub sign-in remains available.
+Production limits `/sign-in/magic-link` to three requests per 15 minutes and
+also reserves each invited email for 60 seconds before delivery. A second
+request in that window returns `MAGIC_LINK_COOLDOWN` and does not call either
+mailer transport.
 
 ## Cutover to `better-auth` with GitHub login (ADR 0019, accepted 2026-08-23)
 

@@ -8,6 +8,8 @@ import { getHostedRouteTelemetry } from "#frame-hosted-telemetry";
 import { createMagicLinkMailer } from "./magic-link-mailer";
 
 const INVITE_ERROR_CODE = "EMAIL_NOT_INVITED";
+const MAGIC_LINK_COOLDOWN_ERROR_CODE = "MAGIC_LINK_COOLDOWN";
+const MAGIC_LINK_COOLDOWN_MS = 60_000;
 
 interface BetterAuthSession {
   user: {
@@ -45,6 +47,13 @@ function inviteDenied(): APIError {
   });
 }
 
+function magicLinkCooldown(): APIError {
+  return new APIError("TOO_MANY_REQUESTS", {
+    code: MAGIC_LINK_COOLDOWN_ERROR_CODE,
+    message: "A sign-in link was sent recently. Check your inbox or try again in a minute.",
+  });
+}
+
 async function invitedUserId(database: D1Database, email: string): Promise<string | null | undefined> {
   const row = await database.prepare(
     "SELECT claimed_user_id FROM hosted_auth_invites WHERE email = ?1",
@@ -52,22 +61,54 @@ async function invitedUserId(database: D1Database, email: string): Promise<strin
   return row?.claimed_user_id;
 }
 
-async function requireInviteAvailableForEmail(
+async function reserveMagicLinkSend(
   database: D1Database,
   email: string,
 ): Promise<void> {
+  const normalized = normalizeEmail(email);
   const row = await database.prepare(
     "SELECT invite.claimed_user_id, user.id AS matching_user_id "
     + "FROM hosted_auth_invites AS invite "
     + "LEFT JOIN better_auth_user AS user ON user.email = invite.email "
     + "WHERE invite.email = ?1",
-  ).bind(normalizeEmail(email)).first<{
+  ).bind(normalized).first<{
     claimed_user_id: string | null;
     matching_user_id: string | null;
   }>();
   if (!row || (row.claimed_user_id !== null && row.claimed_user_id !== row.matching_user_id)) {
     throw inviteDenied();
   }
+
+  const now = new Date();
+  const reserved = await database.prepare(
+    "UPDATE hosted_auth_invites SET last_magic_link_at = ?1 "
+    + "WHERE email = ?2 "
+    + "AND (last_magic_link_at IS NULL OR last_magic_link_at <= ?3) "
+    + "AND (claimed_user_id IS NULL OR claimed_user_id = ("
+    + "SELECT id FROM better_auth_user WHERE email = ?2))",
+  ).bind(
+    now.toISOString(),
+    normalized,
+    new Date(now.getTime() - MAGIC_LINK_COOLDOWN_MS).toISOString(),
+  ).run();
+  if (reserved.success && reserved.meta.changes === 1) return;
+
+  const current = await database.prepare(
+    "SELECT invite.claimed_user_id, user.id AS matching_user_id "
+    + "FROM hosted_auth_invites AS invite "
+    + "LEFT JOIN better_auth_user AS user ON user.email = invite.email "
+    + "WHERE invite.email = ?1",
+  ).bind(normalized).first<{
+    claimed_user_id: string | null;
+    matching_user_id: string | null;
+  }>();
+  if (!current || (
+    current.claimed_user_id !== null
+    && current.claimed_user_id !== current.matching_user_id
+  )) {
+    throw inviteDenied();
+  }
+  throw magicLinkCooldown();
 }
 
 async function requireAndClaimInvite(
@@ -137,9 +178,9 @@ export function createBetterAuth(event: H3Event) {
   const mailerFrom = configString(config.betterAuthMailerFrom);
   const mailerTelemetry = getHostedRouteTelemetry(event);
   const mailer = createMagicLinkMailer({
-    emailBinding: mailerFrom
-      ? (event.context.cloudflare?.env.EMAIL ?? nitroEnvironment?.EMAIL) as SendEmail | undefined
-      : undefined,
+    emailBinding: (event.context.cloudflare?.env.EMAIL ?? nitroEnvironment?.EMAIL) as
+      | SendEmail
+      | undefined,
     httpOrigin: mailerOrigin,
     httpKey: configString(config.betterAuthMailerKey),
     from: mailerFrom,
@@ -191,7 +232,7 @@ export function createBetterAuth(event: H3Event) {
       before: createAuthMiddleware(async (ctx) => {
         if (ctx.path !== "/sign-in/magic-link") return;
         const email = ctx.body?.email;
-        if (typeof email === "string") await requireInviteAvailableForEmail(database, email);
+        if (typeof email === "string") await reserveMagicLinkSend(database, email);
       }),
     },
     user: {
@@ -266,7 +307,7 @@ export function createBetterAuth(event: H3Event) {
       max: allowInsecureFixtures ? 1_000 : 100,
       customRules: allowInsecureFixtures
         ? { "/sign-in/social": { window: 60, max: 1_000 } }
-        : undefined,
+        : { "/sign-in/magic-link": { window: 900, max: 3 } },
       modelName: "better_auth_rate_limit",
       fields: { lastRequest: "last_request" },
     },
