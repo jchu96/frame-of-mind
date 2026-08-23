@@ -341,11 +341,11 @@ function hostedPrincipalSeedSql(rows: string[][]): string {
     ).join(",")};
     INSERT INTO hosted_media_receipts (
       principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
-      mime_type, retention, sealed_at, expires_at, duration_seconds
+      mime_type, retention, sealed_at, expires_at, duration_seconds, size_bytes
     ) VALUES ${rows.map(([principal, , mediaId]) =>
       `('${principal}','${mediaId}','files/${mediaId}',`
       + `'https://generativelanguage.googleapis.test/v1beta/files/${mediaId}',`
-      + `'${digest}','video/mp4','retained','${sealedAt}','${expiresAt}',1)`
+      + `'${digest}','video/mp4','retained','${sealedAt}','${expiresAt}',1,1)`
     ).join(",")};
   `;
 }
