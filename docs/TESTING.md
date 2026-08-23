@@ -21,6 +21,83 @@ when its deployment credentials are absent. `bun run check:e2e` selects hosted
 and adversarial projects and is part of `bun run check`. CI uses
 `bun run test:e2e:ci`, which adds smoke and fails on flaky retries.
 
+## Gate tiers
+
+The gate follows the nwave mission: minimize tests while maximizing decision
+value and reducing feedback time. The fast answer must still preserve the
+authority-boundary checks relevant to the change; a shorter tier is not
+permission to remove coverage from the complete gate.
+
+- `bun run check:pr` runs the fast and local lanes for the normal PR-required
+  gate.
+- `bun run check:sharded` runs fast, local, and hosted lanes for every merge to
+  `main` and every nightly gate.
+- A PR that changes `apps/web/server-hosted/`, `apps/workflows/`,
+  `scripts/test-hosted-*`, or `apps/web/db/migrations/` must run the sharded
+  tier before merge. Set `FRAME_OF_MIND_GATE_BASE_REF=origin/main` (or pass
+  `--base <ref>` to `scripts/run-check-sharded.ts`) and `check:pr` upgrades
+  itself to sharded when those paths differ from the base.
+- `bun run check` remains the serial fallback and retains its original 16-step
+  order.
+
+## Gate lanes
+
+The three lanes cover exactly the same 16 logical steps as the serial gate. A
+unit test parses `package.json` and rejects omissions or duplicates.
+
+| Lane | Logical checks | Shared build |
+|---|---|---|
+| fast | repository hygiene, typechecks, CLI/unit tests, web/unit tests | none |
+| local | CLI build, node web build, Local Studio HTTP contract, streaming spike | one `node-server` artifact |
+| hosted | Access (three entries), Workflows (two auth modes), media, auth, hosted/adversarial Playwright, release rehearsal | one `cloudflare_module` artifact and one sibling Workflows artifact |
+
+Run one lane directly with `bun run check:lane:fast`,
+`bun run check:lane:local`, or `bun run check:lane:hosted`.
+
+`bun run check:sharded` starts the lanes concurrently, prefixes complete output
+lines with the lane name, prints per-lane exit codes and wall time, and prints
+total wall time. Set `FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes under
+load; the default is three.
+
+On a shared host, wrap `check:sharded` in the house `gate-lock`; lanes inside one
+invocation are bounded by `FRAME_OF_MIND_GATE_PARALLELISM`.
+
+On this machine, the hub-measured pre-sharding serial gate required 75–90
+minutes. The same 16-step implementation tree completed with a cold build cache
+in 324.47 seconds: fast 20.17 seconds, local 38.81 seconds, and hosted 324.46
+seconds. Hosted dominated the wall clock, led by the two Workflows HTTP modes
+at 62.61 and 95.19 seconds. A future optimization may overlap the independent
+hosted contract processes inside that lane; it is intentionally deferred from
+the first sharded-gate landing.
+
+Each logical step has a 20-minute hard timeout. Override it with the positive
+integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`. A timeout prints
+`exit=step_timeout` and terminates only the detached process group created for
+that step. The historically intermittent
+`test:hosted-workflows-http:better-auth` step receives one automatic retry and
+prints `retry=1`; no other step is retried.
+
+### Prebuilt artifact contract
+
+The local and hosted contract runners accept
+`FRAME_OF_MIND_PREBUILT_OUTPUT=<absolute-directory>`. Hosted Workflows consumers
+also accept the sibling
+`FRAME_OF_MIND_PREBUILT_WORKFLOWS=<absolute-directory>`. Each directory must
+contain `.frame-of-mind-build.json` with the required preset
+(`node-server`, `cloudflare_module`, or `cloudflare-workflows`). A missing,
+invalid, or wrong marker fails closed with `prebuilt_preset_mismatch`. Without
+these variables, every script retains its prior build behavior.
+
+Lane builds use isolated Nuxt build and output directories, never
+`apps/web/.nuxt` or `apps/web/.output`. Outputs are cached by a SHA-256 over
+`apps/web/**`, `apps/workflows/**`, `bun.lock`, and `package.json`, excluding
+`.output`, `.nuxt`, and `node_modules`. The default cache is
+`~/.cache/frame-of-mind/builds`; override it with
+`FRAME_OF_MIND_BUILD_CACHE=<directory>` or disable it with
+`FRAME_OF_MIND_BUILD_CACHE=off`. Only the five newest entries are retained. A
+hit prints `build=CACHED <hash8>` and is copied into the run-owned temporary
+tree before consumers start.
+
 The quarantine file is
 [`apps/web/e2e/flaky-quarantine.json`](../apps/web/e2e/flaky-quarantine.json).
 It must remain an explicit JSON array; zero entries is the normal state.
