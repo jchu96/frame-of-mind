@@ -7,6 +7,7 @@ import { retryBrowserReadiness } from "./browser-readiness";
 import { createE2EEnvironment } from "./e2e-environment";
 import { runFixture, videoRunFixture } from "../apps/web/test/fixtures";
 import { analysisDigest } from "../src/domain/integrity";
+import { resolvePrebuiltWebOutput } from "./prebuilt-artifact";
 
 const startedAt = performance.now();
 const isolation = await createE2EIsolation(
@@ -19,6 +20,8 @@ const configPath = join(temporaryRoot, "wrangler.jsonc");
 const databaseName = isolation.databaseName;
 const databaseId = isolation.databaseId;
 const workerName = isolation.workerName("hosted-auth-contract");
+const prebuiltOutput = await resolvePrebuiltWebOutput("cloudflare_module");
+const webOutput = prebuiltOutput ?? resolve("apps/web/.output");
 const wranglerBin = resolve("apps/web/node_modules/wrangler/bin/wrangler.js");
 const betterAuthSecret = "fixture-only-better-auth-secret-00000000000000000000";
 const mailerKey = "fixture-mailer-key";
@@ -87,7 +90,11 @@ const fixtureOrigin = `http://127.0.0.1:${fixtureServer.port}`;
 try {
   console.log(`HOSTED_AUTH isolation=PASS worker=${workerName} database=${databaseName}`);
   console.log("HOSTED_AUTH build=START cloudflare_module");
-  await runChecked(["bun", "--no-env-file", "run", "build:web:cloudflare"], "Better Auth Cloudflare build");
+  if (prebuiltOutput) {
+    console.log("HOSTED_AUTH build=SKIP prebuilt=cloudflare_module");
+  } else {
+    await runChecked(["bun", "--no-env-file", "run", "build:web:cloudflare"], "Better Auth Cloudflare build");
+  }
   console.log("HOSTED_AUTH build=PASS cloudflare_module");
 
   const workerPort = await isolation.reservePort();
@@ -269,10 +276,10 @@ async function writeConfig(
   await writeFile(path, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
     name: workerName,
-    main: resolve("apps/web/.output/server/index.mjs"),
+    main: join(webOutput, "server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
-    assets: { directory: resolve("apps/web/.output/public"), binding: "ASSETS" },
+    assets: { directory: join(webOutput, "public"), binding: "ASSETS" },
     d1_databases: [{
       binding: "DB",
       database_name: databaseName,

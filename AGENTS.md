@@ -14,6 +14,8 @@
 | Test web workspace | `bun run test:web` |
 | Browser smoke | `bun run test:e2e:smoke` |
 | Typecheck | `bun run typecheck` |
+| PR gate | `bun run check:pr` |
+| Full sharded gate | `bun run check:sharded` |
 | Run CLI source | `bun run dev -- --help` |
 | Run local web app | `bun run web` |
 
