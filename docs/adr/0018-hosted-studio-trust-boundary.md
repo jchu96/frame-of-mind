@@ -32,9 +32,11 @@ Hosted Studio uses the existing Cloudflare hostname and Access application:
 - service tokens use a separate Access policy and the same middleware, which
   normalizes the documented empty `sub` plus `common_name` claim into a
   service-principal namespace;
-- recording bytes travel browser → Worker → Gemini through raw 8 MiB resumable
-  requests and are never stored by Frame of Mind unless the user explicitly
-  chooses retained media; this supersedes local Studio's provisional Phase B
+- recording bytes travel browser → Gemini directly through a resumable upload
+  session that the Worker opens with the secret key and hands to the browser
+  as a write-only session URL; the Worker never carries recording bytes, and
+  Frame of Mind never stores them unless the user explicitly chooses retained
+  media (Amendment 2, superseding the original Worker-proxied 8 MiB parts); this supersedes local Studio's provisional Phase B
   browser → R2 sketch without changing local media-part constants;
 - retained media is private, principal-owned R2 data with a visible lifecycle;
   ephemeral media is cleaned from Gemini on every terminal path;
@@ -65,7 +67,7 @@ The phased implementation and exact route/data contracts live in the
 
 | Threat | Decision |
 |---|---|
-| Isolate-memory DoS | Task 2.0 must prove raw 8 MiB request streaming and two concurrent uploads within the 128 MB per-isolate limit; failure changes the contract before implementation. |
+| Isolate-memory DoS | Task 2.0 measured that workerd materializes a proxied part under backpressure; Amendment 2 removes the Worker from the byte path, so isolate memory is no longer a function of upload size. Open sessions per principal are capped instead. |
 | Workflow default retries / skipped cleanup | Every step has explicit config; provider steps use `retries.limit: 0`, durable pre-call receipt checks, and `NonRetryableError` after success-without-receipt. The Workflow catches terminal errors inside `run`, performs explicit cleanup before rethrow/finalization, and registers rollback for committed outputs that own cleanup actions. |
 | D1 export of encrypted session URLs | D1 exports are secret-bearing artifacts; exports and derived keys have separate custody, and rotation aborts active sessions before ciphertext removal. |
 | Access `sub` recycle | A re-added user's new subject receives no old rows automatically; email never transfers ownership, and an explicit old/new-sub migration is required. |
@@ -103,8 +105,11 @@ while the existing Worker + D1 + Access boundary already fits the product.
 
 ### Upload directly from the browser to Gemini
 
-Rejected because Gemini resumable upload authorization would expose the shared
-Worker key or an equivalent reusable provider credential.
+Originally rejected on the assumption that resumable upload authorization
+would expose the shared Worker key. The 2026-08-23 spike
+(`docs/spikes/hosted-direct-upload-spike-2026-08-23.md`) disproved that
+assumption: the session URL carries no credential, is write-only to one
+file, and cannot create or list files. Adopted by Amendment 2.
 
 ### Hash with one-shot WebCrypto
 
@@ -128,3 +133,54 @@ retention. R2 is opt-in for retained media only.
 
 Rejected because local process state and request lifetime are not durable
 hosted execution boundaries. The port receives a Workflows adapter instead.
+
+## Amendment 2 (proposed 2026-08-23, not yet adopted): browser → Gemini direct upload
+
+**Supersedes Amendment 1.** Amendment 1 (4 MiB proxied parts, PR #65) is
+withdrawn; the Worker leaves the recording byte path entirely.
+
+**Finding.** Measured against the real Gemini Files API from real Chromium at
+a loopback origin: the Worker opens a resumable session with the secret key
+and returns only the session URL; the browser PUTs the recording directly to
+Google with `X-Goog-Upload-Command` / `-Offset` headers; CORS preflight
+succeeds from a non-Google origin; no API key or bearer appears in the URL,
+request headers, or any response; a captured session URL can only write bytes
+to that one file (it cannot create, list, or read files); the session has a
+provider-side TTL and supports offset query/resume after a client restart;
+`files.get` returns `sizeBytes` and `sha256Hash` of the uploaded bytes.
+
+**Decision (proposed).**
+- `POST /api/hosted/media` creates a principal-owned media session with a
+  declared size, declared SHA-256, and MIME type, opens the Gemini resumable
+  session server-side, stores the Gemini file name, and returns the session
+  URL to the browser. The Worker holds at most **N open sessions per
+  principal** (default 2) — enforced in D1 before the Gemini call — and
+  refuses a new session while the cap is reached.
+- The browser uploads directly to the session URL. Part size is a browser
+  concern (Google's 256 KiB multiple rule), not a trust property.
+- `POST /api/hosted/media/:id/seal` asks the Worker to call `files.get` and
+  **requires** `sizeBytes` and `sha256Hash` to equal the declared values;
+  a missing hash fails closed. Only then is the sealed-media receipt written
+  and `ensure_gemini_file` allowed to proceed. A mismatched or abandoned
+  session is deleted from Gemini by the Worker (and by the Phase 5 janitor
+  for expired sessions).
+- FR-04 and AD-4 in the hosted spec are rewritten to match; the 4 MiB /
+  8 MiB part constants, the wrapper-entry upload path, and the proxy
+  streaming oracle are retired (the wrapper entry remains only as the
+  production `main` that delegates to Nitro).
+
+**What changes in the trust statement.** The Worker never sees recording
+bytes. The browser holds a short-lived, single-file, write-only capability
+URL; leaking it lets a third party write into that one pending file before
+seal, which the digest check detects and rejects. The Gemini key stays a
+Workflows-Worker / Nuxt-Worker secret and is never sent to the browser.
+
+**Rejected alternatives.** Worker-proxied parts (Amendment 1): bounded only
+by part size × concurrency and measured to materialize in isolate memory.
+Private R2 staging: adds a second custody of ephemeral recordings.
+
+**Adoption.** Takes effect when the maintainer merges this amendment; Phase 2
+is then re-planned as: 2.1 media session + cap, 2.2 browser direct upload +
+resume, 2.3 seal with size+digest verification, 2.4 abandoned-session
+cleanup — each with built-Worker contracts using a fake Files API.
+
