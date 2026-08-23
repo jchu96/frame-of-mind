@@ -547,6 +547,7 @@ async function hostedRepositoryFixture(includeHostedMigration = true) {
           "0004_hosted_workflows.sql",
           "0005_hosted_spend_telemetry.sql",
           "0007_hosted_direct_media.sql",
+          "0008_hosted_retention_evidence.sql",
         ]
       : []),
   ];

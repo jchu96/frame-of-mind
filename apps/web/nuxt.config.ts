@@ -9,6 +9,7 @@ import {
 import {
   HOSTED_MEDIA_MAX_BYTES_DEFAULT,
   HOSTED_MEDIA_OPEN_SESSION_CAP_DEFAULT,
+  HOSTED_MEDIA_RETENTION_DAYS_DEFAULT,
   HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT,
 } from "../workflows/src/media";
 import { shouldRegisterLocalStudioRoutes } from "./server-local/studio-session/session";
@@ -79,6 +80,24 @@ const hostedMediaCancelHandler = fileURLToPath(
 );
 const hostedMediaJanitorHandler = fileURLToPath(
   new URL("./server-hosted/media/janitor.post.ts", import.meta.url),
+);
+const hostedRetainedPartHandler = fileURLToPath(
+  new URL("./server-hosted/media/retained-part.put.ts", import.meta.url),
+);
+const hostedRetainedCompleteHandler = fileURLToPath(
+  new URL("./server-hosted/media/retained-complete.post.ts", import.meta.url),
+);
+const hostedRetainedDeleteHandler = fileURLToPath(
+  new URL("./server-hosted/media/retained.delete.ts", import.meta.url),
+);
+const hostedEvidenceListHandler = fileURLToPath(
+  new URL("./server-hosted/evidence/list.get.ts", import.meta.url),
+);
+const hostedEvidenceCaptureHandler = fileURLToPath(
+  new URL("./server-hosted/evidence/capture.post.ts", import.meta.url),
+);
+const hostedEvidenceMediaHandler = fileURLToPath(
+  new URL("./server-hosted/evidence/media.get.ts", import.meta.url),
 );
 const hostedJobDetailHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/detail.get.ts", import.meta.url),
@@ -162,6 +181,9 @@ const hostedActivityPage = fileURLToPath(
 );
 const hostedActivityDetailPage = fileURLToPath(
   new URL("./server-hosted/studio-ui/activity-detail.vue", import.meta.url),
+);
+const hostedReviewPage = fileURLToPath(
+  new URL("./server-hosted/studio-ui/review.vue", import.meta.url),
 );
 const appFrame = fileURLToPath(
   new URL(
@@ -484,6 +506,36 @@ const localHandlers = [
           handler: hostedMediaSealHandler,
         },
         {
+          route: "/api/hosted/media/:id/retained/parts",
+          method: "put",
+          handler: hostedRetainedPartHandler,
+        },
+        {
+          route: "/api/hosted/media/:id/retained/complete",
+          method: "post",
+          handler: hostedRetainedCompleteHandler,
+        },
+        {
+          route: "/api/hosted/media/:id/retained",
+          method: "delete",
+          handler: hostedRetainedDeleteHandler,
+        },
+        {
+          route: "/api/hosted/runs/:id/evidence",
+          method: "get",
+          handler: hostedEvidenceListHandler,
+        },
+        {
+          route: "/api/hosted/runs/:id/evidence",
+          method: "post",
+          handler: hostedEvidenceCaptureHandler,
+        },
+        {
+          route: "/api/hosted/runs/:id/media",
+          method: "get",
+          handler: hostedEvidenceMediaHandler,
+        },
+        {
           route: "/api/hosted/media/:id",
           method: "delete",
           handler: hostedMediaCancelHandler,
@@ -626,6 +678,7 @@ export default defineNuxtConfig({
           { name: "hosted-run", path: "/hosted/new/run", file: hostedRunPage },
           { name: "hosted-activity", path: "/hosted/activity", file: hostedActivityPage },
           { name: "hosted-activity-detail", path: "/hosted/activity/:id", file: hostedActivityDetailPage },
+          { name: "hosted-review", path: "/hosted/review/:runId", file: hostedReviewPage },
         );
       }
     },
@@ -672,6 +725,7 @@ export default defineNuxtConfig({
     hostedMediaOpenSessionCap: HOSTED_MEDIA_OPEN_SESSION_CAP_DEFAULT,
     hostedMediaMaxBytes: HOSTED_MEDIA_MAX_BYTES_DEFAULT,
     hostedMediaSessionTtlSeconds: HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT,
+    hostedMediaRetentionDays: HOSTED_MEDIA_RETENTION_DAYS_DEFAULT,
     public: {
       appName: "Frame of Mind",
       appVersion: "0.3.0",

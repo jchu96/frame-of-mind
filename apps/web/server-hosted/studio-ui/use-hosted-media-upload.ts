@@ -28,6 +28,7 @@ import {
   resumeHostedMedia,
   sealHostedMedia,
   uploadHostedRecording,
+  uploadRetainedRecording,
   validateHostedRecording,
   withHostedUploadLock,
   type HostedMediaDraft,
@@ -286,6 +287,11 @@ export function useHostedMediaUpload() {
               progressBytes.value = offset;
               persistHostedMediaDraft(storage, draft.value);
             },
+          });
+          await uploadRetainedRecording({
+            file: selected,
+            draft: activeDraft,
+            signal: controller?.signal,
           });
           phase.value = "sealing";
           media.value = await sealHostedMedia(activeDraft.mediaId, controller?.signal);

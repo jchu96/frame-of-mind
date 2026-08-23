@@ -5,6 +5,8 @@ import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
 import { createE2EEnvironment } from "./e2e-environment";
+import { analysisDigest } from "../src/domain/integrity";
+import type { VersionedAnalysisRun } from "../src/domain/types";
 
 const root = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-media-"));
 const persistRoot = join(root, "wrangler-state");
@@ -60,6 +62,10 @@ try {
       binding: "DB", database_name: databaseName, database_id: databaseId,
       migrations_dir: resolve("apps/web/db/migrations"),
     }],
+    r2_buckets: [{
+      binding: "RETAINED_MEDIA",
+      bucket_name: "frame-of-mind-hosted-retention-contract",
+    }],
     vars: {
       NUXT_AUTH_MODE: "cloudflare-access",
       NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: issuer,
@@ -69,6 +75,7 @@ try {
       NUXT_HOSTED_MEDIA_OPEN_SESSION_CAP: "2",
       NUXT_HOSTED_MEDIA_MAX_BYTES: String(1024 * 1024),
       NUXT_HOSTED_MEDIA_SESSION_TTL_SECONDS: "3600",
+      NUXT_HOSTED_MEDIA_RETENTION_DAYS: "30",
       HOSTED_GEMINI_FILES_BASE_URL: filesOrigin,
       GEMINI_API_KEY: fixtureKey,
     },
@@ -135,11 +142,112 @@ try {
   assert(sealedBody.media?.sha256 === digestHex(recording), "seal receipt digest mismatch");
   assert(await countReceipts(direct.mediaId) === 1, "exact upload omitted its receipt");
   console.log("HOSTED_MEDIA direct=PASS chromium=true resume=query_after_reload seal=exact");
+  const ephemeralRunId = "20260823T055900Z-hosted-ephemeral-contract";
+  await seedEvidenceRun(ephemeralRunId, direct.mediaId, digestHex(recording));
+  await browserEphemeralDisclosureContract(origin, tokenA, ephemeralRunId);
 
   await rejectionCase(origin, tokenA, "size", bytes(330_001, 31));
   await rejectionCase(origin, tokenA, "digest", bytes(330_002, 32));
   await rejectionCase(origin, tokenA, "missing", bytes(330_003, 33));
   console.log("HOSTED_MEDIA mismatch=PASS size=true same_size_digest=true missing_hash=true deleted=true");
+
+  const retainedBytes = bytes(700_321, 91);
+  const retained = await createSession(origin, tokenA, retainedBytes, "retained");
+  assert(retained.retainedUpload, "retained create omitted its R2 capability");
+  assert(!JSON.stringify(retained.retainedUpload).includes(fixtureKey), "retained capability leaked Gemini key");
+  await uploadAll(retained, retainedBytes);
+  await uploadAllRetained(retained, retainedBytes, tokenA);
+  await expectStatus(
+    uploadRetainedPartResponse(retained.retainedUpload.partUrl, 1, retainedBytes, tokenA),
+    409,
+    "completed retained capability reuse",
+  );
+  const retainedSeal = await expectStatus(sealResponse(origin, tokenA, retained.mediaId), 200, "retained exact seal");
+  const retainedBody = await retainedSeal.json() as { media?: { keptUntil?: string; playbackAvailable?: boolean } };
+  assert(Boolean(retainedBody.media?.keptUntil), "retained seal omitted kept-until");
+  assert(retainedBody.media?.playbackAvailable === true, "retained seal omitted playback availability");
+  const retainedRow = await d1Json(`SELECT retained_object_key FROM hosted_media_receipts WHERE media_id = '${retained.mediaId}'`);
+  const retainedKey = retainedRow[0]?.results?.[0]?.retained_object_key;
+  assert(typeof retainedKey === "string" && /^principals\/[a-f0-9]{32}\/media\/[a-f0-9-]{36}$/.test(retainedKey), "retained object key was not principal-scoped and unguessable");
+  await expectStatus(deleteRetainedResponse(origin, tokenB, retained.mediaId), 404, "cross-principal retained delete");
+  await expectStatus(deleteRetainedResponse(origin, tokenA, retained.mediaId), 200, "explicit retained delete");
+
+  const mismatchedRetainedBytes = bytes(700_333, 92);
+  const mismatchedRetained = await createSession(origin, tokenA, mismatchedRetainedBytes, "retained");
+  await uploadAll(mismatchedRetained, mismatchedRetainedBytes);
+  await uploadAllRetained(mismatchedRetained, bytes(mismatchedRetainedBytes.length, 93), tokenA);
+  const retainedMismatch = await expectStatus(
+    sealResponse(origin, tokenA, mismatchedRetained.mediaId),
+    409,
+    "retained object with wrong bytes is rejected",
+  );
+  assert(
+    (await retainedMismatch.json() as { data?: { code?: string } }).data?.code === "retained_media_seal_mismatch",
+    "retained digest mismatch did not return its stable code",
+  );
+
+  const expiringRetainedBytes = bytes(700_345, 94);
+  const expiringRetained = await createSession(origin, tokenA, expiringRetainedBytes, "retained");
+  await uploadAll(expiringRetained, expiringRetainedBytes);
+  await uploadAllRetained(expiringRetained, expiringRetainedBytes, tokenA);
+  await expectStatus(sealResponse(origin, tokenA, expiringRetained.mediaId), 200, "retained lifecycle seal");
+  await d1Execute(`UPDATE hosted_media_receipts SET retained_until = '2020-01-01T00:00:00.000Z' WHERE media_id = '${expiringRetained.mediaId}'`);
+  const lifecycleSweep = await expectStatus(janitorResponse(origin, tokenA), 200, "retained lifecycle janitor");
+  assert((await lifecycleSweep.json() as { retained?: number }).retained === 1, "retained lifecycle object was not swept");
+
+  const orphanBytes = bytes(700_357, 95);
+  const orphan = await createSession(origin, tokenA, orphanBytes, "retained");
+  assert(orphan.retainedUpload, "orphan fixture omitted retained capability");
+  await uploadRetainedPart(orphan.retainedUpload.partUrl, 1, orphanBytes, tokenA);
+  await expire(orphan.mediaId);
+  const orphanSweep = await expectStatus(janitorResponse(origin, tokenA), 200, "retained orphan janitor");
+  assert((await orphanSweep.json() as { abandoned?: number }).abandoned === 1, "retained orphan was not abandoned");
+  await expectStatus(uploadRetainedPartResponse(orphan.retainedUpload.partUrl, 1, orphanBytes, tokenA), 409, "swept retained capability reuse");
+  console.log("HOSTED_RETENTION_CONTRACT PASSED presign=true multipart=true digest_match=true digest_mismatch=true lifecycle=true delete=true orphan=true isolation=true");
+
+  const evidenceBytes = bytes(700_369, 96);
+  const evidenceMedia = await createSession(origin, tokenA, evidenceBytes, "retained");
+  await uploadAll(evidenceMedia, evidenceBytes);
+  await uploadAllRetained(evidenceMedia, evidenceBytes, tokenA);
+  await expectStatus(sealResponse(origin, tokenA, evidenceMedia.mediaId), 200, "evidence retained seal");
+  const evidenceRunId = "20260823T060000Z-hosted-evidence-contract";
+  await seedEvidenceRun(evidenceRunId, evidenceMedia.mediaId, digestHex(evidenceBytes));
+  const evidenceSourceResponse = await expectStatus(fetch(
+    `${origin}/api/hosted/runs/${evidenceRunId}/evidence`,
+    { headers: { "cf-access-jwt-assertion": tokenA } },
+  ), 200, "evidence source");
+  const evidenceSource = await evidenceSourceResponse.json() as {
+    source: { manifestSha256: string; recordingSha256: string };
+    evidence: unknown[];
+  };
+  assert(evidenceSource.evidence.length === 0, "new evidence list was not empty");
+  const png = Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"));
+  await expectStatus(captureResponse(origin, tokenA, evidenceRunId, png, {}), 422, "capture without source/timestamp is refused");
+  await expectStatus(captureResponse(origin, tokenA, evidenceRunId, png, {
+    timestampSeconds: 2.5,
+    manifestSha256: "0".repeat(64),
+    recordingSha256: evidenceSource.source.recordingSha256,
+  }), 422, "capture with false manifest source");
+  const captured = await expectStatus(captureResponse(origin, tokenA, evidenceRunId, png, {
+    timestampSeconds: 2.5,
+    manifestSha256: evidenceSource.source.manifestSha256,
+    recordingSha256: evidenceSource.source.recordingSha256,
+  }), 201, "capture with exact provenance");
+  const capturedBody = await captured.json() as { evidence?: { timestampSeconds?: number; source?: { manifestSha256?: string; recordingSha256?: string } } };
+  assert(capturedBody.evidence?.timestampSeconds === 2.5, "capture omitted timestamp provenance");
+  assert(capturedBody.evidence?.source?.manifestSha256 === evidenceSource.source.manifestSha256, "capture omitted manifest source provenance");
+  assert(capturedBody.evidence?.source?.recordingSha256 === evidenceSource.source.recordingSha256, "capture omitted recording source provenance");
+  await browserEvidenceCaptureContract(origin, tokenA, evidenceRunId, png);
+  await expectStatus(fetch(`${origin}/api/hosted/runs/${evidenceRunId}/evidence`, {
+    headers: { "cf-access-jwt-assertion": tokenB },
+  }), 404, "cross-principal evidence list");
+  await expectStatus(deleteRetainedResponse(origin, tokenA, evidenceMedia.mediaId), 200, "evidence source delete");
+  const deletedEvidence = await d1Json(`SELECT count(*) AS value FROM hosted_evidence_captures WHERE media_id = '${evidenceMedia.mediaId}'`);
+  assert(deletedEvidence[0]?.results?.[0]?.value === 0, "retained delete left evidence receipts behind");
+  await expectStatus(fetch(`${origin}/api/hosted/runs/${evidenceRunId}/evidence`, {
+    headers: { "cf-access-jwt-assertion": tokenA },
+  }), 404, "evidence list after retained delete");
+  console.log("HOSTED_EVIDENCE_CONTRACT PASSED canvas_e2e=true timestamp=true manifest_source=true recording_source=true refusal_code=true isolation=true");
 
   const abandoned = await createSession(origin, tokenA, bytes(340_001, 44));
   await expire(abandoned.mediaId);
@@ -193,6 +301,7 @@ interface SessionResponse {
   uploadUrl: string;
   partBytes: number;
   sessionExpiresAt: string;
+  retainedUpload?: { partUrl: string; completeUrl: string };
 }
 
 interface FakeSession {
@@ -485,6 +594,62 @@ async function browserRecoveryContract(
   }
 }
 
+async function browserEvidenceCaptureContract(
+  origin: string,
+  token: string,
+  runId: string,
+  png: Uint8Array,
+): Promise<void> {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({
+      extraHTTPHeaders: { "cf-access-jwt-assertion": token },
+    });
+    const page = await context.newPage();
+    await page.addInitScript((encoded) => {
+      Object.defineProperty(HTMLMediaElement.prototype, "readyState", { get: () => 4 });
+      Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { get: () => 1 });
+      Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { get: () => 1 });
+      Object.defineProperty(HTMLMediaElement.prototype, "currentTime", { get: () => 2.75, set: () => undefined });
+      CanvasRenderingContext2D.prototype.drawImage = () => undefined;
+      HTMLCanvasElement.prototype.toBlob = function (callback) {
+        const raw = atob(encoded);
+        callback(new Blob([Uint8Array.from(raw, (value) => value.charCodeAt(0))], { type: "image/png" }));
+      };
+    }, Buffer.from(png).toString("base64"));
+    await page.goto(`${origin}/hosted/review/${runId}`);
+    const button = page.getByRole("button", { name: "Capture current frame" });
+    await button.waitFor();
+    await button.click();
+    await page.getByText("2.750s").waitFor();
+    assert(await page.locator("[data-hosted-ephemeral-disclosure]").count() === 0, "retained review showed ephemeral disclosure");
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+}
+
+async function browserEphemeralDisclosureContract(
+  origin: string,
+  token: string,
+  runId: string,
+): Promise<void> {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({
+      extraHTTPHeaders: { "cf-access-jwt-assertion": token },
+    });
+    const page = await context.newPage();
+    await page.goto(`${origin}/hosted/review/${runId}`);
+    await page.locator("[data-hosted-ephemeral-disclosure]").waitFor();
+    assert(await page.locator("video").count() === 0, "ephemeral review exposed playback");
+    assert(await page.getByRole("button", { name: "Capture current frame" }).count() === 0, "ephemeral review exposed capture");
+    await context.close();
+  } finally {
+    await browser.close();
+  }
+}
+
 async function rejectionCase(
   origin: string,
   token: string,
@@ -516,18 +681,121 @@ async function uploadAll(session: SessionResponse, payload: Uint8Array): Promise
   }
 }
 
-async function createSession(origin: string, token: string, payload: Uint8Array): Promise<SessionResponse> {
-  return await (await expectStatus(createResponse(origin, token, payload), 201, "create upload session")).json() as SessionResponse;
+async function createSession(origin: string, token: string, payload: Uint8Array, retention: "ephemeral" | "retained" = "ephemeral"): Promise<SessionResponse> {
+  return await (await expectStatus(createResponse(origin, token, payload, retention), 201, "create upload session")).json() as SessionResponse;
 }
 
-function createResponse(origin: string, token: string, payload: Uint8Array): Promise<Response> {
+function createResponse(origin: string, token: string, payload: Uint8Array, retention: "ephemeral" | "retained" = "ephemeral"): Promise<Response> {
   return fetch(`${origin}/api/hosted/media`, {
     method: "POST", headers: mutationHeaders(origin, token),
     body: JSON.stringify({
       declaredSizeBytes: payload.length, declaredSha256: digestHex(payload),
-      mimeType: "video/webm", durationSeconds: 3, retention: "ephemeral",
+      mimeType: "video/webm", durationSeconds: 3, retention,
     }),
   });
+}
+
+async function uploadAllRetained(session: SessionResponse, payload: Uint8Array, token: string): Promise<void> {
+  if (!session.retainedUpload) throw new Error("retained upload capability missing");
+  const part = await uploadRetainedPart(session.retainedUpload.partUrl, 1, payload, token);
+  await expectStatus(fetch(session.retainedUpload.completeUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: new URL(session.retainedUpload.completeUrl).origin, "cf-access-jwt-assertion": token },
+    body: JSON.stringify({ parts: [part] }),
+  }), 200, "complete retained multipart upload");
+}
+
+async function uploadRetainedPart(url: string, partNumber: number, payload: Uint8Array, token: string): Promise<{ partNumber: number; etag: string }> {
+  const response = await expectStatus(uploadRetainedPartResponse(url, partNumber, payload, token), 200, "upload retained part");
+  return await response.json() as { partNumber: number; etag: string };
+}
+
+function uploadRetainedPartResponse(url: string, partNumber: number, payload: Uint8Array, token: string): Promise<Response> {
+  const separator = url.includes("?") ? "&" : "?";
+  return fetch(`${url}${separator}partNumber=${partNumber}`, {
+    method: "PUT",
+    headers: { "content-type": "application/octet-stream", origin: new URL(url).origin, "cf-access-jwt-assertion": token },
+    body: payload,
+  });
+}
+
+function deleteRetainedResponse(origin: string, token: string, mediaId: string): Promise<Response> {
+  return fetch(`${origin}/api/hosted/media/${mediaId}/retained`, {
+    method: "DELETE", headers: mutationHeaders(origin, token), body: "{}",
+  });
+}
+
+function captureResponse(
+  origin: string,
+  token: string,
+  runId: string,
+  png: Uint8Array,
+  provenance: { timestampSeconds?: number; manifestSha256?: string; recordingSha256?: string },
+): Promise<Response> {
+  const query = provenance.timestampSeconds === undefined
+    ? ""
+    : `?timestampSeconds=${provenance.timestampSeconds}`;
+  return fetch(`${origin}/api/hosted/runs/${runId}/evidence${query}`, {
+    method: "POST",
+    headers: {
+      "content-type": "image/png",
+      origin,
+      "cf-access-jwt-assertion": token,
+      ...(provenance.manifestSha256
+        ? { "x-fom-source-manifest-sha256": provenance.manifestSha256 }
+        : {}),
+      ...(provenance.recordingSha256
+        ? { "x-fom-source-recording-sha256": provenance.recordingSha256 }
+        : {}),
+    },
+    body: png,
+  });
+}
+
+async function seedEvidenceRun(runId: string, mediaId: string, recordingSha256: string): Promise<void> {
+  const analysis: VersionedAnalysisRun = {
+    schemaVersion: 3,
+    runId,
+    recipe: { id: "issue-review", label: "Issue review" },
+    context: { mode: "none" },
+    model: "gemini-test",
+    matchNotes: "Hosted evidence contract.",
+    items: [{
+      candidate: { start: "00:00:02", end: "00:00:03", summary: "Visible evidence.", kind: "issue", importance: "high" },
+      result: { accepted: true, kind: "issue", title: "Visible issue", summary: "The recording shows the issue.", importance: "high", evidence: { timestamp: "00:00:02" } },
+    }],
+  };
+  const manifest = {
+    schemaVersion: 3,
+    toolVersion: "0.3.0",
+    promptRevision: "contract",
+    runId,
+    startedAt: "2026-08-23T06:00:00.000Z",
+    completedAt: "2026-08-23T06:01:00.000Z",
+    context: { mode: "none" },
+    recipe: { id: "issue-review", label: "Issue review", custom: false, revision: "contract", sha256: "c".repeat(64) },
+    model: "gemini-test",
+    recordingSha256,
+    analysisSha256: await analysisDigest(analysis),
+    recordingMimeType: "video/webm",
+    mediaSource: "local-file",
+    remoteFile: { deleted: true },
+    analysis: { maxIncidents: 3, indexFps: 0.5, indexResolution: "low", interrogationResolution: "medium" },
+    artifacts: ["analysis.json", "manifest.json"],
+  };
+  const principal = "media-principal-a";
+  const suffix = createHash("sha256").update(runId).digest("hex").slice(0, 20);
+  const jobId = `job_${suffix}`;
+  const attemptId = `attempt_${suffix}`;
+  const timestamp = "2026-08-23T06:01:00.000Z";
+  await d1Execute(`INSERT INTO video_analysis_runs (principal_sub, run_id, principal_email, recipe_id, recipe_label, model, started_at, completed_at, match_notes, accepted_count, rejected_count, analysis_json, manifest_json, imported_at, imported_by) VALUES (${sql(principal)}, ${sql(runId)}, 'media-principal-a@example.test', 'issue-review', 'Issue review', 'gemini-test', '2026-08-23T06:00:00.000Z', ${sql(timestamp)}, 'Hosted evidence contract.', 1, 0, ${sql(JSON.stringify(analysis))}, ${sql(JSON.stringify(manifest))}, ${sql(timestamp)}, 'contract')`);
+  await d1Execute(`INSERT INTO analysis_run_registry (principal_sub, run_id, principal_email, schema_version) VALUES (${sql(principal)}, ${sql(runId)}, 'media-principal-a@example.test', 3)`);
+  await d1Execute(`INSERT INTO hosted_analysis_jobs (principal_sub, job_id, principal_email, media_id, created_at) VALUES (${sql(principal)}, ${sql(jobId)}, 'media-principal-a@example.test', ${sql(mediaId)}, ${sql(timestamp)})`);
+  await d1Execute(`INSERT INTO hosted_analysis_attempts (principal_sub, attempt_id, job_id, attempt_number, idempotency_key, workflow_instance_id, immutable_input_json, stage, spend_reserved_units, run_id, cleanup_completed_at, created_at, updated_at) VALUES (${sql(principal)}, ${sql(attemptId)}, ${sql(jobId)}, 1, ${sql(`evidence-contract-${suffix}`)}, ${sql(`workflow-${suffix}`)}, '{}', 'succeeded', 1, ${sql(runId)}, ${sql(timestamp)}, ${sql(timestamp)}, ${sql(timestamp)})`);
+}
+
+function sql(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 function sealResponse(origin: string, token: string, mediaId: string): Promise<Response> {

@@ -58,7 +58,7 @@ async function retry(): Promise<void> {
       <template #header><h2 class="text-xl font-black">Receipt</h2></template>
       <dl class="grid gap-4 text-sm md:grid-cols-3"><div><dt class="text-muted">Model</dt><dd>{{ job.input.model }}</dd></div><div><dt class="text-muted">Retention</dt><dd>{{ job.input.retention.mode }}</dd></div><div><dt class="text-muted">Updated</dt><dd>{{ job.updatedAt }}</dd></div></dl>
       <p v-if="job.terminal?.code" class="mt-4 text-sm">Status code: <code>{{ job.terminal.code }}</code></p>
-      <div class="mt-5 flex gap-3"><UButton v-if="actions.actions.some((item) => item.id === 'cancel')" label="Cancel" color="neutral" variant="outline" @click="cancel" /><UButton v-if="actions.actions.some((item) => item.id === 'retry')" label="Retry" @click="retry" /><UButton v-if="job.runId" :to="`/runs/${encodeURIComponent(job.runId)}`" label="Open published run" icon="i-lucide-external-link" /></div>
+      <div class="mt-5 flex gap-3"><UButton v-if="actions.actions.some((item) => item.id === 'cancel')" label="Cancel" color="neutral" variant="outline" @click="cancel" /><UButton v-if="actions.actions.some((item) => item.id === 'retry')" label="Retry" @click="retry" /><UButton v-if="job.runId" :to="`/hosted/review/${encodeURIComponent(job.runId)}`" label="Open review workspace" icon="i-lucide-external-link" /></div>
       <p v-if="actions.whyNot" class="mt-4 text-sm text-muted">{{ actions.whyNot }}</p>
     </UCard>
     <UCard class="mt-6"><template #header><h2 class="text-xl font-black">Timeline</h2></template><ol class="space-y-4"><li v-for="row in timeline" :key="row.key"><p class="font-bold">{{ row.label }}</p><p class="text-sm text-muted">{{ row.message }} · {{ row.occurredAt }}</p></li></ol></UCard>
