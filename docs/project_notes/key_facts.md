@@ -220,6 +220,9 @@
   atomically consumes its token on the first fetch. The hosted integration
   rejects uninvited sends in a before-hook so no verification row or mail is
   created, then rechecks the invite before session insertion.
+- Hosted magic-link admission conditionally updates the invite row before
+  delivery, allowing one send per email each 60 seconds even across concurrent
+  requests; production also caps the route at three requests per 15 minutes.
 - Hosted retained mode uses the private `RETAINED_MEDIA` R2 binding with a
   hashed-principal/random object key and a one-way application capability; no
   R2 account credentials enter the browser or D1. Seal accepts the object only

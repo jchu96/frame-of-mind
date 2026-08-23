@@ -53,7 +53,9 @@ The shared hosted fixture builds the Nuxt `cloudflare_module` artifact, dry-runs
 the Workflows Worker, applies migrations to a unique local D1 name, seeds
 principal-bound sealed-media receipts, then starts both Workers under workerd.
 It also starts a fake Access JWKS issuer, fake GitHub OAuth endpoint, captured
-mailer, and fake Gemini port. Provider calls remain offline.
+HTTP mailer, Wrangler's local `send_email` simulator, and a fake Gemini port.
+The auth spike proves both mailer paths without `remote: true`; provider calls
+remain offline.
 
 Better Auth has a named Playwright project and a `HostedAuthMode` fixture seam.
 When `apps/web/server/utils/better-auth.ts` is absent, that project skips with
@@ -98,6 +100,11 @@ The printed Access helper URL is a loopback reverse proxy that injects only the
 generated principal-A assertion. Removing the `tester@example.test` invite
 from the Better Auth seed is discriminating: the fake GitHub sign-in must end
 with `EMAIL_NOT_INVITED`.
+
+The hosted-auth contract also submits the same invited magic-link address
+twice within 60 seconds. The second request must return 429 with
+`MAGIC_LINK_COOLDOWN`, while Wrangler's local email simulator must still
+contain exactly one captured message.
 
 Run the hosted two-Worker, two-principal contract and its first-time-user
 browser journey:

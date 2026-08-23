@@ -2,6 +2,24 @@
 
 ## 2026-08-23
 
+- Closed the Cloudflare Email Service adversarial review's three should-fix
+  findings before go-live. A present `EMAIL` binding with no sender now fails
+  closed as code-only `E_MAILER_FROM_UNSET`, and binding failures cannot fall
+  through to the configured HTTP transport. Migration 0009 adds a nullable
+  invite-row timestamp; the Better Auth before-hook reserves it with a
+  conditional update, production limits the route to three requests per 15
+  minutes, and the second request inside 60 seconds returns
+  `MAGIC_LINK_COOLDOWN` without another send. Focused mailer tests (6/6), web
+  typecheck, and the built-workerd hosted-auth contract passed; the latter
+  applied migrations `0001..0009` twice and emitted
+  `magic_link_cooldown=PASS seconds=60 mailer_calls=1`.
+
+- Added binding-first Better Auth magic-link delivery through Cloudflare Email
+  Service with explicit sender configuration, dual-part five-minute sign-in
+  copy, HTTP fallback, and code-only fail-closed telemetry. The hosted-auth
+  spike now proves the local `send_email` simulator and HTTP variants while
+  retaining the zero-delivery uninvited-email receipt.
+
 - Added the long-lived `bun run hosted:local` reviewer topology: isolated
   built Workers, fake GitHub/Gemini/mailer, seeded Better Auth invites when
   that adapter is present, and a generated Access-header proxy fallback on
