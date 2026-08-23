@@ -110,5 +110,18 @@ test.describe(`hosted sign-in (${mode})`, () => {
     await page.unroute("**/api/auth/sign-in/magic-link");
     await page.goto("/sign-in?error=EMAIL_NOT_INVITED");
     await expect(page.getByText("This email has not been invited to Frame of Mind.")).toBeVisible();
+
+    await page.route("**/api/auth/sign-in/magic-link", async (route) => {
+      await route.fulfill({
+        status: 429,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "MAGIC_LINK_COOLDOWN" }),
+      });
+    });
+    await page.getByRole("textbox", { name: "Email address" }).fill("browser@example.test");
+    await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+    await expect(page.getByText(
+      "A sign-in link was sent recently. Check your inbox or try again in a minute.",
+    )).toBeVisible();
   });
 });
