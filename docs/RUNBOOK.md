@@ -1422,6 +1422,26 @@ bun run test:hosted-workflows-http
 The second command must print `HOSTED_SPEND_CONTRACT PASSED` and confirm the
 telemetry contract accepts codes/structural fields while rejecting content.
 
+### Hosted Phase 6.4 post-deploy canary
+
+After deploying the public Worker with hosted creation still dark, run the
+read-only Access canary before any traffic expansion:
+
+```bash
+FRAME_OF_MIND_CANARY_URL="https://fom.flickerventures.com" \
+CF_ACCESS_CLIENT_ID="<service-token-id>" \
+CF_ACCESS_CLIENT_SECRET="<service-token-secret>" \
+bun run test:e2e:canary
+```
+
+Require `CANARY ...=PASS` for the unauthenticated 302, deliberate service-token
+403 on `/api/runs`, sanitized `/api/session` shape, dark hosted pages returning
+404, `/api/health`, and the static favicon. The command is not part of
+`bun run check`; missing URL or token input must print `CANARY environment=SKIP`.
+Pointing the URL at an unprotected local Studio must fail the unauthenticated
+302 check. Keep the token only in the release shell and never paste it into the
+receipt.
+
 ### Hosted release enablement and canary (dark by default)
 
 The committed production shape builds hosted routes but keeps
@@ -1936,7 +1956,7 @@ bun test apps/web/test/studio-media-upload.test.ts
 bun test apps/web/test/studio-media-controller.test.ts
 bun run test:studio-http
 bun run test:e2e:smoke
-bun run test:e2e -- apps/web/e2e/studio-upload.spec.ts
+FRAME_OF_MIND_E2E_SUITE=smoke bun --no-env-file scripts/run-playwright-e2e.ts apps/web/e2e/smoke/studio-upload.spec.ts
 bun run build:web:cloudflare
 ```
 
