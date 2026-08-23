@@ -1,4 +1,5 @@
 import { lstat } from "node:fs/promises";
+import { builtinModules } from "node:module";
 import { extname, resolve } from "node:path";
 
 type Finding = {
@@ -14,6 +15,21 @@ type SensitivePattern = {
 const repositoryRoot = resolve(import.meta.dir, "..");
 const historyMode = process.argv.includes("--history");
 const selfTestMode = process.argv.includes("--self-test");
+const rootManifestPath = resolve(repositoryRoot, "package.json");
+
+const importSourceExtensions = new Set([
+  ".cjs",
+  ".cts",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".mts",
+  ".ts",
+  ".tsx",
+]);
+const builtinPackages = new Set(
+  builtinModules.flatMap((name) => [name, name.replace(/^node:/, "")]),
+);
 
 const forbiddenArtifactExtensions = new Set([
   ".avi",
@@ -662,7 +678,86 @@ function runSelfTest(): void {
     throw new Error("Repository hygiene self-test failed for the reviewed UX proof allowlist.");
   }
 
+  const missingBareImports = undeclaredBareImports(
+    ["node:fs/promises", "./fixture", "jose", "@playwright/test"],
+    new Set(["@playwright/test"]),
+  );
+  if (missingBareImports.join("\0") !== "jose") {
+    throw new Error(
+      "Repository hygiene self-test failed to reject a root script's undeclared bare import.",
+    );
+  }
+  if (
+    undeclaredBareImports(
+      ["node:fs/promises", "./fixture", "jose", "@playwright/test"],
+      new Set(["@playwright/test", "jose"]),
+    ).length !== 0
+  ) {
+    throw new Error(
+      "Repository hygiene self-test rejected bare imports declared in the root manifest.",
+    );
+  }
+
   console.log(`Repository hygiene self-test: passed (${fixtures.length} fixtures).`);
+}
+
+function barePackageName(specifier: string): string | undefined {
+  if (
+    specifier.startsWith(".")
+    || specifier.startsWith("/")
+    || specifier.startsWith("#")
+    || specifier.startsWith("node:")
+    || specifier.startsWith("bun:")
+  ) {
+    return undefined;
+  }
+  if (specifier.startsWith("@")) {
+    const [scope, name] = specifier.split("/");
+    return scope && name ? `${scope}/${name}` : specifier;
+  }
+  return specifier.split("/", 1)[0];
+}
+
+function undeclaredBareImports(
+  specifiers: string[],
+  declaredPackages: Set<string>,
+): string[] {
+  return [...new Set(specifiers.flatMap((specifier) => {
+    const packageName = barePackageName(specifier);
+    if (
+      !packageName
+      || builtinPackages.has(packageName)
+      || declaredPackages.has(packageName)
+    ) {
+      return [];
+    }
+    return [packageName];
+  }))].sort();
+}
+
+function shouldCheckImports(path: string): boolean {
+  return (path.startsWith("scripts/") || path.startsWith("test/"))
+    && importSourceExtensions.has(extname(path).toLowerCase());
+}
+
+function declaredRootPackages(manifest: {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+}): Set<string> {
+  return new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.devDependencies ?? {}),
+    ...Object.keys(manifest.optionalDependencies ?? {}),
+  ]);
+}
+
+function scanSourceImports(text: string): string[] {
+  const transpiler = new Bun.Transpiler({ loader: "tsx" });
+  const source = text.startsWith("#!")
+    ? text.slice(text.indexOf("\n") + 1)
+    : text;
+  return transpiler.scanImports(source).map((entry) => entry.path);
 }
 
 function printFindings(findings: Finding[]): never {
@@ -700,6 +795,8 @@ async function repositoryFiles(): Promise<string[]> {
 async function scanWorkingTree(): Promise<void> {
   const findings: Finding[] = [];
   const files = await repositoryFiles();
+  const rootManifest = await Bun.file(rootManifestPath).json();
+  const declaredPackages = declaredRootPackages(rootManifest);
   let textLines = 0;
 
   for (const path of files) {
@@ -723,6 +820,17 @@ async function scanWorkingTree(): Promise<void> {
     if (view.includes(0)) continue;
     const text = new TextDecoder("utf-8", { fatal: false }).decode(view);
     textLines += scanText(text, (lineNumber) => `${path}:${lineNumber}`, findings);
+    if (shouldCheckImports(path)) {
+      for (const packageName of undeclaredBareImports(
+        scanSourceImports(text),
+        declaredPackages,
+      )) {
+        findings.push({
+          location: path,
+          pattern: `undeclared-root-import:${packageName}`,
+        });
+      }
+    }
   }
 
   if (findings.length > 0) printFindings(findings);

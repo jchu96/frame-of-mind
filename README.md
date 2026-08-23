@@ -209,6 +209,12 @@ FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
 Run `bun run check:sharded` before merging hosted changes and for the complete
 merge/nightly gate. `bun run check` remains the serial fallback.
 
+GitHub CI keeps the fast answer and hosted proof separate: the 15-minute
+`check` job runs fast and local through `check:pr`, then the required
+40-minute `hosted-contracts` job installs Chromium and runs the hosted lane.
+The three fresh-clone platforms and the independent browser E2E job remain
+separate failure domains. See [docs/TESTING.md](docs/TESTING.md#ci).
+
 The full fresh-clone Studio boot is continuously tested on macOS and Linux.
 On Windows, use WSL or Git Bash with Bun 1.3.14+ and keep the checkout on LF:
 

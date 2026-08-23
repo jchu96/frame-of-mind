@@ -2,7 +2,12 @@ export type GateTier = "pr" | "sharded";
 
 export interface GateSelection {
   readonly tier: GateTier;
-  readonly reason: "requested" | "base_ref_unavailable" | "unsafe_path" | "all_paths_safe";
+  readonly reason:
+    | "requested"
+    | "hosted_lane_separate"
+    | "base_ref_unavailable"
+    | "unsafe_path"
+    | "all_paths_safe";
 }
 
 const presentationExtensions = new Set([
@@ -27,8 +32,10 @@ export function selectGateTier(
   requestedTier: GateTier,
   baseRefAvailable: boolean,
   changedPaths: readonly string[],
+  hostedLaneSeparate = false,
 ): GateSelection {
   if (requestedTier === "sharded") return { tier: "sharded", reason: "requested" };
+  if (hostedLaneSeparate) return { tier: "pr", reason: "hosted_lane_separate" };
   if (!baseRefAvailable) {
     return { tier: "sharded", reason: "base_ref_unavailable" };
   }

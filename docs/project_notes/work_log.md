@@ -2,6 +2,15 @@
 
 ## 2026-08-23
 
+- Repaired the root-script dependency contract after repeated red runs went
+  unnoticed: root scripts now own their `jose` dependency and repository
+  hygiene rejects undeclared bare imports under `scripts/` and `test/`.
+  A real Windows runner proved that the lockfile drift was a cross-drive
+  fresh-clone path rewrite, not an optional package; Windows clones now stay on
+  the source drive. After PR #94 landed, CI was split into a 15-minute fast and
+  local `check` job and a required 40-minute Playwright-enabled hosted-contract
+  job while retaining the three-platform fresh-clone matrix. The complete local
+  and GitHub receipts are recorded in the fleet STATUS.
 - Configured Better Auth's documented `advanced.ipAddress.ipAddressHeaders`
   path for Cloudflare Workers so magic-link rate limiting uses only the
   edge-set `cf-connecting-ip` header. Added a behavioral
@@ -1129,6 +1138,27 @@
   the client IP on Workers (`cf-connecting-ip`), so the per-route rate limit
   was a single shared bucket; and `/api/_nuxt_icon/*` was not a public path,
   so the sign-in page's icon request returned `403` before login.
+- Merged PR #94's sharded gate into the CI repair branch on 2026-08-23. The
+  ordinary `check` job now runs the adaptive PR gate within 15 minutes while a
+  dependent 40-minute `hosted-contracts` job installs Chromium and owns the
+  hosted lane; the Ubuntu/macOS/Windows fresh-clone matrix remains unchanged.
+  The first Linux branch run exposed local workerd D1 writer contention only
+  after the synthetic 3-admit/7-reject HTTP burst. The fixture now preserves
+  that concurrent admission proof and its three durable attempts while an
+  exact media-and-key-scoped fixture returns accepted dispatch receipts without
+  launching instances; successful Workflow completion remains covered earlier
+  in both auth modes. This separates the spend-cap oracle from SQLite-backed
+  local-runtime scheduling without interrupting or poisoning the next local
+  Workflows process.
+  The exact-head Linux run then exposed a separate unbounded client wait after
+  the browser workflow and before the crash fixture. Local dispatch and status
+  fetches now have 10-second request bounds and retain idempotent retries, so a
+  wedged workerd service-binding request recovers its durable receipt or fails
+  inside the contract instead of consuming the lane's 20-minute step timeout.
+  Per the CI capacity ruling, the hosted job now serializes gate work, gives a
+  logical step 30 minutes inside the unchanged 40-minute job budget, and grants
+  both Workflow auth variants one timeout-only retry in CI while local retry
+  behavior remains Better Auth-only.
 - Addressed PR #92's hygiene review after merging the Cloudflare Email Service
   work from `origin/main`. Synthetic Access domains now use literal values with
   an occurrence-scoped safe rule; split/join evasion is explicitly rejected.
@@ -1158,4 +1188,3 @@
   zero-to-deploy checklist, both supported GitHub application choices, and a
   provenance map separating vendored Google skills, installable official
   Cloudflare marketplace skills, and unshipped maintainer review skills.
-

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Database } from "bun:sqlite";
 
@@ -11,7 +11,12 @@ type Mode = "fresh" | "upgrade" | "install-only";
 const mode = parseMode(Bun.argv[2]);
 const sourceRoot = await gitOutput(["rev-parse", "--show-toplevel"], process.cwd());
 const headSha = await gitOutput(["rev-parse", "HEAD"], sourceRoot);
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-fresh-clone-"));
+// Bun 1.3.14 rewrites workspace paths in bun.lock when a Windows local clone
+// crosses drives (the Actions checkout is on D: while os.tmpdir() is on C:).
+// Keep the owned clone beside the source checkout on Windows so the frozen
+// install exercises a portable workspace path instead of a drive-relative one.
+const temporaryParent = process.platform === "win32" ? dirname(sourceRoot) : tmpdir();
+const temporaryRoot = await mkdtemp(join(temporaryParent, "frame-of-mind-fresh-clone-"));
 const checkoutRoot = join(temporaryRoot, "checkout");
 const stateRoot = join(temporaryRoot, "state");
 const databasePath = join(stateRoot, "studio.sqlite");

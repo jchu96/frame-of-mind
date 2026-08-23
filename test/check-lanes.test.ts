@@ -105,6 +105,36 @@ describe("check lanes", () => {
     });
   });
 
+  test("keeps the CI check job on fast and local when hosted runs separately", () => {
+    expect(selectGateTier("pr", false, ["package.json"], true)).toEqual({
+      tier: "pr",
+      reason: "hosted_lane_separate",
+    });
+  });
+
+  test("wires the CI jobs to the complete lane set", async () => {
+    const workflow = await readFile(".github/workflows/ci.yml", "utf8");
+    expect(workflow).toContain("timeout-minutes: 15");
+    expect(workflow).toContain(
+      'bun run check:pr --base "origin/${{ github.base_ref || \'main\' }}"',
+    );
+    expect(workflow).toContain('FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE: "1"');
+    expect(workflow).toContain("hosted-contracts:\n    needs: check");
+    expect(workflow).toContain("timeout-minutes: 40");
+    expect(workflow).toContain("FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'");
+    expect(workflow).toContain("FRAME_OF_MIND_GATE_PARALLELISM: '1'");
+    expect(workflow).toContain("bunx playwright install --with-deps chromium");
+    expect(workflow).toContain("bun run check:lane:hosted");
+
+    for (const matrixEntry of [
+      "os: ubuntu-latest\n            mode: fresh",
+      "os: macos-latest\n            mode: fresh",
+      "os: windows-latest\n            mode: install-only",
+    ]) {
+      expect(workflow).toContain(matrixEntry);
+    }
+  });
+
   test("keys builds by the non-documentation git tree and scrubbed environment", async () => {
     expect(isBuildInputPath("node_modules")).toBe(false);
     expect(isBuildInputPath("apps/web/.nuxt/builds/meta.json")).toBe(false);
