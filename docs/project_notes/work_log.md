@@ -18,6 +18,11 @@
   built module graph to Miniflare. Focused typecheck and the 10-test hosted plus
   adversarial E2E project passed after the merge.
 
+- Closed PR #84 review findings SF1–SF2 by routing the hosted-auth and hosted
+  streaming spikes through the shared run-scoped isolation helper. Two
+  concurrently launched auth checks completed with distinct Worker/D1 names,
+  and the standalone streaming spike retained every bounded-stream oracle.
+
 - Completed the standalone hosted direct-upload spike on 2026-08-23. A real
   Chromium page on an ephemeral loopback origin PUT a generated 20 MiB MP4 to
   a keyless Gemini resumable session in 16 MiB + 4 MiB chunks, then a fresh

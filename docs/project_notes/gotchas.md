@@ -1,5 +1,11 @@
 # Gotchas
 
+- Every synthetic Wrangler process must use `createE2EIsolation` for its
+  Worker name, D1 name/ID, persistence root, ports, and cleanup. A unique temp
+  directory alone does not prevent Wrangler's local service registry from
+  colliding when scripts retain fixed Worker or database identities; nested
+  Playwright probes must reuse `FRAME_OF_MIND_E2E_TEMP_ROOT` so they do not
+  reacquire the outer runtime lease.
 - A local context receipt is intentionally single-use. Execution acquires it,
   normalization reads it through `FileContextSource`, and the executor deletes
   it in `finally`; a linked retry must restage the authorized source.
