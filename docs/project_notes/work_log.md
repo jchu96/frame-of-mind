@@ -968,6 +968,35 @@
   `HOSTED_WORKFLOW_CONTRACT PASSED`, including the 3-admitted/7-rejected spend
   race). One earlier full-check auth browser process closed unexpectedly; the
   isolated auth gate and the clean final full check both passed unchanged.
+- Completed hosted UX pass 3 on 2026-08-23. Recording now uses plain-language
+  upload and retention states, renders the configured size limit, collapses a
+  sealed upload to `name · duration · size · Replace`, and keeps the mobile
+  composer usable at 390 px. Intent exposes an explicit Optional focus label;
+  start failures provide code-specific recovery actions; and Activity plus
+  Results distinguish recording-only runs with sealed D1 duration and size.
+  Added rendered glossary checks, direct label-driven browser coverage, all
+  four start-error fixtures, two distinct recording rows, and 26 reviewed
+  desktop/mobile receipts under `apps/web/e2e/__screenshots__/ux-pass-3/`.
+  Validated by `gate-lock bun run test:e2e:hosted` and a terminal
+  `gate-lock bun run check` exit 0: repository hygiene, all typechecks, 22 Vitest files /
+  213 tests, 42 Bun web files / 316 tests, both hosted Workflow auth modes,
+  hosted media recovery/direct-upload contracts, auth, release rehearsal, and
+  the 32 MiB streaming proof passed. One earlier full run hit the documented
+  intermittent auth browser closure; its isolated rerun and terminal full gate
+  both passed unchanged.
+- Closed the PR #86 hosted UX pass-3 review findings on 2026-08-23. Activity
+  now joins one principal-scoped batch of tolerant display receipts, so a
+  pre-0007 nullable-size row no longer hides valid jobs while execution reads
+  remain strict. Recording derives its retention label from the server's
+  session policy and omits an unavailable size ceiling. Each reachable Run
+  start error owns specific copy and a matching retry, navigation, refresh, or
+  support action; removed built-in recipes now return `recipe_not_found`.
+  Filename persistence remains intentionally absent because the durable job
+  boundary stores only opaque media IDs and digests. The real-D1/browser
+  contract and refreshed desktop/mobile screenshots passed under
+  `gate-lock bun run test:e2e:hosted`, including the nullable legacy row,
+  3-admitted/7-rejected spend race, composer, Activity, publication, viewer,
+  and review workspace.
 - Hardened the hosted-auth spike on 2026-08-23 after the hub reproduced the
   fresh stacked Chromium closing on its first navigation twice under a clean
   serialized gate. Browser launch now earns a side-effect-free `/api/health`
@@ -989,3 +1018,25 @@
   health receipt and retries only the known DevTools-pipe disconnect once;
   Better Auth fixture seeding stops both live workerd processes before external
   Wrangler D1 writes and restarts them on the same isolated resources.
+- Closed the second PR #86 delta review on 2026-08-23. Hosted Activity detail
+  now uses the same nullable-tolerant display projection as the list while
+  execution remains strict. The real-D1 contract covers the legacy detail and
+  a principal-B attempt whose immutable input references principal-A media;
+  the exact-message table pins every reachable start code; and denied clipboard
+  writes leave the rendered support code selectable without an unhandled page
+  error. Integrated `origin/main` at `7a50381`, preserving its run-scoped E2E
+  isolation/resource lease and both branches' regression receipts.
+- Re-integrated `origin/main` at `2e0f2c8` into Hosted Studio Phase 5b on
+  2026-08-23. The merged list and detail routes keep #86's batched,
+  NULL-tolerant display receipts while execution remains strict. Recording
+  copy now derives the unfinished-upload duration from the Gemini session TTL
+  and the `Keep` duration independently from the R2 retention-days policy;
+  the browser contract proves `1 hour` and `30 days` respectively without
+  exposing internal glossary terms. The run-start error table gives each
+  retained-media failure specific copy and a recovery CTA, Activity keeps
+  #86's recording rows, and the pass-3 screenshot set was regenerated and
+  visually checked. The final serialized `bun run check` passed with 23
+  Vitest files / 217 tests, 44 Bun web files / 321 tests, both hosted Workflow
+  auth modes, the retention/evidence/media contracts, nine executed
+  Playwright tests with one intentional skip, release migrations `0001..0008`,
+  and the 32 MiB streaming proof.

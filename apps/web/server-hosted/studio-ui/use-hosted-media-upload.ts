@@ -33,6 +33,7 @@ import {
   withHostedUploadLock,
   type HostedMediaDraft,
 } from "./hosted-media-upload.js";
+import { formatRecordingBytes } from "../../app/studio/recording-display.js";
 
 export type HostedMediaPhase =
   | "idle"
@@ -51,7 +52,7 @@ export type HostedMediaPhase =
   | "abandoned"
   | "failed";
 
-export function useHostedMediaUpload() {
+export function useHostedMediaUpload(options: { maxBytes?: number } = {}) {
   const browser = globalThis as unknown as {
     addEventListener(type: "pagehide", listener: () => void): void;
     removeEventListener(type: "pagehide", listener: () => void): void;
@@ -81,21 +82,11 @@ export function useHostedMediaUpload() {
   ].includes(phase.value));
   const totalBytes = computed(() => draft.value?.declaredSizeBytes ?? file.value?.size ?? 0);
   const statusMessage = computed(() => {
-    if (phase.value === "restoring") return "Checking the principal-bound recording receipt.";
-    if (phase.value === "selected") return "Recording selected. Start when the retention choice is correct.";
-    if (phase.value === "hashing") return `Hashing ${hashBytes.value.toLocaleString()} of ${totalBytes.value.toLocaleString()} bytes in the browser.`;
-    if (phase.value === "creating") return "Opening one short-lived Gemini upload session.";
-    if (phase.value === "open-session-choice") return "Choose whether to resume or discard an unfinished upload from this account.";
-    if (phase.value === "reselect-required") return "An unfinished upload was found. Reselect the same recording to resume.";
-    if (phase.value === "ready-to-resume") return "Recording metadata matches. Resume to verify its digest and provider offset.";
-    if (phase.value === "uploading") return `${progressBytes.value.toLocaleString()} of ${totalBytes.value.toLocaleString()} bytes sent.`;
-    if (phase.value === "paused") return `Upload paused at ${progressBytes.value.toLocaleString()} provider-confirmed bytes.`;
-    if (phase.value === "sealing") return "The Worker is independently verifying Gemini size and SHA-256.";
-    if (phase.value === "sealed") return "Recording sealed and ready for analysis.";
-    if (phase.value === "canceling") return "Abandoning the provider upload session.";
-    if (phase.value === "abandoned") return "Upload session abandoned and browser receipt cleared.";
-    if (phase.value === "failed") return "Recording transfer needs attention.";
-    return "Choose or drop one supported recording.";
+    return hostedMediaStatusMessage(phase.value, {
+      hashBytes: hashBytes.value,
+      progressBytes: progressBytes.value,
+      totalBytes: totalBytes.value,
+    });
   });
 
   const fileModel = computed<File | null>({
@@ -155,7 +146,7 @@ export function useHostedMediaUpload() {
       openSessions.value = await listOpenHostedMedia();
     } catch (error) {
       operationError.value = error instanceof HostedMediaClientError
-        ? error.message
+        ? hostedMediaErrorMessage(error, options.maxBytes)
         : "Hosted Studio could not recover unfinished uploads.";
       phase.value = "failed";
       return;
@@ -197,8 +188,8 @@ export function useHostedMediaUpload() {
         phase.value = "reselect-required";
       } catch (error) {
         operationError.value = error instanceof HostedMediaClientError
-          ? error.message
-          : "Hosted Studio could not resume this upload session.";
+          ? hostedMediaErrorMessage(error, options.maxBytes)
+          : "Could not resume this upload.";
         phase.value = "failed";
       } finally {
         controller = undefined;
@@ -221,8 +212,8 @@ export function useHostedMediaUpload() {
           : "abandoned";
       } catch (error) {
         operationError.value = error instanceof HostedMediaClientError
-          ? error.message
-          : "Hosted Studio could not discard this upload session.";
+          ? hostedMediaErrorMessage(error, options.maxBytes)
+          : "Could not discard this upload.";
         phase.value = "failed";
       }
     });
@@ -313,8 +304,8 @@ export function useHostedMediaUpload() {
           }
         } else {
           operationError.value = error instanceof HostedMediaClientError
-            ? error.message
-            : "Hosted Studio could not transfer this recording.";
+            ? hostedMediaErrorMessage(error, options.maxBytes)
+            : "Could not upload this recording.";
           phase.value = "failed";
         }
       } finally {
@@ -353,8 +344,8 @@ export function useHostedMediaUpload() {
         phase.value = "abandoned";
       } catch (error) {
         operationError.value = error instanceof HostedMediaClientError
-          ? error.message
-          : "Hosted Studio could not abandon the upload session.";
+          ? hostedMediaErrorMessage(error, options.maxBytes)
+          : "Could not cancel this upload.";
         phase.value = "failed";
       }
     });
@@ -380,6 +371,18 @@ export function useHostedMediaUpload() {
     if (browser.document.visibilityState === "hidden") abandonForPageExit();
   }
 
+  function replace(): void {
+    if (!storage || busy.value) return;
+    clearMediaResumeReceipt(hostedStorage(storage));
+    media.value = undefined;
+    file.value = null;
+    progressBytes.value = 0;
+    hashBytes.value = 0;
+    fieldError.value = undefined;
+    operationError.value = undefined;
+    phase.value = "idle";
+  }
+
   onMounted(() => {
     browser.addEventListener("pagehide", abandonForPageExit);
     browser.document.addEventListener("visibilitychange", onVisibilityChange);
@@ -394,6 +397,63 @@ export function useHostedMediaUpload() {
   return {
     busy, cancel, discardOpenSession, draft, fieldError, fileModel, media,
     openSessions, operationError, pause, phase, progressBytes, resumeOpenSession,
-    retention, start, statusMessage, totalBytes,
+    replace, retention, start, statusMessage, totalBytes,
   };
+}
+
+export function hostedMediaStatusMessage(
+  phase: HostedMediaPhase,
+  progress: { hashBytes: number; progressBytes: number; totalBytes: number },
+): string {
+  if (phase === "restoring") return "Checking your last upload…";
+  if (phase === "selected") return "Recording selected";
+  if (phase === "hashing") return "Checking the file…";
+  if (phase === "creating") return "Preparing upload…";
+  if (phase === "open-session-choice") return "Choose an unfinished upload to continue or discard.";
+  if (phase === "reselect-required") return "Choose the same recording to continue this upload.";
+  if (phase === "ready-to-resume") return "Recording matched. Continue the upload.";
+  if (phase === "uploading") {
+    return `Uploading — ${formatRecordingBytes(progress.progressBytes)} of ${formatRecordingBytes(progress.totalBytes)}`;
+  }
+  if (phase === "paused") return "Upload paused";
+  if (phase === "sealing") return "Verifying the upload…";
+  if (phase === "sealed") return "Recording ready";
+  if (phase === "canceling") return "Cancelling upload…";
+  if (phase === "abandoned") return "Upload cancelled";
+  if (phase === "failed") return "Upload needs attention";
+  return "Choose a recording.";
+}
+
+export function hostedMediaStatusLabel(phase: HostedMediaPhase): string {
+  if (["hashing", "creating", "uploading", "sealing", "canceling"].includes(phase)) return "In progress";
+  if (phase === "restoring") return "Checking";
+  if (phase === "selected") return "Selected";
+  if (phase === "open-session-choice") return "Action needed";
+  if (phase === "reselect-required") return "Choose file";
+  if (phase === "ready-to-resume") return "Ready to continue";
+  if (phase === "paused") return "Paused";
+  if (phase === "sealed") return "Ready";
+  if (phase === "abandoned") return "Cancelled";
+  if (phase === "failed") return "Needs attention";
+  return "Ready";
+}
+
+export function hostedMediaStatusColor(
+  phase: HostedMediaPhase,
+): "info" | "success" | "error" | "warning" | "neutral" {
+  if (phase === "sealed") return "success";
+  if (phase === "failed") return "error";
+  if (["paused", "reselect-required", "open-session-choice"].includes(phase)) return "warning";
+  if (["abandoned", "idle"].includes(phase)) return "neutral";
+  return "info";
+}
+
+function hostedMediaErrorMessage(
+  error: HostedMediaClientError,
+  maxBytes?: number,
+): string {
+  if (error.code === "hosted_media_size_exceeded" && maxBytes) {
+    return `This recording is larger than ${formatRecordingBytes(maxBytes)}.`;
+  }
+  return error.message;
 }

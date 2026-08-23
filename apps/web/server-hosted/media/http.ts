@@ -49,7 +49,6 @@ export function getHostedMediaRuntime(event: H3Event): {
   principalSub: string;
 } {
   const principalSub = getHostedMediaPrincipal(event);
-  const config = useRuntimeConfig(event);
   const environment = event.context.cloudflare?.env as
     | Record<string, unknown>
     | undefined;
@@ -65,26 +64,12 @@ export function getHostedMediaRuntime(event: H3Event): {
       data: { code: "hosted_media_bindings_unavailable" },
     });
   }
-  const openSessionCap = positiveInteger(
-    config.hostedMediaOpenSessionCap,
-    HOSTED_MEDIA_OPEN_SESSION_CAP_DEFAULT,
-    100,
-  );
-  const maxBytes = positiveInteger(
-    config.hostedMediaMaxBytes,
-    HOSTED_MEDIA_MAX_BYTES_DEFAULT,
-    HOSTED_MEDIA_MAX_BYTES_DEFAULT,
-  );
-  const sessionTtlSeconds = positiveInteger(
-    config.hostedMediaSessionTtlSeconds,
-    HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT,
-    MAXIMUM_PROVIDER_SESSION_TTL_SECONDS,
-  );
-  const retentionDays = positiveInteger(
-    config.hostedMediaRetentionDays,
-    HOSTED_MEDIA_RETENTION_DAYS_DEFAULT,
-    365,
-  );
+  const {
+    openSessionCap,
+    maxBytes,
+    sessionTtlSeconds,
+    retentionDays,
+  } = hostedMediaPolicy(event);
   const origin = typeof environment?.HOSTED_GEMINI_FILES_BASE_URL === "string"
     ? environment.HOSTED_GEMINI_FILES_BASE_URL
     : undefined;
@@ -97,6 +82,37 @@ export function getHostedMediaRuntime(event: H3Event): {
       bucket as ConstructorParameters<typeof HostedMediaService>[3],
       getRequestURL(event).origin,
       { openSessionCap, maxBytes, sessionTtlSeconds, retentionDays },
+    ),
+  };
+}
+
+export function hostedMediaPolicy(event: H3Event): {
+  openSessionCap: number;
+  maxBytes: number;
+  sessionTtlSeconds: number;
+  retentionDays: number;
+} {
+  const config = useRuntimeConfig(event);
+  return {
+    openSessionCap: positiveInteger(
+      config.hostedMediaOpenSessionCap,
+      HOSTED_MEDIA_OPEN_SESSION_CAP_DEFAULT,
+      100,
+    ),
+    maxBytes: positiveInteger(
+      config.hostedMediaMaxBytes,
+      HOSTED_MEDIA_MAX_BYTES_DEFAULT,
+      HOSTED_MEDIA_MAX_BYTES_DEFAULT,
+    ),
+    sessionTtlSeconds: positiveInteger(
+      config.hostedMediaSessionTtlSeconds,
+      HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT,
+      MAXIMUM_PROVIDER_SESSION_TTL_SECONDS,
+    ),
+    retentionDays: positiveInteger(
+      config.hostedMediaRetentionDays,
+      HOSTED_MEDIA_RETENTION_DAYS_DEFAULT,
+      365,
     ),
   };
 }

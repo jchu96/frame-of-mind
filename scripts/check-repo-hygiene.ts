@@ -63,15 +63,19 @@ const reviewedUxPassTwoScreens = new Set([
   "12-import",
   "13-not-found",
 ]);
+const reviewedUxPassThreeScreens = new Set(reviewedUxPassTwoScreens);
 
 function isReviewedUxProof(path: string): boolean {
   const match = path.match(
-    /^apps\/web\/e2e\/__screenshots__\/(ux-pass-[12])\/(.+)-(desktop|mobile)\.png$/,
+    /^apps\/web\/e2e\/__screenshots__\/(ux-pass-[123])\/(.+)-(desktop|mobile)\.png$/,
   );
   if (!match) return false;
-  return match[1] === "ux-pass-1"
-    ? reviewedUxPassOneScreens.has(match[2])
-    : reviewedUxPassTwoScreens.has(match[2]);
+  const reviewedScreens = match[1] === "ux-pass-1"
+    ? reviewedUxPassOneScreens
+    : match[1] === "ux-pass-2"
+      ? reviewedUxPassTwoScreens
+      : reviewedUxPassThreeScreens;
+  return reviewedScreens.has(match[2]);
 }
 
 // These expressions intentionally overlap. A finding reports only its name and
@@ -369,7 +373,9 @@ function runSelfTest(): void {
   if (
     !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-1/01-intent-empty-mobile.png")
     || !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-2/06-activity-running-desktop.png")
+    || !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-3/11-results-home-mobile.png")
     || isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-1/unreviewed-mobile.png")
+    || isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-3/unreviewed-desktop.png")
     || isReviewedUxProof("apps/web/e2e/__screenshots__/other-pass/01-intent-empty-mobile.png")
   ) {
     throw new Error("Repository hygiene self-test failed for the reviewed UX proof allowlist.");

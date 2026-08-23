@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { RunPage, RunSummary } from "../../shared/types";
+import { recordingDisplayLabel } from "../studio/recording-display";
+import type { HostedJobView } from "../../../workflows/src/contracts";
 
 const config = useRuntimeConfig();
 useSeoMeta({
@@ -11,6 +13,11 @@ const { data: page, error, refresh, status } = await useFetch<RunPage>("/api/run
   query: { limit: 50 },
   default: () => ({ runs: [] }),
 });
+const { data: hostedJobs } = config.public.hostedStudioEnabled
+  ? await useFetch<{ jobs: HostedJobView[] }>("/api/hosted/jobs", {
+      default: () => ({ jobs: [] }),
+    })
+  : { data: ref({ jobs: [] as HostedJobView[] }) };
 const runs = computed(() => page.value.runs);
 const loadingMore = ref(false);
 
@@ -18,15 +25,22 @@ const accepted = computed(() => runs.value.reduce((sum, run) => sum + run.accept
 const recipesUsed = computed(() => new Set(runs.value.map((run) => run.recipeLabel)).size);
 
 function runTitle(run: RunSummary): string {
+  const recording = recordingForRun(run);
   return run.schemaVersion === 2
     ? run.meetingTitle || run.meetingId
-    : `${run.recipeLabel} · ${formatDate(run.completedAt)}`;
+    : recording
+      ? recordingDisplayLabel(recording)
+      : `Recording · ${formatDate(run.completedAt)}`;
+}
+
+function recordingForRun(run: RunSummary) {
+  return hostedJobs.value.jobs.find((job) => job.runId === run.runId)?.receipt.recording;
 }
 
 function runContext(run: RunSummary): string {
   return run.schemaVersion === 2
     ? `${run.provider} · ${run.transport}`
-    : "video only";
+    : "Recording only";
 }
 
 async function loadMore() {
@@ -128,9 +142,9 @@ function formatDate(value: string) {
           <table class="w-full min-w-220 text-left text-sm">
             <thead class="border-b border-default bg-elevated/90 text-xs uppercase tracking-wider text-muted">
               <tr>
-                <th class="px-5 py-3 font-semibold">Source</th>
-                <th class="px-5 py-3 font-semibold">Recipe</th>
-                <th class="px-5 py-3 font-semibold">Context</th>
+                <th class="px-5 py-3 font-semibold">Recording</th>
+                <th class="px-5 py-3 font-semibold">Goal</th>
+                <th class="px-5 py-3 font-semibold">Sources</th>
                 <th class="px-5 py-3 font-semibold">Findings</th>
                 <th class="px-5 py-3 font-semibold">Completed</th>
               </tr>
