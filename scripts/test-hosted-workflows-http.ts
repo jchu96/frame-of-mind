@@ -1676,6 +1676,7 @@ async function createJobResponse(
         context: { mode: "none" },
         recipeId: "decisions",
       }),
+      signal: AbortSignal.timeout(10_000),
     }));
 }
 
@@ -1711,22 +1712,35 @@ async function retryJob(
     method: "POST",
     headers: mutationHeaders(origin, token),
     body: JSON.stringify({ idempotencyKey }),
+    signal: AbortSignal.timeout(10_000),
   }));
 }
 
 async function retryLocalDispatch(
   request: () => Promise<Response>,
 ): Promise<Response> {
-  const initial = await request();
-  if (!await isLocalDispatchFailure(initial)) return initial;
+  let initial: Response | undefined;
+  try {
+    initial = await request();
+    if (!await isLocalDispatchFailure(initial)) return initial;
+  } catch {
+    // A local workerd service-binding request can occasionally remain pending
+    // after the Workflow was accepted. Retry the idempotent HTTP request so
+    // the existing attempt/instance receipt can be recovered.
+  }
   const retry = dispatchRetryTail.then(async () => {
     let response = initial;
     for (let attempt = 1; attempt <= 10; attempt += 1) {
-      await response.body?.cancel();
+      await response?.body?.cancel();
       await Bun.sleep(100 * attempt);
-      response = await request();
-      if (!await isLocalDispatchFailure(response)) return response;
+      try {
+        response = await request();
+        if (!await isLocalDispatchFailure(response)) return response;
+      } catch (error) {
+        if (attempt === 10) throw error;
+      }
     }
+    if (!response) throw new Error("Local Workflow dispatch did not return a response.");
     return response;
   });
   dispatchRetryTail = retry.then(() => undefined, () => undefined);
@@ -1752,16 +1766,24 @@ function mutationHeaders(origin: string, token: string): Record<string, string> 
 function authenticatedFetch(origin: string, path: string, token: string): Promise<Response> {
   return fetch(`${origin}${path}`, {
     headers: hostedAuthHeaders(token),
+    signal: AbortSignal.timeout(10_000),
   });
 }
 
 async function getJob(origin: string, token: string, id: string): Promise<JobDetail> {
-  let response = await authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token);
-  for (let attempt = 1; attempt <= 10 && response.status === 500; attempt += 1) {
-    await response.body?.cancel();
-    await Bun.sleep(50 * attempt);
-    response = await authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token);
+  let response: Response | undefined;
+  for (let attempt = 0; attempt <= 10; attempt += 1) {
+    try {
+      response = await authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token);
+      if (response.status !== 500) break;
+      if (attempt === 10) break;
+      await response.body?.cancel();
+    } catch (error) {
+      if (attempt === 10) throw error;
+    }
+    await Bun.sleep(50 * (attempt + 1));
   }
+  if (!response) throw new Error(`Hosted attempt ${id} did not return a response.`);
   return await json<JobDetail>(await expectStatus(response, 200, `job ${id}`));
 }
 
