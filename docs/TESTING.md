@@ -77,6 +77,22 @@ Run the fast browser gate:
 bun run test:e2e:smoke
 ```
 
+Run the hosted two-Worker, two-principal contract and its first-time-user
+browser journey:
+
+```bash
+bun run test:e2e:hosted
+```
+
+The Cloudflare Access pass refreshes desktop (1280×900) and mobile (390×844)
+visual receipts in
+`apps/web/e2e/__screenshots__/ux-pass-1/`. The journey covers Intent, Context,
+Recording empty and ready states, Review and start, Activity detail and list,
+the published viewer, hosted review workspace, Results, Import, and the branded
+not-found state. The same contract also proves own-principal review and support
+access plus foreign-principal 404 denial. The Better Auth variant runs in the
+full `bun run check` gate without replacing the Access screenshots.
+
 Verify the live Gemini upload, index, detail, and cleanup boundary with
 generated media:
 

@@ -333,9 +333,10 @@
   and Cloudflare Nuxt builds concurrently against `apps/web`; run them
   sequentially so one target cannot fail or reuse the other's generated state.
 - Tailwind v4 automatic source detection does not cover build-injected Studio
-  Vue files under `server-local/`. Keep the explicit relative `@source` in
-  `app/assets/css/main.css`; a successful Vue build can otherwise omit unique
-  responsive utilities. Assert real desktop geometry, not only element
+  Vue files under `server-local/` or `server-hosted/`. Keep both explicit
+  relative `@source` entries in `app/assets/css/main.css`; a successful Vue
+  build can otherwise omit unique responsive, focus, hover, and ring utilities.
+  Assert real desktop geometry and focused/selected state, not only element
   visibility.
 - Nuxt may reuse cached `useFetch` state when client navigation returns to
   Studio Home. Revalidate jobs, runs, and connection presence on mount so an
@@ -436,6 +437,19 @@
   too late; use a `/sign-in/magic-link` before-hook when denial must precede
   both storage and delivery. The verify URL is a first-fetch, session-minting
   GET, so mail scanners can consume it.
+- In the hosted workflow HTTP contract, the deliberately held concurrent-spend
+  race must run after ordinary browser and dispatch assertions. Its fake Worker
+  intentionally keeps workflow instances active, so running it earlier can
+  consume the shared per-principal concurrency budget and make later healthy
+  dispatches return 503. Give each local Wrangler process `--inspector-port 0`
+  as well so parallel worktrees cannot collide on the default inspector port.
+- On a fleet machine, serialize every full check, hosted contract, hosted check,
+  and E2E suite with `gate-lock`. Concurrent workerd gates can fail healthy
+  service bindings or collide on local resources; the machine-wide lock waits
+  for the current gate and reclaims only a lock whose recorded process is gone.
+- Keep `gate-lock` around bounded gate commands only. A long-lived development
+  server such as `run-hosted-local.ts` must never hold the shared lock, because
+  it prevents every queued fleet gate from making progress.
 - Cloudflare/workerd `fetch` rejects `redirect: "error"`; use
   `redirect: "manual"` for Gemini Files calls and treat every non-2xx response
   (including redirects) as a provider error. Browser/Bun fetch acceptance is

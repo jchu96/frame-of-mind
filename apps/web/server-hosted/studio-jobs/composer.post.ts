@@ -3,7 +3,11 @@ import {
   composerPayloadSchema,
   type MediaSession,
 } from "../../../../src/domain/studio-schemas.js";
-import { builtInRecipe, digestRecipe } from "../../../../src/recipes/index.js";
+import {
+  builtInRecipe,
+  builtInRecipeRevision,
+  digestRecipe,
+} from "../../../../src/recipes/index.js";
 import { assertTrustedJsonMutation } from "../../server/utils/request-security.js";
 import { translateComposerJob } from "../../app/studio/composer-translate.js";
 import { hostedJobCreateRequestSchema } from "../../../workflows/src/contracts.js";
@@ -38,7 +42,7 @@ export default defineEventHandler(async (event) => {
             recipe,
             custom: false,
             sha256: await digestRecipe(recipe),
-            revision: recipe.revision ?? "builtin-2026-08-11.1",
+            revision: builtInRecipeRevision(recipe.id),
           }
         : undefined,
       now: new Date().toISOString(),

@@ -2,41 +2,64 @@
 import type { AnalysisJob } from "../../../../src/domain/studio-schemas.js";
 import type { HostedJobView } from "../../../workflows/src/contracts.js";
 import { derivePermittedActivityActions } from "../../app/studio/activity-actions.js";
-import { deriveActivityProgress } from "../../app/studio/activity-progress.js";
-import { activityStageLabel, groupActivityJobs } from "../../app/studio/activity-state.js";
+import {
+  activityDisplayState,
+  activityStageLabel,
+  formatRelativeActivity,
+  recipeDisplayLabel,
+} from "../../app/studio/activity-state.js";
 import { hostedJobAsActivity } from "./hosted-adapter";
 
-const jobs = ref<AnalysisJob[]>([]);
-const loading = ref(true);
+useSeoMeta({
+  title: "Activity · Frame of Mind",
+  description: "See hosted analyses and how they are going.",
+});
+const hostedPage = useState<{ jobs: HostedJobView[] }>("hosted-activity-page", () => ({ jobs: [] }));
+const clock = useState("hosted-activity-clock", () => Date.now());
 const notice = ref("");
 const requestFetch = useRequestFetch();
 let timer: ReturnType<typeof setInterval> | undefined;
 async function refresh(): Promise<void> {
   try {
-    const page = await requestFetch<{ jobs: HostedJobView[] }>("/api/hosted/jobs");
-    jobs.value = page.jobs.map((job) => hostedJobAsActivity(job));
+    hostedPage.value = await requestFetch<{ jobs: HostedJobView[] }>("/api/hosted/jobs");
     notice.value = "";
   } catch {
-    if (loading.value) throw createError({ statusCode: 404, statusMessage: "Not found" });
-    notice.value = "Activity refresh paused. Existing receipts remain on screen.";
-  } finally {
-    loading.value = false;
+    if (hostedPage.value.jobs.length === 0) {
+      throw createError({ statusCode: 404, statusMessage: "Not found" });
+    }
+    notice.value = "Lost connection — retrying.";
   }
 }
 await refresh();
-onMounted(() => { timer = setInterval(() => void refresh(), 2_000); });
+onMounted(() => {
+  timer = setInterval(() => {
+    clock.value = Date.now();
+    void refresh();
+  }, 2_000);
+});
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });
-const grouped = computed(() => groupActivityJobs(jobs.value));
-const groups = [
-  { key: "active" as const, label: "Active" },
-  { key: "finished" as const, label: "Finished" },
-  { key: "needs-attention" as const, label: "Needs attention" },
-];
-function progress(job: AnalysisJob): string {
-  return deriveActivityProgress(job, [], new Date()).descriptor.accessibleText;
+const jobs = computed<AnalysisJob[]>(() =>
+  hostedPage.value.jobs.map((job) => hostedJobAsActivity(job))
+);
+const recipeLabels = computed(() =>
+  new Map(hostedPage.value.jobs.map((job) => [job.id, job.receipt.recipe.label]))
+);
+function label(job: AnalysisJob): string {
+  return recipeLabels.value.get(job.id) || recipeDisplayLabel(job.input.recipe.id);
+}
+function relative(value: string): string {
+  return formatRelativeActivity(value, new Date(clock.value));
+}
+function statusColor(job: AnalysisJob): "primary" | "success" | "error" | "warning" | "neutral" {
+  const state = activityDisplayState(job.stage);
+  if (state === "active") return "primary";
+  if (state === "succeeded") return "success";
+  if (state === "failed" || state === "interrupted") return "error";
+  if (state === "canceled") return "neutral";
+  return "warning";
 }
 function canCancel(job: AnalysisJob): boolean {
-  return derivePermittedActivityActions({ job, media: undefined, projection: "unknown", now: new Date().toISOString() }).actions.some((item) => item.id === "cancel");
+  return derivePermittedActivityActions({ job, media: undefined, projection: "unknown", now: new Date(clock.value).toISOString() }).actions.some((item) => item.id === "cancel");
 }
 async function cancel(job: AnalysisJob): Promise<void> {
   await $fetch(`/api/hosted/jobs/${encodeURIComponent(job.id)}/cancel`, { method: "POST", body: {} });
@@ -46,19 +69,30 @@ async function cancel(job: AnalysisJob): Promise<void> {
 
 <template>
   <main class="fom-shell py-8" data-hosted-activity-page="list">
-    <div class="flex items-end justify-between gap-4"><div><p class="fom-kicker text-primary">Hosted Studio</p><h1 class="mt-3 text-4xl font-black">Activity</h1><p class="mt-3 text-muted">Principal-bound analysis attempts and sanitized status receipts.</p></div><UButton label="Refresh" icon="i-lucide-refresh-cw" color="neutral" variant="outline" @click="refresh" /></div>
+    <div class="flex items-end justify-between gap-4"><div><h1 class="text-4xl font-black">Activity</h1><p class="mt-3 text-muted">Analyses you've started, and how they're going.</p></div><UButton label="Refresh" icon="i-lucide-refresh-cw" color="neutral" variant="outline" @click="refresh" /></div>
     <UAlert v-if="notice" class="mt-6" color="warning" :description="notice" />
-    <div class="mt-8 space-y-6">
-      <UCard v-for="group in groups" :key="group.key">
-        <template #header><h2 class="text-xl font-black">{{ group.label }} <UBadge color="neutral">{{ grouped[group.key].length }}</UBadge></h2></template>
-        <p v-if="!grouped[group.key].length" class="text-sm text-muted">No attempts in this group.</p>
-        <ul v-else class="divide-y divide-default">
-          <li v-for="job in grouped[group.key]" :key="job.id" class="flex flex-wrap items-center justify-between gap-4 py-4">
-            <NuxtLink :to="`/hosted/activity/${encodeURIComponent(job.id)}`" class="font-bold hover:text-primary">{{ job.input.recipe.id }} · attempt {{ job.attempt }}</NuxtLink>
-            <div class="flex items-center gap-3"><span class="text-sm text-muted">{{ activityStageLabel(job.stage) }} · {{ progress(job) }}</span><UButton v-if="canCancel(job)" label="Cancel" size="xs" color="neutral" variant="outline" @click="cancel(job)" /></div>
-          </li>
-        </ul>
-      </UCard>
-    </div>
+    <UCard v-if="jobs.length === 0" class="mt-8 text-center">
+      <h2 class="text-xl font-black">No analyses yet</h2>
+      <p class="mt-2 text-sm text-muted">Start an analysis to see its progress here.</p>
+      <UButton class="mt-5" to="/hosted/new/intent" label="Start an analysis" icon="i-lucide-plus" />
+    </UCard>
+    <UCard v-else class="mt-8">
+      <ul class="divide-y divide-default">
+        <li v-for="job in jobs" :key="job.id" class="flex flex-wrap items-center justify-between gap-4 py-4">
+          <div>
+            <NuxtLink :to="`/hosted/activity/${encodeURIComponent(job.id)}`" class="font-bold hover:text-primary">
+              {{ label(job) }}<template v-if="job.attempt > 1"> · Try {{ job.attempt }}</template>
+            </NuxtLink>
+            <p class="mt-1 text-sm text-muted">
+              Started <time :datetime="job.createdAt" :title="job.createdAt">{{ relative(job.createdAt) }}</time>
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
+            <UBadge :color="statusColor(job)" variant="soft">{{ activityStageLabel(job.stage) }}</UBadge>
+            <UButton v-if="canCancel(job)" label="Cancel" size="xs" color="neutral" variant="outline" @click="cancel(job)" />
+          </div>
+        </li>
+      </ul>
+    </UCard>
   </main>
 </template>

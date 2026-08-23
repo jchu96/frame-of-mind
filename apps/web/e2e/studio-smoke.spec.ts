@@ -642,9 +642,9 @@ test("imports and reviews one video-only run without meeting provenance", {
   await page.getByRole("link", { name: "Open run" }).click();
 
   await expect(
-    page.getByRole("heading", { name: "Video analysis", level: 1 }),
+    page.getByRole("heading", { name: "Issue review · Jul 28, 2026", level: 1 }),
   ).toBeVisible();
-  await expect(page.getByText("video only · no external context")).toBeVisible();
+  await expect(page.getByText("recording only", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Fix the visible issue", level: 3 }),
   ).toBeVisible();

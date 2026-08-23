@@ -89,6 +89,9 @@ const hostedJobRetryHandler = fileURLToPath(
 const hostedJobCancelHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/cancel.post.ts", import.meta.url),
 );
+const hostedJobSupportReceiptHandler = fileURLToPath(
+  new URL("./server-hosted/studio-jobs/support-receipt.get.ts", import.meta.url),
+);
 const hostedSpendJanitorHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/spend-janitor.post.ts", import.meta.url),
 );
@@ -162,6 +165,9 @@ const hostedActivityPage = fileURLToPath(
 );
 const hostedActivityDetailPage = fileURLToPath(
   new URL("./server-hosted/studio-ui/activity-detail.vue", import.meta.url),
+);
+const hostedReviewPage = fileURLToPath(
+  new URL("./server-hosted/studio-ui/review.vue", import.meta.url),
 );
 const appFrame = fileURLToPath(
   new URL(
@@ -524,6 +530,11 @@ const localHandlers = [
           handler: hostedJobCancelHandler,
         },
         {
+          route: "/api/hosted/jobs/:id/support-receipt",
+          method: "get",
+          handler: hostedJobSupportReceiptHandler,
+        },
+        {
           route: "/api/hosted/spend/janitor",
           method: "post",
           handler: hostedSpendJanitorHandler,
@@ -626,6 +637,7 @@ export default defineNuxtConfig({
           { name: "hosted-run", path: "/hosted/new/run", file: hostedRunPage },
           { name: "hosted-activity", path: "/hosted/activity", file: hostedActivityPage },
           { name: "hosted-activity-detail", path: "/hosted/activity/:id", file: hostedActivityDetailPage },
+          { name: "hosted-review", path: "/review/:runId", file: hostedReviewPage },
         );
       }
     },
@@ -682,6 +694,7 @@ export default defineNuxtConfig({
         ? { studioDefaultModel: DEFAULT_GEMINI_MODEL }
         : {}),
       studioEnabled: localStudioEnabled,
+      hostedStudioEnabled: hostedWorkflowsBuilt,
     },
   },
   typescript: {
