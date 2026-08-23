@@ -21,28 +21,6 @@ when its deployment credentials are absent. `bun run check:e2e` selects hosted
 and adversarial projects and is part of `bun run check`. CI uses
 `bun run test:e2e:ci`, which adds smoke and fails on flaky retries.
 
-## Continuous integration
-
-GitHub Actions splits the serial `bun run check` contract by runtime budget:
-
-- `check` has 10 minutes for repository hygiene, typechecks, unit suites, CLI
-  and web builds, and the Local Studio HTTP contract;
-- `hosted-contracts` waits for `check` and has 40 minutes for both hosted auth
-  modes, Access, Workflow, media, auth, release-rehearsal, and 32 MiB streaming
-  contracts. It installs Chromium because the hosted fixtures include browser
-  proof;
-- `browser-e2e` has 15 minutes for the consolidated synthetic Studio browser
-  suite and fails on flaky retries;
-- `fresh-clone` has 15 minutes per Ubuntu, macOS, and Windows matrix entry.
-  Ubuntu and macOS build and boot Local Studio; Windows proves the frozen
-  install and builds without claiming a Studio boot.
-
-`test/ci-workflow.test.ts` parses the root `check` script and asserts that the
-CI jobs cover its complete command set. A red lane is a product signal: open
-the failed job, identify the first named command and receipt that failed, and
-reproduce that command locally. Do not disable the lane, relax the frozen
-lockfile, or raise a timeout until the dependency or runtime cause is known.
-
 The quarantine file is
 [`apps/web/e2e/flaky-quarantine.json`](../apps/web/e2e/flaky-quarantine.json).
 It must remain an explicit JSON array; zero entries is the normal state.
