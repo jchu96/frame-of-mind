@@ -953,3 +953,10 @@
   `HOSTED_WORKFLOW_CONTRACT PASSED`, including the 3-admitted/7-rejected spend
   race). One earlier full-check auth browser process closed unexpectedly; the
   isolated auth gate and the clean final full check both passed unchanged.
+- Hardened the hosted-auth spike on 2026-08-23 after the hub reproduced the
+  fresh stacked Chromium closing on its first navigation twice under a clean
+  serialized gate. Browser launch now earns a side-effect-free `/api/health`
+  readiness receipt before login, retries only the exact TargetClosed family
+  once, and leaves all auth mutations non-retried. The discriminator passed
+  3/3 and the live `gate-lock bun run check:hosted-auth` contract passed with
+  one-attempt readiness receipts in both Better Auth modes.

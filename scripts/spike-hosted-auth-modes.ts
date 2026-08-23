@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { chromium, type BrowserContext } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
 import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
+import { retryBrowserReadiness } from "./browser-readiness";
 import { createE2EEnvironment } from "./e2e-environment";
 import { runFixture, videoRunFixture } from "../apps/web/test/fixtures";
 import { analysisDigest } from "../src/domain/integrity";
@@ -115,7 +116,7 @@ try {
   await waitForWorker(origin, worker, 403);
   await runHostedSignInSpec(origin, "better-auth");
   console.log("HOSTED_AUTH sign_in_page=PASS mode=better-auth");
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchReadyBrowser("better-auth", origin);
   try {
     const cookieA = await githubLogin(browser, origin, "user-a@example.test");
     const cookieB = await githubLogin(browser, origin, "user-b@example.test");
@@ -170,7 +171,11 @@ try {
   await expectStatus(fetch(`${stackedOrigin}/api/auth/sign-in/social`, { method: "POST" }), 403, "stacked auth without Access");
   await runHostedSignInSpec(stackedOrigin, "cloudflare-access+better-auth", browserAccessToken);
   console.log("HOSTED_AUTH sign_in_page=PASS mode=cloudflare-access+better-auth");
-  const stackedBrowser = await chromium.launch({ headless: true });
+  const stackedBrowser = await launchReadyBrowser(
+    "cloudflare-access+better-auth",
+    stackedOrigin,
+    accessToken,
+  );
   try {
     const cookie = await githubLogin(stackedBrowser, stackedOrigin, "stacked@example.test", accessToken);
     await expectSession(stackedOrigin, cookie, "stacked@example.test", "cloudflare-access+better-auth", accessToken);
@@ -308,6 +313,37 @@ async function githubLogin(
     // probe into an unrelated "browser has been closed" error.
     await context.close().catch(() => undefined);
   }
+}
+
+async function launchReadyBrowser(
+  mode: "better-auth" | "cloudflare-access+better-auth",
+  origin: string,
+  accessToken?: string,
+): Promise<Awaited<ReturnType<typeof chromium.launch>>> {
+  return await retryBrowserReadiness(async (attempt) => {
+    const browser = await chromium.launch({ headless: true });
+    let context: BrowserContext | undefined;
+    try {
+      context = await browser.newContext();
+      if (accessToken) await addAccessHeader(context, origin, accessToken);
+      const page = await context.newPage();
+      const response = await page.goto(`${origin}/api/health`);
+      if (!response) throw new Error(`Browser readiness omitted a response for ${mode}.`);
+      await context?.close().catch(() => undefined);
+      context = undefined;
+      if (!browser.isConnected()) {
+        throw new Error(`Browser has been closed during readiness for ${mode}.`);
+      }
+      console.log(`HOSTED_AUTH browser_readiness=PASS mode=${mode} attempts=${attempt}`);
+      return browser;
+    } catch (error) {
+      await context?.close().catch(() => undefined);
+      await browser.close().catch(() => undefined);
+      throw error;
+    }
+  }, ({ attempt }) => {
+    console.log(`HOSTED_AUTH browser_readiness=RETRY mode=${mode} attempt=${attempt}`);
+  });
 }
 
 async function magicLinkLogin(

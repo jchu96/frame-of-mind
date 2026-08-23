@@ -520,3 +520,16 @@
 - Fix: send `{}` and show an error toast when sign-out fails.
 - Prevention: built-workerd browser coverage requires redirect to `/sign-in`
   and a subsequent `/api/session` JSON 403.
+
+## 2026-08-23 — Fresh auth Chromium disconnect looked like an auth failure
+
+- Symptom: two clean, serialized hub gates passed the stacked sign-in-page
+  contract, then failed at `githubLogin()` with `Target page, context or
+  browser has been closed` on the fresh browser's first navigation.
+- Cause: the first navigation on each newly launched browser also began the
+  stateful login probe. A transient Chromium process disconnect therefore had
+  no side-effect-free readiness boundary and was reported as an auth failure.
+- Fix: navigate a temporary context to `/api/health` before auth mutation and
+  retry only the exact TargetClosed error family once with explicit receipts.
+- Prevention: deterministic tests require one TargetClosed retry, refuse to
+  retry HTTP-like failures, and surface a second disconnect.
