@@ -6,6 +6,7 @@ import {
   E2E_PORT,
 } from "../apps/web/e2e/support/constants";
 import { withE2EBuildLock } from "../apps/web/e2e/support/isolation";
+import { resolvePrebuiltWebOutput } from "./prebuilt-artifact";
 
 const repositoryRoot = process.cwd();
 const webRoot = join(repositoryRoot, "apps", "web");
@@ -37,7 +38,8 @@ const ownsTemporaryRoot = resolvedTemporaryRoot === undefined;
 const temporaryRoot = resolvedTemporaryRoot
   ?? await mkdtemp(join(tmpdir(), "frame-of-mind-e2e-"));
 const emptyDotenvPath = join(temporaryRoot, "empty.env");
-const isolatedOutput = join(temporaryRoot, "local-web-output");
+const prebuiltOutput = await resolvePrebuiltWebOutput("node-server");
+const isolatedOutput = prebuiltOutput ?? join(temporaryRoot, "local-web-output");
 
 const environment: Record<string, string> = {
   HOME: temporaryRoot,
@@ -75,8 +77,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 try {
   await writeFile(emptyDotenvPath, "", { mode: 0o600 });
-  const buildExitCode = await withE2EBuildLock(async () => {
-    activeChild = Bun.spawn(
+  const buildExitCode = prebuiltOutput
+    ? 0
+    : await withE2EBuildLock(async () => {
+      activeChild = Bun.spawn(
       [
         process.execPath,
         "--no-env-file",
@@ -94,12 +98,15 @@ try {
         stderr: "inherit",
       },
     );
-    const exitCode = await activeChild.exited;
-    if (exitCode === 0) {
-      await cp(join(webRoot, ".output"), isolatedOutput, { recursive: true });
-    }
-    return exitCode;
-  });
+      const exitCode = await activeChild.exited;
+      if (exitCode === 0) {
+        await cp(join(webRoot, ".output"), isolatedOutput, { recursive: true });
+      }
+      return exitCode;
+    });
+  if (prebuiltOutput) {
+    console.log("STUDIO_E2E build=SKIP prebuilt=node-server");
+  }
   if (buildExitCode !== 0) {
     process.exitCode = buildExitCode;
   } else {

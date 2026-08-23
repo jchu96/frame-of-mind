@@ -1,7 +1,13 @@
 import { createE2EEnvironment } from "./e2e-environment";
 import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
+import { resolvePrebuiltWebOutput } from "./prebuilt-artifact";
 
 const suite = process.env.FRAME_OF_MIND_E2E_SUITE || "smoke";
+const prebuiltOutput = suite === "canary"
+  ? undefined
+  : await resolvePrebuiltWebOutput(
+      suite === "smoke" ? "node-server" : "cloudflare_module",
+    );
 const isolation = await createE2EIsolation(`playwright-${suite}`);
 const e2ePort = await isolation.reservePort();
 const canaryEnvironment = suite === "canary" || suite === "all"
@@ -16,6 +22,15 @@ const environment = createE2EEnvironment(process.env, {
   FRAME_OF_MIND_E2E_PORT: String(e2ePort),
   FRAME_OF_MIND_E2E_SUITE: suite,
   FRAME_OF_MIND_E2E_RUN_ID: isolation.id,
+  ...(prebuiltOutput
+    ? { FRAME_OF_MIND_PREBUILT_OUTPUT: prebuiltOutput }
+    : {}),
+  ...(process.env.FRAME_OF_MIND_PREBUILT_WORKFLOWS
+    ? {
+        FRAME_OF_MIND_PREBUILT_WORKFLOWS:
+          process.env.FRAME_OF_MIND_PREBUILT_WORKFLOWS,
+      }
+    : {}),
   ...canaryEnvironment,
 });
 

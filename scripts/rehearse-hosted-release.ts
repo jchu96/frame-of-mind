@@ -8,12 +8,24 @@ import { join, resolve } from "node:path";
 import { checkCloudflareBoundary } from "./check-cloudflare-boundary";
 import { createE2EEnvironment } from "./e2e-environment";
 import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
+import {
+  resolvePrebuiltWebOutput,
+  resolvePrebuiltWorkflowsOutput,
+} from "./prebuilt-artifact";
 
 const startedAt = performance.now();
 const repositoryRoot = resolve(import.meta.dir, "..");
 const isolation = await createE2EIsolation("hosted-release");
 const temporaryRoot = isolation.root;
 const previousOutput = join(temporaryRoot, "previous-output");
+const prebuiltOutput = await resolvePrebuiltWebOutput("cloudflare_module");
+const prebuiltWorkflows = await resolvePrebuiltWorkflowsOutput();
+const webOutput = prebuiltOutput
+  ?? resolve(repositoryRoot, "apps/web/.output");
+const rollbackOutput = prebuiltOutput ?? previousOutput;
+const workflowMain = prebuiltWorkflows
+  ? join(prebuiltWorkflows, "index.js")
+  : resolve(repositoryRoot, "apps/workflows/src/index.ts");
 const migrationDirectory = join(temporaryRoot, "migrations-0001-through-0009");
 const persistRoot = isolation.persistRoot;
 const wranglerBin = resolve(repositoryRoot, "apps/web/node_modules/wrangler/bin/wrangler.js");
@@ -22,26 +34,32 @@ const databaseId = isolation.databaseId;
 const safeEnvironment = createE2EEnvironment(process.env);
 
 try {
-  await runChecked(
-    ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare:review"],
-    "previous review-only Cloudflare build",
-  );
-  await cp(resolve(repositoryRoot, "apps/web/.output"), previousOutput, { recursive: true });
+  if (prebuiltOutput) {
+    console.log("HOSTED_RELEASE build=SKIP prebuilt=cloudflare_module");
+  } else {
+    await runChecked(
+      ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare:review"],
+      "previous review-only Cloudflare build",
+    );
+    await cp(resolve(repositoryRoot, "apps/web/.output"), previousOutput, { recursive: true });
 
-  await runChecked(
-    ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare"],
-    "hosted production Cloudflare build",
-  );
+    await runChecked(
+      ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare"],
+      "hosted production Cloudflare build",
+    );
+  }
   const firstEntry = await readFile(
-    resolve(repositoryRoot, "apps/web/.output/server/hosted-entry.mjs"),
+    join(webOutput, "server/hosted-entry.mjs"),
   );
-  await runChecked(
-    ["bun", "--no-env-file", "scripts/build-hosted-entry.ts"],
-    "deterministic hosted entry replay",
-  );
-  const secondEntry = await readFile(
-    resolve(repositoryRoot, "apps/web/.output/server/hosted-entry.mjs"),
-  );
+  const secondEntry = prebuiltOutput
+    ? await readFile(resolve(repositoryRoot, "scripts/hosted-entry.mjs"))
+    : await (async () => {
+        await runChecked(
+          ["bun", "--no-env-file", "scripts/build-hosted-entry.ts"],
+          "deterministic hosted entry replay",
+        );
+        return readFile(join(webOutput, "server/hosted-entry.mjs"));
+      })();
   if (!firstEntry.equals(secondEntry)) {
     throw new Error("hosted-entry.mjs changed across identical emission inputs.");
   }
@@ -53,7 +71,7 @@ try {
   console.log("HOSTED_RELEASE entry=PASS mode=delegating body_read=false");
 
   const boundary = await checkCloudflareBoundary(
-    resolve(repositoryRoot, "apps/web/.output"),
+    webOutput,
   );
   console.log(
     `HOSTED_RELEASE boundary=PASS required=${boundary.requiredMarkers} `
@@ -87,10 +105,10 @@ try {
   await writeFile(publicConfig, JSON.stringify({
     ...publicShape,
     name: "frame-of-mind-hosted-release-rehearsal",
-    main: resolve(repositoryRoot, "apps/web/.output/server/hosted-entry.mjs"),
+    main: join(webOutput, "server/hosted-entry.mjs"),
     routes: undefined,
     assets: {
-      directory: resolve(repositoryRoot, "apps/web/.output/public"),
+      directory: join(webOutput, "public"),
       binding: "ASSETS",
     },
     d1_databases: [d1Binding(resolve(repositoryRoot, "apps/web/db/migrations"))],
@@ -102,15 +120,15 @@ try {
   await writeFile(workflowConfig, JSON.stringify({
     ...workflowShape,
     name: "frame-of-mind-hosted-workflows-rehearsal",
-    main: resolve(repositoryRoot, "apps/workflows/src/index.ts"),
+    main: workflowMain,
     d1_databases: [d1Binding(resolve(repositoryRoot, "apps/web/db/migrations"))],
   }, null, 2));
   await writeFile(rollbackConfig, JSON.stringify({
     ...publicShape,
     name: "frame-of-mind-hosted-rollback-rehearsal",
-    main: join(previousOutput, "server/index.mjs"),
+    main: join(rollbackOutput, "server/index.mjs"),
     routes: undefined,
-    assets: { directory: join(previousOutput, "public"), binding: "ASSETS" },
+    assets: { directory: join(rollbackOutput, "public"), binding: "ASSETS" },
     d1_databases: [d1Binding(resolve(repositoryRoot, "apps/web/db/migrations"))],
     services: undefined,
     vars: {
@@ -152,7 +170,7 @@ try {
   const migrationConfig = join(temporaryRoot, "migration.wrangler.json");
   await writeFile(migrationConfig, JSON.stringify({
     name: "frame-of-mind-hosted-migration-rehearsal",
-    main: resolve(repositoryRoot, "apps/workflows/src/index.ts"),
+    main: workflowMain,
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat"],
     d1_databases: [d1Binding(migrationDirectory)],
