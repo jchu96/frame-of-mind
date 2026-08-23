@@ -5,8 +5,10 @@
 - Repaired the root-script dependency contract after repeated red runs went
   unnoticed: root scripts now own their `jose` dependency and repository
   hygiene rejects undeclared bare imports under `scripts/` and `test/`.
-  Windows lockfile diagnosis is continuing against a real GitHub runner; the
-  CI lane restructure is waiting for the sharded-gate branch to land first.
+  A real Windows runner proved that the lockfile drift was a cross-drive
+  fresh-clone path rewrite, not an optional package; Windows clones now stay on
+  the source drive. The CI lane restructure is waiting for the sharded-gate
+  branch to land first.
 
 - Closed the Cloudflare Email Service adversarial review's three should-fix
   findings before go-live. A present `EMAIL` binding with no sender now fails
