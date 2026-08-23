@@ -1,32 +1,64 @@
+<div align="center">
+  <img src="docs/assets/frame-of-mind-mascot.png" alt="Frame of Mind's mascot: a small mint-green clay creature with a camera-lens eye and headphones, taking notes while watching a paused video" width="360">
+
 # Frame of Mind
 
-**Video in. Understanding out.**
+**It watched the whole meeting so you don't have to.**
 
-Frame of Mind is a local-first AI analyst for screen recordings. Point it at
-a recorded meeting, user call, demo, or teaching session; pick a **recipe**
-for what you want out of it; and it watches the video with Gemini — the
-pixels, not just the words — and returns structured, evidence-cited findings
-you can act on. Every claim is anchored to a timestamp, validated against a
-strict local schema, and stored privately on your machine.
+Frame of Mind is an AI analyst for screen recordings. Give it a recorded
+meeting, user call, or demo; tell it what you're looking for; and it watches
+the video with Gemini — the pixels, not just the words — and hands back
+findings with receipts: timestamps, verbatim quotes, and screenshots of the
+exact moment.
 
-One run produces:
-
-- **findings that match your intent** — issues, decisions, requirements,
-  action items, a repository change plan, or communication coaching;
-- **proof for each finding** — timestamps, verbatim UI text, reporter
-  quotes, and screenshots of the exact moment;
-- **a portable private bundle** — JSON contracts, Markdown, and a
-  self-contained HTML report, with SHA-256 provenance in a manifest.
-
-Meeting context from Bluedot or Granola (or a local transcript file) enriches
-the analysis when available; a bare recording works too — Frame of Mind can
-even derive its own transcript from the recording's audio.
+[![CI](https://github.com/jchu96/frame-of-mind/actions/workflows/ci.yml/badge.svg)](https://github.com/jchu96/frame-of-mind/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Bun 1.3+](https://img.shields.io/badge/bun-1.3+-black.svg)](package.json)
 
 [Install](#install) ·
 [Quickstart](#analyze) ·
 [Recipes](#recipes) ·
 [Local Studio](#launch-the-local-studio) ·
 [Documentation](#documentation)
+
+</div>
+
+## Ask it for what you actually need
+
+> "Turn this user call into bug reports — with the error text on screen and
+> the second it appeared."
+
+> "Who committed to what on this call, and by when?"
+
+> "This demo went sideways at some point. Find where, and what the presenter
+> could have done differently."
+
+> "Write the SOP for the process my teammate just walked through."
+
+Every answer is a **finding with proof**: a timestamp, the words spoken, the
+text on screen, and a screenshot — validated against a strict schema and
+stored in a portable bundle (JSON + Markdown + a self-contained HTML report,
+with SHA-256 provenance).
+
+## Local-first, private by default
+
+Everything runs from your machine: your recording goes directly to Gemini for
+analysis and is deleted when it finishes; results live on your disk. Meeting
+context from Bluedot or Granola (or a plain transcript file) enriches a run
+when you have it — a bare recording works too, and Frame of Mind can derive
+its own transcript from the audio.
+
+```mermaid
+flowchart LR
+    a["your recording"] --> b["Frame of Mind<br>recipes + schema + evidence"]
+    b --> c["Gemini<br>(watches the video)"]
+    c --> b
+    b --> d["findings bundle<br>timestamps · quotes · screenshots"]
+```
+
+There is also a hosted Studio (invite-gated, same evidence contract) — the
+maintainer's reference instance runs at
+[fom.flickerventures.com](https://fom.flickerventures.com).
 
 > [!IMPORTANT]
 > Early public release (`v0.3.0`). Review generated work before using or
