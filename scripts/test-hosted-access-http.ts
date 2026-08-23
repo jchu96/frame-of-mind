@@ -35,12 +35,6 @@ try {
     "Cloudflare artifact build",
   );
   console.log("HOSTED_ACCESS build=PASS cloudflare_module");
-  if (entrySelection === "hosted-entry") {
-    await runChecked(
-      ["bun", "--no-env-file", "run", "build:hosted-stream-entry"],
-      "Hosted wrapper entry build",
-    );
-  }
 
   const keys = await generateKeyPair("RS256");
   const publicJwk = await exportJWK(keys.publicKey);
