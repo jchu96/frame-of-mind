@@ -7,6 +7,9 @@ ALTER TABLE hosted_media_upload_sessions ADD COLUMN r2_capability_hash TEXT CHEC
   r2_capability_hash IS NULL OR length(r2_capability_hash) = 64
 );
 ALTER TABLE hosted_media_upload_sessions ADD COLUMN r2_completed_at TEXT;
+ALTER TABLE hosted_media_upload_sessions ADD COLUMN r2_uploaded_bytes INTEGER NOT NULL DEFAULT 0 CHECK (
+  r2_uploaded_bytes >= 0 AND r2_uploaded_bytes <= declared_size_bytes
+);
 
 ALTER TABLE hosted_media_receipts ADD COLUMN retained_object_key TEXT;
 ALTER TABLE hosted_media_receipts ADD COLUMN retained_until TEXT;

@@ -34,6 +34,7 @@ interface ContextRow {
   retained_until: string | null;
   retained_delete_requested_at: string | null;
   retained_deleted_at: string | null;
+  duration_seconds: number;
   manifest_json: string | null;
 }
 
@@ -60,6 +61,7 @@ export class HostedEvidenceService {
     mediaId: string;
     mimeType: string;
     keptUntil: string;
+    durationSeconds: number;
   }> {
     const context = await this.context(principalSub, runId);
     if (
@@ -80,6 +82,7 @@ export class HostedEvidenceService {
       mediaId: context.media_id,
       mimeType: context.mime_type,
       keptUntil: context.retained_until,
+      durationSeconds: context.duration_seconds,
     };
   }
 
@@ -149,6 +152,7 @@ export class HostedEvidenceService {
     }
     if (!isPng(input.bytes)) throw new HostedEvidenceError("hosted_capture_format_invalid");
     const source = await this.source(input.principalSub, input.runId);
+    const timestampSeconds = Math.min(input.timestampSeconds, source.durationSeconds);
     if (
       input.sourceManifestSha256 !== source.manifestSha256
       || input.sourceRecordingSha256 !== source.recordingSha256
@@ -180,7 +184,7 @@ export class HostedEvidenceService {
         ) < 500
       `).bind(
         input.principalSub, evidenceId, input.runId, source.mediaId,
-        source.manifestSha256, source.recordingSha256, input.timestampSeconds,
+        source.manifestSha256, source.recordingSha256, timestampSeconds,
         capturedAt, captureSha256, objectKey,
         input.principalSub, source.mediaId, capturedAt,
         input.principalSub, input.runId,
@@ -195,7 +199,7 @@ export class HostedEvidenceService {
     return {
       id: evidenceId,
       runId: input.runId,
-      timestampSeconds: input.timestampSeconds,
+      timestampSeconds,
       capturedAt,
       captureSha256,
       mimeType: "image/png",
@@ -210,7 +214,7 @@ export class HostedEvidenceService {
     const row = await this.database.prepare(`
       SELECT media.media_id, media.sha256, media.mime_type,
         media.retained_object_key, media.retained_until, media.retained_deleted_at,
-        media.retained_delete_requested_at,
+        media.retained_delete_requested_at, media.duration_seconds,
         COALESCE(meeting.manifest_json, video.manifest_json) AS manifest_json
       FROM hosted_analysis_attempts attempt
       JOIN hosted_analysis_jobs job

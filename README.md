@@ -51,7 +51,9 @@ even derive its own transcript from the recording's audio.
   retention, evidence, spend, and telemetry Tasks 5.1–5.4, plus Phase 6
   preparation artifacts are built and contract-tested. Retained mode adds a
   private principal-owned R2 copy with a visible lifecycle and client-canvas
-  evidence provenance; ephemeral mode remains Gemini-only. The Phase 6
+  evidence provenance; each multipart part first consumes a D1-tracked byte
+  reservation bounded by the declared recording size. Ephemeral mode remains
+  Gemini-only. The Phase 6
   deployment gate remains pending. The current source of truth is the
   [Hosted Studio track](conductor/tracks/hosted-studio_20260822/).
 

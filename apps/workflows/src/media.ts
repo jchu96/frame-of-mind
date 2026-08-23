@@ -81,6 +81,7 @@ export interface HostedMediaUploadSession {
   r2UploadId?: string;
   r2CapabilityHash?: string;
   r2CompletedAt?: string;
+  r2UploadedBytes: number;
   state: z.infer<typeof hostedMediaUploadStateSchema>;
   createdAt: string;
   sessionExpiresAt: string;

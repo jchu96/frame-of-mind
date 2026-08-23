@@ -166,12 +166,15 @@ The browser never receives R2 account credentials. For retained mode the
 Worker creates a multipart upload through the binding and returns a random,
 principal-authenticated capability whose SHA-256—not plaintext—is stored in
 D1. Each request is fixed-length streamed to R2, and completion consumes the
-capability. Seal then reads the completed object and requires its complete
-size and SHA-256 to match the browser declaration and Gemini file. Object keys
-use a hashed principal prefix plus a random UUID and are never returned by a
-public API. Evidence PNGs use the same private bucket and a separate random
-key; D1 stores only the evidence digest and manifest/recording/timestamp
-provenance.
+capability. Before R2 reads a part, one conditional D1 update reserves its
+`Content-Length` against both the session's cumulative uploaded bytes and the
+declared/configured ceilings; concurrent parts therefore cannot overshoot.
+A failed R2 write releases that reservation. Seal then reads the completed
+object and requires its complete size and SHA-256 to match the browser
+declaration and Gemini file. Object keys use a hashed principal prefix plus a
+random UUID and are never returned by a public API. Evidence PNGs use the same
+private bucket and a separate random key; D1 stores only the evidence digest
+and manifest/recording/timestamp provenance.
 
 The browser receives no key. It receives one provider-scoped capability only
 after the D1 cap reservation commits. D1 stores that URL as principal/media-

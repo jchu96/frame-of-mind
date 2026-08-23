@@ -136,6 +136,7 @@ export function throwHostedMediaHttpError(error: unknown): never {
       : code === "hosted_media_open_session_cap_exceeded"
         ? 429
         : code === "hosted_media_size_exceeded"
+          || code === "hosted_retained_part_size_exceeded"
           || code === "invalid_hosted_media_request"
           ? 422
           : code === "media_seal_mismatch"

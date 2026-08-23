@@ -27,6 +27,15 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const STALE_SEAL_GRACE_MS = 2 * 60_000;
 
+export interface HostedRetainedPartReservation {
+  principalSub: string;
+  mediaId: string;
+  partNumber: number;
+  contentLength: number;
+  r2ObjectKey: string;
+  r2UploadId: string;
+}
+
 export class HostedMediaService {
   private readonly uploads: HostedMediaRepository;
   private readonly receipts: HostedWorkflowRepository;
@@ -148,22 +157,75 @@ export class HostedMediaService {
     };
   }
 
-  async uploadRetainedPart(input: {
+  async reserveRetainedPart(input: {
     principalSub: string;
     mediaId: string;
     capability: string;
     partNumber: number;
-    body: ReadableStream;
-  }): Promise<HostedR2UploadedPart> {
+    contentLength: number;
+  }): Promise<HostedRetainedPartReservation> {
     const now = new Date().toISOString();
     const session = await this.uploads.get(input.principalSub, input.mediaId);
     requireRetainedSession(session, now);
-    if (await sha256Hex(input.capability) !== session.r2CapabilityHash) {
+    const capabilityHash = await sha256Hex(input.capability);
+    if (capabilityHash !== session.r2CapabilityHash) {
       throw new HostedMediaServiceError("hosted_retained_capability_unavailable");
     }
     if (!this.bucket) throw new HostedMediaServiceError("hosted_retention_binding_unavailable");
-    return await this.bucket.resumeMultipartUpload(session.r2ObjectKey, session.r2UploadId)
-      .uploadPart(input.partNumber, input.body);
+    if (
+      !Number.isSafeInteger(input.contentLength)
+      || input.contentLength < 1
+      || input.contentLength > session.declaredSizeBytes
+      || input.contentLength > this.config.maxBytes
+    ) {
+      throw new HostedMediaServiceError("hosted_retained_part_size_exceeded");
+    }
+    const reserved = await this.uploads.reserveRetainedPartBytes({
+      principalSub: input.principalSub,
+      mediaId: input.mediaId,
+      capabilityHash,
+      contentLength: input.contentLength,
+      maxBytes: this.config.maxBytes,
+      updatedAt: now,
+    });
+    if (!reserved) {
+      const current = await this.uploads.get(input.principalSub, input.mediaId);
+      requireRetainedSession(current, now);
+      if (current.r2CapabilityHash !== capabilityHash) {
+        throw new HostedMediaServiceError("hosted_retained_capability_unavailable");
+      }
+      throw new HostedMediaServiceError("hosted_retained_part_size_exceeded");
+    }
+    return {
+      principalSub: input.principalSub,
+      mediaId: input.mediaId,
+      partNumber: input.partNumber,
+      contentLength: input.contentLength,
+      r2ObjectKey: session.r2ObjectKey,
+      r2UploadId: session.r2UploadId,
+    };
+  }
+
+  async uploadRetainedPart(
+    reservation: HostedRetainedPartReservation,
+    body: ReadableStream,
+  ): Promise<HostedR2UploadedPart> {
+    if (!this.bucket) throw new HostedMediaServiceError("hosted_retention_binding_unavailable");
+    return await this.bucket.resumeMultipartUpload(
+      reservation.r2ObjectKey,
+      reservation.r2UploadId,
+    ).uploadPart(reservation.partNumber, body);
+  }
+
+  async releaseRetainedPart(
+    reservation: HostedRetainedPartReservation,
+  ): Promise<void> {
+    await this.uploads.releaseRetainedPartBytes({
+      principalSub: reservation.principalSub,
+      mediaId: reservation.mediaId,
+      contentLength: reservation.contentLength,
+      updatedAt: new Date().toISOString(),
+    });
   }
 
   async completeRetainedUpload(input: {

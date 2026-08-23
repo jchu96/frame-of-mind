@@ -445,3 +445,11 @@
   runtime. Require `Content-Length`, pipe through workerd `FixedLengthStream`,
   and give its readable side to R2; this keeps the part streaming without
   materializing it in application memory.
+- A fixed-length R2 stream does not enforce the upload session's declaration.
+  Reserve each part's `Content-Length` with one conditional D1 counter update
+  before opening the R2 write, and release it if the write fails; a read/check/
+  write sequence lets concurrent parts overshoot.
+- The retained-expiry janitor does not currently repeat explicit delete's
+  active-analysis veto. The 30-day default keeps ordinary jobs far from that
+  edge, but do not shorten retained-media lifetime enough to overlap analysis
+  without adding the same non-terminal-job check to expiry cleanup.
