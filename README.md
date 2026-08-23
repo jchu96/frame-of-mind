@@ -196,11 +196,16 @@ frameofmind recipes
 frameofmind doctor
 ```
 
-Contributors should also run the complete repository gate:
+Contributors should run the required pull-request gate; hosted-sensitive
+changes automatically upgrade it to the full three-lane gate when a base ref
+is supplied:
 
 ```bash
-bun run check
+FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
 ```
+
+Run `bun run check:sharded` before merging hosted changes and for the complete
+merge/nightly gate. `bun run check` remains the serial fallback.
 
 The full fresh-clone Studio boot is continuously tested on macOS and Linux.
 On Windows, use WSL or Git Bash with Bun 1.3.14+ and keep the checkout on LF:
@@ -694,6 +699,8 @@ bun run build:web:cloudflare
 bun run test:hosted-access-http
 bun run test:hosted-media-http              # fake Files API + real Chromium direct-upload contract
 bun run rehearse:hosted-release
+bun run check:pr
+bun run check:sharded
 bun run check
 ```
 

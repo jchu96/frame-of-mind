@@ -1071,3 +1071,11 @@
   `/sign-in` and `/robots.txt` and `403` for every data and hosted route.
   Membership is the D1 invite table; `access-users.ts` is no longer
   authoritative. Hosted creation remains dark.
+- Sharded the 16-step repository gate on 2026-08-23 without reducing logical
+  coverage. Fast, local, and hosted lanes now build each required preset once,
+  consume fail-closed marked artifacts, isolate outputs, enforce per-step
+  process-group deadlines, and cache the five newest content-addressed builds.
+  The locked complete sharded gate passed in 324.47 seconds (fast 20.17, local
+  38.81, hosted 324.46); hosted was dominated by the two Workflows HTTP modes
+  at 62.61 and 95.19 seconds. A separate known Better Auth stall proved the
+  single retry and exact 1,200-second `step_timeout` receipt.
