@@ -57,7 +57,7 @@ async function selectStep(step: VisibleComposerStep): Promise<void> {
       <li v-for="(item, index) in items" :key="item.value" class="min-w-0">
         <button
           type="button"
-          class="flex w-full items-start gap-3 rounded-md p-2 text-left transition-colors hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-55"
+          class="flex w-full flex-col items-start gap-1 rounded-md p-2 text-left transition-colors hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-55 sm:flex-row sm:gap-3"
           :class="visibleCurrent === item.value ? 'bg-elevated' : ''"
           :disabled="disabled(item.value)"
           :aria-current="visibleCurrent === item.value ? 'step' : undefined"

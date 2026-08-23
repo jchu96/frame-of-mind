@@ -18,17 +18,17 @@ try {
   };
 
   for (const path of [
+    "/api/hosted/media",
+    "/api/hosted/media/media_test_0001/seal",
     "/api/hosted/media/media_test_0001/parts",
-    "/api//hosted/media/media_test_0001/parts/",
-    "/api/hosted/media/media_test_0001/%70arts",
   ]) {
     const request = new Request(`https://frame-of-mind.example.test${path}`, {
       method: "POST",
       body: "fixture",
     });
     const response = await entry.fetch(request, {}, {});
-    if (response.status !== 404) throw new Error(`${path} did not stay dark.`);
-    if (request.bodyUsed) throw new Error(`${path} consumed the upload body.`);
+    if (response.status !== 204) throw new Error(`${path} did not delegate to Nitro.`);
+    if (request.bodyUsed) throw new Error(`${path} was consumed by the wrapper.`);
   }
 
   for (const [method, path] of [
@@ -44,7 +44,7 @@ try {
     if (response.status !== 204) throw new Error(`${method} ${path} did not delegate to Nitro.`);
   }
 
-  console.log("HOSTED_ENTRY_DARK_UPLOAD_CONTRACT PASSED");
+  console.log("HOSTED_ENTRY_DELEGATION_CONTRACT PASSED");
 } finally {
   await rm(temporaryRoot, { recursive: true, force: true });
 }
