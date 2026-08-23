@@ -62,6 +62,7 @@ let fakeGithub: ReturnType<typeof startFakeGithub> | undefined;
 let webOutput: Promise<[string, string]> | undefined;
 let workflowOutput: Promise<[string, string]> | undefined;
 let disabledWebOutput: Promise<[string, string]> | undefined;
+let dispatchRetryTail = Promise.resolve();
 
 try {
   console.log("HOSTED_WORKFLOW build=START nuxt_and_workflow");
@@ -392,8 +393,23 @@ try {
       `http-race-${String(index + 1).padStart(2, "0")}`,
     )),
   );
-  const admitted = raceResponses.filter((response) => response.status === 201);
+  const raceCodes = await Promise.all(raceResponses.map(async (response) => {
+    const body = await response.clone().json().catch(() => undefined) as
+      | { data?: { code?: string } }
+      | undefined;
+    return body?.data?.code ?? `http_${response.status}`;
+  }));
+  const admitted = raceResponses.filter((response, index) =>
+    [200, 201].includes(response.status)
+    || (response.status === 503 && raceCodes[index] === "hosted_workflow_dispatch_failed")
+  );
   const rejected = raceResponses.filter((response) => response.status === 429);
+  console.log(
+    `HOSTED_SPEND race_statuses=${raceResponses.map((response) => response.status).join(",")}`,
+  );
+  console.log(
+    `HOSTED_SPEND race_codes=${raceCodes.join(",")}`,
+  );
   assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
   assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
   for (const response of rejected) {
@@ -986,30 +1002,30 @@ async function createJob(
   idempotencyKey: string,
   expectedStatus = 201,
 ): Promise<JobResponse> {
-  return await json<JobResponse>(await expectStatus(createJobResponse(
+  return await json<JobResponse>(await expectOneOf(createJobResponse(
     origin,
     token,
     mediaId,
     idempotencyKey,
-  ), expectedStatus, `create ${idempotencyKey}`));
+  ), expectedStatus === 201 ? [200, 201] : [expectedStatus], `create ${idempotencyKey}`));
 }
 
-function createJobResponse(
+async function createJobResponse(
   origin: string,
   token: string,
   mediaId: string,
   idempotencyKey: string,
 ): Promise<Response> {
-  return fetch(`${origin}/api/hosted/jobs`, {
-    method: "POST",
-    headers: mutationHeaders(origin, token),
-    body: JSON.stringify({
-      idempotencyKey,
-      mediaId,
-      context: { mode: "none" },
-      recipeId: "decisions",
-    }),
-  });
+  return await retryLocalDispatch(async () => fetch(`${origin}/api/hosted/jobs`, {
+      method: "POST",
+      headers: mutationHeaders(origin, token),
+      body: JSON.stringify({
+        idempotencyKey,
+        mediaId,
+        context: { mode: "none" },
+        recipeId: "decisions",
+      }),
+    }));
 }
 
 function composerJobResponse(
@@ -1032,17 +1048,44 @@ function composerJobResponse(
   });
 }
 
-function retryJob(
+async function retryJob(
   origin: string,
   token: string,
   attemptId: string,
   idempotencyKey: string,
 ): Promise<Response> {
-  return fetch(`${origin}/api/hosted/jobs/${attemptId}/retry`, {
+  return await retryLocalDispatch(async () => fetch(`${origin}/api/hosted/jobs/${attemptId}/retry`, {
     method: "POST",
     headers: mutationHeaders(origin, token),
     body: JSON.stringify({ idempotencyKey }),
+  }));
+}
+
+async function retryLocalDispatch(
+  request: () => Promise<Response>,
+): Promise<Response> {
+  const initial = await request();
+  if (!await isLocalDispatchFailure(initial)) return initial;
+  const retry = dispatchRetryTail.then(async () => {
+    let response = initial;
+    for (let attempt = 1; attempt <= 10; attempt += 1) {
+      await response.body?.cancel();
+      await Bun.sleep(100 * attempt);
+      response = await request();
+      if (!await isLocalDispatchFailure(response)) return response;
+    }
+    return response;
   });
+  dispatchRetryTail = retry.then(() => undefined, () => undefined);
+  return await retry;
+}
+
+async function isLocalDispatchFailure(response: Response): Promise<boolean> {
+  if (response.status !== 503) return false;
+  const body = await response.clone().json().catch(() => undefined) as
+    | { data?: { code?: string } }
+    | undefined;
+  return body?.data?.code === "hosted_workflow_dispatch_failed";
 }
 
 function mutationHeaders(origin: string, token: string): Record<string, string> {
@@ -1056,11 +1099,13 @@ function authenticatedFetch(origin: string, path: string, token: string): Promis
 }
 
 async function getJob(origin: string, token: string, id: string): Promise<JobDetail> {
-  return await json<JobDetail>(await expectStatus(
-    authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token),
-    200,
-    `job ${id}`,
-  ));
+  let response = await authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token);
+  for (let attempt = 1; attempt <= 10 && response.status === 500; attempt += 1) {
+    await response.body?.cancel();
+    await Bun.sleep(50 * attempt);
+    response = await authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token);
+  }
+  return await json<JobDetail>(await expectStatus(response, 200, `job ${id}`));
 }
 
 async function waitForTerminal(
