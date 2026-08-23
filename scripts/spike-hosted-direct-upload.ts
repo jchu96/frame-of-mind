@@ -249,9 +249,11 @@ try {
   cleanupNames.add(finalizedName);
   const fetched = await ai.files.get({ name: finalizedName });
   requireCondition(Number(fetched.sizeBytes) === fixtureSize, "files_get_size_mismatch");
+  // The digest is the only thing that distinguishes the committed recording
+  // from a same-size substitute, so a missing hash fails closed (review SF1).
+  requireCondition(typeof fetched.sha256Hash === "string", "files_get_digest_missing");
   requireCondition(
-    typeof fetched.sha256Hash !== "string"
-      || remoteDigestMatchesHex(fetched.sha256Hash, fixtureSha256),
+    remoteDigestMatchesHex(fetched.sha256Hash as string, fixtureSha256),
     "files_get_digest_mismatch",
   );
 
