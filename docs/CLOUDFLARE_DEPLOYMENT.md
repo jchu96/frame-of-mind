@@ -9,18 +9,17 @@ This runbook deploys the Nuxt SSR workspace to Cloudflare Workers with:
 - Cloudflare Access protecting the whole hostname;
 - application-level validation of `Cf-Access-Jwt-Assertion`;
 - no public meeting-data route;
-- no provider credential in the public Worker; and
-- `GEMINI_API_KEY` as the only Tier A secret, held by the internal Workflows
-  Worker only.
+- no provider credential returned to browser code; and
+- `GEMINI_API_KEY` as the only Tier A secret, installed on both the public
+  session-minting Worker and internal Workflows Worker.
 
 The repository does not auto-deploy. Deployment is an operator action.
 
-Status as of 2026-08-22: the principal-scoped completed-run review surface is
-the deployable product. Hosted creation remains dark and undeployed. Phases
-3–4, spend/telemetry Tasks 5.3–5.4, and Phase 6 release-preparation artifacts
-are contract-tested, while ADR 0018 Amendment 1 (PR #65), upload Tasks
-2.1–2.4, retention/capture Tasks 5.1–5.2, and every Phase 6 deployment gate are
-pending. The exact checklist lives in the
+Status as of 2026-08-23: hosted creation remains dark and undeployed. Phases
+1–4, spend/telemetry Tasks 5.3–5.4, and Phase 6 release-preparation artifacts
+are contract-tested. ADR 0018 Amendment 2 and direct-upload Tasks 2.1–2.4 are
+implemented; retention/capture Tasks 5.1–5.2 and every production deployment
+gate remain pending. The exact checklist lives in the
 [Hosted Studio plan](../conductor/tracks/hosted-studio_20260822/plan.md), and
 the data handled by any deployment is classified in
 [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md).
@@ -29,11 +28,11 @@ the data handled by any deployment is classified in
 
 The proposed [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/)
 extends this same hostname and Access boundary with principal-scoped creation,
-D1 job state, Cloudflare Workflows, and Worker-proxied Gemini uploads. The
+D1 job state, Cloudflare Workflows, and direct browser-to-Gemini uploads. The
 production artifact and binding shape are prepared but not deployed, and the
 hosted routes remain 404-dark by default. Tier A adds `GEMINI_API_KEY` as the
-only secret on the internal Worker; provider connections and their separate
-encryption KEK remain Tier B.
+only Tier A secret and is installed on both Workers; provider connections and
+their separate encryption KEK remain Tier B.
 
 Task 3.0 selected a sibling, internal-only Workflows Worker because pinned
 Nitro 2.13.4 has no supported `WorkflowEntrypoint` export seam. The Nuxt Worker
@@ -44,18 +43,19 @@ binding, so the sibling must revalidate a bounded principal-scoped job receipt.
 The passing local/dry-run proof is recorded in
 [`docs/spikes/hosted-workflows-spike-2026-08-22.md`](spikes/hosted-workflows-spike-2026-08-22.md).
 
-Tasks 3.1–3.4 implement that topology behind build and runtime flags. The
+Tasks 2.1–4 implement that topology behind build and runtime flags. The
 production Nuxt artifact contains the hosted implementation, but its runtime
 flag defaults to false and hosted creation stays 404-dark. The generated
-`hosted-entry.mjs` wrapper intercepts the future raw upload-part route before
-Nitro and returns 404 until Phase 2 supplies the bounded forwarding handler.
-Before any future enablement, run:
+`hosted-entry.mjs` is a deterministic delegating main; it has no upload
+interception or recording-byte logic. Before any future enablement, run:
 
 ```bash
 bun run test:hosted-workflows-http
+bun run test:hosted-media-http
 ```
 
-The receipt must include `HOSTED_SPEND_CONTRACT PASSED`, end with
+The receipts must include `HOSTED_SPEND_CONTRACT PASSED`,
+`HOSTED_MEDIA_CONTRACT PASSED`, and end with
 `HOSTED_WORKFLOW_CONTRACT PASSED`, and show principal isolation, one provider
 invocation across the simulated success-without-receipt crash, terminal
 cleanup, linked retry deduplication, cap exhaustion before Workflow creation,
@@ -66,11 +66,14 @@ provider-usage reconciliation, and codes/structure-only telemetry rejection.
 Copy `apps/workflows/wrangler.jsonc.example` to an ignored operator-owned
 `wrangler.jsonc`, then replace only the placeholders with exact infrastructure
 values. Never place a secret in either config. For the Phase 6 Tier A shape,
-`GEMINI_API_KEY` is the only secret and belongs on the sibling Worker:
+`GEMINI_API_KEY` is the only Tier A secret. Install the same value on the
+public Worker (to mint/query/delete Files sessions) and sibling Worker (for
+analysis):
 
 ```bash
 node apps/web/node_modules/wrangler/bin/wrangler.js secret put GEMINI_API_KEY \
   --config apps/workflows/wrangler.jsonc
+bunx wrangler secret put GEMINI_API_KEY --cwd apps/web --config wrangler.jsonc
 ```
 
 The Workflows Worker shape is:
@@ -124,8 +127,21 @@ including module entry, Workers Assets, D1, and the service binding:
 }
 ```
 
-Deploy order is deliberate: apply migrations `0004_hosted_workflows.sql` and
-`0005_hosted_spend_telemetry.sql`,
+The public Worker accepts these non-secret media policy variables. Omit them
+to use the defaults:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `NUXT_HOSTED_MEDIA_OPEN_SESSION_CAP` | `2` | maximum unsealed sessions per principal |
+| `NUXT_HOSTED_MEDIA_MAX_BYTES` | `2147483648` | declared per-recording ceiling (2 GiB) |
+| `NUXT_HOSTED_MEDIA_SESSION_TTL_SECONDS` | `3600` | pending capability lifetime; cannot exceed seven days |
+
+The browser receives no key. It receives one provider-scoped capability only
+after the D1 cap reservation commits. D1 stores that URL as principal/media-
+bound AES-GCM ciphertext.
+
+Deploy order is deliberate: apply migrations through
+`0007_hosted_direct_media.sql`,
 deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
 caller with the service binding. Enabling hosted routes is a later reviewed
 release task; do not set its flags during this dark Phase 3 deployment shape.
@@ -151,28 +167,20 @@ bun run rehearse:hosted-release
 ```
 
 It builds the previous review-only and current hosted artifacts, applies D1
-migrations `0001` through `0005` to an isolated local clone and replays them as
+migrations `0001` through `0007` to an isolated local clone and replays them as
 an idempotent no-op, validates both Worker binding graphs, scans the boundary,
 runs the local byte-stability import regression, and dry-runs both the current
 and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.
 The 2026-08-22 baseline completes in under 60 seconds on the maintainer
 workstation, so it is part of `bun run check`.
 
-### Zone plan and request-body ceiling
+### Direct-upload ceiling
 
-Wrangler cannot report the active zone's request-body override. Immediately
-before the canary, open **Cloudflare Dashboard → the production zone →
-Network → Maximum Upload Size** and record the plan and displayed ceiling in
-the private release receipt. Record only the plan label and byte ceiling, not
-an account or zone ID. Stop if the dashboard value is below 4 MiB.
-
-Cloudflare's current [Workers limits documentation](https://developers.cloudflare.com/workers/platform/limits/)
-lists 100 MB as the lowest request-body ceiling (Free and Pro; Business is
-200 MB and Enterprise defaults to 500 MB) and notes that a zone owner can
-configure a lower maximum. The 4 MiB part fixed by proposed ADR 0018 Amendment
-1 ([PR #65](https://github.com/jchu96/frame-of-mind/pull/65)) is below that
-lowest documented tier. The dashboard check remains mandatory because the
-account-specific override, not the documentation table, governs production.
+The recording request body goes browser → Gemini, so the Cloudflare zone
+request-body ceiling does not bound recordings. Record and review the
+application `NUXT_HOSTED_MEDIA_MAX_BYTES` value instead. Stop if it exceeds
+the current provider Files API limit or the product policy approved for the
+tenant.
 
 ## Security model
 
@@ -440,9 +448,9 @@ Deploy from `apps/web` so Wrangler paths match the configuration:
 bunx wrangler deploy --cwd apps/web --config wrangler.jsonc
 ```
 
-The public Worker bundle contains no Gemini, Granola, Bluedot, Asana, or
-telemetry secret. The internal Workflows Worker receives only
-`GEMINI_API_KEY` through Wrangler's secret store for the Tier A release shape.
+Neither Worker bundle contains a secret literal. The public and internal
+Workers each receive the same `GEMINI_API_KEY` through Wrangler's secret store;
+Granola, Bluedot, Asana, and telemetry secrets remain absent in Tier A.
 
 ## 8. Verify fail-closed behavior
 
@@ -715,4 +723,3 @@ better-auth add <email>`).
    → 401/redirect to `/sign-in`, GitHub sign-in works, `access-users.ts` is
    no longer authoritative (membership is the D1 invite table).
 5. Record the cutover in `work_log.md`.
-
