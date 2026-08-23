@@ -9,21 +9,21 @@ const { data: session } = await useFetch<SessionInfo>("/api/session", {
 
 <template>
   <header
-    v-if="!config.public.studioEnabled"
-    class="border-b border-zinc-300/80 bg-[#f6f4ed]/90 backdrop-blur"
+    v-if="!config.public.studioEnabled && !config.public.hostedStudioEnabled"
+    class="border-b border-default bg-default/90 backdrop-blur"
   >
     <div
       class="fom-shell flex min-h-18 flex-col items-stretch gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
     >
       <NuxtLink to="/" class="group flex items-center gap-3" aria-label="Frame of Mind home">
         <span
-          class="grid size-10 place-items-center border border-zinc-900 bg-zinc-950 text-sm font-black text-emerald-300 transition-transform group-hover:-rotate-3"
+          class="grid size-10 place-items-center border border-default bg-inverted text-sm font-black text-primary transition-transform group-hover:-rotate-3"
         >
           FM
         </span>
         <span>
           <span class="block text-sm font-black tracking-tight">Frame of Mind</span>
-          <span class="block text-xs text-zinc-500">Video in. Understanding out.</span>
+          <span class="block text-xs text-muted">Video in. Understanding out.</span>
         </span>
       </NuxtLink>
 

@@ -939,6 +939,15 @@ async function verifyHostedBrowserContract(
     }
     const page = await context.newPage();
     await page.goto(`${origin}/hosted/new/intent`);
+    assertEqual(await page.getByRole("navigation").count(), 1, "single hosted navigation landmark");
+    const runStep = page.locator("[data-slot=item]").filter({ hasText: "RunAdd a recording first" }).getByRole("button");
+    assertEqual(await runStep.isDisabled(), true, "Run step disabled before prerequisites");
+    await runStep.click({ force: true });
+    assertEqual(new URL(page.url()).pathname, "/hosted/new/intent", "disabled Run stays on Intent");
+    await page.getByText("Complete Intent and add a recording before Run.").waitFor();
+    await page.goto(`${origin}/hosted/new/run`);
+    await page.waitForURL(/\/hosted\/new\/intent\?reason=/);
+    await page.getByText("Complete Intent before opening Run.").waitFor();
     await page.getByRole("button", { name: "Save intent" }).click();
     await page.goto(`${origin}/hosted/new/context`);
     await page.getByRole("button", { name: "Use video only" }).click();

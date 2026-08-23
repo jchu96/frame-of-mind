@@ -2,6 +2,7 @@
 import { loadMediaResumeReceipt } from "../../app/studio/media-upload.js";
 import type { HostedMediaView } from "../../../workflows/src/contracts.js";
 import { hostedStorage } from "./hosted-adapter";
+import HostedComposerStepper from "./composer-stepper.vue";
 
 const { error } = await useFetch("/api/hosted/configuration");
 if (error.value) throw createError({ statusCode: 404, statusMessage: "Not found" });
@@ -21,6 +22,7 @@ onMounted(async () => {
 
 <template>
   <main class="fom-shell py-8" data-hosted-composer="recording">
+    <HostedComposerStepper current="recording" :intent-ready="true" :recording-ready="Boolean(media)" />
     <p class="fom-kicker text-primary">Step 3 of 4</p>
     <h1 class="mt-3 text-4xl font-black">Recording receipt</h1>
     <UAlert class="mt-6 max-w-2xl" color="neutral" variant="soft" icon="i-lucide-upload" title="Recording upload is not available yet" description="Hosted Studio can use an existing sealed, principal-bound media receipt. Upload support remains gated for a later phase." />
