@@ -504,3 +504,14 @@
 - Fix: send `{}` and show an error toast when sign-out fails.
 - Prevention: built-workerd browser coverage requires redirect to `/sign-in`
   and a subsequent `/api/session` JSON 403.
+
+## 2026-08-23 — Playwright routes did not replace Nuxt SSR fixture data
+
+- Symptom: synthetic Activity and Results rows were absent after a direct page
+  load even though Playwright had installed matching browser routes.
+- Cause: Nuxt executed the initial `useFetch` on the Worker during SSR, outside
+  the browser context where `page.route()` can intercept requests.
+- Fix: load one real SSR response first, then install the synthetic route and
+  trigger an explicit client Refresh or client-side navigation.
+- Prevention: hosted browser fixtures that replace server-fetched data must
+  cross a client request boundary before asserting the synthetic state.

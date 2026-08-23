@@ -380,10 +380,13 @@ function messageForCode(code: string): string {
     return "Finish or cancel an existing upload before starting another.";
   }
   if (code === "media_seal_mismatch") {
-    return "Gemini received different bytes than the selected recording. The remote file was deleted.";
+    return "The uploaded file did not match the recording you chose. Choose it again.";
   }
   if (code === "hosted_media_duration_invalid") {
     return "The browser could not read a valid recording duration.";
   }
-  return "Hosted Studio could not complete the recording transfer.";
+  if (code === "hosted_media_size_exceeded") {
+    return "This recording is larger than the upload limit.";
+  }
+  return "Could not upload this recording. Try again.";
 }

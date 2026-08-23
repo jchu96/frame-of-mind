@@ -13,6 +13,8 @@ import { composerReadinessFromStorage } from "../../app/studio/composer-readines
 import type { HostedJobView, HostedMediaView } from "../../../workflows/src/contracts.js";
 import { hostedMediaSession, hostedStorage } from "./hosted-adapter";
 import HostedComposerStepper from "./composer-stepper.vue";
+import { recordingDisplayLabel } from "../../app/studio/recording-display";
+import { hostedRunStartErrorCopy } from "./run-start-error";
 
 interface Recipe { id: string; label: string; revision: string }
 useSeoMeta({
@@ -25,11 +27,14 @@ const blockers = ref<Array<{ code: string; message: string; link: string; action
 const ready = ref(false);
 const submitting = ref(false);
 const submitError = ref("");
+const submitNextAction = ref("");
+const submitErrorCode = ref("");
 const summary = ref<{
   recipe: string;
   focus: string;
   context: string;
   recording: string;
+  recordingTitle: string;
 }>();
 let payload: ReturnType<typeof buildComposerPayload> | undefined;
 
@@ -86,6 +91,7 @@ onMounted(async () => {
     recording: media
       ? `Uploaded ${formatDate(media.sealedAt)} · ${media.retention === "ephemeral" ? "deleted after analysis" : `kept until ${formatDate(media.expiresAt)}`}`
       : "No recording added",
+    recordingTitle: media ? recordingDisplayLabel(media) : "No recording added",
   };
   if (!state.canSubmit) return;
   const draft = createOrLoadRunDraft(storage, retentionRequestForMediaSession(session), () => `hosted-run:${crypto.randomUUID()}`);
@@ -97,6 +103,8 @@ async function start(): Promise<void> {
   if (!payload || submitting.value) return;
   submitting.value = true;
   submitError.value = "";
+  submitNextAction.value = "";
+  submitErrorCode.value = "";
   try {
     const response = await $fetch<{ job: HostedJobView }>("/api/hosted/composer/jobs", {
       method: "POST",
@@ -110,9 +118,10 @@ async function start(): Promise<void> {
     await navigateTo(`/hosted/activity/${encodeURIComponent(response.job.id)}`);
   } catch (caught) {
     const code = (caught as { data?: { data?: { code?: string } } }).data?.data?.code;
-    submitError.value = code === "recipe_receipt_mismatch" || code === "recipe_not_found"
-      ? "This goal was updated. Choose it again."
-      : "Analysis could not start. Review the settings and try again.";
+    const copy = hostedRunStartErrorCopy(code);
+    submitError.value = copy.message;
+    submitNextAction.value = copy.nextAction;
+    submitErrorCode.value = typeof code === "string" ? code : "start_failed";
   } finally {
     submitting.value = false;
   }
@@ -144,7 +153,7 @@ function formatDate(value: string): string {
       </UCard>
       <UCard data-summary-card="recording">
         <p class="text-sm font-bold text-muted">Recording</p>
-        <h2 class="mt-2 text-xl font-black">Recording</h2>
+        <h2 class="mt-2 text-xl font-black">{{ summary.recordingTitle }}</h2>
         <p class="mt-2 text-sm text-muted">{{ summary.recording }}</p>
       </UCard>
     </div>
@@ -165,8 +174,20 @@ function formatDate(value: string): string {
     <div class="mt-6">
       <UButton data-hosted-run-start="true" label="Start analysis" icon="i-lucide-play" :loading="submitting" :disabled="!ready" @click="start" />
       <p v-if="!ready" class="mt-2 text-sm text-muted">Complete the steps above before starting.</p>
-      <p v-if="submitError" class="mt-4 text-sm text-error" role="alert">{{ submitError }}</p>
-      <UButton v-if="submitError === 'This goal was updated. Choose it again.'" class="mt-3" to="/hosted/new/intent" color="neutral" variant="outline" label="Choose what to find" />
+      <UAlert
+        v-if="submitError"
+        class="mt-4 max-w-2xl"
+        color="error"
+        variant="soft"
+        :title="submitError"
+        :description="submitNextAction"
+        role="alert"
+      />
+      <p v-if="submitErrorCode" class="mt-3 text-sm text-muted">
+        Support code: <code>{{ submitErrorCode }}</code>
+      </p>
+      <UButton v-if="submitErrorCode === 'recipe_receipt_mismatch' || submitErrorCode === 'recipe_not_found'" class="mt-3" to="/hosted/new/intent" color="neutral" variant="outline" label="Choose what to find" />
+      <UButton v-else-if="submitErrorCode && submitErrorCode !== 'principal_spend_cap_exceeded'" class="mt-3" to="/hosted/new/recording" color="neutral" variant="outline" label="Upload recording again" />
     </div>
   </main>
 </template>

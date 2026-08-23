@@ -1044,7 +1044,7 @@ async function verifyHostedBrowserContract(
   token: string,
   mediaId: string,
 ): Promise<void> {
-  const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-2");
+  const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-3");
   const captureScreenshots = hostedContractAuthMode === "cloudflare-access";
   if (captureScreenshots) {
     await rm(screenshotRoot, { recursive: true, force: true });
@@ -1066,11 +1066,12 @@ async function verifyHostedBrowserContract(
     page.on("console", (message) => {
       if (message.text().toLowerCase().includes("hydration")
         && message.text().toLowerCase().includes("mismatch")) {
-        hydrationMismatches.push(message.text());
+        hydrationMismatches.push(`${new URL(page.url()).pathname}: ${message.text()}`);
       }
     });
     const capture = async (name: string): Promise<void> => {
       assertEqual(await page.locator("h1").count(), 1, `${name} single h1`);
+      assertEqual(hydrationMismatches, [], `${name} hydration mismatches`);
       if (!captureScreenshots) return;
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.screenshot({ path: join(screenshotRoot, `${name}-desktop.png`), fullPage: true });
@@ -1080,6 +1081,11 @@ async function verifyHostedBrowserContract(
     };
     await page.goto(`${origin}/hosted/new/intent`);
     await capture("01-intent-empty");
+    const directFocus = page.getByLabel("Optional focus");
+    await directFocus.waitFor();
+    await directFocus.fill("Direct-load label check");
+    assertEqual(await directFocus.inputValue(), "Direct-load label check", "direct SSR Intent label binding");
+    await directFocus.fill("");
     assertEqual(await page.getByRole("navigation").count(), 1, "single hosted navigation landmark");
     assertEqual(await page.getByRole("group", { name: "New analysis progress" }).count(), 1, "single composer progress group");
     assertEqual(await page.locator("[data-composer-step]").count(), 3, "three composer steps");
@@ -1146,7 +1152,8 @@ async function verifyHostedBrowserContract(
     await page.getByText("Drop a recording here").waitFor();
     await page.getByRole("link", { name: "Back to Activity" }).waitFor();
     await page.getByText("Delete after analysis", { exact: true }).waitFor();
-    await page.getByText("Keep temporarily", { exact: true }).waitFor();
+    await page.getByText("Keep for 7 days", { exact: true }).waitFor();
+    await assertRecordingCopyUsesUxGlossary(page);
     await capture("03-recording-empty");
     await page.evaluate((id) => {
       sessionStorage.setItem(
@@ -1156,6 +1163,10 @@ async function verifyHostedBrowserContract(
     }, mediaId);
     await page.reload();
     await page.locator("[data-hosted-media-ready=true]").waitFor();
+    await page.getByText(/^Recording · 1 s · 1\.0 KB$/).waitFor();
+    await page.getByRole("button", { name: "Replace" }).waitFor();
+    assertEqual(await page.getByText("Drop a recording here").count(), 0, "ready recording collapses dropzone");
+    await assertRecordingCopyUsesUxGlossary(page);
     await capture("04-recording-ready");
     await page.getByRole("link", { name: "Continue" }).click();
     await page.waitForURL(/\/hosted\/new\/run$/);
@@ -1166,6 +1177,45 @@ async function verifyHostedBrowserContract(
     await capture("05-review-and-start");
     const start = page.locator("[data-hosted-run-start=true]");
     await start.waitFor();
+    const startErrorFixtures = [
+      {
+        code: "principal_spend_cap_exceeded",
+        message: "You've used this account's analysis allowance.",
+        nextAction: "Contact support to raise it.",
+        status: 429,
+      },
+      {
+        code: "spend_duration_unavailable",
+        message: "We couldn't read this recording's length.",
+        nextAction: "Upload the recording again.",
+        status: 422,
+      },
+      {
+        code: "sealed_media_receipt_missing",
+        message: "This recording is no longer ready.",
+        nextAction: "Upload the recording again.",
+        status: 404,
+      },
+      {
+        code: "media_retention_expired",
+        message: "This recording's availability changed.",
+        nextAction: "Return to Recording and upload it again.",
+        status: 409,
+      },
+    ];
+    for (const fixture of startErrorFixtures) {
+      await page.route("**/api/hosted/composer/jobs", async (route) => {
+        await route.fulfill({
+          status: fixture.status,
+          contentType: "application/json",
+          body: JSON.stringify({ data: { code: fixture.code } }),
+        });
+      }, { times: 1 });
+      await start.click();
+      await page.getByRole("alert").getByText(fixture.message, { exact: true }).waitFor();
+      await page.getByRole("alert").getByText(fixture.nextAction, { exact: true }).waitFor();
+      await page.getByText(`Support code: ${fixture.code}`, { exact: true }).waitFor();
+    }
     await start.click();
     await page.waitForURL(/\/hosted\/activity\/attempt_/);
     await page.locator("[data-hosted-activity-page=detail]").waitFor();
@@ -1189,11 +1239,49 @@ async function verifyHostedBrowserContract(
     );
     assertEqual(reviewColumns, 2, "hosted review desktop columns");
     await capture("09-review-workspace");
+    const activityFixtures = hostedActivityFixtures();
     await page.goto(`${origin}/hosted/activity`);
     await page.locator("[data-hosted-activity-page=list]").waitFor();
+    assertEqual(hydrationMismatches, [], "Activity SSR hydration mismatches");
+    await page.route("**/api/hosted/jobs", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: activityFixtures }),
+      });
+    });
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.getByText("Recording · 20 s · 954 KB", { exact: false }).waitFor();
+    await page.getByText("Recording · 37 s · 1.2 MB", { exact: false }).waitFor();
     await capture("10-activity-list");
-    await page.goto(origin);
+    await page.route("**/api/runs?*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          runs: activityFixtures.map((job, index) => ({
+            schemaVersion: 3,
+            contextMode: "none",
+            runId: job.runId,
+            recipeId: job.receipt.recipe.id,
+            recipeLabel: job.receipt.recipe.label,
+            model: job.receipt.model,
+            startedAt: job.createdAt,
+            completedAt: job.updatedAt,
+            acceptedCount: index + 1,
+            rejectedCount: 0,
+            importedAt: job.updatedAt,
+          })),
+        }),
+      });
+    });
+    await page.getByRole("link", { name: "Results", exact: true }).click();
+    await page.waitForURL(`${origin}/`);
     await page.getByRole("heading", { name: "Your finished analyses.", level: 1 }).waitFor();
+    await page.getByRole("columnheader", { name: "Goal" }).waitFor();
+    await page.getByRole("columnheader", { name: "Sources" }).waitFor();
+    await page.getByRole("link", { name: "Recording · 20 s · 954 KB" }).waitFor();
+    await page.getByRole("link", { name: "Recording · 37 s · 1.2 MB" }).waitFor();
     const visibleResultsLabels = await page.getByText("Results", { exact: true }).evaluateAll((elements) =>
       elements.filter((element) => {
         const box = element.getBoundingClientRect();
@@ -1202,6 +1290,8 @@ async function verifyHostedBrowserContract(
     );
     assertEqual(visibleResultsLabels, 1, "one visible Results label on published analyses screen");
     await capture("11-results-home");
+    await page.unroute("**/api/runs?*");
+    await page.unroute("**/api/hosted/jobs");
     await page.goto(`${origin}/import`);
     await page.getByRole("heading", { name: /Import/, level: 1 }).waitFor();
     await capture("12-import");
@@ -1214,6 +1304,70 @@ async function verifyHostedBrowserContract(
     await browser.close();
   }
   console.log("HOSTED_WORKFLOW browser=PASS composer_activity_published_viewer");
+}
+
+async function assertRecordingCopyUsesUxGlossary(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  const copyGuide = await readFile(resolve("docs/UX_COPY.md"), "utf8");
+  const glossary = copyGuide
+    .split("\n")
+    .filter((line) => line.startsWith("| ") && !line.includes("Internal term") && !line.startsWith("|---"))
+    .flatMap((line) => (line.split("|")[1] ?? "")
+      .replaceAll("`", "")
+      .split(/\s+or\s+/)
+      .map((term) => term.trim().toLowerCase())
+      .filter(Boolean));
+  const forbidden = [...new Set([...glossary, "session"])]
+    .flatMap((term) => term.split(/\s+/))
+    .filter((term) => /^[a-z]+$/.test(term));
+  const rendered = (await page.locator("[data-hosted-composer=recording]").innerText()).toLowerCase();
+  for (const term of forbidden) {
+    if (new RegExp(`\\b${term}\\b`, "i").test(rendered)) {
+      throw new Error(`Rendered hosted Recording copy exposed glossary term ${term}.`);
+    }
+  }
+}
+
+function hostedActivityFixtures() {
+  const base = {
+    rootJobId: "job_ux_pass_3",
+    attempt: 1,
+    stage: "succeeded" as const,
+    cleanupCompleted: true,
+    createdAt: "2026-08-23T08:00:00.000Z",
+    updatedAt: "2026-08-23T08:01:00.000Z",
+  };
+  return [
+    {
+      ...base,
+      id: "attempt_ux_pass_3_first",
+      rootJobId: "job_ux_pass_3_first",
+      runId: "run_ux_pass_3_first",
+      receipt: {
+        recipe: { id: "issue-review", label: "Issue review", revision: "ux-pass-3" },
+        context: { mode: "none" as const },
+        model: "gemini-test",
+        retention: "ephemeral" as const,
+        recording: { durationSeconds: 20, sizeBytes: 954_357 },
+      },
+    },
+    {
+      ...base,
+      id: "attempt_ux_pass_3_second",
+      rootJobId: "job_ux_pass_3_second",
+      runId: "run_ux_pass_3_second",
+      createdAt: "2026-08-23T09:00:00.000Z",
+      updatedAt: "2026-08-23T09:01:00.000Z",
+      receipt: {
+        recipe: { id: "decisions", label: "Decisions", revision: "ux-pass-3" },
+        context: { mode: "none" as const },
+        model: "gemini-test",
+        retention: "retained" as const,
+        recording: { durationSeconds: 37, sizeBytes: 1_200_000 },
+      },
+    },
+  ];
 }
 
 async function signAccessToken(

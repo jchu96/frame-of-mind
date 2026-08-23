@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
       attempt.input.mediaId,
     );
     return {
-      job: hostedJobView(attempt),
+      job: hostedJobView(attempt, media),
       ...(media ? { media: hostedMediaView(media) } : {}),
       events: await runtime.repository.events(
         runtime.principalSub,
