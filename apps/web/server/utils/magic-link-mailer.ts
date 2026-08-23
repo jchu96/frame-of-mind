@@ -15,6 +15,7 @@ export const CLOUDFLARE_EMAIL_ERROR_CODES = [
 ] as const;
 
 const UNKNOWN_EMAIL_ERROR_CODE = "E_EMAIL_SEND_FAILED";
+const MAILER_FROM_UNSET_CODE = "E_MAILER_FROM_UNSET";
 const SUBJECT = "Sign in to Frame of Mind";
 
 export interface MagicLinkMailerOptions {
@@ -42,7 +43,11 @@ export function createMagicLinkMailer(options: MagicLinkMailerOptions): {
   return {
     async send({ email, url }) {
       const normalizedEmail = normalizeEmail(email);
-      if (options.emailBinding && from) {
+      if (options.emailBinding) {
+        if (!from) {
+          await logBindingFailure(options.failureLogger, MAILER_FROM_UNSET_CODE);
+          throw mailerUnavailable();
+        }
         try {
           await options.emailBinding.send({
             to: normalizedEmail,

@@ -101,6 +101,11 @@ generated principal-A assertion. Removing the `tester@example.test` invite
 from the Better Auth seed is discriminating: the fake GitHub sign-in must end
 with `EMAIL_NOT_INVITED`.
 
+The hosted-auth contract also submits the same invited magic-link address
+twice within 60 seconds. The second request must return 429 with
+`MAGIC_LINK_COOLDOWN`, while Wrangler's local email simulator must still
+contain exactly one captured message.
+
 Run the hosted two-Worker, two-principal contract and its first-time-user
 browser journey:
 

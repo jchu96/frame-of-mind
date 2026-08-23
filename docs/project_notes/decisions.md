@@ -316,7 +316,9 @@ binding when `NUXT_BETTER_AUTH_MAILER_FROM` is configured, with the existing
 HTTPS mailer retained only as a no-binding fallback. Binding failures fail
 closed as `MAILER_UNAVAILABLE` and cross the hosted telemetry seam as one safe
 `E_` code only. This adds no Worker, D1, or retention boundary; the invite gate
-and Better Auth rate limit still run before any delivery attempt.
+and Better Auth rate limit still run before any delivery attempt. The invite
+row also owns a conditional 60-second send reservation, while production caps
+the route at three requests per 15 minutes.
 
 ## 2026-08-23 — Hosted recording upload goes directly to Gemini
 

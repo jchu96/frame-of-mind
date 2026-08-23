@@ -99,6 +99,9 @@ try {
   ];
   const firstMigration = await runChecked(migrationArgs, "Better Auth D1 migration");
   if (!firstMigration.includes("0006_better_auth.sql")) throw new Error("D1 omitted migration 0006_better_auth.sql.");
+  if (!firstMigration.includes("0009_magic_link_cooldown.sql")) {
+    throw new Error("D1 omitted migration 0009_magic_link_cooldown.sql.");
+  }
   const replay = await runChecked(migrationArgs, "Better Auth D1 migration replay");
   if (!/no migrations to apply/i.test(replay)) throw new Error("Better Auth migration replay was not idempotent.");
   await d1Execute(
@@ -111,7 +114,7 @@ try {
     + "('stacked@example.test','2026-08-23T00:00:00.000Z')",
     configPath,
   );
-  console.log("HOSTED_AUTH migration=PASS range=0001..0006 replay=idempotent");
+  console.log("HOSTED_AUTH migration=PASS range=0001..0009 replay=idempotent");
 
   ({ worker, output: workerOutput } = await startWorker(configPath, workerPort));
   await waitForWorker(origin, worker, 403);
@@ -125,6 +128,8 @@ try {
 
     const magicCookie = await bindingMagicLinkLogin(browser, origin, "magic@example.test");
     await expectSession(origin, magicCookie, "magic@example.test", "better-auth");
+    await expectMagicLinkCooldown(browser, origin, "magic@example.test");
+    console.log("HOSTED_AUTH magic_link_cooldown=PASS seconds=60 mailer_calls=1");
 
     await expectUninvitedMagicLinkDenied(browser, origin, configPath);
     console.log("HOSTED_AUTH magic_link_invite=PASS mailer_calls=0 verification_rows=0");
@@ -442,6 +447,54 @@ async function waitForSimulatedEmail(email: string): Promise<{ url: string }> {
     await Bun.sleep(50);
   }
   throw new Error("Wrangler did not write the simulated binding email to its isolated project files.");
+}
+
+async function expectMagicLinkCooldown(
+  browser: Awaited<ReturnType<typeof chromium.launch>>,
+  origin: string,
+  email: string,
+): Promise<void> {
+  const initialMailerCalls = await simulatedEmailCount();
+  if (initialMailerCalls !== 1) {
+    throw new Error(`Magic-link cooldown fixture expected one initial binding send, found ${initialMailerCalls}.`);
+  }
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/api/health`);
+    const result = await page.evaluate(async ({ email }) => {
+      const response = await fetch("/api/auth/sign-in/magic-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, name: "Cooldown Fixture", callbackURL: "/api/session" }),
+      });
+      return { status: response.status, body: await response.text() };
+    }, { email });
+    if (
+      result.status !== 429
+      || !result.body.includes("MAGIC_LINK_COOLDOWN")
+      || !result.body.includes(
+        "A sign-in link was sent recently. Check your inbox or try again in a minute.",
+      )
+    ) {
+      throw new Error(`Magic-link cooldown was not refused safely: ${result.status} ${result.body}`);
+    }
+  } finally {
+    await context.close().catch(() => undefined);
+  }
+  const finalMailerCalls = await simulatedEmailCount();
+  if (finalMailerCalls !== initialMailerCalls) {
+    throw new Error(`Magic-link cooldown reached the binding: calls=${finalMailerCalls}.`);
+  }
+}
+
+async function simulatedEmailCount(): Promise<number> {
+  let count = 0;
+  const emailFiles = new Bun.Glob("**/email-text/*.txt");
+  for await (const path of emailFiles.scan({ cwd: temporaryRoot, absolute: true, dot: true })) {
+    if (await Bun.file(path).exists()) count += 1;
+  }
+  return count;
 }
 
 async function expectUninvitedMagicLinkDenied(
