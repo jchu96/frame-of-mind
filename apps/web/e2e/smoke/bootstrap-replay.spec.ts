@@ -3,9 +3,9 @@ import {
   LOCAL_STUDIO_BOOTSTRAP_FRAGMENT,
   LOCAL_STUDIO_BOOTSTRAP_PATH,
   LOCAL_STUDIO_LAUNCH_PATH,
-} from "../server-local/studio-session/contract";
-import { E2E_BOOTSTRAP_TOKEN } from "./support/constants";
-import { collectClientErrors } from "./support/client-errors";
+} from "../../server-local/studio-session/contract";
+import { E2E_BOOTSTRAP_TOKEN } from "../support/constants";
+import { collectClientErrors } from "../support/client-errors";
 
 test("the one-time launch fragment cannot be replayed", async ({ page }) => {
   const clientErrors = collectClientErrors(page, {

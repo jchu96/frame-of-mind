@@ -1,5 +1,34 @@
 # Work Log
 
+## 2026-08-23
+
+- Added the long-lived `bun run hosted:local` reviewer topology: isolated
+  built Workers, fake GitHub/Gemini/mailer, seeded Better Auth invites when
+  that adapter is present, and a generated Access-header proxy fallback on
+  the current Access-only base.
+
+- Consolidated browser verification into smoke, hosted, adversarial, and
+  deployed-canary Playwright projects. A shared OS-temp isolation helper now
+  assigns unique ports, Wrangler persistence roots, and local D1 names; hosted
+  HTTP contracts retain HTTP assertions and no longer drive Chromium.
+
+- Integrated the E2E harness branch with pluggable hosted auth. Better Auth
+  browser sessions now use real cookies and seed fixtures against their
+  generated `ba:<userId>` principals; the streaming oracle supplies the full
+  built module graph to Miniflare. Focused typecheck and the 10-test hosted plus
+  adversarial E2E project passed after the merge.
+
+- Closed PR #84 review findings SF1–SF2 by routing the hosted-auth and hosted
+  streaming spikes through the shared run-scoped isolation helper. Two
+  concurrently launched auth checks completed with distinct Worker/D1 names,
+  and the standalone streaming spike retained every bounded-stream oracle.
+
+- Re-integrated the E2E harness after hosted Phase 2 retired the standalone
+  hosted-stream spike. The root check now covers the new hosted-media HTTP
+  contract plus the consolidated E2E project; hosted-media uses the shared
+  run-scoped identity helper, and workflow media cases retain the harness
+  lease, retry settling, and race-failure diagnostics.
+
 - Completed the first hosted UX pass on 2026-08-23. Hosted mode now has one
   navigation, an Intent → Context → Recording → Run stepper, one-click intent
   selection, an honest recording-upload empty state, a three-card review, and
@@ -14,6 +43,12 @@
   rehearsal, and 32 MiB streaming proof passed), `bun run test:e2e:hosted`
   (hosted browser and 3-admitted/7-rejected spend race passed), and
   `bun run test:e2e:smoke` (13 passed).
+
+- Final-integrated the consolidated E2E harness with the hosted UX pass. The
+  hosted Workflow contract retains its first-user browser and visual receipts
+  while using run-scoped Worker/D1/port/persistence identities, and its final
+  concurrent admission burst drains every admitted Workflow before cleanup.
+
 - Completed the standalone hosted direct-upload spike on 2026-08-23. A real
   Chromium page on an ephemeral loopback origin PUT a generated 20 MiB MP4 to
   a keyless Gemini resumable session in 16 MiB + 4 MiB chunks, then a fresh
@@ -808,6 +843,22 @@
   Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40
   files / 303 tests; Local Studio HTTP, hosted contracts, release rehearsal,
   and streaming spike passed).
+- Root-caused the local hosted-spend race flake on 2026-08-23. Under a
+  concurrent hosted-auth Chromium/workerd run, the ten HTTP requests returned
+  three `hosted_workflow_dispatch_failed` 503s and seven correct spend-cap
+  429s, while D1 contained exactly three queued attempts and three 12,000-unit
+  reservations against the 36,000-unit cap. The admission transaction was
+  correct; unbounded local emulator/browser concurrency made the HTTP oracle
+  conflate admission with downstream dispatch. The shared isolation helper
+  now gives every top-level E2E runner a stale-safe machine-wide runtime lease,
+  while nested fixtures reuse the owner lease and per-run state remains unique.
+  Legacy access/Workflow contracts now use run-scoped Worker and Workflow names,
+  and the spend-race fixture drains all three admitted Workflows before later
+  scenarios. Reverting the runtime lease reproduced the concurrent failure on
+  run 6; the fixed hosted-auth spike passed 5/5 concurrent launches, the focused
+  Workflow contract passed 5/5 sequential runs, and a single `gate-lock` lease
+  around 10 consecutive `bun run check` executions passed 10/10 with
+  `admitted=3 rejected=7` each time.
 - Completed the pluggable hosted-auth spike on 2026-08-23 without deployment.
   Better Auth 1.7.1 ran in the built Nuxt workerd artifact with direct D1,
   fake GitHub OAuth and captured magic-link browser sign-ins, claimed email
@@ -931,3 +982,10 @@
   `gate-lock bun run test:e2e:hosted`, including the nullable legacy row,
   3-admitted/7-rejected spend race, composer, Activity, publication, viewer,
   and review workspace.
+- Hardened the hosted-auth spike on 2026-08-23 after the hub reproduced the
+  fresh stacked Chromium closing on its first navigation twice under a clean
+  serialized gate. Browser launch now earns a side-effect-free `/api/health`
+  readiness receipt before login, retries only the exact TargetClosed family
+  once, and leaves all auth mutations non-retried. The discriminator passed
+  3/3 and the live `gate-lock bun run check:hosted-auth` contract passed with
+  one-attempt readiness receipts in both Better Auth modes.

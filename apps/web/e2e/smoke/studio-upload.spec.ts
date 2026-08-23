@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { MEDIA_RESUME_STORAGE_KEY } from "../server-local/studio-ui/media-upload";
-import { collectClientErrors } from "./support/client-errors";
+import { MEDIA_RESUME_STORAGE_KEY } from "../../server-local/studio-ui/media-upload";
+import { collectClientErrors } from "../support/client-errors";
 
 function syntheticMp4(bytes: number): Buffer {
   const fixture = Buffer.alloc(bytes);
