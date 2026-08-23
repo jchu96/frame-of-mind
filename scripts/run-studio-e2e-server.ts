@@ -1,10 +1,11 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   E2E_BOOTSTRAP_TOKEN,
   E2E_PORT,
 } from "../apps/web/e2e/support/constants";
+import { withE2EBuildLock } from "../apps/web/e2e/support/isolation";
 
 const repositoryRoot = process.cwd();
 const webRoot = join(repositoryRoot, "apps", "web");
@@ -36,6 +37,7 @@ const ownsTemporaryRoot = resolvedTemporaryRoot === undefined;
 const temporaryRoot = resolvedTemporaryRoot
   ?? await mkdtemp(join(tmpdir(), "frame-of-mind-e2e-"));
 const emptyDotenvPath = join(temporaryRoot, "empty.env");
+const isolatedOutput = join(temporaryRoot, "local-web-output");
 
 const environment: Record<string, string> = {
   HOME: temporaryRoot,
@@ -73,25 +75,31 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 try {
   await writeFile(emptyDotenvPath, "", { mode: 0o600 });
-  activeChild = Bun.spawn(
-    [
-      process.execPath,
-      "--no-env-file",
-      "x",
-      "nuxi",
-      "build",
-      "--dotenv",
-      emptyDotenvPath,
-    ],
-    {
-      cwd: webRoot,
-      env: environment,
-      stdin: "ignore",
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
-  const buildExitCode = await activeChild.exited;
+  const buildExitCode = await withE2EBuildLock(async () => {
+    activeChild = Bun.spawn(
+      [
+        process.execPath,
+        "--no-env-file",
+        "x",
+        "nuxi",
+        "build",
+        "--dotenv",
+        emptyDotenvPath,
+      ],
+      {
+        cwd: webRoot,
+        env: environment,
+        stdin: "ignore",
+        stdout: "inherit",
+        stderr: "inherit",
+      },
+    );
+    const exitCode = await activeChild.exited;
+    if (exitCode === 0) {
+      await cp(join(webRoot, ".output"), isolatedOutput, { recursive: true });
+    }
+    return exitCode;
+  });
   if (buildExitCode !== 0) {
     process.exitCode = buildExitCode;
   } else {
@@ -100,8 +108,8 @@ try {
         process.execPath,
         "--no-env-file",
         "--preload",
-        join(webRoot, ".output/server/sentry.server.config.mjs"),
-        join(webRoot, ".output/server/index.mjs"),
+        join(isolatedOutput, "server/sentry.server.config.mjs"),
+        join(isolatedOutput, "server/index.mjs"),
       ],
       {
         cwd: webRoot,
