@@ -94,6 +94,26 @@ const sensitivePatterns: SensitivePattern[] = [
     name: "cloudflare-global-key",
     regex: /\b(?:CLOUDFLARE_GLOBAL_API_KEY|CLOUDFLARE_API_KEY|CF_GLOBAL_API_KEY|CF_API_KEY)\b\s*[:=]\s*["']?[a-f0-9]{37}(?![a-f0-9])["']?/gi,
   },
+  {
+    name: "cloudflare-resource-id",
+    regex: /(?:\bCLOUDFLARE_ACCOUNT_ID\b|["'](?:database_id|account_id)["']|\b(?:database_id|account_id)\b)\s*[:=]\s*["']?[a-f0-9]{32}(?![a-f0-9])["']?/gi,
+  },
+  {
+    name: "cloudflare-access-aud",
+    regex: /(?:\bNUXT_CLOUDFLARE_ACCESS_AUD\b|["']aud["'])\s*[:=]\s*["']?[a-f0-9]{64}(?![a-f0-9])["']?/gi,
+  },
+  {
+    name: "cloudflare-access-team-domain",
+    regex: /\b(?!REPLACE_WITH_TEAM\b)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com\b/gi,
+  },
+  {
+    name: "github-client-id",
+    regex: /\b(?:Iv1\.[A-Fa-f0-9]{16}|(?:Iv23|Ov23)[A-Za-z0-9]{16})\b/g,
+  },
+  {
+    name: "r2-bucket-tag",
+    regex: /["']tag["']\s*[:=]\s*["']?[a-f0-9]{32}(?![a-f0-9])["']?/gi,
+  },
   { name: "stripe-secret-key", regex: /\bsk_(?:live|test)_[0-9A-Za-z]{16,}\b/g },
   { name: "jwt", regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g },
   { name: "bearer-token", regex: /\bBearer\s+[A-Za-z0-9._~+/=-]{20,}\b/gi },
@@ -278,6 +298,12 @@ function runSelfTest(): void {
   const xAmzCredential = ["X-Amz", "Credential"].join("-");
   const legacySignature = ["Signa", "ture"].join("");
   const azureSignature = ["s", "ig"].join("");
+  const cloudflareResourceId = "e".repeat(32);
+  const cloudflareAccessAud = "f".repeat(64);
+  const cloudflareAccessHost = ["fixture-team", "cloudflareaccess", "com"].join(".");
+  const githubOAuthClientId = ["Iv1", "0123456789abcdef"].join(".");
+  const githubAppClientId = `Iv23${"A1".repeat(8)}`;
+  const githubOAuthAppClientId = `Ov23${"B2".repeat(8)}`;
 
   const fixtures: Array<{
     name: string;
@@ -302,6 +328,96 @@ function runSelfTest(): void {
       path: "fixture.env",
       text: `CF_API_KEY='${cloudflareGlobalKey}'`,
       expectedPatterns: ["cloudflare-global-key"],
+    },
+    {
+      name: "cloudflare-d1-database-id",
+      path: "wrangler.jsonc",
+      text: `{"database_id":"${cloudflareResourceId}"}`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-account-env-id",
+      path: "fixture.env",
+      text: `CLOUDFLARE_ACCOUNT_ID=${cloudflareResourceId}`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-account-json-id",
+      path: "fixture.json",
+      text: `{"account_id":"${cloudflareResourceId}"}`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-resource-id-not-git-sha",
+      path: "fixture.json",
+      text: `{"database_id":"${"e".repeat(40)}"}`,
+      expectedPatterns: [],
+    },
+    {
+      name: "cloudflare-access-env-aud",
+      path: "fixture.env",
+      text: `NUXT_CLOUDFLARE_ACCESS_AUD=${cloudflareAccessAud}`,
+      expectedPatterns: ["cloudflare-access-aud"],
+    },
+    {
+      name: "cloudflare-access-json-aud",
+      path: "fixture.json",
+      text: `{"aud":"${cloudflareAccessAud}"}`,
+      expectedPatterns: ["cloudflare-access-aud"],
+    },
+    {
+      name: "sha-256-checksum-without-aud-key",
+      path: "fixture.md",
+      text: `SHA-256: ${cloudflareAccessAud}`,
+      expectedPatterns: [],
+    },
+    {
+      name: "cloudflare-access-team-domain",
+      path: "fixture.env",
+      text: `TEAM_DOMAIN=https://${cloudflareAccessHost}`,
+      expectedPatterns: ["cloudflare-access-team-domain"],
+    },
+    {
+      name: "cloudflare-access-placeholder-domain",
+      path: "wrangler.jsonc.example",
+      text: "TEAM_DOMAIN=https://REPLACE_WITH_TEAM.cloudflareaccess.com",
+      expectedPatterns: [],
+    },
+    {
+      name: "github-oauth-client-id",
+      path: "fixture.env",
+      text: `GITHUB_CLIENT_ID=${githubOAuthClientId}`,
+      expectedPatterns: ["github-client-id"],
+    },
+    {
+      name: "github-app-client-id",
+      path: "fixture.env",
+      text: `GITHUB_CLIENT_ID=${githubAppClientId}`,
+      expectedPatterns: ["github-client-id"],
+    },
+    {
+      name: "github-oauth-app-client-id",
+      path: "fixture.env",
+      text: `GITHUB_CLIENT_ID=${githubOAuthAppClientId}`,
+      expectedPatterns: ["github-client-id"],
+    },
+    {
+      name: "github-client-id-placeholder",
+      path: ".env.example",
+      text: "GITHUB_CLIENT_ID=REPLACE_WITH_GITHUB_CLIENT_ID",
+      expectedPatterns: [],
+    },
+    {
+      name: "r2-bucket-tag",
+      path: "wrangler.jsonc",
+      text: `{"tag":"${cloudflareResourceId}"}`,
+      expectedPatterns: ["r2-bucket-tag"],
+    },
+    {
+      name: "r2-bucket-tag-placeholder",
+      path: "wrangler.jsonc.example",
+      text: "{\"tag\":\"REPLACE_WITH_BUCKET_TAG\"}",
+      expectedPatterns: [],
     },
     {
       name: "aws-amz-signature",

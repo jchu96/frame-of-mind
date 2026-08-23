@@ -706,7 +706,7 @@ policy. Use the compatibility CLI or the mode-aware CLI instead of the
 dashboard:
 
 ```bash
-export FRAME_OF_MIND_ACCESS_ENV=~/secrets/frameofmind/access.env   # token, account id, group id — never committed
+export FRAME_OF_MIND_ACCESS_ENV=<PRIVATE_SECRETS_DIR>/access.env   # token, account id, group id — never committed
 bun scripts/access-users.ts list
 bun scripts/access-users.ts add someone@example.com
 bun scripts/access-users.ts remove someone@example.com
@@ -737,20 +737,50 @@ operator action.
 
 ## Cutover to `better-auth` with GitHub login (ADR 0019, accepted 2026-08-23)
 
-Prerequisites already applied to production on 2026-08-23: migration
-`0006_better_auth.sql`, the `NUXT_BETTER_AUTH_SECRET` Worker secret, and
-invites for the maintainer's emails (`bun scripts/studio-users.ts --mode
-better-auth add <email>`).
+> [!NOTE]
+> Hosted mode is optional. Local Studio and the synthetic `hosted:local`
+> topology need neither a Cloudflare account nor a GitHub account.
 
-1. **GitHub OAuth App** (maintainer, GitHub → Settings → Developer settings →
-   OAuth Apps → New): Homepage `https://fom.flickerventures.com`,
-   Authorization callback URL
-   `https://fom.flickerventures.com/api/auth/callback/github`. Put the values
-   in an uncommitted file, e.g. `~/secrets/frameofmind/github-oauth.env`:
-   `GITHUB_CLIENT_ID=…` and `GITHUB_CLIENT_SECRET=…`.
+### Hosted mode from zero
+
+1. [Create the D1 database](#3-create-the-d1-database).
+2. [Copy the operator-owned `wrangler.jsonc` from the committed example](#4-create-the-local-wrangler-configuration).
+3. [Apply the D1 migrations](#5-apply-the-d1-migration).
+4. [Create one GitHub login application](#github-login-application).
+5. [Add Better Auth invitations with `studio-users.ts`](#managing-who-can-sign-in).
+6. [Build and deploy](#7-build-and-deploy).
+7. [Verify fail-closed behavior](#8-verify-fail-closed-behavior).
+8. Add only the hosted capabilities you need: [Email Service for magic
+   links](#optional-email-service-for-magic-links), [private R2 retained
+   media](#private-retained-media-r2-shape), and the [internal Workflows
+   Worker](#workflows-worker-configuration-shape).
+
+### GitHub login application
+
+Choose one GitHub application type. Both use Homepage
+`https://<YOUR_HOSTNAME>` and callback
+`https://<YOUR_HOSTNAME>/api/auth/callback/github`:
+
+- **GitHub OAuth App:** create it under GitHub Settings → Developer settings →
+  OAuth Apps. Better Auth requests the `user:email` scope automatically.
+- **GitHub App:** create it under GitHub Settings → Developer settings →
+  GitHub Apps. A GitHub App **must** grant the Account permission **Email
+  addresses: Read-only**. GitHub Apps ignore the `user:email` OAuth scope, so
+  omitting that permission makes the callback fail with `email_not_found`.
+  See the [hosted deployment and auth gotcha](project_notes/gotchas.md#hosted-deployment-and-auth-2026-08-23).
+
+Put the resulting values in an uncommitted file, for example
+`<PRIVATE_SECRETS_DIR>/github-oauth.env`, as `GITHUB_CLIENT_ID=…` and
+`GITHUB_CLIENT_SECRET=…`.
+
+Before cutover, apply migration `0006_better_auth.sql`, install the
+`NUXT_BETTER_AUTH_SECRET` Worker secret, and add invitations with
+`bun scripts/studio-users.ts --mode better-auth add <email>`.
+
+1. **Create the GitHub login application** using one of the two options above.
 2. **Secrets + vars** (operator): `wrangler secret put
    NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`; in `wrangler.jsonc` vars set
-   `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID`, `NUXT_BETTER_AUTH_URL=https://fom.flickerventures.com`,
+   `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID`, `NUXT_BETTER_AUTH_URL=https://<YOUR_HOSTNAME>`,
    and `NUXT_AUTH_MODE=cloudflare-access+better-auth` (stacked) for the first deploy.
 3. **Deploy stacked** and verify: Access still 302s anonymous traffic; behind
    Access, `/sign-in` shows "Continue with GitHub"; a sign-in with an invited
@@ -763,3 +793,13 @@ better-auth add <email>`).
    → 401/redirect to `/sign-in`, GitHub sign-in works, `access-users.ts` is
    no longer authoritative (membership is the D1 invite table).
 5. Record the cutover in `work_log.md`.
+
+### Optional Email Service for magic links
+
+GitHub login does not require an email-sending service. To offer magic-link
+login too, deploy a reviewed HTTPS mailer for the existing
+`NUXT_BETTER_AUTH_MAILER_ORIGIN` contract, keep its authentication key in
+`NUXT_BETTER_AUTH_MAILER_KEY`, and optionally back that mailer with Cloudflare
+Email Service. Local tests and examples must keep the simulator default;
+`send_email` with `remote: true` reaches the real Email Service and can send
+real mail.

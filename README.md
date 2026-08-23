@@ -32,7 +32,7 @@ even derive its own transcript from the recording's audio.
 > Early public release (`v0.3.0`). Review generated work before using or
 > publishing it. Generated output always requires human review.
 
-## Status as of 2026-08-22
+## Status as of 2026-08-23
 
 - Local Studio Phases 1–8 are shipped: per-launch authentication, Connections,
   recording/context staging, the Intent/Context/Recording/Run composer,
@@ -46,7 +46,9 @@ even derive its own transcript from the recording's audio.
   reconciliation are complete in this slice; only the operator/adversarial
   release gate (9.4) remains pending in the
   [Phase 9 checklist](conductor/tracks/local-studio_20260726/plan.md#phase-9-public-release-hardening-and-phase-b-roadmap).
-- Hosted Studio remains dark and undeployed. Principal scoping (Slice 1),
+- The maintainer's public deployment at <https://fom.flickerventures.com> is
+  the reference instance; its hosted creation routes remain dark.
+- Hosted Studio creation remains dark. Principal scoping (Slice 1),
   durable Workflows (Phase 3), composer/activity/publication (Phase 4), and
   retention, evidence, spend, and telemetry Tasks 5.1–5.4, plus Phase 6
   preparation artifacts are built and contract-tested. Retained mode adds a
@@ -386,6 +388,17 @@ dropping in a recording, running an analysis through a local Bun process, and
 reviewing timestamp-linked results. The public product context, spec, and
 plan live in [conductor/](conductor/).
 
+Local Studio and the synthetic `bun run hosted:local` topology need no
+Cloudflare account. These are the only operator-owned, gitignored configuration
+files; start from the adjacent committed example when one is needed:
+
+| Operator-owned file | Committed example |
+|---|---|
+| `.env` | `.env.example` |
+| `apps/web/wrangler.jsonc` | `apps/web/wrangler.jsonc.example` |
+| `apps/workflows/wrangler.jsonc` | `apps/workflows/wrangler.jsonc.example` |
+| `.dev.vars` | `.dev.vars.example` |
+
 ```bash
 cp .env.example .env
 # Add GEMINI_API_KEY and, optionally, GRANOLA_API_KEY.
@@ -678,6 +691,11 @@ bun run install:skill -- --target all
 See [docs/SKILL_INSTALLATION.md](docs/SKILL_INSTALLATION.md).
 
 ## Development
+
+The local development and `hosted:local` commands below use only local,
+synthetic infrastructure and need no Cloudflare account. Operator-owned
+configuration stays in the four gitignored files listed under
+[Launch the local Studio](#launch-the-local-studio).
 
 ```bash
 bun install --frozen-lockfile
