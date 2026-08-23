@@ -35,7 +35,6 @@ describe("Better Auth client-IP rate limiting", () => {
 
     expect(BETTER_AUTH_IP_ADDRESS_OPTIONS.ipAddressHeaders).toEqual([
       "cf-connecting-ip",
-      "x-forwarded-for",
     ]);
 
     for (let attempt = 0; attempt < 3; attempt += 1) {

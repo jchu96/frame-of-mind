@@ -11,7 +11,7 @@
   public-path allowlist also covered built assets but not `/api/_nuxt_icon/`.
 - Fix: configure the documented
   [`advanced.ipAddress.ipAddressHeaders`](https://better-auth.com/docs/reference/options)
-  option with Cloudflare first and `x-forwarded-for` second, and admit the
+  option with only Cloudflare's edge-set `cf-connecting-ip`, and admit the
   exact icon prefix behind the existing traversal and encoding rejections.
 - Prevention: a real Better Auth limiter contract proves independent client-IP
   buckets plus a limited no-header fallback. The built-workerd sign-in contract

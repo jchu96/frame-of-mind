@@ -3,8 +3,8 @@
 ## 2026-08-23
 
 - Configured Better Auth's documented `advanced.ipAddress.ipAddressHeaders`
-  path for Cloudflare Workers so magic-link rate limiting keys first on
-  `cf-connecting-ip` and falls back to `x-forwarded-for`. Added a behavioral
+  path for Cloudflare Workers so magic-link rate limiting uses only the
+  edge-set `cf-connecting-ip` header. Added a behavioral
   limiter contract for independent IP buckets and the fail-closed headerless
   bucket, admitted the Nuxt Icon endpoint required by anonymous sign-in while
   preserving traversal rejection, and extended the built-workerd contract to
