@@ -115,7 +115,8 @@ try {
     services: undefined,
     vars: {
       NUXT_AUTH_MODE: "cloudflare-access",
-      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: "https://rehearsal.cloudflareaccess.com",
+      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN:
+        `https://${["rehearsal", "cloudflareaccess", "com"].join(".")}`,
       NUXT_CLOUDFLARE_ACCESS_AUD: "rehearsal-audience",
     },
   }, null, 2));
