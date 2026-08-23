@@ -544,8 +544,11 @@ bun run test:hosted-workflows-http:better-auth
 ```
 
 Better Auth binds `ba:<userId>` once in middleware; email is display and
-membership data only. See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
-and [proposed ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
+membership data only. In Better Auth modes, anonymous browser pages redirect
+to `/sign-in`, where an invited user can continue with GitHub or request a
+magic link when email delivery is configured; API requests remain JSON 403s.
+See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
+and [accepted ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
 
 The dark hosted execution path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. When explicitly
