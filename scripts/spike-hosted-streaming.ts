@@ -1,18 +1,23 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
 import { Miniflare, type ModuleDefinition } from "miniflare";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 import { createE2EEnvironment } from "./e2e-environment";
 
 const mebibyte = 1024 * 1024;
 const chunkBytes = 64 * 1024;
 const audience = "frame-of-mind-hosted-stream-spike";
 const keyId = "hosted-stream-spike-key";
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-stream-"));
+const isolation = await createE2EIsolation(
+  "hosted-stream",
+  process.env.FRAME_OF_MIND_E2E_TEMP_ROOT,
+);
+const temporaryRoot = isolation.root;
 const configPath = join(temporaryRoot, "wrangler.jsonc");
-const persistRoot = join(temporaryRoot, "wrangler-state");
+const persistRoot = isolation.persistRoot;
+const workerName = isolation.workerName("hosted-stream-spike");
 const routePath = "/api/_spike/stream";
 const slowSinkHoldMs = 2_500;
 const partBytesValues = [1, 2, 4].map((value) => value * mebibyte);
@@ -32,6 +37,11 @@ let builtMiniflareModules: Promise<{
 }> | undefined;
 
 try {
+  receipt(
+    "isolation",
+    true,
+    `worker=${workerName} database=${isolation.databaseName}`,
+  );
   receipt("build", true, "START cloudflare_module");
   await runChecked(
     ["bun", "--no-env-file", "run", "build:web:cloudflare"],
@@ -112,7 +122,7 @@ try {
     sub: "hosted-stream-spike-user",
   });
 
-  const darkPort = await reservePort();
+  const darkPort = await isolation.reservePort();
   await writeWranglerConfig({ issuer, enabled: false });
   activeWrangler = await startWrangler(darkPort);
   const darkOrigin = `http://127.0.0.1:${darkPort}`;
@@ -125,8 +135,8 @@ try {
   await stopWrangler(activeWrangler);
   activeWrangler = undefined;
 
-  const workerPort = await reservePort();
-  const inspectorPort = await reservePort();
+  const workerPort = await isolation.reservePort();
+  const inspectorPort = await isolation.reservePort();
   await writeWranglerConfig({
     issuer,
     enabled: true,
@@ -188,8 +198,8 @@ try {
   const matrixReceipts: UploadReceipt[] = [];
   for (const partBytes of partBytesValues) {
     for (const concurrency of concurrencyValues) {
-      const matrixPort = await reservePort();
-      const matrixInspectorPort = await reservePort();
+      const matrixPort = await isolation.reservePort();
+      const matrixInspectorPort = await isolation.reservePort();
       activeWrangler = await startWrangler(matrixPort, matrixInspectorPort);
       origin = `http://127.0.0.1:${matrixPort}`;
       await waitForWorker(origin, activeWrangler.child);
@@ -224,8 +234,8 @@ try {
       + "all_digests_exact=true",
   );
 
-  const postMatrixPort = await reservePort();
-  const postMatrixInspectorPort = await reservePort();
+  const postMatrixPort = await isolation.reservePort();
+  const postMatrixInspectorPort = await isolation.reservePort();
   activeWrangler = await startWrangler(postMatrixPort, postMatrixInspectorPort);
   origin = `http://127.0.0.1:${postMatrixPort}`;
   await waitForWorker(origin, activeWrangler.child);
@@ -398,7 +408,7 @@ try {
   if (activeWrangler) await stopWrangler(activeWrangler);
   jwksServer?.stop(true);
   sinkServer?.stop(true);
-  await rm(temporaryRoot, { recursive: true, force: true });
+  await isolation.cleanup();
 }
 
 if (!spikePassed) process.exitCode = 1;
@@ -633,7 +643,7 @@ async function writeWranglerConfig(options: {
 }): Promise<void> {
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-stream-spike",
+    name: workerName,
     main: resolve("apps/web/.output/server/hosted-entry.mjs"),
     compatibility_date: "2026-07-02",
     compatibility_flags: ["nodejs_compat"],
@@ -643,8 +653,8 @@ async function writeWranglerConfig(options: {
     },
     d1_databases: [{
       binding: "DB",
-      database_name: "frame-of-mind-hosted-stream-spike",
-      database_id: "00000000-0000-0000-0000-000000000002",
+      database_name: isolation.databaseName,
+      database_id: isolation.databaseId,
       migrations_dir: resolve("apps/web/db/migrations"),
     }],
     vars: {
@@ -936,13 +946,6 @@ async function runChecked(command: string[], label: string): Promise<void> {
   if (exitCode !== 0) {
     throw new Error(`${label} failed (${exitCode}):\n${stdout}\n${stderr}`.slice(0, 12_000));
   }
-}
-
-async function reservePort(): Promise<number> {
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("reserved") });
-  const port = server.port;
-  server.stop(true);
-  return port;
 }
 
 async function waitForWorker(origin: string, child: ReturnType<typeof Bun.spawn>): Promise<void> {

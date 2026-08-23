@@ -11,9 +11,15 @@ test("@adversarial hosted upload spike keeps all recurring byte probes green", a
       || !existsSync("scripts/spike-hosted-streaming.ts"),
     "Hosted streaming spike entry is absent on this base.",
   );
+  const managedRoot = process.env.FRAME_OF_MIND_E2E_TEMP_ROOT;
+  if (!managedRoot) {
+    throw new Error("Hosted streaming probes require the outer E2E managed root.");
+  }
   const child = spawn("bun", ["--no-env-file", "run", "check:hosted-stream"], {
     cwd: process.cwd(),
-    env: createE2EEnvironment(process.env),
+    env: createE2EEnvironment(process.env, {
+      FRAME_OF_MIND_E2E_TEMP_ROOT: managedRoot,
+    }),
     stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
