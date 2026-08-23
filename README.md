@@ -79,16 +79,15 @@ maintainer's reference instance runs at
   release gate (9.4) remains pending in the
   [Phase 9 checklist](conductor/tracks/local-studio_20260726/plan.md#phase-9-public-release-hardening-and-phase-b-roadmap).
 - The maintainer's public deployment at <https://fom.flickerventures.com> is
-  the reference instance; its hosted creation routes remain dark.
-- Hosted Studio creation remains dark. Principal scoping (Slice 1),
+  the reference instance; hosted analysis creation is live there behind sign-in (invite-gated while ADR 0020 self-serve requests are in progress).
+- Hosted Studio is live on the reference instance. Principal scoping (Slice 1),
   durable Workflows (Phase 3), composer/activity/publication (Phase 4), and
   retention, evidence, spend, and telemetry Tasks 5.1–5.4, plus Phase 6
   preparation artifacts are built and contract-tested. Retained mode adds a
   private principal-owned R2 copy with a visible lifecycle and client-canvas
   evidence provenance; each multipart part first consumes a D1-tracked byte
   reservation bounded by the declared recording size. Ephemeral mode remains
-  Gemini-only. The Phase 6
-  deployment gate remains pending. The current source of truth is the
+  Gemini-only. Phase 6 deployed on 2026-08-23 and the first production analysis completed the same day. The current source of truth is the
   [Hosted Studio track](conductor/tracks/hosted-studio_20260822/).
 
 ## Why watch the video at all?
