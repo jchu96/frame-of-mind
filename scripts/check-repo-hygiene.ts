@@ -33,6 +33,29 @@ const forbiddenArtifactExtensions = new Set([
   ".wav",
 ]);
 
+const reviewedUxProofScreens = new Set([
+  "01-intent-empty",
+  "02-intent-selected",
+  "03-context",
+  "04-recording-empty",
+  "05-recording-ready",
+  "06-review-and-start",
+  "07-activity-detail",
+  "08-run-viewer",
+  "09-review-workspace",
+  "10-activity-list",
+  "11-results-home",
+  "12-import",
+  "13-not-found",
+]);
+
+function isReviewedUxProof(path: string): boolean {
+  const match = path.match(
+    /^apps\/web\/e2e\/__screenshots__\/ux-pass-1\/(.+)-(desktop|mobile)\.png$/,
+  );
+  return match !== null && reviewedUxProofScreens.has(match[1]);
+}
+
 // These expressions intentionally overlap. A finding reports only its name and
 // location; matched content is never printed.
 const sensitivePatterns: SensitivePattern[] = [
@@ -325,6 +348,14 @@ function runSelfTest(): void {
     }
   }
 
+  if (
+    !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-1/01-intent-empty-mobile.png")
+    || isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-1/unreviewed-mobile.png")
+    || isReviewedUxProof("apps/web/e2e/__screenshots__/other-pass/01-intent-empty-mobile.png")
+  ) {
+    throw new Error("Repository hygiene self-test failed for the reviewed UX proof allowlist.");
+  }
+
   console.log(`Repository hygiene self-test: passed (${fixtures.length} fixtures).`);
 }
 
@@ -371,7 +402,7 @@ async function scanWorkingTree(): Promise<void> {
     if (!metadata.isFile()) continue;
 
     const extension = extname(path).toLowerCase();
-    if (forbiddenArtifactExtensions.has(extension)) {
+    if (forbiddenArtifactExtensions.has(extension) && !isReviewedUxProof(path)) {
       findings.push({ location: path, pattern: "runtime-artifact-file" });
       continue;
     }

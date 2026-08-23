@@ -40,11 +40,11 @@ async function importRun() {
     <AppHeader />
     <main class="fom-shell py-10 sm:py-14">
       <div class="mx-auto max-w-3xl">
-        <p class="fom-kicker text-emerald-700">Deliberate publication boundary</p>
+        <p class="fom-kicker text-primary">Deliberate publication boundary</p>
         <h1 class="mt-4 text-4xl font-black tracking-[-0.04em] sm:text-5xl">Import a reviewed run.</h1>
-        <p class="mt-4 max-w-2xl leading-7 text-zinc-600">
-          Select the matching files from one Frame of Mind run directory. The server validates
-          both contracts, their shared identity, and the canonical analysis SHA-256 before writing.
+        <p class="mt-4 max-w-2xl leading-7 text-muted">
+          Select the matching files from one Frame of Mind analysis. We check that they belong
+          together and have not changed before saving the results.
         </p>
 
         <div class="fom-panel mt-8 p-6 sm:p-8">
@@ -53,7 +53,7 @@ async function importRun() {
               <label for="analysis-file" class="block text-sm font-bold">
                 analysis.json
               </label>
-              <span id="analysis-file-description" class="mt-1 block text-xs text-zinc-500">
+              <span id="analysis-file-description" class="mt-1 block text-xs text-dimmed">
                 Structured analysis records; no raw transcript.
               </span>
               <input
@@ -62,7 +62,7 @@ async function importRun() {
                 aria-describedby="analysis-file-description"
                 accept="application/json,.json"
                 required
-                class="mt-3 block w-full border border-zinc-300 bg-white p-3 text-sm file:mr-4 file:border-0 file:bg-emerald-100 file:px-3 file:py-2 file:font-bold"
+                class="mt-3 block w-full border border-default bg-default p-3 text-sm file:mr-4 file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:font-bold"
                 @change="selectFile('analysis', $event)"
               >
             </div>
@@ -71,8 +71,8 @@ async function importRun() {
               <label for="manifest-file" class="block text-sm font-bold">
                 manifest.json
               </label>
-              <span id="manifest-file-description" class="mt-1 block text-xs text-zinc-500">
-                Run provenance, hashes, alignment, and cleanup state.
+              <span id="manifest-file-description" class="mt-1 block text-xs text-dimmed">
+                How the analysis was produced and how its recording was handled.
               </span>
               <input
                 id="manifest-file"
@@ -80,7 +80,7 @@ async function importRun() {
                 aria-describedby="manifest-file-description"
                 accept="application/json,.json"
                 required
-                class="mt-3 block w-full border border-zinc-300 bg-white p-3 text-sm file:mr-4 file:border-0 file:bg-emerald-100 file:px-3 file:py-2 file:font-bold"
+                class="mt-3 block w-full border border-default bg-default p-3 text-sm file:mr-4 file:border-0 file:bg-primary/10 file:px-3 file:py-2 file:font-bold"
                 @change="selectFile('manifest', $event)"
               >
             </div>
@@ -107,7 +107,7 @@ async function importRun() {
           color="success"
           variant="soft"
           title="Run imported"
-          :description="success.created ? 'A new projection was created.' : 'The existing projection was refreshed.'"
+          :description="success.created ? 'The results were saved.' : 'The saved results were updated.'"
         >
           <template #actions>
             <UButton :to="`/runs/${encodeURIComponent(success.runId)}`" size="sm">Open run</UButton>

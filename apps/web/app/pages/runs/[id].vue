@@ -11,28 +11,37 @@ if (error.value?.statusCode === 404) {
 
 useSeoMeta({
   title: () => `${run.value
-    ? run.value.schemaVersion === 2
-      ? run.value.meetingTitle || run.value.meetingId
-      : "Video analysis"
+    ? runTitle(run.value)
     : "Run"} · Frame of Mind`,
 });
 
 function runTitle(value: StoredRun): string {
   return value.schemaVersion === 2
     ? value.meetingTitle || value.meetingId
-    : "Video analysis";
+    : `${value.recipeLabel} · ${formatDate(value.completedAt)}`;
 }
 
 function runContext(value: StoredRun): string {
   return value.schemaVersion === 2
     ? `${value.provider} · ${value.transport}`
-    : "video only · no external context";
+    : "recording only";
 }
 
 function importanceColor(value?: "high" | "medium" | "low") {
   if (value === "high") return "error";
   if (value === "medium") return "warning";
   return "neutral";
+}
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(date);
+}
+function hostedAttemptId(value: StoredRun): string | undefined {
+  return value.runId.startsWith("hosted_attempt_")
+    ? value.runId.slice("hosted_".length)
+    : undefined;
 }
 </script>
 
@@ -44,12 +53,17 @@ function importanceColor(value?: "high" | "medium" | "low") {
         color="error"
         variant="soft"
         title="Could not load this run"
-        description="The review database or authentication boundary returned an error. Check the server logs and try again."
+        description="The results could not be loaded. Try again, or ask the workspace owner for help."
       />
       <UButton to="/" color="neutral" variant="ghost" class="mt-4">Return to all runs</UButton>
     </main>
     <main v-else-if="run" class="fom-shell py-10 sm:py-14">
-      <NuxtLink to="/" class="text-sm font-bold text-emerald-700 hover:underline">← All runs</NuxtLink>
+      <NuxtLink
+        :to="hostedAttemptId(run) ? `/hosted/activity/${encodeURIComponent(hostedAttemptId(run)!)}` : '/'"
+        class="text-sm font-bold text-primary hover:underline"
+      >
+        {{ hostedAttemptId(run) ? "← Back to activity" : "← All results" }}
+      </NuxtLink>
 
       <section class="mt-6 grid gap-8 lg:grid-cols-[1fr_20rem]">
         <div>
@@ -60,26 +74,27 @@ function importanceColor(value?: "high" | "medium" | "low") {
           <h1 class="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
             {{ runTitle(run) }}
           </h1>
-          <p class="mt-5 max-w-3xl leading-7 text-zinc-600">{{ run.matchNotes }}</p>
+          <p class="mt-5 max-w-3xl leading-7 text-muted">{{ run.matchNotes }}</p>
+          <UButton class="mt-5" :to="`/review/${encodeURIComponent(run.runId)}`" color="neutral" variant="outline" label="Review findings" icon="i-lucide-scan-search" />
         </div>
 
-        <aside class="border border-zinc-300 bg-white/80 p-5 text-sm">
-          <p class="fom-kicker text-zinc-500">Provenance</p>
+        <aside class="border border-default bg-elevated/80 p-5 text-sm">
+          <p class="fom-kicker text-muted">About this run</p>
           <dl class="mt-4 space-y-3">
             <div>
-              <dt class="text-xs text-zinc-500">Run ID</dt>
+              <dt class="text-xs text-muted">Run ID</dt>
               <dd class="mt-1 break-all font-mono text-xs">{{ run.runId }}</dd>
             </div>
             <div>
-              <dt class="text-xs text-zinc-500">Model</dt>
+              <dt class="text-xs text-muted">Model</dt>
               <dd class="mt-1 font-semibold">{{ run.model }}</dd>
             </div>
             <div>
-              <dt class="text-xs text-zinc-500">Accepted / rejected</dt>
+              <dt class="text-xs text-muted">Accepted / rejected</dt>
               <dd class="mt-1 font-semibold">{{ run.acceptedCount }} / {{ run.rejectedCount }}</dd>
             </div>
             <div v-if="run.importedBy">
-              <dt class="text-xs text-zinc-500">Imported by</dt>
+              <dt class="text-xs text-muted">Imported by</dt>
               <dd class="mt-1 break-all font-semibold">{{ run.importedBy }}</dd>
             </div>
           </dl>
@@ -88,8 +103,8 @@ function importanceColor(value?: "high" | "medium" | "low") {
 
       <section class="mt-12 space-y-5" aria-labelledby="records">
         <div>
-          <p class="fom-kicker text-zinc-500">Recipe output</p>
-          <h2 id="records" class="mt-2 text-2xl font-black tracking-tight">Analysis records</h2>
+          <p class="fom-kicker text-muted">Findings</p>
+          <h2 id="records" class="mt-2 text-2xl font-black tracking-tight">Analysis findings</h2>
         </div>
 
         <article
@@ -104,23 +119,23 @@ function importanceColor(value?: "high" | "medium" | "low") {
             <UBadge :color="importanceColor(item.result.importance || item.candidate.importance)" variant="outline">
               {{ item.result.importance || item.candidate.importance }}
             </UBadge>
-            <span class="font-mono text-xs text-zinc-500">
+            <span class="font-mono text-xs text-muted">
               {{ item.result.evidence?.timestamp || item.candidate.start }}
             </span>
           </div>
 
           <h3 class="mt-4 text-xl font-black tracking-tight">{{ item.result.title }}</h3>
-          <p class="mt-3 leading-7 text-zinc-700">{{ item.result.summary }}</p>
+          <p class="mt-3 leading-7 text-default">{{ item.result.summary }}</p>
 
           <dl v-if="item.result.details?.length" class="mt-5 grid gap-3 sm:grid-cols-2">
-            <div v-for="detail in item.result.details" :key="detail.label" class="border-l-2 border-emerald-300 pl-3">
-              <dt class="text-xs font-bold uppercase tracking-wider text-zinc-500">{{ detail.label }}</dt>
+            <div v-for="detail in item.result.details" :key="detail.label" class="border-l-2 border-primary pl-3">
+              <dt class="text-xs font-bold uppercase tracking-wider text-muted">{{ detail.label }}</dt>
               <dd class="mt-1 whitespace-pre-wrap text-sm leading-6">{{ detail.value }}</dd>
             </div>
           </dl>
 
-          <div v-if="item.result.evidence?.reporterQuote || item.result.evidence?.verbatimUiText" class="mt-5 border border-zinc-200 bg-zinc-50 p-4">
-            <p class="fom-kicker text-zinc-500">Evidence excerpt</p>
+          <div v-if="item.result.evidence?.reporterQuote || item.result.evidence?.verbatimUiText" class="mt-5 border border-default bg-elevated p-4">
+            <p class="fom-kicker text-muted">Evidence excerpt</p>
             <blockquote v-if="item.result.evidence.reporterQuote" class="mt-2 text-sm italic leading-6">
               “{{ item.result.evidence.reporterQuote }}”
             </blockquote>
@@ -133,10 +148,10 @@ function importanceColor(value?: "high" | "medium" | "low") {
             <li v-for="step in item.result.steps" :key="step">{{ step }}</li>
           </ol>
 
-          <p v-if="item.screenshot" class="mt-5 text-xs text-zinc-500">
+          <p v-if="item.screenshot" class="mt-5 text-xs text-muted">
             Screenshot <code>{{ item.screenshot }}</code> remains in the local run bundle and is not stored in SQLite/D1.
           </p>
-          <p v-if="item.result.confidenceNotes" class="mt-4 text-xs leading-5 text-zinc-500">
+          <p v-if="item.result.confidenceNotes" class="mt-4 text-xs leading-5 text-muted">
             Confidence: {{ item.result.confidenceNotes }}
           </p>
         </article>

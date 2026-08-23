@@ -1,5 +1,19 @@
 # Work Log
 
+- Completed the first hosted UX pass on 2026-08-23. Hosted mode now has one
+  navigation, an Intent → Context → Recording → Run stepper, one-click intent
+  selection, an honest recording-upload empty state, a three-card review, and
+  plain-language Activity, Results, viewer, error, review, and support surfaces.
+  The shared hosted screens use semantic Nuxt UI tokens and every hosted page
+  sets a useful document title. The Access browser contract captures desktop
+  and mobile visual receipts and proves principal-scoped review and support
+  denial; `docs/UX_COPY.md` records the copy contract and glossary. Validated
+  under the machine-wide gate lock by `bun run check` (22 Vitest files / 212
+  tests; Bun web suite: 40 files / 304 tests; Local Studio HTTP, both hosted
+  Access modes, both hosted Workflow modes, auth workerd proof, release
+  rehearsal, and 32 MiB streaming proof passed), `bun run test:e2e:hosted`
+  (hosted browser and 3-admitted/7-rejected spend race passed), and
+  `bun run test:e2e:smoke` (13 passed).
 - Completed the standalone hosted direct-upload spike on 2026-08-23. A real
   Chromium page on an ephemeral loopback origin PUT a generated 20 MiB MP4 to
   a keyless Gemini resumable session in 16 MiB + 4 MiB chunks, then a fresh
