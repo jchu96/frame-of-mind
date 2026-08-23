@@ -3,6 +3,7 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 import type { SessionInfo } from "../../shared/types";
 
 const route = useRoute();
+const signInRoute = computed(() => route.path === "/sign-in");
 const navigation: NavigationMenuItem[] = [
   { label: "New analysis", icon: "i-lucide-plus", to: "/hosted/new/intent" },
   { label: "Activity", icon: "i-lucide-activity", to: "/hosted/activity" },
@@ -30,6 +31,8 @@ async function signOut(): Promise<void> {
 </script>
 
 <template>
+  <slot v-if="signInRoute" />
+  <template v-else>
   <a href="#hosted-main" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-default focus:px-4 focus:py-2 focus:text-highlighted focus:ring-2 focus:ring-primary">
     Skip to content
   </a>
@@ -67,4 +70,5 @@ async function signOut(): Promise<void> {
       <template #body><div id="hosted-main"><slot /></div></template>
     </UDashboardPanel>
   </UDashboardGroup>
+  </template>
 </template>

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  isBetterAuthPublicPath,
   isLoopbackAddress,
   isLoopbackHost,
   isTrustedLoopbackRequest,
@@ -8,6 +9,7 @@ import {
   usesBetterAuth,
   usesCloudflareAccess,
 } from "../server/utils/auth-policy";
+import { safeHostedNext } from "../shared/utils/hosted-auth";
 
 describe("authentication policy", () => {
   test("allows unauthenticated mode only on loopback by default", () => {
@@ -56,9 +58,57 @@ describe("authentication policy", () => {
     expect(usesBetterAuth("cloudflare-access")).toBe(false);
   });
 
+  test("limits the Better Auth public surface to sign-in and framework assets", () => {
+    for (const path of [
+      "/sign-in",
+      "/api/auth/sign-in/social",
+      "/_nuxt/app.js",
+      "/favicon.svg",
+      "/favicon.ico",
+      "/robots.txt",
+      "/__nuxt_error",
+    ]) expect(isBetterAuthPublicPath(path)).toBe(true);
+
+    for (const path of [
+      "/",
+      "/sign-in/extra",
+      "/favicon/extra",
+      "/api/session",
+      "/api/runs",
+      "/hosted/activity",
+    ]) expect(isBetterAuthPublicPath(path)).toBe(false);
+  });
+
+  test("accepts only same-origin relative hosted return paths", () => {
+    expect(safeHostedNext("/runs/abc")).toBe("/runs/abc");
+    expect(safeHostedNext("/runs/abc?tab=details#finding-1"))
+      .toBe("/runs/abc?tab=details#finding-1");
+    expect(safeHostedNext(["/hosted/activity", "/ignored"])).toBe("/hosted/activity");
+    for (const value of [
+      undefined,
+      "",
+      "runs/abc",
+      "https://evil.example",
+      "/https://evil.example",
+      "//evil.example/path",
+      "/\\evil.example/path",
+      "/runs/abc\nSet-Cookie: bad",
+    ]) expect(safeHostedNext(value)).toBe("/");
+  });
+
   test("accepts only Cloudflare Access team origins", () => {
     expect(normalizeTeamDomain("https://team.cloudflareaccess.com/"))
       .toBe("https://team.cloudflareaccess.com");
     expect(() => normalizeTeamDomain("https://example.com")).toThrow();
   });
 });
+
+test("Better Auth public paths are exact and reject traversal", () => {
+  for (const path of ["/favicons", "/favicon", "/_nuxt", "/_nuxt/..%2fapi/hosted/jobs", "/_nuxt/../api/hosted/jobs", "/sign-in/", "/Sign-In"]) {
+    expect(isBetterAuthPublicPath(path)).toBe(false);
+  }
+  for (const path of ["/favicon.ico", "/favicon.svg", "/_nuxt/entry.js", "/sign-in"]) {
+    expect(isBetterAuthPublicPath(path)).toBe(true);
+  }
+});
+

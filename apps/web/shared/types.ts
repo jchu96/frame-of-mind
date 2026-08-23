@@ -63,4 +63,5 @@ export interface SessionInfo {
     | "better-auth"
     | "cloudflare-access+better-auth";
   email?: string;
+  principal?: true;
 }

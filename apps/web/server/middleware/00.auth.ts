@@ -1,6 +1,7 @@
-import { getHeader, getRequestIP, type H3Event } from "h3";
+import { getHeader, getRequestIP, getRequestURL, sendRedirect, type H3Event } from "h3";
 import { verifyCloudflareAccessJwt } from "../utils/access";
 import {
+  isBetterAuthPublicPath,
   isTrustedLoopbackRequest,
   normalizeTeamDomain,
   parseAuthMode,
@@ -8,6 +9,7 @@ import {
   usesCloudflareAccess,
 } from "../utils/auth-policy";
 import { principalFromBetterAuthSession } from "../utils/better-auth";
+import { safeHostedNext } from "../../shared/utils/hosted-auth";
 import { getHostedRouteTelemetry } from "#frame-hosted-telemetry";
 
 export default defineEventHandler(async (event) => {
@@ -16,7 +18,6 @@ export default defineEventHandler(async (event) => {
     || path.startsWith("/api/hosted/")
     || path === "/hosted"
     || path.startsWith("/hosted/");
-  const authRoute = path === "/api/auth" || path.startsWith("/api/auth/");
   const hostedTelemetry = hostedRoute ? getHostedRouteTelemetry(event) : undefined;
   const config = useRuntimeConfig(event);
   let mode;
@@ -89,21 +90,34 @@ export default defineEventHandler(async (event) => {
   }
 
   if (!usesBetterAuth(mode)) return;
-  if (authRoute) return;
+  if (isBetterAuthPublicPath(path)) return;
   const identity = await principalFromBetterAuthSession(event);
   if (!identity) {
+    const redirectToSignIn = event.method === "GET"
+      && path !== "/api"
+      && !path.startsWith("/api/")
+      && (getHeader(event, "accept") || "").split(",").some((value) => value.trim().startsWith("text/html"));
     await hostedTelemetry?.emit({
       area: "access",
       outcome: "failed",
       code: "better_auth_session_missing",
       routeClass: "hosted_api",
-      status: 403,
+      status: redirectToSignIn ? 302 : 403,
       studioMode: "hosted",
     });
-    throw createError({ statusCode: 403, statusMessage: "A Better Auth session is required." });
+    if (redirectToSignIn) {
+      const requestURL = getRequestURL(event);
+      const next = safeHostedNext(`${requestURL.pathname}${requestURL.search}`);
+      return sendRedirect(event, `/sign-in?next=${encodeURIComponent(next)}`, 302);
+    }
+    throw createError({
+      statusCode: 403,
+      statusMessage: "A Better Auth session is required.",
+      data: { code: "better_auth_session_missing" },
+    });
   }
   event.context.frameOfMindPrincipal = identity;
-  event.context.frameOfMindUser = { authMode: mode, email: identity.email };
+  event.context.frameOfMindUser = { authMode: mode, email: identity.email, principal: true };
   await hostedTelemetry?.emit({
     area: "access",
     outcome: "succeeded",

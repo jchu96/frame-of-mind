@@ -836,3 +836,10 @@
   32 MiB streaming proof passed). An initial full run hit the pre-existing
   intermittent workerd hang; the isolated contract and fresh full gate passed,
   and the harness follow-up is recorded in `bugs.md`.
+- Added the hosted `/sign-in` surface on 2026-08-23 with GitHub OAuth,
+  optional magic-link email, friendly invitation/configuration failures,
+  same-origin relative return paths, and both server and SPA-navigation
+  guards. The built-workerd Playwright spec passes in Better Auth and stacked
+  modes; temporarily removing the `/sign-in` exemption made all five browser
+  checks fail with a redirect loop, proving the render oracle discriminates.
+  The existing auth spike and isolated Better Auth Workflow contract pass.
