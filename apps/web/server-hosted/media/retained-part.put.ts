@@ -29,17 +29,26 @@ export default defineEventHandler(async (event) => {
     if (!FixedLength) {
       throw createError({ statusCode: 503, statusMessage: "Retained streaming is unavailable." });
     }
-    const fixed = new FixedLength(contentLength);
-    const piping = body.pipeTo(fixed.writable);
-    const part = await runtime.service.uploadRetainedPart({
+    const reservation = await runtime.service.reserveRetainedPart({
       principalSub: runtime.principalSub,
       mediaId: parseOpaqueResourceId(getRouterParam(event, "id")),
       capability: query.cap,
       partNumber: query.partNumber,
-      body: fixed.readable,
+      contentLength,
     });
-    await piping;
-    return { partNumber: part.partNumber, etag: part.etag };
+    const fixed = new FixedLength(contentLength);
+    const piping = body.pipeTo(fixed.writable);
+    try {
+      const [part] = await Promise.all([
+        runtime.service.uploadRetainedPart(reservation, fixed.readable),
+        piping,
+      ]);
+      return { partNumber: part.partNumber, etag: part.etag };
+    } catch (error) {
+      await fixed.readable.cancel().catch(() => undefined);
+      await runtime.service.releaseRetainedPart(reservation).catch(() => undefined);
+      throw error;
+    }
   } catch (error) {
     throwHostedMediaHttpError(error);
   }

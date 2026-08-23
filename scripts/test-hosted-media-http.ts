@@ -151,6 +151,66 @@ try {
   await rejectionCase(origin, tokenA, "missing", bytes(330_003, 33));
   console.log("HOSTED_MEDIA mismatch=PASS size=true same_size_digest=true missing_hash=true deleted=true");
 
+  const boundedRetainedBytes = bytes(700_301, 89);
+  const boundedRetained = await createSession(origin, tokenA, boundedRetainedBytes, "retained");
+  assert(boundedRetained.retainedUpload, "bounded retained fixture omitted capability");
+  const boundedPrefix = boundedRetainedBytes.slice(0, 400_000);
+  const boundedPart = await uploadRetainedPart(
+    boundedRetained.retainedUpload.partUrl,
+    1,
+    boundedPrefix,
+    tokenA,
+  );
+  const oversizedPart = await expectStatus(
+    uploadRetainedPartResponse(
+      boundedRetained.retainedUpload.partUrl,
+      1,
+      boundedRetainedBytes,
+      tokenA,
+    ),
+    422,
+    "retained part beyond declared cumulative bytes",
+  );
+  assert(
+    (await oversizedPart.json() as { data?: { code?: string } }).data?.code
+      === "hosted_retained_part_size_exceeded",
+    "retained part ceiling did not return its stable code",
+  );
+  assert(
+    await retainedUploadedBytes(boundedRetained.mediaId) === boundedPrefix.length,
+    "rejected retained part changed the D1 byte counter",
+  );
+  await expectStatus(fetch(boundedRetained.retainedUpload.completeUrl, {
+    method: "POST",
+    headers: mutationHeaders(origin, tokenA),
+    body: JSON.stringify({ parts: [boundedPart] }),
+  }), 200, "complete retained object after rejected overwrite");
+  await cancel(origin, tokenA, boundedRetained.mediaId);
+
+  const concurrentRetainedBytes = bytes(700_311, 90);
+  const concurrentRetained = await createSession(origin, tokenA, concurrentRetainedBytes, "retained");
+  assert(concurrentRetained.retainedUpload, "concurrent retained fixture omitted capability");
+  const concurrentPayload = concurrentRetainedBytes.slice(0, 400_000);
+  const concurrentResponses = await Promise.all([
+    uploadRetainedPartResponse(concurrentRetained.retainedUpload.partUrl, 1, concurrentPayload, tokenA),
+    uploadRetainedPartResponse(concurrentRetained.retainedUpload.partUrl, 2, concurrentPayload, tokenA),
+  ]);
+  assert(
+    concurrentResponses.map((response) => response.status).sort().join(",") === "200,422",
+    "concurrent retained parts were not bounded by one D1 CAS",
+  );
+  const concurrentRejected = concurrentResponses.find((response) => response.status === 422);
+  assert(
+    (await concurrentRejected?.json() as { data?: { code?: string } } | undefined)?.data?.code
+      === "hosted_retained_part_size_exceeded",
+    "concurrent retained rejection omitted its stable code",
+  );
+  assert(
+    await retainedUploadedBytes(concurrentRetained.mediaId) === concurrentPayload.length,
+    "concurrent retained parts overshot the declared D1 byte counter",
+  );
+  await cancel(origin, tokenA, concurrentRetained.mediaId);
+
   const retainedBytes = bytes(700_321, 91);
   const retained = await createSession(origin, tokenA, retainedBytes, "retained");
   assert(retained.retainedUpload, "retained create omitted its R2 capability");
@@ -170,6 +230,18 @@ try {
   const retainedKey = retainedRow[0]?.results?.[0]?.retained_object_key;
   assert(typeof retainedKey === "string" && /^principals\/[a-f0-9]{32}\/media\/[a-f0-9-]{36}$/.test(retainedKey), "retained object key was not principal-scoped and unguessable");
   await expectStatus(deleteRetainedResponse(origin, tokenB, retained.mediaId), 404, "cross-principal retained delete");
+  const retainedAttemptId = await seedActiveRetainedJob(retained.mediaId);
+  const inUseDelete = await expectStatus(
+    deleteRetainedResponse(origin, tokenA, retained.mediaId),
+    409,
+    "retained delete while hosted job is active",
+  );
+  assert(
+    (await inUseDelete.json() as { data?: { code?: string } }).data?.code
+      === "hosted_retained_media_in_use",
+    "active-job retained delete did not return its stable code",
+  );
+  await d1Execute(`UPDATE hosted_analysis_attempts SET stage = 'succeeded' WHERE attempt_id = ${sql(retainedAttemptId)}`);
   await expectStatus(deleteRetainedResponse(origin, tokenA, retained.mediaId), 200, "explicit retained delete");
 
   const mismatchedRetainedBytes = bytes(700_333, 92);
@@ -203,7 +275,7 @@ try {
   const orphanSweep = await expectStatus(janitorResponse(origin, tokenA), 200, "retained orphan janitor");
   assert((await orphanSweep.json() as { abandoned?: number }).abandoned === 1, "retained orphan was not abandoned");
   await expectStatus(uploadRetainedPartResponse(orphan.retainedUpload.partUrl, 1, orphanBytes, tokenA), 409, "swept retained capability reuse");
-  console.log("HOSTED_RETENTION_CONTRACT PASSED presign=true multipart=true digest_match=true digest_mismatch=true lifecycle=true delete=true orphan=true isolation=true");
+  console.log("HOSTED_RETENTION_CONTRACT PASSED presign=true multipart=true part_ceiling=true concurrent_cas=true digest_match=true digest_mismatch=true lifecycle=true delete=true in_use_delete=true orphan=true isolation=true");
 
   const evidenceBytes = bytes(700_369, 96);
   const evidenceMedia = await createSession(origin, tokenA, evidenceBytes, "retained");
@@ -229,12 +301,12 @@ try {
     recordingSha256: evidenceSource.source.recordingSha256,
   }), 422, "capture with false manifest source");
   const captured = await expectStatus(captureResponse(origin, tokenA, evidenceRunId, png, {
-    timestampSeconds: 2.5,
+    timestampSeconds: 3.5,
     manifestSha256: evidenceSource.source.manifestSha256,
     recordingSha256: evidenceSource.source.recordingSha256,
   }), 201, "capture with exact provenance");
   const capturedBody = await captured.json() as { evidence?: { timestampSeconds?: number; source?: { manifestSha256?: string; recordingSha256?: string } } };
-  assert(capturedBody.evidence?.timestampSeconds === 2.5, "capture omitted timestamp provenance");
+  assert(capturedBody.evidence?.timestampSeconds === 3, "capture timestamp was not clamped to media duration");
   assert(capturedBody.evidence?.source?.manifestSha256 === evidenceSource.source.manifestSha256, "capture omitted manifest source provenance");
   assert(capturedBody.evidence?.source?.recordingSha256 === evidenceSource.source.recordingSha256, "capture omitted recording source provenance");
   await browserEvidenceCaptureContract(origin, tokenA, evidenceRunId, png);
@@ -725,6 +797,14 @@ function deleteRetainedResponse(origin: string, token: string, mediaId: string):
   });
 }
 
+async function retainedUploadedBytes(mediaId: string): Promise<number | undefined> {
+  const rows = await d1Json(
+    `SELECT r2_uploaded_bytes FROM hosted_media_upload_sessions WHERE media_id = ${sql(mediaId)}`,
+  );
+  const value = rows[0]?.results?.[0]?.r2_uploaded_bytes;
+  return typeof value === "number" ? value : undefined;
+}
+
 function captureResponse(
   origin: string,
   token: string,
@@ -792,6 +872,16 @@ async function seedEvidenceRun(runId: string, mediaId: string, recordingSha256: 
   await d1Execute(`INSERT INTO analysis_run_registry (principal_sub, run_id, principal_email, schema_version) VALUES (${sql(principal)}, ${sql(runId)}, 'media-principal-a@example.test', 3)`);
   await d1Execute(`INSERT INTO hosted_analysis_jobs (principal_sub, job_id, principal_email, media_id, created_at) VALUES (${sql(principal)}, ${sql(jobId)}, 'media-principal-a@example.test', ${sql(mediaId)}, ${sql(timestamp)})`);
   await d1Execute(`INSERT INTO hosted_analysis_attempts (principal_sub, attempt_id, job_id, attempt_number, idempotency_key, workflow_instance_id, immutable_input_json, stage, spend_reserved_units, run_id, cleanup_completed_at, created_at, updated_at) VALUES (${sql(principal)}, ${sql(attemptId)}, ${sql(jobId)}, 1, ${sql(`evidence-contract-${suffix}`)}, ${sql(`workflow-${suffix}`)}, '{}', 'succeeded', 1, ${sql(runId)}, ${sql(timestamp)}, ${sql(timestamp)}, ${sql(timestamp)})`);
+}
+
+async function seedActiveRetainedJob(mediaId: string): Promise<string> {
+  const suffix = createHash("sha256").update(`active:${mediaId}`).digest("hex").slice(0, 20);
+  const jobId = `job_${suffix}`;
+  const attemptId = `attempt_${suffix}`;
+  const timestamp = "2026-08-23T06:00:00.000Z";
+  await d1Execute(`INSERT INTO hosted_analysis_jobs (principal_sub, job_id, principal_email, media_id, created_at) VALUES ('media-principal-a', ${sql(jobId)}, 'media-principal-a@example.test', ${sql(mediaId)}, ${sql(timestamp)})`);
+  await d1Execute(`INSERT INTO hosted_analysis_attempts (principal_sub, attempt_id, job_id, attempt_number, idempotency_key, workflow_instance_id, immutable_input_json, stage, spend_reserved_units, created_at, updated_at) VALUES ('media-principal-a', ${sql(attemptId)}, ${sql(jobId)}, 1, ${sql(`retained-delete-${suffix}`)}, ${sql(`workflow-${suffix}`)}, '{}', 'queued', 1, ${sql(timestamp)}, ${sql(timestamp)})`);
+  return attemptId;
 }
 
 function sql(value: string): string {

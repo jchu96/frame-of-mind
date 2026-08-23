@@ -26,6 +26,7 @@ interface UploadRow {
   r2_upload_id: string | null;
   r2_capability_hash: string | null;
   r2_completed_at: string | null;
+  r2_uploaded_bytes: number;
   state: HostedMediaUploadSession["state"];
   created_at: string;
   session_expires_at: string;
@@ -152,6 +153,56 @@ export class HostedMediaRepository {
     if (d1Changes(result) !== 1) {
       throw new HostedRepositoryError("hosted_retained_capability_unavailable");
     }
+  }
+
+  async reserveRetainedPartBytes(input: {
+    principalSub: string;
+    mediaId: string;
+    capabilityHash: string;
+    contentLength: number;
+    maxBytes: number;
+    updatedAt: string;
+  }): Promise<boolean> {
+    const result = await this.database.prepare(`
+      UPDATE hosted_media_upload_sessions
+      SET r2_uploaded_bytes = r2_uploaded_bytes + ?, updated_at = ?
+      WHERE principal_sub = ? AND media_id = ? AND state = 'open'
+        AND retention = 'retained' AND r2_capability_hash = ?
+        AND r2_completed_at IS NULL AND session_expires_at > ?
+        AND r2_uploaded_bytes + ? <= declared_size_bytes
+        AND r2_uploaded_bytes + ? <= ?
+    `).bind(
+      input.contentLength,
+      input.updatedAt,
+      input.principalSub,
+      input.mediaId,
+      input.capabilityHash,
+      input.updatedAt,
+      input.contentLength,
+      input.contentLength,
+      input.maxBytes,
+    ).run();
+    return d1Changes(result) === 1;
+  }
+
+  async releaseRetainedPartBytes(input: {
+    principalSub: string;
+    mediaId: string;
+    contentLength: number;
+    updatedAt: string;
+  }): Promise<void> {
+    await this.database.prepare(`
+      UPDATE hosted_media_upload_sessions
+      SET r2_uploaded_bytes = r2_uploaded_bytes - ?, updated_at = ?
+      WHERE principal_sub = ? AND media_id = ? AND state = 'open'
+        AND r2_uploaded_bytes >= ?
+    `).bind(
+      input.contentLength,
+      input.updatedAt,
+      input.principalSub,
+      input.mediaId,
+      input.contentLength,
+    ).run();
   }
 
   async claimForSeal(
@@ -362,6 +413,7 @@ function uploadFromRow(row: UploadRow): HostedMediaUploadSession {
       ? { r2CapabilityHash: row.r2_capability_hash }
       : {}),
     ...(row.r2_completed_at ? { r2CompletedAt: row.r2_completed_at } : {}),
+    r2UploadedBytes: row.r2_uploaded_bytes,
     state: hostedMediaUploadStateSchema.parse(row.state),
     createdAt: row.created_at,
     sessionExpiresAt: row.session_expires_at,
