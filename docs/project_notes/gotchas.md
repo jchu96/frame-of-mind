@@ -430,3 +430,13 @@
   too late; use a `/sign-in/magic-link` before-hook when denial must precede
   both storage and delivery. The verify URL is a first-fetch, session-minting
   GET, so mail scanners can consume it.
+- In the hosted workflow HTTP contract, the deliberately held concurrent-spend
+  race must run after ordinary browser and dispatch assertions. Its fake Worker
+  intentionally keeps workflow instances active, so running it earlier can
+  consume the shared per-principal concurrency budget and make later healthy
+  dispatches return 503. Give each local Wrangler process `--inspector-port 0`
+  as well so parallel worktrees cannot collide on the default inspector port.
+- On a fleet machine, serialize every full check, hosted contract, hosted check,
+  and E2E suite with `gate-lock`. Concurrent workerd gates can fail healthy
+  service bindings or collide on local resources; the machine-wide lock waits
+  for the current gate and reclaims only a lock whose recorded process is gone.

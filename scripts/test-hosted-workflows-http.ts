@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
@@ -90,7 +90,10 @@ try {
     "/api/hosted/composer/jobs",
     "/api/hosted/spend/janitor",
     "/hosted/activity",
+    "/review/:runId",
+    "/api/hosted/jobs/:id/support-receipt",
     "data-hosted-studio-shell",
+    "data-studio-review",
     "Hosted Workflow bindings are unavailable",
     "hosted-video-v2",
     "spend_reservation_created",
@@ -235,6 +238,7 @@ try {
     "--persist-to", persistRoot,
     "--ip", "127.0.0.1",
     "--port", String(workflowPort),
+    "--inspector-port", "0",
     "--log-level", "error",
     "--show-interactive-dev-session=false",
   ], {
@@ -286,6 +290,7 @@ try {
     "--persist-to", persistRoot,
     "--ip", "127.0.0.1",
     "--port", String(workerPort),
+    "--inspector-port", "0",
     "--log-level", "error",
     "--show-interactive-dev-session=false",
   ], {
@@ -339,6 +344,7 @@ try {
     "--persist-to", persistRoot,
     "--ip", "127.0.0.1",
     "--port", String(disabledPort),
+    "--inspector-port", "0",
     "--log-level", "error",
     "--show-interactive-dev-session=false",
   ], {
@@ -362,6 +368,8 @@ try {
     "/hosted/new/run",
     "/hosted/activity",
     "/hosted/activity/attempt_dark_0001",
+    "/review/hosted_attempt_dark_0001",
+    "/api/hosted/jobs/attempt_dark_0001/support-receipt",
   ]) {
     await expectStatus(authenticatedFetch(disabledOrigin, path, tokenA), 404, `disabled ${path}`);
   }
@@ -382,36 +390,6 @@ try {
   disabledWebWorker = undefined;
   disabledWebOutput = undefined;
   console.log("HOSTED_WORKFLOW dark=PASS runtime_disabled_routes_404");
-
-  const raceSize = 10;
-  const raceResponses = await Promise.all(
-    Array.from({ length: raceSize }, (_, index) => createJobResponse(
-      baseUrl,
-      tokenRace,
-      cancelMedia,
-      `http-race-${String(index + 1).padStart(2, "0")}`,
-    )),
-  );
-  const admitted = raceResponses.filter((response) => response.status === 201);
-  const rejected = raceResponses.filter((response) => response.status === 429);
-  assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
-  assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
-  for (const response of rejected) {
-    const body = await json<{ data?: { code?: string } }>(response);
-    assertEqual(body.data?.code, "principal_spend_cap_exceeded", "HTTP race cap code");
-  }
-  for (const response of admitted) await response.body?.cancel();
-  assertEqual(
-    await queryCount(
-      "hosted_analysis_attempts",
-      `principal_sub = '${principalRace}' AND idempotency_key LIKE 'http-race-%'`,
-    ),
-    3,
-    "HTTP race created Workflows",
-  );
-  console.log(
-    `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3}`,
-  );
 
   const janitorResponse = await json<{
     ok: boolean;
@@ -454,6 +432,22 @@ try {
     manifest: published.manifest,
   });
   assertEqual(published.runId, normalTerminal.job.runId, "published viewer run ID");
+  const supportReceipt = await (await expectStatus(
+    authenticatedFetch(baseUrl, `/api/hosted/jobs/${normal.job.id}/support-receipt`, tokenA),
+    200,
+    "principal support receipt",
+  )).text();
+  if (!supportReceipt.startsWith("Frame of Mind support receipt v1\n")) {
+    throw new Error("Hosted support receipt did not use the closed support format.");
+  }
+  const reviewHtml = await (await expectStatus(
+    authenticatedFetch(baseUrl, `/review/${normalTerminal.job.runId}`, tokenA),
+    200,
+    "principal hosted review workspace",
+  )).text();
+  if (!reviewHtml.includes("data-studio-review=\"hosted\"")) {
+    throw new Error("Hosted review workspace did not render its principal-scoped module.");
+  }
 
   const overrun = await createJob(
     baseUrl,
@@ -520,6 +514,16 @@ try {
     authenticatedFetch(baseUrl, `/api/runs/${normalTerminal.job.runId}`, tokenB),
     404,
     "cross-principal published run",
+  );
+  await expectStatus(
+    authenticatedFetch(baseUrl, `/review/${normalTerminal.job.runId}`, tokenB),
+    404,
+    "cross-principal hosted review workspace",
+  );
+  await expectStatus(
+    authenticatedFetch(baseUrl, `/api/hosted/jobs/${normal.job.id}/support-receipt`, tokenB),
+    404,
+    "cross-principal support receipt",
   );
   await createJob(baseUrl, tokenB, normalMedia, "foreign-media-create", 404);
   await expectStatus(fetch(`${baseUrl}/api/hosted/composer/jobs`, {
@@ -677,6 +681,38 @@ try {
   );
   console.log(
     "HOSTED_SPEND reserve=PASS race=unit_contract reconcile=provider_usage create_cap=429 composer_cap=429 workflow_created=false",
+  );
+  // Keep the intentionally concurrent admission burst last. Local workerd may
+  // hold those workflow dispatches while exercising the cap, so no later
+  // contract should depend on the same local Workflow lane becoming idle.
+  const raceSize = 10;
+  const raceResponses = await Promise.all(
+    Array.from({ length: raceSize }, (_, index) => createJobResponse(
+      baseUrl,
+      tokenRace,
+      cancelMedia,
+      `http-race-${String(index + 1).padStart(2, "0")}`,
+    )),
+  );
+  const admitted = raceResponses.filter((response) => response.status === 201);
+  const rejected = raceResponses.filter((response) => response.status === 429);
+  assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
+  assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
+  for (const response of rejected) {
+    const body = await json<{ data?: { code?: string } }>(response);
+    assertEqual(body.data?.code, "principal_spend_cap_exceeded", "HTTP race cap code");
+  }
+  for (const response of admitted) await response.body?.cancel();
+  assertEqual(
+    await queryCount(
+      "hosted_analysis_attempts",
+      `principal_sub = '${principalRace}' AND idempotency_key LIKE 'http-race-%'`,
+    ),
+    3,
+    "HTTP race created Workflows",
+  );
+  console.log(
+    `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3}`,
   );
   console.log("HOSTED_SPEND_CONTRACT PASSED");
   console.log("HOSTED_STUDIO_CONTRACT PASSED");
@@ -926,6 +962,12 @@ async function verifyHostedBrowserContract(
   token: string,
   mediaId: string,
 ): Promise<void> {
+  const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-1");
+  const captureScreenshots = hostedContractAuthMode === "cloudflare-access";
+  if (captureScreenshots) {
+    await rm(screenshotRoot, { recursive: true, force: true });
+    await mkdir(screenshotRoot, { recursive: true });
+  }
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext(hostedContractAuthMode === "cloudflare-access"
@@ -938,7 +980,16 @@ async function verifyHostedBrowserContract(
       }));
     }
     const page = await context.newPage();
+    const capture = async (name: string): Promise<void> => {
+      if (!captureScreenshots) return;
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.screenshot({ path: join(screenshotRoot, `${name}-desktop.png`), fullPage: true });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({ path: join(screenshotRoot, `${name}-mobile.png`), fullPage: true });
+      await page.setViewportSize({ width: 1280, height: 900 });
+    };
     await page.goto(`${origin}/hosted/new/intent`);
+    await capture("01-intent-empty");
     assertEqual(await page.getByRole("navigation").count(), 1, "single hosted navigation landmark");
     const runStep = page.locator("[data-slot=item]").filter({ hasText: "RunAdd a recording first" }).getByRole("button");
     assertEqual(await runStep.isDisabled(), true, "Run step disabled before prerequisites");
@@ -948,25 +999,62 @@ async function verifyHostedBrowserContract(
     await page.goto(`${origin}/hosted/new/run`);
     await page.waitForURL(/\/hosted\/new\/intent\?reason=/);
     await page.getByText("Complete Intent before opening Run.").waitFor();
-    await page.getByRole("button", { name: "Save intent" }).click();
+    const focus = page.getByLabel("Optional focus");
+    await focus.waitFor();
+    await focus.fill("Only the billing bug");
+    await page.getByRole("button", { name: /Issue review/ }).click();
+    await capture("02-intent-selected");
     await page.goto(`${origin}/hosted/new/context`);
-    await page.getByRole("button", { name: "Use video only" }).click();
+    await page.getByRole("heading", { name: "Sources", level: 1 }).waitFor();
+    await capture("03-context");
+    await page.getByRole("link", { name: "Continue" }).click();
+    await page.waitForURL(/\/hosted\/new\/recording$/);
+    await capture("04-recording-empty");
     await page.evaluate((id) => {
       sessionStorage.setItem(
         "hosted:frame-of-mind:studio:media-upload",
         JSON.stringify({ schemaVersion: 1, mediaSessionId: id }),
       );
     }, mediaId);
-    await page.goto(`${origin}/hosted/new/recording`);
+    await page.reload();
     await page.locator("[data-hosted-media-ready=true]").waitFor();
-    await page.goto(`${origin}/hosted/new/run`);
+    await capture("05-recording-ready");
+    await page.getByRole("link", { name: "Continue" }).click();
+    await page.waitForURL(/\/hosted\/new\/run$/);
+    await page.locator("[data-summary-card]").first().waitFor();
+    assertEqual(await page.locator("[data-summary-card]").count(), 3, "three review summary cards");
+    await page.getByText("Before you start").waitFor();
+    await capture("06-review-and-start");
     const start = page.locator("[data-hosted-run-start=true]");
     await start.waitFor();
     await start.click();
     await page.waitForURL(/\/hosted\/activity\/attempt_/);
     await page.locator("[data-hosted-activity-page=detail]").waitFor();
+    await page.getByRole("heading", { name: "Issue review", level: 1 }).waitFor();
+    await page.getByRole("button", { name: "Copy details for support" }).waitFor();
+    const results = page.getByRole("link", { name: "Open published run" });
+    await results.waitFor();
+    await capture("07-activity-detail");
+    await results.click();
+    await page.waitForURL(/\/runs\/hosted_attempt_/);
+    await page.getByRole("heading", { name: /Issue review ·/, level: 1 }).waitFor();
+    await capture("08-run-viewer");
+    await page.getByRole("link", { name: "Review findings" }).click();
+    await page.waitForURL(/\/review\/hosted_attempt_/);
+    await page.locator("[data-studio-review=hosted]").waitFor();
+    await capture("09-review-workspace");
     await page.goto(`${origin}/hosted/activity`);
     await page.locator("[data-hosted-activity-page=list]").waitFor();
+    await capture("10-activity-list");
+    await page.goto(origin);
+    await page.getByRole("heading", { name: "Your finished analyses.", level: 1 }).waitFor();
+    await capture("11-results-home");
+    await page.goto(`${origin}/import`);
+    await page.getByRole("heading", { name: /Import/, level: 1 }).waitFor();
+    await capture("12-import");
+    await page.goto(`${origin}/hosted/activity/not-a-real-attempt`);
+    await page.getByRole("heading", { name: "We couldn't find that analysis", level: 1 }).waitFor();
+    await capture("13-not-found");
     await context.close();
   } finally {
     await browser.close();
