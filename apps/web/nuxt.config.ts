@@ -16,6 +16,8 @@ import { shouldRegisterLocalStudioRoutes } from "./server-local/studio-session/s
 
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
 const nitroPreset = process.env.NITRO_PRESET || "node-server";
+const isolatedBuildDir = process.env.FRAME_OF_MIND_WEB_BUILD_DIR?.trim();
+const isolatedOutputDir = process.env.FRAME_OF_MIND_BUILD_OUTPUT?.trim();
 const sentryNuxtEnabled = nitroPreset !== "cloudflare-worker"
   && nitroPreset !== "cloudflare_module";
 const studioSpikeEnabled = databaseDriver === "sqlite"
@@ -593,6 +595,7 @@ const localHandlers = [
 ];
 
 export default defineNuxtConfig({
+  ...(isolatedBuildDir ? { buildDir: isolatedBuildDir } : {}),
   compatibilityDate: "2026-07-24",
   devtools: { enabled: true },
   modules: [
@@ -698,6 +701,9 @@ export default defineNuxtConfig({
     "#frame-hosted-telemetry": hostedRouteTelemetry,
   },
   nitro: {
+    ...(isolatedOutputDir
+      ? { output: { dir: isolatedOutputDir } }
+      : {}),
     preset: nitroPreset,
     handlers: localHandlers,
     plugins: localStudioEnabled ? [studioJobsStartup] : [],

@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { resolvePrebuiltWebOutput } from "./prebuilt-artifact";
 
 const FIXTURE_BYTES = 32 * 1_024 * 1_024;
 const CHUNK_BYTES = 64 * 1_024;
@@ -27,10 +28,16 @@ const spikeEnv = {
   FRAME_OF_MIND_STUDIO_SPIKE_DIR: directory,
   NITRO_PRESET: "node-server",
 };
+const prebuiltOutput = await resolvePrebuiltWebOutput("node-server");
+const webOutput = prebuiltOutput ?? resolve("apps/web/.output");
 
 let stopServer: (() => Promise<void>) | undefined;
 try {
-  await runChecked(["bun", "run", "--cwd", "apps/web", "build"], spikeEnv);
+  if (prebuiltOutput) {
+    console.log("STUDIO_STREAMING build=SKIP prebuilt=node-server");
+  } else {
+    await runChecked(["bun", "run", "--cwd", "apps/web", "build"], spikeEnv);
+  }
 
   const reservation = Bun.serve({
     port: 0,
@@ -43,8 +50,8 @@ try {
   const server = Bun.spawn([
     "bun",
     "--preload",
-    resolve("apps/web/.output/server/sentry.server.config.mjs"),
-    resolve("apps/web/.output/server/index.mjs"),
+    join(webOutput, "server/sentry.server.config.mjs"),
+    join(webOutput, "server/index.mjs"),
   ], {
     cwd: resolve("."),
     env: {

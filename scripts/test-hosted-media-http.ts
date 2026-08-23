@@ -8,6 +8,7 @@ import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 import { createE2EEnvironment } from "./e2e-environment";
 import { analysisDigest } from "../src/domain/integrity";
 import type { VersionedAnalysisRun } from "../src/domain/types";
+import { resolvePrebuiltWebOutput } from "./prebuilt-artifact";
 
 const isolation = await createE2EIsolation(
   "hosted-media",
@@ -19,6 +20,8 @@ const configPath = join(root, "wrangler.jsonc");
 const databaseName = isolation.databaseName;
 const databaseId = isolation.databaseId;
 const workerName = isolation.workerName("hosted-media-contract");
+const prebuiltOutput = await resolvePrebuiltWebOutput("cloudflare_module");
+const webOutput = prebuiltOutput ?? resolve("apps/web/.output");
 const audience = "frame-of-mind-hosted-media-contract";
 const keyId = "hosted-media-contract-key";
 const fixtureKey = "fixture-only-gemini-key";
@@ -34,10 +37,14 @@ let workerOutput: Promise<[string, string]> | undefined;
 try {
   console.log(`HOSTED_MEDIA isolation=PASS worker=${workerName} database=${databaseName}`);
   console.log("HOSTED_MEDIA build=START cloudflare_module");
-  await runChecked(
-    ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare"],
-    "hosted media Cloudflare build",
-  );
+  if (prebuiltOutput) {
+    console.log("HOSTED_MEDIA build=SKIP prebuilt=cloudflare_module");
+  } else {
+    await runChecked(
+      ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare"],
+      "hosted media Cloudflare build",
+    );
+  }
   console.log("HOSTED_MEDIA build=PASS cloudflare_module");
 
   filesApi = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: fakeFilesFetch });
@@ -61,10 +68,10 @@ try {
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
     name: workerName,
-    main: resolve("apps/web/.output/server/hosted-entry.mjs"),
+    main: join(webOutput, "server/hosted-entry.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
-    assets: { directory: resolve("apps/web/.output/public"), binding: "ASSETS" },
+    assets: { directory: join(webOutput, "public"), binding: "ASSETS" },
     d1_databases: [{
       binding: "DB", database_name: databaseName, database_id: databaseId,
       migrations_dir: resolve("apps/web/db/migrations"),
