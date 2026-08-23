@@ -28,15 +28,19 @@ value and reducing feedback time. The fast answer must still preserve the
 authority-boundary checks relevant to the change; a shorter tier is not
 permission to remove coverage from the complete gate.
 
-- `bun run check:pr` runs the fast and local lanes for the normal PR-required
-  gate.
+- `bun run check:pr` runs the fast and local lanes only when every changed path
+  is explicitly safe: `docs/**`, Markdown, `conductor/**`, `test/**` unit tests,
+  or presentation assets under `apps/web/app/**` (`.vue`, styles, images, icons,
+  and fonts).
 - `bun run check:sharded` runs fast, local, and hosted lanes for every merge to
   `main` and every nightly gate.
-- A PR that changes `apps/web/server-hosted/`, `apps/workflows/`,
-  `scripts/test-hosted-*`, or `apps/web/db/migrations/` must run the sharded
-  tier before merge. Set `FRAME_OF_MIND_GATE_BASE_REF=origin/main` (or pass
-  `--base <ref>` to `scripts/run-check-sharded.ts`) and `check:pr` upgrades
-  itself to sharded when those paths differ from the base.
+- Every path outside that safe allowlist upgrades `check:pr` to sharded. This
+  includes `src/**`, `apps/web/server*/**`, `apps/workflows/**`, `scripts/**`,
+  `db/migrations/**`, `package.json`, `bun.lock`, Nuxt configuration, and
+  `.github/**`. The default comparison is `origin/main`; override it with
+  `FRAME_OF_MIND_GATE_BASE_REF=<ref>` or `--base <ref>`. An unavailable base
+  fails closed to the complete tier and prints
+  `tier=sharded reason=base_ref_unavailable`.
 - `bun run check` remains the serial fallback and retains its original 16-step
   order.
 
@@ -61,6 +65,10 @@ load; the default is three.
 
 On a shared host, wrap `check:sharded` in the house `gate-lock`; lanes inside one
 invocation are bounded by `FRAME_OF_MIND_GATE_PARALLELISM`.
+Concurrent invocations keep fast work parallel while runtime-bearing local and
+hosted lanes take the existing machine-wide workerd/Chromium lease as lane
+units. Waiting for a lane lease happens outside per-step timers; child contracts
+inherit a verified lease token and cannot silently bypass a different owner.
 
 On this machine, the hub-measured pre-sharding serial gate required 75–90
 minutes. The same 16-step implementation tree completed with a cold build cache
@@ -74,8 +82,9 @@ Each logical step has a 20-minute hard timeout. Override it with the positive
 integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`. A timeout prints
 `exit=step_timeout` and terminates only the detached process group created for
 that step. The historically intermittent
-`test:hosted-workflows-http:better-auth` step receives one automatic retry and
-prints `retry=1`; no other step is retried.
+`test:hosted-workflows-http:better-auth` step receives one automatic retry only
+after `step_timeout` and prints `retry=1`; deterministic non-zero exits and all
+other steps are not retried.
 
 ### Prebuilt artifact contract
 
@@ -89,9 +98,18 @@ invalid, or wrong marker fails closed with `prebuilt_preset_mismatch`. Without
 these variables, every script retains its prior build behavior.
 
 Lane builds use isolated Nuxt build and output directories, never
-`apps/web/.nuxt` or `apps/web/.output`. Outputs are cached by a SHA-256 over
-`apps/web/**`, `apps/workflows/**`, `bun.lock`, and `package.json`, excluding
-`.output`, `.nuxt`, and `node_modules`. The default cache is
+`apps/web/.nuxt` or `apps/web/.output`. Outputs are cached by a SHA-256 over the
+Git-tracked tree plus untracked, non-ignored files. Documentation (`docs/**`,
+`conductor/**`, and `*.md`) and `apps/web/e2e/__screenshots__/**` are excluded;
+generated and dependency trees remain excluded because Git ignores them. This
+conservative input set covers `src/**`, `scripts/**`, both app trees, lockfiles,
+package manifests, TypeScript configuration, and configuration import seams.
+
+Build children inherit only `PATH`, `HOME`, `TMPDIR`, and `CI`, plus the lane's
+explicit build settings and run-owned destination paths. Ambient `NUXT_*` and
+`FRAME_OF_MIND_*` variables cannot leak into an artifact. The sorted
+content-bearing environment pairs are part of the cache key; run-owned output
+locations are deliberately destination-only. The default cache is
 `~/.cache/frame-of-mind/builds`; override it with
 `FRAME_OF_MIND_BUILD_CACHE=<directory>` or disable it with
 `FRAME_OF_MIND_BUILD_CACHE=off`. Only the five newest entries are retained. A

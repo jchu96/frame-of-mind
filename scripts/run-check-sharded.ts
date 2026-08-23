@@ -2,11 +2,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { BUILD_DIR_ENV } from "./prebuilt-artifact";
-import { isHostedSensitivePath } from "./check-gate-policy";
+import { selectGateTier, type GateTier } from "./check-gate-policy";
 
 const allLaneNames = ["fast", "local", "hosted"] as const;
 type LaneName = typeof allLaneNames[number];
-type GateTier = "pr" | "sharded";
 interface LaneResult {
   readonly lane: LaneName;
   readonly exitCode: number;
@@ -18,13 +17,16 @@ const requestedTier = option("--tier") ?? "sharded";
 if (requestedTier !== "pr" && requestedTier !== "sharded") {
   throw new Error("--tier must be pr or sharded.");
 }
-const baseRef = option("--base")
+const configuredBaseRef = option("--base")
   ?? process.env.FRAME_OF_MIND_GATE_BASE_REF?.trim();
+const baseRef = requestedTier === "pr" ? configuredBaseRef || "origin/main" : configuredBaseRef;
 const printTier = args.includes("--print-tier");
-const selectedTier = requestedTier === "pr" && baseRef
-  && await hasHostedSensitiveChanges(baseRef)
-  ? "sharded"
-  : requestedTier as GateTier;
+const baseRefAvailable = requestedTier !== "pr" || await isRefAvailable(baseRef!);
+const changedPaths = requestedTier === "pr" && baseRefAvailable
+  ? await pathsChangedSince(baseRef!)
+  : [];
+const selection = selectGateTier(requestedTier as GateTier, baseRefAvailable, changedPaths);
+const selectedTier = selection.tier;
 
 if (printTier) {
   console.log(selectedTier);
@@ -52,7 +54,8 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 try {
   console.log(
     `CHECK_SHARDED tier=${selectedTier} requested=${requestedTier} `
-    + `upgraded=${requestedTier !== selectedTier} base=${baseRef ?? "none"}`,
+    + `upgraded=${requestedTier !== selectedTier} base=${baseRef ?? "none"} `
+    + `reason=${selection.reason}`,
   );
   const queue = [...laneNames];
   const results: LaneResult[] = [];
@@ -121,7 +124,17 @@ async function runLane(lane: LaneName): Promise<LaneResult> {
   return { lane, exitCode, seconds };
 }
 
-async function hasHostedSensitiveChanges(ref: string): Promise<boolean> {
+async function isRefAvailable(ref: string): Promise<boolean> {
+  const child = Bun.spawn(["git", "rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+    cwd: resolve("."),
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  return await child.exited === 0;
+}
+
+async function pathsChangedSince(ref: string): Promise<string[]> {
   const child = Bun.spawn(["git", "diff", "--name-only", `${ref}...HEAD`], {
     cwd: resolve("."),
     stdin: "ignore",
@@ -136,7 +149,7 @@ async function hasHostedSensitiveChanges(ref: string): Promise<boolean> {
   if (exitCode !== 0) {
     throw new Error(`Could not compare gate base ${ref}: ${stderr.trim()}`);
   }
-  return stdout.split(/\r?\n/).some(isHostedSensitivePath);
+  return stdout.split(/\r?\n/).filter(Boolean);
 }
 
 async function pipePrefixed(

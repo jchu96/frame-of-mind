@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   cp,
   mkdir,
@@ -11,9 +11,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { ChildProcess } from "node:child_process";
-import { acquireE2EResourceLease } from "../apps/web/e2e/support/isolation";
+import {
+  acquireE2EResourceLease,
+  E2E_RUNTIME_LEASE_TOKEN_ENV,
+  type E2EResourceLease,
+} from "../apps/web/e2e/support/isolation";
 import {
   BUILD_DIR_ENV,
   BUILD_OUTPUT_ENV,
@@ -22,6 +26,7 @@ import {
   writeBuildMarker,
 } from "./prebuilt-artifact";
 import { killOwnedProcessGroup, runTimedProcess } from "./check-process";
+import { buildContentHash, scrubBuildEnvironment } from "./check-build-cache";
 
 type Lane = "fast" | "local" | "hosted";
 
@@ -68,6 +73,7 @@ const buildDir = join(root, "nuxt-build");
 let webOutput = join(root, "web-output");
 let workflowOutput = join(root, "workflow-output");
 let activeChild: ChildProcess | undefined;
+let runtimeLease: E2EResourceLease | undefined;
 let laneExitCode = 0;
 
 class LaneFailure extends Error {
@@ -78,7 +84,7 @@ class LaneFailure extends Error {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
-    if (activeChild) killOwnedProcessGroup(activeChild, signal);
+    if (activeChild) killOwnedProcessGroup(activeChild, signal, true);
   });
 }
 
@@ -87,12 +93,19 @@ try {
     ({ webOutput, workflowOutput } = await prepareBuildArtifacts(lane));
   }
 
+  if (lane !== "fast") {
+    runtimeLease = await acquireE2EResourceLease();
+  }
+
   const laneEnvironment: Record<string, string> = {
     ...process.env as Record<string, string>,
     ...(lane === "fast" ? {} : { [BUILD_DIR_ENV]: buildDir }),
     ...(lane === "fast" ? {} : { [PREBUILT_OUTPUT_ENV]: webOutput }),
+    ...(lane === "fast" ? {} : { [E2E_RUNTIME_LEASE_TOKEN_ENV]: runtimeLease!.token }),
     ...(lane === "hosted"
-      ? { [PREBUILT_WORKFLOWS_ENV]: workflowOutput }
+      ? {
+          [PREBUILT_WORKFLOWS_ENV]: workflowOutput,
+        }
       : {}),
   };
   if (lane === "fast") delete laneEnvironment[BUILD_DIR_ENV];
@@ -107,11 +120,11 @@ try {
     const first = await runStep(step, laneEnvironment);
     if (
       step === "test:hosted-workflows-http:better-auth"
-      && first.exitCode !== 0
+      && first.timedOut
     ) {
       console.log(
         `CHECK_LANE lane=${lane} step=${step} retry=1 `
-        + `reason=${first.timedOut ? "step_timeout" : `exit_${first.exitCode}`}`,
+        + "reason=step_timeout",
       );
       const retry = await runStep(step, laneEnvironment, 1);
       if (retry.exitCode !== 0) throw new LaneFailure(retry.exitCode);
@@ -131,6 +144,7 @@ try {
   }
 } finally {
   activeChild = undefined;
+  await runtimeLease?.release();
   await rm(root, { recursive: true, force: true });
 }
 process.exitCode = laneExitCode;
@@ -141,7 +155,9 @@ async function prepareBuildArtifacts(selectedLane: "local" | "hosted"): Promise<
 }> {
   const cacheSetting = process.env.FRAME_OF_MIND_BUILD_CACHE?.trim();
   const cacheEnabled = cacheSetting !== "off";
-  const contentHash = cacheEnabled ? await buildContentHash() : "cache-disabled";
+  const contentHash = cacheEnabled
+    ? await buildContentHash(resolve("."), buildCacheEnvironment(selectedLane))
+    : "cache-disabled";
   const hash8 = contentHash.slice(0, 8);
   const cacheRoot = cacheSetting && cacheSetting !== "off"
     ? resolve(cacheSetting)
@@ -267,7 +283,7 @@ async function runBuild(
   console.log(`CHECK_LANE lane=${lane} build=START preset=${preset}`);
   const result = await runTimedProcess(command, {
     cwd: resolve("."),
-    env: { ...process.env, ...additions },
+    env: scrubBuildEnvironment(additions),
     timeoutSeconds,
     stdin: "ignore",
     stdout: "inherit",
@@ -320,30 +336,20 @@ async function buildWorkflows(output: string, temporaryRoot: string): Promise<vo
   ], {}, "cloudflare-workflows");
 }
 
-async function buildContentHash(): Promise<string> {
-  const hash = createHash("sha256");
-  const paths = ["bun.lock", "package.json"];
-  for (const rootPath of ["apps/web", "apps/workflows"]) {
-    for await (const path of new Bun.Glob("**/*").scan({
-      cwd: rootPath,
-      absolute: true,
-      onlyFiles: true,
-    })) {
-      const relativePath = relative(resolve("."), path).replaceAll("\\", "/");
-      if (/(^|\/)(?:\.output|\.nuxt|node_modules)(?:\/|$)/.test(relativePath)) {
-        continue;
+function buildCacheEnvironment(selectedLane: "local" | "hosted"): Record<string, string> {
+  return scrubBuildEnvironment(selectedLane === "local"
+    ? {
+        FRAME_OF_MIND_DB_DRIVER: "sqlite",
+        FRAME_OF_MIND_STUDIO: "1",
+        FRAME_OF_MIND_STUDIO_SPIKE: "1",
+        NITRO_PRESET: "node-server",
       }
-      paths.push(relativePath);
-    }
-  }
-  paths.sort();
-  for (const path of paths) {
-    hash.update(path);
-    hash.update("\0");
-    hash.update(new Uint8Array(await Bun.file(path).arrayBuffer()));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
+    : {
+        FRAME_OF_MIND_DB_DRIVER: "d1",
+        FRAME_OF_MIND_STUDIO: "1",
+        FRAME_OF_MIND_HOSTED_WORKFLOWS: "1",
+        NITRO_PRESET: "cloudflare_module",
+      });
 }
 
 async function isCompleteCacheEntry(

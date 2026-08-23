@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -10,7 +10,12 @@ import {
   writeBuildMarker,
 } from "../scripts/prebuilt-artifact";
 import { killOwnedProcessGroup, runTimedProcess } from "../scripts/check-process";
-import { isHostedSensitivePath } from "../scripts/check-gate-policy";
+import {
+  buildContentHash,
+  isBuildInputPath,
+  scrubBuildEnvironment,
+} from "../scripts/check-build-cache";
+import { isPrSafePath, selectGateTier } from "../scripts/check-gate-policy";
 
 const originalPrebuiltOutput = process.env[PREBUILT_OUTPUT_ENV];
 
@@ -55,18 +60,100 @@ describe("check lanes", () => {
     }
   });
 
-  test("upgrades the PR tier only for hosted-sensitive paths", () => {
-    expect([
-      "apps/web/server-hosted/repository.ts",
+  test("keeps PR tier only when every changed path is explicitly safe", () => {
+    const safePaths = [
+      "docs/x.md",
+      "README.md",
+      "conductor/tracks/example/spec.json",
+      "test/check-lanes.test.ts",
+      "apps/web/app/components/Callout.vue",
+      "apps/web/app/assets/theme.css",
+    ];
+    expect(safePaths.every(isPrSafePath)).toBe(true);
+    expect(selectGateTier("pr", true, safePaths)).toEqual({
+      tier: "pr",
+      reason: "all_paths_safe",
+    });
+
+    for (const path of [
+      "src/domain/studio-schemas.ts",
+      "apps/web/server-hosted/foo.ts",
+      "apps/web/server/middleware/00.auth.ts",
       "apps/workflows/src/index.ts",
       "scripts/test-hosted-media-http.ts",
       "apps/web/db/migrations/0009_example.sql",
-    ].every(isHostedSensitivePath)).toBe(true);
-    expect([
-      "apps/web/server-local/repository.ts",
-      "scripts/run-check-sharded.ts",
-      "test/check-lanes.test.ts",
-    ].some(isHostedSensitivePath)).toBe(false);
+      "apps/web/nuxt.config.ts",
+      ".github/workflows/ci.yml",
+      "package.json",
+      "bun.lock",
+    ]) {
+      expect(selectGateTier("pr", true, [path]), path).toEqual({
+        tier: "sharded",
+        reason: "unsafe_path",
+      });
+    }
+  });
+
+  test("fails a PR tier closed when its default base ref is unavailable", () => {
+    expect(selectGateTier("pr", false, [])).toEqual({
+      tier: "sharded",
+      reason: "base_ref_unavailable",
+    });
+    expect(selectGateTier("pr", true, ["docs/x.md"])).toEqual({
+      tier: "pr",
+      reason: "all_paths_safe",
+    });
+  });
+
+  test("keys builds by the non-documentation git tree and scrubbed environment", async () => {
+    expect(isBuildInputPath("node_modules")).toBe(false);
+    expect(isBuildInputPath("apps/web/.nuxt/builds/meta.json")).toBe(false);
+    expect(isBuildInputPath("apps/web/.output/server/index.mjs")).toBe(false);
+    const fixture = await mkdtemp(join(tmpdir(), "frame-of-mind-build-key-test-"));
+    const sourcePath = join(fixture, "src/domain/studio-schemas.ts");
+    const readmePath = join(fixture, "README.md");
+    try {
+      await mkdir(join(fixture, "src/domain"), { recursive: true });
+      await mkdir(join(fixture, "scripts"), { recursive: true });
+      await writeFile(sourcePath, "export const schemaVersion = 1;\n");
+      await writeFile(join(fixture, "scripts/build.ts"), "export {};\n");
+      await writeFile(readmePath, "baseline\n");
+      await runGit(fixture, ["init", "-q"]);
+      await runGit(fixture, ["add", "."]);
+
+      const caller = {
+        PATH: process.env.PATH ?? "/usr/bin",
+        HOME: process.env.HOME ?? fixture,
+        TMPDIR: process.env.TMPDIR ?? tmpdir(),
+        CI: "1",
+        NUXT_HOSTED_WORKFLOWS_ENABLED: "true",
+        FRAME_OF_MIND_BUILD_CACHE: "/must-not-leak",
+      };
+      const additions = { NITRO_PRESET: "cloudflare_module" };
+      const environment = scrubBuildEnvironment(additions, caller);
+      expect(environment).toEqual({
+        PATH: caller.PATH,
+        HOME: caller.HOME,
+        TMPDIR: caller.TMPDIR,
+        CI: "1",
+        NITRO_PRESET: "cloudflare_module",
+      });
+      const baseline = await buildContentHash(fixture, environment);
+
+      await writeFile(sourcePath, "export const schemaVersion = 2;\n");
+      expect(await buildContentHash(fixture, environment)).not.toBe(baseline);
+      await writeFile(sourcePath, "export const schemaVersion = 1;\n");
+      expect(await buildContentHash(fixture, environment)).toBe(baseline);
+
+      await writeFile(readmePath, "documentation-only change\n");
+      expect(await buildContentHash(fixture, environment)).toBe(baseline);
+      expect(await buildContentHash(
+        fixture,
+        scrubBuildEnvironment(additions, { ...caller, NUXT_HOSTED_WORKFLOWS_ENABLED: "false" }),
+      )).toBe(baseline);
+    } finally {
+      await rm(fixture, { recursive: true, force: true });
+    }
   });
 
   test("terminates only its detached step group at the hard timeout", async () => {
@@ -104,4 +191,19 @@ function parseRunnerSteps(command: string, lane: string): string[] {
   const prefix = `bun scripts/run-check-lane.ts ${lane} `;
   expect(command.startsWith(prefix)).toBe(true);
   return command.slice(prefix.length).trim().split(/\s+/);
+}
+
+async function runGit(cwd: string, args: string[]): Promise<void> {
+  const child = spawn("git", args, {
+    cwd,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  const exitCode = await new Promise<number>((resolveExit, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => resolveExit(code ?? 1));
+  });
+  if (exitCode !== 0) throw new Error(stderr.trim());
 }
