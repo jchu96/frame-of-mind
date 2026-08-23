@@ -1137,6 +1137,7 @@
   hosted lane; the Ubuntu/macOS/Windows fresh-clone matrix remains unchanged.
   The first Linux branch run exposed local workerd D1 writer contention only
   after the synthetic 3-admit/7-reject HTTP burst. The fixture now preserves
-  that concurrent admission proof while deterministically staggering only the
-  admitted fake Workflow starts, separating the spend-cap oracle from
-  SQLite-backed local-runtime scheduling.
+  that concurrent admission proof and its three durable attempts, then stops
+  the fake Workflow Worker before those attempts execute; successful Workflow
+  completion remains covered earlier in both auth modes. This separates the
+  spend-cap oracle from SQLite-backed local-runtime scheduling.
