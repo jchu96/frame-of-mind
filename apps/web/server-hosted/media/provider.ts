@@ -86,13 +86,9 @@ export class HostedGeminiFilesClient {
         && advertised % (256 * 1_024) === 0
       ? advertised
       : 256 * 1_024;
-    const headerName = response.headers.get("x-goog-upload-file-name");
     return {
       uploadUrl,
       partBytes,
-      ...(headerName && FILE_NAME_PATTERN.test(headerName)
-        ? { geminiFileName: headerName }
-        : {}),
     };
   }
 
@@ -176,30 +172,27 @@ export class HostedGeminiFilesClient {
     }
   }
 
-  async abandon(uploadUrl: string, knownName?: string): Promise<void> {
+  async abandon(
+    uploadUrl: string,
+    knownName?: string,
+  ): Promise<"deleted" | "provider_ttl"> {
     this.requireSessionUrl(uploadUrl);
-    let name = knownName;
-    try {
-      const query = await this.query(uploadUrl);
-      name ??= query.geminiFileName;
-    } catch {
-      // A later exact-name delete or session DELETE remains the cleanup path.
+    if (knownName) {
+      await this.deleteFile(knownName);
+      return "deleted";
     }
-    if (name) {
-      await this.deleteFile(name);
-      return;
+    const query = await this.query(uploadUrl);
+    if (query.status === "active") {
+      // Gemini exposes no File identity and no documented resumable-session
+      // revoke before finalize. The D1 state is abandoned immediately and the
+      // opaque provider capability is left to its bounded provider TTL.
+      return "provider_ttl";
     }
-    const response = await fetch(uploadUrl, {
-      method: "DELETE",
-      redirect: "manual",
-      headers: { "content-length": "0" },
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-    });
-    if (!response.ok && response.status !== 404 && response.status !== 410) {
-      throw new HostedGeminiFilesError(
-        `gemini_upload_abandon_http_${response.status}`,
-      );
+    if (!query.geminiFileName) {
+      throw new HostedGeminiFilesError("gemini_upload_final_name_missing");
     }
+    await this.deleteFile(query.geminiFileName);
+    return "deleted";
   }
 
   private requireSessionUrl(value: string): void {

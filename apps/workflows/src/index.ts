@@ -20,6 +20,7 @@ import {
 } from "./contracts.js";
 import {
   createHostedAnalysisProvider,
+  HostedProviderError,
   resolveHostedTranscript,
   type HostedAnalysisProvider,
   type HostedResolvedFile,
@@ -50,6 +51,7 @@ interface Env {
   HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID?: string;
   HOSTED_FAKE_RECEIPT_FAILURE_STEP?: string;
   HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID?: string;
+  HOSTED_FAKE_FILE_MISSING_HASH_MEDIA_ID?: string;
   SENTRY_DSN?: string;
   SENTRY_ENVIRONMENT?: string;
   SENTRY_RELEASE?: string;
@@ -806,10 +808,19 @@ async function providerStep<T>(input: {
         if (error instanceof HostedRepositoryError) {
           return { status: "repository_error", code: error.code };
         }
+        if (error instanceof HostedProviderError) {
+          return { status: "provider_validation_error", code: error.code };
+        }
         return { status: "provider_error", code: "provider_call_failed" };
       }
     },
   );
+  // A provider metadata validation failure is a durable Workflow-step result,
+  // not an ambiguous generation success. Preserve its sanitized fail-closed
+  // code before the generic claim-without-output indeterminacy check.
+  if (result.status === "provider_validation_error") {
+    throw new HostedProviderError(result.code);
+  }
   const durableReceipt = await input.repository.getReceipt(
     input.attempt.principalSub,
     input.attempt.attemptId,
@@ -925,6 +936,9 @@ function terminalFailure(
     if (primaryError.code === "spend_actual_exceeds_reservation") {
       return { stage: "indeterminate", code: primaryError.code };
     }
+    return { stage: "failed", code: primaryError.code };
+  }
+  if (primaryError instanceof HostedProviderError) {
     return { stage: "failed", code: primaryError.code };
   }
   if (primaryError instanceof NonRetryableError) {

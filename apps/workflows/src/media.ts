@@ -34,6 +34,22 @@ export type HostedMediaCreateResponse = z.infer<
   typeof hostedMediaCreateResponseSchema
 >;
 
+export const hostedMediaOpenSessionSchema = hostedMediaCreateResponseSchema.extend({
+  declaredSizeBytes: z.number().int().min(1).max(MAX_MEDIA_BYTES),
+  declaredSha256: sha256Schema,
+  mimeType: supportedMediaMimeTypeSchema,
+  durationSeconds: z.number().finite().positive().max(86_400),
+  retention: z.enum(["ephemeral", "retained"]),
+}).strict();
+
+export type HostedMediaOpenSession = z.infer<
+  typeof hostedMediaOpenSessionSchema
+>;
+
+export const hostedMediaOpenSessionsResponseSchema = z.object({
+  sessions: z.array(hostedMediaOpenSessionSchema).max(100),
+}).strict();
+
 export const hostedMediaUploadStateSchema = z.enum([
   "creating",
   "open",

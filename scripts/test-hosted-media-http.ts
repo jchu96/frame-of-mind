@@ -94,11 +94,30 @@ try {
 
   const capA = await createSession(origin, tokenA, bytes(300_001, 1));
   const capB = await createSession(origin, tokenA, bytes(300_002, 2));
+  assert(fakeFor(capA).name === undefined, "fake Files API exposed a File name before finalize");
   await expectStatus(createResponse(origin, tokenA, bytes(300_003, 3)), 429, "third open session");
   assert(sessions.size === 2, "cap must be enforced before a third provider session starts");
   await cancel(origin, tokenA, capA.mediaId);
+  assert(await uploadState(capA.mediaId) === "abandoned", "pre-final cancel did not abandon D1 state");
+  assert(fakeFor(capA).fileDeleteCalls === 0, "pre-final cancel issued a nonexistent File delete");
+  assert(fakeFor(capA).sessionDeleteCalls === 0, "pre-final cancel issued an unsupported session delete");
+  await expectStatus(sealResponse(origin, tokenA, capA.mediaId), 409, "seal after pre-final cancel");
+  const incompleteSeal = await expectStatus(
+    sealResponse(origin, tokenA, capB.mediaId),
+    409,
+    "incomplete upload seal",
+  );
+  assert(
+    (await incompleteSeal.json() as { data?: { code?: string } }).data?.code
+      === "hosted_media_upload_incomplete",
+    "incomplete seal did not return its stable code",
+  );
   await cancel(origin, tokenA, capB.mediaId);
-  console.log("HOSTED_MEDIA cap=PASS default_test_cap=2 third=429 provider_starts=2");
+  console.log("HOSTED_MEDIA cap=PASS default_test_cap=2 third=429 provider_starts=2 cancel_pre_finalize=provider_ttl incomplete_seal=refused");
+
+  const foreignOpen = await openSessions(origin, tokenB);
+  assert(foreignOpen.length === 0, "open-session listing crossed principal boundaries");
+  await browserRecoveryContract(origin, tokenA);
 
   const recording = bytes(700_123, 19);
   const direct = await createSession(origin, tokenA, recording);
@@ -127,7 +146,9 @@ try {
   const swept = await expectStatus(janitorResponse(origin, tokenA), 200, "expired upload janitor");
   const sweptBody = await swept.json() as { abandoned?: number };
   assert(sweptBody.abandoned === 1, "janitor did not abandon exactly one expired session");
-  assert(fakeFor(abandoned).deleted, "janitor left the provider session present");
+  assert(await uploadState(abandoned.mediaId) === "abandoned", "janitor did not abandon D1 state");
+  assert(fakeFor(abandoned).fileDeleteCalls === 0, "janitor deleted a nonexistent pre-final File");
+  assert(fakeFor(abandoned).sessionDeleteCalls === 0, "janitor issued an unsupported session delete");
 
   const racedBytes = bytes(360_001, 55);
   const raced = await createSession(origin, tokenA, racedBytes);
@@ -176,7 +197,7 @@ interface SessionResponse {
 
 interface FakeSession {
   id: string;
-  name: string;
+  name?: string;
   mediaId: string;
   declared: number;
   mimeType: string;
@@ -184,6 +205,9 @@ interface FakeSession {
   received: number;
   final: boolean;
   deleted: boolean;
+  fileDeleteCalls: number;
+  sessionDeleteCalls: number;
+  queryCount: number;
   mode: "exact" | "size" | "digest" | "missing";
   holdGet?: Deferred<void>;
   getEntered?: Deferred<void>;
@@ -210,28 +234,29 @@ async function fakeFilesFetch(request: Request): Promise<Response> {
     const body = await request.json() as { file?: { display_name?: string } };
     const id = `upload_${++nextSession}`;
     const session: FakeSession = {
-      id, name: `files/f_${id}`, mediaId: body.file?.display_name || "",
+      id, mediaId: body.file?.display_name || "",
       declared: Number(request.headers.get("x-goog-upload-header-content-length")),
       mimeType: request.headers.get("x-goog-upload-header-content-type") || "",
-      chunks: [], received: 0, final: false, deleted: false, mode: "exact",
+      chunks: [], received: 0, final: false, deleted: false,
+      fileDeleteCalls: 0, sessionDeleteCalls: 0, queryCount: 0, mode: "exact",
     };
     sessions.set(id, session);
     return new Response(null, { status: 200, headers: {
       ...cors,
       "x-goog-upload-url": `${filesApiOrigin}/upload/session?upload_protocol=resumable&upload_id=${id}`,
       "x-goog-upload-chunk-granularity": String(256 * 1024),
-      "x-goog-upload-file-name": session.name,
     } });
   }
   if (url.pathname === "/upload/session") {
     const session = sessions.get(url.searchParams.get("upload_id") || "");
     if (!session || session.deleted) return new Response("gone", { status: 410, headers: cors });
     if (request.method === "DELETE") {
-      session.deleted = true;
-      return new Response(null, { status: 204, headers: cors });
+      session.sessionDeleteCalls += 1;
+      return new Response("session revoke unsupported", { status: 405, headers: cors });
     }
     const command = request.headers.get("x-goog-upload-command") || "";
     if (request.method === "PUT" && command === "query") {
+      session.queryCount += 1;
       return new Response(session.final ? JSON.stringify({ file: { name: session.name } }) : null, {
         status: 200,
         headers: { ...cors, "x-goog-upload-size-received": String(session.received), "x-goog-upload-status": session.final ? "final" : "active" },
@@ -248,15 +273,19 @@ async function fakeFilesFetch(request: Request): Promise<Response> {
       if (command.includes("finalize")) {
         if (session.received !== session.declared) return new Response("short", { status: 400, headers: cors });
         session.final = true;
+        session.name = `files/f_${session.id}`;
         return Response.json({ file: { name: session.name } }, { headers: cors });
       }
       return new Response(null, { status: 200, headers: cors });
     }
   }
   const name = url.pathname.replace(/^\/v1beta\//, "");
-  const session = [...sessions.values()].find((candidate) => candidate.name === name);
+  const session = [...sessions.values()].find((candidate) =>
+    candidate.final && candidate.name === name
+  );
   if (session && request.method === "DELETE") {
     assert(request.headers.get("x-goog-api-key") === fixtureKey, "delete omitted Worker API key");
+    session.fileDeleteCalls += 1;
     session.deleted = true;
     return new Response(null, { status: 204, headers: cors });
   }
@@ -350,6 +379,112 @@ async function browserResumeContract(
   }
 }
 
+async function browserRecoveryContract(
+  origin: string,
+  token: string,
+): Promise<void> {
+  const recoveryBytes = bytes(610_123, 81);
+  const blockerBytes = bytes(300_111, 82);
+  const recovery = await createSession(origin, token, recoveryBytes);
+  const blocker = await createSession(origin, token, blockerBytes);
+  const recoveryFake = fakeFor(recovery);
+  const firstPart = recoveryBytes.slice(0, recovery.partBytes);
+  await expectStatus(fetch(recovery.uploadUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": "video/webm",
+      "x-goog-upload-offset": "0",
+      "x-goog-upload-command": "upload",
+    },
+    body: firstPart,
+  }), 200, "browser recovery first part");
+  await expectStatus(
+    createResponse(origin, token, bytes(300_112, 83)),
+    429,
+    "browser recovery full cap",
+  );
+
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({
+      extraHTTPHeaders: { "cf-access-jwt-assertion": token },
+    });
+    let pagehideDeleteObserved = false;
+    const cancelPath = `/api/hosted/media/${recovery.mediaId}`;
+    await context.route(`**${cancelPath}`, async (route) => {
+      if (route.request().method() === "DELETE") {
+        pagehideDeleteObserved = true;
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
+    const first = await context.newPage();
+    await first.addInitScript((draft) => {
+      sessionStorage.setItem(
+        "frame-of-mind:hosted:media-upload:v1",
+        JSON.stringify(draft),
+      );
+    }, {
+      schemaVersion: 1,
+      ...recovery,
+      declaredSizeBytes: recoveryBytes.length,
+      declaredSha256: digestHex(recoveryBytes),
+      mimeType: "video/webm",
+      durationSeconds: 3,
+      retention: "ephemeral",
+      offset: firstPart.length,
+    });
+    await first.goto(`${origin}/hosted/new/recording`);
+    await first.locator("[data-hosted-composer=recording]").waitFor();
+    await first.getByText(
+      "An unfinished upload was found. Reselect the same recording to resume.",
+    ).waitFor();
+    await first.evaluate(() => {
+      window.dispatchEvent(new PageTransitionEvent("pagehide"));
+    });
+    for (let attempt = 0; attempt < 50 && !pagehideDeleteObserved; attempt += 1) {
+      await Bun.sleep(20);
+    }
+    assert(pagehideDeleteObserved, "pagehide did not send a keepalive DELETE");
+    await first.close();
+    await context.unroute(`**${cancelPath}`);
+
+    const second = await context.newPage();
+    await second.goto(`${origin}/hosted/new/recording`);
+    const recovered = second.locator(
+      `[data-hosted-open-session="${recovery.mediaId}"]`,
+    );
+    await recovered.waitFor();
+    assert(
+      await recovered.locator(`[data-hosted-resume-session="${recovery.mediaId}"]`).count() === 1,
+      "recovered session omitted Resume",
+    );
+    assert(
+      await recovered.locator(`[data-hosted-discard-session="${recovery.mediaId}"]`).count() === 1,
+      "recovered session omitted Discard",
+    );
+    const queriesBeforeResume = recoveryFake.queryCount;
+    await recovered.locator(`[data-hosted-resume-session="${recovery.mediaId}"]`).click();
+    await second.getByText("Reselect the same recording to resume.").waitFor();
+    assert(
+      recoveryFake.queryCount > queriesBeforeResume,
+      "Resume did not query the authoritative provider offset",
+    );
+    await second.getByRole("button", { name: "Cancel upload" }).click();
+    await second.getByText("Upload session abandoned and browser receipt cleared.").waitFor();
+    assert(await uploadState(recovery.mediaId) === "abandoned", "Discard did not abandon recovered D1 state");
+    assert(recoveryFake.fileDeleteCalls === 0, "Discard deleted a nonexistent pre-final File");
+    const admitted = await createSession(origin, token, bytes(300_113, 84));
+    await cancel(origin, token, admitted.mediaId);
+    await cancel(origin, token, blocker.mediaId);
+    await context.close();
+    console.log("HOSTED_MEDIA recovery=PASS pagehide=true resume=true discard=true cap_released=true");
+  } finally {
+    await browser.close();
+  }
+}
+
 async function rejectionCase(
   origin: string,
   token: string,
@@ -413,6 +548,16 @@ async function cancel(origin: string, token: string, mediaId: string): Promise<v
   }), 200, "cancel upload session");
 }
 
+async function openSessions(
+  origin: string,
+  token: string,
+): Promise<Array<{ mediaId: string }>> {
+  const response = await expectStatus(fetch(`${origin}/api/hosted/media?state=open`, {
+    headers: { "cf-access-jwt-assertion": token },
+  }), 200, "list open upload sessions");
+  return (await response.json() as { sessions: Array<{ mediaId: string }> }).sessions;
+}
+
 function mutationHeaders(origin: string, token: string): Record<string, string> {
   return { "content-type": "application/json", origin, "cf-access-jwt-assertion": token };
 }
@@ -428,6 +573,14 @@ async function expire(mediaId: string): Promise<void> {
   await d1Execute(
     `UPDATE hosted_media_upload_sessions SET session_expires_at = '2020-01-01T00:00:00.000Z' WHERE media_id = '${mediaId}'`,
   );
+}
+
+async function uploadState(mediaId: string): Promise<string | undefined> {
+  const result = await d1Json(
+    `SELECT state FROM hosted_media_upload_sessions WHERE media_id = '${mediaId}'`,
+  );
+  const state = result[0]?.results?.[0]?.state;
+  return typeof state === "string" ? state : undefined;
 }
 
 async function countReceipts(mediaId: string): Promise<number> {

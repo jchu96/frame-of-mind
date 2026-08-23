@@ -43,6 +43,7 @@ const crashMedia = "media_hosted_crash_0001";
 const cancelMedia = "media_hosted_cancel_0001";
 const overrunMedia = "media_hosted_overrun_0001";
 const janitorMedia = "media_hosted_janitor_0001";
+const missingHashMedia = "media_hosted_missing_hash_0001";
 const janitorAttempt = "attempt_hosted_janitor_0001";
 const mediaSha256 = "a".repeat(64);
 const contractSpendPlan = hostedSpendEstimator.estimate(1, {
@@ -200,6 +201,7 @@ try {
       HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID: crashMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_STEP: "transcribe",
       HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID: overrunMedia,
+      HOSTED_FAKE_FILE_MISSING_HASH_MEDIA_ID: missingHashMedia,
     },
   }, null, 2));
   await runChecked([
@@ -552,6 +554,26 @@ try {
   }), 404, "cross-principal composer create with foreign media");
   console.log("HOSTED_WORKFLOW principal_isolation=PASS activity_media_run_foreign_ids=404 create_with_foreign_media=404");
 
+  const missingHash = await createJob(
+    baseUrl,
+    tokenB,
+    missingHashMedia,
+    "missing-hash-submit-key",
+  );
+  const missingHashTerminal = await waitForTerminal(
+    baseUrl,
+    tokenB,
+    missingHash.job.id,
+  );
+  assertEqual(missingHashTerminal.job.stage, "failed", "missing hash terminal stage");
+  assertEqual(
+    missingHashTerminal.job.errorCode,
+    "media_seal_mismatch",
+    "missing hash sanitized terminal code",
+  );
+  assertEqual(missingHashTerminal.job.runId, undefined, "missing hash publication blocked");
+  console.log("HOSTED_WORKFLOW missing_provider_hash=PASS failed_closed=media_seal_mismatch");
+
   const canceled = await createJob(baseUrl, tokenA, cancelMedia, "cancel-submit-key");
   await expectStatus(fetch(`${baseUrl}/api/hosted/jobs/${canceled.job.id}/cancel`, {
     method: "POST",
@@ -812,6 +834,7 @@ async function verifyRealAdapterContract(): Promise<void> {
     geminiFileName: `files/adapter_${suffix}`,
     geminiFileUri: `https://generativelanguage.googleapis.test/v1beta/files/adapter_${suffix}`,
     sha256: mediaSha256,
+    sizeBytes: 1024,
     mimeType: "video/mp4",
     retention: "ephemeral",
     durationSeconds: 1,
@@ -878,12 +901,13 @@ function seedSql(): string {
     { principal: principalRace, mediaId: cancelMedia, retention: "retained", expiresAt },
     { principal: principalOverrun, mediaId: overrunMedia, retention: "retained", expiresAt },
     { principal: principalJanitor, mediaId: janitorMedia, retention: "retained", expiresAt: expiredAt },
+    { principal: principalB, mediaId: missingHashMedia, retention: "retained", expiresAt },
   ];
   const mediaRows = mediaFixtures.map(({ principal, mediaId, retention, expiresAt: mediaExpiresAt }) =>
       `('${principal}','${mediaId}','files/${mediaId}',`
       + `'https://generativelanguage.googleapis.test/v1beta/files/${mediaId}',`
       + `'${mediaSha256}','video/mp4','${retention}',`
-      + `'${sealedAt}','${mediaExpiresAt}',1)`
+      + `'${sealedAt}','${mediaExpiresAt}',1,1024)`
   );
   const janitorInput = JSON.stringify({
     mediaId: janitorMedia,
@@ -910,7 +934,7 @@ function seedSql(): string {
       ('${principalJanitor}', 'seat@example.test', ${contractSpendPlan.estimatedTokens}, 0, '${sealedAt}');
     INSERT INTO hosted_media_receipts (
       principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
-      mime_type, retention, sealed_at, expires_at, duration_seconds
+      mime_type, retention, sealed_at, expires_at, duration_seconds, size_bytes
     ) VALUES ${mediaRows.join(",\n")};
     INSERT INTO hosted_analysis_jobs (
       principal_sub, job_id, principal_email, media_id, created_at

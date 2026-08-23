@@ -1,6 +1,9 @@
 import {
   hostedMediaCreateResponseSchema,
+  hostedMediaOpenSessionSchema,
+  hostedMediaOpenSessionsResponseSchema,
   type HostedMediaCreateResponse,
+  type HostedMediaOpenSession,
 } from "../../../workflows/src/media.js";
 import type { HostedMediaView } from "../../../workflows/src/contracts.js";
 import { validateRecordingFile } from "../../app/studio/media-upload.js";
@@ -31,25 +34,32 @@ export function loadHostedMediaDraft(
     const raw = storage.getItem(HOSTED_MEDIA_DRAFT_KEY);
     if (!raw) return undefined;
     const value = JSON.parse(raw) as Partial<HostedMediaDraft>;
-    const response = hostedMediaCreateResponseSchema.safeParse(value);
+    const response = hostedMediaOpenSessionSchema.safeParse({
+      mediaId: value.mediaId,
+      uploadUrl: value.uploadUrl,
+      partBytes: value.partBytes,
+      sessionExpiresAt: value.sessionExpiresAt,
+      declaredSizeBytes: value.declaredSizeBytes,
+      declaredSha256: value.declaredSha256,
+      mimeType: value.mimeType,
+      durationSeconds: value.durationSeconds,
+      retention: value.retention,
+    });
     if (
       value.schemaVersion !== 1
       || !response.success
       || !Number.isSafeInteger(value.offset)
       || (value.offset as number) < 0
       || (value.offset as number) > (value.declaredSizeBytes ?? -1)
-      || typeof value.declaredSha256 !== "string"
-      || !/^[a-f0-9]{64}$/.test(value.declaredSha256)
-      || !["video/mp4", "video/quicktime", "video/webm"].includes(
-        value.mimeType ?? "",
-      )
-      || typeof value.durationSeconds !== "number"
-      || !["ephemeral", "retained"].includes(value.retention ?? "")
     ) {
       storage.removeItem(HOSTED_MEDIA_DRAFT_KEY);
       return undefined;
     }
-    return value as HostedMediaDraft;
+    return {
+      schemaVersion: 1,
+      ...response.data,
+      offset: value.offset as number,
+    };
   } catch {
     return undefined;
   }
@@ -187,6 +197,28 @@ export async function createHostedMedia(
   return { schemaVersion: 1, ...declaration, ...session, offset: 0 };
 }
 
+export async function listOpenHostedMedia(): Promise<HostedMediaOpenSession[]> {
+  const value = await sameOriginJson("/api/hosted/media?state=open", {
+    method: "GET",
+  });
+  return hostedMediaOpenSessionsResponseSchema.parse(value).sessions;
+}
+
+export async function resumeHostedMedia(
+  session: HostedMediaOpenSession,
+  signal?: AbortSignal,
+): Promise<HostedMediaDraft> {
+  const draft: HostedMediaDraft = {
+    schemaVersion: 1,
+    ...session,
+    offset: 0,
+  };
+  return {
+    ...draft,
+    offset: await queryHostedUploadOffset(draft, signal),
+  };
+}
+
 export async function sealHostedMedia(
   mediaId: string,
   signal?: AbortSignal,
@@ -210,6 +242,21 @@ export async function cancelHostedMedia(mediaId: string): Promise<void> {
     headers: { "content-type": "application/json" },
     body: "{}",
   });
+}
+
+export function abandonHostedMediaOnExit(mediaId: string): boolean {
+  try {
+    void fetch(`/api/hosted/media/${encodeURIComponent(mediaId)}`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+      credentials: "same-origin",
+      keepalive: true,
+    }).catch(() => undefined);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function mediaDurationSeconds(file: File): Promise<number> {

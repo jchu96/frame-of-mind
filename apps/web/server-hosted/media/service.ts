@@ -3,6 +3,7 @@ import { HostedMediaRepository } from "../../../workflows/src/media-repository.j
 import type {
   HostedMediaCreateRequest,
   HostedMediaCreateResponse,
+  HostedMediaOpenSession,
   HostedMediaUploadSession,
 } from "../../../workflows/src/media.js";
 import { HostedWorkflowRepository } from "../../../workflows/src/repository.js";
@@ -84,16 +85,17 @@ export class HostedMediaService {
         updatedAt: new Date().toISOString(),
       });
     } catch (error) {
-      await this.uploads.markCleanupFailed(
-        principalSub,
-        mediaId,
-        new Date().toISOString(),
-      );
-      if (started) {
-        await this.provider.abandon(
-          started.uploadUrl,
-          started.geminiFileName,
-        ).catch(() => undefined);
+      const failedAt = new Date().toISOString();
+      try {
+        if (started) {
+          await this.provider.abandon(
+            started.uploadUrl,
+            started.geminiFileName,
+          );
+        }
+        await this.uploads.abandon(principalSub, mediaId, failedAt);
+      } catch {
+        await this.uploads.markCleanupFailed(principalSub, mediaId, failedAt);
       }
       throw error;
     }
@@ -161,6 +163,29 @@ export class HostedMediaService {
       sealedAt: now,
       expiresAt,
     });
+  }
+
+  async listOpen(principalSub: string): Promise<HostedMediaOpenSession[]> {
+    const sessions = await this.uploads.listOpen(
+      principalSub,
+      new Date().toISOString(),
+    );
+    return await Promise.all(sessions.map(async (session) => {
+      if (!session.providerPartBytes) {
+        throw new HostedMediaServiceError("hosted_media_capability_missing");
+      }
+      return {
+        mediaId: opaqueIdSchema.parse(session.mediaId),
+        uploadUrl: await this.decryptSessionUrl(session),
+        partBytes: session.providerPartBytes,
+        sessionExpiresAt: session.sessionExpiresAt,
+        declaredSizeBytes: session.declaredSizeBytes,
+        declaredSha256: session.declaredSha256,
+        mimeType: session.mimeType,
+        durationSeconds: session.durationSeconds,
+        retention: session.retention,
+      };
+    }));
   }
 
   async cancel(principalSub: string, mediaId: string): Promise<void> {

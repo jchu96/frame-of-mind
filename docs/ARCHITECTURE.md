@@ -766,8 +766,14 @@ bounded `Blob.slice()` ranges; browser code uploads sequentially to Gemini,
 persists a tab-scoped confirmed offset, and queries provider offset after a
 reload. Seal is the authority transition: the Worker requires exact provider
 size, MIME, and present digest before it writes the sealed-media receipt
-consumed by `ensure_gemini_file`. Cancel and the media janitor remove unsealed
-provider state. The delegating Cloudflare entry never carries recording bytes.
+consumed by `ensure_gemini_file`, which rechecks the same size and digest before
+analysis. A finalized File has an exact identity and can be deleted. Before
+finalize, Gemini exposes neither a File name nor a documented session-revoke
+operation, so cancel and the media janitor abandon the D1 row immediately,
+refuse later sealing, and rely on the provider's bounded session TTL. The
+delegating Cloudflare entry never carries recording bytes. A principal can list
+its own unexpired open sessions to resume or discard them after losing tab-local
+state; page exit also sends a best-effort keepalive DELETE.
 
 Phase 5a adds two ports without changing the local `AnalysisJobExecutor`.
 Creation derives a versioned estimated-token plan from sealed media duration,

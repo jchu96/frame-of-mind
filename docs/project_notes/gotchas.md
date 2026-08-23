@@ -216,6 +216,12 @@
 - Per-tab session storage is a resume convenience, never retention authority.
   Every staged copy needs a server-owned expiry that survives tab closure and
   storage denial.
+- Gemini resumable upload start does not yield a File name, and the documented
+  [Files API](https://ai.google.dev/gemini-api/docs/files) has no pre-finalize
+  session revoke. Never invent a File delete or report
+  `cleanup_failed` for that normal state: abandon the principal-bound D1 row,
+  refuse seal, and rely on the bounded provider TTL. Principal-scoped open-list
+  recovery covers lost best-effort page-exit cancellation.
 - Server-owned expiry is incomplete if it runs only at startup. A long-lived
   local server needs a non-overlapping periodic sweep owned and stopped by the
   Nitro lifecycle. That sweep must acquire the same per-session ownership as

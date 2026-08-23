@@ -46,18 +46,8 @@ export function getHostedMediaRuntime(event: H3Event): {
   service: HostedMediaService;
   principalSub: string;
 } {
+  const principalSub = getHostedMediaPrincipal(event);
   const config = useRuntimeConfig(event);
-  if (config.hostedWorkflowsEnabled !== true) {
-    throw createError({ statusCode: 404, statusMessage: "Not found." });
-  }
-  const principal = event.context.frameOfMindPrincipal;
-  if (!principal || principal.principal.startsWith("service:")) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: "A user principal is required.",
-      data: { code: "user_principal_required" },
-    });
-  }
   const environment = event.context.cloudflare?.env as
     | Record<string, unknown>
     | undefined;
@@ -91,7 +81,7 @@ export function getHostedMediaRuntime(event: H3Event): {
     ? environment.HOSTED_GEMINI_FILES_BASE_URL
     : undefined;
   return {
-    principalSub: principal.principal,
+    principalSub,
     service: new HostedMediaService(
       database as ConstructorParameters<typeof HostedMediaService>[0],
       new HostedGeminiFilesClient(apiKey, origin),
@@ -99,6 +89,22 @@ export function getHostedMediaRuntime(event: H3Event): {
       { openSessionCap, maxBytes, sessionTtlSeconds },
     ),
   };
+}
+
+export function getHostedMediaPrincipal(event: H3Event): string {
+  const config = useRuntimeConfig(event);
+  if (config.hostedWorkflowsEnabled !== true) {
+    throw createError({ statusCode: 404, statusMessage: "Not found." });
+  }
+  const principal = event.context.frameOfMindPrincipal;
+  if (!principal || principal.principal.startsWith("service:")) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: "A user principal is required.",
+      data: { code: "user_principal_required" },
+    });
+  }
+  return principal.principal;
 }
 
 export function throwHostedMediaHttpError(error: unknown): never {

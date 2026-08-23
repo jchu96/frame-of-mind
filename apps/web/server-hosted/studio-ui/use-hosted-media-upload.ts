@@ -11,17 +11,21 @@ import {
   persistMediaResumeReceipt,
 } from "../../app/studio/media-upload.js";
 import type { HostedMediaView } from "../../../workflows/src/contracts.js";
+import type { HostedMediaOpenSession } from "../../../workflows/src/media.js";
 import { hostedStorage } from "./hosted-adapter.js";
 import {
   HostedMediaClientError,
+  abandonHostedMediaOnExit,
   cancelHostedMedia,
   clearHostedMediaDraft,
   createHostedMedia,
   hashHostedRecording,
+  listOpenHostedMedia,
   loadHostedMediaDraft,
   mediaDurationSeconds,
   persistHostedMediaDraft,
   queryHostedUploadOffset,
+  resumeHostedMedia,
   sealHostedMedia,
   uploadHostedRecording,
   validateHostedRecording,
@@ -35,6 +39,7 @@ export type HostedMediaPhase =
   | "selected"
   | "hashing"
   | "creating"
+  | "open-session-choice"
   | "reselect-required"
   | "ready-to-resume"
   | "uploading"
@@ -46,10 +51,20 @@ export type HostedMediaPhase =
   | "failed";
 
 export function useHostedMediaUpload() {
+  const browser = globalThis as unknown as {
+    addEventListener(type: "pagehide", listener: () => void): void;
+    removeEventListener(type: "pagehide", listener: () => void): void;
+    document: {
+      visibilityState: string;
+      addEventListener(type: "visibilitychange", listener: () => void): void;
+      removeEventListener(type: "visibilitychange", listener: () => void): void;
+    };
+  };
   const storage = typeof sessionStorage === "undefined" ? undefined : sessionStorage;
   const file = shallowRef<File | null>(null);
   const draft = shallowRef<HostedMediaDraft>();
   const media = shallowRef<HostedMediaView>();
+  const openSessions = shallowRef<HostedMediaOpenSession[]>([]);
   const phase = ref<HostedMediaPhase>("idle");
   const retention = ref<"ephemeral" | "retained">("ephemeral");
   const fieldError = ref<string>();
@@ -58,6 +73,7 @@ export function useHostedMediaUpload() {
   const hashBytes = ref(0);
   let controller: AbortController | undefined;
   let active: Promise<void> | undefined;
+  const exitAbandons = new Set<string>();
 
   const busy = computed(() => [
     "restoring", "hashing", "creating", "uploading", "sealing", "canceling",
@@ -68,6 +84,7 @@ export function useHostedMediaUpload() {
     if (phase.value === "selected") return "Recording selected. Start when the retention choice is correct.";
     if (phase.value === "hashing") return `Hashing ${hashBytes.value.toLocaleString()} of ${totalBytes.value.toLocaleString()} bytes in the browser.`;
     if (phase.value === "creating") return "Opening one short-lived Gemini upload session.";
+    if (phase.value === "open-session-choice") return "Choose whether to resume or discard an unfinished upload from this account.";
     if (phase.value === "reselect-required") return "An unfinished upload was found. Reselect the same recording to resume.";
     if (phase.value === "ready-to-resume") return "Recording metadata matches. Resume to verify its digest and provider offset.";
     if (phase.value === "uploading") return `${progressBytes.value.toLocaleString()} of ${totalBytes.value.toLocaleString()} bytes sent.`;
@@ -113,29 +130,101 @@ export function useHostedMediaUpload() {
   async function restore(): Promise<void> {
     if (!storage) return;
     phase.value = "restoring";
-    draft.value = loadHostedMediaDraft(storage);
+    const storedDraft = loadHostedMediaDraft(storage);
+    if (!storedDraft) {
+      const sealed = loadMediaResumeReceipt(hostedStorage(storage)).mediaSessionId;
+      if (sealed) {
+        try {
+          const response = await fetch(
+            `/api/hosted/media/${encodeURIComponent(sealed)}`,
+            { credentials: "same-origin" },
+          );
+          if (!response.ok) throw new Error("unavailable");
+          const value = await response.json() as { media?: HostedMediaView };
+          if (!value.media) throw new Error("invalid");
+          media.value = value.media;
+          phase.value = "sealed";
+          return;
+        } catch {
+          clearMediaResumeReceipt(hostedStorage(storage));
+        }
+      }
+    }
+    try {
+      openSessions.value = await listOpenHostedMedia();
+    } catch (error) {
+      operationError.value = error instanceof HostedMediaClientError
+        ? error.message
+        : "Hosted Studio could not recover unfinished uploads.";
+      phase.value = "failed";
+      return;
+    }
+    const serverDraft = storedDraft
+      ? openSessions.value.find((session) => session.mediaId === storedDraft.mediaId)
+      : undefined;
+    if (storedDraft && !serverDraft) clearHostedMediaDraft(storage);
+    draft.value = storedDraft && serverDraft
+      ? { schemaVersion: 1, ...serverDraft, offset: storedDraft.offset }
+      : undefined;
     if (draft.value) {
+      persistHostedMediaDraft(storage, draft.value);
       progressBytes.value = draft.value.offset;
       retention.value = draft.value.retention;
       phase.value = "reselect-required";
       return;
     }
-    const sealed = loadMediaResumeReceipt(hostedStorage(storage)).mediaSessionId;
-    if (!sealed) {
-      phase.value = "idle";
+    if (openSessions.value.length > 0) {
+      phase.value = "open-session-choice";
       return;
     }
-    try {
-      const response = await fetch(`/api/hosted/media/${encodeURIComponent(sealed)}`, { credentials: "same-origin" });
-      if (!response.ok) throw new Error("unavailable");
-      const value = await response.json() as { media?: HostedMediaView };
-      if (!value.media) throw new Error("invalid");
-      media.value = value.media;
-      phase.value = "sealed";
-    } catch {
-      clearMediaResumeReceipt(hostedStorage(storage));
-      phase.value = "idle";
-    }
+    phase.value = "idle";
+  }
+
+  async function resumeOpenSession(session: HostedMediaOpenSession): Promise<void> {
+    if (!storage || active) return;
+    return await runExclusive(async () => {
+      controller = new AbortController();
+      operationError.value = undefined;
+      try {
+        draft.value = await resumeHostedMedia(session, controller.signal);
+        persistHostedMediaDraft(storage, draft.value);
+        progressBytes.value = draft.value.offset;
+        retention.value = draft.value.retention;
+        openSessions.value = openSessions.value.filter(
+          (candidate) => candidate.mediaId !== session.mediaId,
+        );
+        phase.value = "reselect-required";
+      } catch (error) {
+        operationError.value = error instanceof HostedMediaClientError
+          ? error.message
+          : "Hosted Studio could not resume this upload session.";
+        phase.value = "failed";
+      } finally {
+        controller = undefined;
+      }
+    });
+  }
+
+  async function discardOpenSession(session: HostedMediaOpenSession): Promise<void> {
+    if (active) return;
+    return await runExclusive(async () => {
+      phase.value = "canceling";
+      operationError.value = undefined;
+      try {
+        await cancelHostedMedia(session.mediaId);
+        openSessions.value = openSessions.value.filter(
+          (candidate) => candidate.mediaId !== session.mediaId,
+        );
+        phase.value = openSessions.value.length > 0
+          ? "open-session-choice"
+          : "abandoned";
+      } catch (error) {
+        operationError.value = error instanceof HostedMediaClientError
+          ? error.message
+          : "Hosted Studio could not discard this upload session.";
+        phase.value = "failed";
+      }
+    });
   }
 
   function runExclusive(work: () => Promise<void>): Promise<void> {
@@ -210,8 +299,12 @@ export function useHostedMediaUpload() {
         phase.value = "sealed";
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          await reconcileOffset();
-          phase.value = "paused";
+          if (phase.value === "abandoned") {
+            phase.value = "abandoned";
+          } else {
+            await reconcileOffset();
+            phase.value = "paused";
+          }
         } else {
           operationError.value = error instanceof HostedMediaClientError
             ? error.message
@@ -261,11 +354,40 @@ export function useHostedMediaUpload() {
     });
   }
 
-  onMounted(() => { void restore(); });
-  onBeforeUnmount(() => controller?.abort());
+  function abandonForPageExit(): void {
+    const current = draft.value;
+    if (
+      !current
+      || ["sealed", "canceling", "abandoned"].includes(phase.value)
+      || exitAbandons.has(current.mediaId)
+    ) return;
+    exitAbandons.add(current.mediaId);
+    controller?.abort();
+    if (storage) clearHostedMediaDraft(storage);
+    abandonHostedMediaOnExit(current.mediaId);
+    draft.value = undefined;
+    file.value = null;
+    phase.value = "abandoned";
+  }
+
+  function onVisibilityChange(): void {
+    if (browser.document.visibilityState === "hidden") abandonForPageExit();
+  }
+
+  onMounted(() => {
+    browser.addEventListener("pagehide", abandonForPageExit);
+    browser.document.addEventListener("visibilitychange", onVisibilityChange);
+    void restore();
+  });
+  onBeforeUnmount(() => {
+    browser.removeEventListener("pagehide", abandonForPageExit);
+    browser.document.removeEventListener("visibilitychange", onVisibilityChange);
+    abandonForPageExit();
+  });
 
   return {
-    busy, cancel, draft, fieldError, fileModel, media, operationError, pause,
-    phase, progressBytes, retention, start, statusMessage, totalBytes,
+    busy, cancel, discardOpenSession, draft, fieldError, fileModel, media,
+    openSessions, operationError, pause, phase, progressBytes, resumeOpenSession,
+    retention, start, statusMessage, totalBytes,
   };
 }
