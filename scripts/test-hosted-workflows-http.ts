@@ -12,6 +12,7 @@ import type { SealedHostedMediaReceipt } from "../apps/workflows/src/contracts";
 import {
   GeminiHostedAnalysisProvider,
 } from "../apps/workflows/src/provider";
+import { listBuiltInRecipes } from "../src/recipes";
 import { hostedSpendEstimator } from "../apps/workflows/src/spend";
 import { createE2EEnvironment } from "./e2e-environment";
 import {
@@ -44,6 +45,10 @@ const cancelMedia = "media_hosted_cancel_0001";
 const overrunMedia = "media_hosted_overrun_0001";
 const janitorMedia = "media_hosted_janitor_0001";
 const janitorAttempt = "attempt_hosted_janitor_0001";
+const recipeStartMedia = listBuiltInRecipes().map((recipe, index) => ({
+  recipeId: recipe.id,
+  mediaId: `media_recipe_start_${String(index + 1).padStart(2, "0")}`,
+}));
 const mediaSha256 = "a".repeat(64);
 const contractSpendPlan = hostedSpendEstimator.estimate(1, {
   videoTokensPerSecond: 300,
@@ -202,6 +207,8 @@ try {
       HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID: crashMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_STEP: "transcribe",
       HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID: overrunMedia,
+      HOSTED_FAKE_STAGE_DELAY_MS: "3000",
+      HOSTED_FAKE_STAGE_DELAY_MEDIA_ID: normalMedia,
     },
   }, null, 2));
   await runChecked([
@@ -495,6 +502,37 @@ try {
     "foreign activity list",
   ));
   assertEqual(listB.jobs, [], "foreign activity list isolation");
+  const hostedCatalog = await json<{
+    recipes: Array<{ id: string; revision: string }>;
+  }>(await expectStatus(
+    authenticatedFetch(baseUrl, "/api/hosted/recipes", tokenB),
+    200,
+    "hosted built-in recipe catalog",
+  ));
+  assertEqual(
+    hostedCatalog.recipes.map((recipe) => recipe.id),
+    listBuiltInRecipes().map((recipe) => recipe.id),
+    "hosted built-in recipe IDs",
+  );
+  for (const fixture of recipeStartMedia) {
+    const catalogRecipe = hostedCatalog.recipes.find(
+      (recipe) => recipe.id === fixture.recipeId,
+    );
+    if (!catalogRecipe) {
+      throw new Error(`Hosted catalog omitted built-in recipe ${fixture.recipeId}.`);
+    }
+    const started = await json<JobResponse>(await expectStatus(composerJobResponse(
+      baseUrl,
+      tokenB,
+      fixture.mediaId,
+      `recipe-start-${fixture.recipeId}`,
+      fixture.recipeId,
+      catalogRecipe.revision,
+    ), 201, `start built-in recipe ${fixture.recipeId}`));
+    const terminal = await waitForTerminal(baseUrl, tokenB, started.job.id);
+    assertEqual(terminal.job.stage, "succeeded", `complete built-in recipe ${fixture.recipeId}`);
+  }
+  console.log("HOSTED_WORKFLOW recipes=PASS every_built_in_started_from_catalog_receipt");
   await expectStatus(
     authenticatedFetch(baseUrl, `/api/hosted/jobs/${normal.job.id}`, tokenB),
     404,
@@ -898,6 +936,12 @@ function seedSql(): string {
     { principal: principalRace, mediaId: cancelMedia, retention: "retained", expiresAt },
     { principal: principalOverrun, mediaId: overrunMedia, retention: "retained", expiresAt },
     { principal: principalJanitor, mediaId: janitorMedia, retention: "retained", expiresAt: expiredAt },
+    ...recipeStartMedia.map(({ mediaId }) => ({
+      principal: principalB,
+      mediaId,
+      retention: "retained",
+      expiresAt,
+    })),
   ];
   const mediaRows = mediaFixtures.map(({ principal, mediaId, retention, expiresAt: mediaExpiresAt }) =>
       `('${principal}','${mediaId}','files/${mediaId}',`
@@ -924,7 +968,7 @@ function seedSql(): string {
       principal_sub, principal_email, cap_units, committed_units, updated_at
     ) VALUES
       ('${principalA}', 'seat@example.test', ${principalACapUnits}, 0, '${sealedAt}'),
-      ('${principalB}', 'seat@example.test', ${principalACapUnits}, 0, '${sealedAt}'),
+      ('${principalB}', 'seat@example.test', ${contractSpendPlan.estimatedTokens * recipeStartMedia.length}, 0, '${sealedAt}'),
       ('${principalRace}', 'seat@example.test', ${raceCapUnits}, 0, '${sealedAt}'),
       ('${principalOverrun}', 'seat@example.test', ${contractSpendPlan.estimatedTokens * 2}, 0, '${sealedAt}'),
       ('${principalJanitor}', 'seat@example.test', ${contractSpendPlan.estimatedTokens}, 0, '${sealedAt}');
@@ -962,7 +1006,7 @@ async function verifyHostedBrowserContract(
   token: string,
   mediaId: string,
 ): Promise<void> {
-  const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-1");
+  const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-2");
   const captureScreenshots = hostedContractAuthMode === "cloudflare-access";
   if (captureScreenshots) {
     await rm(screenshotRoot, { recursive: true, force: true });
@@ -980,7 +1024,15 @@ async function verifyHostedBrowserContract(
       }));
     }
     const page = await context.newPage();
+    const hydrationMismatches: string[] = [];
+    page.on("console", (message) => {
+      if (message.text().toLowerCase().includes("hydration")
+        && message.text().toLowerCase().includes("mismatch")) {
+        hydrationMismatches.push(message.text());
+      }
+    });
     const capture = async (name: string): Promise<void> => {
+      assertEqual(await page.locator("h1").count(), 1, `${name} single h1`);
       if (!captureScreenshots) return;
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.screenshot({ path: join(screenshotRoot, `${name}-desktop.png`), fullPage: true });
@@ -991,11 +1043,47 @@ async function verifyHostedBrowserContract(
     await page.goto(`${origin}/hosted/new/intent`);
     await capture("01-intent-empty");
     assertEqual(await page.getByRole("navigation").count(), 1, "single hosted navigation landmark");
-    const runStep = page.locator("[data-slot=item]").filter({ hasText: "RunAdd a recording first" }).getByRole("button");
+    assertEqual(await page.getByRole("group", { name: "New analysis progress" }).count(), 1, "single composer progress group");
+    assertEqual(await page.locator("[data-composer-step]").count(), 3, "three composer steps");
+    const announcedSteps = await page.locator("[data-composer-step]").evaluateAll((steps) =>
+      steps.map((step) => ({
+        visible: step.querySelector("[aria-hidden=true]")?.textContent?.trim(),
+        announced: step.querySelector(".sr-only")?.textContent?.trim(),
+      }))
+    );
+    assertEqual(announcedSteps, [
+      { visible: "1", announced: "Step 1 of 3:" },
+      { visible: "2", announced: "Step 2 of 3:" },
+      { visible: "3", announced: "Step 3 of 3:" },
+    ], "visible and announced composer step numbers");
+    const runStep = page.locator("[data-composer-step=run]");
     assertEqual(await runStep.isDisabled(), true, "Run step disabled before prerequisites");
     await runStep.click({ force: true });
     assertEqual(new URL(page.url()).pathname, "/hosted/new/intent", "disabled Run stays on Intent");
-    await page.getByText("Complete Intent and add a recording before Run.").waitFor();
+    const skipLink = page.getByRole("link", { name: "Skip to content" });
+    await skipLink.focus();
+    const skipBox = await skipLink.boundingBox();
+    if (!skipBox || skipBox.width < 80 || skipBox.height < 20) {
+      throw new Error("Focused skip link did not become visibly usable.");
+    }
+    await page.keyboard.press("Escape");
+    const goalCards = page.locator("[aria-label^='Choose ']");
+    const firstGoalBox = await goalCards.nth(0).boundingBox();
+    const secondGoalBox = await goalCards.nth(1).boundingBox();
+    if (!firstGoalBox || !secondGoalBox || firstGoalBox.y !== secondGoalBox.y) {
+      throw new Error("Intent goals did not render two-up at the desktop breakpoint.");
+    }
+    await goalCards.first().hover();
+    const hoverRing = await goalCards.first().evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        shadow: style.getPropertyValue("--tw-ring-shadow"),
+        color: style.getPropertyValue("--tw-ring-color"),
+      };
+    });
+    if (!hoverRing.shadow.includes("2px") || !hoverRing.color.trim()) {
+      throw new Error("Intent goal hover ring was not emitted by the hosted Tailwind build.");
+    }
     await page.goto(`${origin}/hosted/new/run`);
     await page.waitForURL(/\/hosted\/new\/intent\?reason=/);
     await page.getByText("Complete Intent before opening Run.").waitFor();
@@ -1003,13 +1091,21 @@ async function verifyHostedBrowserContract(
     await focus.waitFor();
     await focus.fill("Only the billing bug");
     await page.getByRole("button", { name: /Issue review/ }).click();
+    const selectedRing = await page.getByRole("button", { name: "Choose Issue review" }).evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        shadow: style.getPropertyValue("--tw-ring-shadow"),
+        color: style.getPropertyValue("--tw-ring-color"),
+      };
+    });
+    if (!selectedRing.shadow.includes("2px") || !selectedRing.color.trim()) {
+      throw new Error("Selected Intent goal ring was not emitted by the hosted Tailwind build.");
+    }
     await capture("02-intent-selected");
-    await page.goto(`${origin}/hosted/new/context`);
-    await page.getByRole("heading", { name: "Sources", level: 1 }).waitFor();
-    await capture("03-context");
-    await page.getByRole("link", { name: "Continue" }).click();
-    await page.waitForURL(/\/hosted\/new\/recording$/);
-    await capture("04-recording-empty");
+    await page.goto(`${origin}/hosted/new/run`);
+    await page.waitForURL(/\/hosted\/new\/recording\?reason=/);
+    await page.getByText("Add a recording before Review & start.").waitFor();
+    await capture("03-recording-empty");
     await page.evaluate((id) => {
       sessionStorage.setItem(
         "hosted:frame-of-mind:studio:media-upload",
@@ -1018,13 +1114,14 @@ async function verifyHostedBrowserContract(
     }, mediaId);
     await page.reload();
     await page.locator("[data-hosted-media-ready=true]").waitFor();
-    await capture("05-recording-ready");
+    await capture("04-recording-ready");
     await page.getByRole("link", { name: "Continue" }).click();
     await page.waitForURL(/\/hosted\/new\/run$/);
     await page.locator("[data-summary-card]").first().waitFor();
     assertEqual(await page.locator("[data-summary-card]").count(), 3, "three review summary cards");
+    await page.getByText("Sources").waitFor();
     await page.getByText("Before you start").waitFor();
-    await capture("06-review-and-start");
+    await capture("05-review-and-start");
     const start = page.locator("[data-hosted-run-start=true]");
     await start.waitFor();
     await start.click();
@@ -1032,9 +1129,12 @@ async function verifyHostedBrowserContract(
     await page.locator("[data-hosted-activity-page=detail]").waitFor();
     await page.getByRole("heading", { name: "Issue review", level: 1 }).waitFor();
     await page.getByRole("button", { name: "Copy details for support" }).waitFor();
-    const results = page.getByRole("link", { name: "Open published run" });
+    await page.getByText("Sending recording to Gemini", { exact: true }).first().waitFor();
+    await page.locator("[role=progressbar]").waitFor();
+    await capture("06-activity-running");
+    const results = page.getByRole("link", { name: "View results" });
     await results.waitFor();
-    await capture("07-activity-detail");
+    await capture("07-activity-completed");
     await results.click();
     await page.waitForURL(/\/runs\/hosted_attempt_/);
     await page.getByRole("heading", { name: /Issue review ·/, level: 1 }).waitFor();
@@ -1042,12 +1142,23 @@ async function verifyHostedBrowserContract(
     await page.getByRole("link", { name: "Review findings" }).click();
     await page.waitForURL(/\/review\/hosted_attempt_/);
     await page.locator("[data-studio-review=hosted]").waitFor();
+    const reviewColumns = await page.locator("[data-review-workspace-grid=true]").evaluate((element) =>
+      getComputedStyle(element).gridTemplateColumns.split(" ").length
+    );
+    assertEqual(reviewColumns, 2, "hosted review desktop columns");
     await capture("09-review-workspace");
     await page.goto(`${origin}/hosted/activity`);
     await page.locator("[data-hosted-activity-page=list]").waitFor();
     await capture("10-activity-list");
     await page.goto(origin);
     await page.getByRole("heading", { name: "Your finished analyses.", level: 1 }).waitFor();
+    const visibleResultsLabels = await page.getByText("Results", { exact: true }).evaluateAll((elements) =>
+      elements.filter((element) => {
+        const box = element.getBoundingClientRect();
+        return box.width > 1 && box.height > 1;
+      }).length
+    );
+    assertEqual(visibleResultsLabels, 1, "one visible Results label on published analyses screen");
     await capture("11-results-home");
     await page.goto(`${origin}/import`);
     await page.getByRole("heading", { name: /Import/, level: 1 }).waitFor();
@@ -1055,6 +1166,7 @@ async function verifyHostedBrowserContract(
     await page.goto(`${origin}/hosted/activity/not-a-real-attempt`);
     await page.getByRole("heading", { name: "We couldn't find that analysis", level: 1 }).waitFor();
     await capture("13-not-found");
+    assertEqual(hydrationMismatches, [], "hosted browser hydration mismatches");
     await context.close();
   } finally {
     await browser.close();
@@ -1114,6 +1226,8 @@ function composerJobResponse(
   token: string,
   mediaId: string,
   idempotencyKey: string,
+  recipeId = "decisions",
+  recipeRevision = "builtin-2026-07-27.1",
 ): Promise<Response> {
   return fetch(`${origin}/api/hosted/composer/jobs`, {
     method: "POST",
@@ -1122,7 +1236,7 @@ function composerJobResponse(
       idempotencyKey,
       mediaSessionId: mediaId,
       context: { mode: "none" },
-      recipe: { id: "decisions", revision: "builtin-2026-08-11.1" },
+      recipe: { id: recipeId, revision: recipeRevision },
       model: "gemini-3.7-flash",
       retention: { mode: "retained", ttlSeconds: 7 * 24 * 60 * 60 },
     }),

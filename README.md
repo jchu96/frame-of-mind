@@ -553,12 +553,14 @@ and [accepted ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
 The dark hosted execution path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. When explicitly
 built and enabled, an authenticated user enters through one **New analysis**
-navigation item, follows the Intent → Context → Recording → Run stepper,
-reviews a three-card summary, starts analysis, follows plain-language activity,
-and opens or reviews the validated result. Results, Activity, Import, account,
-and sign-out controls share one hosted navigation. Recording upload is not
-available in hosted Studio yet; the Recording page says so, shows a disabled
-upload control, and contains no upload implementation. The hosted copy contract
+navigation item, follows the What to find → Recording → Review & start flow,
+reviews the goal, recording-only sources, and recording in one summary, starts
+analysis, follows plain-language activity, and opens the published output or
+its timestamped evidence workspace. Results, Activity, Import, account, and
+sign-out controls share one hosted navigation. Recording upload is not
+available in hosted Studio yet; the Recording page says so and links back to
+Activity and to the desktop Studio instructions without presenting a disabled
+primary action. The hosted copy contract
 and internal-to-plain-language glossary live in
 [docs/UX_COPY.md](docs/UX_COPY.md).
 

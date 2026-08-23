@@ -843,3 +843,18 @@
   modes; temporarily removing the `/sign-in` exemption made all five browser
   checks fail with a redirect loop, proving the render oracle discriminates.
   The existing auth spike and isolated Better Auth Workflow contract pass.
+- Addressed hosted UX pass-2 functional and accessibility findings on
+  2026-08-23. Built-in revisions now share one resolver and the hosted HTTP
+  contract starts every catalog goal; sign-out sends the required JSON body,
+  reports failure, and proves session deletion. Hosted Tailwind sources are
+  explicit, the composer is three accurately numbered steps, terminal states
+  are actionable, provider/retention language is plain, and SSR-derived
+  activity state plus a serialized clock prevent hydration drift. The browser
+  contract now checks the responsive grid, hover/selected rings, focused skip
+  link, review columns, single headings, running state, and hydration console,
+  with pass-2 desktop/mobile screenshot receipts. Gate receipts follow after
+  the serialized acceptance run. Validated by `gate-lock bun run
+  test:e2e:hosted`, `gate-lock bun run check:hosted-auth`, and a final
+  `gate-lock bun run check` exit 0 (22 Vitest files / 212 tests; Bun web suite:
+  40 files / 304 tests; both auth-mode hosted Workflow contracts, sign-out
+  browser coverage, release rehearsal, and the 32 MiB streaming proof passed).

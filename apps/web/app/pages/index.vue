@@ -15,9 +15,7 @@ const runs = computed(() => page.value.runs);
 const loadingMore = ref(false);
 
 const accepted = computed(() => runs.value.reduce((sum, run) => sum + run.acceptedCount, 0));
-const meetings = computed(() => new Set(
-  runs.value.flatMap((run) => run.schemaVersion === 2 ? [run.meetingId] : []),
-).size);
+const recipesUsed = computed(() => new Set(runs.value.map((run) => run.recipeLabel)).size);
 
 function runTitle(run: RunSummary): string {
   return run.schemaVersion === 2
@@ -54,6 +52,7 @@ function formatDate(value: string) {
     : new Intl.DateTimeFormat("en", {
         dateStyle: "medium",
         timeStyle: "short",
+        timeZone: "UTC",
       }).format(date);
 }
 </script>
@@ -64,8 +63,7 @@ function formatDate(value: string) {
     <main class="fom-shell py-10 sm:py-14">
       <section class="grid gap-8 lg:grid-cols-[1.35fr_0.65fr] lg:items-end">
         <div>
-          <p class="fom-kicker text-primary">Results</p>
-          <h1 class="mt-4 max-w-3xl text-4xl font-black tracking-[-0.045em] sm:text-6xl">
+          <h1 class="max-w-3xl text-4xl font-black tracking-[-0.045em] sm:text-6xl">
             Your finished analyses.
           </h1>
           <p class="mt-5 max-w-2xl text-base leading-7 text-muted sm:text-lg">
@@ -75,11 +73,11 @@ function formatDate(value: string) {
         <div class="grid grid-cols-3 border border-default bg-elevated/80">
           <div class="border-r border-default p-4">
             <p class="text-2xl font-black">{{ runs.length }}</p>
-            <p class="mt-1 text-xs text-muted">Results</p>
+            <p class="mt-1 text-xs text-muted">Analyses</p>
           </div>
           <div class="border-r border-default p-4">
-            <p class="text-2xl font-black">{{ meetings }}</p>
-            <p class="mt-1 text-xs text-muted">Meetings</p>
+            <p class="text-2xl font-black">{{ recipesUsed }}</p>
+            <p class="mt-1 text-xs text-muted">Goals used</p>
           </div>
           <div class="p-4">
             <p class="text-2xl font-black">{{ accepted }}</p>
@@ -91,8 +89,7 @@ function formatDate(value: string) {
       <section class="mt-12" aria-labelledby="recent-runs">
         <div class="mb-4 flex items-end justify-between gap-4">
           <div>
-            <p class="fom-kicker text-muted">Results</p>
-            <h2 id="recent-runs" class="mt-2 text-2xl font-black tracking-tight">Recent analyses</h2>
+            <h2 id="recent-runs" class="text-2xl font-black tracking-tight">Recent analyses</h2>
           </div>
           <UButton
             color="neutral"

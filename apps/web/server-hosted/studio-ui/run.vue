@@ -30,7 +30,6 @@ const summary = ref<{
   focus: string;
   context: string;
   recording: string;
-  model: string;
 }>();
 let payload: ReturnType<typeof buildComposerPayload> | undefined;
 
@@ -73,16 +72,22 @@ onMounted(async () => {
     });
     return;
   }
+  if (!session) {
+    await navigateTo({
+      path: "/hosted/new/recording",
+      query: { reason: "Add a recording before Review & start." },
+    });
+    return;
+  }
   summary.value = {
     recipe: state.intent.label,
     focus: state.intent.draft?.focus || "No optional focus",
     context: state.context.label === "Video-only" ? "Recording only" : state.context.label,
     recording: media
-      ? `Uploaded ${formatDate(media.sealedAt)} · kept until ${formatDate(media.expiresAt)}`
+      ? `Uploaded ${formatDate(media.sealedAt)} · ${media.retention === "ephemeral" ? "deleted after analysis" : `kept until ${formatDate(media.expiresAt)}`}`
       : "No recording added",
-    model: state.intent.draft?.model || "Unavailable",
   };
-  if (!state.canSubmit || !session) return;
+  if (!state.canSubmit) return;
   const draft = createOrLoadRunDraft(storage, retentionRequestForMediaSession(session), () => `hosted-run:${crypto.randomUUID()}`);
   payload = buildComposerPayload(state, draft);
   ready.value = true;
@@ -105,8 +110,8 @@ async function start(): Promise<void> {
     await navigateTo(`/hosted/activity/${encodeURIComponent(response.job.id)}`);
   } catch (caught) {
     const code = (caught as { data?: { data?: { code?: string } } }).data?.data?.code;
-    submitError.value = code
-      ? `Analysis could not start (${code}). Review the settings and try again.`
+    submitError.value = code === "recipe_receipt_mismatch" || code === "recipe_not_found"
+      ? "This goal was updated. Choose it again."
       : "Analysis could not start. Review the settings and try again.";
   } finally {
     submitting.value = false;
@@ -117,24 +122,23 @@ function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
+    : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date);
 }
 </script>
 
 <template>
   <main class="fom-shell py-8" data-hosted-composer="run">
     <HostedComposerStepper current="run" :intent-ready="true" :recording-ready="ready" />
-    <p class="fom-kicker text-primary">Run</p>
-    <h1 class="mt-3 text-4xl font-black">Review and start</h1>
+    <h1 class="text-4xl font-black">Review and start</h1>
     <div v-if="summary" class="mt-8 grid gap-4 lg:grid-cols-3" aria-label="Analysis summary">
       <UCard data-summary-card="intent">
         <p class="text-sm font-bold text-muted">What to find</p>
         <h2 class="mt-2 text-xl font-black">{{ summary.recipe }}</h2>
         <p class="mt-2 text-sm text-muted">{{ summary.focus }}</p>
-        <p class="mt-3 text-xs text-dimmed">Model: {{ summary.model }}</p>
+        <p class="mt-3 text-xs text-dimmed">Analysed with Gemini</p>
       </UCard>
       <UCard data-summary-card="context">
-        <p class="text-sm font-bold text-muted">Context</p>
+        <p class="text-sm font-bold text-muted">Sources</p>
         <h2 class="mt-2 text-xl font-black">{{ summary.context }}</h2>
         <p class="mt-2 text-sm text-muted">No transcript or meeting notes will be added.</p>
       </UCard>
@@ -149,7 +153,7 @@ function formatDate(value: string): string {
       color="primary"
       variant="soft"
       title="Before you start"
-      description="Your recording will be sent to Google Gemini for analysis and deleted from Gemini when it finishes. The settings below are saved with the results so you can see exactly how they were produced."
+      description="Your recording will be sent to Google Gemini for analysis and deleted from Gemini when it finishes. The settings above are saved with the results so you can see exactly how they were produced."
     />
     <div v-if="blockers.length" class="mt-6 max-w-4xl space-y-3">
       <UAlert v-for="blocker in blockers" :key="blocker.code" color="warning" variant="soft" :title="blocker.message">
@@ -162,6 +166,7 @@ function formatDate(value: string): string {
       <UButton data-hosted-run-start="true" label="Start analysis" icon="i-lucide-play" :loading="submitting" :disabled="!ready" @click="start" />
       <p v-if="!ready" class="mt-2 text-sm text-muted">Complete the steps above before starting.</p>
       <p v-if="submitError" class="mt-4 text-sm text-error" role="alert">{{ submitError }}</p>
+      <UButton v-if="submitError === 'This goal was updated. Choose it again.'" class="mt-3" to="/hosted/new/intent" color="neutral" variant="outline" label="Choose what to find" />
     </div>
   </main>
 </template>

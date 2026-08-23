@@ -40,7 +40,7 @@ async function importRun() {
     <AppHeader />
     <main class="fom-shell py-10 sm:py-14">
       <div class="mx-auto max-w-3xl">
-        <p class="fom-kicker text-primary">Deliberate publication boundary</p>
+        <p class="fom-kicker text-primary">Import analysis files</p>
         <h1 class="mt-4 text-4xl font-black tracking-[-0.04em] sm:text-5xl">Import a reviewed run.</h1>
         <p class="mt-4 max-w-2xl leading-7 text-muted">
           Select the matching files from one Frame of Mind analysis. We check that they belong

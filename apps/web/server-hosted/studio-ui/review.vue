@@ -47,7 +47,7 @@ function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(date);
+    : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(date);
 }
 function title(value: StoredRun): string {
   return `${value.recipeLabel} · ${formatDate(value.completedAt)}`;
@@ -87,12 +87,12 @@ function downloadBundle(): void {
       Loading the review workspace…
     </div>
     <template v-else-if="run">
-      <NuxtLink :to="`/runs/${encodeURIComponent(run.runId)}`" class="text-sm font-bold text-primary">← Back to results</NuxtLink>
+      <NuxtLink :to="`/runs/${encodeURIComponent(run.runId)}`" class="text-sm font-bold text-primary">← Back to published output</NuxtLink>
       <section class="mt-6 flex flex-wrap items-start justify-between gap-5">
         <div>
           <p class="fom-kicker text-primary">Review workspace</p>
           <h1 class="mt-3 text-4xl font-black tracking-tight sm:text-5xl">{{ title(run) }}</h1>
-          <p class="mt-3 max-w-3xl text-muted">Review each finding before using it in follow-up work.</p>
+          <p class="mt-3 max-w-3xl text-muted">Use this timestamped evidence workspace to inspect each finding before using it in follow-up work.</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <UButton color="neutral" variant="outline" icon="i-lucide-copy" label="Copy Markdown" @click="copyMarkdown" />
@@ -103,7 +103,7 @@ function downloadBundle(): void {
 
       <UAlert class="mt-6" color="neutral" variant="soft" icon="i-lucide-video-off" title="Recording playback is not available here" description="Hosted review keeps the findings and how they were produced, but does not keep a playable copy of the recording." />
 
-      <section class="mt-8 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <section class="mt-8 grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]" data-review-workspace-grid="true">
         <UCard :ui="{ body: 'p-0 sm:p-0' }">
           <template #header><h2 class="text-xl font-black">Findings</h2></template>
           <div class="grid grid-cols-3 gap-2 border-b border-default p-3">

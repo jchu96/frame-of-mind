@@ -5,6 +5,7 @@ import type { HostedEventView } from "../../../workflows/src/repository.js";
 import { derivePermittedActivityActions } from "../../app/studio/activity-actions.js";
 import { deriveActivityProgress } from "../../app/studio/activity-progress.js";
 import {
+  activityDisplayState,
   activityStageLabel,
   deriveActivityTimeline,
   formatRelativeActivity,
@@ -14,57 +15,84 @@ import {
 import { hostedEventsAsActivity, hostedJobAsActivity, hostedMediaSession } from "./hosted-adapter";
 
 const route = useRoute();
-const job = ref<AnalysisJob>();
-const recipeLabel = ref("Analysis");
-const media = ref<MediaSession>();
-const events = ref<ReturnType<typeof hostedEventsAsActivity>>([]);
+type HostedActivityDetail = { job: HostedJobView; media?: HostedMediaView; events: HostedEventView[] };
+const stateKey = `hosted-activity-detail:${String(route.params.id)}`;
+const hostedDetail = useState<HostedActivityDetail | undefined>(stateKey, () => undefined);
+const clock = useState(`${stateKey}:clock`, () => Date.now());
 const notice = ref("");
 const supportMessage = ref("");
 const requestFetch = useRequestFetch();
-useSeoMeta({
-  title: () => `${recipeLabel.value} · Activity · Frame of Mind`,
-  description: "Review the progress and details of a hosted analysis.",
-});
 let timer: ReturnType<typeof setInterval> | undefined;
 async function refresh(): Promise<void> {
   try {
-    const response = await requestFetch<{ job: HostedJobView; media?: HostedMediaView; events: HostedEventView[] }>(`/api/hosted/jobs/${encodeURIComponent(String(route.params.id))}`);
-    job.value = hostedJobAsActivity(response.job, response.media);
-    recipeLabel.value = response.job.receipt.recipe.label
-      || recipeDisplayLabel(response.job.receipt.recipe.id);
-    media.value = response.media
-      ? hostedMediaSession(
-          response.media,
-          response.media.retention === "retained" ? "retained" : "sealed",
-        )
-      : undefined;
-    events.value = hostedEventsAsActivity(response.job, response.events);
+    hostedDetail.value = await requestFetch<HostedActivityDetail>(`/api/hosted/jobs/${encodeURIComponent(String(route.params.id))}`);
     notice.value = "";
   } catch {
-    if (!job.value) throw createError({ statusCode: 404, statusMessage: "Not found" });
+    if (!hostedDetail.value) throw createError({ statusCode: 404, statusMessage: "Not found" });
     notice.value = "Lost connection — retrying.";
   }
 }
 await refresh();
-onMounted(() => { timer = setInterval(() => void refresh(), 2_000); });
+onMounted(() => {
+  timer = setInterval(() => {
+    clock.value = Date.now();
+    void refresh();
+  }, 2_000);
+});
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });
+const job = computed(() => hostedDetail.value
+  ? hostedJobAsActivity(hostedDetail.value.job, hostedDetail.value.media)
+  : undefined
+);
+const recipeLabel = computed(() => hostedDetail.value?.job.receipt.recipe.label
+  || (hostedDetail.value ? recipeDisplayLabel(hostedDetail.value.job.receipt.recipe.id) : "Analysis")
+);
+const media = computed(() => hostedDetail.value?.media
+  ? hostedMediaSession(
+      hostedDetail.value.media,
+      hostedDetail.value.media.retention === "retained" ? "retained" : "sealed",
+    )
+  : undefined
+);
+const events = computed(() => hostedDetail.value
+  ? hostedEventsAsActivity(hostedDetail.value.job, hostedDetail.value.events)
+  : []
+);
+useSeoMeta({
+  title: () => `${recipeLabel.value} · Activity · Frame of Mind`,
+  description: "Review the progress and details of a hosted analysis.",
+});
 const timeline = computed(() => deriveActivityTimeline(events.value));
 const actions = computed(() => job.value
-  ? derivePermittedActivityActions({ job: job.value, media: media.value, projection: job.value.runId ? "present" : "unknown", now: new Date().toISOString() })
+  ? derivePermittedActivityActions({ job: job.value, media: media.value, projection: job.value.runId ? "present" : "unknown", now: new Date(clock.value).toISOString() })
   : { actions: [] });
-const progress = computed(() => job.value ? deriveActivityProgress(job.value, events.value, new Date()) : undefined);
+const progress = computed(() => job.value ? deriveActivityProgress(job.value, events.value, new Date(clock.value)) : undefined);
 const terminal = computed(() => progress.value?.descriptor.kind === "terminal");
+const terminalFailure = computed(() =>
+  job.value?.stage === "failed" || job.value?.stage === "interrupted"
+);
+function statusColor(value: AnalysisJob): "primary" | "success" | "error" | "warning" | "neutral" {
+  const state = activityDisplayState(value.stage);
+  if (state === "active") return "primary";
+  if (state === "succeeded") return "success";
+  if (state === "failed" || state === "interrupted") return "error";
+  if (state === "canceled") return "neutral";
+  return "warning";
+}
 function relative(value: string): string {
-  return formatRelativeActivity(value, new Date());
+  return formatRelativeActivity(value, new Date(clock.value));
 }
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
+    : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date);
 }
 function timelineMessage(row: TimelineRow): string {
   if (row.type === "notice") return row.message;
+  if (row.stage === "cleaning_up" && terminalFailure.value) {
+    return "Removing the Gemini upload before stopping.";
+  }
   const messages: Partial<Record<AnalysisJob["stage"], string>> = {
     queued: "Waiting for analysis to begin.",
     fetching_context: "Checking the selected sources.",
@@ -120,8 +148,9 @@ async function copySupportDetails(): Promise<void> {
         <p class="mt-3 text-muted">Started <time :datetime="job.createdAt" :title="job.createdAt">{{ relative(job.createdAt) }}</time></p>
       </div>
       <div class="flex flex-wrap items-center gap-3">
-        <UBadge size="lg">{{ activityStageLabel(job.stage) }}</UBadge>
-        <UButton v-if="job.runId" :to="`/runs/${encodeURIComponent(job.runId)}`" label="Open published run" icon="i-lucide-arrow-right" />
+        <UBadge size="lg" :color="statusColor(job)">{{ activityStageLabel(job.stage) }}</UBadge>
+        <UButton v-if="job.runId" :to="`/runs/${encodeURIComponent(job.runId)}`" label="View results" icon="i-lucide-arrow-right" />
+        <UButton v-if="terminalFailure" to="/hosted/new/intent" label="Start a new analysis" icon="i-lucide-plus" />
       </div>
     </div>
     <UAlert v-if="notice" class="mt-6" color="warning" :description="notice" />
@@ -129,11 +158,11 @@ async function copySupportDetails(): Promise<void> {
     <UCard class="mt-8">
       <template #header><h2 class="text-xl font-black">Details</h2></template>
       <dl class="grid gap-4 text-sm md:grid-cols-3">
-        <div><dt class="text-muted">Model</dt><dd>{{ job.input.model }}</dd></div>
+        <div><dt class="text-muted">Analysis provider</dt><dd>Gemini</dd></div>
         <div><dt class="text-muted">Recording</dt><dd>{{ retentionText }}</dd></div>
         <div><dt class="text-muted">Updated</dt><dd><time :datetime="job.updatedAt" :title="job.updatedAt">{{ relative(job.updatedAt) }}</time></dd></div>
       </dl>
-      <p v-if="job.terminal?.code" class="mt-4 text-sm">Status code: <code>{{ job.terminal.code }}</code></p>
+      <p v-if="job.terminal?.code" class="mt-4 text-sm">Support code: <code>{{ job.terminal.code }}</code></p>
       <div class="mt-5 flex flex-wrap gap-3"><UButton v-if="actions.actions.some((item) => item.id === 'cancel')" label="Cancel" color="neutral" variant="outline" @click="cancel" /><UButton v-if="actions.actions.some((item) => item.id === 'retry')" label="Try again" @click="retry" /><UButton label="Copy details for support" icon="i-lucide-copy" color="neutral" variant="outline" @click="copySupportDetails" /></div>
       <p v-if="supportMessage" class="mt-3 text-sm text-muted" role="status">{{ supportMessage }}</p>
       <p v-if="actions.whyNot && job.stage !== 'succeeded'" class="mt-4 text-sm text-muted">{{ actions.whyNot }}</p>
