@@ -13,6 +13,12 @@ Workflows Worker; Tier B provider-token custody is pending. See
 [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md) and
 [ADR 0018](adr/0018-hosted-studio-trust-boundary.md).
 
+The proposed Better Auth hosted mode adds three public-Nuxt-Worker secrets:
+`NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
+`NUXT_BETTER_AUTH_MAILER_KEY`. Store them with Worker secret bindings, never in
+Wrangler JSON. They do not move `GEMINI_API_KEY` out of the internal Workflows
+Worker. See proposed [ADR 0019](adr/0019-pluggable-auth-modes.md).
+
 ## Short answer
 
 Frame of Mind currently uses the Gemini Developer API Files API. Create an auth

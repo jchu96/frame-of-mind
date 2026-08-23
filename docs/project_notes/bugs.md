@@ -447,3 +447,14 @@
   milliseconds, overlong fields, partial and all-detail failure, unexpected
   whole-run failure, provider-transport aborts, payload redaction, and cleanup
   provenance when upload processing fails after an exact remote ID is known.
+
+## 2026-08-23 — Better Auth lost request state in the Cloudflare bundle
+
+- Symptom: the first OAuth request in a built `cloudflare_module` Worker failed
+  with `No request state found` although workerd enabled Node compatibility.
+- Cause: Nitro bundled unenv's `AsyncLocalStorage` shim; its `run()` clears the
+  store before an asynchronous handler settles.
+- Fix: leave `node:async_hooks` external in Cloudflare builds so workerd supplies
+  the native implementation.
+- Prevention: the hosted-auth spike performs GitHub and magic-link login in a
+  real browser against the built Worker and requires `HOSTED_AUTH runtime=PASS`.

@@ -10,7 +10,9 @@ This model covers the local Bun-controlled Studio defined by ADRs
 [0008](adr/0008-local-secret-resolution.md). Those decisions are accepted
 implementation constraints. The proposed hosted extension is governed by
 [ADR 0018](adr/0018-hosted-studio-trust-boundary.md) and remains disabled
-until its phase gates pass.
+until its phase gates pass. Proposed [ADR 0019](adr/0019-pluggable-auth-modes.md)
+adds an app-owned Better Auth identity option without changing the one-principal
+ownership invariant.
 
 ## Security Invariants
 
@@ -48,6 +50,8 @@ be proven before hosted creation can leave dark deployment.
 | Cloudflare's default Workflow retry repeats a billable Gemini call | Every `step.do` has explicit 15-minute config; provider steps set `retries.limit: 0`, check a durable principal receipt before calling, and use `NonRetryableError` after success-without-receipt | Crash-after-Gemini test proves no second generate; user retry creates a new Workflow instance |
 | D1 export exposes encrypted Gemini resumable-session URLs | Treat exports as secret-bearing, restrict and expire backups, never export the derived key with ciphertext, and abort/clear active sessions before Gemini-key rotation | Export/log scan plus rotation drill with exact deletion receipts |
 | Access `sub` changes after seat removal/re-addition | Never key ownership by email or auto-adopt old rows; require a reviewed migration naming both verified old/new subjects | Removed/re-added identity fixture cannot see old rows until explicit migration |
+| Better Auth invite or email is mistaken for ownership | Use email only to admit/claim one Better Auth user; bind rows to `ba:<userId>` and require an explicit reviewed ID migration | Built-Worker unknown-email denial plus two-user foreign-ID contract |
+| Stacked perimeter identities diverge | Require a valid Access assertion and session; bind the first Access `sub` to the Better Auth user and reject later mismatches | Stacked browser login and stored-sub receipt |
 | Import-overwrite IDOR reuses another principal's `run_id` | Parent, registry, and item keys include `principal_sub`; every list/detail/import/delete/insert predicate includes it; preflight rejects `run_principal_conflict` before mutation | Built-Worker two-principal HTTP suite covers list, detail, overwrite, child delete, and child insert |
 
 ## Data Flow And Trust Boundaries
