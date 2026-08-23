@@ -444,7 +444,7 @@ async function browserRecoveryContract(
     await first.goto(`${origin}/hosted/new/recording`);
     await first.locator("[data-hosted-composer=recording]").waitFor();
     await first.getByText(
-      "An unfinished upload was found. Reselect the same recording to resume.",
+      "Choose the same recording to continue this upload.",
     ).waitFor();
     await first.evaluate(() => {
       window.dispatchEvent(new PageTransitionEvent("pagehide"));
@@ -472,13 +472,13 @@ async function browserRecoveryContract(
     );
     const queriesBeforeResume = recoveryFake.queryCount;
     await recovered.locator(`[data-hosted-resume-session="${recovery.mediaId}"]`).click();
-    await second.getByText("Reselect the same recording to resume.").waitFor();
+    await second.getByText("Choose the same recording to continue this upload.").waitFor();
     assert(
       recoveryFake.queryCount > queriesBeforeResume,
       "Resume did not query the authoritative provider offset",
     );
     await second.getByRole("button", { name: "Cancel upload" }).click();
-    await second.getByText("Upload session abandoned and browser receipt cleared.").waitFor();
+    await second.getByText("Upload cancelled").waitFor();
     assert(await uploadState(recovery.mediaId) === "abandoned", "Discard did not abandon recovered D1 state");
     assert(recoveryFake.fileDeleteCalls === 0, "Discard deleted a nonexistent pre-final File");
     const admitted = await createSession(origin, token, bytes(300_113, 84));

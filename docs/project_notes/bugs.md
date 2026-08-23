@@ -521,6 +521,49 @@
 - Prevention: built-workerd browser coverage requires redirect to `/sign-in`
   and a subsequent `/api/session` JSON 403.
 
+## 2026-08-23 — Playwright routes did not replace Nuxt SSR fixture data
+
+- Symptom: synthetic Activity and Results rows were absent after a direct page
+  load even though Playwright had installed matching browser routes.
+- Cause: Nuxt executed the initial `useFetch` on the Worker during SSR, outside
+  the browser context where `page.route()` can intercept requests.
+- Fix: load one real SSR response first, then install the synthetic route and
+  trigger an explicit client Refresh or client-side navigation.
+- Prevention: hosted browser fixtures that replace server-fetched data must
+  cross a client request boundary before asserting the synthetic state.
+
+## 2026-08-23 — Legacy hosted media metadata broke the whole Activity list
+
+- Symptom: one pre-migration media receipt with a nullable recording size made
+  the principal's complete Activity request fail instead of showing the other
+  valid attempts.
+- Cause: the display route performed one strict execution-grade receipt read
+  per attempt. The strict parser correctly rejected the legacy row, but that
+  exception escaped the optional display projection and the loop also created
+  an N+1 query path.
+- Fix: preserve strict receipt reads for execution and use principal-bound,
+  tolerant display reads in both list and detail routes; the list batches the
+  page, and each route omits only metadata that cannot be parsed completely.
+- Prevention: the real-D1 hosted Workflow contract seeds one nullable legacy
+  receipt beside a valid attempt and requires both list and legacy detail to
+  return HTTP 200 without a recording/media block. A principal-B attempt whose
+  immutable input names principal A's media also proves the display projection
+  cannot cross the SQL principal boundary.
+
+## 2026-08-23 — Hosted recovery actions contradicted their error copy
+
+- Symptom: several start failures offered an upload-again link even when the
+  message asked the user to retry, finish an open upload, refresh, or contact
+  support; Recording also claimed a fixed seven-day retention period while the
+  configured session lifetime was one hour.
+- Cause: Run inferred one CTA from an inverted code condition, and Recording
+  duplicated policy as literal copy.
+- Fix: each reachable start-error copy entry now owns its action, while the
+  Recording route receives and humanizes the server policy lifetime.
+- Prevention: a table-driven UX test covers every reachable error code and CTA;
+  built-workerd browser fixtures cover representative action families and the
+  policy-derived retention label.
+
 ## 2026-08-23 — Fresh auth Chromium disconnect looked like an auth failure
 
 - Symptom: two clean, serialized hub gates passed the stacked sign-in-page

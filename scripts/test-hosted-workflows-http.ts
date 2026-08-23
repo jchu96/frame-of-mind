@@ -47,6 +47,11 @@ const cancelMedia = "media_hosted_cancel_0001";
 const overrunMedia = "media_hosted_overrun_0001";
 const janitorMedia = "media_hosted_janitor_0001";
 const missingHashMedia = "media_hosted_missing_hash_0001";
+const legacyDisplayMedia = "media_hosted_legacy_display_0001";
+const legacyDisplayJob = "job_hosted_legacy_display_0001";
+const legacyDisplayAttempt = "attempt_hosted_legacy_display_0001";
+const foreignDisplayJob = "job_hosted_foreign_display_0001";
+const foreignDisplayAttempt = "attempt_hosted_foreign_display_0001";
 const janitorAttempt = "attempt_hosted_janitor_0001";
 const recipeStartMedia = listBuiltInRecipes().map((recipe, index) => ({
   recipeId: recipe.id,
@@ -501,12 +506,46 @@ try {
   if (!listA.jobs.some((job) => job.id === normal.job.id)) {
     throw new Error("Principal activity list omitted the published attempt.");
   }
+  const normalListJob = listA.jobs.find((job) => job.id === normal.job.id);
+  const legacyListJob = listA.jobs.find((job) => job.id === legacyDisplayAttempt);
+  if (!normalListJob?.receipt.recording) {
+    throw new Error("Principal activity list omitted valid recording details.");
+  }
+  if (!legacyListJob) {
+    throw new Error("Principal activity list omitted the legacy attempt.");
+  }
+  assertEqual(
+    legacyListJob.receipt.recording,
+    undefined,
+    "legacy display receipt omitted only unavailable recording details",
+  );
+  console.log("HOSTED_WORKFLOW legacy_display=PASS list_200 valid_and_null_size_rows=true");
+  const legacyDetail = await json<JobDetail>(await expectStatus(
+    authenticatedFetch(baseUrl, `/api/hosted/jobs/${legacyDisplayAttempt}`, tokenA),
+    200,
+    "legacy activity detail",
+  ));
+  assertEqual(legacyDetail.job.id, legacyDisplayAttempt, "legacy activity detail attempt");
+  assertEqual(
+    legacyDetail.job.receipt.recording,
+    undefined,
+    "legacy activity detail omits unavailable recording details",
+  );
+  if ("media" in legacyDetail) {
+    throw new Error("Legacy activity detail exposed an invalid media block.");
+  }
   const listB = await json<{ jobs: JobView[] }>(await expectStatus(
     authenticatedFetch(baseUrl, "/api/hosted/jobs", tokenB),
     200,
     "foreign activity list",
   ));
-  assertEqual(listB.jobs, [], "foreign activity list isolation");
+  assertEqual(listB.jobs.length, 1, "foreign activity list fixture count");
+  assertEqual(listB.jobs[0]?.id, foreignDisplayAttempt, "foreign activity list attempt");
+  assertEqual(
+    listB.jobs[0]?.receipt.recording,
+    undefined,
+    "foreign activity list omits another principal's recording details",
+  );
   const hostedCatalog = await json<{
     recipes: Array<{ id: string; revision: string }>;
   }>(await expectStatus(
@@ -519,6 +558,19 @@ try {
     listBuiltInRecipes().map((recipe) => recipe.id),
     "hosted built-in recipe IDs",
   );
+  const missingRecipe = await json<{ data: { code: string } }>(await expectStatus(
+    composerJobResponse(
+      baseUrl,
+      tokenB,
+      recipeStartMedia[0]!.mediaId,
+      "missing-recipe-start",
+      "removed-recipe",
+      "removed-revision",
+    ),
+    422,
+    "removed hosted recipe",
+  ));
+  assertEqual(missingRecipe.data.code, "recipe_not_found", "removed recipe error code");
   for (const fixture of recipeStartMedia) {
     const catalogRecipe = hostedCatalog.recipes.find(
       (recipe) => recipe.id === fixture.recipeId,
@@ -861,6 +913,9 @@ interface JobView {
   cleanupCompleted: boolean;
   runId?: string;
   errorCode?: string;
+  receipt: {
+    recording?: { durationSeconds: number; sizeBytes: number };
+  };
 }
 
 interface JobResponse {
@@ -868,6 +923,7 @@ interface JobResponse {
 }
 
 interface JobDetail extends JobResponse {
+  media?: unknown;
   events: Array<{ code?: string }>;
 }
 
@@ -1023,6 +1079,34 @@ function seedSql(): string {
     retention: "retained",
     spendPlan: contractSpendPlan,
   }).replaceAll("'", "''");
+  const legacyDisplayInput = JSON.stringify({
+    mediaId: legacyDisplayMedia,
+    mediaSha256,
+    context: { mode: "none" },
+    recipe: {
+      id: "issue-review",
+      label: "Issue review",
+      revision: "builtin-test",
+      sha256: "b".repeat(64),
+    },
+    model: "gemini-test",
+    retention: "retained",
+    spendPlan: contractSpendPlan,
+  }).replaceAll("'", "''");
+  const foreignDisplayInput = JSON.stringify({
+    mediaId: normalMedia,
+    mediaSha256,
+    context: { mode: "none" },
+    recipe: {
+      id: "issue-review",
+      label: "Issue review",
+      revision: "builtin-test",
+      sha256: "b".repeat(64),
+    },
+    model: "gemini-test",
+    retention: "retained",
+    spendPlan: contractSpendPlan,
+  }).replaceAll("'", "''");
   return `
     INSERT INTO hosted_principal_spend (
       principal_sub, principal_email, cap_units, committed_units, updated_at
@@ -1036,6 +1120,47 @@ function seedSql(): string {
       principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
       mime_type, retention, sealed_at, expires_at, duration_seconds, size_bytes
     ) VALUES ${mediaRows.join(",\n")};
+    INSERT INTO hosted_media_receipts (
+      principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
+      mime_type, retention, sealed_at, expires_at, duration_seconds, size_bytes
+    ) VALUES (
+      '${principalA}', '${legacyDisplayMedia}', 'files/${legacyDisplayMedia}',
+      'https://generativelanguage.googleapis.test/v1beta/files/${legacyDisplayMedia}',
+      '${mediaSha256}', 'video/mp4', 'retained', '${sealedAt}', '${expiresAt}',
+      20, NULL
+    );
+    INSERT INTO hosted_analysis_jobs (
+      principal_sub, job_id, principal_email, media_id, created_at
+    ) VALUES (
+      '${principalA}', '${legacyDisplayJob}', 'seat@example.test',
+      '${legacyDisplayMedia}', '${sealedAt}'
+    );
+    INSERT INTO hosted_analysis_attempts (
+      principal_sub, attempt_id, job_id, retry_of_attempt_id,
+      attempt_number, idempotency_key, workflow_instance_id,
+      immutable_input_json, stage, spend_reserved_units, created_at, updated_at
+    ) VALUES (
+      '${principalA}', '${legacyDisplayAttempt}', '${legacyDisplayJob}', NULL,
+      1, 'legacy-display-key', 'workflow_hosted_legacy_display_0001',
+      '${legacyDisplayInput}', 'queued', ${contractSpendPlan.estimatedTokens},
+      '${sealedAt}', '${sealedAt}'
+    );
+    INSERT INTO hosted_analysis_jobs (
+      principal_sub, job_id, principal_email, media_id, created_at
+    ) VALUES (
+      '${principalB}', '${foreignDisplayJob}', 'seat@example.test',
+      '${recipeStartMedia[0]!.mediaId}', '${sealedAt}'
+    );
+    INSERT INTO hosted_analysis_attempts (
+      principal_sub, attempt_id, job_id, retry_of_attempt_id,
+      attempt_number, idempotency_key, workflow_instance_id,
+      immutable_input_json, stage, spend_reserved_units, created_at, updated_at
+    ) VALUES (
+      '${principalB}', '${foreignDisplayAttempt}', '${foreignDisplayJob}', NULL,
+      1, 'foreign-display-key', 'workflow_hosted_foreign_display_0001',
+      '${foreignDisplayInput}', 'queued', ${contractSpendPlan.estimatedTokens},
+      '${sealedAt}', '${sealedAt}'
+    );
     INSERT INTO hosted_analysis_jobs (
       principal_sub, job_id, principal_email, media_id, created_at
     ) VALUES (
@@ -1066,7 +1191,7 @@ async function verifyHostedBrowserContract(
   token: string,
   mediaId: string,
 ): Promise<void> {
-  const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-2");
+  const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-3");
   const captureScreenshots = hostedContractAuthMode === "cloudflare-access";
   if (captureScreenshots) {
     await rm(screenshotRoot, { recursive: true, force: true });
@@ -1085,23 +1210,39 @@ async function verifyHostedBrowserContract(
     }
     const page = await context.newPage();
     const hydrationMismatches: string[] = [];
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("console", (message) => {
       if (message.text().toLowerCase().includes("hydration")
         && message.text().toLowerCase().includes("mismatch")) {
-        hydrationMismatches.push(message.text());
+        hydrationMismatches.push(`${new URL(page.url()).pathname}: ${message.text()}`);
       }
     });
-    const capture = async (name: string): Promise<void> => {
+    const capture = async (
+      name: string,
+      mobileFocusText?: string,
+    ): Promise<void> => {
       assertEqual(await page.locator("h1").count(), 1, `${name} single h1`);
+      assertEqual(hydrationMismatches, [], `${name} hydration mismatches`);
       if (!captureScreenshots) return;
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.screenshot({ path: join(screenshotRoot, `${name}-desktop.png`), fullPage: true });
       await page.setViewportSize({ width: 390, height: 844 });
+      if (mobileFocusText) {
+        await page.getByText(mobileFocusText, { exact: true }).evaluate((element) => {
+          element.scrollIntoView({ block: "end", inline: "nearest" });
+        });
+      }
       await page.screenshot({ path: join(screenshotRoot, `${name}-mobile.png`), fullPage: true });
       await page.setViewportSize({ width: 1280, height: 900 });
     };
     await page.goto(`${origin}/hosted/new/intent`);
     await capture("01-intent-empty");
+    const directFocus = page.getByLabel("Optional focus");
+    await directFocus.waitFor();
+    await directFocus.fill("Direct-load label check");
+    assertEqual(await directFocus.inputValue(), "Direct-load label check", "direct SSR Intent label binding");
+    await directFocus.fill("");
     assertEqual(await page.getByRole("navigation").count(), 1, "single hosted navigation landmark");
     assertEqual(await page.getByRole("group", { name: "New analysis progress" }).count(), 1, "single composer progress group");
     assertEqual(await page.locator("[data-composer-step]").count(), 3, "three composer steps");
@@ -1168,8 +1309,9 @@ async function verifyHostedBrowserContract(
     await page.getByText("Drop a recording here").waitFor();
     await page.getByRole("link", { name: "Back to Activity" }).waitFor();
     await page.getByText("Delete after analysis", { exact: true }).waitFor();
-    await page.getByText("Keep temporarily", { exact: true }).waitFor();
-    await capture("03-recording-empty");
+    await page.getByText("Keep for 1 hour", { exact: true }).waitFor();
+    await assertRecordingCopyUsesUxGlossary(page);
+    await capture("03-recording-empty", "Keep for 1 hour");
     await page.evaluate((id) => {
       sessionStorage.setItem(
         "hosted:frame-of-mind:studio:media-upload",
@@ -1178,6 +1320,10 @@ async function verifyHostedBrowserContract(
     }, mediaId);
     await page.reload();
     await page.locator("[data-hosted-media-ready=true]").waitFor();
+    await page.getByText(/^Recording · 1 s · 1\.0 KB$/).waitFor();
+    await page.getByRole("button", { name: "Replace" }).waitFor();
+    assertEqual(await page.getByText("Drop a recording here").count(), 0, "ready recording collapses dropzone");
+    await assertRecordingCopyUsesUxGlossary(page);
     await capture("04-recording-ready");
     await page.getByRole("link", { name: "Continue" }).click();
     await page.waitForURL(/\/hosted\/new\/run$/);
@@ -1188,6 +1334,109 @@ async function verifyHostedBrowserContract(
     await capture("05-review-and-start");
     const start = page.locator("[data-hosted-run-start=true]");
     await start.waitFor();
+    const startErrorFixtures = [
+      {
+        code: "principal_spend_cap_exceeded",
+        message: "You've used this account's analysis allowance.",
+        nextAction: "Contact support with the code below to raise it.",
+        action: "Copy support code",
+        actionRole: "button" as const,
+        status: 429,
+      },
+      {
+        code: "spend_duration_unavailable",
+        message: "We couldn't read this recording's length.",
+        nextAction: "Upload the recording again.",
+        action: "Upload recording again",
+        actionRole: "link" as const,
+        status: 422,
+      },
+      {
+        code: "sealed_media_receipt_missing",
+        message: "This recording is no longer ready.",
+        nextAction: "Upload the recording again.",
+        action: "Upload recording again",
+        actionRole: "link" as const,
+        status: 404,
+      },
+      {
+        code: "media_retention_expired",
+        message: "This recording's availability changed.",
+        nextAction: "Return to Recording and upload it again.",
+        action: "Upload recording again",
+        actionRole: "link" as const,
+        status: 409,
+      },
+      {
+        code: "spend_policy_unavailable",
+        message: "Analysis limits are temporarily unavailable.",
+        nextAction: "Try starting the analysis again.",
+        action: "Try again",
+        actionRole: "button" as const,
+        status: 503,
+      },
+      {
+        code: "hosted_media_open_session_cap_exceeded",
+        message: "Another recording upload is still unfinished.",
+        nextAction: "Finish or discard it before starting this analysis.",
+        action: "Finish or discard upload",
+        actionRole: "link" as const,
+        status: 429,
+      },
+      {
+        code: "invalid_hosted_job_request",
+        message: "These analysis selections are no longer valid.",
+        nextAction: "Choose your analysis settings again.",
+        action: "Choose again",
+        actionRole: "link" as const,
+        status: 422,
+      },
+      {
+        code: "hosted_idempotency_conflict",
+        message: "This start request no longer matches the saved analysis.",
+        nextAction: "Refresh this page before trying again.",
+        action: "Refresh page",
+        actionRole: "button" as const,
+        status: 409,
+      },
+    ];
+    for (const fixture of startErrorFixtures) {
+      await page.route("**/api/hosted/composer/jobs", async (route) => {
+        await route.fulfill({
+          status: fixture.status,
+          contentType: "application/json",
+          body: JSON.stringify({ data: { code: fixture.code } }),
+        });
+      }, { times: 1 });
+      await start.click();
+      await page.getByRole("alert").getByText(fixture.message, { exact: true }).waitFor();
+      await page.getByRole("alert").getByText(fixture.nextAction, { exact: true }).waitFor();
+      await page.getByText(`Support code: ${fixture.code}`, { exact: true }).waitFor();
+      const errorAction = page.getByRole(fixture.actionRole, {
+        name: fixture.action,
+        exact: true,
+      });
+      await errorAction.waitFor();
+      if (fixture.code === "principal_spend_cap_exceeded") {
+        await page.evaluate(() => {
+          Object.defineProperty(navigator, "clipboard", {
+            configurable: true,
+            value: {
+              writeText: () => Promise.reject(new Error("Clipboard permission denied")),
+            },
+          });
+        });
+        await errorAction.click();
+        const supportCode = page.locator("code").filter({ hasText: fixture.code });
+        assertEqual(await supportCode.textContent(), fixture.code, "clipboard fallback support code");
+        assertEqual(
+          await supportCode.evaluate((element) => getComputedStyle(element).userSelect === "none"),
+          false,
+          "clipboard fallback support code remains selectable",
+        );
+        assertEqual(pageErrors, [], "clipboard fallback page errors");
+      }
+    }
     await start.click();
     await page.waitForURL(/\/hosted\/activity\/attempt_/);
     await page.locator("[data-hosted-activity-page=detail]").waitFor();
@@ -1211,11 +1460,49 @@ async function verifyHostedBrowserContract(
     );
     assertEqual(reviewColumns, 2, "hosted review desktop columns");
     await capture("09-review-workspace");
+    const activityFixtures = hostedActivityFixtures();
     await page.goto(`${origin}/hosted/activity`);
     await page.locator("[data-hosted-activity-page=list]").waitFor();
+    assertEqual(hydrationMismatches, [], "Activity SSR hydration mismatches");
+    await page.route("**/api/hosted/jobs", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: activityFixtures }),
+      });
+    });
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.getByText("Recording · 20 s · 954 KB", { exact: false }).waitFor();
+    await page.getByText("Recording · 37 s · 1.2 MB", { exact: false }).waitFor();
     await capture("10-activity-list");
-    await page.goto(origin);
+    await page.route("**/api/runs?*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          runs: activityFixtures.map((job, index) => ({
+            schemaVersion: 3,
+            contextMode: "none",
+            runId: job.runId,
+            recipeId: job.receipt.recipe.id,
+            recipeLabel: job.receipt.recipe.label,
+            model: job.receipt.model,
+            startedAt: job.createdAt,
+            completedAt: job.updatedAt,
+            acceptedCount: index + 1,
+            rejectedCount: 0,
+            importedAt: job.updatedAt,
+          })),
+        }),
+      });
+    });
+    await page.getByRole("link", { name: "Results", exact: true }).click();
+    await page.waitForURL(`${origin}/`);
     await page.getByRole("heading", { name: "Your finished analyses.", level: 1 }).waitFor();
+    await page.getByRole("columnheader", { name: "Goal" }).waitFor();
+    await page.getByRole("columnheader", { name: "Sources" }).waitFor();
+    await page.getByRole("link", { name: "Recording · 20 s · 954 KB" }).waitFor();
+    await page.getByRole("link", { name: "Recording · 37 s · 1.2 MB" }).waitFor();
     const visibleResultsLabels = await page.getByText("Results", { exact: true }).evaluateAll((elements) =>
       elements.filter((element) => {
         const box = element.getBoundingClientRect();
@@ -1224,6 +1511,8 @@ async function verifyHostedBrowserContract(
     );
     assertEqual(visibleResultsLabels, 1, "one visible Results label on published analyses screen");
     await capture("11-results-home");
+    await page.unroute("**/api/runs?*");
+    await page.unroute("**/api/hosted/jobs");
     await page.goto(`${origin}/import`);
     await page.getByRole("heading", { name: /Import/, level: 1 }).waitFor();
     await capture("12-import");
@@ -1231,11 +1520,76 @@ async function verifyHostedBrowserContract(
     await page.getByRole("heading", { name: "We couldn't find that analysis", level: 1 }).waitFor();
     await capture("13-not-found");
     assertEqual(hydrationMismatches, [], "hosted browser hydration mismatches");
+    assertEqual(pageErrors, [], "hosted browser page errors");
     await context.close();
   } finally {
     await browser.close();
   }
   console.log("HOSTED_WORKFLOW browser=PASS composer_activity_published_viewer");
+}
+
+async function assertRecordingCopyUsesUxGlossary(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  const copyGuide = await readFile(resolve("docs/UX_COPY.md"), "utf8");
+  const glossary = copyGuide
+    .split("\n")
+    .filter((line) => line.startsWith("| ") && !line.includes("Internal term") && !line.startsWith("|---"))
+    .flatMap((line) => (line.split("|")[1] ?? "")
+      .replaceAll("`", "")
+      .split(/\s+or\s+/)
+      .map((term) => term.trim().toLowerCase())
+      .filter(Boolean));
+  const forbidden = [...new Set([...glossary, "session"])]
+    .flatMap((term) => term.split(/\s+/))
+    .filter((term) => /^[a-z]+$/.test(term));
+  const rendered = (await page.locator("[data-hosted-composer=recording]").innerText()).toLowerCase();
+  for (const term of forbidden) {
+    if (new RegExp(`\\b${term}\\b`, "i").test(rendered)) {
+      throw new Error(`Rendered hosted Recording copy exposed glossary term ${term}.`);
+    }
+  }
+}
+
+function hostedActivityFixtures() {
+  const base = {
+    rootJobId: "job_ux_pass_3",
+    attempt: 1,
+    stage: "succeeded" as const,
+    cleanupCompleted: true,
+    createdAt: "2026-08-23T08:00:00.000Z",
+    updatedAt: "2026-08-23T08:01:00.000Z",
+  };
+  return [
+    {
+      ...base,
+      id: "attempt_ux_pass_3_first",
+      rootJobId: "job_ux_pass_3_first",
+      runId: "run_ux_pass_3_first",
+      receipt: {
+        recipe: { id: "issue-review", label: "Issue review", revision: "ux-pass-3" },
+        context: { mode: "none" as const },
+        model: "gemini-test",
+        retention: "ephemeral" as const,
+        recording: { durationSeconds: 20, sizeBytes: 954_357 },
+      },
+    },
+    {
+      ...base,
+      id: "attempt_ux_pass_3_second",
+      rootJobId: "job_ux_pass_3_second",
+      runId: "run_ux_pass_3_second",
+      createdAt: "2026-08-23T09:00:00.000Z",
+      updatedAt: "2026-08-23T09:01:00.000Z",
+      receipt: {
+        recipe: { id: "decisions", label: "Decisions", revision: "ux-pass-3" },
+        context: { mode: "none" as const },
+        model: "gemini-test",
+        retention: "retained" as const,
+        recording: { durationSeconds: 37, sizeBytes: 1_200_000 },
+      },
+    },
+  ];
 }
 
 async function signAccessToken(
