@@ -2,6 +2,13 @@
 
 ## 2026-08-23
 
+- Repaired the CI dependency and budget contracts after repeated red runs went
+  unnoticed: root scripts now own their `jose` dependency, repository hygiene
+  rejects undeclared bare imports under `scripts/` and `test/`, and the
+  10-minute pre-hosted lane is separated from a 40-minute hosted-contract lane.
+  A unit contract parses the serial root check and proves the CI-job union
+  preserves its coverage.
+
 - Closed the Cloudflare Email Service adversarial review's three should-fix
   findings before go-live. A present `EMAIL` binding with no sender now fails
   closed as code-only `E_MAILER_FROM_UNSET`, and binding failures cannot fall
