@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - fix/ci-green
 
 permissions:
   contents: read
@@ -26,11 +27,34 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run typechecks, tests, and local and Cloudflare builds
-        run: bun run check
+      - name: Run repository, type, unit, build, and local HTTP checks
+        run: bun run check:repo-hygiene && bun run typecheck && bun run test && bun run test:web && bun run build:cli && bun run build:web && bun run test:studio-http
 
       - name: Reject high or critical production advisories
         run: bun audit --production --audit-level=high
+
+  hosted-contracts:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run hosted contracts, release rehearsal, and streaming proof
+        run: bun run test:hosted-access-http && bun run test:hosted-access-http:better-auth && bun run test:hosted-workflows-http && bun run test:hosted-workflows-http:better-auth && bun run test:hosted-media-http && bun run check:hosted-auth && bun run rehearse:hosted-release && bun run spike:studio-streaming
 
   fresh-clone:
     strategy:
