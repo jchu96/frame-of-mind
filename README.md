@@ -661,6 +661,10 @@ bun run check:hosted-stream                 # 1/2/4 MiB materialization-bound Wo
 bun run check
 ```
 
+Local E2E and hosted-contract runners serialize their resource-heavy
+workerd/Chromium lifetimes across worktrees while retaining private ports,
+temporary state, D1/Worker/Workflow names, and report directories per run.
+
 Do not upgrade `@google/genai` or `@modelcontextprotocol/sdk` without
 verifying official authentication, Files upload, structured output, video
 metadata, OAuth, and cleanup contracts.

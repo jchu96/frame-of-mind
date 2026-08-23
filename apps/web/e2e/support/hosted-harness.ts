@@ -146,7 +146,7 @@ export async function startHostedHarness(
     const webOutput = join(isolation.root, "web-output");
     await buildHostedArtifact(webOutput);
 
-    const workflowServiceName = `fom-e2e-workflow-${isolation.id.slice(0, 12)}`;
+    const workflowServiceName = isolation.workerName("workflow");
     const webPort = await isolation.reservePort();
     const baseUrl = `http://127.0.0.1:${webPort}`;
     const d1Binding = {
@@ -157,7 +157,7 @@ export async function startHostedHarness(
     };
     await writeFile(webConfig, JSON.stringify({
       $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-      name: `fom-e2e-web-${isolation.id.slice(0, 12)}`,
+      name: isolation.workerName("web"),
       main: join(webOutput, "server/index.mjs"),
       compatibility_date: "2026-08-18",
       compatibility_flags: ["nodejs_compat", "nodejs_als"],
@@ -192,7 +192,7 @@ export async function startHostedHarness(
       compatibility_flags: ["nodejs_compat"],
       d1_databases: [d1Binding],
       workflows: [{
-        name: `fom-e2e-analysis-${isolation.id.slice(0, 12)}`,
+        name: isolation.workerName("analysis"),
         binding: "HOSTED_WORKFLOW",
         class_name: "HostedAnalysisWorkflow",
       }],

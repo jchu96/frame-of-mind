@@ -56,7 +56,7 @@ try {
 
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-access-contract",
+    name: isolation.workerName(`hosted-access-${entryFile}`),
     main: resolve(`apps/web/.output/server/${entryFile}`),
     compatibility_date: "2026-07-02",
     compatibility_flags: ["nodejs_compat"],
