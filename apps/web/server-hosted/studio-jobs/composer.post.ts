@@ -1,4 +1,4 @@
-import { defineEventHandler, setResponseStatus } from "h3";
+import { createError, defineEventHandler, setResponseStatus } from "h3";
 import {
   composerPayloadSchema,
   type MediaSession,
@@ -7,6 +7,7 @@ import {
   builtInRecipe,
   builtInRecipeRevision,
   digestRecipe,
+  UnknownBuiltInRecipeError,
 } from "../../../../src/recipes/index.js";
 import { assertTrustedJsonMutation } from "../../server/utils/request-security.js";
 import { translateComposerJob } from "../../app/studio/composer-translate.js";
@@ -31,9 +32,19 @@ export default defineEventHandler(async (event) => {
       payload.mediaSessionId,
       new Date().toISOString(),
     );
-    const recipe = "id" in payload.recipe
-      ? builtInRecipe(payload.recipe.id)
-      : undefined;
+    let recipe: ReturnType<typeof builtInRecipe> | undefined;
+    try {
+      recipe = "id" in payload.recipe
+        ? builtInRecipe(payload.recipe.id)
+        : undefined;
+    } catch (error) {
+      if (!(error instanceof UnknownBuiltInRecipeError)) throw error;
+      throw createError({
+        statusCode: 422,
+        statusMessage: "Hosted recipe was not found.",
+        data: { code: "recipe_not_found" },
+      });
+    }
     const translated = translateComposerJob({
       payload,
       mediaSession: hostedStudioMediaSession(media),

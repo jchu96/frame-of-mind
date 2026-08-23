@@ -2,14 +2,29 @@
 import { loadIntentDraft } from "../../app/studio/intent-composer.js";
 import { hostedStorage } from "./hosted-adapter";
 import HostedComposerStepper from "./composer-stepper.vue";
-import { useHostedMediaUpload } from "./use-hosted-media-upload";
+import {
+  hostedMediaStatusColor,
+  hostedMediaStatusLabel,
+  useHostedMediaUpload,
+} from "./use-hosted-media-upload";
+import {
+  formatRetentionDuration,
+  recordingFieldHelp,
+  formatRecordingBytes,
+  recordingDisplayLabel,
+} from "../../app/studio/recording-display";
 
 useSeoMeta({
   title: "Add a recording · Frame of Mind",
   description: "Add the recording for a hosted analysis.",
 });
 
-const { error } = await useFetch("/api/hosted/media/configuration", {
+const { data: configuration, error } = await useFetch<{
+  available: true;
+  maxBytes?: number;
+  sessionTtlSeconds?: number;
+  retentionDays?: number;
+}>("/api/hosted/media/configuration", {
   headers: useRequestHeaders(["cookie"]),
 });
 if (error.value) throw createError({ statusCode: 404, statusMessage: "Not found" });
@@ -17,8 +32,8 @@ if (error.value) throw createError({ statusCode: 404, statusMessage: "Not found"
 const {
   busy, cancel, discardOpenSession, draft, fieldError, fileModel, media,
   openSessions, operationError, pause, phase, progressBytes, resumeOpenSession,
-  retention, start, statusMessage, totalBytes,
-} = useHostedMediaUpload();
+  replace, retention, start, statusMessage, totalBytes,
+} = useHostedMediaUpload({ maxBytes: configuration.value?.maxBytes });
 const route = useRoute();
 const intentReady = ref(false);
 
@@ -26,25 +41,31 @@ onMounted(() => {
   intentReady.value = Boolean(loadIntentDraft(hostedStorage(sessionStorage)).draft);
 });
 
-const retentionOptions = [
+const uploadSessionDuration = computed(() =>
+  formatRetentionDuration(configuration.value?.sessionTtlSeconds ?? 0)
+);
+const retainedDuration = computed(() =>
+  formatRetentionDuration((configuration.value?.retentionDays ?? 0) * 86_400)
+);
+const retentionOptions = computed(() => [
   {
     label: "Delete after analysis",
     value: "ephemeral",
-    description: "Delete the recording from Gemini after this analysis or an abandoned upload.",
+    description: uploadSessionDuration.value
+      ? `Delete the recording from Gemini when this analysis finishes. An unfinished upload expires after ${uploadSessionDuration.value}.`
+      : "Delete the recording from Gemini when this analysis finishes.",
   },
   {
-    label: "Keep temporarily",
+    label: retainedDuration.value
+      ? `Keep for ${retainedDuration.value}`
+      : "Keep until the expiry shown on the next step",
     value: "retained",
-    description: "Keep a private copy for playback and evidence capture for 30 days by default.",
+    description: retainedDuration.value
+      ? `Keep a private copy for playback and evidence capture for ${retainedDuration.value}.`
+      : "Keep a private copy for playback and evidence capture until the expiry shown on the next step.",
   },
-];
-
-function formatBytes(bytes: number): string {
-  if (!bytes) return "0 B";
-  const units = ["B", "KiB", "MiB", "GiB"];
-  const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1_024)), 3);
-  return `${(bytes / 1_024 ** unit).toFixed(unit ? 1 : 0)} ${units[unit]}`;
-}
+]);
+const fieldHelp = computed(() => recordingFieldHelp(configuration.value?.maxBytes));
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -67,10 +88,9 @@ function formatDate(value: string): string {
         <header>
           <h1 class="text-4xl font-black text-highlighted">Add your recording</h1>
           <p class="mt-4 max-w-2xl text-default">
-            Your browser checks the complete file, then sends it directly to a
-            short-lived Gemini upload session. In retained mode, the same
-            committed bytes also go through a single-use capability to your
-            private recording copy.
+            Choose a screen recording. It goes straight from your browser to
+            Gemini for analysis. If you choose Keep, the verified bytes also
+            go to a private temporary copy for playback and evidence capture.
           </p>
           <UButton
             v-if="!media && !draft"
@@ -88,8 +108,8 @@ function formatDate(value: string): string {
             <div>
               <h2 class="text-xl font-black text-highlighted">Unfinished uploads</h2>
               <p class="mt-1 text-sm text-muted">
-                These uploads are still open for your account. Resume one after
-                choosing the same recording, or discard it to free capacity.
+                Continue one after choosing the same recording, or discard it
+                before starting another.
               </p>
             </div>
           </template>
@@ -101,10 +121,16 @@ function formatDate(value: string): string {
               :data-hosted-open-session="session.mediaId"
             >
               <div>
-                <p class="font-semibold text-default">{{ formatBytes(session.declaredSizeBytes) }} recording</p>
+                <p class="font-semibold text-default">{{ formatRecordingBytes(session.declaredSizeBytes) }} recording</p>
                 <p class="mt-1 text-sm text-muted">
-                  <template v-if="session.retention === 'ephemeral'">Delete after analysis</template><template v-else>Keep temporarily</template>
-                  · expires <time :datetime="session.sessionExpiresAt" :title="session.sessionExpiresAt">{{ formatDate(session.sessionExpiresAt) }}</time>
+                  <template v-if="session.retention === 'ephemeral'">
+                    Delete after analysis · upload expires
+                    <time :datetime="session.sessionExpiresAt" :title="session.sessionExpiresAt">{{ formatDate(session.sessionExpiresAt) }}</time>
+                  </template>
+                  <template v-else>
+                    Keep until
+                    <time :datetime="session.sessionExpiresAt" :title="session.sessionExpiresAt">{{ formatDate(session.sessionExpiresAt) }}</time>
+                  </template>
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
@@ -133,9 +159,22 @@ function formatDate(value: string): string {
         </UCard>
 
         <UCard>
+          <div
+            v-if="media"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-default bg-elevated/50 p-4"
+            data-hosted-media-ready="true"
+          >
+            <p class="font-semibold text-default">
+              {{ recordingDisplayLabel(media, fileModel?.name || 'Recording') }}
+            </p>
+            <UButton type="button" color="neutral" variant="outline" size="sm" @click="replace">
+              Replace
+            </UButton>
+          </div>
           <UFormField
+            v-else
             label="Screen recording"
-            description="MP4, MOV, M4V, or WebM; one file; configured hosted limit applies."
+            :description="fieldHelp"
             :error="fieldError"
             required
           >
@@ -155,9 +194,10 @@ function formatDate(value: string): string {
           </UFormField>
 
           <UFormField
+            v-if="!media"
             class="mt-6"
             name="retention"
-            label="Retention"
+            label="After analysis"
             description="Choose how long Gemini may keep this recording."
           >
             <URadioGroup
@@ -169,23 +209,23 @@ function formatDate(value: string): string {
           </UFormField>
         </UCard>
 
-        <UCard v-if="phase !== 'idle'" :data-hosted-media-ready="media ? 'true' : undefined">
+        <UCard v-if="phase !== 'idle' && !media">
           <template #header>
             <div class="flex flex-wrap items-center justify-between gap-3">
               <h2 class="text-xl font-black text-highlighted">Upload progress</h2>
               <UBadge
                 role="status"
-                :color="phase === 'sealed' ? 'success' : phase === 'failed' ? 'error' : phase === 'paused' || phase === 'reselect-required' ? 'warning' : 'primary'"
+                :color="hostedMediaStatusColor(phase)"
                 variant="soft"
               >
-                {{ phase.replaceAll('-', ' ') }}
+                {{ hostedMediaStatusLabel(phase) }}
               </UBadge>
             </div>
           </template>
 
           <p aria-live="polite" class="font-semibold text-default">{{ statusMessage }}</p>
           <p v-if="media?.keptUntil" class="mt-2 text-sm text-muted" data-hosted-kept-until>
-            Private retained copy kept until {{ new Date(media.keptUntil).toLocaleString() }} unless you delete it sooner.
+            Private copy kept until {{ new Date(media.keptUntil).toLocaleString() }} unless you delete it sooner.
           </p>
           <div v-if="totalBytes" class="mt-5">
             <UProgress
@@ -195,8 +235,7 @@ function formatDate(value: string): string {
               aria-label="Recording upload progress"
             />
             <p class="mt-2 text-sm text-muted">
-              {{ formatBytes(progressBytes) }} of {{ formatBytes(totalBytes) }}
-              ({{ progressBytes.toLocaleString() }} of {{ totalBytes.toLocaleString() }} bytes)
+              {{ formatRecordingBytes(progressBytes) }} of {{ formatRecordingBytes(totalBytes) }}
             </p>
           </div>
 
@@ -238,45 +277,27 @@ function formatDate(value: string): string {
             >
               Cancel upload
             </UButton>
-            <UButton
-              v-if="media"
-              to="/hosted/new/run"
-              trailing-icon="i-lucide-arrow-right"
-            >
-              Continue
-            </UButton>
           </div>
         </UCard>
+        <UButton v-if="media" to="/hosted/new/run" trailing-icon="i-lucide-arrow-right">
+          Continue
+        </UButton>
       </UForm>
 
-      <aside class="space-y-5" aria-label="Recording privacy details">
+      <aside aria-label="Recording privacy details">
         <UAlert
           color="primary"
           variant="soft"
           icon="i-lucide-shield-check"
-          title="Direct browser upload"
-          description="Your browser receives a write-only upload address, never the Gemini API key. File size and fingerprint must match before analysis can start."
+          title="Private by design"
+          description="Your browser receives write-only upload access, never the Gemini API key. Upload only recordings you are allowed to process; recordings and upload addresses are never stored in logs or run bundles."
         />
         <UAlert
           color="neutral"
           variant="outline"
           icon="i-lucide-image-off"
-          title="Ephemeral review limits"
-          description="Ephemeral runs have no playback or screenshot capture after this tab closes. Those features require retained media or exact-digest reattachment."
-        />
-        <UAlert
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-refresh-cw"
-          title="Resume after refresh"
-          description="This tab stores only the upload receipt and last confirmed position. After refreshing, choose the same file to resume."
-        />
-        <UAlert
-          color="warning"
-          variant="soft"
-          icon="i-lucide-shield-alert"
-          title="Use authorized recordings only"
-          description="Upload only recordings you are allowed to process. Upload addresses and recording content are never stored in logs, run bundles, or Git."
+          title="Delete-after-analysis review limits"
+          description="Delete-after-analysis runs have no playback or screenshot capture after this tab closes. Those features require a temporary private copy or the exact same recording."
         />
       </aside>
     </section>

@@ -15,7 +15,18 @@ export default defineEventHandler(async (event) => {
       runtime.principalSub,
       limit,
     );
-    return { jobs: page.attempts.map(hostedJobView) };
+    const receipts = await runtime.repository.getMediaReceiptsForDisplay(
+      runtime.principalSub,
+      page.attempts.map((attempt) => attempt.input.mediaId),
+    );
+    return {
+      jobs: page.attempts.map((attempt) =>
+        hostedJobView(
+          attempt,
+          receipts.get(attempt.input.mediaId),
+        )
+      ),
+    };
   } catch (error) {
     throwHostedJobHttpError(error);
   }

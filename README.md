@@ -560,10 +560,13 @@ navigation item, follows the What to find → Recording → Review & start flow,
 reviews the goal, recording-only sources, and recording in one summary, starts
 analysis, follows plain-language activity, and opens the published output or
 its timestamped evidence workspace. Results, Activity, Import, account, and
-sign-out controls share one hosted navigation. Recording upload is not
-available in hosted Studio yet; the Recording page says so and links back to
-Activity and to the desktop Studio instructions without presenting a disabled
-primary action. The hosted copy contract
+sign-out controls share one hosted navigation. The Recording step sends the
+file directly from the browser to Gemini, shows the configured size limit and
+retention duration in plain language, supports pause and recovery, and
+collapses a completed upload into one recording summary with a Replace action.
+Activity and Results identify
+video-only analyses with the recording duration and size, while start failures
+pair a specific next action with a support code. The hosted copy contract
 and internal-to-plain-language glossary live in
 [docs/UX_COPY.md](docs/UX_COPY.md).
 

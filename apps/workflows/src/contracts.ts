@@ -90,6 +90,8 @@ export type SealedHostedMediaReceipt = z.infer<
 export interface HostedMediaView {
   id: string;
   sha256: string;
+  sizeBytes: number;
+  durationSeconds: number;
   mimeType: SealedHostedMediaReceipt["mimeType"];
   retention: SealedHostedMediaReceipt["retention"];
   sealedAt: string;
@@ -104,6 +106,8 @@ export function hostedMediaView(
   return {
     id: receipt.mediaId,
     sha256: receipt.sha256,
+    sizeBytes: receipt.sizeBytes,
+    durationSeconds: receipt.durationSeconds,
     mimeType: receipt.mimeType,
     retention: receipt.retention,
     sealedAt: receipt.sealedAt,
@@ -240,10 +244,17 @@ export interface HostedJobView {
     };
     model: string;
     retention: "ephemeral" | "retained";
+    recording?: {
+      durationSeconds: number;
+      sizeBytes: number;
+    };
   };
 }
 
-export function hostedJobView(attempt: HostedAnalysisAttempt): HostedJobView {
+export function hostedJobView(
+  attempt: HostedAnalysisAttempt,
+  media?: Pick<SealedHostedMediaReceipt, "durationSeconds" | "sizeBytes">,
+): HostedJobView {
   return {
     id: attempt.attemptId,
     rootJobId: attempt.jobId,
@@ -275,6 +286,12 @@ export function hostedJobView(attempt: HostedAnalysisAttempt): HostedJobView {
           },
       model: attempt.input.model,
       retention: attempt.input.retention,
+      ...(media
+        ? { recording: {
+            durationSeconds: media.durationSeconds,
+            sizeBytes: media.sizeBytes,
+          } }
+        : {}),
     },
   };
 }
