@@ -64,7 +64,7 @@ describe("authentication policy", () => {
       "/api/auth/sign-in/social",
       "/_nuxt/app.js",
       "/favicon.svg",
-      "/favicon/extra",
+      "/favicon.ico",
       "/robots.txt",
       "/__nuxt_error",
     ]) expect(isBetterAuthPublicPath(path)).toBe(true);
@@ -72,6 +72,7 @@ describe("authentication policy", () => {
     for (const path of [
       "/",
       "/sign-in/extra",
+      "/favicon/extra",
       "/api/session",
       "/api/runs",
       "/hosted/activity",
