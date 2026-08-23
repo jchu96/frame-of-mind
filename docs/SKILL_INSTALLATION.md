@@ -68,6 +68,63 @@ npx skills add google-gemini/gemini-skills --skill gemini-api-dev --global
 npx skills add google-gemini/gemini-skills --skill gemini-interactions-api --global
 ```
 
+## Agent skills used to build and operate this repo
+
+These skills informed development and operations, but only the first group is
+part of this repository. They are agent guidance, not application runtime
+dependencies.
+
+### Vendored official Google skills
+
+- **`gemini-api-dev`** — current Gemini SDK, Files API, model, and multimodal
+  guidance used around the production analysis adapter.
+- **`gemini-interactions-api`** — current Interactions, structured-output,
+  multimodal, and migration contracts used to keep the deferred API path
+  explicit.
+
+Both are unmodified, repository-vendored copies from Google's official
+[`google-gemini/gemini-skills`](https://github.com/google-gemini/gemini-skills).
+Each companion's `PROVENANCE.md` pins the upstream commit and license.
+
+### Cloudflare official marketplace skills
+
+- **`cloudflare`** — Workers, D1, R2, Workflows, bindings, and platform-boundary
+  guidance.
+- **`cloudflare-email-service`** — Email Service bindings, local-versus-remote
+  behavior, delivery, and mailer operations.
+- **`wrangler`** — configuration, local emulation, migrations, secrets,
+  deployment, and resource operations.
+
+These Cloudflare-owned skills come from the official
+[`cloudflare/skills`](https://github.com/cloudflare/skills) marketplace. They
+are **not vendored in this repository**. The marketplace README gives these
+exact Claude Code installation commands:
+
+```text
+/plugin marketplace add cloudflare/skills
+/plugin install cloudflare@cloudflare
+```
+
+Other Agent Skills-compatible runtimes can use the installation method listed
+in that marketplace README.
+
+### Maintainer house skills not shipped
+
+- **`nuxt`** — covered Nuxt 4/Nitro boundaries, SSR-safe state, server routes,
+  build targets, and test-layer separation; substitute current Nuxt framework
+  guidance.
+- **`nuxt-ui`** — covered accessible Nuxt UI composition, semantic theming,
+  responsive layouts, and form behavior; substitute current component-library
+  and accessibility guidance.
+- **`playwright-skill`** — covered browser-flow, responsive, screenshot, and
+  interaction validation; substitute a Playwright browser-automation workflow.
+- **UI designer review agent** — provided visual hierarchy, responsive,
+  accessibility, and cold-read review of screenshot passes; substitute an
+  independent product-design and accessibility review.
+
+These house tools are maintainer-owned and intentionally not shipped or
+required by the public project.
+
 ## Why copy
 
 A public clone must work on:

@@ -231,3 +231,8 @@
 - Hosted evidence captures are append-only R2 PNG sidecars. D1 stores their
   digest plus authoritative manifest, recording, and player-timestamp
   provenance; the immutable `analysis.json`/`manifest.json` pair is unchanged.
+- Hosted deployment and authentication traps are maintained in
+  [gotchas.md](gotchas.md#hosted-deployment-and-auth-2026-08-23). Durable
+  contracts include tolerant display projection for legacy nullable D1 rows,
+  pre-stream `Content-Length` reservation for retained-media parts, local email
+  simulation by default, and authenticated dark-route canaries.
