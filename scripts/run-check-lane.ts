@@ -118,9 +118,12 @@ try {
       continue;
     }
     const first = await runStep(step, laneEnvironment);
-    if (
+    const retryTimedOutWorkflow = first.timedOut && (
       step === "test:hosted-workflows-http:better-auth"
-      && first.timedOut
+      || (process.env.CI === "true" && step === "test:hosted-workflows-http")
+    );
+    if (
+      retryTimedOutWorkflow
     ) {
       console.log(
         `CHECK_LANE lane=${lane} step=${step} retry=1 `

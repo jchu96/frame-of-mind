@@ -25,7 +25,13 @@ const baseRefAvailable = requestedTier !== "pr" || await isRefAvailable(baseRef!
 const changedPaths = requestedTier === "pr" && baseRefAvailable
   ? await pathsChangedSince(baseRef!)
   : [];
-const selection = selectGateTier(requestedTier as GateTier, baseRefAvailable, changedPaths);
+const hostedLaneSeparate = process.env.FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE === "1";
+const selection = selectGateTier(
+  requestedTier as GateTier,
+  baseRefAvailable,
+  changedPaths,
+  hostedLaneSeparate,
+);
 const selectedTier = selection.tier;
 
 if (printTier) {

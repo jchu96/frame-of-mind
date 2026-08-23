@@ -78,13 +78,43 @@ at 62.61 and 95.19 seconds. A future optimization may overlap the independent
 hosted contract processes inside that lane; it is intentionally deferred from
 the first sharded-gate landing.
 
-Each logical step has a 20-minute hard timeout. Override it with the positive
-integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`. A timeout prints
+## CI
+
+GitHub Actions splits the complete gate across two ordered jobs so the quick
+answer stays bounded without dropping hosted coverage:
+
+| Job | Budget | Command and ownership |
+|---|---:|---|
+| `check` | 15 minutes | `bun run check:pr --base origin/<base>` with fast and local lanes; production audit follows |
+| `hosted-contracts` | 40 minutes | needs `check`, installs Playwright Chromium, then runs `bun run check:lane:hosted` with 30-minute logical-step bounds and gate parallelism 1 |
+| `browser-e2e` | 15 minutes | independently installs Chromium and runs the synthetic Studio browser suite |
+| `fresh-clone` | 15 minutes each | frozen Ubuntu/macOS fresh builds plus the Windows install-only contract |
+
+The `check` job sets `FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1`. This keeps
+`check:pr` on fast and local even when the diff contains a normally unsafe
+path, because `hosted-contracts` is mandatory and supplies the complete hosted
+lane after `check`. Local `check:pr` calls retain the fail-closed adaptive tier
+selection described above. Scheduled and manually dispatched workflows also
+retain the 120-minute serial fallback job.
+
+When CI is red, start with the owning job. A `check` failure belongs to hygiene,
+types, unit tests, local builds/contracts, or the production audit. A
+`hosted-contracts` failure belongs to the Cloudflare/Workflows contracts,
+hosted browser projects, or release rehearsal; confirm the Chromium install
+step before diagnosing application authentication. A `fresh-clone` failure is
+an install/lockfile/portable-build failure—never weaken `--frozen-lockfile`.
+Windows workspace-key drift specifically means checking whether the harness
+kept its temporary clone on the checkout drive.
+
+Each logical step has a 20-minute hard timeout by default. Override it with the
+positive integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`; the 2-core hosted CI job
+uses 30 minutes. A timeout prints
 `exit=step_timeout` and terminates only the detached process group created for
-that step. The historically intermittent
-`test:hosted-workflows-http:better-auth` step receives one automatic retry only
-after `step_timeout` and prints `retry=1`; deterministic non-zero exits and all
-other steps are not retried.
+that step. The historically intermittent Better Auth Workflow contract receives
+one automatic retry only after `step_timeout`; CI extends that single-receipted
+retry to the standard Workflow contract as well. Local runs remain Better
+Auth-only. Retries print `retry=1`; deterministic non-zero exits and all other
+steps are not retried.
 
 ### Prebuilt artifact contract
 

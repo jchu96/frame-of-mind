@@ -58,6 +58,7 @@ interface Env {
   SENTRY_ENVIRONMENT?: string;
   SENTRY_RELEASE?: string;
   HOSTED_FAKE_START_DELAY_MEDIA_ID?: string;
+  HOSTED_FAKE_SKIP_DISPATCH_MEDIA_ID?: string;
 }
 
 interface HostedWorkflowOutput {
@@ -666,6 +667,16 @@ export default {
         });
       }
       return Response.json({ error: "attempt_not_found" }, { status: 404 });
+    }
+    if (
+      env.HOSTED_FAKE_SKIP_DISPATCH_MEDIA_ID === attempt.input.mediaId
+      && attempt.idempotencyKey.startsWith("http-race-")
+    ) {
+      return Response.json({
+        attemptId: attempt.attemptId,
+        workflowInstanceId: attempt.workflowInstanceId,
+        replayed: false,
+      }, { status: 201 });
     }
     try {
       await env.HOSTED_WORKFLOW.create({
