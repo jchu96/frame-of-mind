@@ -181,7 +181,7 @@ after the D1 cap reservation commits. D1 stores that URL as principal/media-
 bound AES-GCM ciphertext.
 
 Deploy order is deliberate: apply migrations through
-`0008_hosted_retention_evidence.sql`,
+`0009_magic_link_cooldown.sql`,
 deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
 caller with the service binding. Enabling hosted routes is a later reviewed
 release task; do not set its flags during this dark Phase 3 deployment shape.
@@ -207,7 +207,7 @@ bun run rehearse:hosted-release
 ```
 
 It builds the previous review-only and current hosted artifacts, applies D1
-migrations `0001` through `0008` to an isolated local clone and replays them as
+migrations `0001` through `0009` to an isolated local clone and replays them as
 an idempotent no-op, validates both Worker binding graphs, scans the boundary,
 runs the local byte-stability import regression, and dry-runs both the current
 and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.
@@ -332,6 +332,7 @@ Edit these values:
 | `database_id` | exact ID returned by D1 create |
 | `NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN` | `https://<team>.cloudflareaccess.com` |
 | `NUXT_CLOUDFLARE_ACCESS_AUD` | Access application audience from step 6 |
+| `NUXT_BETTER_AUTH_MAILER_FROM` | onboarded sender, for example `sign-in@<domain>` |
 | `services[0].service` | exact internal Workflows Worker name |
 
 Keep:
@@ -347,12 +348,14 @@ Proposed ADR 0019 also permits `better-auth` or
 `cloudflare-access+better-auth`. These modes are spike-proven but not the
 committed production default. They additionally require:
 
-- migration `0006_better_auth.sql` on the public Worker's D1 database;
+- migrations `0006_better_auth.sql` and `0009_magic_link_cooldown.sql` on the
+  public Worker's D1 database;
 - `NUXT_BETTER_AUTH_URL` set to the exact HTTPS custom origin;
-- GitHub client ID and the HTTPS mailer origin as Worker variables; and
+- GitHub client ID, magic-link sender, and optional fallback HTTPS mailer
+  origin as Worker variables; and
 - `NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
-  `NUXT_BETTER_AUTH_MAILER_KEY` set with `wrangler secret put` on the public
-  Nuxt Worker only.
+  the optional fallback `NUXT_BETTER_AUTH_MAILER_KEY` set with `wrangler
+  secret put` on the public Nuxt Worker only.
 
 Use at least 32 random bytes for the Better Auth secret. Never put these
 secrets in Wrangler JSON, the browser, or the internal Workflows Worker. The
@@ -682,7 +685,7 @@ storage.
 
 ### Tables do not exist
 
-Apply all pending migrations through `0006_better_auth.sql` to the
+Apply all pending migrations through `0009_magic_link_cooldown.sql` to the
 same database ID bound to both Workers.
 Check `wrangler d1 migrations list ... --remote`.
 
@@ -735,6 +738,60 @@ does not reassign or delete existing `ba:<userId>` rows and is not by itself a
 session revocation; account/session removal needs a separately reviewed
 operator action.
 
+### Enable magic-link email
+
+GitHub login does not require email sending; this section is optional unless
+the deployment also offers magic-link sign-in. Email sign-in uses the public
+Worker's Cloudflare Email Service binding first.
+The HTTPS mailer remains a compatibility fallback only when the binding is
+absent. To enable the binding path:
+
+1. Onboard the sender domain to Cloudflare Email Service.
+2. Add `"send_email": [{ "name": "EMAIL" }]` to the public Worker's Wrangler
+   configuration.
+3. Set `NUXT_BETTER_AUTH_MAILER_FROM=sign-in@<onboarded-domain>`. An empty
+   value with a present binding fails closed as `E_MAILER_FROM_UNSET`; it never
+   enables the HTTP fallback.
+4. Redeploy, request a link for an invited email, and verify the five-minute
+   one-time link arrives with both plain-text and HTML parts.
+
+For the first canary, restrict the binding to the exact invited addresses.
+Keep this operator-managed list synchronized with the D1 invite list:
+
+```jsonc
+"send_email": [{
+  "name": "EMAIL",
+  "allowed_destination_addresses": [
+    "invited-person@example.com"
+  ]
+}]
+```
+
+Do not copy that restriction into the generic example because every deployment
+has a different invite list. Never set `remote: true` in test or example
+configuration: Wrangler's local simulator must capture messages without
+sending real email.
+
+All binding failures return the public `MAILER_UNAVAILABLE` error. Hosted
+telemetry records only the provider code, never the recipient, link, token, or
+message ID:
+
+| Email Service code | Operator action |
+|---|---|
+| `E_MAILER_FROM_UNSET` | Set `NUXT_BETTER_AUTH_MAILER_FROM` to the exact onboarded sender and redeploy. |
+| `E_VALIDATION_ERROR`, `E_FIELD_MISSING`, `E_TOO_MANY_RECIPIENTS`, `E_CONTENT_TOO_LARGE` | Correct the composed request or limits. |
+| `E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE` | Complete sender-domain onboarding and verify `NUXT_BETTER_AUTH_MAILER_FROM`. |
+| `E_RECIPIENT_NOT_ALLOWED` | Add the invited address to the canary binding allowlist. |
+| `E_RECIPIENT_SUPPRESSED` | Review the Email Service suppression state before retrying. |
+| `E_RATE_LIMIT_EXCEEDED`, `E_DAILY_LIMIT_EXCEEDED` | Wait for the applicable limit or request a reviewed limit change. |
+| any other binding failure | Use the code-only `E_EMAIL_SEND_FAILED` receipt and inspect Cloudflare operational state. |
+
+Every row above maps to `MAILER_UNAVAILABLE`; GitHub sign-in remains available.
+Production limits `/sign-in/magic-link` to three requests per 15 minutes and
+also reserves each invited email for 60 seconds before delivery. A second
+request in that window returns `MAGIC_LINK_COOLDOWN` and does not call either
+mailer transport.
+
 ## Cutover to `better-auth` with GitHub login (ADR 0019, accepted 2026-08-23)
 
 > [!NOTE]
@@ -751,7 +808,7 @@ operator action.
 6. [Build and deploy](#7-build-and-deploy).
 7. [Verify fail-closed behavior](#8-verify-fail-closed-behavior).
 8. Add only the hosted capabilities you need: [Email Service for magic
-   links](#optional-email-service-for-magic-links), [private R2 retained
+   links](#enable-magic-link-email), [private R2 retained
    media](#private-retained-media-r2-shape), and the [internal Workflows
    Worker](#workflows-worker-configuration-shape).
 
@@ -782,24 +839,17 @@ Before cutover, apply migration `0006_better_auth.sql`, install the
    NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`; in `wrangler.jsonc` vars set
    `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID`, `NUXT_BETTER_AUTH_URL=https://<YOUR_HOSTNAME>`,
    and `NUXT_AUTH_MODE=cloudflare-access+better-auth` (stacked) for the first deploy.
-3. **Deploy stacked** and verify: Access still 302s anonymous traffic; behind
+3. **Optional email sign-in**: onboard the sending domain, add the `EMAIL`
+   binding, set `NUXT_BETTER_AUTH_MAILER_FROM`, and redeploy. Use the restricted
+   canary binding above until every invited address has been exercised.
+4. **Deploy stacked** and verify: Access still 302s anonymous traffic; behind
    Access, `/sign-in` shows "Continue with GitHub"; a sign-in with an invited
    email lands on the viewer with `GET /api/session` showing a `ba:` principal
    and the Access `sub` bound; an uninvited account is refused with
    `EMAIL_NOT_INVITED`.
-4. **Flip**: set `NUXT_AUTH_MODE=better-auth`, deploy, then set the Access
+5. **Flip**: set `NUXT_AUTH_MODE=better-auth`, deploy, then set the Access
    application policy to *bypass* (or delete the app) so anonymous traffic
    reaches the Worker's own sign-in page. Re-verify: anonymous `/api/runs`
    → 401/redirect to `/sign-in`, GitHub sign-in works, `access-users.ts` is
    no longer authoritative (membership is the D1 invite table).
-5. Record the cutover in `work_log.md`.
-
-### Optional Email Service for magic links
-
-GitHub login does not require an email-sending service. To offer magic-link
-login too, deploy a reviewed HTTPS mailer for the existing
-`NUXT_BETTER_AUTH_MAILER_ORIGIN` contract, keep its authentication key in
-`NUXT_BETTER_AUTH_MAILER_KEY`, and optionally back that mailer with Cloudflare
-Email Service. Local tests and examples must keep the simulator default;
-`send_email` with `remote: true` reaches the real Email Service and can send
-real mail.
+6. Record the cutover in `work_log.md`.

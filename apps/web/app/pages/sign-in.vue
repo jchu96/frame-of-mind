@@ -48,6 +48,9 @@ function friendlyAuthMessage(code: string | undefined): string {
   if (code === "EMAIL_NOT_INVITED") {
     return "This email has not been invited to Frame of Mind.";
   }
+  if (code === "MAGIC_LINK_COOLDOWN") {
+    return "A sign-in link was sent recently. Check your inbox or try again in a minute.";
+  }
   if (code === "EMAIL_NOT_FOUND") {
     return "GitHub did not share an email address for your account. Allow the Frame of Mind app to read your email addresses, or sign in with an account that has a verified email, then try again.";
   }

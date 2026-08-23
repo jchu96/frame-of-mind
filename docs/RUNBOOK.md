@@ -1374,14 +1374,25 @@ The public Worker recognizes `cloudflare-access`, `better-auth`, and
 workflows are enabled; unset or unknown values fail closed. The committed
 production example remains Access-only.
 
-For Better Auth modes, apply D1 migration `0006_better_auth.sql`, set
+For Better Auth modes, apply D1 migrations `0006_better_auth.sql` and
+`0009_magic_link_cooldown.sql`, set
 `NUXT_BETTER_AUTH_URL` to the exact HTTPS application origin, and store
 `NUXT_BETTER_AUTH_SECRET` and `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` as
-public-Worker secrets. To enable magic-link email, also store
-`NUXT_BETTER_AUTH_MAILER_KEY` there and configure the mailer HTTPS origin.
-Keep the GitHub client ID and mailer HTTPS origin as non-secret configuration.
-Never place these secrets on the internal Workflows Worker; conversely, never
-place `GEMINI_API_KEY` on the public Worker.
+public-Worker secrets. To enable magic-link email, onboard the sender domain,
+add the public Worker `send_email` binding named `EMAIL`, and set
+`NUXT_BETTER_AUTH_MAILER_FROM` to its exact sender address. The binding sends
+first; `NUXT_BETTER_AUTH_MAILER_ORIGIN` plus the secret
+`NUXT_BETTER_AUTH_MAILER_KEY` remain an optional HTTP fallback when no binding
+is present. Keep the GitHub client ID, sender, and mailer HTTPS origin as
+non-secret configuration. Never use a remote email binding in a local test,
+and never place these secrets on the internal Workflows Worker; conversely,
+never place `GEMINI_API_KEY` on the public Worker.
+
+Production accepts at most three magic-link requests per 15 minutes and uses a
+conditional D1 update to reserve each invited email for 60 seconds before the
+send begins. `MAGIC_LINK_COOLDOWN` means the existing link should be used or
+the operator should wait one minute; it must not be bypassed by switching
+mailer transports.
 
 Manage app-owned membership through the D1 invite table:
 
