@@ -17,10 +17,10 @@ export default defineEventHandler(async (event) => {
       attemptId,
     );
     if (!attempt) throw new HostedRepositoryError("hosted_attempt_not_found");
-    const media = await runtime.repository.getMediaReceipt(
+    const media = (await runtime.repository.getMediaReceiptsForDisplay(
       runtime.principalSub,
-      attempt.input.mediaId,
-    );
+      [attempt.input.mediaId],
+    )).get(attempt.input.mediaId);
     return {
       job: hostedJobView(attempt, media),
       ...(media ? { media: hostedMediaView(media) } : {}),
