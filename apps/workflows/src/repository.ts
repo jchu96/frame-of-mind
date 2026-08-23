@@ -52,6 +52,10 @@ interface MediaRow {
   size_bytes: number | null;
   sealed_at: string;
   expires_at: string;
+  retained_object_key: string | null;
+  retained_until: string | null;
+  retained_delete_requested_at: string | null;
+  retained_deleted_at: string | null;
 }
 
 export interface HostedAttemptCreateResult {
@@ -1087,6 +1091,16 @@ function mediaFromRow(row: MediaRow): SealedHostedMediaReceipt | undefined {
     durationSeconds: row.duration_seconds,
     sealedAt: row.sealed_at,
     expiresAt: row.expires_at,
+    ...(row.retained_object_key
+      ? { retainedObjectKey: row.retained_object_key }
+      : {}),
+    ...(row.retained_until ? { retainedUntil: row.retained_until } : {}),
+    ...(row.retained_delete_requested_at
+      ? { retainedDeleteRequestedAt: row.retained_delete_requested_at }
+      : {}),
+    ...(row.retained_deleted_at
+      ? { retainedDeletedAt: row.retained_deleted_at }
+      : {}),
   });
   return parsed.success ? parsed.data : undefined;
 }

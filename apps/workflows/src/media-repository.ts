@@ -22,6 +22,11 @@ interface UploadRow {
   upload_url_iv: string | null;
   gemini_file_name: string | null;
   provider_part_bytes: number | null;
+  r2_object_key: string | null;
+  r2_upload_id: string | null;
+  r2_capability_hash: string | null;
+  r2_completed_at: string | null;
+  r2_uploaded_bytes: number;
   state: HostedMediaUploadSession["state"];
   created_at: string;
   session_expires_at: string;
@@ -103,12 +108,16 @@ export class HostedMediaRepository {
     iv: string;
     providerPartBytes: number;
     geminiFileName?: string;
+    r2ObjectKey?: string;
+    r2UploadId?: string;
+    r2CapabilityHash?: string;
     updatedAt: string;
   }): Promise<void> {
     await this.database.prepare(`
       UPDATE hosted_media_upload_sessions
       SET upload_url_ciphertext = ?, upload_url_iv = ?,
           provider_part_bytes = ?, gemini_file_name = ?, state = 'open',
+          r2_object_key = ?, r2_upload_id = ?, r2_capability_hash = ?,
           updated_at = ?
       WHERE principal_sub = ? AND media_id = ? AND state = 'creating'
     `).bind(
@@ -116,6 +125,9 @@ export class HostedMediaRepository {
       input.iv,
       input.providerPartBytes,
       input.geminiFileName ?? null,
+      input.r2ObjectKey ?? null,
+      input.r2UploadId ?? null,
+      input.r2CapabilityHash ?? null,
       input.updatedAt,
       input.principalSub,
       input.mediaId,
@@ -124,6 +136,73 @@ export class HostedMediaRepository {
     if (session?.state !== "open") {
       throw new HostedRepositoryError("hosted_media_session_activation_failed");
     }
+  }
+
+  async markRetainedComplete(
+    principalSub: string,
+    mediaId: string,
+    capabilityHash: string,
+    completedAt: string,
+  ): Promise<void> {
+    const result = await this.database.prepare(`
+      UPDATE hosted_media_upload_sessions
+      SET r2_completed_at = ?, r2_capability_hash = NULL, updated_at = ?
+      WHERE principal_sub = ? AND media_id = ? AND state = 'open'
+        AND r2_capability_hash = ? AND r2_completed_at IS NULL
+    `).bind(completedAt, completedAt, principalSub, mediaId, capabilityHash).run();
+    if (d1Changes(result) !== 1) {
+      throw new HostedRepositoryError("hosted_retained_capability_unavailable");
+    }
+  }
+
+  async reserveRetainedPartBytes(input: {
+    principalSub: string;
+    mediaId: string;
+    capabilityHash: string;
+    contentLength: number;
+    maxBytes: number;
+    updatedAt: string;
+  }): Promise<boolean> {
+    const result = await this.database.prepare(`
+      UPDATE hosted_media_upload_sessions
+      SET r2_uploaded_bytes = r2_uploaded_bytes + ?, updated_at = ?
+      WHERE principal_sub = ? AND media_id = ? AND state = 'open'
+        AND retention = 'retained' AND r2_capability_hash = ?
+        AND r2_completed_at IS NULL AND session_expires_at > ?
+        AND r2_uploaded_bytes + ? <= declared_size_bytes
+        AND r2_uploaded_bytes + ? <= ?
+    `).bind(
+      input.contentLength,
+      input.updatedAt,
+      input.principalSub,
+      input.mediaId,
+      input.capabilityHash,
+      input.updatedAt,
+      input.contentLength,
+      input.contentLength,
+      input.maxBytes,
+    ).run();
+    return d1Changes(result) === 1;
+  }
+
+  async releaseRetainedPartBytes(input: {
+    principalSub: string;
+    mediaId: string;
+    contentLength: number;
+    updatedAt: string;
+  }): Promise<void> {
+    await this.database.prepare(`
+      UPDATE hosted_media_upload_sessions
+      SET r2_uploaded_bytes = r2_uploaded_bytes - ?, updated_at = ?
+      WHERE principal_sub = ? AND media_id = ? AND state = 'open'
+        AND r2_uploaded_bytes >= ?
+    `).bind(
+      input.contentLength,
+      input.updatedAt,
+      input.principalSub,
+      input.mediaId,
+      input.contentLength,
+    ).run();
   }
 
   async claimForSeal(
@@ -205,6 +284,7 @@ export class HostedMediaRepository {
     geminiFileUri: string;
     sealedAt: string;
     expiresAt: string;
+    retainedUntil?: string;
   }): Promise<SealedHostedMediaReceipt> {
     const receipt: SealedHostedMediaReceipt = {
       principalSub: input.session.principalSub,
@@ -218,14 +298,18 @@ export class HostedMediaRepository {
       durationSeconds: input.session.durationSeconds,
       sealedAt: input.sealedAt,
       expiresAt: input.expiresAt,
+      ...(input.session.r2ObjectKey
+        ? { retainedObjectKey: input.session.r2ObjectKey }
+        : {}),
+      ...(input.retainedUntil ? { retainedUntil: input.retainedUntil } : {}),
     };
     await this.database.batch([
       this.database.prepare(`
         INSERT INTO hosted_media_receipts (
           principal_sub, media_id, gemini_file_name, gemini_file_uri,
           sha256, mime_type, retention, sealed_at, expires_at,
-          duration_seconds, size_bytes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          duration_seconds, size_bytes, retained_object_key, retained_until
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         receipt.principalSub,
         receipt.mediaId,
@@ -238,6 +322,8 @@ export class HostedMediaRepository {
         receipt.expiresAt,
         receipt.durationSeconds,
         receipt.sizeBytes,
+        receipt.retainedObjectKey ?? null,
+        receipt.retainedUntil ?? null,
       ),
       this.database.prepare(`
         UPDATE hosted_media_upload_sessions
@@ -321,6 +407,13 @@ function uploadFromRow(row: UploadRow): HostedMediaUploadSession {
     ...(row.provider_part_bytes
       ? { providerPartBytes: row.provider_part_bytes }
       : {}),
+    ...(row.r2_object_key ? { r2ObjectKey: row.r2_object_key } : {}),
+    ...(row.r2_upload_id ? { r2UploadId: row.r2_upload_id } : {}),
+    ...(row.r2_capability_hash
+      ? { r2CapabilityHash: row.r2_capability_hash }
+      : {}),
+    ...(row.r2_completed_at ? { r2CompletedAt: row.r2_completed_at } : {}),
+    r2UploadedBytes: row.r2_uploaded_bytes,
     state: hostedMediaUploadStateSchema.parse(row.state),
     createdAt: row.created_at,
     sessionExpiresAt: row.session_expires_at,

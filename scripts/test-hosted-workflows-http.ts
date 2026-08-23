@@ -353,7 +353,31 @@ try {
     principalRace = await betterAuthPrincipal("workflow-race@example.test");
     principalOverrun = await betterAuthPrincipal("workflow-overrun@example.test");
     principalJanitor = await betterAuthPrincipal("workflow-janitor@example.test");
+    await stopContractWorker(webWorker, webOutput);
+    webWorker = undefined;
+    webOutput = undefined;
+    await stopContractWorker(workflowWorker, workflowOutput);
+    workflowWorker = undefined;
+    workflowOutput = undefined;
     await writeSeed();
+    const restartedWorkflow = await startContractWorker({
+      configPath: workflowConfigPath,
+      persistRoot,
+      port: workflowPort,
+      readinessUrl: `http://127.0.0.1:${workflowPort}/health`,
+      readinessStatus: 200,
+    });
+    workflowWorker = restartedWorkflow.worker;
+    workflowOutput = restartedWorkflow.output;
+    const restartedWeb = await startContractWorker({
+      configPath: webConfigPath,
+      persistRoot,
+      port: workerPort,
+      readinessUrl: `${baseUrl}/api/health`,
+      readinessStatus: 403,
+    });
+    webWorker = restartedWeb.worker;
+    webOutput = restartedWeb.output;
   }
   disabledWebWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
@@ -416,6 +440,7 @@ try {
     method: "POST",
     headers: mutationHeaders(baseUrl, tokenJanitor),
     body: "{}",
+    signal: AbortSignal.timeout(30_000),
   }), 200, "expired reservation janitor"));
   assertEqual(janitorResponse, { ok: true, released: 1, committed: 0 }, "janitor result");
   const janitorReplay = await json<{
@@ -426,6 +451,7 @@ try {
     method: "POST",
     headers: mutationHeaders(baseUrl, tokenJanitor),
     body: "{}",
+    signal: AbortSignal.timeout(30_000),
   }), 200, "idempotent expired reservation janitor"));
   assertEqual(janitorReplay, { ok: true, released: 0, committed: 0 }, "janitor replay");
   assertEqual(
@@ -1309,9 +1335,10 @@ async function verifyHostedBrowserContract(
     await page.getByText("Drop a recording here").waitFor();
     await page.getByRole("link", { name: "Back to Activity" }).waitFor();
     await page.getByText("Delete after analysis", { exact: true }).waitFor();
-    await page.getByText("Keep for 1 hour", { exact: true }).waitFor();
+    await page.getByText(/An unfinished upload expires after 1 hour\./).waitFor();
+    await page.getByText("Keep for 30 days", { exact: true }).waitFor();
     await assertRecordingCopyUsesUxGlossary(page);
-    await capture("03-recording-empty", "Keep for 1 hour");
+    await capture("03-recording-empty", "Keep for 30 days");
     await page.evaluate((id) => {
       sessionStorage.setItem(
         "hosted:frame-of-mind:studio:media-upload",
@@ -1694,11 +1721,15 @@ async function retryLocalDispatch(
 }
 
 async function isLocalDispatchFailure(response: Response): Promise<boolean> {
-  if (response.status !== 503) return false;
   const body = await response.clone().json().catch(() => undefined) as
-    | { data?: { code?: string } }
+    | { statusMessage?: string; data?: { code?: string } }
     | undefined;
-  return body?.data?.code === "hosted_workflow_dispatch_failed";
+  if (response.status === 503) {
+    return body?.data?.code === "hosted_workflow_dispatch_failed";
+  }
+  return response.status === 500
+    && body?.statusMessage === "Hosted job request failed."
+    && body.data?.code === undefined;
 }
 
 function mutationHeaders(origin: string, token: string): Record<string, string> {
@@ -1902,6 +1933,49 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${label}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`);
   }
+}
+
+async function startContractWorker(input: {
+  configPath: string;
+  persistRoot: string;
+  port: number;
+  readinessUrl: string;
+  readinessStatus: number;
+}) {
+  const worker = Bun.spawn([
+    "node", wranglerBin, "dev", "--local",
+    "--config", input.configPath,
+    "--persist-to", input.persistRoot,
+    "--ip", "127.0.0.1",
+    "--port", String(input.port),
+    "--inspector-port", "0",
+    "--log-level", "error",
+    "--show-interactive-dev-session=false",
+  ], {
+    cwd: process.cwd(),
+    env: createE2EEnvironment(process.env),
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const output = Promise.all([
+    new Response(worker.stdout).text(),
+    new Response(worker.stderr).text(),
+  ]);
+  await waitForWorker(input.readinessUrl, worker, input.readinessStatus);
+  return { worker, output };
+}
+
+async function stopContractWorker(
+  worker: ReturnType<typeof Bun.spawn> | undefined,
+  output: Promise<[string, string]> | undefined,
+): Promise<void> {
+  if (!worker || !output) {
+    throw new Error("Hosted Workflow contract Worker restart state was incomplete.");
+  }
+  worker.kill("SIGTERM");
+  await worker.exited;
+  await output;
 }
 
 // Local D1 queries run as a second Miniflare process against the persisted

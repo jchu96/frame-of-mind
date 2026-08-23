@@ -5,7 +5,7 @@ export interface BrowserReadinessRetry {
 
 export function isBrowserDisconnect(error: unknown): error is Error {
   return error instanceof Error
-    && /target page, context or browser has been closed|browser has been closed|target closed/i.test(error.message);
+    && /target page, context or browser has been closed|browser has been closed|target closed|connection terminated while reading from pipe|could not write into pipe/i.test(error.message);
 }
 
 export async function retryBrowserReadiness<T>(

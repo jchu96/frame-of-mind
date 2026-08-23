@@ -923,6 +923,21 @@
   modes; temporarily removing the `/sign-in` exemption made all five browser
   checks fail with a redirect loop, proving the render oracle discriminates.
   The existing auth spike and isolated Better Auth Workflow contract pass.
+- Completed Hosted Studio retention and evidence Tasks 5.1–5.2 on 2026-08-23
+  without deployment. Retained mode now creates a private principal-scoped R2
+  multipart upload behind a one-way, single-use application capability; seal
+  verifies the complete R2 size and SHA-256 against the independently verified
+  Gemini file. Added a visible 30-day default kept-until receipt, explicit
+  owner delete with an active-analysis veto, expired-object and incomplete-
+  multipart janitor cleanup, retained range playback, and client-canvas PNG
+  evidence in an append-only sidecar stamped with run-manifest, recording, and
+  timestamp provenance. The immutable run pair remains unchanged and the
+  Stream-thumbnail port is disabled with no dependency. The built-workerd
+  contract printed `HOSTED_RETENTION_CONTRACT PASSED` and
+  `HOSTED_EVIDENCE_CONTRACT PASSED`; reverting the R2 digest comparison or
+  provenance checks makes the named wrong-bytes/missing-source cases fail.
+  Locked typecheck and the 313-test web suite passed; the full gate receipt is
+  recorded in the worker status after final verification.
 - Addressed hosted UX pass-2 functional and accessibility findings on
   2026-08-23. Built-in revisions now share one resolver and the hosted HTTP
   contract starts every catalog goal; sign-out sends the required JSON body,
@@ -989,6 +1004,20 @@
   once, and leaves all auth mutations non-retried. The discriminator passed
   3/3 and the live `gate-lock bun run check:hosted-auth` contract passed with
   one-attempt readiness receipts in both Better Auth modes.
+- Integrated `origin/main` into Hosted Studio Phase 5b on 2026-08-23 with a
+  two-parent merge. The seven conflicts preserve the Phase 5b retention and
+  evidence contracts alongside main's hosted harness isolation, release
+  bindings, documentation, and shipped review-workspace UX; the canonical
+  review route is `/review/:runId`. The final serialized `bun run check`
+  passed with 23 Vitest files / 217 tests, 43 Bun web files / 317 tests, nine
+  hosted/adversarial Playwright tests passed with one intentional skip,
+  migrations `0001..0008`, and named retention, evidence, media, spend,
+  Studio, Workflow, auth, release, and 32 MiB streaming receipts. The final
+  pass-2 review-workspace desktop and mobile screenshots were refreshed and
+  visually checked. Browser startup now earns a side-effect-free authenticated
+  health receipt and retries only the known DevTools-pipe disconnect once;
+  Better Auth fixture seeding stops both live workerd processes before external
+  Wrangler D1 writes and restarts them on the same isolated resources.
 - Closed the second PR #86 delta review on 2026-08-23. Hosted Activity detail
   now uses the same nullable-tolerant display projection as the list while
   execution remains strict. The real-D1 contract covers the legacy detail and
@@ -997,3 +1026,17 @@
   writes leave the rendered support code selectable without an unhandled page
   error. Integrated `origin/main` at `7a50381`, preserving its run-scoped E2E
   isolation/resource lease and both branches' regression receipts.
+- Re-integrated `origin/main` at `2e0f2c8` into Hosted Studio Phase 5b on
+  2026-08-23. The merged list and detail routes keep #86's batched,
+  NULL-tolerant display receipts while execution remains strict. Recording
+  copy now derives the unfinished-upload duration from the Gemini session TTL
+  and the `Keep` duration independently from the R2 retention-days policy;
+  the browser contract proves `1 hour` and `30 days` respectively without
+  exposing internal glossary terms. The run-start error table gives each
+  retained-media failure specific copy and a recovery CTA, Activity keeps
+  #86's recording rows, and the pass-3 screenshot set was regenerated and
+  visually checked. The final serialized `bun run check` passed with 23
+  Vitest files / 217 tests, 44 Bun web files / 321 tests, both hosted Workflow
+  auth modes, the retention/evidence/media contracts, nine executed
+  Playwright tests with one intentional skip, release migrations `0001..0008`,
+  and the 32 MiB streaming proof.

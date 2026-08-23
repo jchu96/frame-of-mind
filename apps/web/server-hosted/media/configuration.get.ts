@@ -14,6 +14,7 @@ export default defineEventHandler((event) => {
       available: true,
       maxBytes: policy.maxBytes,
       sessionTtlSeconds: policy.sessionTtlSeconds,
+      retentionDays: policy.retentionDays,
     };
   } catch (error) {
     throwHostedMediaHttpError(error);

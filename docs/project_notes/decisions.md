@@ -4,6 +4,17 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-08-23 — Retained upload capabilities stay inside the Tier A secret boundary
+
+ADR 0018 Amendment 2 already authorizes private principal-owned R2 with a
+visible lifecycle, so Phase 5b does not introduce a new trust-boundary
+decision. Native R2 S3 presigning would require separate R2 access credentials
+and violate Tier A's one-secret invariant. The implementation instead mints a
+random, principal-authenticated application capability, stores only its hash,
+and streams fixed-length multipart requests through the private R2 binding.
+Evidence capture is an append-only sidecar bound to the immutable run pair by
+manifest and recording digests rather than a post-publication manifest edit.
+
 ## 2026-08-22 — One plan owns local Studio maintenance
 
 Local Studio replaces independently scheduled media/context expiry work with

@@ -44,6 +44,7 @@ export function loadHostedMediaDraft(
       mimeType: value.mimeType,
       durationSeconds: value.durationSeconds,
       retention: value.retention,
+      retainedUpload: value.retainedUpload,
     });
     if (
       value.schemaVersion !== 1
@@ -181,6 +182,53 @@ export async function uploadHostedRecording(input: {
       if (offset < end) continue;
     }
   }
+}
+
+export async function uploadRetainedRecording(input: {
+  file: File;
+  draft: HostedMediaDraft;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const retained = input.draft.retainedUpload;
+  if (!retained) {
+    if (input.draft.retention === "retained") {
+      throw new HostedMediaClientError("hosted_retained_capability_unavailable");
+    }
+    return;
+  }
+  const partBytes = Math.max(5 * 1_024 * 1_024, input.draft.partBytes);
+  const parts: Array<{ partNumber: number; etag: string }> = [];
+  for (let offset = 0, partNumber = 1; offset < input.file.size; partNumber += 1) {
+    const end = Math.min(offset + partBytes, input.file.size);
+    const separator = retained.partUrl.includes("?") ? "&" : "?";
+    const response = await fetch(
+      `${retained.partUrl}${separator}partNumber=${partNumber}`,
+      {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "content-type": "application/octet-stream" },
+        body: input.file.slice(offset, end),
+        signal: input.signal,
+      },
+    );
+    const part = await response.json().catch(() => undefined) as
+      | { partNumber?: number; etag?: string; data?: { code?: string } }
+      | undefined;
+    if (!response.ok || part?.partNumber !== partNumber || !part.etag) {
+      throw new HostedMediaClientError(
+        part?.data?.code ?? "hosted_retained_upload_failed",
+        response.status,
+      );
+    }
+    parts.push({ partNumber, etag: part.etag });
+    offset = end;
+  }
+  await sameOriginJson(retained.completeUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ parts }),
+    signal: input.signal,
+  });
 }
 
 export async function createHostedMedia(

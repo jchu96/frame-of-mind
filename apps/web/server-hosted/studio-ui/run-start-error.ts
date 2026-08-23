@@ -5,7 +5,8 @@ export type HostedRunStartErrorAction =
   | { kind: "choose-goal"; label: "Choose what to find"; to: "/hosted/new/intent" }
   | { kind: "reselect"; label: "Choose again"; to: "/hosted/new/intent" }
   | { kind: "upload-again"; label: "Upload recording again"; to: "/hosted/new/recording" }
-  | { kind: "finish-or-discard"; label: "Finish or discard upload"; to: "/hosted/new/recording" };
+  | { kind: "finish-or-discard"; label: "Finish or discard upload"; to: "/hosted/new/recording" }
+  | { kind: "view-activity"; label: "View activity"; to: "/hosted/activity" };
 
 export interface HostedRunStartErrorCopy {
   message: string;
@@ -39,6 +40,11 @@ const finishOrDiscardAction = {
   label: "Finish or discard upload",
   to: "/hosted/new/recording",
 } as const;
+const viewActivityAction = {
+  kind: "view-activity",
+  label: "View activity",
+  to: "/hosted/activity",
+} as const;
 
 const recordingUnavailableCodes = new Set([
   "hosted_media_not_found",
@@ -50,6 +56,14 @@ const recordingUnavailableCodes = new Set([
 const retentionCodes = new Set([
   "media_retention_expired",
   "media_retention_mismatch",
+]);
+
+const retainedUploadCodes = new Map<string, string>([
+  ["hosted_retained_capability_unavailable", "The private recording upload expired before it finished."],
+  ["hosted_retained_upload_incomplete", "The private recording copy did not finish uploading."],
+  ["hosted_retained_digest_unavailable", "We couldn't verify the private recording copy."],
+  ["retained_media_seal_mismatch", "The private recording copy did not match the analyzed recording."],
+  ["hosted_retained_part_size_exceeded", "The private recording copy exceeded the allowed size."],
 ]);
 
 const temporarySpendCodes = new Map<string, string>([
@@ -153,6 +167,20 @@ export function hostedRunStartErrorCopy(code?: string): HostedRunStartErrorCopy 
       message: "This recording's availability changed.",
       nextAction: "Return to Recording and upload it again.",
       action: uploadAgainAction,
+    };
+  }
+  if (code && retainedUploadCodes.has(code)) {
+    return {
+      message: retainedUploadCodes.get(code)!,
+      nextAction: "Return to Recording and upload it again.",
+      action: uploadAgainAction,
+    };
+  }
+  if (code === "hosted_retained_media_in_use") {
+    return {
+      message: "This private recording is still tied to active work.",
+      nextAction: "View Activity and wait for that work to finish before trying again.",
+      action: viewActivityAction,
     };
   }
   return {

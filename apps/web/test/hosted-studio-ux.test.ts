@@ -66,6 +66,12 @@ describe("hosted Studio UX pass 3", () => {
       ["media_seal_mismatch", "upload-again", "This recording is no longer ready."],
       ["media_retention_expired", "upload-again", "This recording's availability changed."],
       ["media_retention_mismatch", "upload-again", "This recording's availability changed."],
+      ["hosted_retained_capability_unavailable", "upload-again", "The private recording upload expired before it finished."],
+      ["hosted_retained_upload_incomplete", "upload-again", "The private recording copy did not finish uploading."],
+      ["hosted_retained_digest_unavailable", "upload-again", "We couldn't verify the private recording copy."],
+      ["retained_media_seal_mismatch", "upload-again", "The private recording copy did not match the analyzed recording."],
+      ["hosted_retained_part_size_exceeded", "upload-again", "The private recording copy exceeded the allowed size."],
+      ["hosted_retained_media_in_use", "view-activity", "This private recording is still tied to active work."],
       [undefined, "contact-support", "Something unexpected stopped this analysis from starting."],
     ];
     for (const [code, expectedAction, expectedMessage] of cases) {
