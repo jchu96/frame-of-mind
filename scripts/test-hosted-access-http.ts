@@ -204,7 +204,12 @@ try {
   const session = await json<Record<string, unknown>>(
     await expectStatus(authenticatedFetch(baseUrl, "/api/session", tokenA), 200, "display session"),
   );
-  if ("principal" in session || "sub" in session) {
+  if (
+    "sub" in session
+    || (hostedContractAuthMode === "better-auth"
+      ? session.principal !== true
+      : "principal" in session)
+  ) {
     throw new Error("GET /api/session exposed the durable principal.");
   }
   await expectStatus(
