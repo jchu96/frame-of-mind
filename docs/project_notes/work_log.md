@@ -29,6 +29,26 @@
   run-scoped identity helper, and workflow media cases retain the harness
   lease, retry settling, and race-failure diagnostics.
 
+- Completed the first hosted UX pass on 2026-08-23. Hosted mode now has one
+  navigation, an Intent → Context → Recording → Run stepper, one-click intent
+  selection, an honest recording-upload empty state, a three-card review, and
+  plain-language Activity, Results, viewer, error, review, and support surfaces.
+  The shared hosted screens use semantic Nuxt UI tokens and every hosted page
+  sets a useful document title. The Access browser contract captures desktop
+  and mobile visual receipts and proves principal-scoped review and support
+  denial; `docs/UX_COPY.md` records the copy contract and glossary. Validated
+  under the machine-wide gate lock by `bun run check` (22 Vitest files / 212
+  tests; Bun web suite: 40 files / 304 tests; Local Studio HTTP, both hosted
+  Access modes, both hosted Workflow modes, auth workerd proof, release
+  rehearsal, and 32 MiB streaming proof passed), `bun run test:e2e:hosted`
+  (hosted browser and 3-admitted/7-rejected spend race passed), and
+  `bun run test:e2e:smoke` (13 passed).
+
+- Final-integrated the consolidated E2E harness with the hosted UX pass. The
+  hosted Workflow contract retains its first-user browser and visual receipts
+  while using run-scoped Worker/D1/port/persistence identities, and its final
+  concurrent admission burst drains every admitted Workflow before cleanup.
+
 - Completed the standalone hosted direct-upload spike on 2026-08-23. A real
   Chromium page on an ephemeral loopback origin PUT a generated 20 MiB MP4 to
   a keyless Gemini resumable session in 16 MiB + 4 MiB chunks, then a fresh
@@ -903,3 +923,33 @@
   modes; temporarily removing the `/sign-in` exemption made all five browser
   checks fail with a redirect loop, proving the render oracle discriminates.
   The existing auth spike and isolated Better Auth Workflow contract pass.
+- Addressed hosted UX pass-2 functional and accessibility findings on
+  2026-08-23. Built-in revisions now share one resolver and the hosted HTTP
+  contract starts every catalog goal; sign-out sends the required JSON body,
+  reports failure, and proves session deletion. Hosted Tailwind sources are
+  explicit, the composer is three accurately numbered steps, terminal states
+  are actionable, provider/retention language is plain, and SSR-derived
+  activity state plus a serialized clock prevent hydration drift. The browser
+  contract now checks the responsive grid, hover/selected rings, focused skip
+  link, review columns, single headings, running state, and hydration console,
+  with pass-2 desktop/mobile screenshot receipts. Gate receipts follow after
+  the serialized acceptance run. Validated by `gate-lock bun run
+  test:e2e:hosted`, `gate-lock bun run check:hosted-auth`, and a final
+  `gate-lock bun run check` exit 0 (22 Vitest files / 212 tests; Bun web suite:
+  40 files / 304 tests; both auth-mode hosted Workflow contracts, sign-out
+  browser coverage, release rehearsal, and the 32 MiB streaming proof passed).
+- Integrated Hosted Studio Phase 2 from `origin/main` into the UX pass on
+  2026-08-23. Recording keeps the production direct-upload lifecycle,
+  open-session Resume/Discard recovery, and page-exit abandonment while using
+  the three-step composer, plain-language retention choices, and responsive
+  pass-2 presentation. Workflow fixtures cover both the UX catalog sweep and
+  Phase 2's missing-provider-hash failure, and the refreshed Recording
+  desktop/mobile screenshots were visually checked for step-label collisions
+  and stale reason messaging. Validated under the machine-wide lock by a final
+  `bun run check` exit 0 (22 Vitest files / 213 tests; Bun web suite: 41 files
+  / 313 tests; both hosted Workflow auth modes, hosted media/browser recovery,
+  release rehearsal, and 32 MiB streaming proof passed) and a final `bun run
+  test:e2e:hosted` exit 0 (`HOSTED_STUDIO_CONTRACT PASSED` and
+  `HOSTED_WORKFLOW_CONTRACT PASSED`, including the 3-admitted/7-rejected spend
+  race). One earlier full-check auth browser process closed unexpectedly; the
+  isolated auth gate and the clean final full check both passed unchanged.

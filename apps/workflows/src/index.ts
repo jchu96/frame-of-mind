@@ -51,6 +51,8 @@ interface Env {
   HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID?: string;
   HOSTED_FAKE_RECEIPT_FAILURE_STEP?: string;
   HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID?: string;
+  HOSTED_FAKE_STAGE_DELAY_MS?: string;
+  HOSTED_FAKE_STAGE_DELAY_MEDIA_ID?: string;
   HOSTED_FAKE_FILE_MISSING_HASH_MEDIA_ID?: string;
   SENTRY_DSN?: string;
   SENTRY_ENVIRONMENT?: string;
@@ -704,6 +706,13 @@ async function providerStep<T>(input: {
   usageRequired?: boolean;
   invoke(): Promise<T>;
 }): Promise<T> {
+  const fixtureDelay = fakeStageDelay(input.env, input.attempt.input.mediaId);
+  if (fixtureDelay > 0) {
+    await input.step.sleep(
+      `fixture-delay-${input.providerStepName}`,
+      fixtureDelay,
+    );
+  }
   const result = await input.step.do(
     input.providerStepName,
     HOSTED_PROVIDER_STEP_CONFIG,
@@ -846,6 +855,21 @@ async function providerStep<T>(input: {
     throw new Error(result.code);
   }
   return result.output as T;
+}
+
+function fakeStageDelay(env: Env, mediaId: string): number {
+  if (env.HOSTED_FAKE_GEMINI !== "true") return 0;
+  if (
+    env.HOSTED_FAKE_STAGE_DELAY_MEDIA_ID
+    && env.HOSTED_FAKE_STAGE_DELAY_MEDIA_ID !== mediaId
+  ) return 0;
+  const value = env.HOSTED_FAKE_STAGE_DELAY_MS;
+  if (value === undefined || value.trim() === "") return 0;
+  const milliseconds = Number(value);
+  if (!Number.isSafeInteger(milliseconds) || milliseconds < 0 || milliseconds > 30_000) {
+    throw new Error("hosted_fake_stage_delay_invalid");
+  }
+  return milliseconds;
 }
 
 async function beginStep(
