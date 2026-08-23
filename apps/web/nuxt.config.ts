@@ -626,6 +626,7 @@ export default defineNuxtConfig({
         ? { studioDefaultModel: DEFAULT_GEMINI_MODEL }
         : {}),
       studioEnabled: localStudioEnabled,
+      hostedStudioEnabled: hostedWorkflowsBuilt,
     },
   },
   typescript: {

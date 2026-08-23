@@ -12,6 +12,7 @@ import {
 import { composerReadinessFromStorage } from "../../app/studio/composer-readiness.js";
 import type { HostedJobView, HostedMediaView } from "../../../workflows/src/contracts.js";
 import { hostedMediaSession, hostedStorage } from "./hosted-adapter";
+import HostedComposerStepper from "./composer-stepper.vue";
 
 interface Recipe { id: string; label: string; revision: string }
 const { data: catalog, error } = await useFetch<{ recipes: Recipe[] }>("/api/hosted/recipes");
@@ -47,6 +48,13 @@ onMounted(async () => {
     message: item.message,
     link: `/hosted/new${item.link}`,
   }));
+  if (state.intent.blocker) {
+    await navigateTo({
+      path: "/hosted/new/intent",
+      query: { reason: "Complete Intent before opening Run." },
+    });
+    return;
+  }
   if (!state.canSubmit || !session) return;
   const draft = createOrLoadRunDraft(storage, retentionRequestForMediaSession(session), () => `hosted-run:${crypto.randomUUID()}`);
   payload = buildComposerPayload(state, draft);
@@ -81,6 +89,7 @@ async function start(): Promise<void> {
 
 <template>
   <main class="fom-shell py-8" data-hosted-composer="run">
+    <HostedComposerStepper current="run" :intent-ready="true" :recording-ready="ready" />
     <p class="fom-kicker text-primary">Step 4 of 4</p>
     <h1 class="mt-3 text-4xl font-black">Review and start</h1>
     <UCard class="mt-8 max-w-2xl">

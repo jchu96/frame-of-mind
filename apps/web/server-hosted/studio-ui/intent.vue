@@ -4,8 +4,10 @@ import {
   persistIntentDraft,
 } from "../../app/studio/intent-composer.js";
 import { hostedStorage } from "./hosted-adapter";
+import HostedComposerStepper from "./composer-stepper.vue";
 
 interface Recipe { id: string; label: string; description: string; revision: string }
+const route = useRoute();
 const { data: catalog, error } = await useFetch<{ defaultModel: string; recipes: Recipe[] }>("/api/hosted/recipes");
 if (error.value) throw createError({ statusCode: 404, statusMessage: "Not found" });
 const selected = ref(catalog.value?.recipes[0]?.id ?? "");
@@ -31,6 +33,14 @@ function save(): void {
 
 <template>
   <main class="fom-shell py-8" data-hosted-composer="intent">
+    <HostedComposerStepper current="intent" :intent-ready="saved" :recording-ready="false" />
+    <UAlert
+      v-if="typeof route.query.reason === 'string'"
+      class="mb-6"
+      color="warning"
+      variant="soft"
+      :description="route.query.reason"
+    />
     <p class="fom-kicker text-primary">Step 1 of 4</p>
     <h1 class="mt-3 text-4xl font-black">Choose intent</h1>
     <p class="mt-3 max-w-2xl text-muted">Choose the validated analysis recipe that will be frozen into the run manifest.</p>
