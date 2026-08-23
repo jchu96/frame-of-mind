@@ -512,8 +512,8 @@ whole-run failure after upload publishes only a sanitized
 `failure-manifest.json`. Version 1 bundles are unsupported — rerun the
 analysis to migrate.
 
-Hosted mode builds for Cloudflare Workers with D1 and fails closed behind
-Cloudflare Access JWT validation:
+Hosted mode builds for Cloudflare Workers with D1 and fails closed behind an
+explicit authentication mode: Cloudflare Access, Better Auth, or both:
 
 ```bash
 bun run build:web:cloudflare
@@ -532,6 +532,21 @@ It exercises local D1 migration replay, both Worker dry-runs, boundary
 fixtures, byte-stable local import, and the previous-artifact rollback drill;
 success prints `HOSTED_RELEASE_REHEARSAL PASSED`.
 
+The committed production example remains `cloudflare-access`. The Better Auth
+spike adds GitHub OAuth, magic-link sessions, D1 email invitations, and a
+stacked `cloudflare-access+better-auth` mode without changing the downstream
+principal-scoped contracts. Run its built-Worker browser proof with:
+
+```bash
+bun run check:hosted-auth
+bun run test:hosted-access-http:better-auth
+bun run test:hosted-workflows-http:better-auth
+```
+
+Better Auth binds `ba:<userId>` once in middleware; email is display and
+membership data only. See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
+and [proposed ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
+
 The dark hosted execution path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. When explicitly
 built and enabled, an Access-authenticated user can choose intent and
@@ -542,7 +557,7 @@ available in hosted Studio yet; the Recording page says so and contains no
 upload implementation.
 
 Hosted jobs, media receipts, activity, and published runs are bound to the
-validated Access principal. IDs owned by another principal resolve as not
+validated middleware principal. IDs owned by another principal resolve as not
 found, and no sharing or ownership-transfer route exists. Publication first
 validates the exact `analysis.json`/`manifest.json` pair, then projects it into
 D1 in one atomic batch. These routes remain absent from the normal Worker build

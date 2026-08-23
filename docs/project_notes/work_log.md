@@ -782,3 +782,16 @@
   Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40
   files / 303 tests; Local Studio HTTP, hosted contracts, release rehearsal,
   and streaming spike passed).
+- Completed the pluggable hosted-auth spike on 2026-08-23 without deployment.
+  Better Auth 1.7.1 ran in the built Nuxt workerd artifact with direct D1,
+  fake GitHub OAuth and captured magic-link browser sign-ins, claimed email
+  invites, `ba:<userId>` ownership, and stacked Access subject binding. The
+  existing two-principal Access contract and full hosted Studio/Workflow/spend
+  contract reproduced their PASS receipts in Better Auth mode by changing only
+  the login credential fixture. Added migration 0006, mode-aware membership
+  operations, fail-closed rehearsal checks, a spike receipt, and proposed ADR
+  0019; the production Wrangler example remains unchanged. Validated by
+  `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40 files / 304
+  tests; both builds, Local Studio HTTP, default and Better Auth hosted
+  Access/Workflow/Studio/spend contracts, auth workerd proof, release
+  rehearsal, and 32 MiB streaming proof passed).

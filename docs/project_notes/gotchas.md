@@ -418,3 +418,10 @@
   its working directory. Repository-owned build helpers must resolve source
   and output paths from `import.meta.url`, not `process.cwd()`, or deterministic
   hosted-entry emission looks for an `apps/web/apps/web/.output` tree.
+- Better Auth on Nitro's Cloudflare preset must use workerd's native
+  `node:async_hooks`. Build success alone is insufficient: unenv's
+  `AsyncLocalStorage` shim compiles but loses state across awaited handlers.
+- Nitro renderer requests can omit `event.context.cloudflare` while the
+  Cloudflare preset retains bindings in its request-scoped `globalThis.__env__`.
+  Better Auth resolves D1 from the event first and that Nitro fallback second;
+  the hosted browser contract covers this SSR path.
