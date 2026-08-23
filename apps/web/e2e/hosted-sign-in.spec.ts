@@ -39,6 +39,18 @@ test.describe(`hosted sign-in (${mode})`, () => {
     expect(await apiResponse.json()).toMatchObject({
       data: { code: "better_auth_session_missing" },
     });
+
+    const iconResponse = await request.get(
+      "/api/_nuxt_icon/lucide.json?icons=mail-check",
+      { maxRedirects: 0 },
+    );
+    expect(iconResponse.status()).toBe(200);
+
+    const iconTraversalResponse = await request.get(
+      "/api/_nuxt_icon/..%2fapi/session?icons=mail-check",
+      { maxRedirects: 0 },
+    );
+    expect(iconTraversalResponse.status()).toBe(403);
   });
 
   for (const [label, requestedNext, expectedPath] of [

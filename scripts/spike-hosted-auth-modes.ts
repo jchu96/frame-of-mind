@@ -39,6 +39,8 @@ const keys = await generateKeyPair("RS256");
 const publicJwk = await exportJWK(keys.publicKey);
 let worker: ReturnType<typeof Bun.spawn> | undefined;
 let workerOutput: Promise<[string, string]> | undefined;
+let inspectedRateLimitWorkerOutputs = 0;
+const SHARED_RATE_LIMIT_WARNING = "Rate limiting could not determine a client IP";
 
 const fixtureServer = Bun.serve({
   hostname: "127.0.0.1",
@@ -234,6 +236,12 @@ try {
     await stopWorker();
   }
   console.log("HOSTED_AUTH fail_closed=PASS hosted_enabled_unset=403 unknown=403");
+  if (inspectedRateLimitWorkerOutputs === 0) {
+    throw new Error("Hosted auth did not inspect any workerd output for the shared rate-limit warning.");
+  }
+  console.log(
+    `HOSTED_AUTH rate_limit_ip=PASS shared_bucket_warn=false workers=${inspectedRateLimitWorkerOutputs}`,
+  );
   console.log("HOSTED_AUTH runtime=PASS workerd_d1=true");
   console.log(`HOSTED_AUTH runtime_seconds=${((performance.now() - startedAt) / 1_000).toFixed(2)}`);
   console.log("HOSTED_AUTH_SPIKE PASSED");
@@ -706,14 +714,21 @@ async function stopWorker(forceOutput = false): Promise<void> {
   if (!worker) return;
   worker.kill("SIGTERM");
   await worker.exited;
-  if (workerOutput) {
-    const [stdout, stderr] = await workerOutput;
-    if (forceOutput || (worker.exitCode && worker.exitCode !== 143)) {
-      process.stderr.write(`Hosted auth workerd output:\n${sanitizeWorkerOutput(`${stdout}\n${stderr}`)}`.slice(0, 12_000));
-    }
-  }
+  const output = workerOutput;
+  const exitCode = worker.exitCode;
   worker = undefined;
   workerOutput = undefined;
+  if (output) {
+    const [stdout, stderr] = await output;
+    const combinedOutput = `${stdout}\n${stderr}`;
+    inspectedRateLimitWorkerOutputs += 1;
+    if (forceOutput || (exitCode && exitCode !== 143)) {
+      process.stderr.write(`Hosted auth workerd output:\n${sanitizeWorkerOutput(`${stdout}\n${stderr}`)}`.slice(0, 12_000));
+    }
+    if (!forceOutput && combinedOutput.includes(SHARED_RATE_LIMIT_WARNING)) {
+      throw new Error("Hosted auth workerd emitted the shared rate-limit bucket warning.");
+    }
+  }
 }
 
 function sanitizeWorkerOutput(value: string): string {
