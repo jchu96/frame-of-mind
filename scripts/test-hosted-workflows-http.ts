@@ -22,6 +22,10 @@ import {
   hostedContractAuthMode,
   startFakeGithub,
 } from "./hosted-auth-fixture";
+import {
+  resolvePrebuiltWebOutput,
+  resolvePrebuiltWorkflowsOutput,
+} from "./prebuilt-artifact";
 
 const isolation = await createE2EIsolation("hosted-workflows");
 const temporaryRoot = isolation.root;
@@ -34,6 +38,12 @@ const workflowOutdir = join(temporaryRoot, "workflow-bundle");
 const databaseName = isolation.databaseName;
 const databaseId = isolation.databaseId;
 const workflowServiceName = isolation.workerName("hosted-workflow");
+const prebuiltOutput = await resolvePrebuiltWebOutput("cloudflare_module");
+const prebuiltWorkflows = await resolvePrebuiltWorkflowsOutput();
+const webArtifact = prebuiltOutput ?? resolve("apps/web/.output");
+const workflowMain = prebuiltWorkflows
+  ? join(prebuiltWorkflows, "index.js")
+  : resolve("apps/workflows/src/index.ts");
 const audience = "frame-of-mind-hosted-workflow-contract";
 const keyId = "hosted-workflow-contract-key";
 let principalA = "hosted-workflow-principal-a";
@@ -79,21 +89,25 @@ let dispatchRetryTail = Promise.resolve();
 
 try {
   console.log("HOSTED_WORKFLOW build=START nuxt_and_workflow");
-  await runChecked(
-    ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare"],
-    "hosted Nuxt Worker build",
-    {
-      FRAME_OF_MIND_STUDIO: "1",
-      FRAME_OF_MIND_HOSTED_WORKFLOWS: "1",
-    },
-  );
+  if (prebuiltOutput) {
+    console.log("HOSTED_WORKFLOW build=SKIP prebuilt=cloudflare_module");
+  } else {
+    await runChecked(
+      ["bun", "--no-env-file", "run", "--cwd", "apps/web", "build:cloudflare"],
+      "hosted Nuxt Worker build",
+      {
+        FRAME_OF_MIND_STUDIO: "1",
+        FRAME_OF_MIND_HOSTED_WORKFLOWS: "1",
+      },
+    );
+  }
   const nitroBundle = await readFile(
-    resolve("apps/web/.output/server/chunks/nitro/nitro.mjs"),
+    join(webArtifact, "server/chunks/nitro/nitro.mjs"),
     "utf8",
   );
   const hostedBundleText = [nitroBundle];
   for await (const path of new Bun.Glob("**/*.mjs").scan({
-    cwd: resolve("apps/web/.output/server"),
+    cwd: join(webArtifact, "server"),
     absolute: true,
   })) {
     hostedBundleText.push(await readFile(path, "utf8"));
@@ -157,11 +171,11 @@ try {
   await writeFile(webConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
     name: isolation.workerName("hosted-web"),
-    main: resolve("apps/web/.output/server/index.mjs"),
+    main: join(webArtifact, "server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
     assets: {
-      directory: resolve("apps/web/.output/public"),
+      directory: join(webArtifact, "public"),
       binding: "ASSETS",
     },
     d1_databases: [d1Binding()],
@@ -181,10 +195,10 @@ try {
   await writeFile(disabledWebConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
     name: isolation.workerName("hosted-web-disabled"),
-    main: resolve("apps/web/.output/server/index.mjs"),
+    main: join(webArtifact, "server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
-    assets: { directory: resolve("apps/web/.output/public"), binding: "ASSETS" },
+    assets: { directory: join(webArtifact, "public"), binding: "ASSETS" },
     d1_databases: [d1Binding()],
     services: [{
       binding: "HOSTED_WORKFLOWS",
@@ -201,7 +215,7 @@ try {
   await writeFile(workflowConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
     name: workflowServiceName,
-    main: resolve("apps/workflows/src/index.ts"),
+    main: workflowMain,
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat"],
     d1_databases: [d1Binding()],
@@ -221,10 +235,14 @@ try {
       HOSTED_FAKE_FILE_MISSING_HASH_MEDIA_ID: missingHashMedia,
     },
   }, null, 2));
-  await runChecked([
-    "node", wranglerBin, "deploy", "--dry-run", "--config", workflowConfigPath,
-    "--outdir", workflowOutdir,
-  ], "Workflow Worker dry run");
+  if (prebuiltWorkflows) {
+    console.log("HOSTED_WORKFLOW workflow_build=SKIP prebuilt=cloudflare-workflows");
+  } else {
+    await runChecked([
+      "node", wranglerBin, "deploy", "--dry-run", "--config", workflowConfigPath,
+      "--outdir", workflowOutdir,
+    ], "Workflow Worker dry run");
+  }
   console.log("HOSTED_WORKFLOW build=PASS nuxt_and_workflow");
   await verifyRealAdapterContract();
 

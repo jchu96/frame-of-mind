@@ -13,6 +13,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { createServer } from "node:net";
 
 const RUNTIME_LOCK = join(tmpdir(), "frame-of-mind-e2e-runtime.lock");
+export const E2E_RUNTIME_LEASE_TOKEN_ENV = "FRAME_OF_MIND_E2E_RUNTIME_LEASE_TOKEN";
 const LOCK_OWNER_FILE = "owner.json";
 const LOCK_REAPER_FILE = ".reaping";
 const LOCK_OWNER_GRACE_MS = 5_000;
@@ -31,6 +32,7 @@ export interface E2EIsolation {
 }
 
 export interface E2EResourceLease {
+  readonly token: string;
   release(): Promise<void>;
 }
 
@@ -45,7 +47,8 @@ export async function createE2EIsolation(
   // Top-level runners own the machine-wide workerd/Chromium budget. A hosted
   // fixture created beneath their managed root is nested work in the same run
   // and must not try to acquire the lease again.
-  const resourceLease = parentRoot
+  const inheritedLease = !parentRoot && await hasInheritedRuntimeLease();
+  const resourceLease = parentRoot || inheritedLease
     ? undefined
     : await acquireE2EResourceLease();
 
@@ -115,6 +118,7 @@ export async function acquireE2EResourceLease(
       }
       let released = false;
       return {
+        token,
         release: async () => {
           if (released) return;
           released = true;
@@ -140,6 +144,19 @@ export async function acquireE2EResourceLease(
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, LOCK_POLL_MS));
   }
+}
+
+async function hasInheritedRuntimeLease(): Promise<boolean> {
+  const inheritedToken = process.env[E2E_RUNTIME_LEASE_TOKEN_ENV];
+  if (!inheritedToken) return false;
+  return resourceLeaseTokenMatches(RUNTIME_LOCK, inheritedToken);
+}
+
+export async function resourceLeaseTokenMatches(
+  lockPath: string,
+  token: string,
+): Promise<boolean> {
+  return (await readLockOwner(resolve(lockPath)))?.token === token;
 }
 
 export async function reserveFreePort(): Promise<number> {
