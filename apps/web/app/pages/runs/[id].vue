@@ -36,7 +36,7 @@ function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(date);
+    : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(date);
 }
 function hostedAttemptId(value: StoredRun): string | undefined {
   return value.runId.startsWith("hosted_attempt_")
@@ -62,7 +62,7 @@ function hostedAttemptId(value: StoredRun): string | undefined {
         :to="hostedAttemptId(run) ? `/hosted/activity/${encodeURIComponent(hostedAttemptId(run)!)}` : '/'"
         class="text-sm font-bold text-primary hover:underline"
       >
-        {{ hostedAttemptId(run) ? "← Back to activity" : "← All results" }}
+        {{ hostedAttemptId(run) ? "← Back to activity" : "← All analyses" }}
       </NuxtLink>
 
       <section class="mt-6 grid gap-8 lg:grid-cols-[1fr_20rem]">
@@ -75,6 +75,7 @@ function hostedAttemptId(value: StoredRun): string | undefined {
             {{ runTitle(run) }}
           </h1>
           <p class="mt-5 max-w-3xl leading-7 text-muted">{{ run.matchNotes }}</p>
+          <p class="mt-3 max-w-3xl text-sm text-muted">This is the published output. Open the review workspace to inspect timestamped evidence finding by finding.</p>
           <UButton class="mt-5" :to="`/review/${encodeURIComponent(run.runId)}`" color="neutral" variant="outline" label="Review findings" icon="i-lucide-scan-search" />
         </div>
 
@@ -82,16 +83,12 @@ function hostedAttemptId(value: StoredRun): string | undefined {
           <p class="fom-kicker text-muted">About this run</p>
           <dl class="mt-4 space-y-3">
             <div>
-              <dt class="text-xs text-muted">Run ID</dt>
-              <dd class="mt-1 break-all font-mono text-xs">{{ run.runId }}</dd>
+              <dt class="text-xs text-muted">Analysis provider</dt>
+              <dd class="mt-1 font-semibold">Analysed with Gemini</dd>
             </div>
             <div>
-              <dt class="text-xs text-muted">Model</dt>
-              <dd class="mt-1 font-semibold">{{ run.model }}</dd>
-            </div>
-            <div>
-              <dt class="text-xs text-muted">Accepted / rejected</dt>
-              <dd class="mt-1 font-semibold">{{ run.acceptedCount }} / {{ run.rejectedCount }}</dd>
+              <dt class="text-xs text-muted">Findings</dt>
+              <dd class="mt-1 font-semibold">{{ run.acceptedCount }} accepted</dd>
             </div>
             <div v-if="run.importedBy">
               <dt class="text-xs text-muted">Imported by</dt>

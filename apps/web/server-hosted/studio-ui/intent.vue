@@ -57,8 +57,7 @@ watch(focus, () => { if (!restoring && selected.value) save(); });
       variant="soft"
       :description="route.query.reason"
     />
-    <p class="fom-kicker text-primary">Intent</p>
-    <h1 class="mt-3 text-4xl font-black">What should we find?</h1>
+    <h1 class="text-4xl font-black">What should we find?</h1>
     <p class="mt-3 max-w-2xl text-muted">What should we look for in this recording? Pick one.</p>
     <div class="mt-8 grid gap-4 md:grid-cols-2">
       <UCard
@@ -66,9 +65,10 @@ watch(focus, () => { if (!restoring && selected.value) save(); });
         :key="recipe.id"
         as="button"
         type="button"
-        class="text-left transition-shadow hover:ring-2 hover:ring-primary/40"
+        class="text-left transition-shadow hover:ring-2 hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-primary"
         :class="selected === recipe.id ? 'ring-2 ring-primary' : ''"
         :aria-pressed="selected === recipe.id"
+        :aria-label="`Choose ${recipe.label}`"
         @click="selectRecipe(recipe.id)"
       >
         <h2 class="font-black">{{ recipe.label }}</h2>

@@ -3,6 +3,7 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 import type { SessionInfo } from "../../shared/types";
 
 const route = useRoute();
+const toast = useToast();
 const signInRoute = computed(() => route.path === "/sign-in");
 const navigation: NavigationMenuItem[] = [
   { label: "New analysis", icon: "i-lucide-plus", to: "/hosted/new/intent" },
@@ -22,8 +23,16 @@ const { data: session } = await useFetch<SessionInfo>("/api/session");
 
 async function signOut(): Promise<void> {
   if (session.value?.authMode.includes("better-auth")) {
-    await $fetch("/api/auth/sign-out", { method: "POST" });
-    await navigateTo("/sign-in", { external: true });
+    try {
+      await $fetch("/api/auth/sign-out", { method: "POST", body: {} });
+      await navigateTo("/sign-in", { external: true });
+    } catch {
+      toast.add({
+        title: "Could not sign out",
+        description: "Try again. Your session is still active.",
+        color: "error",
+      });
+    }
     return;
   }
   await navigateTo("/cdn-cgi/access/logout", { external: true });
@@ -49,19 +58,22 @@ async function signOut(): Promise<void> {
       <UNavigationMenu :items="navigation" orientation="vertical" tooltip />
       <template #footer="{ collapsed }">
         <div v-if="!collapsed" class="space-y-2 text-xs">
-          <p class="truncate text-muted">{{ session?.email || "Your account" }}</p>
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <button type="button" class="font-bold text-primary hover:underline" @click="signOut">Sign out</button>
-            <NuxtLink to="/import" class="text-muted hover:text-highlighted hover:underline">Import a run</NuxtLink>
-          </div>
+          <p class="flex min-w-0 items-center gap-1 text-muted">
+            <span class="truncate">{{ session?.email || "Your account" }}</span>
+            <span aria-hidden="true">·</span>
+            <button type="button" class="shrink-0 font-bold text-primary hover:underline" @click="signOut">Sign out</button>
+          </p>
+          <NuxtLink to="/import" class="text-muted hover:text-highlighted hover:underline">Import a run</NuxtLink>
         </div>
       </template>
     </UDashboardSidebar>
     <UDashboardPanel id="hosted-workspace">
       <template #header>
         <UDashboardNavbar>
-          <template #leading><UDashboardSidebarCollapse /></template>
-          <template #title><p class="font-bold text-highlighted">{{ title }}</p></template>
+          <template #left>
+            <UDashboardSidebarCollapse />
+            <p class="sr-only">{{ title }}</p>
+          </template>
           <template #right>
             <UButton v-if="!route.path.startsWith('/hosted/new/')" to="/hosted/new/intent" icon="i-lucide-plus" label="New analysis" size="sm" />
           </template>

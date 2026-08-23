@@ -1,6 +1,10 @@
 import type { H3Event } from "h3";
 import { DEFAULT_GEMINI_MODEL } from "../../../../src/adapters/gemini-model.js";
-import { builtInRecipe, digestRecipe } from "../../../../src/recipes/index.js";
+import {
+  builtInRecipe,
+  builtInRecipeRevision,
+  digestRecipe,
+} from "../../../../src/recipes/index.js";
 import {
   hostedJobView,
   type HostedAttemptInput,
@@ -34,7 +38,7 @@ export async function createHostedJob(
     recipe: {
       id: recipe.id,
       label: recipe.label,
-      revision: recipe.revision ?? "builtin-2026-08-11.1",
+      revision: builtInRecipeRevision(recipe.id),
       sha256: await digestRecipe(recipe),
     },
     model: request.model ?? DEFAULT_GEMINI_MODEL,

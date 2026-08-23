@@ -9,7 +9,7 @@ pass.
 1. Intent: “What should we look for in this recording? Pick one.”
 2. Results: “Your finished analyses, in one place. Only you can see them.”
 3. Recording unavailable: “Uploading a recording here isn't available yet. For now, run this analysis from the desktop Studio.”
-4. Before starting: “Your recording will be sent to Google Gemini for analysis and deleted from Gemini when it finishes. The settings below are saved with the results so you can see exactly how they were produced.”
+4. Before starting: “Your recording will be sent to Google Gemini for analysis and deleted from Gemini when it finishes. The settings above are saved with the results so you can see exactly how they were produced.”
 5. Activity: “Analyses you've started, and how they're going.”
 6. Account footer: “{email} · Sign out”
 7. Missing intent: “Choose what to look for first.”
@@ -37,3 +37,9 @@ pass.
 User-facing hosted copy should explain the action or consequence. Internal
 contract names remain appropriate in code, tests, operator documentation, and
 support details, but not as instructions to a first-time user.
+
+The hosted composer presents three steps: What to find, Recording, and Review
+& start. Review names recording-only input under Sources. The published output
+is the durable result; the review workspace is the finding-by-finding,
+timestamped evidence surface. Provider provenance is phrased as “Analysed with
+Gemini” rather than exposing a raw model identifier.
