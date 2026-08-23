@@ -96,6 +96,15 @@ describe("hosted direct media upload", () => {
     expect(removed).toBe(HOSTED_MEDIA_DRAFT_KEY);
   });
 
+  test("a complete persisted upload draft survives reload validation", () => {
+    const draft = uploadDraft(700_123);
+    const result = loadHostedMediaDraft({
+      getItem: () => JSON.stringify(draft),
+      removeItem: () => { throw new Error("valid draft was removed"); },
+    });
+    expect(result).toEqual(draft);
+  });
+
   test("a successful void upload is not mistaken for a denied Web Lock", async () => {
     Object.defineProperty(globalThis.navigator, "locks", {
       configurable: true,

@@ -33,3 +33,9 @@ CREATE TABLE hosted_media_upload_sessions (
 
 CREATE INDEX hosted_media_upload_open_idx
   ON hosted_media_upload_sessions (principal_sub, state, session_expires_at);
+
+-- The Workflow re-verifies this sealed size together with the provider digest
+-- before any analysis call. Existing dark-launch rows fail closed when absent.
+ALTER TABLE hosted_media_receipts ADD COLUMN size_bytes INTEGER CHECK (
+  size_bytes > 0 AND size_bytes <= 2147483648
+);

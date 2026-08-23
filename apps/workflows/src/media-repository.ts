@@ -83,6 +83,19 @@ export class HostedMediaRepository {
     return row ? uploadFromRow(row) : undefined;
   }
 
+  async listOpen(
+    principalSub: string,
+    now: string,
+    limit = 100,
+  ): Promise<HostedMediaUploadSession[]> {
+    const result = await this.database.prepare(`
+      SELECT * FROM hosted_media_upload_sessions
+      WHERE principal_sub = ? AND state = 'open' AND session_expires_at > ?
+      ORDER BY created_at ASC LIMIT ?
+    `).bind(principalSub, now, limit).all<UploadRow>();
+    return result.results.map(uploadFromRow);
+  }
+
   async activate(input: {
     principalSub: string;
     mediaId: string;
@@ -199,6 +212,7 @@ export class HostedMediaRepository {
       geminiFileName: input.geminiFileName,
       geminiFileUri: input.geminiFileUri,
       sha256: input.session.declaredSha256,
+      sizeBytes: input.session.declaredSizeBytes,
       mimeType: input.session.mimeType,
       retention: input.session.retention,
       durationSeconds: input.session.durationSeconds,
@@ -210,8 +224,8 @@ export class HostedMediaRepository {
         INSERT INTO hosted_media_receipts (
           principal_sub, media_id, gemini_file_name, gemini_file_uri,
           sha256, mime_type, retention, sealed_at, expires_at,
-          duration_seconds
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          duration_seconds, size_bytes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         receipt.principalSub,
         receipt.mediaId,
@@ -223,6 +237,7 @@ export class HostedMediaRepository {
         receipt.sealedAt,
         receipt.expiresAt,
         receipt.durationSeconds,
+        receipt.sizeBytes,
       ),
       this.database.prepare(`
         UPDATE hosted_media_upload_sessions

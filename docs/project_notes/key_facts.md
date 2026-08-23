@@ -123,6 +123,9 @@
   executing; cleanup deletes ephemeral staging or restores retained staging.
 - Studio media sessions, analysis jobs, and durable runs have separate
   lifecycles and authority boundaries.
+- Hosted direct-upload receipts bind size and SHA-256 twice: seal validates
+  Gemini metadata, then `ensure_gemini_file` requires both fields again before
+  analysis. Missing provider hash or size mismatch is `media_seal_mismatch`.
 - New Studio API keys are environment- or process-session-scoped; Phase A adds
   no plaintext API-key store.
 - Local Studio media uses server-advertised fixed-size parts, exact

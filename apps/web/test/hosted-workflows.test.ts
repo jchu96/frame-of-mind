@@ -543,7 +543,11 @@ async function hostedRepositoryFixture(includeHostedMigration = true) {
     "0002_video_only_projection.sql",
     "0003_principal_scope.sql",
     ...(includeHostedMigration
-      ? ["0004_hosted_workflows.sql", "0005_hosted_spend_telemetry.sql"]
+      ? [
+          "0004_hosted_workflows.sql",
+          "0005_hosted_spend_telemetry.sql",
+          "0007_hosted_direct_media.sql",
+        ]
       : []),
   ];
   for (const name of names) {
@@ -589,8 +593,8 @@ async function seedMedia(
     INSERT INTO hosted_media_receipts (
       principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
       mime_type, retention, sealed_at, expires_at
-      , duration_seconds
-    ) VALUES (?, ?, ?, ?, ?, 'video/mp4', 'retained', ?, ?, 1)
+      , duration_seconds, size_bytes
+    ) VALUES (?, ?, ?, ?, ?, 'video/mp4', 'retained', ?, ?, 1, 1024)
   `).bind(
     principalSub,
     mediaId,

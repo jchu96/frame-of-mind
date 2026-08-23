@@ -152,8 +152,8 @@ provider-side TTL and supports offset query/resume after a client restart;
 **Decision.**
 - `POST /api/hosted/media` creates a principal-owned media session with a
   declared size, declared SHA-256, and MIME type, opens the Gemini resumable
-  session server-side, stores the Gemini file name, and returns the session
-  URL to the browser. The Worker holds at most **N open sessions per
+  session server-side, and returns the session URL to the browser. Gemini does
+  not expose a File name until finalize. The Worker holds at most **N open sessions per
   principal** (default 2) — enforced in D1 before the Gemini call — and
   refuses a new session while the cap is reached.
 - The browser uploads directly to the session URL. Part size is a browser
@@ -161,9 +161,15 @@ provider-side TTL and supports offset query/resume after a client restart;
 - `POST /api/hosted/media/:id/seal` asks the Worker to call `files.get` and
   **requires** `sizeBytes` and `sha256Hash` to equal the declared values;
   a missing hash fails closed. Only then is the sealed-media receipt written
-  and `ensure_gemini_file` allowed to proceed. A mismatched or abandoned
-  session is deleted from Gemini by the Worker (and by the Phase 5 janitor
-  for expired sessions).
+  and `ensure_gemini_file` allowed to proceed. A mismatched finalized session
+  is deleted from Gemini by the Worker (and by the Phase 5 janitor for expired
+  sessions). Before finalize, there is no File identity or documented
+  resumable-session revoke: cancel/expiry marks D1 `abandoned`, refuses
+  subsequent seal, and relies on the provider's bounded session TTL.
+- `GET /api/hosted/media?state=open` reissues open-session capabilities only to
+  their owning authenticated principal so a new tab can offer explicit Resume
+  or Discard. `pagehide` and hidden visibility transitions send a best-effort
+  keepalive DELETE; recovery remains authoritative when that request is lost.
 - FR-04 and AD-4 in the hosted spec are rewritten to match; the 4 MiB /
   8 MiB part constants, the wrapper-entry upload path, and the proxy
   streaming oracle are retired (the wrapper entry remains only as the

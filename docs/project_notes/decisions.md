@@ -305,5 +305,9 @@ principal-owned pending session before it calls Gemini, encrypts the resumable
 capability in D1, and returns that write-only URL to the browser without the
 API key. The browser hashes and uploads directly; only exact provider size,
 MIME, and a present matching digest can create the sealed receipt consumed by
-the Workflow. The prior Worker-proxy route and fixed hosted part constants are
-retired.
+the Workflow, which independently rechecks provider size and digest before
+analysis. The prior Worker-proxy route and fixed hosted part constants are
+retired. Because Gemini provides no File identity or documented session revoke
+before finalize, pre-final cancel/expiry abandons D1, refuses seal, and relies
+on provider TTL; principal-scoped open-session recovery is the fallback when a
+best-effort page-exit DELETE is lost.

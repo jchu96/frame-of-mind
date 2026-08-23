@@ -65,6 +65,12 @@ const hostedMediaHandler = fileURLToPath(
 const hostedMediaCreateHandler = fileURLToPath(
   new URL("./server-hosted/media/create.post.ts", import.meta.url),
 );
+const hostedMediaConfigurationHandler = fileURLToPath(
+  new URL("./server-hosted/media/configuration.get.ts", import.meta.url),
+);
+const hostedMediaListHandler = fileURLToPath(
+  new URL("./server-hosted/media/list.get.ts", import.meta.url),
+);
 const hostedMediaSealHandler = fileURLToPath(
   new URL("./server-hosted/media/seal.post.ts", import.meta.url),
 );
@@ -451,6 +457,16 @@ const localHandlers = [
           route: "/api/hosted/recipes",
           method: "get",
           handler: hostedRecipesHandler,
+        },
+        {
+          route: "/api/hosted/media/configuration",
+          method: "get",
+          handler: hostedMediaConfigurationHandler,
+        },
+        {
+          route: "/api/hosted/media",
+          method: "get",
+          handler: hostedMediaListHandler,
         },
         {
           route: "/api/hosted/media",

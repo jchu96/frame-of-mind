@@ -1459,10 +1459,19 @@ zero changes.
 
 The authenticated `POST /api/hosted/media/janitor` route is the companion
 upload cleanup pass. Invoke it per affected principal. It queries and deletes
-expired, unsealed Gemini sessions and marks cleanup failures for the next
-pass. It skips a freshly claimed seal; only a seal stuck beyond the bounded
-grace interval is eligible. Success returns an `abandoned` count, and an
-immediate replay should return zero.
+expired finalized Gemini Files and marks cleanup failures for the next pass.
+For an upload that never finalized, Gemini exposes no File name or documented
+session-revoke operation; the janitor marks D1 `abandoned`, refuses any later
+seal, and relies on the provider session TTL instead of reporting a false
+deletion failure. It skips a freshly claimed seal; only a seal stuck beyond the
+bounded grace interval is eligible. Success returns an `abandoned` count, and
+an immediate replay should return zero.
+
+`GET /api/hosted/media?state=open` is principal-scoped recovery for lost
+tab-local state. The Recording step offers Resume (after querying Gemini's
+authoritative offset) or Discard. Page exit and hidden-tab transitions issue a
+best-effort keepalive DELETE, but operators should expect the recovery list to
+remain the fallback when a browser cannot deliver it.
 
 Future telemetry enablement requires a separately reviewed expansion of the
 Tier A one-secret boundary. If approved later, `SENTRY_DSN` belongs only on
