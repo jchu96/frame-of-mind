@@ -12,6 +12,17 @@ export function usesBetterAuth(mode: AuthMode): boolean {
   return mode === "better-auth" || mode === "cloudflare-access+better-auth";
 }
 
+export function isBetterAuthPublicPath(path: string): boolean {
+  return path === "/sign-in"
+    || path === "/api/auth"
+    || path.startsWith("/api/auth/")
+    || path === "/_nuxt"
+    || path.startsWith("/_nuxt/")
+    || path.startsWith("/favicon")
+    || path === "/robots.txt"
+    || path === "/__nuxt_error";
+}
+
 export function parseAuthMode(value: unknown): AuthMode {
   if (
     value === "off"
