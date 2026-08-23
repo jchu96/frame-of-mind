@@ -541,12 +541,14 @@
   per attempt. The strict parser correctly rejected the legacy row, but that
   exception escaped the optional display projection and the loop also created
   an N+1 query path.
-- Fix: preserve strict receipt reads for execution and add one principal-bound,
-  page-batched display read that omits only rows that cannot supply complete
-  recording metadata.
+- Fix: preserve strict receipt reads for execution and use principal-bound,
+  tolerant display reads in both list and detail routes; the list batches the
+  page, and each route omits only metadata that cannot be parsed completely.
 - Prevention: the real-D1 hosted Workflow contract seeds one nullable legacy
-  receipt beside a valid attempt and requires `GET /api/hosted/jobs` to return
-  HTTP 200 with both rows and recording details only on the valid row.
+  receipt beside a valid attempt and requires both list and legacy detail to
+  return HTTP 200 without a recording/media block. A principal-B attempt whose
+  immutable input names principal A's media also proves the display projection
+  cannot cross the SQL principal boundary.
 
 ## 2026-08-23 — Hosted recovery actions contradicted their error copy
 

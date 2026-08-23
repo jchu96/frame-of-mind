@@ -1218,13 +1218,21 @@ async function verifyHostedBrowserContract(
         hydrationMismatches.push(`${new URL(page.url()).pathname}: ${message.text()}`);
       }
     });
-    const capture = async (name: string): Promise<void> => {
+    const capture = async (
+      name: string,
+      mobileFocusText?: string,
+    ): Promise<void> => {
       assertEqual(await page.locator("h1").count(), 1, `${name} single h1`);
       assertEqual(hydrationMismatches, [], `${name} hydration mismatches`);
       if (!captureScreenshots) return;
       await page.setViewportSize({ width: 1280, height: 900 });
       await page.screenshot({ path: join(screenshotRoot, `${name}-desktop.png`), fullPage: true });
       await page.setViewportSize({ width: 390, height: 844 });
+      if (mobileFocusText) {
+        await page.getByText(mobileFocusText, { exact: true }).evaluate((element) => {
+          element.scrollIntoView({ block: "end", inline: "nearest" });
+        });
+      }
       await page.screenshot({ path: join(screenshotRoot, `${name}-mobile.png`), fullPage: true });
       await page.setViewportSize({ width: 1280, height: 900 });
     };
@@ -1303,7 +1311,7 @@ async function verifyHostedBrowserContract(
     await page.getByText("Delete after analysis", { exact: true }).waitFor();
     await page.getByText("Keep for 1 hour", { exact: true }).waitFor();
     await assertRecordingCopyUsesUxGlossary(page);
-    await capture("03-recording-empty");
+    await capture("03-recording-empty", "Keep for 1 hour");
     await page.evaluate((id) => {
       sessionStorage.setItem(
         "hosted:frame-of-mind:studio:media-upload",
@@ -1419,7 +1427,7 @@ async function verifyHostedBrowserContract(
           });
         });
         await errorAction.click();
-        const supportCode = page.getByRole("alert").locator("code");
+        const supportCode = page.locator("code").filter({ hasText: fixture.code });
         assertEqual(await supportCode.textContent(), fixture.code, "clipboard fallback support code");
         assertEqual(
           await supportCode.evaluate((element) => getComputedStyle(element).userSelect === "none"),

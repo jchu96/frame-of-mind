@@ -989,3 +989,11 @@
   once, and leaves all auth mutations non-retried. The discriminator passed
   3/3 and the live `gate-lock bun run check:hosted-auth` contract passed with
   one-attempt readiness receipts in both Better Auth modes.
+- Closed the second PR #86 delta review on 2026-08-23. Hosted Activity detail
+  now uses the same nullable-tolerant display projection as the list while
+  execution remains strict. The real-D1 contract covers the legacy detail and
+  a principal-B attempt whose immutable input references principal-A media;
+  the exact-message table pins every reachable start code; and denied clipboard
+  writes leave the rendered support code selectable without an unhandled page
+  error. Integrated `origin/main` at `7a50381`, preserving its run-scoped E2E
+  isolation/resource lease and both branches' regression receipts.
