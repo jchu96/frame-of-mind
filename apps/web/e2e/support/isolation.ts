@@ -1,8 +1,23 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createServer } from "node:net";
+
+const RUNTIME_LOCK = join(tmpdir(), "frame-of-mind-e2e-runtime.lock");
+const LOCK_OWNER_FILE = "owner.json";
+const LOCK_REAPER_FILE = ".reaping";
+const LOCK_OWNER_GRACE_MS = 5_000;
+const LOCK_POLL_MS = 100;
+const LOCK_WAIT_TIMEOUT_MS = 30 * 60 * 1_000;
 
 export interface E2EIsolation {
   readonly id: string;
@@ -10,8 +25,13 @@ export interface E2EIsolation {
   readonly persistRoot: string;
   readonly databaseName: string;
   readonly databaseId: string;
+  workerName(role: string): string;
   reservePort(): Promise<number>;
   cleanup(): Promise<void>;
+}
+
+export interface E2EResourceLease {
+  release(): Promise<void>;
 }
 
 export async function createE2EIsolation(
@@ -22,11 +42,32 @@ export async function createE2EIsolation(
     .replace(/^-+|-+$/g, "") || "run";
   const resolvedParent = parentRoot ? resolve(parentRoot) : resolve(tmpdir());
   if (parentRoot) assertManagedRoot(resolvedParent);
-  await mkdir(resolvedParent, { recursive: true });
-  const root = await mkdtemp(join(resolvedParent, `frame-of-mind-e2e-${safeLabel}-`));
+  // Top-level runners own the machine-wide workerd/Chromium budget. A hosted
+  // fixture created beneath their managed root is nested work in the same run
+  // and must not try to acquire the lease again.
+  const resourceLease = parentRoot
+    ? undefined
+    : await acquireE2EResourceLease();
+
+  let root: string;
+  try {
+    await mkdir(resolvedParent, { recursive: true });
+    root = await mkdtemp(join(resolvedParent, `frame-of-mind-e2e-${safeLabel}-`));
+  } catch (error) {
+    await resourceLease?.release();
+    throw error;
+  }
   const id = randomUUID().replaceAll("-", "");
   const persistRoot = join(root, "wrangler-state");
-  await mkdir(persistRoot, { recursive: true });
+  try {
+    await mkdir(persistRoot, { recursive: true });
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    await resourceLease?.release();
+    throw error;
+  }
+
+  let cleaned = false;
 
   return {
     id,
@@ -34,9 +75,71 @@ export async function createE2EIsolation(
     persistRoot,
     databaseName: `fom-e2e-${safeLabel}-${id.slice(0, 12)}`,
     databaseId: randomUUID(),
+    workerName: (role: string) => {
+      const safeRole = role.toLowerCase().replace(/[^a-z0-9-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "worker";
+      return `fom-e2e-${safeRole.slice(0, 35)}-${id.slice(0, 12)}`;
+    },
     reservePort: reserveFreePort,
-    cleanup: () => rm(root, { recursive: true, force: true }),
+    cleanup: async () => {
+      if (cleaned) return;
+      cleaned = true;
+      try {
+        await rm(root, { recursive: true, force: true });
+      } finally {
+        await resourceLease?.release();
+      }
+    },
   };
+}
+
+export async function acquireE2EResourceLease(
+  lockPath = RUNTIME_LOCK,
+): Promise<E2EResourceLease> {
+  const resolvedLock = resolve(lockPath);
+  const token = randomUUID();
+  const startedAt = Date.now();
+
+  for (;;) {
+    try {
+      await mkdir(resolvedLock);
+      try {
+        await writeFile(join(resolvedLock, LOCK_OWNER_FILE), JSON.stringify({
+          pid: process.pid,
+          token,
+          acquiredAt: new Date().toISOString(),
+        }));
+      } catch (error) {
+        await rm(resolvedLock, { recursive: true, force: true });
+        throw error;
+      }
+      let released = false;
+      return {
+        release: async () => {
+          if (released) return;
+          released = true;
+          const owner = await readLockOwner(resolvedLock);
+          if (owner?.token !== token) return;
+          const releasedPath = `${resolvedLock}.released-${token}`;
+          try {
+            await rename(resolvedLock, releasedPath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+            throw error;
+          }
+          await rm(releasedPath, { recursive: true, force: true });
+        },
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+
+    if (await reapStaleLock(resolvedLock)) continue;
+    if (Date.now() - startedAt >= LOCK_WAIT_TIMEOUT_MS) {
+      throw new Error("Timed out waiting for the machine-wide E2E runtime lease.");
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, LOCK_POLL_MS));
+  }
 }
 
 export async function reserveFreePort(): Promise<number> {
@@ -70,18 +173,94 @@ export function assertManagedRoot(root: string): void {
 
 export async function withE2EBuildLock<T>(run: () => Promise<T>): Promise<T> {
   const lock = join(tmpdir(), "frame-of-mind-e2e-web-build.lock");
-  for (;;) {
-    try {
-      await mkdir(lock);
-      break;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
-    }
-  }
+  const lease = await acquireE2EResourceLease(lock);
   try {
     return await run();
   } finally {
-    await rm(lock, { recursive: true, force: true });
+    await lease.release();
   }
+}
+
+interface LockOwner {
+  pid: number;
+  token: string;
+}
+
+async function reapStaleLock(lockPath: string): Promise<boolean> {
+  const observedOwner = await readLockOwner(lockPath);
+  if (observedOwner && processIsAlive(observedOwner.pid)) return false;
+  if (!observedOwner) {
+    try {
+      if (Date.now() - (await stat(lockPath)).mtimeMs < LOCK_OWNER_GRACE_MS) {
+        return false;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+      throw error;
+    }
+  }
+
+  const reaperPath = join(lockPath, LOCK_REAPER_FILE);
+  try {
+    await writeFile(reaperPath, String(process.pid), { flag: "wx" });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") return false;
+    if (code === "ENOENT") return true;
+    throw error;
+  }
+
+  const claimedOwner = await readLockOwner(lockPath);
+  if (
+    !sameLockOwner(observedOwner, claimedOwner)
+    || (claimedOwner && processIsAlive(claimedOwner.pid))
+  ) {
+    await rm(reaperPath, { force: true });
+    return false;
+  }
+
+  const stalePath = `${lockPath}.stale-${randomUUID()}`;
+  try {
+    await rename(lockPath, stalePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+    throw error;
+  }
+  await rm(stalePath, { recursive: true, force: true });
+  return true;
+}
+
+async function readLockOwner(lockPath: string): Promise<LockOwner | undefined> {
+  try {
+    const parsed = JSON.parse(
+      await readFile(join(lockPath, LOCK_OWNER_FILE), "utf8"),
+    ) as Partial<LockOwner>;
+    return Number.isSafeInteger(parsed.pid) && typeof parsed.token === "string"
+      ? parsed as LockOwner
+      : undefined;
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+      || error instanceof SyntaxError
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+function sameLockOwner(
+  left: LockOwner | undefined,
+  right: LockOwner | undefined,
+): boolean {
+  return left?.pid === right?.pid && left?.token === right?.token;
 }

@@ -24,6 +24,7 @@ const seedPath = join(temporaryRoot, "seed.sql");
 const workflowOutdir = join(temporaryRoot, "workflow-bundle");
 const databaseName = isolation.databaseName;
 const databaseId = isolation.databaseId;
+const workflowServiceName = isolation.workerName("hosted-workflow");
 const audience = "frame-of-mind-hosted-workflow-contract";
 const keyId = "hosted-workflow-contract-key";
 const principalA = "hosted-workflow-principal-a";
@@ -110,7 +111,7 @@ try {
   const issuer = `http://127.0.0.1:${jwksServer.port}`;
   await writeFile(webConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-web-contract",
+    name: isolation.workerName("hosted-web"),
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat"],
@@ -121,7 +122,7 @@ try {
     d1_databases: [d1Binding()],
     services: [{
       binding: "HOSTED_WORKFLOWS",
-      service: "frame-of-mind-hosted-workflow-contract",
+      service: workflowServiceName,
     }],
     vars: {
       NUXT_AUTH_MODE: "cloudflare-access",
@@ -137,7 +138,7 @@ try {
   }, null, 2));
   await writeFile(disabledWebConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-web-disabled-contract",
+    name: isolation.workerName("hosted-web-disabled"),
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat"],
@@ -145,7 +146,7 @@ try {
     d1_databases: [d1Binding()],
     services: [{
       binding: "HOSTED_WORKFLOWS",
-      service: "frame-of-mind-hosted-workflow-contract",
+      service: workflowServiceName,
     }],
     vars: {
       NUXT_AUTH_MODE: "cloudflare-access",
@@ -158,13 +159,13 @@ try {
   }, null, 2));
   await writeFile(workflowConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-workflow-contract",
+    name: workflowServiceName,
     main: resolve("apps/workflows/src/index.ts"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat"],
     d1_databases: [d1Binding()],
     workflows: [{
-      name: "frame-of-mind-analysis-contract",
+      name: isolation.workerName("hosted-analysis"),
       binding: "HOSTED_WORKFLOW",
       class_name: "HostedAnalysisWorkflow",
     }],
@@ -338,13 +339,27 @@ try {
   );
   const admitted = raceResponses.filter((response) => response.status === 201);
   const rejected = raceResponses.filter((response) => response.status === 429);
+  if (admitted.length !== 3 || rejected.length !== raceSize - 3) {
+    const responseReceipts = await Promise.all(raceResponses.map(async (response, index) => ({
+      request: index + 1,
+      status: response.status,
+      body: await response.clone().text(),
+    })));
+    const databaseReceipt = await queryRaceFailureReceipt();
+    console.error(`HOSTED_SPEND race_failure=${JSON.stringify({
+      responses: responseReceipts,
+      database: databaseReceipt,
+    })}`);
+  }
   assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
   assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
   for (const response of rejected) {
     const body = await json<{ data?: { code?: string } }>(response);
     assertEqual(body.data?.code, "principal_spend_cap_exceeded", "HTTP race cap code");
   }
-  for (const response of admitted) await response.body?.cancel();
+  const admittedJobs = await Promise.all(
+    admitted.map((response) => json<JobResponse>(response)),
+  );
   assertEqual(
     await queryCount(
       "hosted_analysis_attempts",
@@ -353,6 +368,12 @@ try {
     3,
     "HTTP race created Workflows",
   );
+  const admittedTerminals = await Promise.all(
+    admittedJobs.map(({ job }) => waitForTerminal(baseUrl, tokenRace, job.id)),
+  );
+  for (const terminal of admittedTerminals) {
+    assertEqual(terminal.job.stage, "succeeded", "HTTP race terminal stage");
+  }
   console.log(
     `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3}`,
   );
@@ -537,7 +558,7 @@ try {
   );
   await runChecked([
     "node", wranglerBin, "workflows", "instances", "restart",
-    "frame-of-mind-analysis-contract", workflowInstanceId,
+    isolation.workerName("hosted-analysis"), workflowInstanceId,
     "--local", "--port", String(workflowPort),
     "--config", workflowConfigPath,
     "--from-step-name", "transcribe",
@@ -1009,6 +1030,33 @@ async function queryCount(table: string, predicate: string): Promise<number> {
     "--json",
   ], `query ${table} count`);
   return d1Scalar(stdout);
+}
+
+async function queryRaceFailureReceipt(): Promise<unknown> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command", `
+      SELECT 'principal' AS row_type, principal_sub, NULL AS attempt_id,
+        cap_units, committed_units, NULL AS reserved_units, NULL AS state,
+        NULL AS idempotency_key
+      FROM hosted_principal_spend
+      WHERE principal_sub = '${principalRace}'
+      UNION ALL
+      SELECT 'reservation', principal_sub, attempt_id,
+        NULL, NULL, reserved_units, state, NULL
+      FROM hosted_spend_reservations
+      WHERE principal_sub = '${principalRace}'
+      UNION ALL
+      SELECT 'attempt', principal_sub, attempt_id,
+        NULL, NULL, spend_reserved_units, stage, idempotency_key
+      FROM hosted_analysis_attempts
+      WHERE principal_sub = '${principalRace}'
+      ORDER BY row_type, attempt_id
+    `,
+    "--json",
+  ], "query concurrent spend failure rows");
+  return JSON.parse(stdout);
 }
 
 async function queryCommittedUnits(principalSub: string): Promise<number> {

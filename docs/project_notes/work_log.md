@@ -794,3 +794,19 @@
   Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40
   files / 303 tests; Local Studio HTTP, hosted contracts, release rehearsal,
   and streaming spike passed).
+- Root-caused the local hosted-spend race flake on 2026-08-23. Under a
+  concurrent hosted-auth Chromium/workerd run, the ten HTTP requests returned
+  three `hosted_workflow_dispatch_failed` 503s and seven correct spend-cap
+  429s, while D1 contained exactly three queued attempts and three 12,000-unit
+  reservations against the 36,000-unit cap. The admission transaction was
+  correct; unbounded local emulator/browser concurrency made the HTTP oracle
+  conflate admission with downstream dispatch. The shared isolation helper
+  now gives every top-level E2E runner a stale-safe machine-wide runtime lease,
+  while nested fixtures reuse the owner lease and per-run state remains unique.
+  Legacy access/Workflow contracts now use run-scoped Worker and Workflow names,
+  and the spend-race fixture drains all three admitted Workflows before later
+  scenarios. Reverting the runtime lease reproduced the concurrent failure on
+  run 6; the fixed hosted-auth spike passed 5/5 concurrent launches, the focused
+  Workflow contract passed 5/5 sequential runs, and a single `gate-lock` lease
+  around 10 consecutive `bun run check` executions passed 10/10 with
+  `admitted=3 rejected=7` each time.

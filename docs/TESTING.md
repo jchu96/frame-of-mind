@@ -124,6 +124,23 @@ Playwright reports remain under ignored, run-ID-specific `test-results/` and
 `playwright-report/` directories so concurrent gates do not overwrite one
 another.
 
+Top-level local E2E runners also hold one machine-wide runtime lease for their
+complete workerd/Chromium lifetime. Per-run paths isolate state, but they do
+not isolate CPU and process capacity: overlapping hosted gates can make local
+Workflow dispatch return 503 or terminate a Chromium context. Nested hosted
+fixtures reuse their outer runner's lease. A dead owner is detected by PID and
+reaped, so an interrupted gate does not leave the machine permanently locked.
+Wrangler Worker, service, and Workflow names are also derived from the run ID;
+fixed names can collide with stale entries in Wrangler's local service registry
+even after the prior child process exits. Concurrent HTTP fixtures must consume
+their admitted responses and wait for the resulting Workflows to settle before
+starting a later scenario in the same emulator lifetime.
+
+On shared fleet machines that provide `gate-lock`, invoke the outer gate through
+that wrapper too (for example, `gate-lock bun run check`). It coordinates this
+repository with other worktrees and repositories before the in-process lease
+exists.
+
 ## Discriminating regressions
 
 These tests are intentionally coupled to named failure modes:
