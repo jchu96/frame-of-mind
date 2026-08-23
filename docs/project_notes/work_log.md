@@ -782,3 +782,31 @@
   Validated by `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40
   files / 303 tests; Local Studio HTTP, hosted contracts, release rehearsal,
   and streaming spike passed).
+- Completed the pluggable hosted-auth spike on 2026-08-23 without deployment.
+  Better Auth 1.7.1 ran in the built Nuxt workerd artifact with direct D1,
+  fake GitHub OAuth and captured magic-link browser sign-ins, claimed email
+  invites, `ba:<userId>` ownership, and stacked Access subject binding. The
+  existing two-principal Access contract and full hosted Studio/Workflow/spend
+  contract reproduced their PASS receipts in Better Auth mode by changing only
+  the login credential fixture. Added migration 0006, mode-aware membership
+  operations, fail-closed rehearsal checks, a spike receipt, and proposed ADR
+  0019; the production Wrangler example remains unchanged. Validated by
+  `bun run check` (22 Vitest files / 212 tests; Bun web suite: 40 files / 304
+  tests; both builds, Local Studio HTTP, default and Better Auth hosted
+  Access/Workflow/Studio/spend contracts, auth workerd proof, release
+  rehearsal, and 32 MiB streaming proof passed).
+- Addressed PR #75's four authentication review findings on 2026-08-23.
+  Uninvited magic-link sends now fail before verification storage and mailer
+  invocation; Access rejects the Better Auth `ba:` namespace; and the stacked
+  browser proof denies a second Access subject before session insertion. ADR
+  0019 and the threat model now name magic-link verification as a
+  session-minting, first-fetch GET with link-scanner consumption risk instead
+  of claiming every mutation is POST. The production GitHub provider also
+  requires a verified provider email, and Better Auth membership removal now
+  refuses to remove the final invite instead of silently doing nothing.
+  Validated by the Access unit fixture, the built-workerd auth spike, and a
+  fresh `bun run check` exit 0 (22 Vitest files / 212 tests; Bun web suite: 40
+  files / 304 tests; both auth-mode Workflow contracts, release rehearsal, and
+  32 MiB streaming proof passed). An initial full run hit the pre-existing
+  intermittent workerd hang; the isolated contract and fresh full gate passed,
+  and the harness follow-up is recorded in `bugs.md`.

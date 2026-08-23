@@ -15,7 +15,7 @@ const startedAt = performance.now();
 const repositoryRoot = resolve(import.meta.dir, "..");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-release-"));
 const previousOutput = join(temporaryRoot, "previous-output");
-const migrationDirectory = join(temporaryRoot, "migrations-0001-through-0004");
+const migrationDirectory = join(temporaryRoot, "migrations-0001-through-0006");
 const persistRoot = join(temporaryRoot, "wrangler-state");
 const wranglerBin = resolve(repositoryRoot, "apps/web/node_modules/wrangler/bin/wrangler.js");
 const databaseName = "frame-of-mind-hosted-release-rehearsal";
@@ -68,6 +68,18 @@ try {
   const publicShape = await readJson("apps/web/wrangler.jsonc.example");
   const workflowShape = await readJson("apps/workflows/wrangler.jsonc.example");
   validateConfigShapes(publicShape, workflowShape);
+  validateHostedAuthConfig(publicShape.vars as Record<string, unknown> | undefined);
+  for (const invalid of [undefined, { NUXT_AUTH_MODE: "unknown-mode" }]) {
+    try {
+      validateHostedAuthConfig(invalid);
+      throw new Error("Hosted auth rehearsal accepted an unset or unknown mode.");
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.toLowerCase().includes("hosted auth mode")) {
+        throw error;
+      }
+    }
+  }
+  console.log("HOSTED_RELEASE auth_config=PASS explicit_mode_required=true unknown_refused=true");
   console.log("HOSTED_RELEASE bindings=PASS public=DB,ASSETS,HOSTED_WORKFLOWS workflow=DB,HOSTED_WORKFLOW");
 
   const publicConfig = join(temporaryRoot, "public.wrangler.json");
@@ -128,6 +140,7 @@ try {
     "0003_principal_scope.sql",
     "0004_hosted_workflows.sql",
     "0005_hosted_spend_telemetry.sql",
+    "0006_better_auth.sql",
   ]) {
     await cp(
       resolve(repositoryRoot, "apps/web/db/migrations", name),
@@ -146,15 +159,15 @@ try {
     "node", wranglerBin, "d1", "migrations", "apply", databaseName,
     "--local", "--config", migrationConfig, "--persist-to", persistRoot,
   ];
-  const firstMigration = await runChecked(migrationCommand, "D1 0001 through 0005 migration");
-  for (const name of ["0001_initial.sql", "0002_video_only_projection.sql", "0003_principal_scope.sql", "0004_hosted_workflows.sql", "0005_hosted_spend_telemetry.sql"]) {
+  const firstMigration = await runChecked(migrationCommand, "D1 0001 through 0006 migration");
+  for (const name of ["0001_initial.sql", "0002_video_only_projection.sql", "0003_principal_scope.sql", "0004_hosted_workflows.sql", "0005_hosted_spend_telemetry.sql", "0006_better_auth.sql"]) {
     if (!firstMigration.includes(name)) throw new Error(`D1 rehearsal omitted ${name}.`);
   }
   const replayMigration = await runChecked(migrationCommand, "D1 migration replay");
   if (!/no migrations to apply/i.test(replayMigration)) {
     throw new Error("D1 migration replay did not report an idempotent no-op.");
   }
-  console.log("HOSTED_RELEASE migrations=PASS range=0001..0005 replay=idempotent");
+  console.log("HOSTED_RELEASE migrations=PASS range=0001..0006 replay=idempotent");
 
   await runChecked(
     [
@@ -216,6 +229,22 @@ function validateConfigShapes(
   }
   if (/SENTRY_DSN|GRANOLA|BLUEDOT/.test(JSON.stringify(workflowShape))) {
     throw new Error("Workflow production shape names a disallowed Tier A secret.");
+  }
+}
+
+function validateHostedAuthConfig(vars: Record<string, unknown> | undefined): void {
+  const mode = typeof vars?.NUXT_AUTH_MODE === "string" ? vars.NUXT_AUTH_MODE.trim() : "";
+  if (![
+    "cloudflare-access",
+    "better-auth",
+    "cloudflare-access+better-auth",
+  ].includes(mode)) {
+    throw new Error("Hosted auth mode must be explicit and recognized.");
+  }
+  if (mode.includes("cloudflare-access")) {
+    if (!vars?.NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN || !vars.NUXT_CLOUDFLARE_ACCESS_AUD) {
+      throw new Error("Hosted auth mode cloudflare-access requires its domain and audience.");
+    }
   }
 }
 

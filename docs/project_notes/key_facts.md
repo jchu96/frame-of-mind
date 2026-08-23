@@ -196,3 +196,14 @@
   remains 404 and body-unread until Phase 2 lands; the public Worker has no
   secret and the internal Workflows Worker permits only `GEMINI_API_KEY` in
   the Tier A release shape.
+- Better Auth 1.7.1 is workerd-compatible through the direct D1 adapter when
+  the Cloudflare bundle externalizes `node:async_hooks`. D1 migration 0006
+  stores Better Auth dates as ISO text and invitations as normalized email.
+- Hosted auth binds one principal in middleware: Access uses its validated
+  subject; Better Auth uses `ba:<userId>`; stacked mode still uses the Better
+  Auth principal and records the outer Access subject separately. Access JWT
+  subjects cannot begin with the reserved `ba:` prefix.
+- Better Auth 1.7.1 magic-link verification is a session-minting GET that
+  atomically consumes its token on the first fetch. The hosted integration
+  rejects uninvited sends in a before-hook so no verification row or mail is
+  created, then rechecks the invite before session insertion.

@@ -57,6 +57,10 @@ export interface RunPage {
 }
 
 export interface SessionInfo {
-  authMode: "off" | "cloudflare-access";
+  authMode:
+    | "off"
+    | "cloudflare-access"
+    | "better-auth"
+    | "cloudflare-access+better-auth";
   email?: string;
 }
