@@ -686,3 +686,33 @@ present in both the Access group and the D1 invite list. Removing an invitation
 does not reassign or delete existing `ba:<userId>` rows and is not by itself a
 session revocation; account/session removal needs a separately reviewed
 operator action.
+
+## Cutover to `better-auth` with GitHub login (ADR 0019, accepted 2026-08-23)
+
+Prerequisites already applied to production on 2026-08-23: migration
+`0006_better_auth.sql`, the `NUXT_BETTER_AUTH_SECRET` Worker secret, and
+invites for the maintainer's emails (`bun scripts/studio-users.ts --mode
+better-auth add <email>`).
+
+1. **GitHub OAuth App** (maintainer, GitHub → Settings → Developer settings →
+   OAuth Apps → New): Homepage `https://fom.flickerventures.com`,
+   Authorization callback URL
+   `https://fom.flickerventures.com/api/auth/callback/github`. Put the values
+   in an uncommitted file, e.g. `~/secrets/frameofmind/github-oauth.env`:
+   `GITHUB_CLIENT_ID=…` and `GITHUB_CLIENT_SECRET=…`.
+2. **Secrets + vars** (operator): `wrangler secret put
+   NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`; in `wrangler.jsonc` vars set
+   `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID`, `NUXT_BETTER_AUTH_URL=https://fom.flickerventures.com`,
+   and `NUXT_AUTH_MODE=cloudflare-access+better-auth` (stacked) for the first deploy.
+3. **Deploy stacked** and verify: Access still 302s anonymous traffic; behind
+   Access, `/sign-in` shows "Continue with GitHub"; a sign-in with an invited
+   email lands on the viewer with `GET /api/session` showing a `ba:` principal
+   and the Access `sub` bound; an uninvited account is refused with
+   `EMAIL_NOT_INVITED`.
+4. **Flip**: set `NUXT_AUTH_MODE=better-auth`, deploy, then set the Access
+   application policy to *bypass* (or delete the app) so anonymous traffic
+   reaches the Worker's own sign-in page. Re-verify: anonymous `/api/runs`
+   → 401/redirect to `/sign-in`, GitHub sign-in works, `access-users.ts` is
+   no longer authoritative (membership is the D1 invite table).
+5. Record the cutover in `work_log.md`.
+
