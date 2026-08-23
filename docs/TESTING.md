@@ -86,7 +86,7 @@ answer stays bounded without dropping hosted coverage:
 | Job | Budget | Command and ownership |
 |---|---:|---|
 | `check` | 15 minutes | `bun run check:pr --base origin/<base>` with fast and local lanes; production audit follows |
-| `hosted-contracts` | 40 minutes | needs `check`, installs Playwright Chromium, then runs `bun run check:lane:hosted` |
+| `hosted-contracts` | 40 minutes | needs `check`, installs Playwright Chromium, then runs `bun run check:lane:hosted` with 30-minute logical-step bounds and gate parallelism 1 |
 | `browser-e2e` | 15 minutes | independently installs Chromium and runs the synthetic Studio browser suite |
 | `fresh-clone` | 15 minutes each | frozen Ubuntu/macOS fresh builds plus the Windows install-only contract |
 
@@ -106,13 +106,15 @@ an install/lockfile/portable-build failure—never weaken `--frozen-lockfile`.
 Windows workspace-key drift specifically means checking whether the harness
 kept its temporary clone on the checkout drive.
 
-Each logical step has a 20-minute hard timeout. Override it with the positive
-integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`. A timeout prints
+Each logical step has a 20-minute hard timeout by default. Override it with the
+positive integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`; the 2-core hosted CI job
+uses 30 minutes. A timeout prints
 `exit=step_timeout` and terminates only the detached process group created for
-that step. The historically intermittent
-`test:hosted-workflows-http:better-auth` step receives one automatic retry only
-after `step_timeout` and prints `retry=1`; deterministic non-zero exits and all
-other steps are not retried.
+that step. The historically intermittent Better Auth Workflow contract receives
+one automatic retry only after `step_timeout`; CI extends that single-receipted
+retry to the standard Workflow contract as well. Local runs remain Better
+Auth-only. Retries print `retry=1`; deterministic non-zero exits and all other
+steps are not retried.
 
 ### Prebuilt artifact contract
 

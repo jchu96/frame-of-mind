@@ -1143,3 +1143,12 @@
   in both auth modes. This separates the spend-cap oracle from SQLite-backed
   local-runtime scheduling without interrupting or poisoning the next local
   Workflows process.
+  The exact-head Linux run then exposed a separate unbounded client wait after
+  the browser workflow and before the crash fixture. Local dispatch and status
+  fetches now have 10-second request bounds and retain idempotent retries, so a
+  wedged workerd service-binding request recovers its durable receipt or fails
+  inside the contract instead of consuming the lane's 20-minute step timeout.
+  Per the CI capacity ruling, the hosted job now serializes gate work, gives a
+  logical step 30 minutes inside the unchanged 40-minute job budget, and grants
+  both Workflow auth variants one timeout-only retry in CI while local retry
+  behavior remains Better Auth-only.

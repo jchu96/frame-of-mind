@@ -121,6 +121,8 @@ describe("check lanes", () => {
     expect(workflow).toContain('FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE: "1"');
     expect(workflow).toContain("hosted-contracts:\n    needs: check");
     expect(workflow).toContain("timeout-minutes: 40");
+    expect(workflow).toContain("FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'");
+    expect(workflow).toContain("FRAME_OF_MIND_GATE_PARALLELISM: '1'");
     expect(workflow).toContain("bunx playwright install --with-deps chromium");
     expect(workflow).toContain("bun run check:lane:hosted");
 

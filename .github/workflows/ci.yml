@@ -44,6 +44,9 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'
+      FRAME_OF_MIND_GATE_PARALLELISM: '1'
 
     steps:
       - name: Check out repository
