@@ -48,6 +48,8 @@ const missingHashMedia = "media_hosted_missing_hash_0001";
 const legacyDisplayMedia = "media_hosted_legacy_display_0001";
 const legacyDisplayJob = "job_hosted_legacy_display_0001";
 const legacyDisplayAttempt = "attempt_hosted_legacy_display_0001";
+const foreignDisplayJob = "job_hosted_foreign_display_0001";
+const foreignDisplayAttempt = "attempt_hosted_foreign_display_0001";
 const janitorAttempt = "attempt_hosted_janitor_0001";
 const recipeStartMedia = listBuiltInRecipes().map((recipe, index) => ({
   recipeId: recipe.id,
@@ -516,12 +518,32 @@ try {
     "legacy display receipt omitted only unavailable recording details",
   );
   console.log("HOSTED_WORKFLOW legacy_display=PASS list_200 valid_and_null_size_rows=true");
+  const legacyDetail = await json<JobDetail>(await expectStatus(
+    authenticatedFetch(baseUrl, `/api/hosted/jobs/${legacyDisplayAttempt}`, tokenA),
+    200,
+    "legacy activity detail",
+  ));
+  assertEqual(legacyDetail.job.id, legacyDisplayAttempt, "legacy activity detail attempt");
+  assertEqual(
+    legacyDetail.job.receipt.recording,
+    undefined,
+    "legacy activity detail omits unavailable recording details",
+  );
+  if ("media" in legacyDetail) {
+    throw new Error("Legacy activity detail exposed an invalid media block.");
+  }
   const listB = await json<{ jobs: JobView[] }>(await expectStatus(
     authenticatedFetch(baseUrl, "/api/hosted/jobs", tokenB),
     200,
     "foreign activity list",
   ));
-  assertEqual(listB.jobs, [], "foreign activity list isolation");
+  assertEqual(listB.jobs.length, 1, "foreign activity list fixture count");
+  assertEqual(listB.jobs[0]?.id, foreignDisplayAttempt, "foreign activity list attempt");
+  assertEqual(
+    listB.jobs[0]?.receipt.recording,
+    undefined,
+    "foreign activity list omits another principal's recording details",
+  );
   const hostedCatalog = await json<{
     recipes: Array<{ id: string; revision: string }>;
   }>(await expectStatus(
@@ -879,6 +901,7 @@ interface JobResponse {
 }
 
 interface JobDetail extends JobResponse {
+  media?: unknown;
   events: Array<{ code?: string }>;
 }
 
@@ -1048,6 +1071,20 @@ function seedSql(): string {
     retention: "retained",
     spendPlan: contractSpendPlan,
   }).replaceAll("'", "''");
+  const foreignDisplayInput = JSON.stringify({
+    mediaId: normalMedia,
+    mediaSha256,
+    context: { mode: "none" },
+    recipe: {
+      id: "issue-review",
+      label: "Issue review",
+      revision: "builtin-test",
+      sha256: "b".repeat(64),
+    },
+    model: "gemini-test",
+    retention: "retained",
+    spendPlan: contractSpendPlan,
+  }).replaceAll("'", "''");
   return `
     INSERT INTO hosted_principal_spend (
       principal_sub, principal_email, cap_units, committed_units, updated_at
@@ -1084,6 +1121,22 @@ function seedSql(): string {
       '${principalA}', '${legacyDisplayAttempt}', '${legacyDisplayJob}', NULL,
       1, 'legacy-display-key', 'workflow_hosted_legacy_display_0001',
       '${legacyDisplayInput}', 'queued', ${contractSpendPlan.estimatedTokens},
+      '${sealedAt}', '${sealedAt}'
+    );
+    INSERT INTO hosted_analysis_jobs (
+      principal_sub, job_id, principal_email, media_id, created_at
+    ) VALUES (
+      '${principalB}', '${foreignDisplayJob}', 'seat@example.test',
+      '${recipeStartMedia[0]!.mediaId}', '${sealedAt}'
+    );
+    INSERT INTO hosted_analysis_attempts (
+      principal_sub, attempt_id, job_id, retry_of_attempt_id,
+      attempt_number, idempotency_key, workflow_instance_id,
+      immutable_input_json, stage, spend_reserved_units, created_at, updated_at
+    ) VALUES (
+      '${principalB}', '${foreignDisplayAttempt}', '${foreignDisplayJob}', NULL,
+      1, 'foreign-display-key', 'workflow_hosted_foreign_display_0001',
+      '${foreignDisplayInput}', 'queued', ${contractSpendPlan.estimatedTokens},
       '${sealedAt}', '${sealedAt}'
     );
     INSERT INTO hosted_analysis_jobs (
@@ -1135,6 +1188,8 @@ async function verifyHostedBrowserContract(
     }
     const page = await context.newPage();
     const hydrationMismatches: string[] = [];
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("console", (message) => {
       if (message.text().toLowerCase().includes("hydration")
         && message.text().toLowerCase().includes("mismatch")) {
@@ -1327,7 +1382,30 @@ async function verifyHostedBrowserContract(
       await page.getByRole("alert").getByText(fixture.message, { exact: true }).waitFor();
       await page.getByRole("alert").getByText(fixture.nextAction, { exact: true }).waitFor();
       await page.getByText(`Support code: ${fixture.code}`, { exact: true }).waitFor();
-      await page.getByRole(fixture.actionRole, { name: fixture.action, exact: true }).waitFor();
+      const errorAction = page.getByRole(fixture.actionRole, {
+        name: fixture.action,
+        exact: true,
+      });
+      await errorAction.waitFor();
+      if (fixture.code === "principal_spend_cap_exceeded") {
+        await page.evaluate(() => {
+          Object.defineProperty(navigator, "clipboard", {
+            configurable: true,
+            value: {
+              writeText: () => Promise.reject(new Error("Clipboard permission denied")),
+            },
+          });
+        });
+        await errorAction.click();
+        const supportCode = page.getByRole("alert").locator("code");
+        assertEqual(await supportCode.textContent(), fixture.code, "clipboard fallback support code");
+        assertEqual(
+          await supportCode.evaluate((element) => getComputedStyle(element).userSelect === "none"),
+          false,
+          "clipboard fallback support code remains selectable",
+        );
+        assertEqual(pageErrors, [], "clipboard fallback page errors");
+      }
     }
     await start.click();
     await page.waitForURL(/\/hosted\/activity\/attempt_/);
@@ -1412,6 +1490,7 @@ async function verifyHostedBrowserContract(
     await page.getByRole("heading", { name: "We couldn't find that analysis", level: 1 }).waitFor();
     await capture("13-not-found");
     assertEqual(hydrationMismatches, [], "hosted browser hydration mismatches");
+    assertEqual(pageErrors, [], "hosted browser page errors");
     await context.close();
   } finally {
     await browser.close();

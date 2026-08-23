@@ -40,38 +40,37 @@ describe("hosted Studio UX pass 3", () => {
   });
 
   test("maps every reachable start failure to specific copy and its own CTA", () => {
-    const cases: Array<[string | undefined, string]> = [
-      ["recipe_receipt_mismatch", "choose-goal"],
-      ["recipe_not_found", "choose-goal"],
-      ["principal_spend_cap_exceeded", "contact-support"],
-      ["principal_spend_cap_unavailable", "retry"],
-      ["spend_duration_unavailable", "upload-again"],
-      ["spend_policy_unavailable", "retry"],
-      ["spend_estimate_unavailable", "retry"],
-      ["spend_call_graph_unavailable", "retry"],
-      ["hosted_workflow_dispatch_failed", "retry"],
-      ["hosted_workflow_dispatch_invalid", "retry"],
-      ["hosted_executor_aborted", "retry"],
-      ["hosted_attempt_create_failed", "retry"],
-      ["hosted_media_open_session_cap_exceeded", "finish-or-discard"],
-      ["invalid_hosted_job_request", "reselect"],
-      ["invalid_hosted_job_json", "reselect"],
-      ["hosted_job_request_too_large", "reselect"],
-      ["hosted_idempotency_conflict", "refresh"],
-      ["hosted_attempt_create_conflict", "refresh"],
-      ["custom_recipe_staging_unavailable", "choose-goal"],
-      ["hosted_media_not_found", "upload-again"],
-      ["sealed_media_receipt_missing", "upload-again"],
-      ["sealed_media_receipt_expired", "upload-again"],
-      ["media_seal_mismatch", "upload-again"],
-      ["media_retention_expired", "upload-again"],
-      ["media_retention_mismatch", "upload-again"],
-      [undefined, "contact-support"],
+    const cases: Array<[string | undefined, string, string]> = [
+      ["recipe_receipt_mismatch", "choose-goal", "This goal was updated."],
+      ["recipe_not_found", "choose-goal", "This goal was updated."],
+      ["principal_spend_cap_exceeded", "contact-support", "You've used this account's analysis allowance."],
+      ["principal_spend_cap_unavailable", "retry", "We couldn't check this account's analysis allowance."],
+      ["spend_duration_unavailable", "upload-again", "We couldn't read this recording's length."],
+      ["spend_policy_unavailable", "retry", "Analysis limits are temporarily unavailable."],
+      ["spend_estimate_unavailable", "retry", "We couldn't estimate this analysis yet."],
+      ["spend_call_graph_unavailable", "retry", "We couldn't prepare the analysis steps."],
+      ["hosted_workflow_dispatch_failed", "retry", "The analysis service didn't accept this start request."],
+      ["hosted_workflow_dispatch_invalid", "retry", "The analysis service returned an incomplete start response."],
+      ["hosted_executor_aborted", "retry", "The start request was interrupted."],
+      ["hosted_attempt_create_failed", "retry", "We couldn't create this analysis."],
+      ["hosted_media_open_session_cap_exceeded", "finish-or-discard", "Another recording upload is still unfinished."],
+      ["invalid_hosted_job_request", "reselect", "These analysis selections are no longer valid."],
+      ["invalid_hosted_job_json", "reselect", "The saved analysis request could not be read."],
+      ["hosted_job_request_too_large", "reselect", "The saved analysis request is too large."],
+      ["hosted_idempotency_conflict", "refresh", "This start request no longer matches the saved analysis."],
+      ["hosted_attempt_create_conflict", "refresh", "This analysis was already started another way."],
+      ["custom_recipe_staging_unavailable", "choose-goal", "This custom goal cannot run in Hosted Studio yet."],
+      ["hosted_media_not_found", "upload-again", "This recording is no longer ready."],
+      ["sealed_media_receipt_missing", "upload-again", "This recording is no longer ready."],
+      ["sealed_media_receipt_expired", "upload-again", "This recording is no longer ready."],
+      ["media_seal_mismatch", "upload-again", "This recording is no longer ready."],
+      ["media_retention_expired", "upload-again", "This recording's availability changed."],
+      ["media_retention_mismatch", "upload-again", "This recording's availability changed."],
+      [undefined, "contact-support", "Something unexpected stopped this analysis from starting."],
     ];
-    for (const [code, expectedAction] of cases) {
+    for (const [code, expectedAction, expectedMessage] of cases) {
       const copy = hostedRunStartErrorCopy(code);
-      expect(copy.message).not.toBe("Analysis could not start.");
-      expect(copy.message.length).toBeGreaterThan(12);
+      expect(copy.message).toBe(expectedMessage);
       expect(copy.nextAction.length).toBeGreaterThan(8);
       expect(copy.action.kind).toBe(expectedAction);
       expect(copy.action.label.length).toBeGreaterThan(4);

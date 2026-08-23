@@ -143,7 +143,11 @@ async function handleSubmitErrorAction(): Promise<void> {
     return;
   }
   if (submitErrorAction.value?.kind === "contact-support") {
-    await navigator.clipboard.writeText(submitErrorCode.value);
+    try {
+      await navigator.clipboard.writeText(submitErrorCode.value);
+    } catch {
+      // The rendered support code stays visible and selectable as the fallback.
+    }
   }
 }
 
