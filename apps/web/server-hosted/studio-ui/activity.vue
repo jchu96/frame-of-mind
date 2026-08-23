@@ -9,6 +9,7 @@ import {
   recipeDisplayLabel,
 } from "../../app/studio/activity-state.js";
 import { hostedJobAsActivity } from "./hosted-adapter";
+import { recordingDisplayLabel } from "../../app/studio/recording-display";
 
 useSeoMeta({
   title: "Activity · Frame of Mind",
@@ -50,13 +51,18 @@ function label(job: AnalysisJob): string {
 function relative(value: string): string {
   return formatRelativeActivity(value, new Date(clock.value));
 }
-function statusColor(job: AnalysisJob): "primary" | "success" | "error" | "warning" | "neutral" {
+function statusColor(job: AnalysisJob): "info" | "success" | "error" | "warning" | "neutral" {
   const state = activityDisplayState(job.stage);
-  if (state === "active") return "primary";
+  if (state === "active") return "info";
   if (state === "succeeded") return "success";
   if (state === "failed" || state === "interrupted") return "error";
   if (state === "canceled") return "neutral";
   return "warning";
+}
+function recordingLabel(job: HostedJobView): string {
+  return job.receipt.recording
+    ? recordingDisplayLabel(job.receipt.recording)
+    : "Recording details unavailable";
 }
 function canCancel(job: AnalysisJob): boolean {
   return derivePermittedActivityActions({ job, media: undefined, projection: "unknown", now: new Date(clock.value).toISOString() }).actions.some((item) => item.id === "cancel");
@@ -78,13 +84,14 @@ async function cancel(job: AnalysisJob): Promise<void> {
     </UCard>
     <UCard v-else class="mt-8">
       <ul class="divide-y divide-default">
-        <li v-for="job in jobs" :key="job.id" class="flex flex-wrap items-center justify-between gap-4 py-4">
+        <li v-for="(job, index) in jobs" :key="job.id" class="flex flex-wrap items-center justify-between gap-4 py-4">
           <div>
             <NuxtLink :to="`/hosted/activity/${encodeURIComponent(job.id)}`" class="font-bold hover:text-primary">
               {{ label(job) }}<template v-if="job.attempt > 1"> · Try {{ job.attempt }}</template>
             </NuxtLink>
             <p class="mt-1 text-sm text-muted">
-              Started <time :datetime="job.createdAt" :title="job.createdAt">{{ relative(job.createdAt) }}</time>
+              {{ recordingLabel(hostedPage.jobs[index]!) }} · Started
+              <time :datetime="job.createdAt" :title="job.createdAt">{{ relative(job.createdAt) }}</time>
             </p>
           </div>
           <div class="flex items-center gap-3">

@@ -902,3 +902,19 @@
   `HOSTED_WORKFLOW_CONTRACT PASSED`, including the 3-admitted/7-rejected spend
   race). One earlier full-check auth browser process closed unexpectedly; the
   isolated auth gate and the clean final full check both passed unchanged.
+- Completed hosted UX pass 3 on 2026-08-23. Recording now uses plain-language
+  upload and retention states, renders the configured size limit, collapses a
+  sealed upload to `name · duration · size · Replace`, and keeps the mobile
+  composer usable at 390 px. Intent exposes an explicit Optional focus label;
+  start failures provide code-specific recovery actions; and Activity plus
+  Results distinguish recording-only runs with sealed D1 duration and size.
+  Added rendered glossary checks, direct label-driven browser coverage, all
+  four start-error fixtures, two distinct recording rows, and 26 reviewed
+  desktop/mobile receipts under `apps/web/e2e/__screenshots__/ux-pass-3/`.
+  Validated by `gate-lock bun run test:e2e:hosted` and a terminal
+  `gate-lock bun run check` exit 0: repository hygiene, all typechecks, 22 Vitest files /
+  213 tests, 42 Bun web files / 316 tests, both hosted Workflow auth modes,
+  hosted media recovery/direct-upload contracts, auth, release rehearsal, and
+  the 32 MiB streaming proof passed. One earlier full run hit the documented
+  intermittent auth browser closure; its isolated rerun and terminal full gate
+  both passed unchanged.
