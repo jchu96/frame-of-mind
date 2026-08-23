@@ -220,3 +220,11 @@
   atomically consumes its token on the first fetch. The hosted integration
   rejects uninvited sends in a before-hook so no verification row or mail is
   created, then rechecks the invite before session insertion.
+- Hosted retained mode uses the private `RETAINED_MEDIA` R2 binding with a
+  hashed-principal/random object key and a one-way application capability; no
+  R2 account credentials enter the browser or D1. Seal accepts the object only
+  when its complete size and SHA-256 equal both the upload declaration and the
+  independently verified Gemini file.
+- Hosted evidence captures are append-only R2 PNG sidecars. D1 stores their
+  digest plus authoritative manifest, recording, and player-timestamp
+  provenance; the immutable `analysis.json`/`manifest.json` pair is unchanged.

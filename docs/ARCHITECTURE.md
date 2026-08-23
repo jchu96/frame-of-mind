@@ -3,16 +3,15 @@
 The local Studio trust boundaries and abuse cases are maintained in the
 [Local Studio threat model](THREAT_MODEL.md).
 
-## Status as of 2026-08-22
+## Status as of 2026-08-23
 
 Local Studio Phases 1–8 are implemented and verified through the
 [phase plan](../conductor/tracks/local-studio_20260726/plan.md), the
 [production HTTP contract](../scripts/test-local-studio-http.ts), and the
 [browser smoke suite](../apps/web/e2e/studio-smoke.spec.ts). Hosted Studio is a
-separate dark track: principal scoping and Phases 3–4 ship behind disabled
-build/runtime gates, Tasks 5.3–5.4 and Phase 6 preparation are present, but
-recording upload, retention/capture Tasks 5.1–5.2, the deployment gate, and
-ADR 0018 Amendment 1 remain pending. Nothing in the hosted creation path is
+separate dark track: principal scoping and Phases 2–5 ship behind disabled
+build/runtime gates and Phase 6 preparation is present, but the deployment
+gate remains pending. Nothing in the hosted creation path is
 deployed or enabled by this repository state. See the
 [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/) and
 [data classification](DATA_CLASSIFICATION.md).
@@ -738,10 +737,12 @@ flowchart LR
     Workflow[Workflow instance]
     Gemini[Gemini Files and generateContent]
     D1[(Principal-scoped D1 receipts)]
+    R2[(Private principal-owned R2)]
 
     Browser --> Access --> Nuxt
     Nuxt -->|service binding| WorkflowService --> Workflow
     Nuxt --> D1
+    Nuxt -->|private retained-media binding| R2
     Workflow --> D1
     Workflow --> Gemini
 ```
@@ -786,6 +787,20 @@ fields only. The Nuxt caller forwards Access and spend outcomes internally;
 the Workflows sibling owns optional Sentry delivery, publication/cleanup
 outcomes, and stays inert without its own `SENTRY_DSN`. Upload telemetry stays
 structural and content-free.
+
+Phase 5b implements ADR 0018 Amendment 2 without adding another secret or
+rewriting the immutable run pair. Retained upload creation uses the private R2
+binding to mint a multipart upload plus a random application capability; D1
+stores its hash and a hashed-principal/random object key. Nitro request streams
+are restored to fixed-length workerd streams before R2 so parts remain bounded
+and streaming. Completion consumes the capability, and seal reads the complete
+object to require the same size and SHA-256 as the browser declaration and
+Gemini file. The retained-until receipt drives playback availability, explicit
+owner deletion, and principal janitor cleanup; bucket lifecycle is a backstop.
+Client-canvas PNGs enter a separate append-only evidence table/R2 namespace
+only after the server stamps the exact manifest digest, recording digest, and
+player timestamp. The Stream-thumbnail port is disabled and has no provider
+dependency.
 
 Phase 4 places the hosted composer and activity pages behind those same two
 gates. Browser drafts reuse the pure Studio intent, context, readiness, run,

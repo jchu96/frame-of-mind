@@ -2,7 +2,7 @@
 
 **Track ID:** `hosted-studio_20260822`
 **Spec:** [spec.md](./spec.md)
-**Status:** Active — Phases 1–4 complete; Phase 5 spend/telemetry complete
+**Status:** Active — Phases 1–5 complete; Phase 6 remains deployment-gated
 
 ## Overview
 
@@ -329,13 +329,13 @@ transcripts, and signed URLs.
 
 ### Tasks
 
-- [ ] Task 5.1: Implement explicit `ephemeral` and `retained` media policies;
+- [x] Task 5.1: Implement explicit `ephemeral` and `retained` media policies;
       use private R2 only for retained bytes and configure lifecycle expiry.
       This follows Phase 2 because retained bytes and lifecycle enforcement
       require the upload/storage implementation; it is not part of Phase 5a.
       Trust-boundary review trigger: recording bytes may persist beyond the
       provider operation for the first time.
-- [ ] Task 5.2: Implement client-canvas evidence captures with manifest source
+- [x] Task 5.2: Implement client-canvas evidence captures with manifest source
       and timestamp provenance, plus a gated Stream-thumbnail adapter if Stream
       is later adopted. Disclose and test that an ephemeral run has no
       playback/screenshots after tab close until retained media or exact-digest
@@ -375,9 +375,22 @@ The normal review build resolves that port to a no-op and retains the existing
 Sentry/hosted-marker exclusion gate. Success, failure, timeout, and cancel
 tests prove allowlist-only envelopes and reject user/media/message fields.
 
+**Tasks 5.1–5.2 status (2026-08-23).** Complete in the dark, undeployed
+artifact. Retained uploads use a principal-scoped unguessable R2 key and a
+short-lived, application-presigned multipart capability; the Worker streams
+fixed-length parts through the private binding and stores only a capability
+hash. Seal reads the completed object and requires the same size and SHA-256
+as the independently verified Gemini file. A visible kept-until date, explicit
+delete, expired-object cleanup, and incomplete-multipart reconciliation bound
+the lifecycle. The hosted review workspace streams retained media with byte
+ranges and writes client-canvas PNG captures to an append-only evidence
+sidecar only when the server stamps the exact run-manifest digest, recording
+digest, and player timestamp. The immutable analysis/manifest pair is not
+rewritten. Stream thumbnails remain a disabled interface with no dependency.
+
 ### Verification
 
-- [ ] Lifecycle, explicit-delete, orphan-reconciliation, and screenshot
+- [x] Lifecycle, explicit-delete, orphan-reconciliation, and screenshot
       provenance tests pass after Tasks 5.1/5.2.
 - [x] Spend-race, provider-usage reconciliation, cap-exhaustion/no-Workflow,
       telemetry scrubber, and no-content success/failure/timeout/cancellation
@@ -389,9 +402,11 @@ Stop unless ephemeral bytes are absent after cleanup, retained bytes are
 private and expiring, concurrent spend cannot exceed cap, and telemetry
 contains codes and structural fields only.
 
-**Phase 5a gate status (2026-08-22):** spend and telemetry conditions pass;
-the full Phase 5 gate remains closed until Phase-2-dependent Tasks 5.1/5.2
-prove retention, expiry, playback, and screenshot provenance.
+**Phase 5 gate status (2026-08-23):** pass in the local built-workerd
+contract. Ephemeral provider cleanup, private retained expiry/playback,
+same-byte sealing, explicit/cross-principal delete, orphan reconciliation,
+atomic spend, and codes-only telemetry are proven. Production enablement still
+requires the separate Phase 6 operator and adversarial gates.
 
 ## Phase 6: Tier A Deployment And Team Gate
 

@@ -39,8 +39,8 @@ composer, durable execution, Activity recovery, retained playback,
 digest-verified reattachment, local exports, and unified maintenance. The
 [Local Studio plan](../conductor/tracks/local-studio_20260726/plan.md) maps each
 claim to focused and full-gate receipts. Hosted creation is implemented only in
-dark slices and is not deployed; direct upload is contract-proven while
-retention/capture and deployment gates remain in the
+dark slices and is not deployed; direct upload, retained R2, and evidence
+capture are contract-proven while deployment gates remain in the
 [Hosted Studio plan](../conductor/tracks/hosted-studio_20260822/plan.md).
 Use [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md) for storage, retention,
 visibility, and repository-hygiene rules.
@@ -1488,8 +1488,10 @@ bun run test:hosted-workflows-http
 bun run test:hosted-media-http
 ```
 
-The second command must print `HOSTED_SPEND_CONTRACT PASSED` and confirm the
-telemetry contract accepts codes/structural fields while rejecting content.
+The hosted commands must print `HOSTED_SPEND_CONTRACT PASSED`,
+`HOSTED_RETENTION_CONTRACT PASSED`, and `HOSTED_EVIDENCE_CONTRACT PASSED`, and
+confirm the telemetry contract accepts codes/structural fields while rejecting
+content.
 
 ### Hosted release enablement and canary (dark by default)
 
@@ -1502,13 +1504,16 @@ Release preparation:
 
 1. Run `bun run rehearse:hosted-release`, then `bun run check`; require
    `HOSTED_RELEASE_REHEARSAL PASSED` and every hosted contract receipt.
-2. Record the hosted media session cap, declared-size ceiling, and TTL. Stop
+2. Record the hosted media session cap, declared-size ceiling, upload TTL, and
+   retained-media days. Stop
    if the ceiling exceeds the current provider or approved product policy.
 3. Export D1 to private storage and record only the export checksum in the
    release receipt. D1 has no down migrations.
-4. Dry-run the sibling and public Wrangler configurations. Require the module
-   entry, `DB`, `ASSETS`, `HOSTED_WORKFLOWS`, and `HOSTED_WORKFLOW`, with no
-   `100329`.
+4. Configure the private `RETAINED_MEDIA` R2 binding plus matching object-delete
+   and incomplete-multipart lifecycle rules. Require no public bucket domain.
+   Dry-run the sibling and public Wrangler configurations. Require the module
+   entry, `DB`, `ASSETS`, `RETAINED_MEDIA`, `HOSTED_WORKFLOWS`, and
+   `HOSTED_WORKFLOW`, with no `100329`.
 5. Install `GEMINI_API_KEY` as a secret on both Workers, deploy the sibling
    first and public Worker second with the runtime flag still false. Verify
    authenticated requests to `/api/hosted/jobs`, `/api/hosted/media`, and
