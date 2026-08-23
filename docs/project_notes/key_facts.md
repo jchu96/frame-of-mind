@@ -153,6 +153,10 @@
 - The Studio-enabled Bun build selects a local-only Nuxt UI dashboard frame;
   review-only local and Cloudflare builds select the pass-through SSR review
   frame and exclude Studio shell markers.
+- Shared web styling defines the light Frame of Mind canvas and Nuxt UI
+  semantic palette on bare `:root`, switches both together under the system
+  dark scheme, and honors explicit class or `data-theme` overrides. Hosted
+  browser proof measures actual composited text contrast in both schemes.
 - Studio Home composes existing operational jobs, rebuildable run summaries,
   and sanitized connection presence without persisting a dashboard-specific
   aggregate. It revalidates after client navigation.

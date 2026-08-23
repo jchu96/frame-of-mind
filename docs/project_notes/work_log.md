@@ -1188,3 +1188,13 @@
   zero-to-deploy checklist, both supported GitHub application choices, and a
   provenance map separating vendored Google skills, installable official
   Cloudflare marketplace skills, and unshipped maintainer review skills.
+- Repaired the hosted Studio light/dark collision on 2026-08-23 by making the
+  Frame of Mind canvas, grid, panels, and Nuxt UI semantic text/status/surface
+  tokens switch as one palette. The built-workerd browser contract now checks
+  every visible text node plus the exact Results headings and sidebar labels at
+  4.5:1 in both schemes. Fresh real-run evidence expanded the discriminator to
+  published finding titles, summaries, five detail-value fields, three numbered
+  evidence steps, and the Accepted/severity semantic badges. The hosted
+  Workflow and auth gates passed and regenerated 60 reviewed screenshots: 15
+  states in light/dark at desktop and 390px, including empty Results, the
+  findings viewer, and sign-in.

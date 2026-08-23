@@ -594,3 +594,20 @@
   retry only the exact TargetClosed error family once with explicit receipts.
 - Prevention: deterministic tests require one TargetClosed retry, refuse to
   retry HTTP-like failures, and surface a second disconnect.
+
+## 2026-08-23 — System dark tokens collided with the fixed light Studio canvas
+
+- Symptom: a browser using a dark system scheme rendered pale headings and
+  navigation on the cream Results canvas, while elevated cards kept dark-mode
+  surfaces inside the otherwise light page.
+- Cause: Nuxt UI semantic text and surface tokens followed the system color
+  scheme, but `--fom-paper`, the grid, and `.fom-panel` were permanently light.
+- Fix: define the light Frame of Mind and Nuxt UI semantic palettes on `:root`,
+  apply the dark palette through `prefers-color-scheme`, and preserve explicit
+  `.light`/`.dark` and `data-theme` overrides. Status colors use AA-safe shades.
+- Prevention: the built-workerd browser contract computes rendered foreground
+  and composited background luminance in both schemes, pins the two Results
+  headings, sidebar navigation labels, published finding titles/summaries,
+  detail values, numbered evidence steps, and semantic badges at 4.5:1 or
+  better, audits every visible text node in the captured hosted surfaces, and
+  writes light/dark desktop and 390px screenshot receipts.
