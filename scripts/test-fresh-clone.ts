@@ -75,9 +75,28 @@ async function cloneHead(): Promise<void> {
 }
 
 async function installAndBuild(root: string): Promise<void> {
-  await run(["bun", "install", "--frozen-lockfile"], root);
+  await installFrozen(root);
   await run(["bun", "run", "build:cli"], root);
   await run(["bun", "run", "build:web"], root, studioBuildEnvironment());
+}
+
+async function installFrozen(root: string): Promise<void> {
+  const diagnostic = process.env.FRAME_OF_MIND_LOCKFILE_DIAGNOSTIC === "1";
+  try {
+    await run([
+      "bun",
+      "install",
+      "--frozen-lockfile",
+      ...(diagnostic ? ["--verbose"] : []),
+    ], root);
+  } catch (error) {
+    if (diagnostic) {
+      console.error("WINDOWS_LOCKFILE_DIAGNOSTIC frozen_install=FAIL");
+      await run(["bun", "install", "--lockfile-only", "--verbose"], root);
+      await run(["git", "diff", "--", "bun.lock"], root);
+    }
+    throw error;
+  }
 }
 
 async function verifyCliHelp(root: string): Promise<void> {
