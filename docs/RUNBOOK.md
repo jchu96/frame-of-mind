@@ -34,13 +34,13 @@ provider-safe response schema from the authoritative local Zod contract. Run
 the synthetic canary in section 1.5 before the first sensitive analysis and
 after model, SDK, runtime, or upload changes.
 
-Status as of 2026-08-22: Local Studio Phases 1–8 are shipped, including the
+Status as of 2026-08-23: Local Studio Phases 1–8 are shipped, including the
 composer, durable execution, Activity recovery, retained playback,
 digest-verified reattachment, local exports, and unified maintenance. The
 [Local Studio plan](../conductor/tracks/local-studio_20260726/plan.md) maps each
 claim to focused and full-gate receipts. Hosted creation is implemented only in
-dark slices and is not deployed; its pending upload, retention/capture, and
-deployment gates remain in the
+dark slices and is not deployed; direct upload is contract-proven while
+retention/capture and deployment gates remain in the
 [Hosted Studio plan](../conductor/tracks/hosted-studio_20260822/plan.md).
 Use [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md) for storage, retention,
 visibility, and repository-hygiene rules.
@@ -1367,7 +1367,7 @@ bundle contains the DSN or a telemetry payload. The complete boundary and
 scrubbing policy are recorded in
 [ADR 0017](adr/0017-opt-in-sentry-telemetry.md#disable-telemetry).
 
-### Hosted authentication modes (proposed, not deployed)
+### Hosted authentication modes (ADR 0019 accepted; deployment remains explicit)
 
 The public Worker recognizes `cloudflare-access`, `better-auth`, and
 `cloudflare-access+better-auth`. Keep the value explicit whenever hosted
@@ -1376,11 +1376,12 @@ production example remains Access-only.
 
 For Better Auth modes, apply D1 migration `0006_better_auth.sql`, set
 `NUXT_BETTER_AUTH_URL` to the exact HTTPS application origin, and store
-`NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
-`NUXT_BETTER_AUTH_MAILER_KEY` as public-Worker secrets. Keep the GitHub client
-ID and mailer HTTPS origin as non-secret configuration. Never place these
-secrets on the internal Workflows Worker; conversely, never place
-`GEMINI_API_KEY` on the public Worker.
+`NUXT_BETTER_AUTH_SECRET` and `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` as
+public-Worker secrets. To enable magic-link email, also store
+`NUXT_BETTER_AUTH_MAILER_KEY` there and configure the mailer HTTPS origin.
+Keep the GitHub client ID and mailer HTTPS origin as non-secret configuration.
+Never place these secrets on the internal Workflows Worker; conversely, never
+place `GEMINI_API_KEY` on the public Worker.
 
 Manage app-owned membership through the D1 invite table:
 
@@ -1395,6 +1396,14 @@ target account. Commands default to remote D1; set
 `FRAME_OF_MIND_D1_LOCAL=1` only for an isolated local rehearsal. The legacy
 `scripts/access-users.ts` entry remains Access-only. In stacked mode, manage
 both the outer Access group and the Better Auth invite list.
+
+In Better Auth modes, anonymous HTML page requests redirect to
+`/sign-in?next=<same-origin-relative-path>`. The page offers GitHub OAuth and a
+magic-link form. If the mailer is not configured, the form reports that email
+sign-in is unavailable without exposing configuration details; GitHub remains
+available. API requests, including `/api/session`, continue to return a JSON
+403 with `better_auth_session_missing`. The stacked mode still requires a
+valid Access assertion before any sign-in page or auth endpoint is served.
 
 Before any reviewed release, require all three receipts:
 
@@ -1448,6 +1457,22 @@ commit the full reservation. Run it through the same Cloudflare Access user
 principal as the affected hosted activity. A second invocation should report
 zero changes.
 
+The authenticated `POST /api/hosted/media/janitor` route is the companion
+upload cleanup pass. Invoke it per affected principal. It queries and deletes
+expired finalized Gemini Files and marks cleanup failures for the next pass.
+For an upload that never finalized, Gemini exposes no File name or documented
+session-revoke operation; the janitor marks D1 `abandoned`, refuses any later
+seal, and relies on the provider session TTL instead of reporting a false
+deletion failure. It skips a freshly claimed seal; only a seal stuck beyond the
+bounded grace interval is eligible. Success returns an `abandoned` count, and
+an immediate replay should return zero.
+
+`GET /api/hosted/media?state=open` is principal-scoped recovery for lost
+tab-local state. The Recording step offers Resume (after querying Gemini's
+authoritative offset) or Discard. Page exit and hidden-tab transitions issue a
+best-effort keepalive DELETE, but operators should expect the recovery list to
+remain the fallback when a browser cannot deliver it.
+
 Future telemetry enablement requires a separately reviewed expansion of the
 Tier A one-secret boundary. If approved later, `SENTRY_DSN` belongs only on
 the internal Workflows Worker; optional `SENTRY_ENVIRONMENT` and
@@ -1460,6 +1485,7 @@ Verify both controls before any release:
 ```bash
 bun test apps/web/test/hosted-workflows.test.ts apps/web/test/hosted-telemetry.test.ts
 bun run test:hosted-workflows-http
+bun run test:hosted-media-http
 ```
 
 The second command must print `HOSTED_SPEND_CONTRACT PASSED` and confirm the
@@ -1488,27 +1514,27 @@ receipt.
 ### Hosted release enablement and canary (dark by default)
 
 The committed production shape builds hosted routes but keeps
-`NUXT_HOSTED_WORKFLOWS_ENABLED=false`. The upload wrapper independently
-returns 404 until Phase 2 lands. Do not enable the runtime flag while the
-upload implementation is absent.
+`NUXT_HOSTED_WORKFLOWS_ENABLED=false`. The deterministic `hosted-entry.mjs`
+delegates to Nitro and contains no upload interception. Do not enable the
+runtime flag until the direct-upload and Workflow contracts both pass.
 
 Release preparation:
 
 1. Run `bun run rehearse:hosted-release`, then `bun run check`; require
    `HOSTED_RELEASE_REHEARSAL PASSED` and every hosted contract receipt.
-2. In the Cloudflare dashboard, record the production zone plan and maximum
-   upload size. Stop below 4 MiB; Wrangler cannot read this setting.
+2. Record the hosted media session cap, declared-size ceiling, and TTL. Stop
+   if the ceiling exceeds the current provider or approved product policy.
 3. Export D1 to private storage and record only the export checksum in the
    release receipt. D1 has no down migrations.
 4. Dry-run the sibling and public Wrangler configurations. Require the module
    entry, `DB`, `ASSETS`, `HOSTED_WORKFLOWS`, and `HOSTED_WORKFLOW`, with no
    `100329`.
-5. Deploy the sibling first and the public Worker second with the runtime flag
-   still false. Verify authenticated requests to `/api/hosted/jobs`,
-   `/hosted/activity`, and the upload-part shape all return 404. Record status
-   codes only.
+5. Install `GEMINI_API_KEY` as a secret on both Workers, deploy the sibling
+   first and public Worker second with the runtime flag still false. Verify
+   authenticated requests to `/api/hosted/jobs`, `/api/hosted/media`, and
+   `/hosted/activity` all return 404. Record status codes only.
 
-After Phase 2 is merged and its upload gate passes, a reviewed canary may set
+After the Phase 2 upload gate passes, a reviewed canary may set
 `NUXT_HOSTED_WORKFLOWS_ENABLED=true` in the ignored public Wrangler config and
 redeploy the public Worker. Use one generated, non-sensitive recording and one
 allowlisted test principal. The canary receipt contains no resource IDs and

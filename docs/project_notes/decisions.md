@@ -289,10 +289,25 @@ is disabled; Nuxt app/Vue error hooks can only pass a synthetic code. The
 durable boundary and disable procedure are
 canonical in [ADR 0017](../adr/0017-opt-in-sentry-telemetry.md).
 
-## 2026-08-23 — Pluggable hosted authentication remains proposed
+## 2026-08-23 — Pluggable hosted authentication is accepted
 
-The implementation spike supports Access-only, Better-Auth-only, and stacked
-perimeters while keeping one downstream principal seam. This is not an adopted
-production mode change; the committed Wrangler example remains Access-only.
-The proposed cookie, CSRF, secret-custody, membership, and principal-migration
+ADR 0019 accepts Better Auth with GitHub login as the live mode, with a stacked
+Access-plus-Better-Auth cutover option and Access-only compatibility. Every
+mode keeps one downstream principal seam; the committed Wrangler example
+remains Access-only until an explicit deployment configuration change.
+The accepted cookie, CSRF, secret-custody, membership, and principal-migration
 rules are canonical in [ADR 0019](../adr/0019-pluggable-auth-modes.md).
+
+## 2026-08-23 — Hosted recording upload goes directly to Gemini
+
+ADR 0018 Amendment 2 is adopted. The public Worker reserves and caps a
+principal-owned pending session before it calls Gemini, encrypts the resumable
+capability in D1, and returns that write-only URL to the browser without the
+API key. The browser hashes and uploads directly; only exact provider size,
+MIME, and a present matching digest can create the sealed receipt consumed by
+the Workflow, which independently rechecks provider size and digest before
+analysis. The prior Worker-proxy route and fixed hosted part constants are
+retired. Because Gemini provides no File identity or documented session revoke
+before finalize, pre-final cancel/expiry abandons D1, refuses seal, and relies
+on provider TTL; principal-scoped open-session recovery is the fallback when a
+best-effort page-exit DELETE is lost.

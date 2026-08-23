@@ -63,6 +63,7 @@ export const sealedHostedMediaReceiptSchema = z.object({
   geminiFileName: z.string().min(7).max(128).regex(/^files\/[a-zA-Z0-9_-]+$/),
   geminiFileUri: z.string().url().max(2_000),
   sha256: sha256Schema,
+  sizeBytes: z.number().int().min(1).max(2_147_483_648),
   mimeType: supportedMediaMimeTypeSchema,
   retention: z.enum(["ephemeral", "retained"]),
   durationSeconds: z.number().finite().positive().max(86_400),

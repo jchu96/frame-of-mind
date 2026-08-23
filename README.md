@@ -544,8 +544,11 @@ bun run test:hosted-workflows-http:better-auth
 ```
 
 Better Auth binds `ba:<userId>` once in middleware; email is display and
-membership data only. See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
-and [proposed ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
+membership data only. In Better Auth modes, anonymous browser pages redirect
+to `/sign-in`, where an invited user can continue with GitHub or request a
+magic link when email delivery is configured; API requests remain JSON 403s.
+See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
+and [accepted ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
 
 The dark hosted execution path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. When explicitly
@@ -566,6 +569,13 @@ but are not deployed or enabled. Verify the two-Worker, two-principal, and
 focused browser contract with `bun run test:hosted-workflows-http`; the earlier
 topology proof remains in the
 [spike receipt](docs/spikes/hosted-workflows-spike-2026-08-22.md).
+
+Direct hosted uploads are recoverable beyond one tab's session storage. The
+Recording step lists only the authenticated principal's unexpired open
+sessions, then offers Resume (with a provider offset query) or Discard. A page
+exit sends a best-effort keepalive cancellation. Gemini exposes no File name or
+documented revoke before finalize, so pre-final cancel/expiry abandons D1 and
+relies on the bounded provider TTL; finalized exact-name Files are deleted.
 
 The same dark path now reserves a versioned conservative token estimate before
 each initial or linked attempt and reconciles it from Gemini usage receipts on
@@ -671,8 +681,8 @@ bun run hosted:local                 # human-driveable hosted Workers; Ctrl+C to
 bun run build
 bun run build:web:cloudflare
 bun run test:hosted-access-http
+bun run test:hosted-media-http              # fake Files API + real Chromium direct-upload contract
 bun run rehearse:hosted-release
-bun run check:hosted-stream                 # 1/2/4 MiB materialization-bound Worker oracle
 bun run check
 ```
 

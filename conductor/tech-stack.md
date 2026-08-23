@@ -32,8 +32,8 @@
 - Cloudflare Access with in-application JWT verification
 - Durable hosted job orchestration behind the same `AnalysisJobExecutor`
   contract
-- Direct browser-to-R2 multipart media transfer; Workers authorize and
-  coordinate but do not proxy recording bytes
+- Direct browser-to-Gemini resumable media transfer; Workers mint, cap, seal,
+  and clean write-only sessions but do not proxy recording bytes
 
 ## Data And Infrastructure
 
@@ -43,7 +43,7 @@
 - Phase B may use D1 as operational hosted job state plus rebuildable completed
   run projections
 - Local filesystem staging stores Phase A recording bytes temporarily
-- Private Cloudflare R2 is the proposed Phase B staging adapter
+- Private Cloudflare R2 remains optional for explicitly retained media
 - GitHub Actions runs public continuous integration
 
 ## Key Dependencies

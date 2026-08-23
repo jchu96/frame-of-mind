@@ -37,12 +37,6 @@ try {
     "Cloudflare artifact build",
   );
   console.log("HOSTED_ACCESS build=PASS cloudflare_module");
-  if (entrySelection === "hosted-entry") {
-    await runChecked(
-      ["bun", "--no-env-file", "run", "build:hosted-stream-entry"],
-      "Hosted wrapper entry build",
-    );
-  }
 
   const keys = await generateKeyPair("RS256");
   const publicJwk = await exportJWK(keys.publicKey);
@@ -206,7 +200,12 @@ try {
   const session = await json<Record<string, unknown>>(
     await expectStatus(authenticatedFetch(baseUrl, "/api/session", tokenA), 200, "display session"),
   );
-  if ("principal" in session || "sub" in session) {
+  if (
+    "sub" in session
+    || (hostedContractAuthMode === "better-auth"
+      ? session.principal !== true
+      : "principal" in session)
+  ) {
     throw new Error("GET /api/session exposed the durable principal.");
   }
   await expectStatus(

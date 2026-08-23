@@ -222,6 +222,12 @@
 - Per-tab session storage is a resume convenience, never retention authority.
   Every staged copy needs a server-owned expiry that survives tab closure and
   storage denial.
+- Gemini resumable upload start does not yield a File name, and the documented
+  [Files API](https://ai.google.dev/gemini-api/docs/files) has no pre-finalize
+  session revoke. Never invent a File delete or report
+  `cleanup_failed` for that normal state: abandon the principal-bound D1 row,
+  refuse seal, and rely on the bounded provider TTL. Principal-scoped open-list
+  recovery covers lost best-effort page-exit cancellation.
 - Server-owned expiry is incomplete if it runs only at startup. A long-lived
   local server needs a non-overlapping periodic sweep owned and stopped by the
   Nitro lifecycle. That sweep must acquire the same per-session ownership as
@@ -436,3 +442,7 @@
   too late; use a `/sign-in/magic-link` before-hook when denial must precede
   both storage and delivery. The verify URL is a first-fetch, session-minting
   GET, so mail scanners can consume it.
+- Cloudflare/workerd `fetch` rejects `redirect: "error"`; use
+  `redirect: "manual"` for Gemini Files calls and treat every non-2xx response
+  (including redirects) as a provider error. Browser/Bun fetch acceptance is
+  not sufficient evidence for the deployed edge runtime.
