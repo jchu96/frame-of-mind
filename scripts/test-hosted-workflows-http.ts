@@ -1,7 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { chromium } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
 import { validateVersionedRunImport } from "../src/domain/integrity";
 import {
@@ -14,16 +12,18 @@ import {
 } from "../apps/workflows/src/provider";
 import { hostedSpendEstimator } from "../apps/workflows/src/spend";
 import { createE2EEnvironment } from "./e2e-environment";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-workflows-"));
-const persistRoot = join(temporaryRoot, "wrangler-state");
+const isolation = await createE2EIsolation("hosted-workflows");
+const temporaryRoot = isolation.root;
+const persistRoot = isolation.persistRoot;
 const webConfigPath = join(temporaryRoot, "web.wrangler.jsonc");
 const disabledWebConfigPath = join(temporaryRoot, "web-disabled.wrangler.jsonc");
 const workflowConfigPath = join(temporaryRoot, "workflow.wrangler.jsonc");
 const seedPath = join(temporaryRoot, "seed.sql");
 const workflowOutdir = join(temporaryRoot, "workflow-bundle");
-const databaseName = "frame-of-mind-hosted-workflow-contract";
-const databaseId = "00000000-0000-0000-0000-000000000004";
+const databaseName = isolation.databaseName;
+const databaseId = isolation.databaseId;
 const audience = "frame-of-mind-hosted-workflow-contract";
 const keyId = "hosted-workflow-contract-key";
 const principalA = "hosted-workflow-principal-a";
@@ -195,7 +195,7 @@ try {
     "--file", seedPath,
   ], "hosted Workflow fixture seed");
 
-  const workflowPort = await reservePort();
+  const workflowPort = await isolation.reservePort();
   workflowWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
     "--config", workflowConfigPath,
@@ -247,7 +247,7 @@ try {
     "HOSTED_TELEMETRY contract=PASS codes_and_structural_fields_only dsn_default=off upload=interface_only",
   );
 
-  const workerPort = await reservePort();
+  const workerPort = await isolation.reservePort();
   const baseUrl = `http://127.0.0.1:${workerPort}`;
   webWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
@@ -275,7 +275,7 @@ try {
   const tokenRace = await signAccessToken(keys.privateKey, issuer, principalRace);
   const tokenOverrun = await signAccessToken(keys.privateKey, issuer, principalOverrun);
   const tokenJanitor = await signAccessToken(keys.privateKey, issuer, principalJanitor);
-  const disabledPort = await reservePort();
+  const disabledPort = await isolation.reservePort();
   const disabledOrigin = `http://127.0.0.1:${disabledPort}`;
   disabledWebWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
@@ -509,7 +509,19 @@ try {
   assertEqual(canceledRetryTerminal.job.stage, "succeeded", "canceled retry stage");
   console.log("HOSTED_WORKFLOW cancel_retry=PASS canceled_then_linked_success");
 
-  await verifyHostedBrowserContract(baseUrl, tokenA, normalMedia);
+  const composer = await json<JobResponse>(await expectStatus(
+    composerJobResponse(
+      baseUrl,
+      tokenA,
+      normalMedia,
+      "composer-success-submit-key",
+    ),
+    201,
+    "successful composer create",
+  ));
+  const composerTerminal = await waitForTerminal(baseUrl, tokenA, composer.job.id);
+  assertEqual(composerTerminal.job.stage, "succeeded", "composer terminal stage");
+  console.log("HOSTED_WORKFLOW composer=PASS http_contract_without_browser");
 
   const crashed = await createJob(baseUrl, tokenA, crashMedia, "crash-submit-key");
   const crashTerminal = await waitForTerminal(baseUrl, tokenA, crashed.job.id);
@@ -661,7 +673,7 @@ try {
   if (process.env.KEEP_HOSTED_WORKFLOW_TEMP === "1") {
     console.error(`Hosted Workflow temp retained at ${temporaryRoot}`);
   } else {
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await isolation.cleanup();
   }
 }
 
@@ -840,44 +852,6 @@ function seedSql(): string {
       'reserved', '${sealedAt}', '${sealedAt}'
     );
   `;
-}
-
-async function verifyHostedBrowserContract(
-  origin: string,
-  token: string,
-  mediaId: string,
-): Promise<void> {
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const context = await browser.newContext({
-      extraHTTPHeaders: { "cf-access-jwt-assertion": token },
-    });
-    const page = await context.newPage();
-    await page.goto(`${origin}/hosted/new/intent`);
-    await page.getByRole("button", { name: "Save intent" }).click();
-    await page.goto(`${origin}/hosted/new/context`);
-    await page.getByRole("button", { name: "Use video only" }).click();
-    await page.evaluate((id) => {
-      sessionStorage.setItem(
-        "hosted:frame-of-mind:studio:media-upload",
-        JSON.stringify({ schemaVersion: 1, mediaSessionId: id }),
-      );
-    }, mediaId);
-    await page.goto(`${origin}/hosted/new/recording`);
-    await page.locator("[data-hosted-media-ready=true]").waitFor();
-    await page.goto(`${origin}/hosted/new/run`);
-    const start = page.locator("[data-hosted-run-start=true]");
-    await start.waitFor();
-    await start.click();
-    await page.waitForURL(/\/hosted\/activity\/attempt_/);
-    await page.locator("[data-hosted-activity-page=detail]").waitFor();
-    await page.goto(`${origin}/hosted/activity`);
-    await page.locator("[data-hosted-activity-page=list]").waitFor();
-    await context.close();
-  } finally {
-    await browser.close();
-  }
-  console.log("HOSTED_WORKFLOW browser=PASS composer_activity_published_viewer");
 }
 
 async function signAccessToken(
@@ -1182,17 +1156,6 @@ async function runCheckedOnce(
     throw new Error(`${label} failed (${exitCode}):\n${stdout}\n${stderr}`.slice(0, 20_000));
   }
   return stdout;
-}
-
-async function reservePort(): Promise<number> {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response("reserved"),
-  });
-  const port = server.port;
-  server.stop(true);
-  return port;
 }
 
 async function waitForWorker(

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini-model";
@@ -13,13 +12,16 @@ import { LocalSqliteJobRepository } from "../apps/web/server-local/studio-jobs/s
 import { publishedRunDirectory } from "../apps/web/server-local/studio-jobs/run-reimport";
 import { LocalMediaStagingAdapter } from "../apps/web/server-local/studio-media/local-media-staging";
 import { videoRunFixture } from "../apps/web/test/fixtures";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
-const port = 34_000 + Math.floor(Math.random() * 10_000);
+const isolation = await createE2EIsolation("local-studio-http");
+const port = await isolation.reservePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const webRoot = join(process.cwd(), "apps", "web");
-const mediaRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-http-media-"));
-const spikeRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-studio-spike-http-"));
+const mediaRoot = join(isolation.root, "media");
+const spikeRoot = join(isolation.root, "frame-of-mind-studio-spike-http-fixture");
+await Promise.all([mkdir(mediaRoot, { recursive: true }), mkdir(spikeRoot, { recursive: true })]);
 const outputRoot = join(mediaRoot, "runs");
 const databasePath = join(mediaRoot, "studio.sqlite");
 const environment = {
@@ -1523,8 +1525,5 @@ try {
 } finally {
   server.kill("SIGTERM");
   await server.exited;
-  await Promise.all([
-    rm(mediaRoot, { recursive: true, force: true }),
-    rm(spikeRoot, { recursive: true, force: true }),
-  ]);
+  await isolation.cleanup();
 }
