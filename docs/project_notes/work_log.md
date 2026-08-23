@@ -2,17 +2,13 @@
 
 ## 2026-08-23
 
-- Addressed PR #92's hygiene review after merging the Cloudflare Email Service
-  work from `origin/main`. Synthetic Access domains now use literal values with
-  an occurrence-scoped safe rule; split/join evasion is explicitly rejected.
-  The gate covers prefixed resource keys, dashboard/API/CLI account IDs,
-  broader Access audience keys, unquoted TOML tags, and multiline keyed values
-  with 43 positive/negative fixtures while preserving SHA, migration, UUID,
-  and placeholder cases. The deployment guide now has one binding-first email
-  section with HTTP only as the no-binding fallback, sender-unset fail-closed
-  behavior, and a restricted-binding canary. Focused auth/mailer tests passed
-  14/14, and the executable hosted smoke emitted the spend, Studio, and
-  Workflow contract PASS receipts.
+- Configured Better Auth's documented `advanced.ipAddress.ipAddressHeaders`
+  path for Cloudflare Workers so magic-link rate limiting uses only the
+  edge-set `cf-connecting-ip` header. Added a behavioral
+  limiter contract for independent IP buckets and the fail-closed headerless
+  bucket, admitted the Nuxt Icon endpoint required by anonymous sign-in while
+  preserving traversal rejection, and extended the built-workerd contract to
+  reject the shared-bucket warning.
 
 - Closed the Cloudflare Email Service adversarial review's three should-fix
   findings before go-live. A present `EMAIL` binding with no sender now fails
@@ -1124,7 +1120,7 @@
   contracts inherit only its verified token, keeping both intra-gate and
   cross-worktree waiting outside step timers.
 - Email sign-in went live on 2026-08-23 after PR #91: the public Worker was
-  redeployed with a restricted `send_email` binding
+  redeployed (version `2bf0861d…`) with a restricted `send_email` binding
   (`allowed_destination_addresses` = the invited maintainer addresses),
   `NUXT_BETTER_AUTH_MAILER_FROM` on the onboarded domain, and migration
   `0009` applied remotely. The maintainer's live test succeeded: magic-link
@@ -1133,20 +1129,3 @@
   the client IP on Workers (`cf-connecting-ip`), so the per-route rate limit
   was a single shared bucket; and `/api/_nuxt_icon/*` was not a public path,
   so the sign-in page's icon request returned `403` before login.
-- Added the public-repository hygiene and hosted-operations closeout on
-  2026-08-23. The gate now detects keyed Cloudflare resource IDs and Access
-  audiences, concrete Access team domains, GitHub client IDs, and R2 bucket
-  tags while leaving SHA values, migration text, and committed placeholders
-  alone. Its 26-fixture self-test and full-tree scan passed; a temporary fake
-  D1 identifier failed with exactly one suppressed-content finding and passed
-  after removal. `gate-lock bun run test:e2e:smoke` passed all 13 Local Studio
-  journeys, and a bounded `gate-lock bun run hosted:local` launch printed
-  `HOSTED LOCAL AUTH MODE better-auth` and `HOSTED LOCAL READY` before the
-  owned process was stopped. The serialized `gate-lock bun run check` passed
-  23 Vitest files / 217 tests, 44 Bun web files / 321 tests, all hosted
-  contracts and release receipts, nine Playwright tests with one intentional
-  skip, and the 32 MiB streaming proof.
-  The same documentation closeout now includes an optional hosted-mode
-  zero-to-deploy checklist, both supported GitHub application choices, and a
-  provenance map separating vendored Google skills, installable official
-  Cloudflare marketplace skills, and unshipped maintainer review skills.
