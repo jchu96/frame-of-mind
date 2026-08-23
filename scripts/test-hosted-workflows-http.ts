@@ -45,6 +45,9 @@ const cancelMedia = "media_hosted_cancel_0001";
 const overrunMedia = "media_hosted_overrun_0001";
 const janitorMedia = "media_hosted_janitor_0001";
 const missingHashMedia = "media_hosted_missing_hash_0001";
+const legacyDisplayMedia = "media_hosted_legacy_display_0001";
+const legacyDisplayJob = "job_hosted_legacy_display_0001";
+const legacyDisplayAttempt = "attempt_hosted_legacy_display_0001";
 const janitorAttempt = "attempt_hosted_janitor_0001";
 const recipeStartMedia = listBuiltInRecipes().map((recipe, index) => ({
   recipeId: recipe.id,
@@ -499,6 +502,20 @@ try {
   if (!listA.jobs.some((job) => job.id === normal.job.id)) {
     throw new Error("Principal activity list omitted the published attempt.");
   }
+  const normalListJob = listA.jobs.find((job) => job.id === normal.job.id);
+  const legacyListJob = listA.jobs.find((job) => job.id === legacyDisplayAttempt);
+  if (!normalListJob?.receipt.recording) {
+    throw new Error("Principal activity list omitted valid recording details.");
+  }
+  if (!legacyListJob) {
+    throw new Error("Principal activity list omitted the legacy attempt.");
+  }
+  assertEqual(
+    legacyListJob.receipt.recording,
+    undefined,
+    "legacy display receipt omitted only unavailable recording details",
+  );
+  console.log("HOSTED_WORKFLOW legacy_display=PASS list_200 valid_and_null_size_rows=true");
   const listB = await json<{ jobs: JobView[] }>(await expectStatus(
     authenticatedFetch(baseUrl, "/api/hosted/jobs", tokenB),
     200,
@@ -517,6 +534,19 @@ try {
     listBuiltInRecipes().map((recipe) => recipe.id),
     "hosted built-in recipe IDs",
   );
+  const missingRecipe = await json<{ data: { code: string } }>(await expectStatus(
+    composerJobResponse(
+      baseUrl,
+      tokenB,
+      recipeStartMedia[0]!.mediaId,
+      "missing-recipe-start",
+      "removed-recipe",
+      "removed-revision",
+    ),
+    422,
+    "removed hosted recipe",
+  ));
+  assertEqual(missingRecipe.data.code, "recipe_not_found", "removed recipe error code");
   for (const fixture of recipeStartMedia) {
     const catalogRecipe = hostedCatalog.recipes.find(
       (recipe) => recipe.id === fixture.recipeId,
@@ -839,6 +869,9 @@ interface JobView {
   cleanupCompleted: boolean;
   runId?: string;
   errorCode?: string;
+  receipt: {
+    recording?: { durationSeconds: number; sizeBytes: number };
+  };
 }
 
 interface JobResponse {
@@ -1001,6 +1034,20 @@ function seedSql(): string {
     retention: "retained",
     spendPlan: contractSpendPlan,
   }).replaceAll("'", "''");
+  const legacyDisplayInput = JSON.stringify({
+    mediaId: legacyDisplayMedia,
+    mediaSha256,
+    context: { mode: "none" },
+    recipe: {
+      id: "issue-review",
+      label: "Issue review",
+      revision: "builtin-test",
+      sha256: "b".repeat(64),
+    },
+    model: "gemini-test",
+    retention: "retained",
+    spendPlan: contractSpendPlan,
+  }).replaceAll("'", "''");
   return `
     INSERT INTO hosted_principal_spend (
       principal_sub, principal_email, cap_units, committed_units, updated_at
@@ -1014,6 +1061,31 @@ function seedSql(): string {
       principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
       mime_type, retention, sealed_at, expires_at, duration_seconds, size_bytes
     ) VALUES ${mediaRows.join(",\n")};
+    INSERT INTO hosted_media_receipts (
+      principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
+      mime_type, retention, sealed_at, expires_at, duration_seconds, size_bytes
+    ) VALUES (
+      '${principalA}', '${legacyDisplayMedia}', 'files/${legacyDisplayMedia}',
+      'https://generativelanguage.googleapis.test/v1beta/files/${legacyDisplayMedia}',
+      '${mediaSha256}', 'video/mp4', 'retained', '${sealedAt}', '${expiresAt}',
+      20, NULL
+    );
+    INSERT INTO hosted_analysis_jobs (
+      principal_sub, job_id, principal_email, media_id, created_at
+    ) VALUES (
+      '${principalA}', '${legacyDisplayJob}', 'seat@example.test',
+      '${legacyDisplayMedia}', '${sealedAt}'
+    );
+    INSERT INTO hosted_analysis_attempts (
+      principal_sub, attempt_id, job_id, retry_of_attempt_id,
+      attempt_number, idempotency_key, workflow_instance_id,
+      immutable_input_json, stage, spend_reserved_units, created_at, updated_at
+    ) VALUES (
+      '${principalA}', '${legacyDisplayAttempt}', '${legacyDisplayJob}', NULL,
+      1, 'legacy-display-key', 'workflow_hosted_legacy_display_0001',
+      '${legacyDisplayInput}', 'queued', ${contractSpendPlan.estimatedTokens},
+      '${sealedAt}', '${sealedAt}'
+    );
     INSERT INTO hosted_analysis_jobs (
       principal_sub, job_id, principal_email, media_id, created_at
     ) VALUES (
@@ -1152,7 +1224,7 @@ async function verifyHostedBrowserContract(
     await page.getByText("Drop a recording here").waitFor();
     await page.getByRole("link", { name: "Back to Activity" }).waitFor();
     await page.getByText("Delete after analysis", { exact: true }).waitFor();
-    await page.getByText("Keep for 7 days", { exact: true }).waitFor();
+    await page.getByText("Keep for 1 hour", { exact: true }).waitFor();
     await assertRecordingCopyUsesUxGlossary(page);
     await capture("03-recording-empty");
     await page.evaluate((id) => {
@@ -1181,25 +1253,65 @@ async function verifyHostedBrowserContract(
       {
         code: "principal_spend_cap_exceeded",
         message: "You've used this account's analysis allowance.",
-        nextAction: "Contact support to raise it.",
+        nextAction: "Contact support with the code below to raise it.",
+        action: "Copy support code",
+        actionRole: "button" as const,
         status: 429,
       },
       {
         code: "spend_duration_unavailable",
         message: "We couldn't read this recording's length.",
         nextAction: "Upload the recording again.",
+        action: "Upload recording again",
+        actionRole: "link" as const,
         status: 422,
       },
       {
         code: "sealed_media_receipt_missing",
         message: "This recording is no longer ready.",
         nextAction: "Upload the recording again.",
+        action: "Upload recording again",
+        actionRole: "link" as const,
         status: 404,
       },
       {
         code: "media_retention_expired",
         message: "This recording's availability changed.",
         nextAction: "Return to Recording and upload it again.",
+        action: "Upload recording again",
+        actionRole: "link" as const,
+        status: 409,
+      },
+      {
+        code: "spend_policy_unavailable",
+        message: "Analysis limits are temporarily unavailable.",
+        nextAction: "Try starting the analysis again.",
+        action: "Try again",
+        actionRole: "button" as const,
+        status: 503,
+      },
+      {
+        code: "hosted_media_open_session_cap_exceeded",
+        message: "Another recording upload is still unfinished.",
+        nextAction: "Finish or discard it before starting this analysis.",
+        action: "Finish or discard upload",
+        actionRole: "link" as const,
+        status: 429,
+      },
+      {
+        code: "invalid_hosted_job_request",
+        message: "These analysis selections are no longer valid.",
+        nextAction: "Choose your analysis settings again.",
+        action: "Choose again",
+        actionRole: "link" as const,
+        status: 422,
+      },
+      {
+        code: "hosted_idempotency_conflict",
+        message: "This start request no longer matches the saved analysis.",
+        nextAction: "Refresh this page before trying again.",
+        action: "Refresh page",
+        actionRole: "button" as const,
         status: 409,
       },
     ];
@@ -1215,6 +1327,7 @@ async function verifyHostedBrowserContract(
       await page.getByRole("alert").getByText(fixture.message, { exact: true }).waitFor();
       await page.getByRole("alert").getByText(fixture.nextAction, { exact: true }).waitFor();
       await page.getByText(`Support code: ${fixture.code}`, { exact: true }).waitFor();
+      await page.getByRole(fixture.actionRole, { name: fixture.action, exact: true }).waitFor();
     }
     await start.click();
     await page.waitForURL(/\/hosted\/activity\/attempt_/);

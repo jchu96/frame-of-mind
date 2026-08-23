@@ -515,3 +515,33 @@
   trigger an explicit client Refresh or client-side navigation.
 - Prevention: hosted browser fixtures that replace server-fetched data must
   cross a client request boundary before asserting the synthetic state.
+
+## 2026-08-23 — Legacy hosted media metadata broke the whole Activity list
+
+- Symptom: one pre-migration media receipt with a nullable recording size made
+  the principal's complete Activity request fail instead of showing the other
+  valid attempts.
+- Cause: the display route performed one strict execution-grade receipt read
+  per attempt. The strict parser correctly rejected the legacy row, but that
+  exception escaped the optional display projection and the loop also created
+  an N+1 query path.
+- Fix: preserve strict receipt reads for execution and add one principal-bound,
+  page-batched display read that omits only rows that cannot supply complete
+  recording metadata.
+- Prevention: the real-D1 hosted Workflow contract seeds one nullable legacy
+  receipt beside a valid attempt and requires `GET /api/hosted/jobs` to return
+  HTTP 200 with both rows and recording details only on the valid row.
+
+## 2026-08-23 — Hosted recovery actions contradicted their error copy
+
+- Symptom: several start failures offered an upload-again link even when the
+  message asked the user to retry, finish an open upload, refresh, or contact
+  support; Recording also claimed a fixed seven-day retention period while the
+  configured session lifetime was one hour.
+- Cause: Run inferred one CTA from an inverted code condition, and Recording
+  duplicated policy as literal copy.
+- Fix: each reachable start-error copy entry now owns its action, while the
+  Recording route receives and humanizes the server policy lifetime.
+- Prevention: a table-driven UX test covers every reachable error code and CTA;
+  built-workerd browser fixtures cover representative action families and the
+  policy-derived retention label.

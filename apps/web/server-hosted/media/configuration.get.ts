@@ -13,6 +13,7 @@ export default defineEventHandler((event) => {
     return {
       available: true,
       maxBytes: policy.maxBytes,
+      sessionTtlSeconds: policy.sessionTtlSeconds,
     };
   } catch (error) {
     throwHostedMediaHttpError(error);

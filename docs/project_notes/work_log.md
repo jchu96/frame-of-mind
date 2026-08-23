@@ -918,3 +918,16 @@
   the 32 MiB streaming proof passed. One earlier full run hit the documented
   intermittent auth browser closure; its isolated rerun and terminal full gate
   both passed unchanged.
+- Closed the PR #86 hosted UX pass-3 review findings on 2026-08-23. Activity
+  now joins one principal-scoped batch of tolerant display receipts, so a
+  pre-0007 nullable-size row no longer hides valid jobs while execution reads
+  remain strict. Recording derives its retention label from the server's
+  session policy and omits an unavailable size ceiling. Each reachable Run
+  start error owns specific copy and a matching retry, navigation, refresh, or
+  support action; removed built-in recipes now return `recipe_not_found`.
+  Filename persistence remains intentionally absent because the durable job
+  boundary stores only opaque media IDs and digests. The real-D1/browser
+  contract and refreshed desktop/mobile screenshots passed under
+  `gate-lock bun run test:e2e:hosted`, including the nullable legacy row,
+  3-admitted/7-rejected spend race, composer, Activity, publication, viewer,
+  and review workspace.

@@ -8,6 +8,8 @@ import {
   useHostedMediaUpload,
 } from "./use-hosted-media-upload";
 import {
+  formatRetentionDuration,
+  recordingFieldHelp,
   formatRecordingBytes,
   recordingDisplayLabel,
 } from "../../app/studio/recording-display";
@@ -17,7 +19,11 @@ useSeoMeta({
   description: "Add the recording for a hosted analysis.",
 });
 
-const { data: configuration, error } = await useFetch<{ available: true; maxBytes: number }>("/api/hosted/media/configuration", {
+const { data: configuration, error } = await useFetch<{
+  available: true;
+  maxBytes?: number;
+  sessionTtlSeconds?: number;
+}>("/api/hosted/media/configuration", {
   headers: useRequestHeaders(["cookie"]),
 });
 if (error.value) throw createError({ statusCode: 404, statusMessage: "Not found" });
@@ -34,21 +40,26 @@ onMounted(() => {
   intentReady.value = Boolean(loadIntentDraft(hostedStorage(sessionStorage)).draft);
 });
 
-const retentionOptions = [
+const retentionDuration = computed(() =>
+  formatRetentionDuration(configuration.value?.sessionTtlSeconds ?? 0)
+);
+const retentionOptions = computed(() => [
   {
     label: "Delete after analysis",
     value: "ephemeral",
     description: "Delete the recording from Gemini when this analysis finishes.",
   },
   {
-    label: "Keep for 7 days",
+    label: retentionDuration.value
+      ? `Keep for ${retentionDuration.value}`
+      : "Keep until the expiry shown on the next step",
     value: "retained",
-    description: "Keep the recording in Gemini for up to 7 days.",
+    description: retentionDuration.value
+      ? `Keep the recording in Gemini for up to ${retentionDuration.value}.`
+      : "Keep the recording in Gemini until the expiry shown on the next step.",
   },
-];
-const fieldHelp = computed(() =>
-  `MP4, MOV, M4V or WebM, up to ${formatRecordingBytes(configuration.value?.maxBytes ?? 0)}`
-);
+]);
+const fieldHelp = computed(() => recordingFieldHelp(configuration.value?.maxBytes));
 
 function formatDate(value: string): string {
   const date = new Date(value);
@@ -105,8 +116,14 @@ function formatDate(value: string): string {
               <div>
                 <p class="font-semibold text-default">{{ formatRecordingBytes(session.declaredSizeBytes) }} recording</p>
                 <p class="mt-1 text-sm text-muted">
-                  <template v-if="session.retention === 'ephemeral'">Delete after analysis</template><template v-else>Keep for 7 days</template>
-                  · expires <time :datetime="session.sessionExpiresAt" :title="session.sessionExpiresAt">{{ formatDate(session.sessionExpiresAt) }}</time>
+                  <template v-if="session.retention === 'ephemeral'">
+                    Delete after analysis · upload expires
+                    <time :datetime="session.sessionExpiresAt" :title="session.sessionExpiresAt">{{ formatDate(session.sessionExpiresAt) }}</time>
+                  </template>
+                  <template v-else>
+                    Keep until
+                    <time :datetime="session.sessionExpiresAt" :title="session.sessionExpiresAt">{{ formatDate(session.sessionExpiresAt) }}</time>
+                  </template>
                 </p>
               </div>
               <div class="flex flex-wrap gap-2">
