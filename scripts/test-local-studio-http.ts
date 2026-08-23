@@ -13,12 +13,15 @@ import { publishedRunDirectory } from "../apps/web/server-local/studio-jobs/run-
 import { LocalMediaStagingAdapter } from "../apps/web/server-local/studio-media/local-media-staging";
 import { videoRunFixture } from "../apps/web/test/fixtures";
 import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
+import { resolvePrebuiltWebOutput } from "./prebuilt-artifact";
 
 const bootstrapToken = "studio-http-test-bootstrap-capability-0123456789";
 const isolation = await createE2EIsolation("local-studio-http");
 const port = await isolation.reservePort();
 const baseUrl = `http://127.0.0.1:${port}`;
 const webRoot = join(process.cwd(), "apps", "web");
+const prebuiltOutput = await resolvePrebuiltWebOutput("node-server");
+const webOutput = prebuiltOutput ?? join(webRoot, ".output");
 const mediaRoot = join(isolation.root, "media");
 const spikeRoot = join(isolation.root, "frame-of-mind-studio-spike-http-fixture");
 await Promise.all([mkdir(mediaRoot, { recursive: true }), mkdir(spikeRoot, { recursive: true })]);
@@ -150,15 +153,19 @@ function createStudioProbe(origin: string) {
 }
 
 console.log("Building the local Studio HTTP contract fixture...");
-const build = Bun.spawn(["bun", "run", "--cwd", "apps/web", "build"], {
-  cwd: process.cwd(),
-  env: environment,
-  stdin: "ignore",
-  stdout: "inherit",
-  stderr: "inherit",
-});
-if (await build.exited !== 0) {
-  throw new Error("Local Studio contract fixture build failed.");
+if (prebuiltOutput) {
+  console.log("LOCAL_STUDIO_HTTP build=SKIP prebuilt=node-server");
+} else {
+  const build = Bun.spawn(["bun", "run", "--cwd", "apps/web", "build"], {
+    cwd: process.cwd(),
+    env: environment,
+    stdin: "ignore",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if (await build.exited !== 0) {
+    throw new Error("Local Studio contract fixture build failed.");
+  }
 }
 
 const runFixture = await videoRunFixture();
@@ -340,8 +347,8 @@ try {
 const server = Bun.spawn([
   "bun",
   "--preload",
-  join(webRoot, ".output/server/sentry.server.config.mjs"),
-  join(webRoot, ".output/server/index.mjs"),
+  join(webOutput, "server/sentry.server.config.mjs"),
+  join(webOutput, "server/index.mjs"),
 ], {
   cwd: webRoot,
   env: environment,
