@@ -1,4 +1,7 @@
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
+import { assertVisibleTextContrast } from "./support/contrast";
 
 const origin = process.env.FRAME_OF_MIND_HOSTED_SIGN_IN_ORIGIN;
 const mode = process.env.FRAME_OF_MIND_HOSTED_SIGN_IN_MODE;
@@ -19,6 +22,28 @@ test.use({
 });
 
 test.describe(`hosted sign-in (${mode})`, () => {
+  test("keeps sign-in text legible in light and dark schemes", async ({ page }) => {
+    const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-3");
+    if (mode === "better-auth") await mkdir(screenshotRoot, { recursive: true });
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await page.goto("/sign-in");
+      await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+      await assertVisibleTextContrast(page, `sign-in ${colorScheme}`);
+      if (mode !== "better-auth") continue;
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await page.screenshot({
+        path: resolve(screenshotRoot, `14-sign-in-desktop-${colorScheme}.png`),
+        fullPage: true,
+      });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.screenshot({
+        path: resolve(screenshotRoot, `14-sign-in-mobile-${colorScheme}.png`),
+        fullPage: true,
+      });
+    }
+  });
+
   test("renders through built middleware and discriminates HTML from API denial", async ({ page, request }) => {
     const signInResponse = await page.goto("/sign-in");
     expect(signInResponse?.status()).toBe(200);
