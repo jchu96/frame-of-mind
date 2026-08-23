@@ -13,13 +13,14 @@ export function usesBetterAuth(mode: AuthMode): boolean {
 }
 
 export function isBetterAuthPublicPath(path: string): boolean {
-  // Exact files and a single build-asset prefix; anything that could walk out
-  // of the asset tree (".." or an encoded slash) is not public.
+  // Exact files and approved framework-asset prefixes; anything that could
+  // walk out of an asset tree (".." or an encoded slash) is not public.
   if (path.includes("..") || /%2f/i.test(path) || path.includes("\\")) return false;
   return path === "/sign-in"
     || path === "/api/auth"
     || path.startsWith("/api/auth/")
     || path.startsWith("/_nuxt/")
+    || path.startsWith("/api/_nuxt_icon/")
     || path === "/favicon.ico"
     || path === "/favicon.svg"
     || path === "/robots.txt"
