@@ -6,6 +6,9 @@ on:
     branches:
       - main
       - fix/ci-green
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,7 +16,34 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run pull-request gate
+        env:
+          FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE: "1"
+        run: bun run check:pr --base "origin/${{ github.base_ref || 'main' }}"
+
+      - name: Reject high or critical production advisories
+        run: bun audit --production --audit-level=high
+
+  hosted-contracts:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     steps:
       - name: Check out repository
@@ -27,11 +57,31 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Run typechecks, tests, and local and Cloudflare builds
-        run: bun run check
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
 
-      - name: Reject high or critical production advisories
-        run: bun audit --production --audit-level=high
+      - name: Run hosted contract lane
+        run: bun run check:lane:hosted
+
+  serial-check:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run serial fallback gate
+        run: bun run check
 
   fresh-clone:
     strategy:

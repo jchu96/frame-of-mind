@@ -21,6 +21,129 @@ when its deployment credentials are absent. `bun run check:e2e` selects hosted
 and adversarial projects and is part of `bun run check`. CI uses
 `bun run test:e2e:ci`, which adds smoke and fails on flaky retries.
 
+## Gate tiers
+
+The gate follows the nwave mission: minimize tests while maximizing decision
+value and reducing feedback time. The fast answer must still preserve the
+authority-boundary checks relevant to the change; a shorter tier is not
+permission to remove coverage from the complete gate.
+
+- `bun run check:pr` runs the fast and local lanes only when every changed path
+  is explicitly safe: `docs/**`, Markdown, `conductor/**`, `test/**` unit tests,
+  or presentation assets under `apps/web/app/**` (`.vue`, styles, images, icons,
+  and fonts).
+- `bun run check:sharded` runs fast, local, and hosted lanes for every merge to
+  `main` and every nightly gate.
+- Every path outside that safe allowlist upgrades `check:pr` to sharded. This
+  includes `src/**`, `apps/web/server*/**`, `apps/workflows/**`, `scripts/**`,
+  `db/migrations/**`, `package.json`, `bun.lock`, Nuxt configuration, and
+  `.github/**`. The default comparison is `origin/main`; override it with
+  `FRAME_OF_MIND_GATE_BASE_REF=<ref>` or `--base <ref>`. An unavailable base
+  fails closed to the complete tier and prints
+  `tier=sharded reason=base_ref_unavailable`.
+- `bun run check` remains the serial fallback and retains its original 16-step
+  order.
+
+## Gate lanes
+
+The three lanes cover exactly the same 16 logical steps as the serial gate. A
+unit test parses `package.json` and rejects omissions or duplicates.
+
+| Lane | Logical checks | Shared build |
+|---|---|---|
+| fast | repository hygiene, typechecks, CLI/unit tests, web/unit tests | none |
+| local | CLI build, node web build, Local Studio HTTP contract, streaming spike | one `node-server` artifact |
+| hosted | Access (three entries), Workflows (two auth modes), media, auth, hosted/adversarial Playwright, release rehearsal | one `cloudflare_module` artifact and one sibling Workflows artifact |
+
+Run one lane directly with `bun run check:lane:fast`,
+`bun run check:lane:local`, or `bun run check:lane:hosted`.
+
+`bun run check:sharded` starts the lanes concurrently, prefixes complete output
+lines with the lane name, prints per-lane exit codes and wall time, and prints
+total wall time. Set `FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes under
+load; the default is three.
+
+On a shared host, wrap `check:sharded` in the house `gate-lock`; lanes inside one
+invocation are bounded by `FRAME_OF_MIND_GATE_PARALLELISM`.
+Concurrent invocations keep fast work parallel while runtime-bearing local and
+hosted lanes take the existing machine-wide workerd/Chromium lease as lane
+units. Waiting for a lane lease happens outside per-step timers; child contracts
+inherit a verified lease token and cannot silently bypass a different owner.
+
+On this machine, the hub-measured pre-sharding serial gate required 75–90
+minutes. The same 16-step implementation tree completed with a cold build cache
+in 324.47 seconds: fast 20.17 seconds, local 38.81 seconds, and hosted 324.46
+seconds. Hosted dominated the wall clock, led by the two Workflows HTTP modes
+at 62.61 and 95.19 seconds. A future optimization may overlap the independent
+hosted contract processes inside that lane; it is intentionally deferred from
+the first sharded-gate landing.
+
+## CI
+
+GitHub Actions splits the complete gate across two ordered jobs so the quick
+answer stays bounded without dropping hosted coverage:
+
+| Job | Budget | Command and ownership |
+|---|---:|---|
+| `check` | 15 minutes | `bun run check:pr --base origin/<base>` with fast and local lanes; production audit follows |
+| `hosted-contracts` | 40 minutes | needs `check`, installs Playwright Chromium, then runs `bun run check:lane:hosted` |
+| `browser-e2e` | 15 minutes | independently installs Chromium and runs the synthetic Studio browser suite |
+| `fresh-clone` | 15 minutes each | frozen Ubuntu/macOS fresh builds plus the Windows install-only contract |
+
+The `check` job sets `FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1`. This keeps
+`check:pr` on fast and local even when the diff contains a normally unsafe
+path, because `hosted-contracts` is mandatory and supplies the complete hosted
+lane after `check`. Local `check:pr` calls retain the fail-closed adaptive tier
+selection described above. Scheduled and manually dispatched workflows also
+retain the 120-minute serial fallback job.
+
+When CI is red, start with the owning job. A `check` failure belongs to hygiene,
+types, unit tests, local builds/contracts, or the production audit. A
+`hosted-contracts` failure belongs to the Cloudflare/Workflows contracts,
+hosted browser projects, or release rehearsal; confirm the Chromium install
+step before diagnosing application authentication. A `fresh-clone` failure is
+an install/lockfile/portable-build failure—never weaken `--frozen-lockfile`.
+Windows workspace-key drift specifically means checking whether the harness
+kept its temporary clone on the checkout drive.
+
+Each logical step has a 20-minute hard timeout. Override it with the positive
+integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`. A timeout prints
+`exit=step_timeout` and terminates only the detached process group created for
+that step. The historically intermittent
+`test:hosted-workflows-http:better-auth` step receives one automatic retry only
+after `step_timeout` and prints `retry=1`; deterministic non-zero exits and all
+other steps are not retried.
+
+### Prebuilt artifact contract
+
+The local and hosted contract runners accept
+`FRAME_OF_MIND_PREBUILT_OUTPUT=<absolute-directory>`. Hosted Workflows consumers
+also accept the sibling
+`FRAME_OF_MIND_PREBUILT_WORKFLOWS=<absolute-directory>`. Each directory must
+contain `.frame-of-mind-build.json` with the required preset
+(`node-server`, `cloudflare_module`, or `cloudflare-workflows`). A missing,
+invalid, or wrong marker fails closed with `prebuilt_preset_mismatch`. Without
+these variables, every script retains its prior build behavior.
+
+Lane builds use isolated Nuxt build and output directories, never
+`apps/web/.nuxt` or `apps/web/.output`. Outputs are cached by a SHA-256 over the
+Git-tracked tree plus untracked, non-ignored files. Documentation (`docs/**`,
+`conductor/**`, and `*.md`) and `apps/web/e2e/__screenshots__/**` are excluded;
+generated and dependency trees remain excluded because Git ignores them. This
+conservative input set covers `src/**`, `scripts/**`, both app trees, lockfiles,
+package manifests, TypeScript configuration, and configuration import seams.
+
+Build children inherit only `PATH`, `HOME`, `TMPDIR`, and `CI`, plus the lane's
+explicit build settings and run-owned destination paths. Ambient `NUXT_*` and
+`FRAME_OF_MIND_*` variables cannot leak into an artifact. The sorted
+content-bearing environment pairs are part of the cache key; run-owned output
+locations are deliberately destination-only. The default cache is
+`~/.cache/frame-of-mind/builds`; override it with
+`FRAME_OF_MIND_BUILD_CACHE=<directory>` or disable it with
+`FRAME_OF_MIND_BUILD_CACHE=off`. Only the five newest entries are retained. A
+hit prints `build=CACHED <hash8>` and is copied into the run-owned temporary
+tree before consumers start.
+
 The quarantine file is
 [`apps/web/e2e/flaky-quarantine.json`](../apps/web/e2e/flaky-quarantine.json).
 It must remain an explicit JSON array; zero entries is the normal state.

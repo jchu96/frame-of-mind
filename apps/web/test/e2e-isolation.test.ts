@@ -3,8 +3,25 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "bun:test";
+import {
+  acquireE2EResourceLease,
+  resourceLeaseTokenMatches,
+} from "../e2e/support/isolation";
 
 describe("E2E resource isolation", () => {
+  test("accepts only the token owned by the active lane lease", async () => {
+    const root = await mkdtemp(join(tmpdir(), "frame-of-mind-e2e-token-test-"));
+    const lockPath = join(root, "runtime.lock");
+    const lease = await acquireE2EResourceLease(lockPath);
+    try {
+      expect(await resourceLeaseTokenMatches(lockPath, lease.token)).toBe(true);
+      expect(await resourceLeaseTokenMatches(lockPath, "different-owner")).toBe(false);
+    } finally {
+      await lease.release();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("serializes resource-heavy harnesses across processes", async () => {
     const root = await mkdtemp(join(tmpdir(), "frame-of-mind-e2e-lock-test-"));
     const lockPath = join(root, "frame-of-mind-e2e-runtime.lock");
