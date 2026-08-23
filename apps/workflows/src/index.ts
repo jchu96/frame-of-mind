@@ -1,6 +1,7 @@
 import {
   WorkflowEntrypoint,
   type WorkflowEvent,
+  type WorkflowSleepDuration,
   type WorkflowStep,
 } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
@@ -58,6 +59,7 @@ interface Env {
   SENTRY_ENVIRONMENT?: string;
   SENTRY_RELEASE?: string;
   HOSTED_FAKE_START_DELAY_MEDIA_ID?: string;
+  HOSTED_FAKE_RACE_STAGGER_SECONDS?: string;
 }
 
 interface HostedWorkflowOutput {
@@ -81,7 +83,10 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       throw new NonRetryableError("workflow_instance_receipt_mismatch");
     }
     if (this.env.HOSTED_FAKE_START_DELAY_MEDIA_ID === attempt.input.mediaId) {
-      await step.sleep("contract-start-delay", "1 second");
+      await step.sleep(
+        "contract-start-delay",
+        contractStartDelay(attempt.idempotencyKey, this.env),
+      );
     }
     const provider = createHostedAnalysisProvider(this.env);
     const telemetry = createHostedTelemetry(this.env);
@@ -617,6 +622,24 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
       completedAt: new Date().toISOString(),
     };
   }
+}
+
+function contractStartDelay(
+  idempotencyKey: string,
+  env: Env,
+): WorkflowSleepDuration {
+  const raceIndex = /^http-race-(\d+)$/.exec(idempotencyKey)?.[1];
+  const staggerSeconds = Number(env.HOSTED_FAKE_RACE_STAGGER_SECONDS);
+  if (
+    raceIndex
+    && Number.isSafeInteger(staggerSeconds)
+    && staggerSeconds > 0
+  ) {
+    return (
+      `${Number(raceIndex) * staggerSeconds} seconds` as WorkflowSleepDuration
+    );
+  }
+  return "1 second";
 }
 
 export default {

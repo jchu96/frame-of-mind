@@ -227,6 +227,10 @@ try {
     vars: {
       HOSTED_FAKE_GEMINI: "true",
       HOSTED_FAKE_START_DELAY_MEDIA_ID: cancelMedia,
+      // Keep the HTTP admission burst concurrent, then stagger only its fake
+      // Workflows so Linux workerd's SQLite-backed D1 does not conflate the
+      // spend-cap contract with concurrent local-database writer contention.
+      HOSTED_FAKE_RACE_STAGGER_SECONDS: "3",
       HOSTED_FAKE_RECEIPT_FAILURE_MEDIA_ID: crashMedia,
       HOSTED_FAKE_RECEIPT_FAILURE_STEP: "transcribe",
       HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID: overrunMedia,
