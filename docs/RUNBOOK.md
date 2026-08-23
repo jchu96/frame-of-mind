@@ -1510,7 +1510,7 @@ After deploying the public Worker with hosted creation still dark, run the
 read-only Access canary before any traffic expansion:
 
 ```bash
-FRAME_OF_MIND_CANARY_URL="https://fom.flickerventures.com" \
+FRAME_OF_MIND_CANARY_URL="https://<YOUR_HOSTNAME>" \
 CF_ACCESS_CLIENT_ID="<service-token-id>" \
 CF_ACCESS_CLIENT_SECRET="<service-token-secret>" \
 bun run test:e2e:canary

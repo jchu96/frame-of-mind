@@ -491,3 +491,49 @@
   active-analysis veto. The 30-day default keeps ordinary jobs far from that
   edge, but do not shorten retained-media lifetime enough to overlap analysis
   without adding the same non-terminal-job check to expiry cleanup.
+
+## Hosted deployment and auth (2026-08-23)
+
+1. **GitHub App versus OAuth App.** Symptom: the callback returns
+   `email_not_found` even though an email scope was requested. Cause: GitHub
+   Apps ignore the `user:email` OAuth scope, while Better Auth still needs a
+   verified email. Fix: grant the GitHub App Account permission **Email
+   addresses: Read-only**; an OAuth App continues to use its normal scope.
+2. **Access for Workers adds another policy layer.** Symptom: every hostname,
+   including preview hostnames, keeps redirecting after the expected Access
+   application was bypassed or removed. Cause: **Access for Workers** creates
+   a second application bound to the script and covers every script hostname.
+   Fix: delete or bypass that script-bound application during cutover too.
+3. **Remote Wrangler development behind Access.** Symptom: `wrangler dev
+   --remote` refuses to start against a protected route. Cause: the remote
+   session cannot cross Access without a service token. Fix: supply an
+   authorized service token or use the local synthetic topology.
+4. **A dark route is not anonymously observable.** Symptom: an anonymous
+   canary expects the dark-release 404 but receives 403. Cause: authentication
+   rejects the request before route-darkness is evaluated. Fix: authenticate
+   the dark-release canary, then assert 404.
+5. **Legacy D1 rows can violate newer TypeScript expectations.** Symptom:
+   strict row parsing throws after schema columns such as `duration_seconds`
+   or `size_bytes` are added as nullable in D1 but modeled as required in the
+   current application schema. Cause: legacy rows still contain null. Fix:
+   keep display paths on the tolerant projection and reserve strict parsing
+   for fully migrated writes (learned in #86).
+6. **Remote email mode is production email.** Symptom: a test or example sends
+   real mail. Cause: `send_email` with `remote: true` proxies to the real Email
+   Service. Fix: keep the local simulator as the default and never enable
+   remote email in tests or examples.
+7. **Retained-media parts need a reservation before I/O.** Symptom: concurrent
+   part uploads can exceed the recording's declared size. Cause: validating
+   after streaming leaves a race between writers. Fix: reserve each PUT's
+   `Content-Length` in D1 before opening the stream, then release the
+   reservation if the write fails (#85).
+8. **Hosted-auth browser startup can be transiently resource-bound.** Symptom:
+   `check:hosted-auth` fails with a `TargetClosed` browser error under host
+   load. Cause: Chromium can disconnect before its first navigation. Fix: the
+   spike retries that lifecycle failure once and prints attempt receipts;
+   never retry an HTTP or authentication failure.
+9. **Idle Wrangler processes can stall the Better Auth contract.** Symptom:
+   `test:hosted-workflows-http:better-auth` stops making progress while idle
+   Wrangler processes remain. Cause: the local emulator lifecycle can stall
+   under shared-host pressure. Fix: rerun the bounded gate before debugging
+   authentication code; investigate only if the rerun reproduces the failure.
