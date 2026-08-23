@@ -1040,3 +1040,20 @@
   auth modes, the retention/evidence/media contracts, nine executed
   Playwright tests with one intentional skip, release migrations `0001..0008`,
   and the 32 MiB streaming proof.
+- Phase 6 Tier A dark deploy on 2026-08-23 from `main` `24eb948` (PRs #84
+  harness, #85 retained media + evidence, #86 UX pass 3, #87 ignore). Followed
+  RUNBOOK 6.4: pre-deploy D1 export to private storage (checksum
+  `ead2cd15…`), private R2 bucket with a 30-day object-expiry rule and a 7-day
+  incomplete-multipart abort rule (no custom domain, `r2.dev` disabled), remote
+  migrations `0007` and `0008` applied, both dry-run receipts named the module
+  entry, `DB`, `ASSETS`, `RETAINED_MEDIA`, `HOSTED_WORKFLOWS` / `HOSTED_WORKFLOW`
+  with no `100329`, `GEMINI_API_KEY` installed on both Workers, sibling
+  Workflows Worker deployed first (version `79c4e680…`) and the public Nuxt
+  Worker second (version `60147161…`) with `NUXT_HOSTED_WORKFLOWS_ENABLED=false`
+  and auth mode still `cloudflare-access+better-auth`. Anonymous probes of `/`,
+  `/sign-in`, `/api/session`, `/api/runs`, `/api/hosted/*`, `/hosted/activity`
+  and `/api/health` all return `302` to the Access login, including the
+  `workers.dev` preview host, so no read-only canary behind Access is possible
+  without a human login; the authenticated canary (GitHub sign-in →
+  `/api/session` shows a `ba:` principal, hosted routes `404`) is the next step
+  and gates the `better-auth` cutover. Hosted creation remains dark.
