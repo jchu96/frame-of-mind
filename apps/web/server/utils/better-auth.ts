@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { magicLink } from "better-auth/plugins/magic-link";
 import type { D1Database } from "@cloudflare/workers-types";
@@ -48,6 +48,24 @@ async function invitedUserId(database: D1Database, email: string): Promise<strin
     "SELECT claimed_user_id FROM hosted_auth_invites WHERE email = ?1",
   ).bind(normalizeEmail(email)).first<{ claimed_user_id: string | null }>();
   return row?.claimed_user_id;
+}
+
+async function requireInviteAvailableForEmail(
+  database: D1Database,
+  email: string,
+): Promise<void> {
+  const row = await database.prepare(
+    "SELECT invite.claimed_user_id, user.id AS matching_user_id "
+    + "FROM hosted_auth_invites AS invite "
+    + "LEFT JOIN better_auth_user AS user ON user.email = invite.email "
+    + "WHERE invite.email = ?1",
+  ).bind(normalizeEmail(email)).first<{
+    claimed_user_id: string | null;
+    matching_user_id: string | null;
+  }>();
+  if (!row || (row.claimed_user_id !== null && row.claimed_user_id !== row.matching_user_id)) {
+    throw inviteDenied();
+  }
 }
 
 async function requireAndClaimInvite(
@@ -130,6 +148,7 @@ export function createBetterAuth(event: H3Event) {
           userInfoUrl: `${fakeGithubOrigin}/user`,
           scopes: ["user:email"],
           pkce: true,
+          requireEmailVerification: true,
           accountIssuer: "https://github.com",
           mapProfileToUser: (profile) => ({
             email: String(profile.email || ""),
@@ -146,6 +165,13 @@ export function createBetterAuth(event: H3Event) {
     secret,
     database,
     trustedOrigins: [new URL(baseURL).origin],
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/sign-in/magic-link") return;
+        const email = ctx.body?.email;
+        if (typeof email === "string") await requireInviteAvailableForEmail(database, email);
+      }),
+    },
     user: {
       modelName: "better_auth_user",
       fields: {
@@ -223,7 +249,13 @@ export function createBetterAuth(event: H3Event) {
       fields: { lastRequest: "last_request" },
     },
     socialProviders: !fakeGithubOrigin && githubClientId && githubClientSecret
-      ? { github: { clientId: githubClientId, clientSecret: githubClientSecret } }
+      ? {
+          github: {
+            clientId: githubClientId,
+            clientSecret: githubClientSecret,
+            requireEmailVerification: true,
+          },
+        }
       : undefined,
     plugins: [
       magicLink({

@@ -425,3 +425,8 @@
   Cloudflare preset retains bindings in its request-scoped `globalThis.__env__`.
   Better Auth resolves D1 from the event first and that Nitro fallback second;
   the hosted browser contract covers this SSR path.
+- Better Auth's magic-link `sendMagicLink` callback runs after the plugin has
+  written its verification value. Membership gating inside that callback is
+  too late; use a `/sign-in/magic-link` before-hook when denial must precede
+  both storage and delivery. The verify URL is a first-fetch, session-minting
+  GET, so mail scanners can consume it.

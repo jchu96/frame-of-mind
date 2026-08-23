@@ -115,6 +115,9 @@ try {
     await expectSession(origin, magicCookie, "magic@example.test", "better-auth");
     console.log("HOSTED_AUTH magic_link=PASS captured_mailer browser_session=true");
 
+    await expectUninvitedMagicLinkDenied(browser, origin, configPath);
+    console.log("HOSTED_AUTH magic_link_invite=PASS mailer_calls=0 verification_rows=0");
+
     await expectUnknownLoginDenied(browser, origin);
     console.log("HOSTED_AUTH membership=PASS unknown_email=EMAIL_NOT_INVITED");
 
@@ -152,11 +155,13 @@ try {
   await waitForWorker(stackedOrigin, worker, 403);
   const accessSub = "stacked-access-subject";
   const accessToken = await signAccessToken(keys.privateKey, accessSub);
+  const mismatchedAccessToken = await signAccessToken(keys.privateKey, "different-stacked-access-subject");
   await expectStatus(fetch(`${stackedOrigin}/api/auth/sign-in/social`, { method: "POST" }), 403, "stacked auth without Access");
   const stackedBrowser = await chromium.launch({ headless: true });
   try {
     const cookie = await githubLogin(stackedBrowser, stackedOrigin, "stacked@example.test", accessToken);
     await expectSession(stackedOrigin, cookie, "stacked@example.test", "cloudflare-access+better-auth", accessToken);
+    await expectStackedRebindDenied(stackedBrowser, stackedOrigin, mismatchedAccessToken);
   } finally {
     await stackedBrowser.close();
   }
@@ -167,6 +172,18 @@ try {
   );
   if (!accessBinding.includes(accessSub)) throw new Error("Stacked sign-in did not bind the Access subject.");
   console.log("HOSTED_AUTH stacked=PASS access_required=true principal=better_auth access_sub_bound=true");
+  const stackedSessionCount = await d1Execute(
+    "SELECT CASE WHEN COUNT(*) = 1 THEN 'STACKED_SESSION_COUNT_1' "
+    + "ELSE 'STACKED_SESSION_COUNT_BAD_' || COUNT(*) END AS receipt "
+    + "FROM better_auth_session AS session "
+    + "JOIN better_auth_user AS user ON user.id = session.user_id "
+    + "WHERE user.email = 'stacked@example.test'",
+    configPath,
+  );
+  if (!stackedSessionCount.includes("STACKED_SESSION_COUNT_1")) {
+    throw new Error(`Stacked identity mismatch created a session: ${stackedSessionCount}`);
+  }
+  console.log("HOSTED_AUTH stacked_rebind=PASS mismatch_denied=true");
 
   for (const [label, authMode] of [["unset", undefined], ["unknown", "unknown-mode"]] as const) {
     const port = await reservePort();
@@ -302,6 +319,85 @@ async function magicLinkLogin(
     const cookie = await cookieHeader(context, origin);
     if (!cookie) throw new Error("Magic-link fixture did not issue a session.");
     return cookie;
+  } finally {
+    await context.close();
+  }
+}
+
+async function expectUninvitedMagicLinkDenied(
+  browser: Awaited<ReturnType<typeof chromium.launch>>,
+  origin: string,
+  config: string,
+): Promise<void> {
+  const email = "unknown@example.test";
+  magicLinks.delete(email);
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/api/health`);
+    const result = await page.evaluate(async ({ email }) => {
+      const response = await fetch("/api/auth/sign-in/magic-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, name: "Unknown Magic Fixture", callbackURL: "/api/session" }),
+      });
+      return { status: response.status, body: await response.text() };
+    }, { email });
+    if (result.status !== 403 || !/EMAIL_NOT_INVITED/i.test(result.body)) {
+      throw new Error(`Uninvited magic-link request was not refused safely: ${result.status} ${result.body}`);
+    }
+    if (magicLinks.has(email)) throw new Error("Uninvited magic-link request reached the mailer.");
+    const verificationRows = await d1Execute(
+      "SELECT CASE WHEN COUNT(*) = 0 THEN 'UNINVITED_MAGIC_VERIFICATION_0' "
+      + "ELSE 'UNINVITED_MAGIC_VERIFICATION_BAD_' || COUNT(*) END AS receipt "
+      + "FROM better_auth_verification WHERE value LIKE '%unknown@example.test%'",
+      config,
+    );
+    if (!verificationRows.includes("UNINVITED_MAGIC_VERIFICATION_0")) {
+      throw new Error(`Uninvited magic-link request wrote verification state: ${verificationRows}`);
+    }
+  } finally {
+    await context.close();
+  }
+}
+
+async function expectStackedRebindDenied(
+  browser: Awaited<ReturnType<typeof chromium.launch>>,
+  origin: string,
+  accessToken: string,
+): Promise<void> {
+  const context = await browser.newContext();
+  await addAccessHeader(context, origin, accessToken);
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/api/health`);
+    const signIn = await page.evaluate(async () => {
+      const response = await fetch("/api/auth/sign-in/social", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          provider: "github",
+          loginHint: "stacked@example.test",
+          callbackURL: "/api/session",
+        }),
+      });
+      return { status: response.status, body: await response.json() as { url?: string } };
+    });
+    if (signIn.status !== 200 || !signIn.body.url) {
+      throw new Error(`Stacked rebind fixture did not start: ${signIn.status} ${JSON.stringify(signIn.body)}`);
+    }
+    const providerResponse = await fetch(signIn.body.url, { redirect: "manual" });
+    const callbackURL = providerResponse.headers.get("location");
+    if (providerResponse.status !== 302 || !callbackURL) {
+      throw new Error(`Stacked rebind provider authorization failed: ${providerResponse.status}`);
+    }
+    const callbackResponse = await page.goto(callbackURL);
+    const denialEvidence = `${page.url()} ${callbackResponse ? await callbackResponse.text() : ""}`;
+    if (!/ACCESS_IDENTITY_MISMATCH/i.test(denialEvidence)) {
+      throw new Error(`Stacked rebind omitted the sanitized mismatch code: ${denialEvidence}`);
+    }
+    const sessionCookie = (await context.cookies(origin)).find((cookie) => cookie.name.includes("session_token"));
+    if (sessionCookie) throw new Error("Stacked identity mismatch received a session cookie.");
   } finally {
     await context.close();
   }
