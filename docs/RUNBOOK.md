@@ -1377,11 +1377,15 @@ production example remains Access-only.
 For Better Auth modes, apply D1 migration `0006_better_auth.sql`, set
 `NUXT_BETTER_AUTH_URL` to the exact HTTPS application origin, and store
 `NUXT_BETTER_AUTH_SECRET` and `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` as
-public-Worker secrets. To enable magic-link email, also store
-`NUXT_BETTER_AUTH_MAILER_KEY` there and configure the mailer HTTPS origin.
-Keep the GitHub client ID and mailer HTTPS origin as non-secret configuration.
-Never place these secrets on the internal Workflows Worker; conversely, never
-place `GEMINI_API_KEY` on the public Worker.
+public-Worker secrets. To enable magic-link email, onboard the sender domain,
+add the public Worker `send_email` binding named `EMAIL`, and set
+`NUXT_BETTER_AUTH_MAILER_FROM` to its exact sender address. The binding sends
+first; `NUXT_BETTER_AUTH_MAILER_ORIGIN` plus the secret
+`NUXT_BETTER_AUTH_MAILER_KEY` remain an optional HTTP fallback when no binding
+is present. Keep the GitHub client ID, sender, and mailer HTTPS origin as
+non-secret configuration. Never use a remote email binding in a local test,
+and never place these secrets on the internal Workflows Worker; conversely,
+never place `GEMINI_API_KEY` on the public Worker.
 
 Manage app-owned membership through the D1 invite table:
 

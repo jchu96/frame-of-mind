@@ -2,8 +2,10 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { magicLink } from "better-auth/plugins/magic-link";
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Database, SendEmail } from "@cloudflare/workers-types";
 import { toWebRequest, type H3Event } from "h3";
+import { getHostedRouteTelemetry } from "#frame-hosted-telemetry";
+import { createMagicLinkMailer } from "./magic-link-mailer";
 
 const INVITE_ERROR_CODE = "EMAIL_NOT_INVITED";
 
@@ -107,7 +109,7 @@ export function createBetterAuth(event: H3Event) {
   // request that omits the per-event platform object. The preset still
   // publishes the current Worker bindings on __env__ for that request chain.
   const nitroEnvironment = (globalThis as typeof globalThis & {
-    __env__?: { DB?: D1Database };
+    __env__?: { DB?: D1Database; EMAIL?: SendEmail };
   }).__env__;
   const database = (event.context.cloudflare?.env.DB ?? nitroEnvironment?.DB) as
     | D1Database
@@ -132,6 +134,26 @@ export function createBetterAuth(event: H3Event) {
     config.betterAuthMailerOrigin,
     allowInsecureFixtures,
   );
+  const mailerFrom = configString(config.betterAuthMailerFrom);
+  const mailerTelemetry = getHostedRouteTelemetry(event);
+  const mailer = createMagicLinkMailer({
+    emailBinding: mailerFrom
+      ? (event.context.cloudflare?.env.EMAIL ?? nitroEnvironment?.EMAIL) as SendEmail | undefined
+      : undefined,
+    httpOrigin: mailerOrigin,
+    httpKey: configString(config.betterAuthMailerKey),
+    from: mailerFrom,
+    failureLogger: async (code) => {
+      await mailerTelemetry.emit({
+        area: "access",
+        outcome: "failed",
+        code,
+        routeClass: "better_auth_magic_link",
+        status: 503,
+        studioMode: "hosted",
+      });
+    },
+  });
   const githubClientId = configString(config.betterAuthGithubClientId);
   const githubClientSecret = configString(config.betterAuthGithubClientSecret);
   const accessSub = event.context.frameOfMindAccessIdentity?.sub;
@@ -262,33 +284,7 @@ export function createBetterAuth(event: H3Event) {
         expiresIn: 300,
         storeToken: "hashed",
         sendMagicLink: async ({ email, url }) => {
-          if (!mailerOrigin) {
-            throw new APIError("SERVICE_UNAVAILABLE", {
-              code: "MAILER_UNAVAILABLE",
-              message: "Magic-link email is unavailable.",
-            });
-          }
-          const mailerKey = configString(config.betterAuthMailerKey);
-          if (!mailerKey) {
-            throw new APIError("SERVICE_UNAVAILABLE", {
-              code: "MAILER_UNAVAILABLE",
-              message: "Magic-link email is unavailable.",
-            });
-          }
-          const response = await fetch(`${mailerOrigin}/magic-link`, {
-            method: "POST",
-            headers: {
-              authorization: `Bearer ${mailerKey}`,
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({ email: normalizeEmail(email), url }),
-          });
-          if (!response.ok) {
-            throw new APIError("SERVICE_UNAVAILABLE", {
-              code: "MAILER_UNAVAILABLE",
-              message: "Magic-link email is unavailable.",
-            });
-          }
+          await mailer.send({ email, url });
         },
       }),
       ...providerPlugins,

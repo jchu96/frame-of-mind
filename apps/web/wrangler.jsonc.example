@@ -22,6 +22,11 @@
       "migrations_dir": "db/migrations"
     }
   ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
   "services": [
     {
       "binding": "HOSTED_WORKFLOWS",
@@ -32,6 +37,7 @@
     "NUXT_AUTH_MODE": "cloudflare-access",
     "NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://REPLACE_WITH_TEAM.cloudflareaccess.com",
     "NUXT_CLOUDFLARE_ACCESS_AUD": "REPLACE_WITH_APPLICATION_AUD",
+    "NUXT_BETTER_AUTH_MAILER_FROM": "sign-in@REPLACE_WITH_DOMAIN",
     "NUXT_HOSTED_WORKFLOWS_ENABLED": "false",
     "NUXT_HOSTED_MEDIA_OPEN_SESSION_CAP": "2",
     "NUXT_HOSTED_MEDIA_MAX_BYTES": "2147483648",

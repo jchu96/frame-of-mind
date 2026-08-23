@@ -460,6 +460,12 @@
 - Keep `gate-lock` around bounded gate commands only. A long-lived development
   server such as `run-hosted-local.ts` must never hold the shared lock, because
   it prevents every queued fleet gate from making progress.
+- Wrangler 4.123.0's local `send_email` simulator writes structured-message
+  text and HTML into its isolated project email disk even when the nested
+  binding worker's `console.log` output is not forwarded to the parent
+  `wrangler dev` process. Built-Worker tests should inspect the run-scoped
+  `email-text` file and use `allowed_destination_addresses` to prove the
+  recipient; never enable `remote: true`, which sends real email.
 - Cloudflare/workerd `fetch` rejects `redirect: "error"`; use
   `redirect: "manual"` for Gemini Files calls and treat every non-2xx response
   (including redirects) as a provider error. Browser/Bun fetch acceptance is
