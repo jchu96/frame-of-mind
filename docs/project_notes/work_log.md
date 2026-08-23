@@ -1,5 +1,17 @@
 # Work Log
 
+- Completed the standalone hosted direct-upload spike on 2026-08-23. A real
+  Chromium page on an ephemeral loopback origin PUT a generated 20 MiB MP4 to
+  a keyless Gemini resumable session in 16 MiB + 4 MiB chunks, then a fresh
+  browser queried the exact accepted offset. Browser final response delivery
+  was indeterminate (`NetworkError` and `TimeoutError` were both observed),
+  while Worker query proved `final`, recovered the
+  exact File receipt, and enabled `files.get` size/digest verification plus
+  exact deletion. Unauthenticated new-file/list attempts returned 404/403.
+  Added `scripts/spike-hosted-direct-upload.ts` and the GO-for-review ADR 0018
+  Amendment 2 proposal; no deployed route, Wrangler file, PR, merge, or
+  production state changed.
+
 ## 2026-07-25
 
 - Scaffolded the TypeScript CLI, Bluedot OAuth/MCP adapter, Gemini two-pass Files API analysis, secure download path, screenshots, durable JSON/Markdown artifacts, tests, CI, agent guidance, and runbook.
