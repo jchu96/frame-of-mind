@@ -1,5 +1,21 @@
 # Bugs and Failure History
 
+## 2026-08-23 — Better Auth broke two consolidated E2E harness seams
+
+- Symptom: the Better Auth hosted journey rendered an empty context page and
+  timed out, while the hosted-stream adversarial probe failed when Miniflare
+  encountered the built Nitro bundle's dynamic route imports.
+- Cause: the journey supplied a Better Auth session as a fixed request header
+  instead of browser cookies and seeded media under the old Access subject
+  before the generated `ba:<userId>` was known. The Miniflare length oracle
+  also relied on automatic module traversal, which cannot discover dynamic
+  specifiers introduced by the Better Auth route graph.
+- Fix: install Better Auth cookies in the browser context, resolve and seed the
+  generated principal after login, and pass Miniflare the complete built ESM
+  graph with `hosted-entry.mjs` as the entry module.
+- Prevention: the normal `check` gate now runs both hosted auth journeys and
+  the recurring streaming probe through the consolidated E2E project.
+
 ## 2026-08-22 — Maintenance could delete media queued behind live work
 
 - Symptom: an old queued job sharing a single-concurrency worker with an active
@@ -447,3 +463,27 @@
   milliseconds, overlong fields, partial and all-detail failure, unexpected
   whole-run failure, provider-transport aborts, payload redaction, and cleanup
   provenance when upload processing fails after an exact remote ID is known.
+
+## 2026-08-23 — Better Auth lost request state in the Cloudflare bundle
+
+- Symptom: the first OAuth request in a built `cloudflare_module` Worker failed
+  with `No request state found` although workerd enabled Node compatibility.
+- Cause: Nitro bundled unenv's `AsyncLocalStorage` shim; its `run()` clears the
+  store before an asynchronous handler settles.
+- Fix: leave `node:async_hooks` external in Cloudflare builds so workerd supplies
+  the native implementation.
+- Prevention: the hosted-auth spike performs GitHub and magic-link login in a
+  real browser against the built Worker and requires `HOSTED_AUTH runtime=PASS`.
+
+## 2026-08-23 — Hosted workflow workerd fixture can hang intermittently
+
+- Status: Open; observed outside the authentication seam.
+- Symptom: a one-shot `bun run check` reached the Better Auth hosted Workflow
+  browser stage after `cancel_retry=PASS`, then its two Wrangler dev processes
+  remained alive without producing another receipt for several minutes.
+- Evidence: the isolated Better Auth Workflow contract passed every receipt
+  immediately after cleanup, and a fresh serialized `bun run check` passed the
+  default and Better Auth Workflow contracts and exited zero.
+- Follow-up: give each fixture request a bounded abort/deadline and preserve
+  Wrangler/workerd output on timeout so a future failure identifies the exact
+  dispatch rather than hanging the whole repository gate.

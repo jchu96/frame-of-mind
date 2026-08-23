@@ -295,6 +295,23 @@ Keep:
 
 If the audience or team domain is missing, the application fails closed.
 
+Proposed ADR 0019 also permits `better-auth` or
+`cloudflare-access+better-auth`. These modes are spike-proven but not the
+committed production default. They additionally require:
+
+- migration `0006_better_auth.sql` on the public Worker's D1 database;
+- `NUXT_BETTER_AUTH_URL` set to the exact HTTPS custom origin;
+- GitHub client ID and the HTTPS mailer origin as Worker variables; and
+- `NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
+  `NUXT_BETTER_AUTH_MAILER_KEY` set with `wrangler secret put` on the public
+  Nuxt Worker only.
+
+Use at least 32 random bytes for the Better Auth secret. Never put these
+secrets in Wrangler JSON, the browser, or the internal Workflows Worker. The
+stacked mode retains the Access domain/audience and policy in addition to all
+Better Auth settings. The release rehearsal rejects unset and unknown hosted
+auth modes.
+
 ## 5. Apply the D1 migration
 
 Migration `0003_principal_scope.sql` is a fail-closed table rebuild. It adds
@@ -617,7 +634,7 @@ storage.
 
 ### Tables do not exist
 
-Apply all pending migrations through `0005_hosted_spend_telemetry.sql` to the
+Apply all pending migrations through `0006_better_auth.sql` to the
 same database ID bound to both Workers.
 Check `wrangler d1 migrations list ... --remote`.
 
@@ -632,3 +649,70 @@ is reviewed.
 Static Workers Assets do not contain meeting data. Inspect Worker logs and the
 D1 binding. Confirm the request reached the Worker and carried a validated
 Access assertion.
+
+## Managing who can sign in
+
+Access membership lives in one Access **group** ("Frame of Mind testers") that
+the application policy points at. Adding or removing a tester never edits the
+policy. Use the compatibility CLI or the mode-aware CLI instead of the
+dashboard:
+
+```bash
+export FRAME_OF_MIND_ACCESS_ENV=~/secrets/frameofmind/access.env   # token, account id, group id — never committed
+bun scripts/access-users.ts list
+bun scripts/access-users.ts add someone@example.com
+bun scripts/access-users.ts remove someone@example.com
+bun scripts/studio-users.ts --mode cloudflare-access list
+```
+
+The token needs `Access: Organizations, Identity Providers, and Groups: Edit`.
+The CLI refuses to remove the last member. Login methods (Google, One-time PIN,
+GitHub) are configured once as identity providers; membership is by email,
+which works for any provider that returns a verified email.
+
+Better Auth membership is an email invitation in D1, claimed by the first
+successful user ID. It is membership authority, not row ownership:
+
+```bash
+export FRAME_OF_MIND_WRANGLER_CONFIG=apps/web/wrangler.jsonc
+export FRAME_OF_MIND_D1_DATABASE=frame-of-mind
+bun scripts/studio-users.ts --mode better-auth list
+bun scripts/studio-users.ts --mode better-auth add someone@example.com
+bun scripts/studio-users.ts --mode better-auth remove someone@example.com
+```
+
+These commands target remote D1 by default. In stacked mode, a person must be
+present in both the Access group and the D1 invite list. Removing an invitation
+does not reassign or delete existing `ba:<userId>` rows and is not by itself a
+session revocation; account/session removal needs a separately reviewed
+operator action.
+
+## Cutover to `better-auth` with GitHub login (ADR 0019, accepted 2026-08-23)
+
+Prerequisites already applied to production on 2026-08-23: migration
+`0006_better_auth.sql`, the `NUXT_BETTER_AUTH_SECRET` Worker secret, and
+invites for the maintainer's emails (`bun scripts/studio-users.ts --mode
+better-auth add <email>`).
+
+1. **GitHub OAuth App** (maintainer, GitHub → Settings → Developer settings →
+   OAuth Apps → New): Homepage `https://fom.flickerventures.com`,
+   Authorization callback URL
+   `https://fom.flickerventures.com/api/auth/callback/github`. Put the values
+   in an uncommitted file, e.g. `~/secrets/frameofmind/github-oauth.env`:
+   `GITHUB_CLIENT_ID=…` and `GITHUB_CLIENT_SECRET=…`.
+2. **Secrets + vars** (operator): `wrangler secret put
+   NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`; in `wrangler.jsonc` vars set
+   `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID`, `NUXT_BETTER_AUTH_URL=https://fom.flickerventures.com`,
+   and `NUXT_AUTH_MODE=cloudflare-access+better-auth` (stacked) for the first deploy.
+3. **Deploy stacked** and verify: Access still 302s anonymous traffic; behind
+   Access, `/sign-in` shows "Continue with GitHub"; a sign-in with an invited
+   email lands on the viewer with `GET /api/session` showing a `ba:` principal
+   and the Access `sub` bound; an uninvited account is refused with
+   `EMAIL_NOT_INVITED`.
+4. **Flip**: set `NUXT_AUTH_MODE=better-auth`, deploy, then set the Access
+   application policy to *bypass* (or delete the app) so anonymous traffic
+   reaches the Worker's own sign-in page. Re-verify: anonymous `/api/runs`
+   → 401/redirect to `/sign-in`, GitHub sign-in works, `access-users.ts` is
+   no longer authoritative (membership is the D1 invite table).
+5. Record the cutover in `work_log.md`.
+

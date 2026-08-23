@@ -5,6 +5,13 @@ import { createE2EEnvironment } from "./e2e-environment";
 import { runFixture, videoRunFixture } from "../apps/web/test/fixtures";
 import { analysisDigest } from "../src/domain/integrity";
 import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
+import {
+  betterAuthBrowserLogin,
+  betterAuthFixtureVars,
+  hostedAuthHeaders,
+  hostedContractAuthMode,
+  startFakeGithub,
+} from "./hosted-auth-fixture";
 
 const isolation = await createE2EIsolation("hosted-access");
 const temporaryRoot = isolation.root;
@@ -20,6 +27,7 @@ if (entrySelection !== "index" && entrySelection !== "hosted-entry") {
 const entryFile = entrySelection === "hosted-entry" ? "hosted-entry.mjs" : "index.mjs";
 let wrangler: ReturnType<typeof Bun.spawn> | undefined;
 let jwksServer: ReturnType<typeof Bun.serve> | undefined;
+let fakeGithub: ReturnType<typeof startFakeGithub> | undefined;
 let wranglerOutput: Promise<[string, string]> | undefined;
 
 try {
@@ -53,13 +61,19 @@ try {
   const issuer = `http://127.0.0.1:${jwksServer.port}`;
   const workerPort = await isolation.reservePort();
   const baseUrl = `http://127.0.0.1:${workerPort}`;
+  fakeGithub = hostedContractAuthMode === "better-auth"
+    ? startFakeGithub([
+        { id: "access-a", email: "access-a@example.test" },
+        { id: "access-b", email: "access-b@example.test" },
+      ])
+    : undefined;
 
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("node_modules/wrangler/config-schema.json"),
     name: isolation.workerName(`hosted-access-${entryFile}`),
     main: resolve(`apps/web/.output/server/${entryFile}`),
     compatibility_date: "2026-07-02",
-    compatibility_flags: ["nodejs_compat"],
+    compatibility_flags: ["nodejs_compat", "nodejs_als"],
     assets: {
       directory: resolve("apps/web/.output/public"),
       binding: "ASSETS",
@@ -70,12 +84,14 @@ try {
       database_id: isolation.databaseId,
       migrations_dir: resolve("apps/web/db/migrations"),
     }],
-    vars: {
-      NUXT_AUTH_MODE: "cloudflare-access",
-      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: issuer,
-      NUXT_CLOUDFLARE_ACCESS_AUD: audience,
-      NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
-    },
+    vars: hostedContractAuthMode === "better-auth"
+      ? betterAuthFixtureVars(baseUrl, fakeGithub!.origin)
+      : {
+          NUXT_AUTH_MODE: "cloudflare-access",
+          NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: issuer,
+          NUXT_CLOUDFLARE_ACCESS_AUD: audience,
+          NUXT_CLOUDFLARE_ACCESS_ALLOW_INSECURE_TEST_JWKS: "true",
+        },
   }, null, 2));
 
   const migrationArgs = [
@@ -87,6 +103,15 @@ try {
   ];
   await runChecked(migrationArgs, "empty D1 principal migration");
   await runChecked(migrationArgs, "idempotent D1 migration replay");
+  if (hostedContractAuthMode === "better-auth") {
+    await runChecked([
+      "bunx", "wrangler", "d1", "execute", databaseName,
+      "--local", "--config", configPath, "--persist-to", persistRoot,
+      "--command", "INSERT INTO hosted_auth_invites (email, invited_at) VALUES "
+        + "('access-a@example.test','2026-08-23T00:00:00.000Z'),"
+        + "('access-b@example.test','2026-08-23T00:00:00.000Z')",
+    ], "Better Auth access-contract invites");
+  }
   console.log("HOSTED_ACCESS migration=PASS empty_zero_sentinel replay_idempotent");
 
   const childEnvironment = createE2EEnvironment(process.env);
@@ -113,21 +138,27 @@ try {
 
   await waitForWorker(baseUrl, wrangler);
 
-  const tokenA = await signAccessToken(keys.privateKey, issuer, {
-    sub: "hosted-user-subject-a",
-    email: "recycled-seat@example.test",
-  });
-  const tokenB = await signAccessToken(keys.privateKey, issuer, {
-    sub: "hosted-user-subject-b",
-    email: "recycled-seat@example.test",
-  });
+  const tokenA = hostedContractAuthMode === "better-auth"
+    ? await betterAuthBrowserLogin(baseUrl, "access-a@example.test")
+    : await signAccessToken(keys.privateKey, issuer, {
+        sub: "hosted-user-subject-a",
+        email: "recycled-seat@example.test",
+      });
+  const tokenB = hostedContractAuthMode === "better-auth"
+    ? await betterAuthBrowserLogin(baseUrl, "access-b@example.test")
+    : await signAccessToken(keys.privateKey, issuer, {
+        sub: "hosted-user-subject-b",
+        email: "recycled-seat@example.test",
+      });
   const serviceToken = await signAccessToken(keys.privateKey, issuer, {
     sub: "",
     common_name: "hosted-contract.access",
   });
 
   await expectStatus(fetch(`${baseUrl}/api/runs`), 403, "missing Access assertion");
-  await expectStatus(authenticatedFetch(baseUrl, "/api/runs", serviceToken), 403, "service principal browser denial");
+  if (hostedContractAuthMode === "cloudflare-access") {
+    await expectStatus(authenticatedFetch(baseUrl, "/api/runs", serviceToken), 403, "service principal browser denial");
+  }
 
   const runA = runFixture();
   runA.analysis.runId = "20260822T120001Z-principal-a";
@@ -187,7 +218,9 @@ try {
   console.log(`HOSTED_ACCESS principal_a=PASS own=${runA.manifest.runId} foreign_detail=404`);
   console.log(`HOSTED_ACCESS principal_b=PASS own=${runB.manifest.runId} foreign_detail=404`);
   console.log("HOSTED_ACCESS conflict=PASS status=409 code=run_principal_conflict");
-  console.log("HOSTED_ACCESS service=PASS status=403 browser_runs_denied");
+  console.log(hostedContractAuthMode === "cloudflare-access"
+    ? "HOSTED_ACCESS service=PASS status=403 browser_runs_denied"
+    : "HOSTED_ACCESS service=PASS not_applicable=better_auth");
   console.log("HOSTED_ACCESS missing_header=PASS status=403");
   console.log("HOSTED_ACCESS dark=PASS hosted_creation_status=404");
   console.log(`HOSTED_ACCESS_CONTRACT PASSED entry=${entryFile}`);
@@ -207,6 +240,7 @@ try {
   throw error;
 } finally {
   jwksServer?.stop(true);
+  fakeGithub?.stop();
   await isolation.cleanup();
 }
 
@@ -226,18 +260,14 @@ async function signAccessToken(
 
 function authenticatedFetch(origin: string, path: string, token: string): Promise<Response> {
   return fetch(`${origin}${path}`, {
-    headers: { "cf-access-jwt-assertion": token },
+    headers: hostedAuthHeaders(token),
   });
 }
 
 function importRun(origin: string, token: string, body: unknown): Promise<Response> {
   return fetch(`${origin}/api/runs`, {
     method: "POST",
-    headers: {
-      "cf-access-jwt-assertion": token,
-      "content-type": "application/json",
-      origin,
-    },
+    headers: hostedAuthHeaders(token, origin),
     body: JSON.stringify(body),
   });
 }

@@ -8,6 +8,10 @@ declare module "h3" {
       principal: string;
       email?: string;
     };
+    frameOfMindAccessIdentity?: {
+      sub: string;
+      email?: string;
+    };
     cloudflare?: {
       request: Request;
       env: {
