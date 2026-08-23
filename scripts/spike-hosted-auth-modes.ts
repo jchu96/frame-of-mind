@@ -99,13 +99,16 @@ try {
 
   const workerPort = await isolation.reservePort();
   const origin = `http://127.0.0.1:${workerPort}`;
-  await writeConfig(configPath, origin, "better-auth");
+  await writeConfig(configPath, origin, "better-auth", false, "binding");
   const migrationArgs = [
     "node", wranglerBin, "d1", "migrations", "apply", databaseName,
     "--local", "--config", configPath, "--persist-to", persistRoot,
   ];
   const firstMigration = await runChecked(migrationArgs, "Better Auth D1 migration");
   if (!firstMigration.includes("0006_better_auth.sql")) throw new Error("D1 omitted migration 0006_better_auth.sql.");
+  if (!firstMigration.includes("0009_magic_link_cooldown.sql")) {
+    throw new Error("D1 omitted migration 0009_magic_link_cooldown.sql.");
+  }
   const replay = await runChecked(migrationArgs, "Better Auth D1 migration replay");
   if (!/no migrations to apply/i.test(replay)) throw new Error("Better Auth migration replay was not idempotent.");
   await d1Execute(
@@ -113,11 +116,12 @@ try {
     + "('user-a@example.test','2026-08-23T00:00:00.000Z'),"
     + "('user-b@example.test','2026-08-23T00:00:00.000Z'),"
     + "('magic@example.test','2026-08-23T00:00:00.000Z'),"
+    + "('http-magic@example.test','2026-08-23T00:00:00.000Z'),"
     + "('browser@example.test','2026-08-23T00:00:00.000Z'),"
     + "('stacked@example.test','2026-08-23T00:00:00.000Z')",
     configPath,
   );
-  console.log("HOSTED_AUTH migration=PASS range=0001..0006 replay=idempotent");
+  console.log("HOSTED_AUTH migration=PASS range=0001..0009 replay=idempotent");
 
   ({ worker, output: workerOutput } = await startWorker(configPath, workerPort));
   await waitForWorker(origin, worker, 403);
@@ -129,9 +133,10 @@ try {
     const cookieB = await githubLogin(browser, origin, "user-b@example.test");
     console.log("HOSTED_AUTH github=PASS fake_provider browser_session=true");
 
-    const magicCookie = await magicLinkLogin(browser, origin, "magic@example.test");
+    const magicCookie = await bindingMagicLinkLogin(browser, origin, "magic@example.test");
     await expectSession(origin, magicCookie, "magic@example.test", "better-auth");
-    console.log("HOSTED_AUTH magic_link=PASS captured_mailer browser_session=true");
+    await expectMagicLinkCooldown(browser, origin, "magic@example.test");
+    console.log("HOSTED_AUTH magic_link_cooldown=PASS seconds=60 mailer_calls=1");
 
     await expectUninvitedMagicLinkDenied(browser, origin, configPath);
     console.log("HOSTED_AUTH magic_link_invite=PASS mailer_calls=0 verification_rows=0");
@@ -161,6 +166,14 @@ try {
     console.log(`HOSTED_ACCESS principal_a=PASS own=${runA.manifest.runId} foreign_detail=404`);
     console.log(`HOSTED_ACCESS principal_b=PASS own=${runB.manifest.runId} foreign_detail=404`);
     console.log("HOSTED_AUTH principal_seam=PASS namespace=ba two_principals=true");
+
+    await stopWorker();
+    await writeConfig(configPath, origin, "better-auth", false, "http");
+    ({ worker, output: workerOutput } = await startWorker(configPath, workerPort));
+    await waitForWorker(origin, worker, 403);
+    const httpMagicCookie = await magicLinkLogin(browser, origin, "http-magic@example.test");
+    await expectSession(origin, httpMagicCookie, "http-magic@example.test", "better-auth");
+    console.log("HOSTED_AUTH magic_link=PASS binding=true http=true");
   } finally {
     await browser.close();
   }
@@ -231,7 +244,7 @@ try {
   throw error;
 } finally {
   await stopWorker();
-  fixtureServer.stop(true);
+  await fixtureServer.stop(true);
   await isolation.cleanup();
 }
 
@@ -240,6 +253,7 @@ async function writeConfig(
   origin: string,
   authMode: string | undefined,
   hostedEnabled = false,
+  mailerMode: "binding" | "http" = "http",
 ): Promise<void> {
   const vars: Record<string, string> = {
     NUXT_BETTER_AUTH_SECRET: betterAuthSecret,
@@ -249,6 +263,7 @@ async function writeConfig(
     NUXT_BETTER_AUTH_GITHUB_TEST_ORIGIN: fixtureOrigin,
     NUXT_BETTER_AUTH_MAILER_ORIGIN: fixtureOrigin,
     NUXT_BETTER_AUTH_MAILER_KEY: mailerKey,
+    NUXT_BETTER_AUTH_MAILER_FROM: "sign-in@example.test",
     NUXT_BETTER_AUTH_ALLOW_INSECURE_TEST_PROVIDERS: "true",
     NUXT_HOSTED_WORKFLOWS_ENABLED: String(hostedEnabled),
   };
@@ -271,6 +286,9 @@ async function writeConfig(
       database_id: databaseId,
       migrations_dir: resolve("apps/web/db/migrations"),
     }],
+    ...(mailerMode === "binding"
+      ? { send_email: [{ name: "EMAIL", allowed_destination_addresses: ["magic@example.test"] }] }
+      : {}),
     vars,
   }, null, 2));
 }
@@ -382,6 +400,108 @@ async function magicLinkLogin(
     // probe into an unrelated "browser has been closed" error.
     await context.close().catch(() => undefined);
   }
+}
+
+async function bindingMagicLinkLogin(
+  browser: Awaited<ReturnType<typeof chromium.launch>>,
+  origin: string,
+  email: string,
+): Promise<string> {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/api/health`);
+    const status = await page.evaluate(async ({ email }) => {
+      const response = await fetch("/api/auth/sign-in/magic-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, name: "Magic Fixture", callbackURL: "/api/session" }),
+      });
+      return response.status;
+    }, { email });
+    if (status !== 200) throw new Error(`Binding magic-link fixture returned ${status}.`);
+    if (magicLinks.has(email)) {
+      throw new Error("Binding magic-link fixture used the HTTP fallback instead of EMAIL.");
+    }
+    const captured = await waitForSimulatedEmail(email);
+    await page.goto(captured.url);
+    const cookie = await cookieHeader(context, origin);
+    if (!cookie) throw new Error("Binding magic-link fixture did not issue a session.");
+    return cookie;
+  } finally {
+    await context.close().catch(() => undefined);
+  }
+}
+
+async function waitForSimulatedEmail(email: string): Promise<{ url: string }> {
+  const deadline = Date.now() + 10_000;
+  const emailFiles = new Bun.Glob("**/email-text/*.txt");
+  while (Date.now() < deadline) {
+    for await (const path of emailFiles.scan({ cwd: temporaryRoot, absolute: true, dot: true })) {
+      const file = Bun.file(path);
+      if (await file.exists()) {
+        const text = await file.text();
+        const url = text.match(/https?:\/\/\S+/)?.[0];
+        if (!url || !text.includes("expires in 5 minutes")) {
+          throw new Error("Simulated binding email omitted its magic link or expiry copy.");
+        }
+        if (email !== "magic@example.test") {
+          throw new Error("Simulated binding email did not target the restricted invited address.");
+        }
+        return { url };
+      }
+    }
+    await Bun.sleep(50);
+  }
+  throw new Error("Wrangler did not write the simulated binding email to its isolated project files.");
+}
+
+async function expectMagicLinkCooldown(
+  browser: Awaited<ReturnType<typeof chromium.launch>>,
+  origin: string,
+  email: string,
+): Promise<void> {
+  const initialMailerCalls = await simulatedEmailCount();
+  if (initialMailerCalls !== 1) {
+    throw new Error(`Magic-link cooldown fixture expected one initial binding send, found ${initialMailerCalls}.`);
+  }
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${origin}/api/health`);
+    const result = await page.evaluate(async ({ email }) => {
+      const response = await fetch("/api/auth/sign-in/magic-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, name: "Cooldown Fixture", callbackURL: "/api/session" }),
+      });
+      return { status: response.status, body: await response.text() };
+    }, { email });
+    if (
+      result.status !== 429
+      || !result.body.includes("MAGIC_LINK_COOLDOWN")
+      || !result.body.includes(
+        "A sign-in link was sent recently. Check your inbox or try again in a minute.",
+      )
+    ) {
+      throw new Error(`Magic-link cooldown was not refused safely: ${result.status} ${result.body}`);
+    }
+  } finally {
+    await context.close().catch(() => undefined);
+  }
+  const finalMailerCalls = await simulatedEmailCount();
+  if (finalMailerCalls !== initialMailerCalls) {
+    throw new Error(`Magic-link cooldown reached the binding: calls=${finalMailerCalls}.`);
+  }
+}
+
+async function simulatedEmailCount(): Promise<number> {
+  let count = 0;
+  const emailFiles = new Bun.Glob("**/email-text/*.txt");
+  for await (const path of emailFiles.scan({ cwd: temporaryRoot, absolute: true, dot: true })) {
+    if (await Bun.file(path).exists()) count += 1;
+  }
+  return count;
 }
 
 async function expectUninvitedMagicLinkDenied(
@@ -589,11 +709,17 @@ async function stopWorker(forceOutput = false): Promise<void> {
   if (workerOutput) {
     const [stdout, stderr] = await workerOutput;
     if (forceOutput || (worker.exitCode && worker.exitCode !== 143)) {
-      process.stderr.write(`Hosted auth workerd output:\n${stdout}\n${stderr}`.slice(0, 12_000));
+      process.stderr.write(`Hosted auth workerd output:\n${sanitizeWorkerOutput(`${stdout}\n${stderr}`)}`.slice(0, 12_000));
     }
   }
   worker = undefined;
   workerOutput = undefined;
+}
+
+function sanitizeWorkerOutput(value: string): string {
+  return value
+    .replaceAll(/https?:\/\/\S+/g, "[url]")
+    .replaceAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]");
 }
 
 async function waitForWorker(

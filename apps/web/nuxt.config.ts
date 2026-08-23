@@ -729,6 +729,7 @@ export default defineNuxtConfig({
     betterAuthGithubTestOrigin: "",
     betterAuthMailerOrigin: "",
     betterAuthMailerKey: "",
+    betterAuthMailerFrom: "",
     betterAuthAllowInsecureTestProviders: false,
     hostedWorkflowsEnabled: false,
     hostedSpendPrincipalCapUnits: HOSTED_PRINCIPAL_CAP_UNITS_DEFAULT,
