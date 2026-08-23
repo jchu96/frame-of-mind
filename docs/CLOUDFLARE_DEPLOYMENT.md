@@ -16,10 +16,9 @@ This runbook deploys the Nuxt SSR workspace to Cloudflare Workers with:
 The repository does not auto-deploy. Deployment is an operator action.
 
 Status as of 2026-08-23: hosted creation remains dark and undeployed. Phases
-1–4, spend/telemetry Tasks 5.3–5.4, and Phase 6 release-preparation artifacts
-are contract-tested. ADR 0018 Amendment 2 and direct-upload Tasks 2.1–2.4 are
-implemented; retention/capture Tasks 5.1–5.2 and every production deployment
-gate remain pending. The exact checklist lives in the
+1–5 and Phase 6 release-preparation artifacts are contract-tested. ADR 0018
+Amendment 2 and direct-upload Tasks 2.1–2.4 are implemented; every production
+deployment gate remains pending. The exact checklist lives in the
 [Hosted Studio plan](../conductor/tracks/hosted-studio_20260822/plan.md), and
 the data handled by any deployment is classified in
 [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md).
@@ -60,6 +59,9 @@ The receipts must include `HOSTED_SPEND_CONTRACT PASSED`,
 invocation across the simulated success-without-receipt crash, terminal
 cleanup, linked retry deduplication, cap exhaustion before Workflow creation,
 provider-usage reconciliation, and codes/structure-only telemetry rejection.
+The media receipt must also contain `HOSTED_RETENTION_CONTRACT PASSED` and
+`HOSTED_EVIDENCE_CONTRACT PASSED` with digest mismatch, expiry, delete,
+orphan, principal-isolation, and capture-provenance refusals.
 
 ### Workflows Worker configuration shape
 
@@ -102,8 +104,8 @@ Workflows Worker has no Access check of its own and must only be reachable
 through the Nuxt Worker's `HOSTED_WORKFLOWS` service binding. The release
 rehearsal fails if either committed example config drops this setting.
 
-The committed `apps/web/wrangler.jsonc.example` is the complete public shape,
-including module entry, Workers Assets, D1, and the service binding:
+The committed `apps/web/wrangler.jsonc.example` remains the predeployment base
+shape, including module entry, Workers Assets, D1, and the service binding:
 
 ```json
 {
@@ -135,13 +137,51 @@ to use the defaults:
 | `NUXT_HOSTED_MEDIA_OPEN_SESSION_CAP` | `2` | maximum unsealed sessions per principal |
 | `NUXT_HOSTED_MEDIA_MAX_BYTES` | `2147483648` | declared per-recording ceiling (2 GiB) |
 | `NUXT_HOSTED_MEDIA_SESSION_TTL_SECONDS` | `3600` | pending capability lifetime; cannot exceed seven days |
+| `NUXT_HOSTED_MEDIA_RETENTION_DAYS` | `30` | visible retained-media lifetime; maximum 365 days |
+
+### Private retained-media R2 shape
+
+Task 5.1 adds one private R2 binding to the public Nuxt Worker. Keep the bucket
+without a public custom domain or `r2.dev` exposure. The operator-owned config
+uses placeholders only:
+
+```json
+{
+  "r2_buckets": [{
+    "binding": "RETAINED_MEDIA",
+    "bucket_name": "<PRIVATE_RETAINED_MEDIA_BUCKET>"
+  }]
+}
+```
+
+Configure the bucket lifecycle outside Git with a deletion rule matching the
+application `NUXT_HOSTED_MEDIA_RETENTION_DAYS` value (30 days by default) and
+an incomplete-multipart abort rule no longer than seven days. R2 lifecycle is
+a storage backstop and may apply asynchronously; the application janitor and
+explicit owner delete route remain the user-visible deletion mechanism. Verify
+the rules with `wrangler r2 bucket lifecycle list <bucket>` without pasting the
+bucket identifier into repository receipts.
+
+The browser never receives R2 account credentials. For retained mode the
+Worker creates a multipart upload through the binding and returns a random,
+principal-authenticated capability whose SHA-256—not plaintext—is stored in
+D1. Each request is fixed-length streamed to R2, and completion consumes the
+capability. Before R2 reads a part, one conditional D1 update reserves its
+`Content-Length` against both the session's cumulative uploaded bytes and the
+declared/configured ceilings; concurrent parts therefore cannot overshoot.
+A failed R2 write releases that reservation. Seal then reads the completed
+object and requires its complete size and SHA-256 to match the browser
+declaration and Gemini file. Object keys use a hashed principal prefix plus a
+random UUID and are never returned by a public API. Evidence PNGs use the same
+private bucket and a separate random key; D1 stores only the evidence digest
+and manifest/recording/timestamp provenance.
 
 The browser receives no key. It receives one provider-scoped capability only
 after the D1 cap reservation commits. D1 stores that URL as principal/media-
 bound AES-GCM ciphertext.
 
 Deploy order is deliberate: apply migrations through
-`0007_hosted_direct_media.sql`,
+`0008_hosted_retention_evidence.sql`,
 deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
 caller with the service binding. Enabling hosted routes is a later reviewed
 release task; do not set its flags during this dark Phase 3 deployment shape.
@@ -167,7 +207,7 @@ bun run rehearse:hosted-release
 ```
 
 It builds the previous review-only and current hosted artifacts, applies D1
-migrations `0001` through `0007` to an isolated local clone and replays them as
+migrations `0001` through `0008` to an isolated local clone and replays them as
 an idempotent no-op, validates both Worker binding graphs, scans the boundary,
 runs the local byte-stability import regression, and dry-runs both the current
 and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.

@@ -36,4 +36,18 @@ describe("browser readiness recovery", () => {
     await expect(retryBrowserReadiness(attempt)).rejects.toBe(error);
     expect(attempt).toHaveBeenCalledTimes(2);
   });
+
+  it("retries Chromium exiting before its DevTools pipe becomes ready", async () => {
+    const attempt = vi.fn(async (number: number) => {
+      if (number === 1) {
+        throw new Error(
+          "launch: Timeout 30000ms exceeded. Connection terminated while reading from pipe",
+        );
+      }
+      return "ready";
+    });
+
+    await expect(retryBrowserReadiness(attempt)).resolves.toBe("ready");
+    expect(attempt).toHaveBeenCalledTimes(2);
+  });
 });

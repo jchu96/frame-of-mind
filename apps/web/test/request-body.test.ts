@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readLimitedText, RequestBodyTooLargeError } from "../server/utils/request-body";
+import { readLimitedBytes, readLimitedText, RequestBodyTooLargeError } from "../server/utils/request-body";
 
 function stream(...chunks: string[]) {
   const encoder = new TextEncoder();
@@ -27,5 +27,10 @@ describe("limited request body reader", () => {
     await expect(readLimitedText(stream("1234", "5678"), 7)).rejects.toBeInstanceOf(
       RequestBodyTooLargeError,
     );
+  });
+
+  test("reads bounded binary evidence without text decoding", async () => {
+    const bytes = await readLimitedBytes(stream("\u0000", "PNG"), 4);
+    expect([...bytes]).toEqual([0, 80, 78, 71]);
   });
 });

@@ -47,11 +47,14 @@ even derive its own transcript from the recording's audio.
   release gate (9.4) remains pending in the
   [Phase 9 checklist](conductor/tracks/local-studio_20260726/plan.md#phase-9-public-release-hardening-and-phase-b-roadmap).
 - Hosted Studio remains dark and undeployed. Principal scoping (Slice 1),
-  durable Workflows (Phase 3), composer/activity/publication (Phase 4), spend
-  and telemetry Tasks 5.3–5.4, and Phase 6 preparation artifacts are built and
-  contract-tested. ADR 0018 Amendment 1 in PR #65, upload Tasks 2.1–2.4,
-  retention/capture Tasks 5.1–5.2, and the Phase 6 deployment gate remain
-  pending. The current source of truth is the
+  durable Workflows (Phase 3), composer/activity/publication (Phase 4), and
+  retention, evidence, spend, and telemetry Tasks 5.1–5.4, plus Phase 6
+  preparation artifacts are built and contract-tested. Retained mode adds a
+  private principal-owned R2 copy with a visible lifecycle and client-canvas
+  evidence provenance; each multipart part first consumes a D1-tracked byte
+  reservation bounded by the declared recording size. Ephemeral mode remains
+  Gemini-only. The Phase 6
+  deployment gate remains pending. The current source of truth is the
   [Hosted Studio track](conductor/tracks/hosted-studio_20260822/).
 
 ## Why watch the video at all?

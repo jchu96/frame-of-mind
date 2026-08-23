@@ -23,6 +23,7 @@ const { data: configuration, error } = await useFetch<{
   available: true;
   maxBytes?: number;
   sessionTtlSeconds?: number;
+  retentionDays?: number;
 }>("/api/hosted/media/configuration", {
   headers: useRequestHeaders(["cookie"]),
 });
@@ -40,23 +41,28 @@ onMounted(() => {
   intentReady.value = Boolean(loadIntentDraft(hostedStorage(sessionStorage)).draft);
 });
 
-const retentionDuration = computed(() =>
+const uploadSessionDuration = computed(() =>
   formatRetentionDuration(configuration.value?.sessionTtlSeconds ?? 0)
+);
+const retainedDuration = computed(() =>
+  formatRetentionDuration((configuration.value?.retentionDays ?? 0) * 86_400)
 );
 const retentionOptions = computed(() => [
   {
     label: "Delete after analysis",
     value: "ephemeral",
-    description: "Delete the recording from Gemini when this analysis finishes.",
+    description: uploadSessionDuration.value
+      ? `Delete the recording from Gemini when this analysis finishes. An unfinished upload expires after ${uploadSessionDuration.value}.`
+      : "Delete the recording from Gemini when this analysis finishes.",
   },
   {
-    label: retentionDuration.value
-      ? `Keep for ${retentionDuration.value}`
+    label: retainedDuration.value
+      ? `Keep for ${retainedDuration.value}`
       : "Keep until the expiry shown on the next step",
     value: "retained",
-    description: retentionDuration.value
-      ? `Keep the recording in Gemini for up to ${retentionDuration.value}.`
-      : "Keep the recording in Gemini until the expiry shown on the next step.",
+    description: retainedDuration.value
+      ? `Keep a private copy for playback and evidence capture for ${retainedDuration.value}.`
+      : "Keep a private copy for playback and evidence capture until the expiry shown on the next step.",
   },
 ]);
 const fieldHelp = computed(() => recordingFieldHelp(configuration.value?.maxBytes));
@@ -83,7 +89,8 @@ function formatDate(value: string): string {
           <h1 class="text-4xl font-black text-highlighted">Add your recording</h1>
           <p class="mt-4 max-w-2xl text-default">
             Choose a screen recording. It goes straight from your browser to
-            Gemini for analysis; Frame of Mind never stores the video.
+            Gemini for analysis. If you choose Keep, the verified bytes also
+            go to a private temporary copy for playback and evidence capture.
           </p>
           <UButton
             v-if="!media && !draft"
@@ -217,6 +224,9 @@ function formatDate(value: string): string {
           </template>
 
           <p aria-live="polite" class="font-semibold text-default">{{ statusMessage }}</p>
+          <p v-if="media?.keptUntil" class="mt-2 text-sm text-muted" data-hosted-kept-until>
+            Private copy kept until {{ new Date(media.keptUntil).toLocaleString() }} unless you delete it sooner.
+          </p>
           <div v-if="totalBytes" class="mt-5">
             <UProgress
               :model-value="progressBytes"
@@ -280,7 +290,14 @@ function formatDate(value: string): string {
           variant="soft"
           icon="i-lucide-shield-check"
           title="Private by design"
-          description="Your recording goes directly to Gemini. Upload only recordings you are allowed to process; Frame of Mind never stores the video or includes it in your results."
+          description="Your browser receives write-only upload access, never the Gemini API key. Upload only recordings you are allowed to process; recordings and upload addresses are never stored in logs or run bundles."
+        />
+        <UAlert
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-image-off"
+          title="Delete-after-analysis review limits"
+          description="Delete-after-analysis runs have no playback or screenshot capture after this tab closes. Those features require a temporary private copy or the exact same recording."
         />
       </aside>
     </section>

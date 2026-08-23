@@ -9,6 +9,7 @@ import { opaqueIdSchema } from "../../../src/domain/studio-identifiers.js";
 export const HOSTED_MEDIA_OPEN_SESSION_CAP_DEFAULT = 2;
 export const HOSTED_MEDIA_MAX_BYTES_DEFAULT = MAX_MEDIA_BYTES;
 export const HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT = 60 * 60;
+export const HOSTED_MEDIA_RETENTION_DAYS_DEFAULT = 30;
 export const HOSTED_MEDIA_MIN_PART_BYTES = 256 * 1_024;
 
 export const hostedMediaCreateRequestSchema = z.object({
@@ -28,6 +29,10 @@ export const hostedMediaCreateResponseSchema = z.object({
   uploadUrl: z.string().url().max(4_096),
   partBytes: z.number().int().min(HOSTED_MEDIA_MIN_PART_BYTES),
   sessionExpiresAt: z.string().datetime({ offset: false }),
+  retainedUpload: z.object({
+    partUrl: z.string().url().max(4_096),
+    completeUrl: z.string().url().max(4_096),
+  }).strict().optional(),
 }).strict();
 
 export type HostedMediaCreateResponse = z.infer<
@@ -72,6 +77,11 @@ export interface HostedMediaUploadSession {
   uploadUrlIv?: string;
   geminiFileName?: string;
   providerPartBytes?: number;
+  r2ObjectKey?: string;
+  r2UploadId?: string;
+  r2CapabilityHash?: string;
+  r2CompletedAt?: string;
+  r2UploadedBytes: number;
   state: z.infer<typeof hostedMediaUploadStateSchema>;
   createdAt: string;
   sessionExpiresAt: string;

@@ -1,5 +1,6 @@
 import {
   createError,
+  getRequestURL,
   getRequestWebStream,
   type H3Event,
 } from "h3";
@@ -7,6 +8,7 @@ import { z } from "zod";
 import {
   HOSTED_MEDIA_MAX_BYTES_DEFAULT,
   HOSTED_MEDIA_OPEN_SESSION_CAP_DEFAULT,
+  HOSTED_MEDIA_RETENTION_DAYS_DEFAULT,
   HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT,
 } from "../../../workflows/src/media.js";
 import { HostedRepositoryError } from "../../../workflows/src/repository.js";
@@ -51,6 +53,7 @@ export function getHostedMediaRuntime(event: H3Event): {
     | Record<string, unknown>
     | undefined;
   const database = environment?.DB;
+  const bucket = environment?.RETAINED_MEDIA;
   const apiKey = typeof environment?.GEMINI_API_KEY === "string"
     ? environment.GEMINI_API_KEY.trim()
     : "";
@@ -61,7 +64,12 @@ export function getHostedMediaRuntime(event: H3Event): {
       data: { code: "hosted_media_bindings_unavailable" },
     });
   }
-  const { openSessionCap, maxBytes, sessionTtlSeconds } = hostedMediaPolicy(event);
+  const {
+    openSessionCap,
+    maxBytes,
+    sessionTtlSeconds,
+    retentionDays,
+  } = hostedMediaPolicy(event);
   const origin = typeof environment?.HOSTED_GEMINI_FILES_BASE_URL === "string"
     ? environment.HOSTED_GEMINI_FILES_BASE_URL
     : undefined;
@@ -71,7 +79,9 @@ export function getHostedMediaRuntime(event: H3Event): {
       database as ConstructorParameters<typeof HostedMediaService>[0],
       new HostedGeminiFilesClient(apiKey, origin),
       apiKey,
-      { openSessionCap, maxBytes, sessionTtlSeconds },
+      bucket as ConstructorParameters<typeof HostedMediaService>[3],
+      getRequestURL(event).origin,
+      { openSessionCap, maxBytes, sessionTtlSeconds, retentionDays },
     ),
   };
 }
@@ -80,6 +90,7 @@ export function hostedMediaPolicy(event: H3Event): {
   openSessionCap: number;
   maxBytes: number;
   sessionTtlSeconds: number;
+  retentionDays: number;
 } {
   const config = useRuntimeConfig(event);
   return {
@@ -97,6 +108,11 @@ export function hostedMediaPolicy(event: H3Event): {
       config.hostedMediaSessionTtlSeconds,
       HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT,
       MAXIMUM_PROVIDER_SESSION_TTL_SECONDS,
+    ),
+    retentionDays: positiveInteger(
+      config.hostedMediaRetentionDays,
+      HOSTED_MEDIA_RETENTION_DAYS_DEFAULT,
+      365,
     ),
   };
 }
@@ -136,9 +152,14 @@ export function throwHostedMediaHttpError(error: unknown): never {
       : code === "hosted_media_open_session_cap_exceeded"
         ? 429
         : code === "hosted_media_size_exceeded"
+          || code === "hosted_retained_part_size_exceeded"
           || code === "invalid_hosted_media_request"
           ? 422
           : code === "media_seal_mismatch"
+            || code === "retained_media_seal_mismatch"
+            || code === "hosted_retained_upload_incomplete"
+            || code === "hosted_retained_capability_unavailable"
+            || code === "hosted_retained_media_in_use"
             || code === "hosted_media_upload_incomplete"
             || code === "hosted_media_seal_conflict"
             || code === "hosted_media_session_expired"
