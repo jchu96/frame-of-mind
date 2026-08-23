@@ -1,5 +1,14 @@
 # Key Facts
 
+- A 2026-08-23 live Chromium spike proved that a Gemini resumable session
+  started with the API key in a header returns upload/control URLs containing
+  only `upload_id` and `upload_protocol`; direct browser PUT, restart/query,
+  and exact 20 MiB finalization work without browser credentials. The final
+  browser response was indeterminate (`NetworkError` and `TimeoutError` were
+  both observed), but Worker query recovered the
+  `final` File receipt and exact size/digest for verification and deletion.
+  Direct hosted upload therefore requires Worker reconciliation and remains an
+  ADR 0018 Amendment 2 proposal, not implementation authority.
 - Local context staging accepts only JSON, text, Markdown, SRT, or VTT up to
   8 MiB, returns no path/body/name, expires after one hour, and is absent from
   Cloudflare builds.
