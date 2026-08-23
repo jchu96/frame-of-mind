@@ -758,6 +758,23 @@ exclude all hosted creation routes unless the build/runtime flags are both
 enabled. See the [Task 3.0 spike](spikes/hosted-workflows-spike-2026-08-22.md) and
 [ADR 0018](adr/0018-hosted-studio-trust-boundary.md).
 
+Phase 2 adds a direct media capability boundary without changing the local
+`MediaStagingAdapter`. The public Worker atomically reserves a principal-owned
+pending row before it opens Gemini with its secret, then returns only the
+write-only resumable URL and an aligned part hint. A browser Web Worker hashes
+bounded `Blob.slice()` ranges; browser code uploads sequentially to Gemini,
+persists a tab-scoped confirmed offset, and queries provider offset after a
+reload. Seal is the authority transition: the Worker requires exact provider
+size, MIME, and present digest before it writes the sealed-media receipt
+consumed by `ensure_gemini_file`, which rechecks the same size and digest before
+analysis. A finalized File has an exact identity and can be deleted. Before
+finalize, Gemini exposes neither a File name nor a documented session-revoke
+operation, so cancel and the media janitor abandon the D1 row immediately,
+refuse later sealing, and rely on the provider's bounded session TTL. The
+delegating Cloudflare entry never carries recording bytes. A principal can list
+its own unexpired open sessions to resume or discard them after losing tab-local
+state; page exit also sends a best-effort keepalive DELETE.
+
 Phase 5a adds two ports without changing the local `AnalysisJobExecutor`.
 Creation derives a versioned estimated-token plan from sealed media duration,
 a configured maximum video-call graph, Google's documented conservative 300
@@ -767,14 +784,14 @@ settles provider usage or conservatively commits the reservation when usage is
 incomplete. A separate strict telemetry port accepts codes and structural
 fields only. The Nuxt caller forwards Access and spend outcomes internally;
 the Workflows sibling owns optional Sentry delivery, publication/cleanup
-outcomes, and stays inert without its own `SENTRY_DSN`. Upload exposes only the
-telemetry interface until Phase 2 implements media transfer.
+outcomes, and stays inert without its own `SENTRY_DSN`. Upload telemetry stays
+structural and content-free.
 
 Phase 4 places the hosted composer and activity pages behind those same two
 gates. Browser drafts reuse the pure Studio intent, context, readiness, run,
 activity-state, progress, and action modules through a hosted adapter; the
-Recording step can resolve only a pre-existing sealed media receipt and has no
-upload capability. HTTP views expose opaque IDs, immutable recipe/model/
+Recording step drives the Phase 2 direct upload and resumes only after the same
+recording is reselected and rehashed. HTTP views expose opaque IDs, immutable recipe/model/
 context/retention receipts, and codes-only failure state. Every lookup binds
 the middleware principal in SQL and returns 404 for absent or foreign
 resources.

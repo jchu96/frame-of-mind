@@ -49,6 +49,7 @@ interface MediaRow {
   mime_type: string;
   retention: "ephemeral" | "retained";
   duration_seconds: number | null;
+  size_bytes: number | null;
   sealed_at: string;
   expires_at: string;
 }
@@ -1061,6 +1062,7 @@ function mediaFromRow(row: MediaRow): SealedHostedMediaReceipt | undefined {
     geminiFileName: row.gemini_file_name,
     geminiFileUri: row.gemini_file_uri,
     sha256: row.sha256,
+    sizeBytes: row.size_bytes,
     mimeType: row.mime_type,
     retention: row.retention,
     durationSeconds: row.duration_seconds,

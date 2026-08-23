@@ -6,6 +6,11 @@ import {
   HOSTED_PROMPT_OUTPUT_HEADROOM_PER_CALL_DEFAULT,
   HOSTED_VIDEO_TOKEN_RATE_DEFAULT,
 } from "../workflows/src/spend";
+import {
+  HOSTED_MEDIA_MAX_BYTES_DEFAULT,
+  HOSTED_MEDIA_OPEN_SESSION_CAP_DEFAULT,
+  HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT,
+} from "../workflows/src/media";
 import { shouldRegisterLocalStudioRoutes } from "./server-local/studio-session/session";
 
 const databaseDriver = process.env.FRAME_OF_MIND_DB_DRIVER === "d1" ? "d1" : "sqlite";
@@ -56,6 +61,24 @@ const hostedRecipesHandler = fileURLToPath(
 );
 const hostedMediaHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/media.get.ts", import.meta.url),
+);
+const hostedMediaCreateHandler = fileURLToPath(
+  new URL("./server-hosted/media/create.post.ts", import.meta.url),
+);
+const hostedMediaConfigurationHandler = fileURLToPath(
+  new URL("./server-hosted/media/configuration.get.ts", import.meta.url),
+);
+const hostedMediaListHandler = fileURLToPath(
+  new URL("./server-hosted/media/list.get.ts", import.meta.url),
+);
+const hostedMediaSealHandler = fileURLToPath(
+  new URL("./server-hosted/media/seal.post.ts", import.meta.url),
+);
+const hostedMediaCancelHandler = fileURLToPath(
+  new URL("./server-hosted/media/cancel.delete.ts", import.meta.url),
+);
+const hostedMediaJanitorHandler = fileURLToPath(
+  new URL("./server-hosted/media/janitor.post.ts", import.meta.url),
 );
 const hostedJobDetailHandler = fileURLToPath(
   new URL("./server-hosted/studio-jobs/detail.get.ts", import.meta.url),
@@ -442,6 +465,36 @@ const localHandlers = [
           handler: hostedRecipesHandler,
         },
         {
+          route: "/api/hosted/media/configuration",
+          method: "get",
+          handler: hostedMediaConfigurationHandler,
+        },
+        {
+          route: "/api/hosted/media",
+          method: "get",
+          handler: hostedMediaListHandler,
+        },
+        {
+          route: "/api/hosted/media",
+          method: "post",
+          handler: hostedMediaCreateHandler,
+        },
+        {
+          route: "/api/hosted/media/janitor",
+          method: "post",
+          handler: hostedMediaJanitorHandler,
+        },
+        {
+          route: "/api/hosted/media/:id/seal",
+          method: "post",
+          handler: hostedMediaSealHandler,
+        },
+        {
+          route: "/api/hosted/media/:id",
+          method: "delete",
+          handler: hostedMediaCancelHandler,
+        },
+        {
           route: "/api/hosted/media/:id",
           method: "get",
           handler: hostedMediaHandler,
@@ -628,6 +681,9 @@ export default defineNuxtConfig({
     hostedSpendPromptOutputHeadroomPerCall:
       HOSTED_PROMPT_OUTPUT_HEADROOM_PER_CALL_DEFAULT,
     hostedSpendMaxInterrogationCalls: HOSTED_MAX_INTERROGATION_CALLS_DEFAULT,
+    hostedMediaOpenSessionCap: HOSTED_MEDIA_OPEN_SESSION_CAP_DEFAULT,
+    hostedMediaMaxBytes: HOSTED_MEDIA_MAX_BYTES_DEFAULT,
+    hostedMediaSessionTtlSeconds: HOSTED_MEDIA_SESSION_TTL_SECONDS_DEFAULT,
     public: {
       appName: "Frame of Mind",
       appVersion: "0.3.0",

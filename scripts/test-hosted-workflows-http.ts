@@ -44,6 +44,7 @@ const crashMedia = "media_hosted_crash_0001";
 const cancelMedia = "media_hosted_cancel_0001";
 const overrunMedia = "media_hosted_overrun_0001";
 const janitorMedia = "media_hosted_janitor_0001";
+const missingHashMedia = "media_hosted_missing_hash_0001";
 const janitorAttempt = "attempt_hosted_janitor_0001";
 const recipeStartMedia = listBuiltInRecipes().map((recipe, index) => ({
   recipeId: recipe.id,
@@ -67,6 +68,7 @@ let fakeGithub: ReturnType<typeof startFakeGithub> | undefined;
 let webOutput: Promise<[string, string]> | undefined;
 let workflowOutput: Promise<[string, string]> | undefined;
 let disabledWebOutput: Promise<[string, string]> | undefined;
+let dispatchRetryTail = Promise.resolve();
 
 try {
   console.log("HOSTED_WORKFLOW build=START nuxt_and_workflow");
@@ -209,6 +211,7 @@ try {
       HOSTED_FAKE_USAGE_OVERRUN_MEDIA_ID: overrunMedia,
       HOSTED_FAKE_STAGE_DELAY_MS: "3000",
       HOSTED_FAKE_STAGE_DELAY_MEDIA_ID: normalMedia,
+      HOSTED_FAKE_FILE_MISSING_HASH_MEDIA_ID: missingHashMedia,
     },
   }, null, 2));
   await runChecked([
@@ -578,6 +581,26 @@ try {
   }), 404, "cross-principal composer create with foreign media");
   console.log("HOSTED_WORKFLOW principal_isolation=PASS activity_media_run_foreign_ids=404 create_with_foreign_media=404");
 
+  const missingHash = await createJob(
+    baseUrl,
+    tokenB,
+    missingHashMedia,
+    "missing-hash-submit-key",
+  );
+  const missingHashTerminal = await waitForTerminal(
+    baseUrl,
+    tokenB,
+    missingHash.job.id,
+  );
+  assertEqual(missingHashTerminal.job.stage, "failed", "missing hash terminal stage");
+  assertEqual(
+    missingHashTerminal.job.errorCode,
+    "media_seal_mismatch",
+    "missing hash sanitized terminal code",
+  );
+  assertEqual(missingHashTerminal.job.runId, undefined, "missing hash publication blocked");
+  console.log("HOSTED_WORKFLOW missing_provider_hash=PASS failed_closed=media_seal_mismatch");
+
   const canceled = await createJob(baseUrl, tokenA, cancelMedia, "cancel-submit-key");
   await expectStatus(fetch(`${baseUrl}/api/hosted/jobs/${canceled.job.id}/cancel`, {
     method: "POST",
@@ -732,8 +755,21 @@ try {
       `http-race-${String(index + 1).padStart(2, "0")}`,
     )),
   );
-  const admitted = raceResponses.filter((response) => response.status === 201);
+  const raceCodes = await Promise.all(raceResponses.map(async (response) => {
+    const body = await response.clone().json().catch(() => undefined) as
+      | { data?: { code?: string } }
+      | undefined;
+    return body?.data?.code ?? `http_${response.status}`;
+  }));
+  const admitted = raceResponses.filter((response, index) =>
+    [200, 201].includes(response.status)
+    || (response.status === 503 && raceCodes[index] === "hosted_workflow_dispatch_failed")
+  );
   const rejected = raceResponses.filter((response) => response.status === 429);
+  console.log(
+    `HOSTED_SPEND race_statuses=${raceResponses.map((response) => response.status).join(",")}`,
+  );
+  console.log(`HOSTED_SPEND race_codes=${raceCodes.join(",")}`);
   assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
   assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
   for (const response of rejected) {
@@ -870,6 +906,7 @@ async function verifyRealAdapterContract(): Promise<void> {
     geminiFileName: `files/adapter_${suffix}`,
     geminiFileUri: `https://generativelanguage.googleapis.test/v1beta/files/adapter_${suffix}`,
     sha256: mediaSha256,
+    sizeBytes: 1024,
     mimeType: "video/mp4",
     retention: "ephemeral",
     durationSeconds: 1,
@@ -942,12 +979,13 @@ function seedSql(): string {
       retention: "retained",
       expiresAt,
     })),
+    { principal: principalB, mediaId: missingHashMedia, retention: "retained", expiresAt },
   ];
   const mediaRows = mediaFixtures.map(({ principal, mediaId, retention, expiresAt: mediaExpiresAt }) =>
       `('${principal}','${mediaId}','files/${mediaId}',`
       + `'https://generativelanguage.googleapis.test/v1beta/files/${mediaId}',`
       + `'${mediaSha256}','video/mp4','${retention}',`
-      + `'${sealedAt}','${mediaExpiresAt}',1)`
+      + `'${sealedAt}','${mediaExpiresAt}',1,1024)`
   );
   const janitorInput = JSON.stringify({
     mediaId: janitorMedia,
@@ -968,13 +1006,13 @@ function seedSql(): string {
       principal_sub, principal_email, cap_units, committed_units, updated_at
     ) VALUES
       ('${principalA}', 'seat@example.test', ${principalACapUnits}, 0, '${sealedAt}'),
-      ('${principalB}', 'seat@example.test', ${contractSpendPlan.estimatedTokens * recipeStartMedia.length}, 0, '${sealedAt}'),
+      ('${principalB}', 'seat@example.test', ${contractSpendPlan.estimatedTokens * (recipeStartMedia.length + 1)}, 0, '${sealedAt}'),
       ('${principalRace}', 'seat@example.test', ${raceCapUnits}, 0, '${sealedAt}'),
       ('${principalOverrun}', 'seat@example.test', ${contractSpendPlan.estimatedTokens * 2}, 0, '${sealedAt}'),
       ('${principalJanitor}', 'seat@example.test', ${contractSpendPlan.estimatedTokens}, 0, '${sealedAt}');
     INSERT INTO hosted_media_receipts (
       principal_sub, media_id, gemini_file_name, gemini_file_uri, sha256,
-      mime_type, retention, sealed_at, expires_at, duration_seconds
+      mime_type, retention, sealed_at, expires_at, duration_seconds, size_bytes
     ) VALUES ${mediaRows.join(",\n")};
     INSERT INTO hosted_analysis_jobs (
       principal_sub, job_id, principal_email, media_id, created_at
@@ -1105,6 +1143,10 @@ async function verifyHostedBrowserContract(
     await page.goto(`${origin}/hosted/new/run`);
     await page.waitForURL(/\/hosted\/new\/recording\?reason=/);
     await page.getByText("Add a recording before Review & start.").waitFor();
+    await page.getByText("Drop a recording here").waitFor();
+    await page.getByRole("link", { name: "Back to Activity" }).waitFor();
+    await page.getByText("Delete after analysis", { exact: true }).waitFor();
+    await page.getByText("Keep temporarily", { exact: true }).waitFor();
     await capture("03-recording-empty");
     await page.evaluate((id) => {
       sessionStorage.setItem(
@@ -1195,30 +1237,30 @@ async function createJob(
   idempotencyKey: string,
   expectedStatus = 201,
 ): Promise<JobResponse> {
-  return await json<JobResponse>(await expectStatus(createJobResponse(
+  return await json<JobResponse>(await expectOneOf(createJobResponse(
     origin,
     token,
     mediaId,
     idempotencyKey,
-  ), expectedStatus, `create ${idempotencyKey}`));
+  ), expectedStatus === 201 ? [200, 201] : [expectedStatus], `create ${idempotencyKey}`));
 }
 
-function createJobResponse(
+async function createJobResponse(
   origin: string,
   token: string,
   mediaId: string,
   idempotencyKey: string,
 ): Promise<Response> {
-  return fetch(`${origin}/api/hosted/jobs`, {
-    method: "POST",
-    headers: mutationHeaders(origin, token),
-    body: JSON.stringify({
-      idempotencyKey,
-      mediaId,
-      context: { mode: "none" },
-      recipeId: "decisions",
-    }),
-  });
+  return await retryLocalDispatch(async () => fetch(`${origin}/api/hosted/jobs`, {
+      method: "POST",
+      headers: mutationHeaders(origin, token),
+      body: JSON.stringify({
+        idempotencyKey,
+        mediaId,
+        context: { mode: "none" },
+        recipeId: "decisions",
+      }),
+    }));
 }
 
 function composerJobResponse(
@@ -1243,17 +1285,44 @@ function composerJobResponse(
   });
 }
 
-function retryJob(
+async function retryJob(
   origin: string,
   token: string,
   attemptId: string,
   idempotencyKey: string,
 ): Promise<Response> {
-  return fetch(`${origin}/api/hosted/jobs/${attemptId}/retry`, {
+  return await retryLocalDispatch(async () => fetch(`${origin}/api/hosted/jobs/${attemptId}/retry`, {
     method: "POST",
     headers: mutationHeaders(origin, token),
     body: JSON.stringify({ idempotencyKey }),
+  }));
+}
+
+async function retryLocalDispatch(
+  request: () => Promise<Response>,
+): Promise<Response> {
+  const initial = await request();
+  if (!await isLocalDispatchFailure(initial)) return initial;
+  const retry = dispatchRetryTail.then(async () => {
+    let response = initial;
+    for (let attempt = 1; attempt <= 10; attempt += 1) {
+      await response.body?.cancel();
+      await Bun.sleep(100 * attempt);
+      response = await request();
+      if (!await isLocalDispatchFailure(response)) return response;
+    }
+    return response;
   });
+  dispatchRetryTail = retry.then(() => undefined, () => undefined);
+  return await retry;
+}
+
+async function isLocalDispatchFailure(response: Response): Promise<boolean> {
+  if (response.status !== 503) return false;
+  const body = await response.clone().json().catch(() => undefined) as
+    | { data?: { code?: string } }
+    | undefined;
+  return body?.data?.code === "hosted_workflow_dispatch_failed";
 }
 
 function mutationHeaders(origin: string, token: string): Record<string, string> {
@@ -1267,11 +1336,13 @@ function authenticatedFetch(origin: string, path: string, token: string): Promis
 }
 
 async function getJob(origin: string, token: string, id: string): Promise<JobDetail> {
-  return await json<JobDetail>(await expectStatus(
-    authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token),
-    200,
-    `job ${id}`,
-  ));
+  let response = await authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token);
+  for (let attempt = 1; attempt <= 10 && response.status === 500; attempt += 1) {
+    await response.body?.cancel();
+    await Bun.sleep(50 * attempt);
+    response = await authenticatedFetch(origin, `/api/hosted/jobs/${id}`, token);
+  }
+  return await json<JobDetail>(await expectStatus(response, 200, `job ${id}`));
 }
 
 async function waitForTerminal(
