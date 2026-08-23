@@ -1131,3 +1131,12 @@
   the client IP on Workers (`cf-connecting-ip`), so the per-route rate limit
   was a single shared bucket; and `/api/_nuxt_icon/*` was not a public path,
   so the sign-in page's icon request returned `403` before login.
+- Merged PR #94's sharded gate into the CI repair branch on 2026-08-23. The
+  ordinary `check` job now runs the adaptive PR gate within 15 minutes while a
+  dependent 40-minute `hosted-contracts` job installs Chromium and owns the
+  hosted lane; the Ubuntu/macOS/Windows fresh-clone matrix remains unchanged.
+  The first Linux branch run exposed local workerd D1 writer contention only
+  after the synthetic 3-admit/7-reject HTTP burst. The fixture now preserves
+  that concurrent admission proof while deterministically staggering only the
+  admitted fake Workflow starts, separating the spend-cap oracle from
+  SQLite-backed local-runtime scheduling.
