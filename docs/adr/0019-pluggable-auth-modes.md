@@ -1,6 +1,6 @@
 # ADR 0019: Make hosted authentication a pluggable perimeter
 
-- Status: Proposed
+- Status: Accepted (2026-08-23, maintainer decision: live mode is `better-auth` with GitHub login; Cloudflare Access retained only during cutover via the stacked mode)
 - Date: 2026-08-23
 
 ## Invariant
