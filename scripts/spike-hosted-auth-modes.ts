@@ -1,18 +1,24 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { chromium, type BrowserContext } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
+import { retryBrowserReadiness } from "./browser-readiness";
 import { createE2EEnvironment } from "./e2e-environment";
 import { runFixture, videoRunFixture } from "../apps/web/test/fixtures";
 import { analysisDigest } from "../src/domain/integrity";
 
 const startedAt = performance.now();
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-auth-"));
-const persistRoot = join(temporaryRoot, "wrangler-state");
+const isolation = await createE2EIsolation(
+  "hosted-auth",
+  process.env.FRAME_OF_MIND_E2E_TEMP_ROOT,
+);
+const temporaryRoot = isolation.root;
+const persistRoot = isolation.persistRoot;
 const configPath = join(temporaryRoot, "wrangler.jsonc");
-const databaseName = "frame-of-mind-hosted-auth-contract";
-const databaseId = "00000000-0000-0000-0000-000000000019";
+const databaseName = isolation.databaseName;
+const databaseId = isolation.databaseId;
+const workerName = isolation.workerName("hosted-auth-contract");
 const wranglerBin = resolve("apps/web/node_modules/wrangler/bin/wrangler.js");
 const betterAuthSecret = "fixture-only-better-auth-secret-00000000000000000000";
 const mailerKey = "fixture-mailer-key";
@@ -79,11 +85,12 @@ const fixtureServer = Bun.serve({
 const fixtureOrigin = `http://127.0.0.1:${fixtureServer.port}`;
 
 try {
+  console.log(`HOSTED_AUTH isolation=PASS worker=${workerName} database=${databaseName}`);
   console.log("HOSTED_AUTH build=START cloudflare_module");
   await runChecked(["bun", "--no-env-file", "run", "build:web:cloudflare"], "Better Auth Cloudflare build");
   console.log("HOSTED_AUTH build=PASS cloudflare_module");
 
-  const workerPort = await reservePort();
+  const workerPort = await isolation.reservePort();
   const origin = `http://127.0.0.1:${workerPort}`;
   await writeConfig(configPath, origin, "better-auth");
   const migrationArgs = [
@@ -109,7 +116,7 @@ try {
   await waitForWorker(origin, worker, 403);
   await runHostedSignInSpec(origin, "better-auth");
   console.log("HOSTED_AUTH sign_in_page=PASS mode=better-auth");
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchReadyBrowser("better-auth", origin);
   try {
     const cookieA = await githubLogin(browser, origin, "user-a@example.test");
     const cookieB = await githubLogin(browser, origin, "user-b@example.test");
@@ -152,7 +159,7 @@ try {
   }
   await stopWorker();
 
-  const stackedPort = await reservePort();
+  const stackedPort = await isolation.reservePort();
   const stackedOrigin = `http://127.0.0.1:${stackedPort}`;
   await writeConfig(configPath, stackedOrigin, "cloudflare-access+better-auth");
   ({ worker, output: workerOutput } = await startWorker(configPath, stackedPort));
@@ -164,7 +171,11 @@ try {
   await expectStatus(fetch(`${stackedOrigin}/api/auth/sign-in/social`, { method: "POST" }), 403, "stacked auth without Access");
   await runHostedSignInSpec(stackedOrigin, "cloudflare-access+better-auth", browserAccessToken);
   console.log("HOSTED_AUTH sign_in_page=PASS mode=cloudflare-access+better-auth");
-  const stackedBrowser = await chromium.launch({ headless: true });
+  const stackedBrowser = await launchReadyBrowser(
+    "cloudflare-access+better-auth",
+    stackedOrigin,
+    accessToken,
+  );
   try {
     const cookie = await githubLogin(stackedBrowser, stackedOrigin, "stacked@example.test", accessToken);
     await expectSession(stackedOrigin, cookie, "stacked@example.test", "cloudflare-access+better-auth", accessToken);
@@ -193,7 +204,7 @@ try {
   console.log("HOSTED_AUTH stacked_rebind=PASS mismatch_denied=true");
 
   for (const [label, authMode] of [["unset", undefined], ["unknown", "unknown-mode"]] as const) {
-    const port = await reservePort();
+    const port = await isolation.reservePort();
     const testOrigin = `http://127.0.0.1:${port}`;
     await writeConfig(configPath, testOrigin, authMode, true);
     ({ worker, output: workerOutput } = await startWorker(configPath, port));
@@ -214,7 +225,7 @@ try {
 } finally {
   await stopWorker();
   fixtureServer.stop(true);
-  await rm(temporaryRoot, { recursive: true, force: true });
+  await isolation.cleanup();
 }
 
 async function writeConfig(
@@ -242,7 +253,7 @@ async function writeConfig(
   }
   await writeFile(path, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-auth-contract",
+    name: workerName,
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
@@ -302,6 +313,37 @@ async function githubLogin(
     // probe into an unrelated "browser has been closed" error.
     await context.close().catch(() => undefined);
   }
+}
+
+async function launchReadyBrowser(
+  mode: "better-auth" | "cloudflare-access+better-auth",
+  origin: string,
+  accessToken?: string,
+): Promise<Awaited<ReturnType<typeof chromium.launch>>> {
+  return await retryBrowserReadiness(async (attempt) => {
+    const browser = await chromium.launch({ headless: true });
+    let context: BrowserContext | undefined;
+    try {
+      context = await browser.newContext();
+      if (accessToken) await addAccessHeader(context, origin, accessToken);
+      const page = await context.newPage();
+      const response = await page.goto(`${origin}/api/health`);
+      if (!response) throw new Error(`Browser readiness omitted a response for ${mode}.`);
+      await context?.close().catch(() => undefined);
+      context = undefined;
+      if (!browser.isConnected()) {
+        throw new Error(`Browser has been closed during readiness for ${mode}.`);
+      }
+      console.log(`HOSTED_AUTH browser_readiness=PASS mode=${mode} attempts=${attempt}`);
+      return browser;
+    } catch (error) {
+      await context?.close().catch(() => undefined);
+      await browser.close().catch(() => undefined);
+      throw error;
+    }
+  }, ({ attempt }) => {
+    console.log(`HOSTED_AUTH browser_readiness=RETRY mode=${mode} attempt=${attempt}`);
+  });
 }
 
 async function magicLinkLogin(
@@ -562,13 +604,6 @@ async function waitForWorker(
     await Bun.sleep(100);
   }
   throw new Error(`Timed out waiting for workerd at ${origin}.`);
-}
-
-async function reservePort(): Promise<number> {
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("reserved") });
-  const port = server.port;
-  server.stop(true);
-  return port;
 }
 
 async function runChecked(command: string[], label: string): Promise<string> {

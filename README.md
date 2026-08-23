@@ -40,7 +40,7 @@ even derive its own transcript from the recording's audio.
   digest-verified reattachment, local exports, and unified maintenance. The
   implementation receipts and verification commands are recorded in the
   [Local Studio plan](conductor/tracks/local-studio_20260726/plan.md) and
-  [Studio browser suite](apps/web/e2e/studio-smoke.spec.ts).
+  [Studio browser suite](apps/web/e2e/smoke/studio-smoke.spec.ts).
 - Phase 9 release hardening is in progress. Documentation, classification,
   repository hygiene, fresh-clone platform testing, and hosted-track
   reconciliation are complete in this slice; only the operator/adversarial
@@ -678,7 +678,11 @@ bun install --frozen-lockfile
 bun run typecheck
 bun run test
 bun run test:web
-bun run test:e2e:smoke
+bun run test:e2e                     # Local Studio smoke
+bun run test:e2e:hosted              # built Nuxt + Workflows Workers
+bun run test:e2e:adversarial         # reviewer-derived regressions
+bun run test:e2e:canary              # deployed, read-only; env-gated
+bun run hosted:local                 # human-driveable hosted Workers; Ctrl+C to stop
 bun run build
 bun run build:web:cloudflare
 bun run test:hosted-access-http
@@ -686,6 +690,10 @@ bun run test:hosted-media-http              # fake Files API + real Chromium dir
 bun run rehearse:hosted-release
 bun run check
 ```
+
+Local E2E and hosted-contract runners serialize their resource-heavy
+workerd/Chromium lifetimes across worktrees while retaining private ports,
+temporary state, D1/Worker/Workflow names, and report directories per run.
 
 Do not upgrade `@google/genai` or `@modelcontextprotocol/sdk` without
 verifying official authentication, Files upload, structured output, video

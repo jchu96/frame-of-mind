@@ -8,7 +8,7 @@ The local Studio trust boundaries and abuse cases are maintained in the
 Local Studio Phases 1–8 are implemented and verified through the
 [phase plan](../conductor/tracks/local-studio_20260726/plan.md), the
 [production HTTP contract](../scripts/test-local-studio-http.ts), and the
-[browser smoke suite](../apps/web/e2e/studio-smoke.spec.ts). Hosted Studio is a
+[browser smoke suite](../apps/web/e2e/smoke/studio-smoke.spec.ts). Hosted Studio is a
 separate dark track: principal scoping and Phases 3–4 ship behind disabled
 build/runtime gates, Tasks 5.3–5.4 and Phase 6 preparation are present, but
 recording upload, retention/capture Tasks 5.1–5.2, the deployment gate, and

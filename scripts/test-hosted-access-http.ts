@@ -1,10 +1,10 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
 import { createE2EEnvironment } from "./e2e-environment";
 import { runFixture, videoRunFixture } from "../apps/web/test/fixtures";
 import { analysisDigest } from "../src/domain/integrity";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 import {
   betterAuthBrowserLogin,
   betterAuthFixtureVars,
@@ -13,9 +13,11 @@ import {
   startFakeGithub,
 } from "./hosted-auth-fixture";
 
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hosted-access-"));
-const persistRoot = join(temporaryRoot, "wrangler-state");
+const isolation = await createE2EIsolation("hosted-access");
+const temporaryRoot = isolation.root;
+const persistRoot = isolation.persistRoot;
 const configPath = join(temporaryRoot, "wrangler.jsonc");
+const databaseName = isolation.databaseName;
 const audience = "frame-of-mind-hosted-access-contract";
 const keyId = "hosted-access-contract-key";
 const entrySelection = process.env.FRAME_OF_MIND_HOSTED_ACCESS_ENTRY || "index";
@@ -51,7 +53,7 @@ try {
     },
   });
   const issuer = `http://127.0.0.1:${jwksServer.port}`;
-  const workerPort = await reservePort();
+  const workerPort = await isolation.reservePort();
   const baseUrl = `http://127.0.0.1:${workerPort}`;
   fakeGithub = hostedContractAuthMode === "better-auth"
     ? startFakeGithub([
@@ -62,7 +64,7 @@ try {
 
   await writeFile(configPath, JSON.stringify({
     $schema: resolve("node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-access-contract",
+    name: isolation.workerName(`hosted-access-${entryFile}`),
     main: resolve(`apps/web/.output/server/${entryFile}`),
     compatibility_date: "2026-07-02",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
@@ -72,8 +74,8 @@ try {
     },
     d1_databases: [{
       binding: "DB",
-      database_name: "frame-of-mind-hosted-access-contract",
-      database_id: "00000000-0000-0000-0000-000000000001",
+      database_name: databaseName,
+      database_id: isolation.databaseId,
       migrations_dir: resolve("apps/web/db/migrations"),
     }],
     vars: hostedContractAuthMode === "better-auth"
@@ -88,7 +90,7 @@ try {
 
   const migrationArgs = [
     "bunx", "wrangler", "d1", "migrations", "apply",
-    "frame-of-mind-hosted-access-contract",
+    databaseName,
     "--local",
     "--config", configPath,
     "--persist-to", persistRoot,
@@ -97,7 +99,7 @@ try {
   await runChecked(migrationArgs, "idempotent D1 migration replay");
   if (hostedContractAuthMode === "better-auth") {
     await runChecked([
-      "bunx", "wrangler", "d1", "execute", "frame-of-mind-hosted-access-contract",
+      "bunx", "wrangler", "d1", "execute", databaseName,
       "--local", "--config", configPath, "--persist-to", persistRoot,
       "--command", "INSERT INTO hosted_auth_invites (email, invited_at) VALUES "
         + "('access-a@example.test','2026-08-23T00:00:00.000Z'),"
@@ -238,7 +240,7 @@ try {
 } finally {
   jwksServer?.stop(true);
   fakeGithub?.stop();
-  await rm(temporaryRoot, { recursive: true, force: true });
+  await isolation.cleanup();
 }
 
 async function signAccessToken(
@@ -309,17 +311,6 @@ async function runChecked(command: string[], label: string): Promise<void> {
   if (exitCode !== 0) {
     throw new Error(`${label} failed (${exitCode}):\n${stdout}\n${stderr}`.slice(0, 12_000));
   }
-}
-
-async function reservePort(): Promise<number> {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response("reserved"),
-  });
-  const port = server.port;
-  server.stop(true);
-  return port;
 }
 
 async function waitForWorker(

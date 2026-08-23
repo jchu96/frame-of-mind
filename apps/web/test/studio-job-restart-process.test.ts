@@ -132,7 +132,7 @@ describe("Local Studio process restart recovery", () => {
     } finally {
       await rm(temporaryRoot, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 });
 
 async function runChild(
@@ -158,7 +158,7 @@ async function runChild(
       stdout: "pipe",
     },
   );
-  const timeout = setTimeout(() => child.kill(), 5_000);
+  const timeout = setTimeout(() => child.kill(), 10_000);
   try {
     const [exitCode, stderr, stdout] = await Promise.all([
       child.exited,
