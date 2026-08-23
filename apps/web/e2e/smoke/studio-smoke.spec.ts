@@ -2,10 +2,10 @@ import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import { DEFAULT_GEMINI_MODEL } from "../../../src/adapters/gemini-model";
-import { analysisDigest } from "../../../src/domain/integrity";
-import { runFixture, videoRunFixture } from "../test/fixtures";
-import { collectClientErrors } from "./support/client-errors";
+import { DEFAULT_GEMINI_MODEL } from "../../../../src/adapters/gemini-model";
+import { analysisDigest } from "../../../../src/domain/integrity";
+import { runFixture, videoRunFixture } from "../../test/fixtures";
+import { collectClientErrors } from "../support/client-errors";
 
 function syntheticMp4(bytes = 64): Buffer {
   const fixture = Buffer.alloc(bytes);

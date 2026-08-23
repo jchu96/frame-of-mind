@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { collectClientErrors } from "./support/client-errors";
+import { collectClientErrors } from "../support/client-errors";
 
 test("keeps the local Studio usable on a narrow screen", {
   tag: "@smoke",

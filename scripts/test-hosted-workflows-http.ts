@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
@@ -15,6 +14,7 @@ import {
 import { listBuiltInRecipes } from "../src/recipes";
 import { hostedSpendEstimator } from "../apps/workflows/src/spend";
 import { createE2EEnvironment } from "./e2e-environment";
+import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 import {
   betterAuthBrowserLogins,
   betterAuthFixtureVars,
@@ -23,15 +23,17 @@ import {
   startFakeGithub,
 } from "./hosted-auth-fixture";
 
-const temporaryRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-workflows-"));
-const persistRoot = join(temporaryRoot, "wrangler-state");
+const isolation = await createE2EIsolation("hosted-workflows");
+const temporaryRoot = isolation.root;
+const persistRoot = isolation.persistRoot;
 const webConfigPath = join(temporaryRoot, "web.wrangler.jsonc");
 const disabledWebConfigPath = join(temporaryRoot, "web-disabled.wrangler.jsonc");
 const workflowConfigPath = join(temporaryRoot, "workflow.wrangler.jsonc");
 const seedPath = join(temporaryRoot, "seed.sql");
 const workflowOutdir = join(temporaryRoot, "workflow-bundle");
-const databaseName = "frame-of-mind-hosted-workflow-contract";
-const databaseId = "00000000-0000-0000-0000-000000000004";
+const databaseName = isolation.databaseName;
+const databaseId = isolation.databaseId;
+const workflowServiceName = isolation.workerName("hosted-workflow");
 const audience = "frame-of-mind-hosted-workflow-contract";
 const keyId = "hosted-workflow-contract-key";
 let principalA = "hosted-workflow-principal-a";
@@ -126,9 +128,9 @@ try {
     },
   });
   const issuer = `http://127.0.0.1:${jwksServer.port}`;
-  const workerPort = await reservePort();
+  const workerPort = await isolation.reservePort();
   const baseUrl = `http://127.0.0.1:${workerPort}`;
-  const disabledPort = await reservePort();
+  const disabledPort = await isolation.reservePort();
   const disabledOrigin = `http://127.0.0.1:${disabledPort}`;
   fakeGithub = hostedContractAuthMode === "better-auth"
     ? startFakeGithub([
@@ -149,7 +151,7 @@ try {
       };
   await writeFile(webConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-web-contract",
+    name: isolation.workerName("hosted-web"),
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
@@ -160,7 +162,7 @@ try {
     d1_databases: [d1Binding()],
     services: [{
       binding: "HOSTED_WORKFLOWS",
-      service: "frame-of-mind-hosted-workflow-contract",
+      service: workflowServiceName,
     }],
     vars: {
       ...authVars,
@@ -173,7 +175,7 @@ try {
   }, null, 2));
   await writeFile(disabledWebConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-web-disabled-contract",
+    name: isolation.workerName("hosted-web-disabled"),
     main: resolve("apps/web/.output/server/index.mjs"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat", "nodejs_als"],
@@ -181,7 +183,7 @@ try {
     d1_databases: [d1Binding()],
     services: [{
       binding: "HOSTED_WORKFLOWS",
-      service: "frame-of-mind-hosted-workflow-contract",
+      service: workflowServiceName,
     }],
     vars: {
       ...(hostedContractAuthMode === "better-auth"
@@ -193,13 +195,13 @@ try {
   }, null, 2));
   await writeFile(workflowConfigPath, JSON.stringify({
     $schema: resolve("apps/web/node_modules/wrangler/config-schema.json"),
-    name: "frame-of-mind-hosted-workflow-contract",
+    name: workflowServiceName,
     main: resolve("apps/workflows/src/index.ts"),
     compatibility_date: "2026-08-18",
     compatibility_flags: ["nodejs_compat"],
     d1_databases: [d1Binding()],
     workflows: [{
-      name: "frame-of-mind-analysis-contract",
+      name: isolation.workerName("hosted-analysis"),
       binding: "HOSTED_WORKFLOW",
       class_name: "HostedAnalysisWorkflow",
     }],
@@ -241,7 +243,7 @@ try {
     await writeSeed();
   }
 
-  const workflowPort = await reservePort();
+  const workflowPort = await isolation.reservePort();
   workflowWorker = Bun.spawn([
     "node", wranglerBin, "dev", "--local",
     "--config", workflowConfigPath,
@@ -646,7 +648,7 @@ try {
   );
   await runChecked([
     "node", wranglerBin, "workflows", "instances", "restart",
-    "frame-of-mind-analysis-contract", workflowInstanceId,
+    isolation.workerName("hosted-analysis"), workflowInstanceId,
     "--local", "--port", String(workflowPort),
     "--config", workflowConfigPath,
     "--from-step-name", "transcribe",
@@ -770,13 +772,27 @@ try {
     `HOSTED_SPEND race_statuses=${raceResponses.map((response) => response.status).join(",")}`,
   );
   console.log(`HOSTED_SPEND race_codes=${raceCodes.join(",")}`);
+  if (admitted.length !== 3 || rejected.length !== raceSize - 3) {
+    const responseReceipts = await Promise.all(raceResponses.map(async (response, index) => ({
+      request: index + 1,
+      status: response.status,
+      body: await response.clone().text(),
+    })));
+    const databaseReceipt = await queryRaceFailureReceipt();
+    console.error(`HOSTED_SPEND race_failure=${JSON.stringify({
+      responses: responseReceipts,
+      database: databaseReceipt,
+    })}`);
+  }
   assertEqual(admitted.length, 3, "HTTP concurrent spend admissions");
   assertEqual(rejected.length, raceSize - 3, "HTTP concurrent spend rejections");
   for (const response of rejected) {
     const body = await json<{ data?: { code?: string } }>(response);
     assertEqual(body.data?.code, "principal_spend_cap_exceeded", "HTTP race cap code");
   }
-  for (const response of admitted) await response.body?.cancel();
+  const admittedJobs = await Promise.all(
+    admitted.map((response) => json<JobResponse>(response)),
+  );
   assertEqual(
     await queryCount(
       "hosted_analysis_attempts",
@@ -785,6 +801,12 @@ try {
     3,
     "HTTP race created Workflows",
   );
+  const admittedTerminals = await Promise.all(
+    admittedJobs.map(({ job }) => waitForTerminal(baseUrl, tokenRace, job.id)),
+  );
+  for (const terminal of admittedTerminals) {
+    assertEqual(terminal.job.stage, "succeeded", "HTTP race terminal stage");
+  }
   console.log(
     `HOSTED_SPEND race=http_concurrent admitted=3 rejected=${raceSize - 3}`,
   );
@@ -828,7 +850,7 @@ try {
   if (process.env.KEEP_HOSTED_WORKFLOW_TEMP === "1") {
     console.error(`Hosted Workflow temp retained at ${temporaryRoot}`);
   } else {
-    await rm(temporaryRoot, { recursive: true, force: true });
+    await isolation.cleanup();
   }
 }
 
@@ -1400,6 +1422,33 @@ async function queryCount(table: string, predicate: string): Promise<number> {
   return d1Scalar(stdout);
 }
 
+async function queryRaceFailureReceipt(): Promise<unknown> {
+  const stdout = await runChecked([
+    "node", wranglerBin, "d1", "execute", databaseName,
+    "--local", "--config", webConfigPath, "--persist-to", persistRoot,
+    "--command", `
+      SELECT 'principal' AS row_type, principal_sub, NULL AS attempt_id,
+        cap_units, committed_units, NULL AS reserved_units, NULL AS state,
+        NULL AS idempotency_key
+      FROM hosted_principal_spend
+      WHERE principal_sub = '${principalRace}'
+      UNION ALL
+      SELECT 'reservation', principal_sub, attempt_id,
+        NULL, NULL, reserved_units, state, NULL
+      FROM hosted_spend_reservations
+      WHERE principal_sub = '${principalRace}'
+      UNION ALL
+      SELECT 'attempt', principal_sub, attempt_id,
+        NULL, NULL, spend_reserved_units, stage, idempotency_key
+      FROM hosted_analysis_attempts
+      WHERE principal_sub = '${principalRace}'
+      ORDER BY row_type, attempt_id
+    `,
+    "--json",
+  ], "query concurrent spend failure rows");
+  return JSON.parse(stdout);
+}
+
 async function queryCommittedUnits(principalSub: string): Promise<number> {
   const stdout = await runChecked([
     "node", wranglerBin, "d1", "execute", databaseName,
@@ -1545,17 +1594,6 @@ async function runCheckedOnce(
     throw new Error(`${label} failed (${exitCode}):\n${stdout}\n${stderr}`.slice(0, 20_000));
   }
   return stdout;
-}
-
-async function reservePort(): Promise<number> {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response("reserved"),
-  });
-  const port = server.port;
-  server.stop(true);
-  return port;
 }
 
 async function waitForWorker(
