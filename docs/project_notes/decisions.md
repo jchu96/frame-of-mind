@@ -309,6 +309,17 @@ remains Access-only until an explicit deployment configuration change.
 The accepted cookie, CSRF, secret-custody, membership, and principal-migration
 rules are canonical in [ADR 0019](../adr/0019-pluggable-auth-modes.md).
 
+## 2026-08-23 — Cloudflare Email Service is the primary magic-link transport
+
+The public Nuxt Worker sends Better Auth magic links through its `EMAIL`
+binding when `NUXT_BETTER_AUTH_MAILER_FROM` is configured, with the existing
+HTTPS mailer retained only as a no-binding fallback. Binding failures fail
+closed as `MAILER_UNAVAILABLE` and cross the hosted telemetry seam as one safe
+`E_` code only. This adds no Worker, D1, or retention boundary; the invite gate
+and Better Auth rate limit still run before any delivery attempt. The invite
+row also owns a conditional 60-second send reservation, while production caps
+the route at three requests per 15 minutes.
+
 ## 2026-08-23 — Hosted recording upload goes directly to Gemini
 
 ADR 0018 Amendment 2 is adopted. The public Worker reserves and caps a

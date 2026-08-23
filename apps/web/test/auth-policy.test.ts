@@ -97,9 +97,8 @@ describe("authentication policy", () => {
   });
 
   test("accepts only Cloudflare Access team origins", () => {
-    const teamDomain = ["team", "cloudflareaccess", "com"].join(".");
-    expect(normalizeTeamDomain(`https://${teamDomain}/`))
-      .toBe(`https://${teamDomain}`);
+    expect(normalizeTeamDomain("https://team.cloudflareaccess.com/"))
+      .toBe("https://team.cloudflareaccess.com");
     expect(() => normalizeTeamDomain("https://example.com")).toThrow();
   });
 });
@@ -112,3 +111,4 @@ test("Better Auth public paths are exact and reject traversal", () => {
     expect(isBetterAuthPublicPath(path)).toBe(true);
   }
 });
+

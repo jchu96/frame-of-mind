@@ -2,6 +2,36 @@
 
 ## 2026-08-23
 
+- Addressed PR #92's hygiene review after merging the Cloudflare Email Service
+  work from `origin/main`. Synthetic Access domains now use literal values with
+  an occurrence-scoped safe rule; split/join evasion is explicitly rejected.
+  The gate covers prefixed resource keys, dashboard/API/CLI account IDs,
+  broader Access audience keys, unquoted TOML tags, and multiline keyed values
+  with 43 positive/negative fixtures while preserving SHA, migration, UUID,
+  and placeholder cases. The deployment guide now has one binding-first email
+  section with HTTP only as the no-binding fallback, sender-unset fail-closed
+  behavior, and a restricted-binding canary. Focused auth/mailer tests passed
+  14/14, and the executable hosted smoke emitted the spend, Studio, and
+  Workflow contract PASS receipts.
+
+- Closed the Cloudflare Email Service adversarial review's three should-fix
+  findings before go-live. A present `EMAIL` binding with no sender now fails
+  closed as code-only `E_MAILER_FROM_UNSET`, and binding failures cannot fall
+  through to the configured HTTP transport. Migration 0009 adds a nullable
+  invite-row timestamp; the Better Auth before-hook reserves it with a
+  conditional update, production limits the route to three requests per 15
+  minutes, and the second request inside 60 seconds returns
+  `MAGIC_LINK_COOLDOWN` without another send. Focused mailer tests (6/6), web
+  typecheck, and the built-workerd hosted-auth contract passed; the latter
+  applied migrations `0001..0009` twice and emitted
+  `magic_link_cooldown=PASS seconds=60 mailer_calls=1`.
+
+- Added binding-first Better Auth magic-link delivery through Cloudflare Email
+  Service with explicit sender configuration, dual-part five-minute sign-in
+  copy, HTTP fallback, and code-only fail-closed telemetry. The hosted-auth
+  spike now proves the local `send_email` simulator and HTTP variants while
+  retaining the zero-delivery uninvited-email receipt.
+
 - Added the long-lived `bun run hosted:local` reviewer topology: isolated
   built Workers, fake GitHub/Gemini/mailer, seeded Better Auth invites when
   that adapter is present, and a generated Access-header proxy fallback on
@@ -1071,6 +1101,16 @@
   `/sign-in` and `/robots.txt` and `403` for every data and hosted route.
   Membership is the D1 invite table; `access-users.ts` is no longer
   authoritative. Hosted creation remains dark.
+- Email sign-in went live on 2026-08-23 after PR #91: the public Worker was
+  redeployed with a restricted `send_email` binding
+  (`allowed_destination_addresses` = the invited maintainer addresses),
+  `NUXT_BETTER_AUTH_MAILER_FROM` on the onboarded domain, and migration
+  `0009` applied remotely. The maintainer's live test succeeded: magic-link
+  request `200` → verify `302` → `/` `200` → `/api/session` `200`. The tail
+  surfaced two follow-ups dispatched immediately: Better Auth could not read
+  the client IP on Workers (`cf-connecting-ip`), so the per-route rate limit
+  was a single shared bucket; and `/api/_nuxt_icon/*` was not a public path,
+  so the sign-in page's icon request returned `403` before login.
 - Added the public-repository hygiene and hosted-operations closeout on
   2026-08-23. The gate now detects keyed Cloudflare resource IDs and Access
   audiences, concrete Access team domains, GitHub client IDs, and R2 bucket

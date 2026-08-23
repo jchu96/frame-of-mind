@@ -79,7 +79,8 @@ function isReviewedUxProof(path: string): boolean {
 }
 
 // These expressions intentionally overlap. A finding reports only its name and
-// location; matched content is never printed.
+// location; matched content is never printed. Never split a literal to evade;
+// add an isKnownSafe rule instead.
 const sensitivePatterns: SensitivePattern[] = [
   { name: "private-key", regex: /-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----/g },
   { name: "aws-access-key", regex: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g },
@@ -96,11 +97,15 @@ const sensitivePatterns: SensitivePattern[] = [
   },
   {
     name: "cloudflare-resource-id",
-    regex: /(?:\bCLOUDFLARE_ACCOUNT_ID\b|["'](?:database_id|account_id)["']|\b(?:database_id|account_id)\b)\s*[:=]\s*["']?[a-f0-9]{32}(?![a-f0-9])["']?/gi,
+    regex: /(?:^|[^A-Za-z0-9])(?:[A-Z0-9_]*_)?(?:ACCOUNT_ID|DATABASE_ID|D1_DATABASE_ID)["']?\s*[:=]\s*["']?[a-f0-9]{32}(?![a-f0-9])["']?/gi,
+  },
+  {
+    name: "cloudflare-resource-id",
+    regex: /(?:\bdash\.cloudflare\.com\/|\/client\/v4\/accounts\/|--account-id(?:\s+|=)["']?)[a-f0-9]{32}(?![a-f0-9])/gi,
   },
   {
     name: "cloudflare-access-aud",
-    regex: /(?:\bNUXT_CLOUDFLARE_ACCESS_AUD\b|["']aud["'])\s*[:=]\s*["']?[a-f0-9]{64}(?![a-f0-9])["']?/gi,
+    regex: /(?:^|[^A-Za-z0-9])(?:[A-Z0-9_]*_)?(?:CLOUDFLARE_ACCESS_AUD|AUD|AUDIENCE)["']?\s*[:=]\s*["']?[a-f0-9]{64}(?![a-f0-9])["']?/gi,
   },
   {
     name: "cloudflare-access-team-domain",
@@ -111,8 +116,12 @@ const sensitivePatterns: SensitivePattern[] = [
     regex: /\b(?:Iv1\.[A-Fa-f0-9]{16}|(?:Iv23|Ov23)[A-Za-z0-9]{16})\b/g,
   },
   {
+    name: "literal-splitting-evasion",
+    regex: /\[\s*["'][a-z0-9-]+["']\s*,\s*["']cloudflareaccess["']\s*,\s*["']com["']\s*\]\.join\(\s*["']\.["']\s*\)|["'][a-z0-9-]+\.["']\s*\+\s*["']cloudflareaccess\.com["']/gi,
+  },
+  {
     name: "r2-bucket-tag",
-    regex: /["']tag["']\s*[:=]\s*["']?[a-f0-9]{32}(?![a-f0-9])["']?/gi,
+    regex: /(?:^|[^A-Za-z0-9_])tag["']?\s*[:=]\s*["']?[a-f0-9]{32}(?![a-f0-9])["']?/gi,
   },
   { name: "stripe-secret-key", regex: /\bsk_(?:live|test)_[0-9A-Za-z]{16,}\b/g },
   { name: "jwt", regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g },
@@ -129,6 +138,23 @@ const sensitivePatterns: SensitivePattern[] = [
   {
     name: "transcript-like-line",
     regex: /\[\d{2}:\d{2}:\d{2}\]\s+[A-Za-z][^:\r\n]{0,60}:\s+\S[^\r\n]*|^\s*WEBVTT(?:\s.*)?$/g,
+  },
+];
+
+// The normal pass stays line-oriented for precise receipts. These patterns
+// cover keyed values deliberately wrapped onto the immediately following line.
+const sensitiveMultilinePatterns: SensitivePattern[] = [
+  {
+    name: "cloudflare-resource-id",
+    regex: /(?:^|[^A-Za-z0-9])(?:[A-Z0-9_]*_)?(?:ACCOUNT_ID|DATABASE_ID|D1_DATABASE_ID)["']?[\t ]*[:=][\t ]*\r?\n[\t ]*["']?[a-f0-9]{32}(?![a-f0-9])["']?/gim,
+  },
+  {
+    name: "cloudflare-access-aud",
+    regex: /(?:^|[^A-Za-z0-9])(?:[A-Z0-9_]*_)?(?:CLOUDFLARE_ACCESS_AUD|AUD|AUDIENCE)["']?[\t ]*[:=][\t ]*\r?\n[\t ]*["']?[a-f0-9]{64}(?![a-f0-9])["']?/gim,
+  },
+  {
+    name: "r2-bucket-tag",
+    regex: /(?:^|[^A-Za-z0-9_])tag["']?[\t ]*[:=][\t ]*\r?\n[\t ]*["']?[a-f0-9]{32}(?![a-f0-9])["']?/gim,
   },
 ];
 
@@ -232,6 +258,11 @@ function isKnownSafe(
       || occurrenceOverlapsFragment(line, start, end, knownSafeFragments);
   }
 
+  if (pattern === "cloudflare-access-team-domain") {
+    return /^(?:team|rehearsal|example|test|fixture)\.cloudflareaccess\.com\b/i
+      .test(occurrence);
+  }
+
   if (occurrenceOverlapsFragment(line, start, end, knownSafeFragments)) {
     return true;
   }
@@ -254,6 +285,31 @@ function scanLine(line: string, location: string, findings: Finding[]): void {
   }
 }
 
+function lineNumberAt(text: string, index: number): number {
+  let lineNumber = 1;
+  for (let cursor = 0; cursor < index; cursor += 1) {
+    if (text.charCodeAt(cursor) === 10) lineNumber += 1;
+  }
+  return lineNumber;
+}
+
+function scanMultilineKeyValues(
+  text: string,
+  locationForLine: (lineNumber: number) => string,
+  findings: Finding[],
+): void {
+  for (const pattern of sensitiveMultilinePatterns) {
+    pattern.regex.lastIndex = 0;
+    for (const match of text.matchAll(pattern.regex)) {
+      const keyOffset = Math.max(0, match[0].search(/[A-Za-z]/));
+      const lineNumber = lineNumberAt(text, match.index + keyOffset);
+      if (!isKnownSafe(match[0], pattern.name, 0, match[0].length)) {
+        findings.push({ location: locationForLine(lineNumber), pattern: pattern.name });
+      }
+    }
+  }
+}
+
 function isTranscriptDialogue(line: string): boolean {
   const trimmed = line.trim();
   return trimmed.length > 0
@@ -268,6 +324,7 @@ function scanText(
   findings: Finding[],
 ): number {
   const lines = text.split(/\r?\n/);
+  scanMultilineKeyValues(text, locationForLine, findings);
   for (const [index, line] of lines.entries()) {
     scanLine(line, locationForLine(index + 1), findings);
     if (!transcriptCuePattern.test(line)) continue;
@@ -300,10 +357,16 @@ function runSelfTest(): void {
   const azureSignature = ["s", "ig"].join("");
   const cloudflareResourceId = "e".repeat(32);
   const cloudflareAccessAud = "f".repeat(64);
-  const cloudflareAccessHost = ["fixture-team", "cloudflareaccess", "com"].join(".");
+  const syntheticAccessSuffix = "cloudflareaccess.com";
+  const cloudflareAccessHost = `fixture-team.${syntheticAccessSuffix}`;
   const githubOAuthClientId = ["Iv1", "0123456789abcdef"].join(".");
   const githubAppClientId = `Iv23${"A1".repeat(8)}`;
   const githubOAuthAppClientId = `Ov23${"B2".repeat(8)}`;
+  const splitAccessHost = `const host = [${[
+    "real-team",
+    "cloudflareaccess",
+    "com",
+  ].map((part) => JSON.stringify(part)).join(", ")}].join(${JSON.stringify(".")});`;
 
   const fixtures: Array<{
     name: string;
@@ -348,6 +411,48 @@ function runSelfTest(): void {
       expectedPatterns: ["cloudflare-resource-id"],
     },
     {
+      name: "cloudflare-prefixed-account-env-id",
+      path: "fixture.env",
+      text: `CF_ACCOUNT_ID=${cloudflareResourceId}`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-prefixed-d1-database-env-id",
+      path: "fixture.env",
+      text: `CLOUDFLARE_D1_DATABASE_ID=${cloudflareResourceId}`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-nuxt-prefixed-account-env-id",
+      path: "fixture.env",
+      text: `NUXT_CLOUDFLARE_ACCOUNT_ID=${cloudflareResourceId}`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-dashboard-account-id",
+      path: "fixture.md",
+      text: `https://dash.cloudflare.com/${cloudflareResourceId}/workers`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-api-account-id",
+      path: "fixture.md",
+      text: `https://api.cloudflare.com/client/v4/accounts/${cloudflareResourceId}/d1`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-cli-account-id",
+      path: "fixture.sh",
+      text: `wrangler deploy --account-id ${cloudflareResourceId}`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
+      name: "cloudflare-multiline-database-id",
+      path: "fixture.yaml",
+      text: `database_id:\n  "${cloudflareResourceId}"`,
+      expectedPatterns: ["cloudflare-resource-id"],
+    },
+    {
       name: "cloudflare-resource-id-not-git-sha",
       path: "fixture.json",
       text: `{"database_id":"${"e".repeat(40)}"}`,
@@ -366,6 +471,30 @@ function runSelfTest(): void {
       expectedPatterns: ["cloudflare-access-aud"],
     },
     {
+      name: "cloudflare-access-unprefixed-env-aud",
+      path: "fixture.env",
+      text: `CLOUDFLARE_ACCESS_AUD=${cloudflareAccessAud}`,
+      expectedPatterns: ["cloudflare-access-aud"],
+    },
+    {
+      name: "cloudflare-access-yaml-aud",
+      path: "fixture.yaml",
+      text: `aud: ${cloudflareAccessAud}`,
+      expectedPatterns: ["cloudflare-access-aud"],
+    },
+    {
+      name: "cloudflare-access-toml-audience",
+      path: "fixture.toml",
+      text: `audience = "${cloudflareAccessAud}"`,
+      expectedPatterns: ["cloudflare-access-aud"],
+    },
+    {
+      name: "cloudflare-access-multiline-audience",
+      path: "fixture.yaml",
+      text: `audience:\n  "${cloudflareAccessAud}"`,
+      expectedPatterns: ["cloudflare-access-aud"],
+    },
+    {
       name: "sha-256-checksum-without-aud-key",
       path: "fixture.md",
       text: `SHA-256: ${cloudflareAccessAud}`,
@@ -379,9 +508,21 @@ function runSelfTest(): void {
     },
     {
       name: "cloudflare-access-placeholder-domain",
-      path: "wrangler.jsonc.example",
+      path: "fixture.jsonc",
       text: "TEAM_DOMAIN=https://REPLACE_WITH_TEAM.cloudflareaccess.com",
       expectedPatterns: [],
+    },
+    {
+      name: "cloudflare-access-synthetic-literal-domains",
+      path: "fixture.ts",
+      text: "https://team.cloudflareaccess.com https://rehearsal.cloudflareaccess.com",
+      expectedPatterns: [],
+    },
+    {
+      name: "cloudflare-access-split-literal-evasion",
+      path: "fixture.ts",
+      text: splitAccessHost,
+      expectedPatterns: ["literal-splitting-evasion"],
     },
     {
       name: "github-oauth-client-id",
@@ -403,7 +544,7 @@ function runSelfTest(): void {
     },
     {
       name: "github-client-id-placeholder",
-      path: ".env.example",
+      path: "fixture.env",
       text: "GITHUB_CLIENT_ID=REPLACE_WITH_GITHUB_CLIENT_ID",
       expectedPatterns: [],
     },
@@ -415,8 +556,32 @@ function runSelfTest(): void {
     },
     {
       name: "r2-bucket-tag-placeholder",
-      path: "wrangler.jsonc.example",
+      path: "fixture.jsonc",
       text: "{\"tag\":\"REPLACE_WITH_BUCKET_TAG\"}",
+      expectedPatterns: [],
+    },
+    {
+      name: "r2-bucket-toml-tag",
+      path: "fixture.toml",
+      text: `tag = "${cloudflareResourceId}"`,
+      expectedPatterns: ["r2-bucket-tag"],
+    },
+    {
+      name: "r2-bucket-multiline-tag",
+      path: "fixture.yaml",
+      text: `tag:\n  "${cloudflareResourceId}"`,
+      expectedPatterns: ["r2-bucket-tag"],
+    },
+    {
+      name: "migration-name-is-safe",
+      path: "fixture.md",
+      text: "Migration 0009_magic_link_cooldown.sql",
+      expectedPatterns: [],
+    },
+    {
+      name: "adr-uuid-is-safe",
+      path: "fixture.md",
+      text: "Decision receipt 123e4567-e89b-12d3-a456-426614174000",
       expectedPatterns: [],
     },
     {

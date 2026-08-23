@@ -562,7 +562,12 @@ bun run test:hosted-workflows-http:better-auth
 Better Auth binds `ba:<userId>` once in middleware; email is display and
 membership data only. In Better Auth modes, anonymous browser pages redirect
 to `/sign-in`, where an invited user can continue with GitHub or request a
-magic link when email delivery is configured; API requests remain JSON 403s.
+magic link when email delivery is configured. Magic-link delivery prefers the
+public Worker's `EMAIL` binding with an explicit onboarded sender, retains the
+HTTP mailer as a no-binding fallback, and exposes only `MAILER_UNAVAILABLE` on
+delivery failure. Production also limits the route to three requests per 15
+minutes and atomically reserves a 60-second cooldown on each invited email;
+API requests remain JSON 403s.
 See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
 and [accepted ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
 

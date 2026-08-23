@@ -14,7 +14,7 @@ const repositoryRoot = resolve(import.meta.dir, "..");
 const isolation = await createE2EIsolation("hosted-release");
 const temporaryRoot = isolation.root;
 const previousOutput = join(temporaryRoot, "previous-output");
-const migrationDirectory = join(temporaryRoot, "migrations-0001-through-0008");
+const migrationDirectory = join(temporaryRoot, "migrations-0001-through-0009");
 const persistRoot = isolation.persistRoot;
 const wranglerBin = resolve(repositoryRoot, "apps/web/node_modules/wrangler/bin/wrangler.js");
 const databaseName = isolation.databaseName;
@@ -115,8 +115,7 @@ try {
     services: undefined,
     vars: {
       NUXT_AUTH_MODE: "cloudflare-access",
-      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN:
-        `https://${["rehearsal", "cloudflareaccess", "com"].join(".")}`,
+      NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: "https://rehearsal.cloudflareaccess.com",
       NUXT_CLOUDFLARE_ACCESS_AUD: "rehearsal-audience",
     },
   }, null, 2));
@@ -143,6 +142,7 @@ try {
     "0006_better_auth.sql",
     "0007_hosted_direct_media.sql",
     "0008_hosted_retention_evidence.sql",
+    "0009_magic_link_cooldown.sql",
   ]) {
     await cp(
       resolve(repositoryRoot, "apps/web/db/migrations", name),
@@ -161,15 +161,15 @@ try {
     "node", wranglerBin, "d1", "migrations", "apply", databaseName,
     "--local", "--config", migrationConfig, "--persist-to", persistRoot,
   ];
-  const firstMigration = await runChecked(migrationCommand, "D1 0001 through 0008 migration");
-  for (const name of ["0001_initial.sql", "0002_video_only_projection.sql", "0003_principal_scope.sql", "0004_hosted_workflows.sql", "0005_hosted_spend_telemetry.sql", "0006_better_auth.sql", "0007_hosted_direct_media.sql", "0008_hosted_retention_evidence.sql"]) {
+  const firstMigration = await runChecked(migrationCommand, "D1 0001 through 0009 migration");
+  for (const name of ["0001_initial.sql", "0002_video_only_projection.sql", "0003_principal_scope.sql", "0004_hosted_workflows.sql", "0005_hosted_spend_telemetry.sql", "0006_better_auth.sql", "0007_hosted_direct_media.sql", "0008_hosted_retention_evidence.sql", "0009_magic_link_cooldown.sql"]) {
     if (!firstMigration.includes(name)) throw new Error(`D1 rehearsal omitted ${name}.`);
   }
   const replayMigration = await runChecked(migrationCommand, "D1 migration replay");
   if (!/no migrations to apply/i.test(replayMigration)) {
     throw new Error("D1 migration replay did not report an idempotent no-op.");
   }
-  console.log("HOSTED_RELEASE migrations=PASS range=0001..0008 replay=idempotent");
+  console.log("HOSTED_RELEASE migrations=PASS range=0001..0009 replay=idempotent");
 
   await runChecked(
     [
