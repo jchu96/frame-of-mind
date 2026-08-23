@@ -3,7 +3,7 @@
 **Track ID:** `hosted-studio_20260822`
 **Type:** feature
 **Created:** 2026-08-22
-**Status:** Proposed — pending adversarial plan review
+**Status:** Active — accepted Tier A implementation
 
 ## Summary
 
@@ -41,15 +41,9 @@ begins.
 Current platform facts used by this proposal are linked rather than assumed:
 
 - [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
-  set 128 MB per isolate, not per request, and make request-body size an account
-  plan limit: Free and Pro currently allow 100 MB. Hosted parts are fixed at
-  8 MiB. Before deployment an operator must check the zone/account plan and any
-  lower upload ceiling in the dashboard because Wrangler cannot read that
-  setting; 8 MiB remains below the lowest documented tier.
-- [Workers Streams](https://developers.cloudflare.com/workers/runtime-apis/streams/)
-  documents streaming as the way to avoid buffering inside the isolate, but it
-  does not prove Nitro/H3 preserves the request stream. Task 2.0 measures that
-  exact `cloudflare_module` path before the upload contract can proceed.
+  set 128 MB per isolate, not per request. Amendment 2 removes recording bytes
+  from the Worker request path, so upload size is bounded by the declared
+  application ceiling and Gemini rather than Worker request-body capacity.
 - [Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/)
   allow unlimited wall time per step subject to CPU limits and permit up to
   10,000 retries per step. The current
@@ -108,7 +102,7 @@ deleted.
 
 The composer preserves the local readiness model: Recording and Intent are
 required; Context is an explicit optional choice. It replaces local filesystem
-staging with a Worker-proxied resumable upload.
+staging with a Worker-minted, browser-to-Gemini resumable upload.
 
 1. **Intent** — stable recipe, optional focus, model, and privacy/cost receipt.
 2. **Context** — explicit video-only choice or one exact provider connection.
@@ -212,30 +206,20 @@ future handler can call an unscoped store. One D1 database per user is rejected
 for Tier A because it complicates migrations and operations without replacing
 the need for application authorization.
 
-### Architectural Decision 4 - Proxy Gemini Resumable Upload Through The Worker
+### Architectural Decision 4 - Mint Direct Gemini Upload Capabilities
 
 **Decision (revised by ADR 0018 Amendment 2).** The Worker opens a Gemini
 resumable session with the secret key and returns only the write-only session
 URL; the browser uploads the recording directly to Google and the Worker
-never proxies bytes. The original text below describes the superseded
-Worker-proxied design: the browser sends raw-body parts of exactly 8 MiB except for the
-final shorter part to `POST /api/hosted/media/:id/parts`. Metadata is carried
-in bounded `Content-Length`, upload-offset, part-number, and part-digest
-headers; multipart encoding is forbidden. The Worker validates the Access
-principal and headers, then streams `request.body` into a Gemini resumable
-session opened with the Worker-secret `GEMINI_API_KEY`.
+never proxies bytes. The superseded Worker-proxied `/parts` route, fixed 4/8
+MiB constants, and streaming oracle are retired. The browser sends sequential,
+provider-aligned parts directly to the write-only Gemini session and queries
+its accepted offset after reload. The public Worker sees declarations and
+receipts, never recording bytes.
 
-On every part start or retry, the Worker queries Gemini's resumable session for
-its provider-accepted offset and forwards only the remaining suffix from that
-offset. D1 receipts record completed parts but never authorize an overlapping
-replay. Task 2.0 must first prove the exact Nitro/H3 path does not call
-`readBody()` or otherwise buffer, using two concurrent synthetic uploads of at
-least the hosted part size. Failure keeps the route dark and changes this
-contract—smaller parts or private R2 staging require an ADR amendment before
-Tasks 2.1+ proceed.
-
-The Gemini resumable-session URL is a bearer capability. It is never returned
-to browser code or stored in plaintext. In Tier A the Worker seals it for short
+The Gemini resumable-session URL is a bearer capability. It is returned only
+to its owning browser and stored only in that tab's session-scoped draft. In
+Tier A the Worker seals it for short
 term D1 storage using an AES-GCM key derived from `GEMINI_API_KEY` with
 domain-separated HKDF information; rotating that secret invalidates active
 uploads, which fail closed and restart. Tier B provider-token encryption uses a
@@ -246,14 +230,12 @@ session aborting, attempts deletion of each exact Gemini file, clears only the
 corresponding encrypted session ciphertext, rotates `GEMINI_API_KEY`, and then
 reenables uploads. An unclean abort remains fail-closed and operator-visible.
 
-**Rationale.** The browser cannot receive the Gemini API key, while streaming
-through the Worker keeps memory bounded and avoids mandatory R2 storage.
+**Rationale.** The browser cannot receive the Gemini API key. Direct transfer
+removes recording size from Worker isolate memory and avoids mandatory R2.
 
-**Rejected alternative.** Direct browser-to-Gemini upload is rejected because
-starting the resumable session requires the API key and returning a provider
-capability would widen the browser boundary. Mandatory browser-to-R2 staging is
-rejected because ephemeral analysis does not require durable recording
-retention.
+**Rejected alternative.** Worker-proxied parts are rejected because workerd
+materialized request bodies under backpressure. Mandatory browser-to-R2
+staging is rejected because ephemeral analysis needs no second custody.
 
 This hosted browser → Worker → Gemini decision supersedes the local Studio
 Phase B browser → R2 sketch. It does not change local
@@ -270,7 +252,7 @@ the main UI thread receives progress and the final digest only.
 small synthetic fixtures. After Gemini finalizes the file, the server
 normalizes the provider's `sha256Hash` through the existing live-proven
 encoding matcher and compares it with the client receipt. A mismatch fails
-closed with sanitized code `media_digest_mismatch`; no analysis Workflow may
+closed with sanitized code `media_seal_mismatch`; no analysis Workflow may
 continue.
 
 **Rationale.** The end-to-end digest proves the finalized Gemini file matches
@@ -472,24 +454,20 @@ Pagination cursors are principal-bound. Foreign keys and indexes include the
 principal where a child table can otherwise cross ownership. There is no admin
 or migration query in normal runtime code that omits principal scope.
 
-### FR-04 - Worker-Proxied Media Upload
+### FR-04 - Direct Resumable Media Upload
 
-- `POST /api/hosted/media` creates an opaque principal-owned media session.
-- `POST /api/hosted/media/:id/parts` accepts one raw-body 8 MiB part (or the
-  shorter final part) with bounded `Content-Length`, upload-offset,
-  part-number, and part-digest headers; it never accepts multipart bytes.
-- Every start/retry queries Gemini's accepted resumable offset and forwards
-  only the unaccepted suffix; D1 never authorizes overlapping replay.
+- `POST /api/hosted/media` atomically reserves an opaque principal-owned row,
+  enforces session cap/size/TTL, opens Gemini with the Worker secret, and
+  returns only the media ID, write-only URL, aligned part hint, and expiry.
 - The Worker never carries recording bytes: the browser uploads directly to a
   Worker-minted, write-only Gemini resumable session (ADR 0018 Amendment 2);
   seal requires `files.get` size and SHA-256 to equal the declared values.
-- The browser maintains bounded upload concurrency and reconciles from the
-  server receipt after refresh.
-- The provider session capability is encrypted and never returned or logged.
+- The browser sends sequential provider-aligned parts, persists its confirmed
+  offset per tab, and queries Gemini after refresh before sending more bytes.
+- `navigator.locks` prevents two tabs from concurrently driving one session.
+- The provider capability is encrypted in D1 and never logged.
 - Default uploads do not create an R2 object.
-- Task 2.0 is a hard stop/go measurement. If Nitro/H3 buffers or two concurrent
-  parts exceed the isolate budget, this part contract changes before Tasks
-  2.1+; no implementation may wave the spike through.
+- Cancel and the principal-scoped janitor delete abandoned provider state.
 
 ### FR-05 - End-To-End Media Integrity
 
@@ -498,7 +476,7 @@ The hash Web Worker reads deterministic `Blob.slice()` ranges, feeds them to
 lowercase digest. Small-fixture tests compare that output with
 `SubtleCrypto.digest`. Finalization normalizes Gemini's `sha256Hash` and
 requires equality before marking media sealed. Mismatch records
-`media_digest_mismatch`, deletes the exact remote file when possible, and
+`media_seal_mismatch`, deletes the exact remote file when possible, and
 prevents Workflow execution.
 
 ### FR-06 - Context And Connections
@@ -608,9 +586,9 @@ Provisional hosted endpoints:
 | `GET` | `/api/hosted/recipes` | Return bounded built-in recipe receipts |
 | `POST` | `/api/hosted/media` | Create a principal-owned resumable upload session |
 | `GET` | `/api/hosted/media/:id` | Read one principal-owned media receipt |
-| `POST` | `/api/hosted/media/:id/parts` | Stream one bounded ordered part to Gemini |
-| `POST` | `/api/hosted/media/:id/complete` | Cross-check digest and seal the Gemini file |
+| `POST` | `/api/hosted/media/:id/seal` | Cross-check provider size/digest and seal the file |
 | `DELETE` | `/api/hosted/media/:id` | Abort and clean one owned media session |
+| `POST` | `/api/hosted/media/janitor` | Delete expired unsealed sessions for the principal |
 | `GET` | `/api/hosted/catalog/:provider` | List bounded context identities for the exact connection |
 | `GET` | `/api/hosted/jobs` | List principal-scoped job summaries |
 | `POST` | `/api/hosted/jobs` | Reserve spend and create one job/Workflow attempt |
@@ -818,11 +796,11 @@ enter these operational rows.
 | Missing, invalid, or wrong-audience Access JWT | Reject before repository or body access |
 | Service token reaches a browser-only route | Reject even when the Service Auth assertion is valid |
 | Browser refresh during upload | Query Gemini offset, rehydrate owned receipt, and resume only the unaccepted suffix |
-| D1/Gemini upload offsets disagree | Gemini offset is transfer authority; never overlap replay; repair D1 only after completed-part proof |
-| Duplicate or conflicting chunk | Replay exact completed receipt or fail closed; never double-forward |
-| Raw part exceeds 8 MiB or account upload ceiling | Return bounded 413 guidance; no provider state advance |
+| Browser draft/Gemini upload offsets disagree | Gemini offset is transfer authority; resume from it and never overlap replay |
+| Duplicate tab drives one session | `navigator.locks` admits one browser driver; the other fails visibly |
+| Declared size exceeds configured ceiling | Reject before creating a provider session |
 | Hash worker stops | Preserve upload receipt, require a fresh complete digest pass before seal |
-| Client/Gemini digest mismatch | Record `media_digest_mismatch`, clean remote file, block Workflow |
+| Client/Gemini digest mismatch | Record `media_seal_mismatch`, clean remote file, block Workflow |
 | Gemini key rotates during upload | Active encrypted session becomes unreadable; clean/restart explicitly |
 | Workflow provider step restarts | Explicit retries.limit 0; check receipt before call; never automatic second generate |
 | Gemini succeeds but D1 receipt fails | Throw NonRetryableError, mark attempt indeterminate, require new user-linked Workflow |
@@ -906,12 +884,12 @@ adapters behind the same domain and principal-scoped repository contracts.
       list, detail, event, media, retry, and projection tests fail closed.
 - [ ] Existing single-tenant D1 rows are assigned to the first principal before
       hosted routes enable, and no sentinel/default-owned row remains.
-- [ ] Raw browser parts are 8 MiB or the shorter final part, query Gemini offset
-      before forwarding, pass the two-concurrent-upload streaming spike, and
-      never expose the Gemini key or resumable-session URL.
-- [ ] `hash-wasm` computes the complete file digest with bounded memory in a
+- [x] The Worker atomically caps pending sessions before Gemini; real Chromium
+      uploads directly without a key, reloads, queries provider offset,
+      resumes, and excludes a second tab from the same session.
+- [x] `hash-wasm` computes the complete file digest with bounded memory in a
       Web Worker; WebCrypto verifies small fixtures; Gemini digest mismatch
-      blocks analysis with `media_digest_mismatch`.
+      blocks analysis with `media_seal_mismatch`.
 - [ ] Ephemeral mode stores no complete recording in R2; retained mode is
       explicit, principal-owned, lifecycle-bound, visible, and deletable.
 - [ ] Hosted screenshots use client canvas or explicitly adopted Stream
@@ -956,7 +934,6 @@ adapters behind the same domain and principal-scoped repository contracts.
 ## Out Of Scope
 
 - Changing or removing the local Bun/SQLite Studio executor
-- Direct browser-to-Gemini upload
 - Mandatory R2 recording storage
 - ffmpeg or server-side screenshot extraction in Workers
 - Collaborative editing, shared annotations, or ownership transfer
@@ -981,11 +958,8 @@ adapters behind the same domain and principal-scoped repository contracts.
   boundaries, not Workflow state.
 - R2 lifecycle rules are a deletion backstop, not immediate cleanup evidence;
   application deletion still records its exact result.
-- Wrangler cannot report the zone's configured request-body ceiling. Phase 6
-  records a dashboard/operator receipt for the active plan before route
-  enablement even though the fixed 8 MiB part is below every documented tier.
-- Task 2.0 is the only resolver for Nitro/H3 upload streaming; Task 3.0 is the
-  only resolver for same-module versus sibling-Worker Workflow topology.
+- Task 2.0 records why Worker proxying was retired; Task 3.0 is the resolver
+  for same-module versus sibling-Worker Workflow topology.
 - The marker gate is a release instrument. Every new hosted route or adapter
   family must add a stable required marker, and every local-only family must
   retain a forbidden marker.

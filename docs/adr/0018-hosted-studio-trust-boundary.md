@@ -1,6 +1,6 @@
 # ADR 0018: Host Studio creation behind principal-scoped Cloudflare execution
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-22
 
 ## Invariant
@@ -134,7 +134,7 @@ retention. R2 is opt-in for retained media only.
 Rejected because local process state and request lifetime are not durable
 hosted execution boundaries. The port receives a Workflows adapter instead.
 
-## Amendment 2 (proposed 2026-08-23, not yet adopted): browser → Gemini direct upload
+## Amendment 2 (adopted 2026-08-23): browser → Gemini direct upload
 
 **Supersedes Amendment 1.** Amendment 1 (4 MiB proxied parts, PR #65) is
 withdrawn; the Worker leaves the recording byte path entirely.
@@ -149,11 +149,11 @@ to that one file (it cannot create, list, or read files); the session has a
 provider-side TTL and supports offset query/resume after a client restart;
 `files.get` returns `sizeBytes` and `sha256Hash` of the uploaded bytes.
 
-**Decision (proposed).**
+**Decision.**
 - `POST /api/hosted/media` creates a principal-owned media session with a
   declared size, declared SHA-256, and MIME type, opens the Gemini resumable
-  session server-side, stores the Gemini file name, and returns the session
-  URL to the browser. The Worker holds at most **N open sessions per
+  session server-side, and returns the session URL to the browser. Gemini does
+  not expose a File name until finalize. The Worker holds at most **N open sessions per
   principal** (default 2) — enforced in D1 before the Gemini call — and
   refuses a new session while the cap is reached.
 - The browser uploads directly to the session URL. Part size is a browser
@@ -161,9 +161,15 @@ provider-side TTL and supports offset query/resume after a client restart;
 - `POST /api/hosted/media/:id/seal` asks the Worker to call `files.get` and
   **requires** `sizeBytes` and `sha256Hash` to equal the declared values;
   a missing hash fails closed. Only then is the sealed-media receipt written
-  and `ensure_gemini_file` allowed to proceed. A mismatched or abandoned
-  session is deleted from Gemini by the Worker (and by the Phase 5 janitor
-  for expired sessions).
+  and `ensure_gemini_file` allowed to proceed. A mismatched finalized session
+  is deleted from Gemini by the Worker (and by the Phase 5 janitor for expired
+  sessions). Before finalize, there is no File identity or documented
+  resumable-session revoke: cancel/expiry marks D1 `abandoned`, refuses
+  subsequent seal, and relies on the provider's bounded session TTL.
+- `GET /api/hosted/media?state=open` reissues open-session capabilities only to
+  their owning authenticated principal so a new tab can offer explicit Resume
+  or Discard. `pagehide` and hidden visibility transitions send a best-effort
+  keepalive DELETE; recovery remains authoritative when that request is lost.
 - FR-04 and AD-4 in the hosted spec are rewritten to match; the 4 MiB /
   8 MiB part constants, the wrapper-entry upload path, and the proxy
   streaming oracle are retired (the wrapper entry remains only as the
@@ -179,8 +185,7 @@ Workflows-Worker / Nuxt-Worker secret and is never sent to the browser.
 by part size × concurrency and measured to materialize in isolate memory.
 Private R2 staging: adds a second custody of ephemeral recordings.
 
-**Adoption.** Takes effect when the maintainer merges this amendment; Phase 2
-is then re-planned as: 2.1 media session + cap, 2.2 browser direct upload +
-resume, 2.3 seal with size+digest verification, 2.4 abandoned-session
-cleanup — each with built-Worker contracts using a fake Files API.
-
+**Adoption.** Adopted for Phase 2 on 2026-08-23. Phase 2 is re-planned as:
+2.1 media session + cap, 2.2 browser direct upload + resume, 2.3 seal with
+size+digest verification, and 2.4 abandoned-session cleanup. The built-Worker
+contract uses a fake Files API and real Chromium.

@@ -27,6 +27,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260814.1",
     "@iconify-json/lucide": "1.2.123",
+    "@iconify-json/simple-icons": "^1.2.93",
     "@types/bun": "1.3.14",
     "miniflare": "4.20260730.0",
     "tailwindcss": "4.3.3",

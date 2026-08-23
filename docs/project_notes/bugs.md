@@ -487,3 +487,15 @@
 - Follow-up: give each fixture request a bounded abort/deadline and preserve
   Wrangler/workerd output on timeout so a future failure identifies the exact
   dispatch rather than hanging the whole repository gate.
+
+## 2026-08-23 — Hosted sign-in page was protected by its own session gate
+
+- Symptom: `/sign-in` in stacked mode rendered the Better Auth session error
+  instead of a login page.
+- Cause: the global middleware exempted only `/api/auth/**`, and no Nuxt
+  sign-in route existed because the original spike authenticated through API
+  calls.
+- Fix: add the Nuxt sign-in page, narrowly exempt auth/bootstrap assets, and
+  redirect anonymous HTML pages while preserving JSON 403 responses for APIs.
+- Prevention: the built-workerd browser spec runs in Better Auth and stacked
+  modes and fails when the `/sign-in` exemption is removed.

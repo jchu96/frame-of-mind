@@ -1403,6 +1403,7 @@ describe("retained Gemini file reuse", () => {
   const liveSha256Hash = Buffer.from(localSha256Hex, "utf8").toString("base64");
   const retainedFile: GeminiFile = {
     ...activeFile,
+    sizeBytes: "1234",
     sha256Hash: liveSha256Hash,
   };
 
@@ -1411,38 +1412,41 @@ describe("retained Gemini file reuse", () => {
       getFile: async () => retainedFile,
     });
 
-    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
       .resolves.toMatchObject({ name: "files/public-test", uri: activeFile.uri });
   });
 
   it("resolves when the provider reports the documented raw-bytes base64 digest", async () => {
     const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
       getFile: async () => ({
-        ...activeFile,
+        ...retainedFile,
         sha256Hash: Buffer.from(localSha256Hex, "hex").toString("base64"),
       }),
     });
 
-    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
       .resolves.toMatchObject({ name: "files/public-test" });
   });
 
   it("resolves when the provider reports a plain hex digest", async () => {
     const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
-      getFile: async () => ({ ...activeFile, sha256Hash: localSha256Hex }),
+      getFile: async () => ({ ...retainedFile, sha256Hash: localSha256Hex }),
     });
 
-    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
       .resolves.toMatchObject({ name: "files/public-test" });
   });
 
-  it("resolves when the provider omits a digest to compare", async () => {
+  it("fails closed when the provider omits the sealed digest", async () => {
     const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
       getFile: async () => activeFile,
     });
 
-    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
-      .resolves.toMatchObject({ name: "files/public-test" });
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
+      .rejects.toMatchObject({
+        name: "GeminiFileError",
+        telemetryCode: "media_seal_mismatch",
+      });
   });
 
   it("rejects a retained file whose digest does not match the local recording", async () => {
@@ -1453,11 +1457,23 @@ describe("retained Gemini file reuse", () => {
       }),
     });
 
-    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
       .rejects.toMatchObject({
         name: "GeminiFileError",
         uploadCleanup: "not_obtained",
-        message: expect.stringContaining("does not match the local recording digest"),
+        telemetryCode: "media_seal_mismatch",
+      });
+  });
+
+  it("fails closed when the provider size differs from the sealed receipt", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      getFile: async () => ({ ...retainedFile, sizeBytes: "1235" }),
+    });
+
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
+      .rejects.toMatchObject({
+        name: "GeminiFileError",
+        telemetryCode: "media_seal_mismatch",
       });
   });
 
@@ -1466,7 +1482,7 @@ describe("retained Gemini file reuse", () => {
       getFile: async () => ({ ...retainedFile, state: FileState.PROCESSING }),
     });
 
-    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
       .rejects.toMatchObject({ name: "GeminiFileError", uploadCleanup: "not_obtained" });
   });
 
@@ -1482,7 +1498,7 @@ describe("retained Gemini file reuse", () => {
       },
     });
 
-    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
       .rejects.toMatchObject({ name: "GeminiFileError", uploadCleanup: "not_obtained" });
     expect(deletions).toBe(0);
   });
@@ -1492,7 +1508,7 @@ describe("retained Gemini file reuse", () => {
       getFile: async () => ({ ...retainedFile, name: "files/other-file" }),
     });
 
-    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex))
+    await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
       .rejects.toMatchObject({ name: "GeminiFileError", uploadCleanup: "not_obtained" });
   });
 });

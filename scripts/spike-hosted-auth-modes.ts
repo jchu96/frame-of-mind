@@ -27,6 +27,7 @@ const profiles = new Map([
   ["user-a@example.test", { id: "1001", login: "fixture-a", name: "Fixture A" }],
   ["user-b@example.test", { id: "1002", login: "fixture-b", name: "Fixture B" }],
   ["stacked@example.test", { id: "1003", login: "fixture-stacked", name: "Fixture Stacked" }],
+  ["browser@example.test", { id: "1004", login: "fixture-browser", name: "Fixture Browser" }],
   ["unknown@example.test", { id: "1999", login: "fixture-unknown", name: "Fixture Unknown" }],
 ]);
 const magicLinks = new Map<string, string>();
@@ -45,7 +46,7 @@ const fixtureServer = Bun.serve({
     }
     if (url.pathname === "/login/oauth/authorize") {
       const redirect = new URL(url.searchParams.get("redirect_uri") || "");
-      redirect.searchParams.set("code", `fixture:${url.searchParams.get("login_hint") || "unknown@example.test"}`);
+      redirect.searchParams.set("code", `fixture:${url.searchParams.get("login_hint") || "browser@example.test"}`);
       redirect.searchParams.set("state", url.searchParams.get("state") || "");
       return Response.redirect(redirect, 302);
     }
@@ -104,6 +105,7 @@ try {
     + "('user-a@example.test','2026-08-23T00:00:00.000Z'),"
     + "('user-b@example.test','2026-08-23T00:00:00.000Z'),"
     + "('magic@example.test','2026-08-23T00:00:00.000Z'),"
+    + "('browser@example.test','2026-08-23T00:00:00.000Z'),"
     + "('stacked@example.test','2026-08-23T00:00:00.000Z')",
     configPath,
   );
@@ -111,6 +113,8 @@ try {
 
   ({ worker, output: workerOutput } = await startWorker(configPath, workerPort));
   await waitForWorker(origin, worker, 403);
+  await runHostedSignInSpec(origin, "better-auth");
+  console.log("HOSTED_AUTH sign_in_page=PASS mode=better-auth");
   const browser = await chromium.launch({ headless: true });
   try {
     const cookieA = await githubLogin(browser, origin, "user-a@example.test");
@@ -161,8 +165,11 @@ try {
   await waitForWorker(stackedOrigin, worker, 403);
   const accessSub = "stacked-access-subject";
   const accessToken = await signAccessToken(keys.privateKey, accessSub);
+  const browserAccessToken = await signAccessToken(keys.privateKey, "stacked-browser-access-subject");
   const mismatchedAccessToken = await signAccessToken(keys.privateKey, "different-stacked-access-subject");
   await expectStatus(fetch(`${stackedOrigin}/api/auth/sign-in/social`, { method: "POST" }), 403, "stacked auth without Access");
+  await runHostedSignInSpec(stackedOrigin, "cloudflare-access+better-auth", browserAccessToken);
+  console.log("HOSTED_AUTH sign_in_page=PASS mode=cloudflare-access+better-auth");
   const stackedBrowser = await chromium.launch({ headless: true });
   try {
     const cookie = await githubLogin(stackedBrowser, stackedOrigin, "stacked@example.test", accessToken);
@@ -297,7 +304,9 @@ async function githubLogin(
     await expectSession(origin, cookie, email, accessToken ? "cloudflare-access+better-auth" : "better-auth", accessToken);
     return cookie;
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -326,7 +335,9 @@ async function magicLinkLogin(
     if (!cookie) throw new Error("Magic-link fixture did not issue a session.");
     return cookie;
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -363,7 +374,9 @@ async function expectUninvitedMagicLinkDenied(
       throw new Error(`Uninvited magic-link request wrote verification state: ${verificationRows}`);
     }
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -405,7 +418,9 @@ async function expectStackedRebindDenied(
     const sessionCookie = (await context.cookies(origin)).find((cookie) => cookie.name.includes("session_token"));
     if (sessionCookie) throw new Error("Stacked identity mismatch received a session cookie.");
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -432,7 +447,9 @@ async function expectUnknownLoginDenied(
     }
     if (await cookieHeader(context, origin)) throw new Error("Unknown email received a session cookie.");
   } finally {
-    await context.close();
+    // A context that already went away must not turn a passing (or failing)
+    // probe into an unrelated "browser has been closed" error.
+    await context.close().catch(() => undefined);
   }
 }
 
@@ -461,7 +478,12 @@ async function expectSession(
   const session = await json<Record<string, unknown>>(
     await expectStatus(fetch(`${origin}/api/session`, { headers }), 200, `${mode} display session`),
   );
-  if (session.email !== email || session.authMode !== mode || "principal" in session || "sub" in session) {
+  if (
+    session.email !== email
+    || session.authMode !== mode
+    || session.principal !== true
+    || "sub" in session
+  ) {
     throw new Error(`${mode} display session violated the principal seam.`);
   }
 }
@@ -563,6 +585,34 @@ async function runChecked(command: string[], label: string): Promise<string> {
   ]);
   if (code !== 0) throw new Error(`${label} failed (${code}):\n${stdout}\n${stderr}`);
   return `${stdout}\n${stderr}`;
+}
+
+async function runHostedSignInSpec(
+  origin: string,
+  mode: "better-auth" | "cloudflare-access+better-auth",
+  accessToken?: string,
+): Promise<void> {
+  const environment = createE2EEnvironment(process.env);
+  environment.FRAME_OF_MIND_HOSTED_SIGN_IN_ORIGIN = origin;
+  environment.FRAME_OF_MIND_HOSTED_SIGN_IN_MODE = mode;
+  if (accessToken) environment.FRAME_OF_MIND_HOSTED_SIGN_IN_ACCESS_TOKEN = accessToken;
+  const child = Bun.spawn([
+    "bunx", "playwright", "test", "--config", "playwright.hosted.config.ts",
+  ], {
+    cwd: process.cwd(),
+    env: environment,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (code !== 0) {
+    throw new Error(`Hosted sign-in Playwright spec failed (${mode}, ${code}):\n${stdout}\n${stderr}`);
+  }
 }
 
 async function expectStatus(

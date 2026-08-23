@@ -2,6 +2,7 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 
 const route = useRoute();
+const signInRoute = computed(() => route.path === "/sign-in");
 const navigation: NavigationMenuItem[] = [
   { label: "Runs", icon: "i-lucide-library", to: "/", exact: true },
   { label: "Intent", icon: "i-lucide-target", to: "/hosted/new/intent" },
@@ -20,7 +21,8 @@ const title = computed(() => route.path.startsWith("/hosted/activity/")
 </script>
 
 <template>
-  <UDashboardGroup data-hosted-studio-shell="true" storage-key="frame-of-mind-hosted-shell">
+  <slot v-if="signInRoute" />
+  <UDashboardGroup v-else data-hosted-studio-shell="true" storage-key="frame-of-mind-hosted-shell">
     <UDashboardSidebar id="hosted-navigation" collapsible class="bg-elevated/40">
       <template #header="{ collapsed }">
         <NuxtLink to="/" class="flex items-center gap-3">
