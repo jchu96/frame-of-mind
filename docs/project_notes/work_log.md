@@ -1,5 +1,17 @@
 # Work Log
 
+## 2026-08-23
+
+- Added the long-lived `bun run hosted:local` reviewer topology: isolated
+  built Workers, fake GitHub/Gemini/mailer, seeded Better Auth invites when
+  that adapter is present, and a generated Access-header proxy fallback on
+  the current Access-only base.
+
+- Consolidated browser verification into smoke, hosted, adversarial, and
+  deployed-canary Playwright projects. A shared OS-temp isolation helper now
+  assigns unique ports, Wrangler persistence roots, and local D1 names; hosted
+  HTTP contracts retain HTTP assertions and no longer drive Chromium.
+
 ## 2026-07-25
 
 - Scaffolded the TypeScript CLI, Bluedot OAuth/MCP adapter, Gemini two-pass Files API analysis, secure download path, screenshots, durable JSON/Markdown artifacts, tests, CI, agent guidance, and runbook.
