@@ -1057,3 +1057,17 @@
   without a human login; the authenticated canary (GitHub sign-in →
   `/api/session` shows a `ba:` principal, hosted routes `404`) is the next step
   and gates the `better-auth` cutover. Hosted creation remains dark.
+- `better-auth` cutover completed on 2026-08-23 (ADR 0019 step 4). The first
+  live GitHub callback failed with `email_not_found` because the registered
+  GitHub App lacked the *Email addresses: Read-only* account permission; after
+  the maintainer granted it, `POST /api/auth/sign-in/social` → callback →
+  `/` → `/api/session` all succeeded behind Access. PR #89 maps that callback
+  error to specific copy. The public Worker was redeployed with
+  `NUXT_AUTH_MODE=better-auth` (version `fe9d36b4…`), the maintainer
+  re-verified `/` and `/api/session`, and both Access applications in the
+  account were deleted — the custom-domain app and the Workers-level
+  "frame-of-mind - Cloudflare Workers" app, which kept redirecting every
+  hostname until it was removed too. Anonymous probes now return `200` for
+  `/sign-in` and `/robots.txt` and `403` for every data and hosted route.
+  Membership is the D1 invite table; `access-users.ts` is no longer
+  authoritative. Hosted creation remains dark.
