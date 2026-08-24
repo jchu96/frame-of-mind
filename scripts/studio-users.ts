@@ -67,10 +67,14 @@ function parseArguments(args: string[], fallbackMode?: MembershipMode): {
 
 export async function main(args = process.argv.slice(2), fallbackMode?: MembershipMode): Promise<void> {
   const { mode, command, values } = parseArguments(args, fallbackMode);
-  if (!(["list", "add", "remove"].includes(command))) {
+  const commands = mode === "better-auth"
+    ? ["list", "list-requests", "add", "approve", "deny", "remove"]
+    : ["list", "add", "remove"];
+  if (!commands.includes(command)) {
     throw new Error(
       "Usage: bun scripts/studio-users.ts [--mode cloudflare-access|better-auth] "
-      + "list | add <email...> | remove <email...>",
+      + "list | list-requests | add <email...> | approve <email...> | "
+      + "deny <email...> | remove <email...>",
     );
   }
   if (mode === "better-auth") {
@@ -85,26 +89,59 @@ async function manageBetterAuth(command: string, values: string[]): Promise<void
   const database = env.FRAME_OF_MIND_D1_DATABASE || "frame-of-mind";
   const config = env.FRAME_OF_MIND_WRANGLER_CONFIG || "apps/web/wrangler.jsonc";
   const target = env.FRAME_OF_MIND_D1_LOCAL === "1" ? "--local" : "--remote";
+  const persistenceArgs = env.FRAME_OF_MIND_D1_PERSIST_TO
+    ? ["--persist-to", env.FRAME_OF_MIND_D1_PERSIST_TO]
+    : [];
+  const decidedBy = (env.FRAME_OF_MIND_ACCESS_DECIDED_BY || "maintainer-cli").trim();
   let statement: string;
   if (command === "list") {
-    statement = "SELECT email, claimed_user_id IS NOT NULL AS claimed, invited_at, claimed_at "
+    statement = "SELECT email, state, claimed_user_id IS NOT NULL AS claimed, "
+      + "requested_at, approved_at, decided_by "
       + "FROM hosted_auth_invites ORDER BY email";
+  } else if (command === "list-requests") {
+    statement = "SELECT email, requested_at, claimed_user_id IS NOT NULL AS claimed "
+      + "FROM hosted_auth_invites WHERE state = 'requested' ORDER BY requested_at, email";
   } else if (command === "add") {
     const now = new Date().toISOString();
     statement = emails(values).map((email) =>
-      "INSERT OR IGNORE INTO hosted_auth_invites (email, invited_at) VALUES "
-      + `(${sqlLiteral(email)}, ${sqlLiteral(now)})`,
+      "INSERT INTO hosted_auth_invites "
+      + "(email, invited_at, state, approved_at, decided_by) VALUES "
+      + `(${sqlLiteral(email)}, ${sqlLiteral(now)}, 'approved', ${sqlLiteral(now)}, ${sqlLiteral(decidedBy)}) `
+      + "ON CONFLICT(email) DO UPDATE SET state = 'approved', "
+      + `approved_at = ${sqlLiteral(now)}, decided_by = ${sqlLiteral(decidedBy)}`,
     ).join("; ");
+  } else if (command === "approve" || command === "deny") {
+    const targets = emails(values).map(sqlLiteral).join(", ");
+    const now = new Date().toISOString();
+    const state = command === "approve" ? "approved" : "revoked";
+    const rows = await executeBetterAuthD1Json(
+      database,
+      target,
+      config,
+      persistenceArgs,
+      "UPDATE hosted_auth_invites "
+      + `SET state = '${state}', `
+      + (command === "approve" ? `approved_at = ${sqlLiteral(now)}, ` : "approved_at = NULL, ")
+      + `decided_by = ${sqlLiteral(decidedBy)} `
+      + `WHERE email IN (${targets}) `
+      + (command === "deny" ? "AND state IN ('requested', 'revoked') " : "")
+      + "RETURNING email, state",
+    );
+    if (!rows.length) throw new Error("No matching access requests were found.");
+    console.log(`${command === "approve" ? "Approved" : "Denied"} ${rows.length}.`);
+    return;
   } else {
     const targets = emails(values).map(sqlLiteral).join(", ");
     const current = await executeBetterAuthD1Json(
       database,
       target,
       config,
-      "SELECT email FROM hosted_auth_invites ORDER BY email",
+      persistenceArgs,
+      "SELECT email, state FROM hosted_auth_invites ORDER BY email",
     );
     const requested = new Set(emails(values));
     const members = current
+      .filter((row) => row.state === "approved")
       .map((row) => typeof row.email === "string" ? row.email.toLowerCase() : "")
       .filter(Boolean);
     const removed = members.filter((email) => requested.has(email));
@@ -115,23 +152,26 @@ async function manageBetterAuth(command: string, values: string[]): Promise<void
     if (removed.length === members.length) {
       throw new Error("Refusing to remove the last member; the app would lock everyone out.");
     }
-    const deleted = await executeBetterAuthD1Json(
+    const revoked = await executeBetterAuthD1Json(
       database,
       target,
       config,
-      `DELETE FROM hosted_auth_invites WHERE email IN (${targets}) `
-      + `AND EXISTS (SELECT 1 FROM hosted_auth_invites WHERE email NOT IN (${targets})) RETURNING email`,
+      persistenceArgs,
+      "UPDATE hosted_auth_invites SET state = 'revoked', approved_at = NULL, "
+      + `decided_by = ${sqlLiteral(decidedBy)} WHERE email IN (${targets}) `
+      + "AND state = 'approved' RETURNING email",
     );
-    if (deleted.length !== removed.length) {
+    if (revoked.length !== removed.length) {
       throw new Error("Membership changed concurrently; removal was not fully applied. Retry the command.");
     }
-    console.log(`Removed ${deleted.length}.`);
+    console.log(`Revoked ${revoked.length}.`);
     return;
   }
   const child = Bun.spawn([
     "bunx", "wrangler", "d1", "execute", database,
     target,
     "--config", config,
+    ...persistenceArgs,
     "--command", statement,
   ], {
     cwd: process.cwd(),
@@ -148,12 +188,14 @@ async function executeBetterAuthD1Json(
   database: string,
   target: "--local" | "--remote",
   config: string,
+  persistenceArgs: string[],
   statement: string,
 ): Promise<Array<Record<string, unknown>>> {
   const child = Bun.spawn([
     "bunx", "wrangler", "d1", "execute", database,
     target,
     "--config", config,
+    ...persistenceArgs,
     "--command", statement,
     "--json",
   ], {

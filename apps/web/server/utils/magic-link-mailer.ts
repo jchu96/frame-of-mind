@@ -32,6 +32,11 @@ export interface MagicLinkMessage {
   url: string;
 }
 
+export interface AccessRequestMessage {
+  requesterEmail: string;
+  notifyEmail: string;
+}
+
 export function createMagicLinkMailer(options: MagicLinkMailerOptions): {
   send(message: MagicLinkMessage): Promise<void>;
 } {
@@ -84,6 +89,76 @@ export function createMagicLinkMailer(options: MagicLinkMailerOptions): {
   };
 }
 
+export function createAccessRequestNotifier(options: MagicLinkMailerOptions): {
+  send(message: AccessRequestMessage): Promise<void>;
+} {
+  const from = options.from?.trim() ?? "";
+  const httpOrigin = options.httpOrigin?.trim() ?? "";
+  const httpKey = options.httpKey?.trim() ?? "";
+  const send = options.fetch ?? globalThis.fetch;
+
+  return {
+    async send({ requesterEmail, notifyEmail }) {
+      const requester = normalizeEmail(requesterEmail);
+      const recipient = normalizeEmail(notifyEmail);
+      const command = `bun run approve ${shellQuote(requester)}`;
+      if (options.emailBinding) {
+        if (!from) {
+          await logBindingFailure(options.failureLogger, MAILER_FROM_UNSET_CODE);
+          throw mailerUnavailable();
+        }
+        try {
+          await options.emailBinding.send({
+            to: recipient,
+            from: { email: from, name: "Frame of Mind" },
+            subject: "Frame of Mind access request",
+            text: [
+              "A person requested access to Frame of Mind.",
+              "",
+              `Email: ${requester}`,
+              "",
+              "Approve from the repository:",
+              command,
+            ].join("\n"),
+            html: [
+              "<p>A person requested access to Frame of Mind.</p>",
+              `<p>Email: ${escapeHtml(requester)}</p>`,
+              "<p>Approve from the repository:</p>",
+              `<pre>${escapeHtml(command)}</pre>`,
+            ].join(""),
+          });
+          return;
+        } catch (error) {
+          await logBindingFailure(options.failureLogger, bindingFailureCode(error));
+          throw mailerUnavailable();
+        }
+      }
+
+      if (httpOrigin && httpKey) {
+        try {
+          const response = await send(`${httpOrigin}/access-request`, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${httpKey}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              notifyEmail: recipient,
+              requesterEmail: requester,
+              command,
+            }),
+          });
+          if (response.ok) return;
+        } catch {
+          // The HTTP fallback has no provider code safe enough to record.
+        }
+      }
+
+      throw mailerUnavailable();
+    },
+  };
+}
+
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -116,6 +191,10 @@ function escapeHtml(value: string): string {
     "'": "&#39;",
     "\"": "&quot;",
   })[character]!);
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 function bindingFailureCode(error: unknown): string {

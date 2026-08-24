@@ -559,9 +559,9 @@ It exercises local D1 migration replay, both Worker dry-runs, boundary
 fixtures, byte-stable local import, and the previous-artifact rollback drill;
 success prints `HOSTED_RELEASE_REHEARSAL PASSED`.
 
-The committed production example remains `cloudflare-access`. The Better Auth
-spike adds GitHub OAuth, magic-link sessions, D1 email invitations, and a
-stacked `cloudflare-access+better-auth` mode without changing the downstream
+The committed production example remains `cloudflare-access`. Better Auth adds
+GitHub OAuth, approved-account magic links, D1 access requests, and a stacked
+`cloudflare-access+better-auth` mode without changing the downstream
 principal-scoped contracts. Run its built-Worker browser proof with:
 
 ```bash
@@ -570,17 +570,20 @@ bun run test:hosted-access-http:better-auth
 bun run test:hosted-workflows-http:better-auth
 ```
 
-Better Auth binds `ba:<userId>` once in middleware; email is display and
-membership data only. In Better Auth modes, anonymous browser pages redirect
-to `/sign-in`, where an invited user can continue with GitHub or request a
-magic link when email delivery is configured. Magic-link delivery prefers the
+Better Auth authenticates first, then the same global middleware binds
+`ba:<userId>` only when D1 membership is `approved`; email is display and
+membership data only. Anyone may continue with GitHub. An unapproved account
+is confined to `/request-access`, before run, composer, media, Gemini,
+Workflow, spend, or R2 code can run. The idempotent request sends at most one
+configured maintainer notification, and approval remains a local operator
+command. Magic links are available only to approved accounts. Delivery prefers the
 public Worker's `EMAIL` binding with an explicit onboarded sender, retains the
 HTTP mailer as a no-binding fallback, and exposes only `MAILER_UNAVAILABLE` on
 delivery failure. Production also limits the route to three requests per 15
-minutes and atomically reserves a 60-second cooldown on each invited email;
+minutes and atomically reserves a 60-second cooldown on each approved email;
 API requests remain JSON 403s.
 See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
-and [accepted ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
+and [accepted ADRs 0019 and 0020](docs/adr/0020-self-serve-access-requests.md).
 
 The dark hosted execution path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. When explicitly
