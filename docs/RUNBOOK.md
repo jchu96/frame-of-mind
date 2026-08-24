@@ -1377,8 +1377,8 @@ workflows are enabled; unset or unknown values fail closed. The reference
 instance uses `better-auth`; its former Access application is deleted. Access
 and stacked modes remain compatibility options for other deployments.
 
-For Better Auth modes, apply D1 migrations `0006_better_auth.sql` and
-`0009_magic_link_cooldown.sql`, set
+For Better Auth modes, apply D1 migrations `0006_better_auth.sql`,
+`0009_magic_link_cooldown.sql`, and `0010_access_requests.sql`, set
 `NUXT_BETTER_AUTH_URL` to the exact HTTPS application origin, and store
 `NUXT_BETTER_AUTH_SECRET` as a public-Worker secret. Add
 `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` only when GitHub login is enabled. To
@@ -1394,7 +1394,7 @@ Install `GEMINI_API_KEY` on both Workers: the public Worker mints and manages
 direct-upload sessions, while the internal Worker performs analysis.
 
 Production accepts at most three magic-link requests per 15 minutes and uses a
-conditional D1 update to reserve each invited email for 60 seconds before the
+conditional D1 update to reserve each approved email for 60 seconds before the
 send begins. `MAGIC_LINK_COOLDOWN` means the existing link should be used or
 the operator should wait one minute; it must not be bypassed by switching
 mailer transports.
@@ -1403,7 +1403,10 @@ Manage app-owned membership through the D1 invite table:
 
 ```bash
 bun scripts/studio-users.ts --mode better-auth list
+bun scripts/studio-users.ts --mode better-auth list-requests
 bun scripts/studio-users.ts --mode better-auth add "<email-address>"
+bun run approve "<email-address>"
+bun scripts/studio-users.ts --mode better-auth deny "<email-address>"
 bun scripts/studio-users.ts --mode better-auth remove "<email-address>"
 ```
 
@@ -1411,7 +1414,12 @@ Set `FRAME_OF_MIND_WRANGLER_CONFIG` and `FRAME_OF_MIND_D1_DATABASE` for the
 target account. Commands default to remote D1; set
 `FRAME_OF_MIND_D1_LOCAL=1` only for an isolated local rehearsal. The legacy
 `scripts/access-users.ts` entry remains Access-only. In stacked mode, manage
-both the outer Access group and the Better Auth invite list.
+both the outer Access group and the Better Auth membership list.
+`add` pre-approves an email. GitHub-authenticated people without approval are
+confined to the request page; `approve`, `deny`, and `remove` record a state
+transition instead of deleting the audit row. Set `NUXT_ACCESS_REQUEST_NOTIFY`
+to the maintainer destination for one request notification, or leave it unset
+to record requests without sending mail.
 
 In Better Auth modes, anonymous HTML page requests redirect to
 `/sign-in?next=<same-origin-relative-path>`. The page offers GitHub OAuth and a

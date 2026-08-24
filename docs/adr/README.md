@@ -37,7 +37,8 @@ decision may be made in place.
 | [0016](0016-recipe-charters-and-executor-owned-prompt-policy.md) | Decompose recipes into charters under executor-owned prompt policy | Accepted | 2026-08-11 |
 | [0017](0017-opt-in-sentry-telemetry.md) | Make Sentry telemetry opt-in and codes-only | Accepted | 2026-08-22 |
 | [0018](0018-hosted-studio-trust-boundary.md) | Host Studio creation behind principal-scoped Cloudflare execution; 4 MiB materialization-bound Amendment 1 remains proposed in PR #65 | Proposed | 2026-08-22 |
-| [0019](0019-pluggable-auth-modes.md) | Make hosted authentication a pluggable Access, Better Auth, or stacked perimeter | Proposed | 2026-08-23 |
+| [0019](0019-pluggable-auth-modes.md) | Make hosted authentication a pluggable Access, Better Auth, or stacked perimeter | Accepted | 2026-08-23 |
+| [0020](0020-self-serve-access-requests.md) | Separate sign-in from maintainer-approved hosted access | Accepted | 2026-08-23 |
 
 ## Adding An ADR
 

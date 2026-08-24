@@ -8,6 +8,15 @@
 
 ## 2026-08-23
 
+- Implemented ADR 0020's self-serve access request boundary. Migration 0010
+  backfills existing memberships as approved and adds requested/revoked audit
+  state; Better Auth now authenticates unknown GitHub identities while the
+  global middleware withholds the downstream principal until approval. The
+  request page and mutation are idempotent, HMAC-keyed per-IP limited, and send
+  at most one command-only maintainer notification. The hosted access contract
+  discriminates a real unapproved workerd session across session, runs, hosted,
+  media, and composer surfaces.
+
 - Correction: the earlier required-hosted-contract description was superseded
   the same evening; `hosted-contracts` is advisory pending issue #96.
 - Repaired the root-script dependency contract after repeated red runs went

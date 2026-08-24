@@ -309,6 +309,16 @@ remains Access-only until an explicit deployment configuration change.
 The accepted cookie, CSRF, secret-custody, membership, and principal-migration
 rules are canonical in [ADR 0019](../adr/0019-pluggable-auth-modes.md).
 
+## 2026-08-23 — Sign-in is open but hosted access requires approval
+
+ADR 0020 accepts self-serve access requests without weakening the principal
+boundary. GitHub may establish a Better Auth session for any verified identity,
+but the global middleware binds `ba:<userId>` only for an approved D1 membership.
+Unapproved sessions are confined to status and request-access surfaces before
+run, media, provider, spend, Workflow, or R2 handlers. Requests are idempotent,
+per-IP limited, and may send one command-only maintainer notification; all
+approval transitions remain local operator actions.
+
 ## 2026-08-23 — Cloudflare Email Service is the primary magic-link transport
 
 The public Nuxt Worker sends Better Auth magic links through its `EMAIL`

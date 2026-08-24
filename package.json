@@ -36,6 +36,7 @@
     "build:cli": "tsc -p tsconfig.json",
     "build:web": "bun run --cwd apps/web build",
     "build:web:cloudflare": "bun run --cwd apps/web build:cloudflare && bun scripts/check-cloudflare-boundary.ts",
+    "approve": "bun scripts/studio-users.ts --mode better-auth approve",
     "check:cloudflare-boundary:self-test": "bun --no-env-file scripts/test-cloudflare-boundary.ts",
     "check:hosted-entry": "bun --no-env-file scripts/test-hosted-entry.ts",
     "check:hosted-auth": "bun --no-env-file scripts/spike-hosted-auth-modes.ts",
