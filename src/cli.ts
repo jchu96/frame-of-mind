@@ -142,7 +142,9 @@ program
         analyzeOptions = await buildAnalyzeOptions(meetingId, flags, apiKey);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
-        process.on("SIGINT", cancel);
+        // @types/bun 1.4.0 drops Node's signal overloads from process.on/off;
+        // the runtime accepts signal names under both typings.
+        process.on("SIGINT" as never, cancel);
         let result;
         try {
           result = await analyzeMeeting(
@@ -158,7 +160,7 @@ program
             },
           );
         } finally {
-          process.off("SIGINT", cancel);
+          process.off("SIGINT" as never, cancel);
         }
         const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
         process.stdout.write(
