@@ -65,4 +65,5 @@ export interface SessionInfo {
   email?: string;
   principal?: true;
   accessState?: "requested" | "approved" | "revoked";
+  maintainer?: true;
 }

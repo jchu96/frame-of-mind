@@ -1378,7 +1378,8 @@ instance uses `better-auth`; its former Access application is deleted. Access
 and stacked modes remain compatibility options for other deployments.
 
 For Better Auth modes, apply D1 migrations `0006_better_auth.sql`,
-`0009_magic_link_cooldown.sql`, and `0010_access_requests.sql`, set
+`0009_magic_link_cooldown.sql`, `0010_access_requests.sql`, and
+`0011_admin_access.sql`, set
 `NUXT_BETTER_AUTH_URL` to the exact HTTPS application origin, and store
 `NUXT_BETTER_AUTH_SECRET` as a public-Worker secret. Add
 `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` only when GitHub login is enabled. To
@@ -1423,6 +1424,39 @@ to record requests without sending mail. `NUXT_ACCESS_REQUEST_PENDING_CAP`
 defaults to `200`; when that many rows remain in `requested`, new applicants
 receive `429 access_request_capacity_reached` until a maintainer transitions a
 row.
+
+### Hosted access administration
+
+Set the public Worker variable `NUXT_MAINTAINER_EMAILS` to the comma-separated
+emails that may open `https://<hostname>/admin/access`. Values are trimmed and
+lowercased. Leaving it unset, empty, or whitespace-only creates zero
+maintainers and makes the page plus `/api/admin/*` indistinguishable from
+unknown routes. A listed email must also have approved Better Auth membership;
+Access identities, service principals, and unapproved sessions never receive
+the capability.
+
+The page groups Pending, Members, and Revoked rows. It can approve, deny,
+revoke, and re-approve through the same transition rules as the CLI. It refuses
+to revoke the last approved member and does not offer self-revocation. These
+actions record the maintainer email and timestamp in `actioned_by` and
+`actioned_at`. They do not send requester email.
+
+There is no role-management endpoint. To add or remove a maintainer, edit
+`NUXT_MAINTAINER_EMAILS` in operator-owned Worker configuration and redeploy.
+The CLI remains available for every membership action and is the recovery path
+when the allowlist is empty or the admin page is otherwise dark:
+
+```bash
+bun scripts/studio-users.ts --mode better-auth list
+bun run approve "<email-address>"
+bun scripts/studio-users.ts --mode better-auth deny "<email-address>"
+bun scripts/studio-users.ts --mode better-auth remove "<email-address>"
+```
+
+CLI transitions record `actioned_by='cli'`. Admin POST requests require JSON,
+an exact same-origin `Origin`, and `Sec-Fetch-Site: same-origin`; absent headers
+are rejected. Better Auth cookies remain HttpOnly, SameSite=Lax, and Secure on
+HTTPS, but the cookie setting does not replace those explicit CSRF checks.
 
 In Better Auth modes, anonymous HTML page requests redirect to
 `/sign-in?next=<same-origin-relative-path>`. The page offers GitHub OAuth and a

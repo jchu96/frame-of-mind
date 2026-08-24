@@ -2,6 +2,12 @@
 
 ## 2026-08-24
 
+- Implemented ADR 0021's deploy-allowlisted admin approval surface. Approved
+  Better Auth sessions listed by `NUXT_MAINTAINER_EMAILS` receive the only
+  maintainer capability; all other HTML and API requests see unknown-route
+  404s. The page and CLI share approval-state rules, preserve the last-member
+  refusal, record the acting maintainer or `cli` through migration 0011, require
+  explicit same-origin mutation headers, and send no requester email.
 - Reconciled README, architecture, deployment, testing, security, data,
   credentials, workspace, MCP, skill, and scoped-agent guidance with the live
   Better Auth Hosted Studio and the v0.4.0 sharded repository gate.

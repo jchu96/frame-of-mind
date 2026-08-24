@@ -4,6 +4,15 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-08-24 — Maintainer authority stays in deployment configuration
+
+ADR 0021 adds browser access to the existing membership transition state
+machine without adding roles. Only an approved Better Auth principal whose
+normalized email appears in `NUXT_MAINTAINER_EMAILS` receives the request-
+scoped maintainer capability; empty configuration makes every admin route dark.
+The application can approve, deny, and revoke membership but cannot add a
+maintainer, which remains an operator config-and-deploy action.
+
 ## 2026-08-23 — Retained upload capabilities stay inside the Tier A secret boundary
 
 ADR 0018 Amendment 2 already authorizes private principal-owned R2 with a

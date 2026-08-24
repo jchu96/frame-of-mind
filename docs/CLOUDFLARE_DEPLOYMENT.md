@@ -184,7 +184,7 @@ after the D1 cap reservation commits. D1 stores that URL as principal/media-
 bound AES-GCM ciphertext.
 
 Deploy order is deliberate: apply migrations through
-`0010_access_requests.sql`,
+`0011_admin_access.sql`,
 deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
 caller with the service binding. Keep hosted routes disabled for a new
 deployment until the reviewed release checks in this runbook pass.
@@ -338,6 +338,7 @@ Edit these values:
 | `NUXT_BETTER_AUTH_MAILER_FROM` | onboarded sender, for example `sign-in@<domain>` |
 | `NUXT_ACCESS_REQUEST_NOTIFY` | optional maintainer address for access-request notifications |
 | `NUXT_ACCESS_REQUEST_PENDING_CAP` | maximum pending self-serve access requests; defaults to `200` |
+| `NUXT_MAINTAINER_EMAILS` | comma-separated maintainer emails; empty keeps `/admin/access` dark |
 | `services[0].service` | exact internal Workflows Worker name |
 
 Set:
@@ -352,8 +353,8 @@ operator-owned reference configuration makes the explicit change above.
 Better Auth is the reference topology; Access-only and stacked modes remain
 compatibility adapters. Better Auth requires:
 
-- migrations `0006_better_auth.sql`, `0009_magic_link_cooldown.sql`, and
-  `0010_access_requests.sql` on the
+- migrations `0006_better_auth.sql`, `0009_magic_link_cooldown.sql`,
+  `0010_access_requests.sql`, and `0011_admin_access.sql` on the
   public Worker's D1 database;
 - `NUXT_BETTER_AUTH_URL` set to the exact HTTPS custom origin;
 - a magic-link sender and optional fallback HTTPS mailer origin as Worker
@@ -688,7 +689,7 @@ storage.
 
 ### Tables do not exist
 
-Apply all pending migrations through `0010_access_requests.sql` to the
+Apply all pending migrations through `0011_admin_access.sql` to the
 same database ID bound to both Workers.
 Check `wrangler d1 migrations list ... --remote`.
 
@@ -751,6 +752,15 @@ still recorded. In stacked mode, a person must be present in both the Access
 group and the D1 membership list. Revocation does not reassign or delete
 existing `ba:<userId>` rows; the global middleware observes the state before
 binding that principal.
+
+For browser-based review, set `NUXT_MAINTAINER_EMAILS` in the operator-owned
+public Worker configuration and redeploy. An approved listed session can open
+`/admin/access`; every other identity sees an unknown-route 404 and no
+navigation link. The variable is the only maintainer authority and the web
+surface cannot change it. Empty configuration deliberately leaves the surface
+dark. Browser actions record the maintainer email and time, use the same state
+machine and last-member refusal as the CLI, and send no requester email. CLI
+actions record `actioned_by='cli'` and remain the recovery path.
 
 ### Enable magic-link email
 
@@ -849,7 +859,7 @@ Put the resulting values in an uncommitted file, for example
 `<PRIVATE_SECRETS_DIR>/github-oauth.env`, as `GITHUB_CLIENT_ID=…` and
 `GITHUB_CLIENT_SECRET=…`.
 
-Before deployment, apply migrations through `0010_access_requests.sql`, install the
+Before deployment, apply migrations through `0011_admin_access.sql`, install the
 `NUXT_BETTER_AUTH_SECRET` Worker secret, and optionally pre-approve accounts with
 `bun scripts/studio-users.ts --mode better-auth add "<email-address>"`.
 

@@ -16,7 +16,16 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // /api/session — fails closed to the sign-in page (review: the guard must
   // never fail open). Access-only deployments still answer 200 + principal, so
   // they are unaffected.
-  if (session.value?.principal && session.value.accessState === "approved") return;
+  if (session.value?.principal && session.value.accessState === "approved") {
+    if (to.path === "/admin/access" && !session.value.maintainer) {
+      return abortNavigation(createError({
+        statusCode: 404,
+        statusMessage: `Page not found: ${to.path}`,
+        data: { path: to.path },
+      }));
+    }
+    return;
+  }
   if (session.value?.principal) {
     if (to.path === "/request-access") return;
     return navigateTo("/request-access");

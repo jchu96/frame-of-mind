@@ -19,15 +19,18 @@ describe("access-request migration", () => {
       );
 
       database.exec(migration("0010_access_requests.sql"));
+      database.exec(migration("0011_admin_access.sql"));
 
       expect(database.query(
-        "SELECT state, requested_at, approved_at, decided_by "
+        "SELECT state, requested_at, approved_at, decided_by, actioned_by, actioned_at "
         + "FROM hosted_auth_invites WHERE email = ?1",
       ).get("existing@example.test")).toEqual({
         state: "approved",
         requested_at: null,
         approved_at: "2026-08-23T00:00:00.000Z",
         decided_by: null,
+        actioned_by: null,
+        actioned_at: null,
       });
       database.run(
         "INSERT INTO hosted_auth_invites "
