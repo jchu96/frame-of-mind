@@ -172,6 +172,11 @@
   `apps/web` can make a root script pass locally and fail on a fresh install;
   the missing `jose` declaration left CI red from 2026-08-22 to 2026-08-23
   without being noticed.
+- Hosted screenshot generators share `ux-pass-3` but own disjoint prefixes:
+  the Workflow contract owns `00-*` through `13-*`, while the auth contract
+  owns `14-sign-in-*`. Rotate only the generating contract's files so an
+  interrupted Workflow run cannot delete tracked sign-in receipts and break
+  repository hygiene.
 - Validate the final analysis/manifest pair before publication. TypeScript
   shapes alone do not enforce durable string, count, route, or provenance
   constraints.

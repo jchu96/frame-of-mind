@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
@@ -26,6 +26,12 @@ import {
   resolvePrebuiltWebOutput,
   resolvePrebuiltWorkflowsOutput,
 } from "./prebuilt-artifact";
+import {
+  assertLocatorContrast,
+  assertLocatorsContrast,
+  assertSelectionContrast,
+  assertVisibleTextContrast,
+} from "../apps/web/e2e/support/contrast";
 
 const isolation = await createE2EIsolation("hosted-workflows");
 const temporaryRoot = isolation.root;
@@ -1233,8 +1239,12 @@ async function verifyHostedBrowserContract(
   const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-3");
   const captureScreenshots = hostedContractAuthMode === "cloudflare-access";
   if (captureScreenshots) {
-    await rm(screenshotRoot, { recursive: true, force: true });
     await mkdir(screenshotRoot, { recursive: true });
+    for (const entry of await readdir(screenshotRoot, { withFileTypes: true })) {
+      if (entry.isFile() && /^(?:0\d|1[0-3])-.*\.png$/.test(entry.name)) {
+        await rm(join(screenshotRoot, entry.name), { force: true });
+      }
+    }
   }
   const browser = await chromium.launch({ headless: true });
   try {
@@ -1263,18 +1273,88 @@ async function verifyHostedBrowserContract(
     ): Promise<void> => {
       assertEqual(await page.locator("h1").count(), 1, `${name} single h1`);
       assertEqual(hydrationMismatches, [], `${name} hydration mismatches`);
-      if (!captureScreenshots) return;
-      await page.setViewportSize({ width: 1280, height: 900 });
-      await page.screenshot({ path: join(screenshotRoot, `${name}-desktop.png`), fullPage: true });
-      await page.setViewportSize({ width: 390, height: 844 });
-      if (mobileFocusText) {
-        await page.getByText(mobileFocusText, { exact: true }).evaluate((element) => {
-          element.scrollIntoView({ block: "end", inline: "nearest" });
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme });
+        await assertVisibleTextContrast(page, `${name} ${colorScheme}`);
+        if (name === "00-results-empty") {
+          const navigation = page.locator("[data-hosted-navigation]");
+          const resultsHeading = page.getByRole("heading", { name: "Your finished analyses.", level: 1 });
+          await assertLocatorContrast(
+            resultsHeading,
+            `${name} ${colorScheme} results heading`,
+          );
+          await assertSelectionContrast(
+            resultsHeading,
+            `${name} ${colorScheme} selection`,
+          );
+          await page.locator("body").evaluate((body) => {
+            const probe = document.createElement("span");
+            probe.dataset.themeTokenContrastProbe = "true";
+            probe.style.color = "var(--ui-text-dimmed)";
+            probe.style.backgroundColor = "var(--ui-bg-accented)";
+            probe.textContent = "Theme token contrast probe";
+            body.append(probe);
+          });
+          const tokenProbe = page.locator("[data-theme-token-contrast-probe=true]");
+          await assertLocatorContrast(
+            tokenProbe,
+            `${name} ${colorScheme} dimmed text on accented background`,
+          );
+          await tokenProbe.evaluate((element) => element.remove());
+          await assertLocatorContrast(
+            page.getByRole("heading", { name: "Start your first analysis", level: 2 }),
+            `${name} ${colorScheme} empty heading`,
+          );
+          await assertLocatorContrast(
+            navigation.getByText("New analysis", { exact: true }),
+            `${name} ${colorScheme} New analysis navigation`,
+          );
+          await assertLocatorContrast(
+            navigation.getByText("Activity", { exact: true }),
+            `${name} ${colorScheme} Activity navigation`,
+          );
+        }
+        if (!captureScreenshots) continue;
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.screenshot({
+          path: join(screenshotRoot, `${name}-desktop-${colorScheme}.png`),
+          fullPage: true,
+        });
+        await page.setViewportSize({ width: 390, height: 844 });
+        if (mobileFocusText) {
+          await page.getByText(mobileFocusText, { exact: true }).evaluate((element) => {
+            element.scrollIntoView({ block: "end", inline: "nearest" });
+          });
+        }
+        await page.screenshot({
+          path: join(screenshotRoot, `${name}-mobile-${colorScheme}.png`),
+          fullPage: true,
         });
       }
-      await page.screenshot({ path: join(screenshotRoot, `${name}-mobile.png`), fullPage: true });
       await page.setViewportSize({ width: 1280, height: 900 });
+      await page.emulateMedia({ colorScheme: "light" });
     };
+    await page.route("**/api/runs?*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ runs: [] }),
+      });
+    });
+    await page.route("**/api/hosted/jobs", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ jobs: [] }),
+      });
+    });
+    await page.goto(`${origin}/hosted/new/intent`);
+    await page.getByRole("navigation").getByRole("link", { name: "Results", exact: true }).click();
+    await page.waitForURL(`${origin}/`);
+    await page.getByRole("heading", { name: "Start your first analysis", level: 2 }).waitFor();
+    await capture("00-results-empty");
+    await page.unroute("**/api/runs?*");
+    await page.unroute("**/api/hosted/jobs");
     await page.goto(`${origin}/hosted/new/intent`);
     await capture("01-intent-empty");
     const directFocus = page.getByLabel("Optional focus");
@@ -1491,6 +1571,48 @@ async function verifyHostedBrowserContract(
     await results.click();
     await page.waitForURL(/\/runs\/hosted_attempt_/);
     await page.getByRole("heading", { name: /Issue review ·/, level: 1 }).waitFor();
+    assertEqual(await page.locator("[data-run-finding-title]").count(), 1, "published finding title fixture");
+    assertEqual(await page.locator("[data-run-finding-summary]").count(), 1, "published finding summary fixture");
+    assertEqual(await page.locator("[data-run-finding-value]").count(), 5, "published finding value fixtures");
+    assertEqual(await page.locator("[data-run-finding-step]").count(), 3, "published finding step fixtures");
+    assertEqual(await page.locator("[data-run-finding-evidence]").count(), 1, "published finding evidence fixture");
+    assertEqual(
+      await page.locator("[data-run-finding-verdict]").getAttribute("data-semantic-color"),
+      "success",
+      "Accepted badge semantic color",
+    );
+    assertEqual(
+      await page.locator("[data-run-finding-severity]").getAttribute("data-semantic-color"),
+      "error",
+      "high severity badge semantic color",
+    );
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await assertLocatorsContrast(
+        page.locator("[data-run-finding-title]"),
+        `published viewer ${colorScheme} finding titles`,
+      );
+      await assertLocatorsContrast(
+        page.locator("[data-run-finding-summary]"),
+        `published viewer ${colorScheme} finding summaries`,
+      );
+      await assertLocatorsContrast(
+        page.locator("[data-run-finding-value]"),
+        `published viewer ${colorScheme} field values`,
+      );
+      await assertLocatorsContrast(
+        page.locator("[data-run-finding-step]"),
+        `published viewer ${colorScheme} evidence steps`,
+      );
+      await assertLocatorsContrast(
+        page.locator("[data-run-finding-evidence] p, [data-run-finding-evidence] blockquote"),
+        `published viewer ${colorScheme} evidence excerpt`,
+      );
+      await assertLocatorsContrast(
+        page.locator("[data-run-finding-verdict], [data-run-finding-severity]"),
+        `published viewer ${colorScheme} semantic badges`,
+      );
+    }
     await capture("08-run-viewer");
     await page.getByRole("link", { name: "Review findings" }).click();
     await page.waitForURL(/\/review\/hosted_attempt_/);

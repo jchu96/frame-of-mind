@@ -1197,3 +1197,20 @@
   zero-to-deploy checklist, both supported GitHub application choices, and a
   provenance map separating vendored Google skills, installable official
   Cloudflare marketplace skills, and unshipped maintainer review skills.
+- Repaired the hosted Studio light/dark collision on 2026-08-23 by making the
+  Frame of Mind canvas, grid, panels, and Nuxt UI semantic text/status/surface
+  tokens switch as one palette. The built-workerd browser contract now checks
+  every visible text node plus the exact Results headings and sidebar labels at
+  4.5:1 in both schemes. Fresh real-run evidence expanded the discriminator to
+  published finding titles, summaries, five detail-value fields, three numbered
+  evidence steps, and the Accepted/severity semantic badges. The hosted
+  Workflow and auth gates passed and regenerated 60 reviewed screenshots: 15
+  states in light/dark at desktop and 390px, including empty Results, the
+  findings viewer, and sign-in.
+- Closed the adversarial theme-review blocker by upgrading stylesheet and app
+  configuration changes to the sharded gate tier, with a failing-then-passing
+  `main.css`-only policy test. Added actual `::selection` contrast coverage,
+  raised the light dimmed/accented pair from 4.49:1 to 4.92:1, and rendered the
+  published evidence-excerpt fixture for both-scheme browser proof. Kept the
+  Workflow screenshot rotation within its `00-*` through `13-*` ownership so
+  partial runs no longer remove the auth contract's tracked sign-in receipts.

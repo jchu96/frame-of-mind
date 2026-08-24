@@ -4,10 +4,139 @@
 @import "@nuxt/ui";
 
 :root {
+  color-scheme: light;
   --fom-ink: #17221d;
   --fom-paper: #f6f4ed;
   --fom-mint: #b8f2d0;
-  --fom-line: #d9ddd5;
+  --fom-selection-ink: #17221d;
+  --fom-line: #cfd6d0;
+  --fom-grid-line: rgba(23, 34, 29, 0.035);
+  --fom-panel: rgba(255, 255, 255, 0.84);
+  --fom-panel-shadow: rgba(23, 34, 29, 0.07);
+  --ui-primary: #065f46;
+  --ui-secondary: #6d28d9;
+  --ui-success: #065f46;
+  --ui-info: #075985;
+  --ui-warning: #92400e;
+  --ui-error: #b91c1c;
+  --ui-text-dimmed: #54635b;
+  --ui-text-muted: #4b5a52;
+  --ui-text-toned: #34443b;
+  --ui-text: #27362f;
+  --ui-text-highlighted: #17221d;
+  --ui-text-inverted: #ffffff;
+  --ui-bg: #f6f4ed;
+  --ui-bg-muted: #eef0eb;
+  --ui-bg-elevated: #ffffff;
+  --ui-bg-accented: #dfe4df;
+  --ui-bg-inverted: #17221d;
+  --ui-border: #cfd6d0;
+  --ui-border-muted: #dfe4df;
+  --ui-border-accented: #aebbb2;
+  --ui-border-inverted: #17221d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light):not([data-theme="light"]) {
+    color-scheme: dark;
+    --fom-ink: #edf4ef;
+    --fom-paper: #101713;
+    --fom-mint: #6ee7b7;
+    --fom-selection-ink: #17221d;
+    --fom-line: #344039;
+    --fom-grid-line: rgba(237, 244, 239, 0.045);
+    --fom-panel: rgba(27, 38, 32, 0.9);
+    --fom-panel-shadow: rgba(0, 0, 0, 0.28);
+    --ui-primary: #6ee7b7;
+    --ui-secondary: #c4b5fd;
+    --ui-success: #6ee7b7;
+    --ui-info: #7dd3fc;
+    --ui-warning: #fbbf24;
+    --ui-error: #fca5a5;
+    --ui-text-dimmed: #9aaba0;
+    --ui-text-muted: #b0beb5;
+    --ui-text-toned: #cfdbd2;
+    --ui-text: #e0e9e2;
+    --ui-text-highlighted: #ffffff;
+    --ui-text-inverted: #17221d;
+    --ui-bg: #101713;
+    --ui-bg-muted: #17211b;
+    --ui-bg-elevated: #1b2620;
+    --ui-bg-accented: #29372f;
+    --ui-bg-inverted: #f6f4ed;
+    --ui-border: #344039;
+    --ui-border-muted: #29372f;
+    --ui-border-accented: #53645a;
+    --ui-border-inverted: #edf4ef;
+  }
+}
+
+:root.dark,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --fom-ink: #edf4ef;
+  --fom-paper: #101713;
+  --fom-mint: #6ee7b7;
+  --fom-selection-ink: #17221d;
+  --fom-line: #344039;
+  --fom-grid-line: rgba(237, 244, 239, 0.045);
+  --fom-panel: rgba(27, 38, 32, 0.9);
+  --fom-panel-shadow: rgba(0, 0, 0, 0.28);
+  --ui-primary: #6ee7b7;
+  --ui-secondary: #c4b5fd;
+  --ui-success: #6ee7b7;
+  --ui-info: #7dd3fc;
+  --ui-warning: #fbbf24;
+  --ui-error: #fca5a5;
+  --ui-text-dimmed: #9aaba0;
+  --ui-text-muted: #b0beb5;
+  --ui-text-toned: #cfdbd2;
+  --ui-text: #e0e9e2;
+  --ui-text-highlighted: #ffffff;
+  --ui-text-inverted: #17221d;
+  --ui-bg: #101713;
+  --ui-bg-muted: #17211b;
+  --ui-bg-elevated: #1b2620;
+  --ui-bg-accented: #29372f;
+  --ui-bg-inverted: #f6f4ed;
+  --ui-border: #344039;
+  --ui-border-muted: #29372f;
+  --ui-border-accented: #53645a;
+  --ui-border-inverted: #edf4ef;
+}
+
+:root.light,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --fom-ink: #17221d;
+  --fom-paper: #f6f4ed;
+  --fom-mint: #b8f2d0;
+  --fom-selection-ink: #17221d;
+  --fom-line: #cfd6d0;
+  --fom-grid-line: rgba(23, 34, 29, 0.035);
+  --fom-panel: rgba(255, 255, 255, 0.84);
+  --fom-panel-shadow: rgba(23, 34, 29, 0.07);
+  --ui-primary: #065f46;
+  --ui-secondary: #6d28d9;
+  --ui-success: #065f46;
+  --ui-info: #075985;
+  --ui-warning: #92400e;
+  --ui-error: #b91c1c;
+  --ui-text-dimmed: #54635b;
+  --ui-text-muted: #4b5a52;
+  --ui-text-toned: #34443b;
+  --ui-text: #27362f;
+  --ui-text-highlighted: #17221d;
+  --ui-text-inverted: #ffffff;
+  --ui-bg: #f6f4ed;
+  --ui-bg-muted: #eef0eb;
+  --ui-bg-elevated: #ffffff;
+  --ui-bg-accented: #dfe4df;
+  --ui-bg-inverted: #17221d;
+  --ui-border: #cfd6d0;
+  --ui-border-muted: #dfe4df;
+  --ui-border-accented: #aebbb2;
+  --ui-border-inverted: #17221d;
 }
 
 html {
@@ -19,14 +148,14 @@ body {
   min-height: 100vh;
   background-color: var(--fom-paper);
   background-image:
-    linear-gradient(rgba(23, 34, 29, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(23, 34, 29, 0.035) 1px, transparent 1px);
+    linear-gradient(var(--fom-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--fom-grid-line) 1px, transparent 1px);
   background-size: 32px 32px;
 }
 
 ::selection {
   background: var(--fom-mint);
-  color: var(--fom-ink);
+  color: var(--fom-selection-ink);
 }
 
 .fom-shell {
@@ -43,7 +172,7 @@ body {
 
 .fom-panel {
   border: 1px solid var(--fom-line);
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 18px 50px rgba(23, 34, 29, 0.07);
+  background: var(--fom-panel);
+  box-shadow: 0 18px 50px var(--fom-panel-shadow);
   backdrop-filter: blur(14px);
 }
