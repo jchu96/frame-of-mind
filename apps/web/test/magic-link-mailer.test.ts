@@ -169,7 +169,7 @@ describe("access-request notifier", () => {
     });
 
     await notifier.send({
-      requesterEmail: " Requester@Example.Test ",
+      requesterEmail: " Requester+<img>@Example.Test ",
       notifyEmail: " Maintainer@Example.Test ",
     });
 
@@ -180,7 +180,10 @@ describe("access-request notifier", () => {
       subject: "Frame of Mind access request",
     });
     const message = messages[0] as { text: string; html: string };
-    expect(message.text).toContain("bun run approve 'requester@example.test'");
+    expect(message.text).toContain("bun run approve 'requester+<img>@example.test'");
+    expect(message.html).toContain("requester+&lt;img&gt;@example.test");
+    expect(message.html).toContain("&lt;");
+    expect(message.html).not.toContain("<img>");
     expect(message.html).not.toContain("<a ");
     expect(message.text).not.toContain("http");
   });
