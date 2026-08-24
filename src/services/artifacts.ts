@@ -96,10 +96,13 @@ export function renderAnalysis(
         ]
       : []),
     "",
-    outcome?.status === "partial" || outcome?.status === "failed"
+    outcome && outcome.candidates.failed > 0
       ? `> ${outcome.candidates.failed} candidate response(s) failed validation and were excluded. See \`analysis-outcome.json\` for sanitized diagnostics.`
       : "",
-    outcome?.status === "partial" || outcome?.status === "failed" ? "" : "",
+    outcome && outcome.candidates.omittedByLimit > 0
+      ? `> Coverage truncated: ${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit. Later parts of the recording are missing from this analysis; rerun with a higher \`--max-moments\` for full coverage.`
+      : "",
+    outcome && (outcome.candidates.failed > 0 || outcome.candidates.omittedByLimit > 0) ? "" : "",
     analysis.matchNotes ? "## Recording match notes" : "",
     analysis.matchNotes ? renderBlock(analysis.matchNotes) : "",
     "",
@@ -210,9 +213,17 @@ async function renderHtmlArtifact(
     : manifest.schemaVersion === 2
       ? `Transcript alignment: ${manifest.transcriptAlignment.offsetSeconds >= 0 ? "+" : ""}${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).`
       : "Transcript alignment: not applicable to a video-only run.";
+  const outcomeReasons = [
+    outcome.candidates.failed > 0
+      ? `${outcome.candidates.failed} candidate response(s) failed validation and were excluded; sanitized diagnostics are available in <code>analysis-outcome.json</code>.`
+      : "",
+    outcome.candidates.omittedByLimit > 0
+      ? `${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit, so later parts of the recording are missing; rerun with a higher <code>--max-moments</code> for full coverage.`
+      : "",
+  ].filter(Boolean).join(" ");
   const outcomeNotice = outcome.status === "complete"
     ? ""
-    : `<aside><strong>${html(outcome.status === "partial" ? "Partial analysis" : "Analysis failed")}</strong>: ${outcome.candidates.failed} candidate response(s) failed validation and were excluded. Sanitized diagnostics are available in <code>analysis-outcome.json</code>.</aside>`;
+    : `<aside><strong>${html(outcome.status === "partial" ? "Partial analysis" : "Analysis failed")}</strong>: ${outcomeReasons}</aside>`;
   return `<!doctype html>
 <html lang="en">
 <head>

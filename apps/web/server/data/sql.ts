@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS analysis_runs (
   manifest_json TEXT NOT NULL,
   imported_at TEXT NOT NULL,
   imported_by TEXT,
+  outcome_json TEXT,
   PRIMARY KEY (principal_sub, run_id)
 ) STRICT;
 
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS video_analysis_runs (
   manifest_json TEXT NOT NULL,
   imported_at TEXT NOT NULL,
   imported_by TEXT,
+  outcome_json TEXT,
   PRIMARY KEY (principal_sub, run_id)
 ) STRICT;
 
@@ -128,8 +130,8 @@ export const upsertRunSql = `
 INSERT INTO analysis_runs (
   principal_sub, principal_email, run_id, meeting_id, meeting_title, provider, transport, recipe_id,
   recipe_label, model, started_at, completed_at, match_notes, accepted_count,
-  rejected_count, analysis_json, manifest_json, imported_at, imported_by
-) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  rejected_count, analysis_json, manifest_json, outcome_json, imported_at, imported_by
+) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 WHERE EXISTS (
   SELECT 1 FROM analysis_run_registry
   WHERE principal_sub = ? AND run_id = ? AND schema_version = 2
@@ -150,6 +152,7 @@ ON CONFLICT(principal_sub, run_id) DO UPDATE SET
   rejected_count = excluded.rejected_count,
   analysis_json = excluded.analysis_json,
   manifest_json = excluded.manifest_json,
+  outcome_json = excluded.outcome_json,
   imported_at = excluded.imported_at,
   imported_by = excluded.imported_by
 `;
@@ -158,8 +161,8 @@ export const upsertVideoRunSql = `
 INSERT INTO video_analysis_runs (
   principal_sub, principal_email, run_id, recipe_id, recipe_label, model, started_at, completed_at,
   match_notes, accepted_count, rejected_count, analysis_json, manifest_json,
-  imported_at, imported_by
-) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  outcome_json, imported_at, imported_by
+) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 WHERE EXISTS (
   SELECT 1 FROM analysis_run_registry
   WHERE principal_sub = ? AND run_id = ? AND schema_version = 3
@@ -176,6 +179,7 @@ ON CONFLICT(principal_sub, run_id) DO UPDATE SET
   rejected_count = excluded.rejected_count,
   analysis_json = excluded.analysis_json,
   manifest_json = excluded.manifest_json,
+  outcome_json = excluded.outcome_json,
   imported_at = excluded.imported_at,
   imported_by = excluded.imported_by
 `;
@@ -276,6 +280,7 @@ export function importValues(input: {
     startedAt: string;
     completedAt: string;
   };
+  outcome?: unknown;
 }, principal: string, principalEmail?: string, actor?: string) {
   const acceptedCount = input.analysis.items.filter((item) => item.result.accepted).length;
   return [
@@ -296,6 +301,7 @@ export function importValues(input: {
     input.analysis.items.length - acceptedCount,
     JSON.stringify(input.analysis),
     JSON.stringify(input.manifest),
+    input.outcome === undefined ? null : JSON.stringify(input.outcome),
     new Date().toISOString(),
     actor ?? null,
     principal,
@@ -315,6 +321,7 @@ export function importVideoValues(input: {
     startedAt: string;
     completedAt: string;
   };
+  outcome?: unknown;
 }, principal: string, principalEmail?: string, actor?: string) {
   const acceptedCount = input.analysis.items.filter((item) => item.result.accepted).length;
   return [
@@ -331,6 +338,7 @@ export function importVideoValues(input: {
     input.analysis.items.length - acceptedCount,
     JSON.stringify(input.analysis),
     JSON.stringify(input.manifest),
+    input.outcome === undefined ? null : JSON.stringify(input.outcome),
     new Date().toISOString(),
     actor ?? null,
     principal,

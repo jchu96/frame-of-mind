@@ -123,8 +123,9 @@ class FakeD1 {
           rejected_count: Number(value[14]),
           analysis_json: String(value[15]),
           manifest_json: String(value[16]),
-          imported_at: String(value[17]),
-          imported_by: value[18] === null ? null : String(value[18]),
+          outcome_json: value[17] === null ? null : String(value[17]),
+          imported_at: String(value[18]),
+          imported_by: value[19] === null ? null : String(value[19]),
         });
       } else if (statement.sql.includes("INSERT INTO video_analysis_runs")) {
         const value = statement.values;
@@ -150,8 +151,9 @@ class FakeD1 {
           rejected_count: Number(value[10]),
           analysis_json: String(value[11]),
           manifest_json: String(value[12]),
-          imported_at: String(value[13]),
-          imported_by: value[14] === null ? null : String(value[14]),
+          outcome_json: value[13] === null ? null : String(value[13]),
+          imported_at: String(value[14]),
+          imported_by: value[15] === null ? null : String(value[15]),
         });
       } else if (
         statement.sql.includes("DELETE FROM analysis_items")
@@ -343,6 +345,7 @@ describe("D1 projection contract", () => {
         "0001_initial.sql",
         "0002_video_only_projection.sql",
         "0003_principal_scope.sql",
+        "0011_run_outcome_projection.sql",
       ].map((name) => readFile(
         new URL(`../db/migrations/${name}`, import.meta.url),
         "utf8",
@@ -474,6 +477,9 @@ describe("D1 projection contract", () => {
         principalA.email,
         "legacy@example.test",
       ).slice(2, -2);
+      // The legacy 0001-era schema predates outcome_json; drop that value so
+      // the positional insert matches the 17 legacy columns.
+      legacyValues.splice(15, 1);
       await database.prepare(`
         INSERT INTO analysis_runs (
           run_id, meeting_id, meeting_title, provider, transport, recipe_id,

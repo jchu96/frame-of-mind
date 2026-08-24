@@ -1269,6 +1269,53 @@ describe("AnalysisOrchestrator", () => {
     expect(persisted).not.toContain(privateProviderPayload);
   });
 
+  it("reports omission-only truncation as partial with a coverage warning", async () => {
+    const fixture = await createFixture();
+    fixture.options.maxIncidents = 2;
+    fixture.analyzer.index = vi.fn(async () => ({
+      ...indexResult(),
+      moments: [1, 2, 3].map((second) => ({
+        ...indexResult().moments[0]!,
+        start: `00:00:0${second}`,
+        end: `00:00:0${second + 1}`,
+      })),
+    }));
+    fixture.analyzer.interrogate = vi.fn(async (_file, candidate) => ({
+      ...detailResult(),
+      accepted: true,
+      evidence: { timestamp: candidate.start },
+    }));
+    const events: AnalysisProgressEvent[] = [];
+
+    const result = await createOrchestrator(fixture).analyze(fixture.options, {
+      progress: { report: (event) => events.push(event) },
+    });
+
+    expect(result.outcome).toMatchObject({
+      status: "partial",
+      candidates: {
+        indexed: 3,
+        selected: 2,
+        omittedByLimit: 1,
+        validated: 2,
+        accepted: 2,
+        rejected: 0,
+        failed: 0,
+      },
+      failures: [],
+    });
+    expect(events).toContainEqual(expect.objectContaining({
+      kind: "warning",
+      stage: "interrogating",
+      message: expect.stringContaining("Analysis truncated: 1 indexed candidate(s)"),
+    }));
+    const persisted = JSON.parse(await readFile(
+      join(result.directory, "analysis-outcome.json"),
+      "utf8",
+    ));
+    expect(persisted.status).toBe("partial");
+  });
+
   it("publishes a failed sanitized outcome and cleanup receipt when every detail fails", async () => {
     const fixture = await createFixture();
     fixture.analyzer.interrogate = vi.fn(async () => {

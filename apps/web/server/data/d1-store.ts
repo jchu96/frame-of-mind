@@ -87,7 +87,7 @@ export function createD1RunStore(
            NULL AS meeting_title, NULL AS provider, NULL AS transport,
            recipe_id, recipe_label, model, started_at, completed_at,
            match_notes, accepted_count, rejected_count, analysis_json,
-           manifest_json, imported_at, imported_by
+           manifest_json, outcome_json, imported_at, imported_by
          FROM video_analysis_runs WHERE principal_sub = ? AND run_id = ?
            AND json_valid(analysis_json) AND json_valid(manifest_json)
            AND json_extract(analysis_json, '$.schemaVersion') = 3
@@ -101,6 +101,7 @@ export function createD1RunStore(
       const input = await validateVersionedRunImport({
         analysis: JSON.parse(row.analysis_json),
         manifest: JSON.parse(row.manifest_json),
+        ...(row.outcome_json ? { outcome: JSON.parse(row.outcome_json) } : {}),
       });
       return storedRunFrom(row, input);
     },

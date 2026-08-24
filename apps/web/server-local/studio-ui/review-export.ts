@@ -147,10 +147,48 @@ function allowlistedManifest(run: StoredRun) {
       };
 }
 
+function allowlistedOutcome(run: StoredRun) {
+  const outcome = run.outcome;
+  if (!outcome) return {};
+  // Counts and enum status only — the outcome contract is already sanitized,
+  // and the allowlist keeps it that way if the contract ever grows.
+  return {
+    outcome: {
+      schemaVersion: outcome.schemaVersion,
+      runId: outcome.runId,
+      status: outcome.status,
+      candidates: {
+        indexed: outcome.candidates.indexed,
+        selected: outcome.candidates.selected,
+        omittedByLimit: outcome.candidates.omittedByLimit,
+        validated: outcome.candidates.validated,
+        accepted: outcome.candidates.accepted,
+        rejected: outcome.candidates.rejected,
+        failed: outcome.candidates.failed,
+      },
+    },
+  };
+}
+
+export function coverageNotice(run: StoredRun): string | undefined {
+  const outcome = run.outcome;
+  if (!outcome || outcome.status === "complete") return undefined;
+  const reasons = [
+    outcome.candidates.failed > 0
+      ? `${outcome.candidates.failed} candidate response(s) failed validation and were excluded`
+      : "",
+    outcome.candidates.omittedByLimit > 0
+      ? `${outcome.candidates.omittedByLimit} of ${outcome.candidates.indexed} indexed candidate(s) were never interrogated because of the configured moment limit, so later parts of the recording are missing`
+      : "",
+  ].filter(Boolean).join("; ");
+  return `${outcome.status === "partial" ? "Partial analysis" : "Analysis failed"}: ${reasons}.`;
+}
+
 export function buildReviewBundle(run: StoredRun) {
   return {
     analysis: allowlistedAnalysis(run),
     manifest: allowlistedManifest(run),
+    ...allowlistedOutcome(run),
   };
 }
 
@@ -162,11 +200,14 @@ export function buildReviewMarkdown(run: StoredRun): string {
   const title = run.schemaVersion === 2
     ? run.meetingTitle || run.meetingId
     : "Video analysis";
+  const notice = coverageNotice(run);
   const lines = [
     `# ${title}`,
     "",
     `Recipe: ${run.recipeLabel}`,
     `Run: ${run.runId}`,
+    ...(run.outcome ? [`Outcome: ${run.outcome.status}`] : []),
+    ...(notice ? ["", `> ${notice}`] : []),
     "",
     run.matchNotes,
   ];

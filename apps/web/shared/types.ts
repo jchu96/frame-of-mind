@@ -4,6 +4,7 @@ import type {
   RunManifest,
   RunManifestV3,
 } from "../../../src/domain/types.js";
+import type { AnalysisOutcome } from "../../../src/domain/analysis-outcome.js";
 
 interface RunSummaryBase {
   runId: string;
@@ -43,12 +44,14 @@ export type StoredRun = RunSummaryBase & ({
   matchNotes: string;
   analysis: AnalysisRun;
   manifest: RunManifest;
+  outcome?: AnalysisOutcome;
 } | {
   schemaVersion: 3;
   contextMode: "none";
   matchNotes: string;
   analysis: AnalysisRunV3;
   manifest: RunManifestV3;
+  outcome?: AnalysisOutcome;
 });
 
 export interface RunPage {

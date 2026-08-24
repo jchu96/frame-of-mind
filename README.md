@@ -349,6 +349,9 @@ the video). Without the flag, Gemini estimates alignment — inspect
 
 > [!TIP]
 > For a fast bounded trial, add `--max-moments 3` and a `--focus` string.
+> A run that drops indexed candidates to the limit reports
+> `outcome=partial` with a truncation warning — expected for bounded trials;
+> raise `--max-moments` when you need full coverage.
 > For an in-depth pass (denser sampling, layered observation/inference
 > prompts), add `--depth deep`, optionally with `--model gemini-pro-latest`:
 
