@@ -14,7 +14,7 @@ Worker fixtures are disposable projections.
 | Smoke E2E | `bun run test:e2e` | the 13 Local Studio browser journeys |
 | Hosted E2E | `bun run test:e2e:hosted` | composer → activity → publication → viewer against built Nuxt and Workflows Workers |
 | Adversarial E2E | `bun run test:e2e:adversarial` | recurring reviewer regressions tagged `@adversarial` |
-| Canary | `bun run test:e2e:canary` | read-only checks against a deployed Access hostname |
+| Canary | `bun run test:e2e:canary` | read-only checks for Access compatibility deployments; not the Better Auth reference canary |
 
 `bun run test:e2e:all` selects every project. The canary prints a clear SKIP
 when its deployment credentials are absent. `bun run check:e2e` selects hosted
@@ -53,7 +53,7 @@ unit test parses `package.json` and rejects omissions or duplicates.
 |---|---|---|
 | fast | repository hygiene, typechecks, CLI/unit tests, web/unit tests | none |
 | local | CLI build, node web build, Local Studio HTTP contract, streaming spike | one `node-server` artifact |
-| hosted | Access (three entries), Workflows (two auth modes), media, auth, hosted/adversarial Playwright, release rehearsal | one `cloudflare_module` artifact and one sibling Workflows artifact |
+| hosted | auth/principal contracts (Better Auth plus Access compatibility), Workflows (two auth modes), media, hosted/adversarial Playwright, release rehearsal | one `cloudflare_module` artifact and one sibling Workflows artifact |
 
 Run one lane directly with `bun run check:lane:fast`,
 `bun run check:lane:local`, or `bun run check:lane:hosted`.
@@ -80,22 +80,24 @@ the first sharded-gate landing.
 
 ## CI
 
-GitHub Actions splits the complete gate across two ordered jobs so the quick
-answer stays bounded without dropping hosted coverage:
+GitHub Actions separates required branch-protection checks from the advisory
+hosted lane:
 
-| Job | Budget | Command and ownership |
-|---|---:|---|
-| `check` | 15 minutes | `bun run check:pr --base origin/<base>` with fast and local lanes; production audit follows |
-| `hosted-contracts` | 40 minutes | needs `check`, installs Playwright Chromium, then runs `bun run check:lane:hosted` with 30-minute logical-step bounds and gate parallelism 1 |
-| `browser-e2e` | 15 minutes | independently installs Chromium and runs the synthetic Studio browser suite |
-| `fresh-clone` | 15 minutes each | frozen Ubuntu/macOS fresh builds plus the Windows install-only contract |
+| Job | Status | Budget | Command and ownership |
+|---|---|---:|---|
+| `check` | required | 15 minutes | `bun run check:pr --base origin/<base>` with fast and local lanes; production audit follows |
+| `browser-e2e` | required | 15 minutes | independently installs Chromium and runs the synthetic Studio browser suite |
+| `fresh-clone` (Ubuntu, macOS, Windows) | required | 15 minutes each | frozen Ubuntu/macOS fresh builds plus the Windows install-only contract |
+| `hosted-contracts` | advisory (`continue-on-error`) | 40 minutes | needs `check`, installs Chromium, then runs `bun run check:lane:hosted` with 30-minute logical-step bounds and gate parallelism 1 |
+| `serial-check` | nightly/manual | 120 minutes | serial fallback over the complete logical gate |
 
-The `check` job sets `FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1`. This keeps
-`check:pr` on fast and local even when the diff contains a normally unsafe
-path, because `hosted-contracts` is mandatory and supplies the complete hosted
-lane after `check`. Local `check:pr` calls retain the fail-closed adaptive tier
-selection described above. Scheduled and manually dispatched workflows also
-retain the 120-minute serial fallback job.
+The `check` job sets `FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1`, so CI runs
+fast and local lanes there while `hosted-contracts` reports the hosted lane
+separately. Hosted remains advisory because the Workflows contract exceeds its
+budget on the 2-core runner; [issue #96](https://github.com/jchu96/frame-of-mind/issues/96)
+tracks restoring a reliable required hosted check. Local `check:pr` calls retain
+the fail-closed adaptive tier selection described in [Gate tiers](#gate-tiers),
+and `bun run check:sharded` remains the repository's complete pre-merge gate.
 
 When CI is red, start with the owning job. A `check` failure belongs to hygiene,
 types, unit tests, local builds/contracts, or the production audit. A
@@ -183,8 +185,7 @@ The auth spike proves both mailer paths without `remote: true`; provider calls
 remain offline.
 
 Better Auth has a named Playwright project and a `HostedAuthMode` fixture seam.
-When `apps/web/server/utils/better-auth.ts` is absent, that project skips with
-the PR #75 reason rather than pretending the mode ran.
+The complete hosted lane runs it alongside the Access compatibility contract.
 
 ## Principals and sessions
 
@@ -196,9 +197,9 @@ const principalB = await hosted.session("b");
 const service = await hosted.session("service");
 ```
 
-In Access mode these are short-lived RS256 JWTs signed by the fixture JWKS.
-The session method is the single seam for adding Better Auth cookies when that
-adapter lands. Never print the returned headers. Principal A and B deliberately
+In Better Auth mode these are fixture sessions bound to `ba:` principals; in
+Access compatibility mode they are short-lived RS256 JWTs signed by the fixture
+JWKS. Never print the returned headers. Principal A and B deliberately
 use different subjects so ID-sweep tests can distinguish ownership without
 using real participant data.
 
@@ -210,12 +211,10 @@ Run the long-lived local topology and leave it open while you drive the browser:
 bun run hosted:local
 ```
 
-It prints `HOSTED LOCAL http://127.0.0.1:<port>` and the synthetic GitHub user
-`tester@example.test`, then stays up until Ctrl+C. It uses Better Auth, seeds
-that invite, starts fake GitHub and Gemini services, and prints captured
-fixture magic links. On a base where the Better Auth PR is not present, the
-same command prints a clear skip reason and falls back to the Access helper so
-the hosted Studio remains human-driveable. To select that path explicitly:
+It prints `HOSTED LOCAL http://127.0.0.1:<port>` and a synthetic invited user,
+then stays up until Ctrl+C. It uses Better Auth, seeds the invite, starts fake
+GitHub and Gemini services, and prints captured fixture magic links. To test
+the Access compatibility path explicitly:
 
 ```bash
 bun run hosted:local -- --mode cloudflare-access
@@ -238,7 +237,7 @@ browser journey:
 bun run test:e2e:hosted
 ```
 
-The Cloudflare Access pass refreshes desktop (1280×900) and mobile (390×844)
+The Access compatibility pass refreshes desktop (1280×900) and mobile (390×844)
 visual receipts in the current reviewed `apps/web/e2e/__screenshots__/ux-pass-*`
 directory. Pass 3 covers Intent, Recording empty and ready states, Review and
 start, Activity running/detail/list views, the published viewer, hosted review
@@ -313,16 +312,17 @@ These tests are intentionally coupled to named failure modes:
 - support receipts must remain a closed projection;
 - maintenance must preserve an old queued sibling while any worker heartbeat
   is recent;
-- the dark upload spike must retain slow-sink, over-length, and short-part
+- the direct-upload spike must retain slow-sink, over-length, and short-part
   receipts.
 
 Review briefs should link this file and the exact spec rather than reconstruct
 the boot sequence in prose.
 
-## Deployed canary
+## Access compatibility canary
 
-The canary is read-only and not part of `bun run check`. Configure it only in a
-release shell:
+The current deployed canary is read-only, not part of `bun run check`, and
+supports only Access compatibility deployments. Do not present it as coverage
+for the Better Auth reference instance. Configure it only in a release shell:
 
 ```bash
 FRAME_OF_MIND_CANARY_URL="https://<hostname>" \
