@@ -2,6 +2,12 @@
 
 ## 2026-08-24
 
+- Bounded issue #113's Better Auth hosted-access fixture: Chromium lifecycle,
+  navigation, in-page sign-in, provider callback, cookie, HTTP/body, command,
+  and Wrangler shutdown waits now fail with named deadlines instead of a
+  silent 30-minute lane timeout. The hosted CI step ceiling is five minutes;
+  both local auth modes, focused timeout tests, and typecheck passed.
+
 - Implemented ADR 0021's deploy-allowlisted admin approval surface. Approved
   Better Auth sessions listed by `NUXT_MAINTAINER_EMAILS` receive the only
   maintainer capability; all other HTML and API requests see unknown-route

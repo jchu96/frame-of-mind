@@ -48,6 +48,7 @@ jobs:
     continue-on-error: true
     env:
       FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'
+      FRAME_OF_MIND_HOSTED_ACCESS_STEP_TIMEOUT_SECONDS: '300'
       FRAME_OF_MIND_GATE_PARALLELISM: '1'
 
     steps:
