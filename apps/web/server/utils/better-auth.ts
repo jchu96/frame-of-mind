@@ -12,6 +12,8 @@ const INVITE_ERROR_CODE = "EMAIL_NOT_INVITED";
 const MAGIC_LINK_COOLDOWN_ERROR_CODE = "MAGIC_LINK_COOLDOWN";
 const MAGIC_LINK_COOLDOWN_MS = 60_000;
 
+export type HostedAccessState = "requested" | "approved" | "revoked";
+
 interface BetterAuthSession {
   user: {
     id: string;
@@ -55,11 +57,40 @@ function magicLinkCooldown(): APIError {
   });
 }
 
-async function invitedUserId(database: D1Database, email: string): Promise<string | null | undefined> {
-  const row = await database.prepare(
-    "SELECT claimed_user_id FROM hosted_auth_invites WHERE email = ?1",
-  ).bind(normalizeEmail(email)).first<{ claimed_user_id: string | null }>();
-  return row?.claimed_user_id;
+async function membershipForUser(
+  database: D1Database,
+  userId: string,
+  email: string,
+): Promise<HostedAccessState | undefined> {
+  const normalized = normalizeEmail(email);
+  let row = await database.prepare(
+    "SELECT claimed_user_id, state FROM hosted_auth_invites WHERE email = ?1",
+  ).bind(normalized).first<{
+    claimed_user_id: string | null;
+    state: HostedAccessState;
+  }>();
+  if (!row) return undefined;
+  if (row.claimed_user_id !== null && row.claimed_user_id !== userId) {
+    throw inviteDenied();
+  }
+  if (row.claimed_user_id === null) {
+    const now = new Date().toISOString();
+    const claimed = await database.prepare(
+      "UPDATE hosted_auth_invites "
+      + "SET claimed_user_id = ?1, claimed_at = COALESCE(claimed_at, ?2) "
+      + "WHERE email = ?3 AND claimed_user_id IS NULL",
+    ).bind(userId, now, normalized).run();
+    if (!claimed.success || claimed.meta.changes !== 1) {
+      row = await database.prepare(
+        "SELECT claimed_user_id, state FROM hosted_auth_invites WHERE email = ?1",
+      ).bind(normalized).first<{
+        claimed_user_id: string | null;
+        state: HostedAccessState;
+      }>();
+      if (!row || row.claimed_user_id !== userId) throw inviteDenied();
+    }
+  }
+  return row.state;
 }
 
 async function reserveMagicLinkSend(
@@ -68,15 +99,20 @@ async function reserveMagicLinkSend(
 ): Promise<void> {
   const normalized = normalizeEmail(email);
   const row = await database.prepare(
-    "SELECT invite.claimed_user_id, user.id AS matching_user_id "
+    "SELECT invite.claimed_user_id, invite.state, user.id AS matching_user_id "
     + "FROM hosted_auth_invites AS invite "
     + "LEFT JOIN better_auth_user AS user ON user.email = invite.email "
     + "WHERE invite.email = ?1",
   ).bind(normalized).first<{
     claimed_user_id: string | null;
+    state: HostedAccessState;
     matching_user_id: string | null;
   }>();
-  if (!row || (row.claimed_user_id !== null && row.claimed_user_id !== row.matching_user_id)) {
+  if (
+    !row
+    || row.state !== "approved"
+    || (row.claimed_user_id !== null && row.claimed_user_id !== row.matching_user_id)
+  ) {
     throw inviteDenied();
   }
 
@@ -85,6 +121,7 @@ async function reserveMagicLinkSend(
     "UPDATE hosted_auth_invites SET last_magic_link_at = ?1 "
     + "WHERE email = ?2 "
     + "AND (last_magic_link_at IS NULL OR last_magic_link_at <= ?3) "
+    + "AND state = 'approved' "
     + "AND (claimed_user_id IS NULL OR claimed_user_id = ("
     + "SELECT id FROM better_auth_user WHERE email = ?2))",
   ).bind(
@@ -95,37 +132,21 @@ async function reserveMagicLinkSend(
   if (reserved.success && reserved.meta.changes === 1) return;
 
   const current = await database.prepare(
-    "SELECT invite.claimed_user_id, user.id AS matching_user_id "
+    "SELECT invite.claimed_user_id, invite.state, user.id AS matching_user_id "
     + "FROM hosted_auth_invites AS invite "
     + "LEFT JOIN better_auth_user AS user ON user.email = invite.email "
     + "WHERE invite.email = ?1",
   ).bind(normalized).first<{
     claimed_user_id: string | null;
+    state: HostedAccessState;
     matching_user_id: string | null;
   }>();
-  if (!current || (
-    current.claimed_user_id !== null
-    && current.claimed_user_id !== current.matching_user_id
+  if (!current || current.state !== "approved" || (
+    current.claimed_user_id !== null && current.claimed_user_id !== current.matching_user_id
   )) {
     throw inviteDenied();
   }
   throw magicLinkCooldown();
-}
-
-async function requireAndClaimInvite(
-  database: D1Database,
-  userId: string,
-  email: string,
-): Promise<void> {
-  const normalized = normalizeEmail(email);
-  const claimed = await invitedUserId(database, normalized);
-  if (claimed === undefined || (claimed !== null && claimed !== userId)) throw inviteDenied();
-  const result = await database.prepare(
-    "UPDATE hosted_auth_invites "
-    + "SET claimed_user_id = ?1, claimed_at = COALESCE(claimed_at, ?2) "
-    + "WHERE email = ?3 AND (claimed_user_id IS NULL OR claimed_user_id = ?1)",
-  ).bind(userId, new Date().toISOString(), normalized).run();
-  if (!result.success || result.meta.changes !== 1) throw inviteDenied();
 }
 
 async function bindAccessSubject(
@@ -146,7 +167,7 @@ async function bindAccessSubject(
   }
 }
 
-export function createBetterAuth(event: H3Event) {
+export function betterAuthDatabase(event: H3Event): D1Database {
   // Nitro's Cloudflare renderer can enter middleware through an internal H3
   // request that omits the per-event platform object. The preset still
   // publishes the current Worker bindings on __env__ for that request chain.
@@ -159,6 +180,20 @@ export function createBetterAuth(event: H3Event) {
   if (!database) {
     throw createError({ statusCode: 503, statusMessage: "D1 binding DB is required for Better Auth." });
   }
+  return database;
+}
+
+export function betterAuthEmailBinding(event: H3Event): SendEmail | undefined {
+  const nitroEnvironment = (globalThis as typeof globalThis & {
+    __env__?: { EMAIL?: SendEmail };
+  }).__env__;
+  return (event.context.cloudflare?.env.EMAIL ?? nitroEnvironment?.EMAIL) as
+    | SendEmail
+    | undefined;
+}
+
+export function createBetterAuth(event: H3Event) {
+  const database = betterAuthDatabase(event);
   const config = useRuntimeConfig(event);
   const secret = configString(config.betterAuthSecret);
   if (secret.length < 32) {
@@ -179,9 +214,7 @@ export function createBetterAuth(event: H3Event) {
   const mailerFrom = configString(config.betterAuthMailerFrom);
   const mailerTelemetry = getHostedRouteTelemetry(event);
   const mailer = createMagicLinkMailer({
-    emailBinding: (event.context.cloudflare?.env.EMAIL ?? nitroEnvironment?.EMAIL) as
-      | SendEmail
-      | undefined,
+    emailBinding: betterAuthEmailBinding(event),
     httpOrigin: mailerOrigin,
     httpKey: configString(config.betterAuthMailerKey),
     from: mailerFrom,
@@ -251,14 +284,6 @@ export function createBetterAuth(event: H3Event) {
           returned: false,
           fieldName: "access_sub",
         },
-      },
-      validateUserInfo: async ({ user }) => {
-        if (!user.email || await invitedUserId(database, user.email) === undefined) {
-          return {
-            error: INVITE_ERROR_CODE,
-            errorDescription: "Sign-in is not available for this email.",
-          };
-        }
       },
     },
     session: {
@@ -335,11 +360,6 @@ export function createBetterAuth(event: H3Event) {
       session: {
         create: {
           before: async (session) => {
-            const user = await database.prepare(
-              "SELECT email FROM better_auth_user WHERE id = ?1",
-            ).bind(session.userId).first<{ email: string }>();
-            if (!user) throw inviteDenied();
-            await requireAndClaimInvite(database, session.userId, user.email);
             await bindAccessSubject(database, session.userId, accessSub);
           },
         },
@@ -360,13 +380,22 @@ export function createBetterAuth(event: H3Event) {
 
 export async function principalFromBetterAuthSession(event: H3Event): Promise<{
   principal: string;
+  userId: string;
   email: string;
+  accessState?: HostedAccessState;
 } | undefined> {
   const auth = createBetterAuth(event);
   const session = await auth.api.getSession({ headers: toWebRequest(event).headers }) as BetterAuthSession | null;
   if (!session?.user?.id || !session.user.email) return undefined;
+  const accessState = await membershipForUser(
+    betterAuthDatabase(event),
+    session.user.id,
+    session.user.email,
+  );
   return {
     principal: `ba:${session.user.id}`,
+    userId: session.user.id,
     email: normalizeEmail(session.user.email),
+    ...(accessState ? { accessState } : {}),
   };
 }
