@@ -1,4 +1,4 @@
-# Cloudflare Deployment and Access Runbook
+# Cloudflare Hosted Studio Deployment Runbook
 
 ## Outcome
 
@@ -6,47 +6,51 @@ This runbook deploys the Nuxt SSR workspace to Cloudflare Workers with:
 
 - D1 bound as `DB`;
 - a custom hostname;
-- Cloudflare Access protecting the whole hostname;
-- application-level validation of `Cf-Access-Jwt-Assertion`;
+- Better Auth sessions bound to one `ba:<userId>` principal;
+- invite-gated email magic links sent through Cloudflare Email Service;
 - no public meeting-data route;
 - no provider credential returned to browser code; and
-- `GEMINI_API_KEY` as the only Tier A secret, installed on both the public
-  session-minting Worker and internal Workflows Worker.
+- `GEMINI_API_KEY` installed on both the public session-minting Worker and
+  internal Workflows Worker;
+- `NUXT_BETTER_AUTH_SECRET` installed only on the public Worker; and
+- optional GitHub and HTTP-mailer secrets installed only when those fallback
+  sign-in transports are enabled.
 
 The repository does not auto-deploy. Deployment is an operator action.
 
-Status as of 2026-08-23: hosted creation remains dark and undeployed. Phases
-1–5 and Phase 6 release-preparation artifacts are contract-tested. ADR 0018
-Amendment 2 and direct-upload Tasks 2.1–2.4 are implemented; every production
-deployment gate remains pending. The exact checklist lives in the
+Status as of 2026-08-24: the reference instance deployed hosted creation on
+2026-08-23, retired its Cloudflare Access application, enabled Better Auth and
+email magic links, and completed its first production analysis. The exact
+implementation and release checklist lives in the
 [Hosted Studio plan](../conductor/tracks/hosted-studio_20260822/plan.md), and
 the data handled by any deployment is classified in
 [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md).
 
-## Hosted Studio (dark release shape)
+## Hosted Studio topology
 
-The proposed [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/)
-extends this same hostname and Access boundary with principal-scoped creation,
+The [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/)
+extends the public hostname and authentication boundary with principal-scoped creation,
 D1 job state, Cloudflare Workflows, and direct browser-to-Gemini uploads. The
-production artifact and binding shape are prepared but not deployed, and the
-hosted routes remain 404-dark by default. Tier A adds `GEMINI_API_KEY` as the
-only Tier A secret and is installed on both Workers; provider connections and
-their separate encryption KEK remain Tier B.
+reference instance runs this artifact with hosted routes enabled. A generic new
+deployment begins with those routes disabled until its release checks pass.
+`GEMINI_API_KEY` is installed on both Workers; provider connections and their
+separate encryption KEK remain outside this release shape.
 
 Task 3.0 selected a sibling, internal-only Workflows Worker because pinned
 Nitro 2.13.4 has no supported `WorkflowEntrypoint` export seam. The Nuxt Worker
-will call it through a service binding while remaining the only public Worker
-on the Access hostname. The target Workflows Worker deploys first; the Nuxt
-caller binding deploys second. Access context does not propagate over the
+calls it through a service binding while remaining the only public Worker
+on the application hostname. The target Workflows Worker deploys first; the Nuxt
+caller binding deploys second. Authentication context does not propagate over the
 binding, so the sibling must revalidate a bounded principal-scoped job receipt.
 The passing local/dry-run proof is recorded in
 [`docs/spikes/hosted-workflows-spike-2026-08-22.md`](spikes/hosted-workflows-spike-2026-08-22.md).
 
 Tasks 2.1–4 implement that topology behind build and runtime flags. The
-production Nuxt artifact contains the hosted implementation, but its runtime
-flag defaults to false and hosted creation stays 404-dark. The generated
+production Nuxt artifact contains the hosted implementation. The generic
+example starts with its runtime flag false; the reference instance sets it
+true. The generated
 `hosted-entry.mjs` is a deterministic delegating main; it has no upload
-interception or recording-byte logic. Before any future enablement, run:
+interception or recording-byte logic. Before enabling another deployment, run:
 
 ```bash
 bun run test:hosted-workflows-http
@@ -67,10 +71,9 @@ orphan, principal-isolation, and capture-provenance refusals.
 
 Copy `apps/workflows/wrangler.jsonc.example` to an ignored operator-owned
 `wrangler.jsonc`, then replace only the placeholders with exact infrastructure
-values. Never place a secret in either config. For the Phase 6 Tier A shape,
-`GEMINI_API_KEY` is the only Tier A secret. Install the same value on the
-public Worker (to mint/query/delete Files sessions) and sibling Worker (for
-analysis):
+values. Never place a secret in either config. Install the same
+`GEMINI_API_KEY` value on the public Worker (to mint/query/delete Files
+sessions) and sibling Worker (for analysis):
 
 ```bash
 node apps/web/node_modules/wrangler/bin/wrangler.js secret put GEMINI_API_KEY \
@@ -183,14 +186,14 @@ bound AES-GCM ciphertext.
 Deploy order is deliberate: apply migrations through
 `0010_access_requests.sql`,
 deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
-caller with the service binding. Enabling hosted routes is a later reviewed
-release task; do not set its flags during this dark Phase 3 deployment shape.
+caller with the service binding. Keep hosted routes disabled for a new
+deployment until the reviewed release checks in this runbook pass.
 
-Hosted telemetry remains disabled for the Tier A release shape because adding
-`SENTRY_DSN` would violate the one-secret gate. Never set a telemetry secret
-on the public Nuxt Worker. Spend-policy runtime values and their safe defaults
+Hosted telemetry remains disabled on the reference instance. Enabling
+`SENTRY_DSN` requires a separate review, and the secret belongs only on the
+internal Workflows Worker. Spend-policy runtime values and their safe defaults
 are documented in
-[RUNBOOK.md](RUNBOOK.md#hosted-spend-and-telemetry-controls-dark).
+[RUNBOOK.md](RUNBOOK.md#hosted-spend-and-telemetry-controls).
 
 The Cloudflare build uses Nitro's module-format `cloudflare_module` preset.
 The legacy `cloudflare-worker` service-worker preset is incompatible with
@@ -212,7 +215,7 @@ an idempotent no-op, validates both Worker binding graphs, scans the boundary,
 runs the local byte-stability import regression, and dry-runs both the current
 and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.
 The 2026-08-22 baseline completes in under 60 seconds on the maintainer
-workstation, so it is part of `bun run check`.
+workstation, so it is part of `bun run check:sharded`.
 
 ### Direct-upload ceiling
 
@@ -227,44 +230,44 @@ tenant.
 ```mermaid
 sequenceDiagram
     actor User
-    participant Access as Cloudflare Access
     participant Worker as Nuxt Worker
-    participant JWKS as Access JWKS
+    participant Auth as Better Auth
+    participant Email as Email Service
     participant D1
 
-    User->>Access: Request custom hostname
-    Access->>User: Identity challenge
-    User->>Access: Approved identity
-    Access->>Worker: Request plus Cf-Access-Jwt-Assertion
-    Worker->>JWKS: Resolve rotating signing key
-    JWKS-->>Worker: JWK set
-    Worker->>Worker: Verify signature, issuer, audience, RS256
+    User->>Worker: Request custom hostname
+    Worker-->>User: Redirect to sign-in
+    User->>Auth: Request invited email magic link
+    Auth->>D1: Reserve invite and one-time token
+    Auth->>Email: Send five-minute link
+    Email-->>User: Deliver link
+    User->>Auth: Consume link and create session
+    Auth->>D1: Bind session to ba:userId
     Worker->>D1: Read or import validated projection
     D1-->>Worker: Run data
     Worker-->>User: SSR/API response
 ```
 
-Access is the identity-aware proxy. The Worker still validates the JWT.
-Cloudflare explicitly recommends validating the header because a Worker may
-also be reachable through another route.
+Better Auth is the reference identity boundary. The Worker validates the
+session, binds one opaque principal, and authorizes every D1 read or mutation
+against that principal. Access-only and stacked adapters retain their own JWT
+validation for compatibility deployments.
 
 References:
 
 - [Nuxt on Workers](https://developers.cloudflare.com/workers/framework-guides/web-apps/more-web-frameworks/nuxt/)
 - [D1 bindings](https://developers.cloudflare.com/d1/worker-api/)
 - [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)
-- [Cloudflare Access applications](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/)
-- [Validate Access JWTs](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
+- [Cloudflare Email Service bindings](https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/)
 
 ## Prerequisites
 
 - Bun 1.3.14 or newer;
 - a Cloudflare account with Workers and D1;
 - a domain in the same account or a routable custom hostname;
-- a Cloudflare Zero Trust organization;
-- an identity provider configured in Zero Trust;
+- a sender domain onboarded to Cloudflare Email Service;
 - Wrangler authentication for the intended account;
-- authority to create a D1 database, Worker, DNS route, and Access application.
+- authority to create a D1 database, Worker, DNS route, and Email Service binding.
 
 Do not reuse an unrelated account token. Confirm the active account before
 creating resources.
@@ -330,41 +333,41 @@ Edit these values:
 |---|---|
 | `routes[0].pattern` | dedicated custom hostname |
 | `database_id` | exact ID returned by D1 create |
-| `NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN` | `https://<team>.cloudflareaccess.com` |
-| `NUXT_CLOUDFLARE_ACCESS_AUD` | Access application audience from step 6 |
+| `NUXT_AUTH_MODE` | `better-auth` for the reference topology |
+| `NUXT_BETTER_AUTH_URL` | exact HTTPS custom origin |
 | `NUXT_BETTER_AUTH_MAILER_FROM` | onboarded sender, for example `sign-in@<domain>` |
 | `NUXT_ACCESS_REQUEST_NOTIFY` | optional maintainer address for access-request notifications |
 | `NUXT_ACCESS_REQUEST_PENDING_CAP` | maximum pending self-serve access requests; defaults to `200` |
 | `services[0].service` | exact internal Workflows Worker name |
 
-Keep:
+Set:
 
 ```json
-"NUXT_AUTH_MODE": "cloudflare-access",
+"NUXT_AUTH_MODE": "better-auth",
 "NUXT_HOSTED_WORKFLOWS_ENABLED": "false"
 ```
 
-If the audience or team domain is missing, the application fails closed.
-
-Accepted ADRs 0019 and 0020 also permit `better-auth` or
-`cloudflare-access+better-auth`. These modes are contract-proven but not the
-committed production default. They additionally require:
+The committed example remains an Access compatibility starting point; the
+operator-owned reference configuration makes the explicit change above.
+Better Auth is the reference topology; Access-only and stacked modes remain
+compatibility adapters. Better Auth requires:
 
 - migrations `0006_better_auth.sql`, `0009_magic_link_cooldown.sql`, and
   `0010_access_requests.sql` on the
   public Worker's D1 database;
 - `NUXT_BETTER_AUTH_URL` set to the exact HTTPS custom origin;
-- GitHub client ID, magic-link sender, and optional fallback HTTPS mailer
-  origin as Worker variables; and
-- `NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
-  the optional fallback `NUXT_BETTER_AUTH_MAILER_KEY` set with `wrangler
-  secret put` on the public Nuxt Worker only.
+- a magic-link sender and optional fallback HTTPS mailer origin as Worker
+  variables;
+- `NUXT_BETTER_AUTH_SECRET` set with `wrangler secret put` on the public Nuxt
+  Worker only; and
+- a GitHub client ID/secret only when GitHub login is enabled, plus
+  `NUXT_BETTER_AUTH_MAILER_KEY` only when the HTTP mailer fallback is enabled.
 
 Use at least 32 random bytes for the Better Auth secret. Never put these
-secrets in Wrangler JSON, the browser, or the internal Workflows Worker. The
-stacked mode retains the Access domain/audience and policy in addition to all
-Better Auth settings. The release rehearsal rejects unset and unknown hosted
-auth modes.
+secrets in Wrangler JSON, the browser, or the internal Workflows Worker.
+Access-only and stacked modes remain compatibility options and retain the
+Access domain, audience, and policy in addition to their mode-specific
+settings. The release rehearsal rejects unset and unknown hosted auth modes.
 
 ## 5. Apply the D1 migration
 
@@ -418,13 +421,14 @@ Run the built-Worker two-principal stop/go before the remote apply:
 
 ```bash
 bun run test:hosted-access-http
+bun run test:hosted-access-http:better-auth
 ```
 
-The final receipt must include `HOSTED_ACCESS_CONTRACT PASSED`, isolated list
+Each receipt must include `HOSTED_ACCESS_CONTRACT PASSED`, isolated list
 and 404 detail lines for both principals, a 409 `run_principal_conflict`, and
 403 denials for both a service principal and a missing assertion. The contract
-also applies all migrations twice against an empty local D1 and proves hosted
-creation remains 404-dark.
+also applies all migrations twice against an empty local D1 and proves the
+explicit disabled-hosted fixture remains 404.
 
 After migration, verify no sentinel survived:
 
@@ -440,26 +444,21 @@ user sessions: each list contains only its own imported run, foreign detail is
 404, a reused foreign run ID is 409 `run_principal_conflict`, and
 `GET /api/session` exposes display email but no `sub` or principal.
 
-## 6. Create the Access application
+## 6. Configure Better Auth sign-in
 
-In Cloudflare Zero Trust:
+1. Set `NUXT_BETTER_AUTH_URL` to the exact HTTPS custom origin.
+2. Create a random Better Auth secret of at least 32 bytes and install it with
+   `wrangler secret put NUXT_BETTER_AUTH_SECRET` on the public Worker.
+3. Onboard the sender domain to Cloudflare Email Service.
+4. Bind Email Service as `EMAIL` and set
+   `NUXT_BETTER_AUTH_MAILER_FROM` to the exact onboarded sender.
+5. Add only reviewed addresses to the D1 invite table with
+   `bun scripts/studio-users.ts --mode better-auth add "<email-address>"`.
+6. Keep GitHub OAuth disabled unless its client ID and secret are separately
+   configured and reviewed.
 
-1. Open **Access controls → Applications**.
-2. Create a **Self-hosted** application.
-3. Enter the exact custom hostname from Wrangler.
-4. Protect the root path so every page and API route is covered.
-5. Add a narrow **Allow** policy:
-   - specific email addresses, or
-   - a controlled identity-provider group.
-6. Add Require rules such as device posture when appropriate.
-7. Do not add an Everyone Bypass policy.
-8. Save the application.
-9. Open its additional settings.
-10. Copy the exact Application Audience (AUD) tag into the local
-    `wrangler.jsonc`.
-
-An email-domain Allow rule is broader than a named group. Choose the smallest
-population that needs meeting-derived analyses.
+An invite admits an email address but does not become row ownership. Better
+Auth binds ownership to the opaque `ba:<userId>` principal after sign-in.
 
 ## 7. Build and deploy
 
@@ -503,29 +502,30 @@ Granola, Bluedot, Asana, and telemetry secrets remain absent in Tier A.
 ### Direct unauthenticated request
 
 ```bash
-curl -i "https://frame-of-mind.example.com/api/health"
+curl -i "https://<hostname>/api/health"
 ```
 
-Expect an Access redirect or denial, not JSON run data.
+Expect a redirect to `/sign-in` for HTML or a fail-closed JSON denial for API
+requests, never run data.
 
 ### Browser identity
 
 1. Open the custom hostname in a private browser window.
-2. Complete the configured identity challenge.
+2. Request and consume an invite-gated email magic link.
 3. Verify the header shows the authenticated email.
 4. Open Runs and Import.
 5. Import a non-sensitive test fixture.
 6. Verify the run list and detail page.
 
-### Wrong audience
+### Missing or invalid session
 
-Temporarily use an invalid audience in a non-production test deployment. An
-otherwise valid Access token must receive 403 from the application.
+Request a protected API without a Better Auth cookie in a non-production test
+deployment. It must receive 403 `better_auth_session_missing`.
 
 ### Direct Worker route
 
-If a `workers.dev` route exists, request it directly. The in-application JWT
-gate must return 403 because Access did not add a valid assertion.
+If a `workers.dev` route exists, request it directly. The in-application
+session gate must still return 403 without a valid Better Auth session.
 
 ## 9. Import production data deliberately
 
@@ -544,9 +544,9 @@ body logging, JWT logging, analysis logging, or D1 row logging.
 
 ### Key rotation
 
-The application uses the Access JWKS endpoint through `jose`; it does not pin a
-single certificate. Cloudflare rotates signing keys, so remote JWKS resolution
-prevents manual certificate drift.
+Rotate `NUXT_BETTER_AUTH_SECRET` only through a reviewed session-invalidation
+window. Existing sessions become invalid; verify invite-gated sign-in and
+principal isolation again before calling rotation complete.
 
 ### Database backup
 
@@ -587,7 +587,7 @@ help select the candidate but is never ownership authority. Validate and
 preview the composite key before deletion:
 
 ```bash
-FOM_PRINCIPAL_SUB="<EXACT_ACCESS_SUB>"
+FOM_PRINCIPAL_SUB="<EXACT_PRINCIPAL_SUB>"
 FOM_RUN_ID="<EXACT_RUN_ID>"
 case "$FOM_PRINCIPAL_SUB" in
   ""|*[!a-zA-Z0-9._:@/-]*)
@@ -638,7 +638,7 @@ Before upgrading Nuxt, Nuxt UI, Wrangler, `jose`, Bun, or Workers types:
 1. read current official documentation;
 2. run local tests and typechecks;
 3. build both Nitro targets;
-4. verify JWT denial and success paths;
+4. verify Better Auth denial and success paths;
 5. run a local D1 migration;
 6. inspect the generated Worker entrypoint and asset paths.
 
@@ -651,7 +651,7 @@ Application rollback:
 2. dry-run that exact artifact with its matching configuration;
 3. deploy that exact output only after the dry-run names the expected module
    entry, Assets, D1, and service bindings without `100329`;
-4. verify Access and API denial before importing data.
+4. verify authentication and API denial before importing data.
 
 Database rollback:
 
@@ -670,15 +670,15 @@ Database rollback:
 
 ## Common failures
 
-### Every request returns 403 after Access login
+### Every request returns 403 after Better Auth sign-in
 
 Check:
 
-- exact team-domain origin, including `https://`;
-- exact application AUD;
-- custom hostname is attached to the same Access application;
-- Worker variables use the `NUXT_` names in the template;
-- system clock and Access session are valid.
+- exact `NUXT_BETTER_AUTH_URL`, including `https://`;
+- `NUXT_BETTER_AUTH_SECRET` is installed on the public Worker;
+- migrations through `0009_magic_link_cooldown.sql` are applied;
+- the email invite is claimed by the expected Better Auth user;
+- the session cookie is current and valid.
 
 ### D1 binding is missing
 
@@ -702,14 +702,18 @@ is reviewed.
 
 Static Workers Assets do not contain meeting data. Inspect Worker logs and the
 D1 binding. Confirm the request reached the Worker and carried a validated
-Access assertion.
+Better Auth session.
 
 ## Managing who can sign in
 
-Access membership lives in one Access **group** ("Frame of Mind testers") that
-the application policy points at. Adding or removing a tester never edits the
-policy. Use the compatibility CLI or the mode-aware CLI instead of the
-dashboard:
+The Better Auth reference instance keeps membership as a stateful D1 row.
+Sign-in establishes identity; only an `approved` membership binds the
+downstream principal. It is membership authority, not row ownership.
+
+Access-only and stacked compatibility deployments keep their outer membership
+in one Access **group** ("Frame of Mind testers") that the application policy
+points at. Adding or removing a tester never edits the policy. Use the
+compatibility CLI or the mode-aware CLI instead of the dashboard:
 
 ```bash
 export FRAME_OF_MIND_ACCESS_ENV=<PRIVATE_SECRETS_DIR>/access.env   # token, account id, group id — never committed
@@ -724,19 +728,18 @@ The CLI refuses to remove the last member. Login methods (Google, One-time PIN,
 GitHub) are configured once as identity providers; membership is by email,
 which works for any provider that returns a verified email.
 
-Better Auth membership is a stateful D1 row claimed by the first successful
-user ID. Sign-in establishes identity; only `approved` binds the downstream
-principal. It is membership authority, not row ownership:
+Manage the Better Auth reference membership and access-request queue through
+D1:
 
 ```bash
 export FRAME_OF_MIND_WRANGLER_CONFIG=apps/web/wrangler.jsonc
 export FRAME_OF_MIND_D1_DATABASE=frame-of-mind
 bun scripts/studio-users.ts --mode better-auth list
 bun scripts/studio-users.ts --mode better-auth list-requests
-bun scripts/studio-users.ts --mode better-auth add someone@example.com
-bun run approve someone@example.com
-bun scripts/studio-users.ts --mode better-auth deny someone@example.com
-bun scripts/studio-users.ts --mode better-auth remove someone@example.com
+bun scripts/studio-users.ts --mode better-auth add "<email-address>"
+bun run approve "<email-address>"
+bun scripts/studio-users.ts --mode better-auth deny "<email-address>"
+bun scripts/studio-users.ts --mode better-auth remove "<email-address>"
 ```
 
 These commands target remote D1 by default. `add` is the pre-approval command;
@@ -751,9 +754,9 @@ binding that principal.
 
 ### Enable magic-link email
 
-GitHub login does not require email sending; this section is optional unless
-the deployment also offers magic-link sign-in. Email sign-in uses the public
-Worker's Cloudflare Email Service binding first.
+The reference instance uses the public Worker's Cloudflare Email Service
+binding for magic-link sign-in. GitHub login, when separately configured, does
+not require email sending.
 The HTTPS mailer remains a compatibility fallback only when the binding is
 absent. To enable the binding path:
 
@@ -776,8 +779,8 @@ with D1 membership and `NUXT_ACCESS_REQUEST_NOTIFY`:
 "send_email": [{
   "name": "EMAIL",
   "allowed_destination_addresses": [
-    "approved-person@example.com",
-    "maintainer@example.com"
+    "<approved-email-address>",
+    "<maintainer-email-address>"
   ]
 }]
 ```
@@ -807,27 +810,28 @@ also reserves each approved email for 60 seconds before delivery. A second
 request in that window returns `MAGIC_LINK_COOLDOWN` and does not call either
 mailer transport.
 
-## Cutover to `better-auth` with GitHub login (ADR 0019, accepted 2026-08-23)
+## Better Auth deployment from zero
 
 > [!NOTE]
 > Hosted mode is optional. Local Studio and the synthetic `hosted:local`
 > topology need neither a Cloudflare account nor a GitHub account.
 
-### Hosted mode from zero
-
 1. [Create the D1 database](#3-create-the-d1-database).
 2. [Copy the operator-owned `wrangler.jsonc` from the committed example](#4-create-the-local-wrangler-configuration).
 3. [Apply the D1 migrations](#5-apply-the-d1-migration).
-4. [Create one GitHub login application](#github-login-application).
-5. [Configure Better Auth access approval](#managing-who-can-sign-in).
-6. [Build and deploy](#7-build-and-deploy).
-7. [Verify fail-closed behavior](#8-verify-fail-closed-behavior).
-8. Add only the hosted capabilities you need: [Email Service for magic
+4. [Create one GitHub login application](#optional-github-login-application).
+5. [Configure Better Auth sign-in](#6-configure-better-auth-sign-in).
+6. [Configure Better Auth access approval](#managing-who-can-sign-in).
+7. [Build and deploy](#7-build-and-deploy) with hosted creation disabled.
+8. [Verify fail-closed behavior](#8-verify-fail-closed-behavior).
+9. Add only the hosted capabilities you need: [Email Service for magic
    links](#enable-magic-link-email), [private R2 retained
    media](#private-retained-media-r2-shape), and the [internal Workflows
    Worker](#workflows-worker-configuration-shape).
+10. Run `bun run check:sharded` through `gate-lock`, then enable hosted creation
+    and submit one generated, non-sensitive canary recording.
 
-### GitHub login application
+### Optional GitHub login application
 
 Choose one GitHub application type. Both use Homepage
 `https://<YOUR_HOSTNAME>` and callback
@@ -845,26 +849,22 @@ Put the resulting values in an uncommitted file, for example
 `<PRIVATE_SECRETS_DIR>/github-oauth.env`, as `GITHUB_CLIENT_ID=…` and
 `GITHUB_CLIENT_SECRET=…`.
 
-Before cutover, apply migrations through `0010_access_requests.sql`, install the
+Before deployment, apply migrations through `0010_access_requests.sql`, install the
 `NUXT_BETTER_AUTH_SECRET` Worker secret, and optionally pre-approve accounts with
-`bun scripts/studio-users.ts --mode better-auth add <email>`.
+`bun scripts/studio-users.ts --mode better-auth add "<email-address>"`.
 
 1. **Create the GitHub login application** using one of the two options above.
 2. **Secrets + vars** (operator): `wrangler secret put
    NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`; in `wrangler.jsonc` vars set
    `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID`, `NUXT_BETTER_AUTH_URL=https://<YOUR_HOSTNAME>`,
-   and `NUXT_AUTH_MODE=cloudflare-access+better-auth` (stacked) for the first deploy.
+   and `NUXT_AUTH_MODE=better-auth`. GitHub is an additional sign-in method,
+   not a different principal or perimeter.
 3. **Optional email sign-in**: onboard the sending domain, add the `EMAIL`
    binding, set `NUXT_BETTER_AUTH_MAILER_FROM`, and redeploy. Use the restricted
    canary binding above until every approved address has been exercised.
-4. **Deploy stacked** and verify: Access still 302s anonymous traffic; behind
-   Access, `/sign-in` shows "Continue with GitHub"; a sign-in with an approved
-   email lands on the viewer with `GET /api/session` showing a `ba:` principal
-   and the Access `sub` bound; an unapproved account lands on `/request-access`
-   and receives 403 from run, hosted, media, and composer APIs.
-5. **Flip**: set `NUXT_AUTH_MODE=better-auth`, deploy, then set the Access
-   application policy to *bypass* (or delete the app) so anonymous traffic
-   reaches the Worker's own sign-in page. Re-verify: anonymous `/api/runs`
-   → 401/redirect to `/sign-in`, GitHub sign-in works, `access-users.ts` is
-   no longer authoritative (membership is the D1 state table).
-6. Record the cutover in `work_log.md`.
+4. **Deploy and verify** with hosted creation disabled: an approved GitHub
+   identity lands on the viewer with `GET /api/session` showing a `ba:`
+   principal; an unapproved identity lands on `/request-access` and receives
+   403 from run, hosted, media, and composer APIs.
+5. Run the locked sharded gate, enable hosted creation, and submit one
+   generated, non-sensitive canary recording.

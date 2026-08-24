@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository        | `jchu96/frame-of-mind`                      |
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
-| Current version   | `0.3.0`                                     |
+| Current version   | `0.4.0`                                     |
 | Default model     | `gemini-3.7-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
@@ -28,19 +28,22 @@ Context and video are sensitive inputs. The operator controls authorization,
 retention, review, and publishing. Frame of Mind produces drafts with
 provenance; it does not make product, personnel, or engineering decisions.
 
-Current release status: the v0.3.0 production adapter bypasses the failing SDK
+Current release status: the v0.4.0 production adapter bypasses the failing SDK
 upload wrapper with Google's documented resumable protocol and derives a
 provider-safe response schema from the authoritative local Zod contract. Run
 the synthetic canary in section 1.5 before the first sensitive analysis and
 after model, SDK, runtime, or upload changes.
 
-Status as of 2026-08-23: Local Studio Phases 1–8 are shipped, including the
+Status as of 2026-08-24: Local Studio Phases 1–8 are shipped, including the
 composer, durable execution, Activity recovery, retained playback,
 digest-verified reattachment, local exports, and unified maintenance. The
 [Local Studio plan](../conductor/tracks/local-studio_20260726/plan.md) maps each
-claim to focused and full-gate receipts. Hosted creation is implemented only in
-dark slices and is not deployed; direct upload, retained R2, and evidence
-capture are contract-proven while deployment gates remain in the
+claim to focused and full-gate receipts. Hosted creation deployed to the
+reference instance on 2026-08-23 and completed its first production analysis.
+It uses invite-gated Better Auth email magic links, Cloudflare Email Service,
+direct upload, durable Workflows, retained R2, evidence capture, spend controls,
+and principal-scoped publication. Cloudflare Access has been retired from that
+instance. The implementation and release receipts remain mapped in the
 [Hosted Studio plan](../conductor/tracks/hosted-studio_20260822/plan.md).
 Use [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md) for storage, retention,
 visibility, and repository-hygiene rules.
@@ -1354,12 +1357,11 @@ model ID, duration, version/mode, and platform. It never sends transcripts,
 recordings, findings or analysis output, paths, filenames, meeting IDs, keys or
 tokens, request/response bodies, query-bearing URLs, emails, or IP addresses.
 Tracing, Replay, profiling, logs, and user feedback remain disabled.
-The current Cloudflare review build excludes the Sentry Nuxt module and DSN.
-The dark hosted execution build uses a separate strict event port: Nuxt
-forwards codes/structural fields over its internal service binding. The Phase
-6 Tier A release shape permits `GEMINI_API_KEY` as its only secret, so hosted
-Sentry delivery stays off; do not set `SENTRY_DSN` on either Worker for that
-release.
+The current Cloudflare build excludes the Sentry Nuxt module and DSN. Hosted
+execution uses a separate strict event port: Nuxt forwards codes/structural
+fields over its internal service binding. The reference release keeps hosted
+Sentry delivery off. Do not set `SENTRY_DSN` on either Worker unless a
+separately reviewed telemetry deployment preserves the codes-only boundary.
 
 Disable telemetry by removing `SENTRY_DSN` from `.env` and the process
 environment, then restart Studio or rerun the CLI. No local database or run
@@ -1367,26 +1369,29 @@ bundle contains the DSN or a telemetry payload. The complete boundary and
 scrubbing policy are recorded in
 [ADR 0017](adr/0017-opt-in-sentry-telemetry.md#disable-telemetry).
 
-### Hosted authentication modes (ADR 0019 accepted; deployment remains explicit)
+### Hosted authentication
 
 The public Worker recognizes `cloudflare-access`, `better-auth`, and
 `cloudflare-access+better-auth`. Keep the value explicit whenever hosted
-workflows are enabled; unset or unknown values fail closed. The committed
-production example remains Access-only.
+workflows are enabled; unset or unknown values fail closed. The reference
+instance uses `better-auth`; its former Access application is deleted. Access
+and stacked modes remain compatibility options for other deployments.
 
 For Better Auth modes, apply D1 migrations `0006_better_auth.sql`,
 `0009_magic_link_cooldown.sql`, and `0010_access_requests.sql`, set
 `NUXT_BETTER_AUTH_URL` to the exact HTTPS application origin, and store
-`NUXT_BETTER_AUTH_SECRET` and `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` as
-public-Worker secrets. To enable magic-link email, onboard the sender domain,
+`NUXT_BETTER_AUTH_SECRET` as a public-Worker secret. Add
+`NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` only when GitHub login is enabled. To
+enable magic-link email, onboard the sender domain,
 add the public Worker `send_email` binding named `EMAIL`, and set
 `NUXT_BETTER_AUTH_MAILER_FROM` to its exact sender address. The binding sends
 first; `NUXT_BETTER_AUTH_MAILER_ORIGIN` plus the secret
 `NUXT_BETTER_AUTH_MAILER_KEY` remain an optional HTTP fallback when no binding
 is present. Keep the GitHub client ID, sender, and mailer HTTPS origin as
 non-secret configuration. Never use a remote email binding in a local test,
-and never place these secrets on the internal Workflows Worker; conversely,
-never place `GEMINI_API_KEY` on the public Worker.
+and never place these authentication secrets on the internal Workflows Worker.
+Install `GEMINI_API_KEY` on both Workers: the public Worker mints and manages
+direct-upload sessions, while the internal Worker performs analysis.
 
 Production accepts at most three magic-link requests per 15 minutes and uses a
 conditional D1 update to reserve each approved email for 60 seconds before the
@@ -1399,10 +1404,10 @@ Manage app-owned membership through the D1 invite table:
 ```bash
 bun scripts/studio-users.ts --mode better-auth list
 bun scripts/studio-users.ts --mode better-auth list-requests
-bun scripts/studio-users.ts --mode better-auth add someone@example.com
-bun run approve someone@example.com
-bun scripts/studio-users.ts --mode better-auth deny someone@example.com
-bun scripts/studio-users.ts --mode better-auth remove someone@example.com
+bun scripts/studio-users.ts --mode better-auth add "<email-address>"
+bun run approve "<email-address>"
+bun scripts/studio-users.ts --mode better-auth deny "<email-address>"
+bun scripts/studio-users.ts --mode better-auth remove "<email-address>"
 ```
 
 Set `FRAME_OF_MIND_WRANGLER_CONFIG` and `FRAME_OF_MIND_D1_DATABASE` for the
@@ -1441,10 +1446,10 @@ five minutes to reach a cached request; remove the invite/session and outer
 Access membership where applicable, then wait through that bound before
 calling revocation complete.
 
-### Hosted spend and telemetry controls (dark)
+### Hosted spend and telemetry controls
 
-Task 5a is implemented but not deployed. Apply D1 migration
-`0005_hosted_spend_telemetry.sql` only as part of a reviewed hosted release.
+Task 5a is deployed on the reference instance. Apply D1 migration
+`0005_hosted_spend_telemetry.sql` as part of any new reviewed hosted release.
 The public Nuxt Worker reads these runtime values; the shown defaults are safe
 global defaults for a newly seen principal and never overwrite an existing
 principal-specific D1 cap:
@@ -1480,9 +1485,9 @@ The authenticated `POST /api/hosted/spend/janitor` route is available only in
 the hosted build. It is principal-scoped and idempotently settles reservations
 left in `reserved` when their attempt is already terminal or their sealed media
 receipt has expired. Zero-claim rows are released; rows with incomplete usage
-commit the full reservation. Run it through the same Cloudflare Access user
-principal as the affected hosted activity. A second invocation should report
-zero changes.
+commit the full reservation. Run it through the same authenticated principal
+as the affected hosted activity. A second invocation should report zero
+changes.
 
 The authenticated `POST /api/hosted/media/janitor` route is the companion
 upload cleanup pass. Invoke it per affected principal. It queries and deletes
@@ -1500,8 +1505,8 @@ authoritative offset) or Discard. Page exit and hidden-tab transitions issue a
 best-effort keepalive DELETE, but operators should expect the recovery list to
 remain the fallback when a browser cannot deliver it.
 
-Future telemetry enablement requires a separately reviewed expansion of the
-Tier A one-secret boundary. If approved later, `SENTRY_DSN` belongs only on
+Future telemetry enablement requires a separately reviewed secret-custody
+expansion. If approved later, `SENTRY_DSN` belongs only on
 the internal Workflows Worker; optional `SENTRY_ENVIRONMENT` and
 `SENTRY_RELEASE` values must remain structural identifiers. Never put the DSN
 or hosted spend values in browser state, committed Wrangler files, or
@@ -1520,10 +1525,12 @@ The hosted commands must print `HOSTED_SPEND_CONTRACT PASSED`,
 confirm the telemetry contract accepts codes/structural fields while rejecting
 content.
 
-### Hosted Phase 6.4 post-deploy canary
+### Access compatibility canary
 
-After deploying the public Worker with hosted creation still dark, run the
-read-only Access canary before any traffic expansion:
+The automated deployed canary currently exercises only Access compatibility
+deployments. It is not the canary for the Better Auth reference instance,
+whose Access application was retired. Before expanding traffic on an Access
+deployment, keep hosted creation disabled and run:
 
 ```bash
 FRAME_OF_MIND_CANARY_URL="https://<YOUR_HOSTNAME>" \
@@ -1533,23 +1540,25 @@ bun run test:e2e:canary
 ```
 
 Require `CANARY ...=PASS` for the unauthenticated 302, deliberate service-token
-403 on `/api/runs`, sanitized `/api/session` shape, dark hosted pages returning
-404, `/api/health`, and the static favicon. The command is not part of
+403 on `/api/runs`, sanitized `/api/session` shape, disabled hosted pages
+returning 404, `/api/health`, and the static favicon. The command is not part of
 `bun run check`; missing URL or token input must print `CANARY environment=SKIP`.
 Pointing the URL at an unprotected local Studio must fail the unauthenticated
 302 check. Keep the token only in the release shell and never paste it into the
 receipt.
 
-### Hosted release enablement and canary (dark by default)
+### Hosted release enablement and canary
 
-The committed production shape builds hosted routes but keeps
-`NUXT_HOSTED_WORKFLOWS_ENABLED=false`. The deterministic `hosted-entry.mjs`
+The generic committed example builds hosted routes but keeps
+`NUXT_HOSTED_WORKFLOWS_ENABLED=false` as a safe starting point. The reference
+instance sets it to `true`. The deterministic `hosted-entry.mjs`
 delegates to Nitro and contains no upload interception. Do not enable the
 runtime flag until the direct-upload and Workflow contracts both pass.
 
 Release preparation:
 
-1. Run `bun run rehearse:hosted-release`, then `bun run check`; require
+1. Run `bun run rehearse:hosted-release`, then
+   `gate-lock bun run check:sharded`; require
    `HOSTED_RELEASE_REHEARSAL PASSED` and every hosted contract receipt.
 2. Record the hosted media session cap, declared-size ceiling, upload TTL, and
    retained-media days. Stop

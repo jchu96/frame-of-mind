@@ -2,6 +2,9 @@
 
 ## 2026-08-24
 
+- Reconciled README, architecture, deployment, testing, security, data,
+  credentials, workspace, MCP, skill, and scoped-agent guidance with the live
+  Better Auth Hosted Studio and the v0.4.0 sharded repository gate.
 - Replaced hosted spend's full retry-multiplied admission estimate with one
   first-attempt generation graph and a fail-closed D1 extension before each
   actual Gemini transport retry. Cap errors now distinguish exhausted allowance
@@ -22,6 +25,8 @@
   discriminates a real unapproved workerd session across session, runs, hosted,
   media, and composer surfaces.
 
+- Correction: the earlier required-hosted-contract description was superseded
+  the same evening; `hosted-contracts` is advisory pending issue #96.
 - Repaired the root-script dependency contract after repeated red runs went
   unnoticed: root scripts now own their `jose` dependency and repository
   hygiene rejects undeclared bare imports under `scripts/` and `test/`.
