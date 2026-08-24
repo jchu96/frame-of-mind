@@ -95,7 +95,7 @@ hosted lane:
 | `check` | required | 15 minutes | `bun run check:pr --base origin/<base>` with fast and local lanes; production audit follows |
 | `browser-e2e` | required | 15 minutes | independently installs Chromium and runs the synthetic Studio browser suite |
 | `fresh-clone` (Ubuntu, macOS, Windows) | required | 15 minutes each | frozen Ubuntu/macOS fresh builds plus the Windows install-only contract |
-| `hosted-contracts` | advisory (`continue-on-error`) | 40 minutes | needs `check`, installs Chromium, then runs `bun run check:lane:hosted` with 30-minute logical-step bounds and gate parallelism 1 |
+| `hosted-contracts` | advisory (`continue-on-error`) | 40 minutes | needs `check`, installs Chromium, then runs `bun run check:lane:hosted` with 30-minute logical-step bounds, a five-minute Better Auth access-step cap, and gate parallelism 1 |
 | `serial-check` | nightly/manual | 120 minutes | serial fallback over the complete logical gate |
 
 The `check` job sets `FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1`, so CI runs
@@ -117,7 +117,8 @@ kept its temporary clone on the checkout drive.
 
 Each logical step has a 20-minute hard timeout by default. Override it with the
 positive integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`; the 2-core hosted CI job
-uses 30 minutes. A timeout prints
+uses 30 minutes except for `test:hosted-access-http:better-auth`, whose
+`FRAME_OF_MIND_HOSTED_ACCESS_STEP_TIMEOUT_SECONDS` cap is five minutes. A timeout prints
 `exit=step_timeout` and terminates only the detached process group created for
 that step. The historically intermittent Better Auth Workflow contract receives
 one automatic retry only after `step_timeout`; CI extends that single-receipted

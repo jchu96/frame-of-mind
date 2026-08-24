@@ -567,7 +567,10 @@
     2026-08-24 (better-auth hosted-access step hangs to its 1800s step
     timeout; #113). Fix: compare the lane's conclusion on main's recent runs
     before treating it as PR-induced — and fix or re-tier the lane instead of
-    learning to ignore it.
+    learning to ignore it. Issue #113 bounds every hosted-access browser stage
+    at 30 seconds with a named error and lowers that step's outer ceiling to five
+    minutes; use the named stage from the next Linux receipt rather than
+    inferring a root cause from the old silent interval.
 13. **Concurrent PRs race migration prefixes.** Symptom: two merged PRs both
     ship `0011_*.sql` (#109 and #111, 2026-08-24). Cause: prefixes are chosen
     at branch time, not merge time. Fix: Wrangler tracks applied migrations
