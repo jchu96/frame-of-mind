@@ -19,11 +19,20 @@ async function requestAccess() {
   try {
     await $fetch("/api/access/request", { method: "POST", body: {} });
     await refresh();
-  } catch {
-    feedback.value = "We couldn't save your request. Please wait a moment and try again.";
+  } catch (error) {
+    feedback.value = errorStatus(error) === 429
+      ? "Too many requests. Try again in a few minutes."
+      : "We couldn't save your request. Please wait a moment and try again.";
   } finally {
     pending.value = false;
   }
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const candidate = error as { status?: unknown; statusCode?: unknown };
+  const status = candidate.statusCode ?? candidate.status;
+  return typeof status === "number" ? status : undefined;
 }
 
 async function signOut() {
@@ -51,7 +60,7 @@ async function signOut() {
           color="info"
           variant="soft"
           title="Request received"
-          description="You'll get an email when approved. Until then, recordings, analyses, and results stay unavailable."
+          description="The maintainer will review this request. Until then, recordings, analyses, and results stay unavailable."
         />
         <UAlert
           v-else-if="session?.accessState === 'revoked'"
@@ -62,7 +71,7 @@ async function signOut() {
         />
         <template v-else>
           <p class="text-sm leading-6 text-muted">
-            Send one access request for <span class="font-semibold text-highlighted">{{ session?.email }}</span>. You'll get an email when approved.
+            Send one access request for <span class="font-semibold text-highlighted">{{ session?.email }}</span>. The maintainer will review this request.
           </p>
           <UButton
             block
