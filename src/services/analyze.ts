@@ -180,8 +180,8 @@ export interface AnalysisProgressReporter {
 }
 
 export type AnalysisProjectionInput =
-  | { analysis: AnalysisRun; manifest: RunManifest }
-  | { analysis: AnalysisRunV3; manifest: RunManifestV3 };
+  | { analysis: AnalysisRun; manifest: RunManifest; outcome?: AnalysisOutcome }
+  | { analysis: AnalysisRunV3; manifest: RunManifestV3; outcome?: AnalysisOutcome };
 
 export type PublishedAnalysisRun = AnalysisProjectionInput & {
   readonly directory: string;
@@ -1229,13 +1229,21 @@ function projectionInputFrom(
     published.analysis.schemaVersion === 2
     && published.manifest.schemaVersion === 2
   ) {
-    return { analysis: published.analysis, manifest: published.manifest };
+    return {
+      analysis: published.analysis,
+      manifest: published.manifest,
+      outcome: published.outcome,
+    };
   }
   if (
     published.analysis.schemaVersion === 3
     && published.manifest.schemaVersion === 3
   ) {
-    return { analysis: published.analysis, manifest: published.manifest };
+    return {
+      analysis: published.analysis,
+      manifest: published.manifest,
+      outcome: published.outcome,
+    };
   }
   throw new Error("Run contract schema versions do not match.");
 }
