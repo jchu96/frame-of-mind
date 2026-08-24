@@ -110,10 +110,20 @@ function hostedAttemptId(value: StoredRun): string | undefined {
           class="fom-panel p-6 sm:p-8"
         >
           <div class="flex flex-wrap items-center gap-2">
-            <UBadge :color="item.result.accepted ? 'success' : 'neutral'" variant="soft">
+            <UBadge
+              data-run-finding-verdict
+              :data-semantic-color="item.result.accepted ? 'success' : 'neutral'"
+              :color="item.result.accepted ? 'success' : 'neutral'"
+              variant="soft"
+            >
               {{ item.result.accepted ? "Accepted" : "Rejected" }}
             </UBadge>
-            <UBadge :color="importanceColor(item.result.importance || item.candidate.importance)" variant="outline">
+            <UBadge
+              data-run-finding-severity
+              :data-semantic-color="importanceColor(item.result.importance || item.candidate.importance)"
+              :color="importanceColor(item.result.importance || item.candidate.importance)"
+              variant="outline"
+            >
               {{ item.result.importance || item.candidate.importance }}
             </UBadge>
             <span class="font-mono text-xs text-muted">
@@ -121,17 +131,17 @@ function hostedAttemptId(value: StoredRun): string | undefined {
             </span>
           </div>
 
-          <h3 class="mt-4 text-xl font-black tracking-tight">{{ item.result.title }}</h3>
-          <p class="mt-3 leading-7 text-default">{{ item.result.summary }}</p>
+          <h3 data-run-finding-title class="mt-4 text-xl font-black tracking-tight">{{ item.result.title }}</h3>
+          <p data-run-finding-summary class="mt-3 leading-7 text-default">{{ item.result.summary }}</p>
 
           <dl v-if="item.result.details?.length" class="mt-5 grid gap-3 sm:grid-cols-2">
             <div v-for="detail in item.result.details" :key="detail.label" class="border-l-2 border-primary pl-3">
               <dt class="text-xs font-bold uppercase tracking-wider text-muted">{{ detail.label }}</dt>
-              <dd class="mt-1 whitespace-pre-wrap text-sm leading-6">{{ detail.value }}</dd>
+              <dd data-run-finding-value class="mt-1 whitespace-pre-wrap text-sm leading-6">{{ detail.value }}</dd>
             </div>
           </dl>
 
-          <div v-if="item.result.evidence?.reporterQuote || item.result.evidence?.verbatimUiText" class="mt-5 border border-default bg-elevated p-4">
+          <div v-if="item.result.evidence?.reporterQuote || item.result.evidence?.verbatimUiText" data-run-finding-evidence class="mt-5 border border-default bg-elevated p-4">
             <p class="fom-kicker text-muted">Evidence excerpt</p>
             <blockquote v-if="item.result.evidence.reporterQuote" class="mt-2 text-sm italic leading-6">
               “{{ item.result.evidence.reporterQuote }}”
@@ -142,7 +152,7 @@ function hostedAttemptId(value: StoredRun): string | undefined {
           </div>
 
           <ol v-if="item.result.steps?.length" class="mt-5 list-decimal space-y-2 pl-5 text-sm leading-6">
-            <li v-for="step in item.result.steps" :key="step">{{ step }}</li>
+            <li v-for="step in item.result.steps" :key="step" data-run-finding-step>{{ step }}</li>
           </ol>
 
           <p v-if="item.screenshot" class="mt-5 text-xs text-muted">

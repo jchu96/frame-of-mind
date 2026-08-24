@@ -55,7 +55,7 @@ async function signOut(): Promise<void> {
           <span v-if="!collapsed" class="font-black">Frame of Mind</span>
         </NuxtLink>
       </template>
-      <UNavigationMenu :items="navigation" orientation="vertical" tooltip />
+      <UNavigationMenu data-hosted-navigation :items="navigation" orientation="vertical" tooltip />
       <template #footer="{ collapsed }">
         <div v-if="!collapsed" class="space-y-2 text-xs">
           <p class="flex min-w-0 items-center gap-1 text-muted">

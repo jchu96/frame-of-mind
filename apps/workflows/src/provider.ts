@@ -363,9 +363,24 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
     return {
       accepted: true,
       kind: input.candidate.kind,
-      title: "Hosted Workflow contract",
-      summary: "The synthetic Workflow reached an idempotent provider step.",
-      evidence: { timestamp: "00:00:02" },
+      title: "Send error message text to Jeremy Chu",
+      summary: "The finished analysis records the requested follow-up and the evidence behind it.",
+      details: [
+        { label: "Action item", value: "Send the visible error message text" },
+        { label: "Owner", value: "Jeremy Chu" },
+        { label: "Requester", value: "Project reviewer" },
+        { label: "Due date", value: "Not stated" },
+        { label: "Status", value: "Open" },
+      ],
+      evidence: {
+        timestamp: "00:00:02",
+        reporterQuote: "The upload could not be completed. Please try again.",
+      },
+      steps: [
+        "Open the finished analysis.",
+        "Read the visible error message.",
+        "Send the error message text to Jeremy Chu.",
+      ],
       importance: "high",
     };
   }

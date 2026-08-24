@@ -15,7 +15,11 @@ import {
   isBuildInputPath,
   scrubBuildEnvironment,
 } from "../scripts/check-build-cache";
-import { isPrSafePath, selectGateTier } from "../scripts/check-gate-policy";
+import {
+  isPrSafePath,
+  isThemeContractPath,
+  selectGateTier,
+} from "../scripts/check-gate-policy";
 
 const originalPrebuiltOutput = process.env[PREBUILT_OUTPUT_ENV];
 
@@ -67,7 +71,7 @@ describe("check lanes", () => {
       "conductor/tracks/example/spec.json",
       "test/check-lanes.test.ts",
       "apps/web/app/components/Callout.vue",
-      "apps/web/app/assets/theme.css",
+      "apps/web/app/assets/logo.svg",
     ];
     expect(safePaths.every(isPrSafePath)).toBe(true);
     expect(selectGateTier("pr", true, safePaths)).toEqual({
@@ -92,6 +96,24 @@ describe("check lanes", () => {
         reason: "unsafe_path",
       });
     }
+  });
+
+  test("upgrades theme contract paths to the hosted sharded tier", () => {
+    for (const path of [
+      "apps/web/app/assets/css/main.css",
+      "apps/web/app/assets/css/tokens.scss",
+      "apps/web/app.config.ts",
+    ]) {
+      expect(isThemeContractPath(path), path).toBe(true);
+      expect(isPrSafePath(path), path).toBe(false);
+      expect(selectGateTier("pr", true, [path]), path).toEqual({
+        tier: "sharded",
+        reason: "theme_contract_paths",
+      });
+    }
+
+    expect(isThemeContractPath("apps/web/app/pages/about.vue")).toBe(false);
+    expect(isPrSafePath("apps/web/app/pages/about.vue")).toBe(true);
   });
 
   test("fails a PR tier closed when its default base ref is unavailable", () => {

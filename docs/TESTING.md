@@ -28,10 +28,17 @@ value and reducing feedback time. The fast answer must still preserve the
 authority-boundary checks relevant to the change; a shorter tier is not
 permission to remove coverage from the complete gate.
 
+| Change class | `check:pr` selection | Reason receipt |
+|---|---|---|
+| Docs, Markdown, `conductor/**`, `test/**`, or presentation-only Vue/images/icons/fonts under `apps/web/app/**` | fast + local | `all_paths_safe` |
+| Stylesheets under `apps/web/app/**` or `apps/web/app.config.*` | fast + local + hosted | `theme_contract_paths` |
+| Any other contract-bearing path | fast + local + hosted | `unsafe_path` |
+
 - `bun run check:pr` runs the fast and local lanes only when every changed path
   is explicitly safe: `docs/**`, Markdown, `conductor/**`, `test/**` unit tests,
-  or presentation assets under `apps/web/app/**` (`.vue`, styles, images, icons,
-  and fonts).
+  or presentation assets under `apps/web/app/**` (`.vue`, images, icons, and
+  fonts). Stylesheets and app configuration are excluded because they can
+  define the `--ui-*` semantic tokens whose contrast contract runs in hosted.
 - `bun run check:sharded` runs fast, local, and hosted lanes for every merge to
   `main` and every nightly gate.
 - Every path outside that safe allowlist upgrades `check:pr` to sharded. This
