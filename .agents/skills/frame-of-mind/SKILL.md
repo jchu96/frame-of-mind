@@ -402,7 +402,9 @@ bun run web:import -- "/path/to/run-directory"
 
 Use only reviewed `analysis.json` + `manifest.json` pairs. Local mode is
 loopback-only and uses SQLite. Hosted mode requires the Cloudflare deployment
-runbook, D1, a whole-hostname Access policy, and validated Access JWTs.
+runbook, D1, and an explicit fail-closed auth mode. The reference instance uses
+Better Auth with invite-gated email magic links; Access and stacked modes remain
+compatibility options.
 
 Do not auto-sync local runs, copy recordings/screenshots into D1, or expose the
 future MCP design as if it already ships. Read `docs/WEB_WORKSPACE.md`,

@@ -56,15 +56,15 @@ flowchart LR
     b --> d["findings bundle<br>timestamps · quotes · screenshots"]
 ```
 
-There is also a hosted Studio (invite-gated, same evidence contract) — the
+There is also a hosted Studio (approval-gated, same evidence contract) — the
 maintainer's reference instance runs at
 [fom.flickerventures.com](https://fom.flickerventures.com).
 
 > [!IMPORTANT]
-> Early public release (`v0.3.0`). Review generated work before using or
+> Early public release (`v0.4.0`). Review generated work before using or
 > publishing it. Generated output always requires human review.
 
-## Status as of 2026-08-23
+## Status as of 2026-08-24
 
 - Local Studio Phases 1–8 are shipped: per-launch authentication, Connections,
   recording/context staging, the Intent/Context/Recording/Run composer,
@@ -73,13 +73,12 @@ maintainer's reference instance runs at
   implementation receipts and verification commands are recorded in the
   [Local Studio plan](conductor/tracks/local-studio_20260726/plan.md) and
   [Studio browser suite](apps/web/e2e/smoke/studio-smoke.spec.ts).
-- Phase 9 release hardening is in progress. Documentation, classification,
-  repository hygiene, fresh-clone platform testing, and hosted-track
-  reconciliation are complete in this slice; only the operator/adversarial
-  release gate (9.4) remains pending in the
-  [Phase 9 checklist](conductor/tracks/local-studio_20260726/plan.md#phase-9-public-release-hardening-and-phase-b-roadmap).
+- Phase 9 release hardening is complete: documentation, classification,
+  repository hygiene, fresh-clone platform testing, the sharded repository
+  gate, branch protection, and the operator/adversarial release gate are live.
 - The maintainer's public deployment at <https://fom.flickerventures.com> is
-  the reference instance; hosted analysis creation is live there behind sign-in (invite-gated while ADR 0020 self-serve requests are in progress).
+  the reference instance; hosted analysis creation is live there behind Better
+  Auth sign-in and ADR 0020's self-serve access-approval boundary.
 - Hosted Studio is live on the reference instance. Principal scoping (Slice 1),
   durable Workflows (Phase 3), composer/activity/publication (Phase 4), and
   retention, evidence, spend, and telemetry Tasks 5.1–5.4, plus Phase 6
@@ -97,7 +96,7 @@ hesitation, the exact state before a problem, and the examples people point
 at instead of naming. Frame of Mind reasons over both — and every finding
 must cite visible or spoken evidence, or it is rejected.
 
-Under the hood, v0.3.0 uses Google's documented resumable Files upload
+Under the hood, v0.4.0 uses Google's documented resumable Files upload
 protocol and a Gemini-safe response schema while the complete Zod contract
 stays authoritative locally. An invalid structured response gets one
 regeneration attempt with sanitized feedback; a terminal failure is isolated
@@ -237,14 +236,16 @@ is supplied:
 FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
 ```
 
-Run `bun run check:sharded` before merging hosted changes and for the complete
-merge/nightly gate. `bun run check` remains the serial fallback.
+Run `bun run check:sharded` before every merge and for the complete nightly
+gate. `bun run check` remains the serial fallback.
 
-GitHub CI keeps the fast answer and hosted proof separate: the 15-minute
-`check` job runs fast and local through `check:pr`, then the required
-40-minute `hosted-contracts` job installs Chromium and runs the hosted lane.
-The three fresh-clone platforms and the independent browser E2E job remain
-separate failure domains. See [docs/TESTING.md](docs/TESTING.md#ci).
+GitHub CI keeps required checks and hosted proof separate: the 15-minute
+`check` job runs fast and local through `check:pr`; the advisory 40-minute
+`hosted-contracts` job installs Chromium and reports the hosted lane while
+[issue #96](https://github.com/jchu96/frame-of-mind/issues/96) tracks its
+2-core timing. The three required fresh-clone platforms and independent
+browser E2E job remain separate failure domains. See
+[docs/TESTING.md](docs/TESTING.md#ci).
 
 The full fresh-clone Studio boot is continuously tested on macOS and Linux.
 On Windows, use WSL or Git Bash with Bun 1.3.14+ and keep the checkout on LF:
@@ -590,10 +591,12 @@ It exercises local D1 migration replay, both Worker dry-runs, boundary
 fixtures, byte-stable local import, and the previous-artifact rollback drill;
 success prints `HOSTED_RELEASE_REHEARSAL PASSED`.
 
-The committed production example remains `cloudflare-access`. Better Auth adds
-GitHub OAuth, approved-account magic links, D1 access requests, and a stacked
-`cloudflare-access+better-auth` mode without changing the downstream
-principal-scoped contracts. Run its built-Worker browser proof with:
+The committed generic example remains a `cloudflare-access` compatibility
+starting point; the operator-owned reference configuration uses `better-auth`.
+Better Auth provides live approved-account magic links, optional GitHub OAuth,
+and D1-backed self-serve access requests without changing the downstream
+principal-scoped contracts. Access-only and stacked modes remain compatibility
+adapters. Run the built-Worker browser proof with:
 
 ```bash
 bun run check:hosted-auth
@@ -616,9 +619,9 @@ API requests remain JSON 403s.
 See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
 and [accepted ADRs 0019 and 0020](docs/adr/0020-self-serve-access-requests.md).
 
-The dark hosted execution path uses an internal sibling Workflows Worker,
-reached from the public Nuxt Worker through a service binding. When explicitly
-built and enabled, an authenticated user enters through one **New analysis**
+The live reference hosted path uses an internal sibling Workflows Worker,
+reached from the public Nuxt Worker through a service binding. An authenticated
+user enters through one **New analysis**
 navigation item, follows the What to find → Recording → Review & start flow,
 reviews the goal, recording-only sources, and recording in one summary, starts
 analysis, follows plain-language activity, and opens the published output or
@@ -637,9 +640,9 @@ Hosted jobs, media receipts, activity, and published runs are bound to the
 validated middleware principal. IDs owned by another principal resolve as not
 found, and no sharing or ownership-transfer route exists. Publication first
 validates the exact `analysis.json`/`manifest.json` pair, then projects it into
-D1 in one atomic batch. These routes remain absent from the normal Worker build
-and return not found when the hosted runtime flag is off. They are implemented
-but are not deployed or enabled. Verify the two-Worker, two-principal, and
+D1 in one atomic batch. These routes remain absent from a build that omits
+hosted support and return not found when the hosted runtime flag is off. The
+reference instance builds and enables them. Verify the two-Worker, two-principal, and
 focused browser contract with `bun run test:e2e:hosted`; the earlier
 topology proof remains in the
 [spike receipt](docs/spikes/hosted-workflows-spike-2026-08-22.md).
@@ -651,7 +654,7 @@ exit sends a best-effort keepalive cancellation. Gemini exposes no File name or
 documented revoke before finalize, so pre-final cancel/expiry abandons D1 and
 relies on the bounded provider TTL; finalized exact-name Files are deleted.
 
-The same dark path now reserves a versioned conservative token estimate before
+The same hosted path reserves a versioned conservative token estimate before
 each initial or linked attempt and reconciles it from Gemini usage receipts on
 terminal cleanup. The v2 plan includes the maximum schema-repair generation
 and every configured transport retry for each video-bearing step. Actual usage
@@ -661,14 +664,15 @@ failures release their reservations; a hosted-only, principal-scoped janitor
 idempotently settles terminal or expired reservations. Per-principal caps,
 video rate, prompt/output headroom, and maximum interrogation calls are
 operator configuration, not browser input.
-Hosted telemetry uses a strict ADR-0017 codes-only port, but the Phase 6 Tier A
-release shape keeps delivery off because `GEMINI_API_KEY` is its only allowed
-secret. Enabling a sibling-Worker `SENTRY_DSN` is a separate reviewed boundary
-expansion; the public Worker contains neither provider nor telemetry secrets.
+Hosted telemetry uses a strict ADR-0017 codes-only port and remains off on the
+reference instance. Enabling a sibling-Worker `SENTRY_DSN` is a separate
+reviewed boundary expansion. The public Worker holds Better Auth secret custody
+and the `GEMINI_API_KEY` needed for direct-upload sessions; neither is exposed
+to browser code.
 
 > [!CAUTION]
 > Do not deploy from that command alone. Follow the database, custom-domain,
-> Access-policy, audience, migration, verification, and rollback procedure in
+> authentication, email, migration, verification, and rollback procedure in
 > [docs/CLOUDFLARE_DEPLOYMENT.md](docs/CLOUDFLARE_DEPLOYMENT.md).
 
 ## Provider behavior

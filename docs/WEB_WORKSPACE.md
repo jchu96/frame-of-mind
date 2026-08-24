@@ -140,9 +140,9 @@ projection:
   sidecar contract.
 
 Sensitive local Studio routes require a per-launch session, not only the
-current loopback guard. The Cloudflare build remains review-only and must
-exclude every local secret, staging, executor, and media-serving
-implementation. See the [Conductor specification](../conductor/tracks/local-studio_20260726/spec.md)
+current loopback guard. The Cloudflare build supports hosted review and
+creation while excluding every local secret, staging, executor, and
+media-serving implementation. See the [Conductor specification](../conductor/tracks/local-studio_20260726/spec.md)
 and [ADR log](adr/README.md).
 
 ## Deployment modes
@@ -151,7 +151,7 @@ and [ADR log](adr/README.md).
 |---|---|---|---|---|
 | Local review | Bun + Nuxt SSR | Bun SQLite | loopback Host/peer guard | browse completed runs |
 | Local Studio | Bun + Nuxt SSR | Bun SQLite plus private filesystem staging | Host/peer guard plus per-launch session | start from Home, configure providers, stage a recording, and monitor active work |
-| Hosted review (creation dark) | Cloudflare Worker | D1 | Cloudflare Access plus in-app JWT validation | principal-scoped completed-run review; hosted creation remains disabled |
+| Hosted Studio | Cloudflare Worker plus internal Workflows Worker | D1 plus optional private R2 | Better Auth session bound to `ba:<userId>` | principal-scoped creation, activity, publication, review, and retained media |
 
 The run pages and API contracts are shared. The `RunStore`, Nitro preset, and
 top-level application frame are selected at build time.
@@ -335,7 +335,8 @@ does not expose that address, the middleware requires the server's explicit
 `NUXT_ALLOW_UNAUTHENTICATED_REMOTE=true` is explicitly set.
 
 That override is intentionally awkward. Do not use it for a public deployment.
-Use Cloudflare Access.
+Use an explicit fail-closed hosted auth mode; the reference instance uses
+Better Auth.
 
 ## Local production build
 
@@ -415,10 +416,10 @@ For a new migration:
 | `POST` | `/api/studio/jobs/:id/retry` | create or replay a linked retained-media retry |
 | `POST` | `/api/studio/jobs/:id/reimport` | idempotently re-import one succeeded job's existing run pair |
 
-The entire hostname should be protected by Access. `/api/health` is not a
-public bypass because a health response can reveal deployment state.
-The `/api/studio/*` rows above are local-only and are absent from Cloudflare
-artifacts.
+Every data route must pass the selected authentication middleware. Better Auth
+sign-in and callback routes are the bounded public exception; `/api/health`
+returns no run or identity data. The `/api/studio/*` rows above are local-only
+and are absent from Cloudflare artifacts.
 
 ## Troubleshooting
 

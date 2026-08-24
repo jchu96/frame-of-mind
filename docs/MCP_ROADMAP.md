@@ -2,7 +2,7 @@
 
 ## Status
 
-Design target for the next iteration. No MCP server is shipped in v0.2.0.
+Design target for a future iteration. No MCP server is shipped in v0.4.0.
 
 This is deliberate. The CLI, durable contracts, review workspace, database
 projection, and authentication boundary need real usage before agent access is
@@ -193,8 +193,9 @@ The UI and MCP have related but different clients.
 
 ### Human web UI
 
-Keep Cloudflare Access on the UI hostname. Continue verifying
-`Cf-Access-Jwt-Assertion` in the Nuxt Worker.
+The reference UI uses Better Auth and invite-gated email magic links. Reuse its
+principal and membership policy; do not make a future MCP bearer token a web
+session. Access-only and stacked UI modes remain compatibility deployments.
 
 ### Browser-based MCP connectors
 
@@ -214,7 +215,7 @@ behind a second Access challenge that the MCP client cannot complete.
 Prefer one of:
 
 - OAuth device/browser flow supported by the client;
-- Cloudflare Access service-token policy with client ID/secret headers;
+- a Cloudflare Access service-token policy only for an Access compatibility deployment;
 - a dedicated rotatable bearer secret accepted only on `/mcp`.
 
 If a static bearer is supported:
@@ -312,5 +313,5 @@ Before enabling MCP:
 8. Add hosted deployment runbook.
 9. Consider semantic search only after query usage is understood.
 
-This sequence keeps v0.2.0 useful without pretending an untested MCP auth
+This sequence keeps v0.4.0 useful without pretending an untested MCP auth
 surface is production-ready.

@@ -3,18 +3,19 @@
 The local Studio trust boundaries and abuse cases are maintained in the
 [Local Studio threat model](THREAT_MODEL.md).
 
-## Status as of 2026-08-23
+## Status as of 2026-08-24
 
 Local Studio Phases 1–8 are implemented and verified through the
 [phase plan](../conductor/tracks/local-studio_20260726/plan.md), the
 [production HTTP contract](../scripts/test-local-studio-http.ts), and the
-[browser smoke suite](../apps/web/e2e/smoke/studio-smoke.spec.ts). Hosted Studio is a
-separate dark track: principal scoping, direct recording upload, durable
-Workflows, composer/activity/publication, and retention, evidence, spend, and
-telemetry Tasks 5.1–5.4 ship behind disabled build/runtime gates. Phase 6
-preparation is present, but the deployment gate remains pending. Nothing in
-the hosted creation path is
-deployed or enabled by this repository state. See the
+[browser smoke suite](../apps/web/e2e/smoke/studio-smoke.spec.ts). Hosted Studio
+uses the same durable run contracts with principal scoping, direct recording
+upload, durable Workflows, composer/activity/publication, retained media,
+evidence, spend controls, and codes-only telemetry. The reference instance
+deployed this topology on 2026-08-23, retired its Cloudflare Access application,
+enabled hosted creation, and completed its first production analysis behind
+invite-gated Better Auth email sign-in. Other deployments still opt into hosted
+creation explicitly. See the
 [Hosted Studio track](../conductor/tracks/hosted-studio_20260822/) and
 [data classification](DATA_CLASSIFICATION.md).
 
@@ -713,18 +714,22 @@ one or more byte-bounded `json_each` bulk item expansions. The 2 MiB request
 cap, 1.8 MB projected-row cap, and 900 KB parameter cap keep row/value/query
 limits explicit even for the contract maximum of 1,000 findings.
 
-Local unauthenticated mode is loopback-only. The committed hosted mode combines
-a Cloudflare Access policy over the complete hostname with in-Worker validation
-of the Access JWT signature, issuer, audience, and algorithm. Accepted
-[ADR 0019](adr/0019-pluggable-auth-modes.md) lets the same middleware seam use
-Better Auth, optionally behind Access. [ADR 0020](adr/0020-self-serve-access-requests.md)
-then separates authentication from authorization: any verified GitHub identity
-may establish a session, but only a D1 membership with `state='approved'`
-binds `ba:<userId>` into the downstream principal context. Other sessions can
-reach only their bounded session and request-access surfaces, before any run,
-media, provider, spend, Workflow, or R2 handler executes.
+Local unauthenticated mode is loopback-only. Hosted mode selects one explicit,
+fail-closed authentication adapter. The reference instance binds a Better Auth
+session to `ba:<userId>` and uses invite-gated email magic links delivered by
+the public Worker's Cloudflare Email Service binding. Its former Access
+application has been deleted. Better Auth separates authentication from
+authorization: any verified GitHub identity may establish a session, but only
+a D1 membership with `state='approved'` binds `ba:<userId>` into the downstream
+principal context. Other sessions can reach only their bounded session and
+request-access surfaces, before any run, media, provider, spend, Workflow, or
+R2 handler executes. Access-only and stacked modes remain tested compatibility
+adapters at the same principal seam; they are not the reference deployment.
+[ADR 0019](adr/0019-pluggable-auth-modes.md) preserves the supported mode
+contract, and [ADR 0020](adr/0020-self-serve-access-requests.md) defines the
+access-request boundary.
 
-### Hosted execution and Studio topology (dark)
+### Hosted execution and Studio topology
 
 Task 3.0 proved the hosted Workflows boundary under the pinned toolchain. Nitro
 2.13.4's `cloudflare_module` output remains the public Nuxt Worker, while an
@@ -737,7 +742,8 @@ the Nuxt caller and durable sibling as separate deployable artifacts.
 ```mermaid
 flowchart LR
     Browser[Browser]
-    Access[Configured outer perimeter]
+    Auth[Better Auth session]
+    Email[Cloudflare Email Service]
     Nuxt[Nuxt Worker]
     WorkflowService[Internal Workflows Worker]
     Workflow[Workflow instance]
@@ -745,7 +751,10 @@ flowchart LR
     D1[(Principal-scoped D1 receipts)]
     R2[(Private principal-owned R2)]
 
-    Browser --> Access --> Nuxt
+    Browser --> Nuxt
+    Nuxt --> Auth
+    Nuxt -->|send email binding| Email
+    Email -->|one-time magic link| Browser
     Nuxt -->|service binding| WorkflowService --> Workflow
     Nuxt --> D1
     Nuxt -->|private retained-media binding| R2
@@ -753,15 +762,15 @@ flowchart LR
     Workflow --> Gemini
 ```
 
-Access context does not propagate across service bindings. Nuxt therefore
+Authentication context does not propagate across service bindings. Nuxt therefore
 passes a bounded principal-scoped job/attempt receipt, and the Workflow service
 rehydrates and revalidates it against D1. An internal call is not itself user
 authentication. Every provider step writes a codes-only invocation event
 before Gemini, has zero automatic retries, and stores a bounded immutable
 receipt before the Workflow can advance. A success that cannot be receipted is
 indeterminate, executes terminal cleanup, and requires an explicit linked
-attempt; it never reuses a Workflow ID. Normal Cloudflare artifacts still
-exclude all hosted creation routes unless the build/runtime flags are both
+attempt; it never reuses a Workflow ID. Cloudflare artifacts still require
+explicit build/runtime enablement; the reference instance has both gates
 enabled. See the [Task 3.0 spike](spikes/hosted-workflows-spike-2026-08-22.md) and
 [ADR 0018](adr/0018-hosted-studio-trust-boundary.md).
 
@@ -789,7 +798,7 @@ tokens/second default-resolution rate, and prompt/output headroom. D1 reserves
 that estimate atomically for initial and linked attempts, then terminal cleanup
 settles provider usage or conservatively commits the reservation when usage is
 incomplete. A separate strict telemetry port accepts codes and structural
-fields only. The Nuxt caller forwards Access and spend outcomes internally;
+fields only. The Nuxt caller forwards authentication and spend outcomes internally;
 the Workflows sibling owns optional Sentry delivery, publication/cleanup
 outcomes, and stays inert without its own `SENTRY_DSN`. Upload telemetry stays
 structural and content-free.
@@ -1141,8 +1150,9 @@ operational job row or making SQLite the authority for media ownership.
 
 The normal Cloudflare artifact excludes the local session bootstrap, secret
 resolver, media staging/server, executor, and `bun:` implementations. Hosted
-creation is a separate, dark Phase B track with independent build/runtime
-gates and no deployment implied by implemented source. See
+creation remains independently gated from local Studio. It is live on the
+reference instance, while source availability alone does not enable it for
+another deployment. See
 [ADR 0006](adr/0006-local-studio-execution-and-session-boundary.md),
 [ADR 0007](adr/0007-separate-media-job-and-run-lifecycles.md),
 [ADR 0008](adr/0008-local-secret-resolution.md), and the
