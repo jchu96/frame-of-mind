@@ -85,6 +85,14 @@ const reviewedUxPassThreeScreens = new Set([
   "14-sign-in",
 ]);
 
+// Brand assets are reviewed and enumerated exactly like UX proofs: a new
+// image requires a new entry here, alongside maintainer review of its content.
+const reviewedBrandAssets = new Set(["docs/assets/frame-of-mind-mascot.png"]);
+
+function isReviewedBrandAsset(path: string): boolean {
+  return reviewedBrandAssets.has(path);
+}
+
 function isReviewedUxProof(path: string): boolean {
   const match = path.match(
     /^apps\/web\/e2e\/__screenshots__\/(ux-pass-[123])\/(.+)-(desktop|mobile)(?:-(light|dark))?\.png$/,
@@ -672,7 +680,9 @@ function runSelfTest(): void {
   }
 
   if (
-    !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-1/01-intent-empty-mobile.png")
+    !isReviewedBrandAsset("docs/assets/frame-of-mind-mascot.png")
+    || isReviewedBrandAsset("docs/assets/unreviewed.png")
+    || !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-1/01-intent-empty-mobile.png")
     || !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-2/06-activity-running-desktop.png")
     || !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-3/11-results-home-mobile-light.png")
     || !isReviewedUxProof("apps/web/e2e/__screenshots__/ux-pass-3/14-sign-in-desktop-dark.png")
@@ -810,7 +820,11 @@ async function scanWorkingTree(): Promise<void> {
     if (!metadata.isFile()) continue;
 
     const extension = extname(path).toLowerCase();
-    if (forbiddenArtifactExtensions.has(extension) && !isReviewedUxProof(path)) {
+    if (
+      forbiddenArtifactExtensions.has(extension)
+      && !isReviewedUxProof(path)
+      && !isReviewedBrandAsset(path)
+    ) {
       findings.push({ location: path, pattern: "runtime-artifact-file" });
       continue;
     }

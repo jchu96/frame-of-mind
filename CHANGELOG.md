@@ -5,6 +5,37 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-24
+
+### Added
+
+- Hosted Studio went live at the maintainer's reference instance: sign-in with
+  GitHub or an email magic link (Better Auth on Workers + D1), browser-direct
+  recording upload to Gemini with sealed SHA-256 receipts, capped
+  per-principal spend with atomic reservations, durable Workflows-based
+  analysis, published results, and codes-only telemetry (ADRs 0017-0019;
+  first production analysis completed 2026-08-23).
+- Magic-link email delivery through the Cloudflare Email Service binding with
+  a fail-closed mailer, per-email cooldown, and per-client-IP rate limiting;
+  the HTTP mailer remains a no-binding fallback.
+- Retained-media mode: a private, principal-owned R2 copy with visible
+  lifecycle, digest-bound multipart uploads with per-part byte reservations,
+  and client-canvas evidence provenance.
+- A sharded repository gate: `check:sharded` runs the same 16 steps as the
+  serial `check` in three concurrent lanes with build-once artifacts and a
+  content-hash cache (~5 minutes instead of 75-90), `check:pr` as the PR
+  tier, and per-step timeouts.
+- Public-repository hygiene detectors for cloud resource identifiers, and a
+  scheme-aware light/dark theme with enforced WCAG AA contrast.
+
+### Changed
+
+- GitHub CI runs the lane-based jobs and is green again; a red required check
+  now blocks merges via branch protection.
+- Hosted access is invite-gated today; self-serve access requests (ADR 0020)
+  are in progress.
+
+
 ### Added
 
 - Long recordings now derive a transcript in bounded windows. Audio beyond ten
