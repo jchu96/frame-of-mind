@@ -114,6 +114,7 @@ try {
           NUXT_BETTER_AUTH_MAILER_FROM: "sign-in@example.test",
           NUXT_ACCESS_REQUEST_NOTIFY: "maintainer@example.test",
           NUXT_ACCESS_REQUEST_PENDING_CAP: "4",
+          NUXT_MAINTAINER_EMAILS: " Access-A@Example.Test ",
         }
       : {
           NUXT_AUTH_MODE: "cloudflare-access",
@@ -287,6 +288,12 @@ try {
     if (!(await capacityLimited.text()).includes("access_request_capacity_reached")) {
       throw new Error("Pending access-request capacity omitted its stable code.");
     }
+    await verifyAdminAccessSurface({
+      baseUrl,
+      maintainerToken: tokenA,
+      nonMaintainerToken: tokenB,
+      capturedAccessRequests,
+    });
     console.log("HOSTED_ACCESS request_access=PASS session=requested protected=403 mail=maintainer_only rate_limit=429 pending_cap=429");
   }
 
@@ -391,6 +398,184 @@ try {
   await isolation.cleanup();
 }
 
+async function verifyAdminAccessSurface(input: {
+  baseUrl: string;
+  maintainerToken: string;
+  nonMaintainerToken: string;
+  capturedAccessRequests: unknown[];
+}): Promise<void> {
+  const unknownApi = await fetch(`${input.baseUrl}/api/route-that-does-not-exist`, {
+    headers: hostedAuthHeaders(input.nonMaintainerToken),
+  });
+  const hiddenApi = await fetch(`${input.baseUrl}/api/admin/access`, {
+    headers: hostedAuthHeaders(input.nonMaintainerToken),
+  });
+  await assertMatchingNotFoundShape(unknownApi, hiddenApi, "non-maintainer admin GET");
+
+  const unknownPost = await fetch(`${input.baseUrl}/api/route-that-does-not-exist`, {
+    method: "POST",
+    headers: adminMutationHeaders(input.nonMaintainerToken, input.baseUrl),
+    body: "{}",
+  });
+  const hiddenPost = await fetch(`${input.baseUrl}/api/admin/access/approve`, {
+    method: "POST",
+    headers: adminMutationHeaders(input.nonMaintainerToken, input.baseUrl),
+    body: JSON.stringify({ email: "request-a@example.test" }),
+  });
+  await assertMatchingNotFoundShape(unknownPost, hiddenPost, "non-maintainer admin POST");
+
+  const unknownHtml = await fetch(`${input.baseUrl}/route-that-does-not-exist`, {
+    headers: { ...hostedAuthHeaders(input.nonMaintainerToken), accept: "text/html" },
+  });
+  const hiddenHtml = await fetch(`${input.baseUrl}/admin/access`, {
+    headers: { ...hostedAuthHeaders(input.nonMaintainerToken), accept: "text/html" },
+  });
+  await assertMatchingNotFoundShape(unknownHtml, hiddenHtml, "non-maintainer admin page");
+
+  const maintainerSession = await json<Record<string, unknown>>(await expectStatus(
+    authenticatedFetch(input.baseUrl, "/api/session", input.maintainerToken),
+    200,
+    "maintainer session",
+  ));
+  assertEqual(maintainerSession.maintainer, true, "allowlisted session maintainer flag");
+  const nonMaintainerSession = await json<Record<string, unknown>>(await expectStatus(
+    authenticatedFetch(input.baseUrl, "/api/session", input.nonMaintainerToken),
+    200,
+    "non-maintainer session",
+  ));
+  if ("maintainer" in nonMaintainerSession) {
+    throw new Error("Non-maintainer session exposed a maintainer flag.");
+  }
+
+  await expectStatus(fetch(`${input.baseUrl}/admin/access`, {
+    headers: { ...hostedAuthHeaders(input.maintainerToken), accept: "text/html" },
+  }), 200, "maintainer admin page");
+  const initial = await json<{
+    requested: Array<{ email: string }>;
+    approved: Array<{ email: string }>;
+    revoked: Array<{ email: string }>;
+  }>(await expectStatus(
+    authenticatedFetch(input.baseUrl, "/api/admin/access", input.maintainerToken),
+    200,
+    "maintainer access list",
+  ));
+  for (const [group, email] of [
+    [initial.requested, "request-a@example.test"],
+    [initial.approved, "access-a@example.test"],
+  ] as const) {
+    if (!group.some((row) => row.email === email)) {
+      throw new Error(`Admin access list omitted ${email}.`);
+    }
+  }
+
+  const mailCount = input.capturedAccessRequests.length;
+  const approve = await adminAction(
+    input.baseUrl,
+    input.maintainerToken,
+    "approve",
+    "request-a@example.test",
+  );
+  assertEqual(approve, {
+    email: "request-a@example.test",
+    state: "approved",
+    idempotent: false,
+  }, "admin approve");
+  const approveReplay = await adminAction(
+    input.baseUrl,
+    input.maintainerToken,
+    "approve",
+    "request-a@example.test",
+  );
+  assertEqual(approveReplay.idempotent, true, "admin approve replay");
+
+  const deny = await adminAction(
+    input.baseUrl,
+    input.maintainerToken,
+    "deny",
+    "request-b@example.test",
+  );
+  assertEqual(deny.state, "revoked", "admin deny");
+  const denyReplay = await adminAction(
+    input.baseUrl,
+    input.maintainerToken,
+    "deny",
+    "request-b@example.test",
+  );
+  assertEqual(denyReplay.idempotent, true, "admin deny replay");
+
+  const revoke = await adminAction(
+    input.baseUrl,
+    input.maintainerToken,
+    "revoke",
+    "access-b@example.test",
+  );
+  assertEqual(revoke.state, "revoked", "admin revoke");
+  const revokeReplay = await adminAction(
+    input.baseUrl,
+    input.maintainerToken,
+    "revoke",
+    "access-b@example.test",
+  );
+  assertEqual(revokeReplay.idempotent, true, "admin revoke replay");
+  await adminAction(input.baseUrl, input.maintainerToken, "approve", "access-b@example.test");
+  assertEqual(input.capturedAccessRequests.length, mailCount, "admin actions send no email");
+
+  const audit = await runChecked([
+    "bunx", "wrangler", "d1", "execute", databaseName,
+    "--local", "--config", configPath, "--persist-to", persistRoot,
+    "--command", "SELECT actioned_by, actioned_at FROM hosted_auth_invites "
+      + "WHERE email = 'request-a@example.test'",
+    "--json",
+  ], "admin action audit query");
+  if (!audit.includes("access-a@example.test") || !audit.includes("2026-")) {
+    throw new Error(`Admin audit row omitted maintainer or timestamp: ${audit}`);
+  }
+  console.log("HOSTED_ACCESS admin=PASS dark_404=true list=true approve=true deny=true revoke=true replay=true mail=false");
+}
+
+async function adminAction(
+  origin: string,
+  token: string,
+  action: "approve" | "deny" | "revoke",
+  email: string,
+): Promise<Record<string, unknown>> {
+  return await json(await expectStatus(fetch(`${origin}/api/admin/access/${action}`, {
+    method: "POST",
+    headers: adminMutationHeaders(token, origin),
+    body: JSON.stringify({ email }),
+  }), 200, `admin ${action} ${email}`));
+}
+
+function adminMutationHeaders(token: string, origin: string): Record<string, string> {
+  return {
+    ...hostedAuthHeaders(token, origin),
+    "sec-fetch-site": "same-origin",
+  };
+}
+
+async function assertMatchingNotFoundShape(
+  unknown: Response,
+  hidden: Response,
+  label: string,
+): Promise<void> {
+  if (unknown.status !== 404 || hidden.status !== 404) {
+    throw new Error(`${label}: expected matching 404 responses, received ${unknown.status}/${hidden.status}.`);
+  }
+  const unknownType = unknown.headers.get("content-type")?.split(";", 1)[0];
+  const hiddenType = hidden.headers.get("content-type")?.split(";", 1)[0];
+  if (unknownType !== hiddenType) {
+    throw new Error(`${label}: content types differ (${unknownType}/${hiddenType}).`);
+  }
+  const [unknownBody, hiddenBody] = await Promise.all([unknown.text(), hidden.text()]);
+  if (unknownType === "application/json") {
+    const unknownKeys = Object.keys(JSON.parse(unknownBody)).sort();
+    const hiddenKeys = Object.keys(JSON.parse(hiddenBody)).sort();
+    assertEqual(hiddenKeys, unknownKeys, `${label} JSON shape`);
+  } else if (!unknownBody.includes("404") || !hiddenBody.includes("404")) {
+    throw new Error(`${label}: HTML responses were not both 404 pages.`);
+  }
+}
+
 async function expectUnapprovedBoundary(origin: string, token: string): Promise<void> {
   await expectStatus(authenticatedFetch(origin, "/api/runs", token), 403, "unapproved runs denial");
   await expectStatus(authenticatedFetch(origin, "/api/hosted/configuration", token), 403, "unapproved hosted denial");
@@ -442,7 +627,7 @@ async function verifyMaintainerCommands(): Promise<void> {
   const rows = await runChecked([
     "bunx", "wrangler", "d1", "execute", databaseName,
     "--local", "--config", configPath, "--persist-to", persistRoot,
-    "--command", "SELECT email, state, decided_by FROM hosted_auth_invites "
+    "--command", "SELECT email, state, decided_by, actioned_by, actioned_at FROM hosted_auth_invites "
       + "WHERE email IN ('request-a@example.test','request-b@example.test',"
       + "'access-a@example.test','preapproved@example.test') ORDER BY email",
     "--json",
@@ -455,6 +640,7 @@ async function verifyMaintainerCommands(): Promise<void> {
     "approved",
     "revoked",
     "fixture-operator",
+    "cli",
   ]) {
     if (!rows.includes(expected)) throw new Error(`Maintainer state query omitted ${expected}: ${rows}`);
   }

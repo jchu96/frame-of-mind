@@ -5,11 +5,6 @@ import type { SessionInfo } from "../../shared/types";
 const route = useRoute();
 const toast = useToast();
 const signInRoute = computed(() => route.path === "/sign-in");
-const navigation: NavigationMenuItem[] = [
-  { label: "New analysis", icon: "i-lucide-plus", to: "/hosted/new/intent" },
-  { label: "Activity", icon: "i-lucide-activity", to: "/hosted/activity" },
-  { label: "Results", icon: "i-lucide-library", to: "/", exact: true },
-];
 const title = computed(() => route.path.startsWith("/hosted/activity/")
   ? "Activity"
   : route.path === "/hosted/activity"
@@ -20,6 +15,14 @@ const title = computed(() => route.path.startsWith("/hosted/activity/")
         ? "Results"
         : "Results");
 const { data: session } = await useFetch<SessionInfo>("/api/session");
+const navigation = computed<NavigationMenuItem[]>(() => [
+  { label: "New analysis", icon: "i-lucide-plus", to: "/hosted/new/intent" },
+  { label: "Activity", icon: "i-lucide-activity", to: "/hosted/activity" },
+  { label: "Results", icon: "i-lucide-library", to: "/", exact: true },
+  ...(session.value?.maintainer
+    ? [{ label: "Access", icon: "i-lucide-shield-check", to: "/admin/access" }]
+    : []),
+]);
 
 async function signOut(): Promise<void> {
   if (session.value?.authMode.includes("better-auth")) {

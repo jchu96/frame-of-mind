@@ -53,6 +53,15 @@ const { data: session } = await useFetch<SessionInfo>("/api/session", {
           Connections
         </UButton>
         <UButton to="/import" color="primary" variant="soft" size="sm">Import run</UButton>
+        <UButton
+          v-if="session?.maintainer"
+          to="/admin/access"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+        >
+          Access
+        </UButton>
         <UBadge
           color="neutral"
           variant="outline"

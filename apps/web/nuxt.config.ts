@@ -697,6 +697,9 @@ export default defineNuxtConfig({
   alias: {
     "#frame-app": appFrame,
     "#frame-contracts": `${projectRoot}/src/domain/schemas.ts`,
+    "#frame-admin-access": fileURLToPath(
+      new URL("./shared/admin-access.ts", import.meta.url),
+    ),
     "#frame-store": storeImplementation,
     "#frame-hosted-telemetry": hostedRouteTelemetry,
   },
@@ -732,6 +735,7 @@ export default defineNuxtConfig({
     betterAuthMailerFrom: "",
     accessRequestNotify: "",
     accessRequestPendingCap: 200,
+    maintainerEmails: "",
     betterAuthAllowInsecureTestProviders: false,
     hostedWorkflowsEnabled: false,
     hostedSpendPrincipalCapUnits: HOSTED_PRINCIPAL_CAP_UNITS_DEFAULT,

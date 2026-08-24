@@ -26,6 +26,24 @@ export function mutationRejection(
   return trustedMutationRejection(fetchSite, origin, requestOrigin);
 }
 
+export function adminMutationRejection(
+  contentType: string | undefined,
+  fetchSite: string | undefined,
+  origin: string | undefined,
+  requestOrigin: string,
+): { statusCode: number; statusMessage: string } | undefined {
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType || "")) {
+    return { statusCode: 415, statusMessage: "Content-Type must be application/json." };
+  }
+  if (!origin || !fetchSite) {
+    return { statusCode: 403, statusMessage: "Same-origin request headers are required." };
+  }
+  if (fetchSite.toLowerCase() !== "same-origin" || origin !== requestOrigin) {
+    return { statusCode: 403, statusMessage: "Cross-origin admin mutation rejected." };
+  }
+  return undefined;
+}
+
 export function assertTrustedMutation(event: H3Event): void {
   const rejection = trustedMutationRejection(
     getHeader(event, "sec-fetch-site"),
@@ -45,4 +63,14 @@ export function assertTrustedJsonMutation(event: H3Event): void {
     });
   }
   assertTrustedMutation(event);
+}
+
+export function assertTrustedAdminJsonMutation(event: H3Event): void {
+  const rejection = adminMutationRejection(
+    getHeader(event, "content-type"),
+    getHeader(event, "sec-fetch-site"),
+    getHeader(event, "origin"),
+    getRequestURL(event).origin,
+  );
+  if (rejection) throw createError(rejection);
 }
