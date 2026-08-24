@@ -84,6 +84,8 @@ export function createLocalRunStoreFromDatabase(
 ): RunStore {
   migrateLegacyLocalProjection(database, principal);
   database.exec(schemaSql);
+  ensureOutcomeColumn(database, "analysis_runs");
+  ensureOutcomeColumn(database, "video_analysis_runs");
   database.exec("PRAGMA foreign_keys = ON;");
   database.exec("PRAGMA busy_timeout = 5000;");
   return {
@@ -138,7 +140,8 @@ export function createLocalRunStoreFromDatabase(
            run_id, NULL AS meeting_id, NULL AS meeting_title,
            NULL AS provider, NULL AS transport, recipe_id, recipe_label,
            model, started_at, completed_at, match_notes, accepted_count,
-           rejected_count, analysis_json, manifest_json, imported_at, imported_by
+           rejected_count, analysis_json, manifest_json, outcome_json,
+           imported_at, imported_by
          FROM video_analysis_runs WHERE principal_sub = ? AND run_id = ?
            AND json_valid(analysis_json) AND json_valid(manifest_json)
            AND json_extract(analysis_json, '$.schemaVersion') = 3
@@ -152,6 +155,7 @@ export function createLocalRunStoreFromDatabase(
       const input = await validateVersionedRunImport({
         analysis: JSON.parse(row.analysis_json),
         manifest: JSON.parse(row.manifest_json),
+        ...(row.outcome_json ? { outcome: JSON.parse(row.outcome_json) } : {}),
       });
       return storedRunFrom(row, input);
     },
@@ -387,4 +391,19 @@ function migrateLegacyLocalProjection(
   } finally {
     database.exec("PRAGMA foreign_keys = ON;");
   }
+}
+
+// Additive projection migration: older local databases predate the
+// outcome_json column (CREATE TABLE IF NOT EXISTS cannot add columns to an
+// existing table). The projection stays disposable; rows imported before the
+// column simply carry NULL until their run is re-projected.
+function ensureOutcomeColumn(
+  database: Database,
+  table: "analysis_runs" | "video_analysis_runs",
+): void {
+  const columns = database
+    .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
+    .all();
+  if (columns.some((column) => column.name === "outcome_json")) return;
+  database.exec(`ALTER TABLE ${table} ADD COLUMN outcome_json TEXT;`);
 }

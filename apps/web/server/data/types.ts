@@ -91,6 +91,7 @@ export interface RunRow {
   rejected_count: number;
   analysis_json: string;
   manifest_json: string;
+  outcome_json: string | null;
   imported_at: string;
   imported_by: string | null;
 }
@@ -102,6 +103,7 @@ export type RunSummaryRow = Omit<
   | "match_notes"
   | "analysis_json"
   | "manifest_json"
+  | "outcome_json"
 >;
 
 export function rowToSummary(row: RunSummaryRow): RunSummary {
@@ -185,6 +187,7 @@ export function storedRunFrom(
       matchNotes: row.match_notes,
       analysis: input.analysis,
       manifest: input.manifest,
+      ...(input.outcome ? { outcome: input.outcome } : {}),
     };
   }
   if (summary.schemaVersion === 3 && isRunImportV3(input)) {
@@ -193,6 +196,7 @@ export function storedRunFrom(
       matchNotes: row.match_notes,
       analysis: input.analysis,
       manifest: input.manifest,
+      ...(input.outcome ? { outcome: input.outcome } : {}),
     };
   }
   throw new Error("Stored run projection schema does not match its bundle.");
