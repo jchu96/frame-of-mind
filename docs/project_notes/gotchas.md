@@ -546,3 +546,25 @@
    Wrangler processes remain. Cause: the local emulator lifecycle can stall
    under shared-host pressure. Fix: rerun the bounded gate before debugging
    authentication code; investigate only if the rerun reproduces the failure.
+10. **Pass-1 indexing is non-deterministic in candidate count.** Symptom: the
+    same recording indexed 16, 28, and 21 candidates across three identical
+    deep runs (2026-08-24), so a rerun with `--max-moments` set to "last
+    count plus a few" can still truncate. Cause: model-side variability in
+    moment segmentation. Fix: pick the limit with generous headroom (30+ for
+    an episode-length recording) and trust `outcome=complete` / zero
+    `omittedByLimit`, never a previous run's index count.
+11. **Windows working copies fail suites that pass on CI.** Symptom: local
+    `test/sqlite.test.ts` fails with `EBUSY` removing temp dirs in
+    `afterEach`, and `audio`/`oauth` tests fail asserting `mode & 0o777`
+    permission bits. Cause: Bun keeps SQLite handles open so Windows blocks
+    the rm, and POSIX permission-bit chmod semantics do not hold on NTFS.
+    Fix: classify against `origin/main` in a detached worktree before
+    debugging; these are environment flakes, the Linux/macOS CI lanes are the
+    arbiter (verified identical on main, 2026-08-24).
+12. **A red advisory lane is not evidence against your PR.** Symptom:
+    `hosted-contracts` shows ❌ on every push of a branch. Cause: the job is
+    `continue-on-error` and has been failing on main since at least
+    2026-08-24 (better-auth hosted-access step hangs to its 1800s step
+    timeout; #113). Fix: compare the lane's conclusion on main's recent runs
+    before treating it as PR-induced — and fix or re-tier the lane instead of
+    learning to ignore it.
