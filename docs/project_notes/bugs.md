@@ -1,5 +1,23 @@
 # Bugs and Failure History
 
+## 2026-08-24 — Better Auth hosted-access fixture could wait forever in CI
+
+- Symptom: the advisory hosted lane printed the migration receipt, then the
+  Better Auth access contract produced no output until the 1,800-second step
+  timeout terminated it (#113). The same contract passed locally.
+- Cause: the browser fixture relied on implicit or absent deadlines around
+  Chromium launch, page setup and navigation, the in-page social sign-in
+  request, provider authorization, callback navigation, session-cookie read,
+  and browser cleanup. The in-page request had no Playwright deadline at all;
+  available evidence does not identify which CI-only wait stalled.
+- Fix: give every browser stage and hosted HTTP/body wait a 30-second named
+  `hosted_access_timeout`, bound fixture commands to 60 seconds, and reduce that
+  step's outer ceiling to 300 seconds. Timeout cleanup terminates the
+  owned Wrangler process and preserves its bounded output.
+- Prevention: offline tests pin the named timeout and abort behavior; both
+  hosted-access auth modes and typecheck pass locally. CI remains the oracle
+  for which named stage, if any, reproduces on the Linux runner.
+
 ## 2026-08-23 — Better Auth rate limiting collapsed Worker traffic into one bucket
 
 - Symptom: production logged that Better Auth could not determine a client IP,
