@@ -1,18 +1,18 @@
 # Studio Threat Model
 
-Status: Local implementation baseline plus dark hosted extension
+Status: Local and hosted implementation baseline
 
-Last reviewed: 2026-08-23
+Last reviewed: 2026-08-24
 
 This model covers the local Bun-controlled Studio defined by ADRs
 [0006](adr/0006-local-studio-execution-and-session-boundary.md),
 [0007](adr/0007-separate-media-job-and-run-lifecycles.md), and
 [0008](adr/0008-local-secret-resolution.md). Those decisions are accepted
-implementation constraints. The hosted extension is governed by accepted
-[ADR 0018](adr/0018-hosted-studio-trust-boundary.md) and remains disabled
-until its phase gates pass. Proposed [ADR 0019](adr/0019-pluggable-auth-modes.md)
-adds an app-owned Better Auth identity option without changing the one-principal
-ownership invariant.
+implementation constraints. The reference hosted instance went live on
+2026-08-23 with Better Auth, invite-gated email magic links, and hosted creation
+enabled; its Cloudflare Access application was retired. [ADR 0018](adr/0018-hosted-studio-trust-boundary.md)
+and [ADR 0019](adr/0019-pluggable-auth-modes.md) preserve the hosted
+trust-boundary and auth-mode decision history.
 
 ## Security Invariants
 
@@ -37,12 +37,12 @@ transcripts, recordings, findings, filenames, provider meeting IDs,
 credentials, bodies, query-bearing URLs, email addresses, or IP addresses.
 See [ADR 0017](adr/0017-opt-in-sentry-telemetry.md).
 
-## Hosted Studio Extension (Dark)
+## Hosted Studio Extension
 
-Hosted creation adds Access identity, D1 ownership, direct browser-to-Gemini
+Hosted creation adds Better Auth identity, D1 ownership, direct browser-to-Gemini
 upload, Cloudflare Workflows, and optional retained R2 media. The local controls
-below remain active for local mode; this table adds the hosted threats that must
-be proven before hosted creation can leave dark deployment.
+below remain active for local mode; this table adds the hosted controls enforced
+by the live reference topology and its release gates.
 
 | Threat | Required control | Verification |
 |---|---|---|
@@ -50,12 +50,12 @@ be proven before hosted creation can leave dark deployment.
 | Leaked upload capability substitutes same-size bytes | Scope capability to one pending file; require present exact Gemini SHA-256 and size at seal; delete mismatch and write no receipt | Real-Chromium/fake-Files contract covers same-size substitute, missing hash, size mismatch, and deletion |
 | Cloudflare's default Workflow retry repeats a billable Gemini call | Every `step.do` has explicit 15-minute config; provider steps set `retries.limit: 0`, check a durable principal receipt before calling, and use `NonRetryableError` after success-without-receipt | Crash-after-Gemini test proves no second generate; user retry creates a new Workflow instance |
 | D1 export exposes encrypted Gemini resumable-session URLs | Treat exports as secret-bearing, restrict and expire backups, never export the derived key with ciphertext, and abort/clear active sessions before Gemini-key rotation | Export/log scan plus rotation drill with exact deletion receipts |
-| Access `sub` changes after seat removal/re-addition | Never key ownership by email or auto-adopt old rows; require a reviewed migration naming both verified old/new subjects | Removed/re-added identity fixture cannot see old rows until explicit migration |
-| Access assertion forges a Better Auth principal | Reserve the `ba:` prefix before an Access `sub` can become a principal | Signed Access fixture rejects `ba:forged` |
+| Better Auth user identity is recreated after membership removal | Never key ownership by email or auto-adopt old rows; require a reviewed migration naming both verified old/new subjects | Removed/re-added identity fixture cannot see old rows until explicit migration |
+| Access compatibility assertion forges a Better Auth principal | Reserve the `ba:` prefix before an Access `sub` can become a principal | Signed Access fixture rejects `ba:forged` |
 | Better Auth invite or email is mistaken for ownership | Use email only to admit/claim one Better Auth user; reject uninvited magic-link sends before verification storage or mail delivery; bind rows to `ba:<userId>` and require an explicit reviewed ID migration | Built-Worker `magic_link_invite` zero-mail/zero-verification receipt, unknown-email denial, and two-user foreign-ID contract |
 | An invited address is used to exhaust email quota or sender reputation | Apply the production route limit and atomically reserve a 60-second cooldown on the invite row before delivery; never fall through from a binding failure to HTTP | Built-Worker second-send 429 proves `MAGIC_LINK_COOLDOWN` and one binding capture; unit tests pin both binding failure paths to zero HTTP calls |
 | A mail scanner consumes a magic link before its recipient | Treat `GET /api/auth/magic-link/verify` as a session-minting, atomically consumed first fetch; expire links after five minutes and document scanner consumption rather than claiming all mutations are POST | Built-Worker one-use browser sign-in plus proposed ADR 0019 residual-risk statement |
-| Stacked perimeter identities diverge | Require a valid Access assertion and session; bind the first Access `sub` to the Better Auth user and reject later mismatches before session insertion | `HOSTED_AUTH stacked_rebind=PASS mismatch_denied=true` and the stored-sub receipt |
+| Stacked compatibility identities diverge | Require a valid Access assertion and session; bind the first Access `sub` to the Better Auth user and reject later mismatches before session insertion | `HOSTED_AUTH stacked_rebind=PASS mismatch_denied=true` and the stored-sub receipt |
 | Import-overwrite IDOR reuses another principal's `run_id` | Parent, registry, and item keys include `principal_sub`; every list/detail/import/delete/insert predicate includes it; preflight rejects `run_principal_conflict` before mutation | Built-Worker two-principal HTTP suite covers list, detail, overwrite, child delete, and child insert |
 
 ## Data Flow And Trust Boundaries

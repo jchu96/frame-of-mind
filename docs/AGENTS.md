@@ -10,14 +10,16 @@
 - `docs/ARTIFACT_COMPOSITION.md`: evidence-to-issue/SOP/explainer/coaching/Q&A quality contract.
 - `docs/PROVIDERS.md`: Bluedot, Granola MCP/API, and local context contracts.
 - `docs/WEB_WORKSPACE.md`: local Nuxt/SQLite projection and import runbook.
-- `docs/TESTING.md`: test-layer ownership, browser isolation, and E2E roadmap.
-- `docs/CLOUDFLARE_DEPLOYMENT.md`: Workers, D1, Access, verification, rollback.
+- `docs/TESTING.md`: gate tiers, test-layer ownership, browser isolation, and E2E roadmap.
+- `docs/CLOUDFLARE_DEPLOYMENT.md`: Workers, D1, Better Auth, verification, rollback.
+- `docs/SKILL_INSTALLATION.md`: portable Codex and Claude skill installation.
+- `docs/adr/0019-pluggable-auth-modes.md`: historical auth-mode decision record.
 - `docs/MCP_ROADMAP.md`: deferred local/hosted read-only MCP boundary.
 - `docs/RUNBOOK.md`: installation, operations, incident response, and troubleshooting.
 - `docs/MEETING_TO_ISSUE_RUNBOOK.md`: transcript-scoped analysis, repository grounding, BI synthesis, and authorized issue publication.
 - `docs/VERSIONING.md`: release and compatibility policy.
 - `docs/project_notes/`: sanitized causal history and gotchas.
-- `docs/adr/`: durable architecture decisions and unresolved proposals.
+- `docs/adr/`: immutable architecture history; supersede decisions instead of rewriting them.
 
 ## Rules
 

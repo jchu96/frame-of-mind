@@ -7,4 +7,6 @@
   `bun run build:web:cloudflare`.
 - SQLite/D1 are projections. Never make the database the sole run source.
 - Do not add automatic cloud sync, media storage, or public routes.
-- Hosted mode must fail closed and validate the Cloudflare Access JWT.
+- Hosted mode must select an explicit auth mode and fail closed. Bind the
+  reference Better Auth session to one `ba:<userId>` principal; validate Access
+  JWTs only in Access or stacked compatibility modes.
