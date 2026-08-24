@@ -729,6 +729,16 @@ adapters at the same principal seam; they are not the reference deployment.
 contract, and [ADR 0020](adr/0020-self-serve-access-requests.md) defines the
 access-request boundary.
 
+Approved Better Auth sessions whose normalized email appears in the
+deploy-time `NUXT_MAINTAINER_EMAILS` allowlist receive a separate,
+request-scoped maintainer capability. That capability alone reveals the
+bounded `/admin/access` membership surface; every other identity receives the
+same 404 shape as an unknown HTML or API route. D1 cannot create maintainers.
+The shared CLI/HTTP transition oracle preserves requested, approved, and
+revoked state rules plus the last-member refusal, while migration 0011 records
+the actioning maintainer or `cli`. [ADR 0021](adr/0021-admin-approval-surface.md)
+defines this authority boundary and its explicit same-origin mutation guard.
+
 ### Hosted execution and Studio topology
 
 Task 3.0 proved the hosted Workflows boundary under the pinned toolchain. Nitro

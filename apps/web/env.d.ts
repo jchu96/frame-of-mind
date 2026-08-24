@@ -8,6 +8,9 @@ declare module "h3" {
       principal: string;
       email?: string;
     };
+    frameOfMindMaintainer?: {
+      email: string;
+    };
     frameOfMindAccessApplicant?: {
       userId: string;
       email: string;

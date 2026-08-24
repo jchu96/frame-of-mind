@@ -1,6 +1,16 @@
 #!/usr/bin/env bun
 /** Manage hosted Studio membership in Access or Better Auth mode. */
 import { readFileSync } from "node:fs";
+import type {
+  AdminAccessAction,
+  AdminAccessState,
+} from "../apps/web/shared/admin-access";
+import {
+  AccessTransitionError,
+  decideAccessTransition,
+  isValidAccessEmail,
+  normalizeAccessEmail,
+} from "../apps/web/server/utils/access-membership";
 
 type Rule =
   | { email: { email: string } }
@@ -29,12 +39,11 @@ function required(env: Record<string, string>, key: string): string {
 }
 
 function validEmail(value: string): boolean {
-  return /^[a-z0-9.!#$%&*+/=?^_`{|}~-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(value)
-    && value.length <= 320;
+  return isValidAccessEmail(value);
 }
 
 function emails(args: string[]): string[] {
-  const values = [...new Set(args.map((value) => value.trim().toLowerCase()).filter(Boolean))];
+  const values = [...new Set(args.map(normalizeAccessEmail).filter(Boolean))];
   if (!values.length || !values.every(validEmail)) throw new Error("Provide one or more valid email addresses.");
   return values;
 }
@@ -96,7 +105,7 @@ async function manageBetterAuth(command: string, values: string[]): Promise<void
   let statement: string;
   if (command === "list") {
     statement = "SELECT email, state, claimed_user_id IS NOT NULL AS claimed, "
-      + "requested_at, approved_at, decided_by "
+      + "requested_at, approved_at, decided_by, actioned_by, actioned_at "
       + "FROM hosted_auth_invites ORDER BY email";
   } else if (command === "list-requests") {
     statement = "SELECT email, requested_at, claimed_user_id IS NOT NULL AS claimed "
@@ -105,66 +114,22 @@ async function manageBetterAuth(command: string, values: string[]): Promise<void
     const now = new Date().toISOString();
     statement = emails(values).map((email) =>
       "INSERT INTO hosted_auth_invites "
-      + "(email, invited_at, state, approved_at, decided_by) VALUES "
-      + `(${sqlLiteral(email)}, ${sqlLiteral(now)}, 'approved', ${sqlLiteral(now)}, ${sqlLiteral(decidedBy)}) `
+      + "(email, invited_at, state, approved_at, decided_by, actioned_by, actioned_at) VALUES "
+      + `(${sqlLiteral(email)}, ${sqlLiteral(now)}, 'approved', ${sqlLiteral(now)}, ${sqlLiteral(decidedBy)}, 'cli', ${sqlLiteral(now)}) `
       + "ON CONFLICT(email) DO UPDATE SET state = 'approved', "
-      + `approved_at = ${sqlLiteral(now)}, decided_by = ${sqlLiteral(decidedBy)}`,
+      + `approved_at = ${sqlLiteral(now)}, decided_by = ${sqlLiteral(decidedBy)}, `
+      + `actioned_by = 'cli', actioned_at = ${sqlLiteral(now)}`,
     ).join("; ");
-  } else if (command === "approve" || command === "deny") {
-    const targets = emails(values).map(sqlLiteral).join(", ");
-    const now = new Date().toISOString();
-    const state = command === "approve" ? "approved" : "revoked";
-    const rows = await executeBetterAuthD1Json(
-      database,
-      target,
-      config,
-      persistenceArgs,
-      "UPDATE hosted_auth_invites "
-      + `SET state = '${state}', `
-      + (command === "approve" ? `approved_at = ${sqlLiteral(now)}, ` : "approved_at = NULL, ")
-      + `decided_by = ${sqlLiteral(decidedBy)} `
-      + `WHERE email IN (${targets}) `
-      + (command === "deny" ? "AND state IN ('requested', 'revoked') " : "")
-      + "RETURNING email, state",
-    );
-    if (!rows.length) throw new Error("No matching access requests were found.");
-    console.log(`${command === "approve" ? "Approved" : "Denied"} ${rows.length}.`);
-    return;
   } else {
-    const targets = emails(values).map(sqlLiteral).join(", ");
-    const current = await executeBetterAuthD1Json(
+    await transitionBetterAuthMembership({
       database,
       target,
       config,
       persistenceArgs,
-      "SELECT email, state FROM hosted_auth_invites ORDER BY email",
-    );
-    const requested = new Set(emails(values));
-    const members = current
-      .filter((row) => row.state === "approved")
-      .map((row) => typeof row.email === "string" ? row.email.toLowerCase() : "")
-      .filter(Boolean);
-    const removed = members.filter((email) => requested.has(email));
-    if (!removed.length) {
-      console.log("Nothing to remove; no listed email is a member.");
-      return;
-    }
-    if (removed.length === members.length) {
-      throw new Error("Refusing to remove the last member; the app would lock everyone out.");
-    }
-    const revoked = await executeBetterAuthD1Json(
-      database,
-      target,
-      config,
-      persistenceArgs,
-      "UPDATE hosted_auth_invites SET state = 'revoked', approved_at = NULL, "
-      + `decided_by = ${sqlLiteral(decidedBy)} WHERE email IN (${targets}) `
-      + "AND state = 'approved' RETURNING email",
-    );
-    if (revoked.length !== removed.length) {
-      throw new Error("Membership changed concurrently; removal was not fully applied. Retry the command.");
-    }
-    console.log(`Revoked ${revoked.length}.`);
+      action: command === "remove" ? "revoke" : command as AdminAccessAction,
+      values: emails(values),
+      decidedBy,
+    });
     return;
   }
   const child = Bun.spawn([
@@ -182,6 +147,93 @@ async function manageBetterAuth(command: string, values: string[]): Promise<void
   });
   const code = await child.exited;
   if (code !== 0) throw new Error(`Wrangler D1 membership command failed (${code}).`);
+}
+
+async function transitionBetterAuthMembership(input: {
+  database: string;
+  target: "--local" | "--remote";
+  config: string;
+  persistenceArgs: string[];
+  action: AdminAccessAction;
+  values: string[];
+  decidedBy: string;
+}): Promise<void> {
+  const current = await executeBetterAuthD1Json(
+    input.database,
+    input.target,
+    input.config,
+    input.persistenceArgs,
+    "SELECT email, state FROM hosted_auth_invites ORDER BY email",
+  );
+  const rows = new Map(current.flatMap((row) =>
+    typeof row.email === "string"
+      && (row.state === "requested" || row.state === "approved" || row.state === "revoked")
+      ? [[normalizeAccessEmail(row.email), row.state as AdminAccessState] as const]
+      : [],
+  ));
+  let approvedCount = [...rows.values()].filter((state) => state === "approved").length;
+  const plans: Array<{
+    email: string;
+    from: AdminAccessState;
+    to: AdminAccessState;
+    idempotent: boolean;
+  }> = [];
+  try {
+    for (const email of input.values) {
+      const from = rows.get(email);
+      if (!from) continue;
+      const decision = decideAccessTransition({
+        action: input.action,
+        currentState: from,
+        approvedCount,
+      });
+      plans.push({ email, from, to: decision.state, idempotent: decision.idempotent });
+      if (!decision.idempotent) {
+        if (from === "approved") approvedCount -= 1;
+        if (decision.state === "approved") approvedCount += 1;
+      }
+    }
+  } catch (error) {
+    if (error instanceof AccessTransitionError && error.code === "admin_access_last_member") {
+      throw new Error("Refusing to remove the last member; the app would lock everyone out.");
+    }
+    if (error instanceof AccessTransitionError) {
+      throw new Error("The requested membership transition is not valid for the current state.");
+    }
+    throw error;
+  }
+  if (!plans.length) throw new Error("No matching access rows were found.");
+  const now = new Date().toISOString();
+  let changed = 0;
+  for (const plan of plans) {
+    if (plan.idempotent) continue;
+    const updated = await executeBetterAuthD1Json(
+      input.database,
+      input.target,
+      input.config,
+      input.persistenceArgs,
+      "UPDATE hosted_auth_invites SET "
+      + `state = ${sqlLiteral(plan.to)}, `
+      + `approved_at = ${plan.to === "approved" ? sqlLiteral(now) : "NULL"}, `
+      + `decided_by = ${sqlLiteral(input.decidedBy)}, actioned_by = 'cli', `
+      + `actioned_at = ${sqlLiteral(now)} `
+      + `WHERE email = ${sqlLiteral(plan.email)} AND state = ${sqlLiteral(plan.from)} `
+      + (input.action === "revoke"
+        ? "AND (SELECT COUNT(*) FROM hosted_auth_invites WHERE state = 'approved') > 1 "
+        : "")
+      + "RETURNING email, state",
+    );
+    if (updated.length !== 1) {
+      throw new Error("Membership changed concurrently; the action was not fully applied. Retry the command.");
+    }
+    changed += 1;
+  }
+  if (input.action === "revoke" && changed === 0) {
+    console.log("Nothing to remove; no listed email is a member.");
+    return;
+  }
+  const label = input.action === "approve" ? "Approved" : input.action === "deny" ? "Denied" : "Revoked";
+  console.log(`${label} ${plans.length}.`);
 }
 
 async function executeBetterAuthD1Json(
