@@ -1,4 +1,4 @@
 interface:
   display_name: "Frame of Mind"
-  short_description: "Turn meeting video into structured, recipe-driven work"
-  default_prompt: "Use $frame-of-mind to analyze an authorized meeting recording with the recipe that best matches the requested output."
+  short_description: "Analyze meeting video or operate the hosted Studio"
+  default_prompt: "Use $frame-of-mind to route this authorized local-analysis or hosted-Studio task through the correct recipe, access boundary, and runbook."
