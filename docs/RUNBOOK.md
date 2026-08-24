@@ -827,9 +827,16 @@ failure and continues. Review `analysis-outcome.json`:
 - `accepted` and `rejected`: recipe disposition among validated responses;
 - `failed`: selected responses that exhausted bounded recovery.
 
-`partial` means at least one selected candidate failed and at least one
-validated. `failed` means no selected detail validated. Rejected candidates are
-valid results and do not make a run partial.
+`complete` requires full coverage and full validation: zero failed responses
+AND zero candidates omitted by the `--max-moments` limit. `partial` means the
+run is usable but not the whole story — at least one selected candidate failed
+validation, or at least one indexed candidate was never interrogated because
+of the limit (any positive `omittedByLimit` prevents `complete`, even when
+every interrogated candidate validates). `failed` means at least one candidate
+failed and no selected detail validated. Rejected candidates are valid results
+and do not make a run partial. A truncated run also emits an
+interrogation-stage warning naming the omitted count and the `--max-moments`
+remedy.
 
 If the bounded retry also fails:
 
