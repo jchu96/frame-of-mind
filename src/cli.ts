@@ -167,12 +167,6 @@ program
           `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
             `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
         );
-        if (result.outcome.candidates.omittedByLimit > 0) {
-          process.stderr.write(
-            `WARNING: analysis truncated — ${result.outcome.candidates.omittedByLimit} of ${result.outcome.candidates.indexed} indexed candidate(s) were never interrogated (--max-moments ${flags.maxMoments}). ` +
-              "Later parts of the recording are missing; rerun with a higher --max-moments for full coverage.\n",
-          );
-        }
         const remoteFile = result.manifest.remoteFile;
         const retentionRequested = Boolean(flags.keepUpload || flags.remoteFile);
         if (retentionRequested && remoteFile && !remoteFile.deleted && remoteFile.name) {
