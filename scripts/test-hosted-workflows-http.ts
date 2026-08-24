@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
@@ -29,6 +29,7 @@ import {
 import {
   assertLocatorContrast,
   assertLocatorsContrast,
+  assertSelectionContrast,
   assertVisibleTextContrast,
 } from "../apps/web/e2e/support/contrast";
 
@@ -1238,8 +1239,12 @@ async function verifyHostedBrowserContract(
   const screenshotRoot = resolve("apps/web/e2e/__screenshots__/ux-pass-3");
   const captureScreenshots = hostedContractAuthMode === "cloudflare-access";
   if (captureScreenshots) {
-    await rm(screenshotRoot, { recursive: true, force: true });
     await mkdir(screenshotRoot, { recursive: true });
+    for (const entry of await readdir(screenshotRoot, { withFileTypes: true })) {
+      if (entry.isFile() && /^(?:0\d|1[0-3])-.*\.png$/.test(entry.name)) {
+        await rm(join(screenshotRoot, entry.name), { force: true });
+      }
+    }
   }
   const browser = await chromium.launch({ headless: true });
   try {
@@ -1273,10 +1278,29 @@ async function verifyHostedBrowserContract(
         await assertVisibleTextContrast(page, `${name} ${colorScheme}`);
         if (name === "00-results-empty") {
           const navigation = page.locator("[data-hosted-navigation]");
+          const resultsHeading = page.getByRole("heading", { name: "Your finished analyses.", level: 1 });
           await assertLocatorContrast(
-            page.getByRole("heading", { name: "Your finished analyses.", level: 1 }),
+            resultsHeading,
             `${name} ${colorScheme} results heading`,
           );
+          await assertSelectionContrast(
+            resultsHeading,
+            `${name} ${colorScheme} selection`,
+          );
+          await page.locator("body").evaluate((body) => {
+            const probe = document.createElement("span");
+            probe.dataset.themeTokenContrastProbe = "true";
+            probe.style.color = "var(--ui-text-dimmed)";
+            probe.style.backgroundColor = "var(--ui-bg-accented)";
+            probe.textContent = "Theme token contrast probe";
+            body.append(probe);
+          });
+          const tokenProbe = page.locator("[data-theme-token-contrast-probe=true]");
+          await assertLocatorContrast(
+            tokenProbe,
+            `${name} ${colorScheme} dimmed text on accented background`,
+          );
+          await tokenProbe.evaluate((element) => element.remove());
           await assertLocatorContrast(
             page.getByRole("heading", { name: "Start your first analysis", level: 2 }),
             `${name} ${colorScheme} empty heading`,
@@ -1551,6 +1575,7 @@ async function verifyHostedBrowserContract(
     assertEqual(await page.locator("[data-run-finding-summary]").count(), 1, "published finding summary fixture");
     assertEqual(await page.locator("[data-run-finding-value]").count(), 5, "published finding value fixtures");
     assertEqual(await page.locator("[data-run-finding-step]").count(), 3, "published finding step fixtures");
+    assertEqual(await page.locator("[data-run-finding-evidence]").count(), 1, "published finding evidence fixture");
     assertEqual(
       await page.locator("[data-run-finding-verdict]").getAttribute("data-semantic-color"),
       "success",
@@ -1578,6 +1603,10 @@ async function verifyHostedBrowserContract(
       await assertLocatorsContrast(
         page.locator("[data-run-finding-step]"),
         `published viewer ${colorScheme} evidence steps`,
+      );
+      await assertLocatorsContrast(
+        page.locator("[data-run-finding-evidence] p, [data-run-finding-evidence] blockquote"),
+        `published viewer ${colorScheme} evidence excerpt`,
       );
       await assertLocatorsContrast(
         page.locator("[data-run-finding-verdict], [data-run-finding-severity]"),

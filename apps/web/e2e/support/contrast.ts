@@ -33,6 +33,20 @@ export async function assertLocatorsContrast(
   }
 }
 
+export async function assertSelectionContrast(
+  locator: Locator,
+  label: string,
+  minimum = 4.5,
+): Promise<void> {
+  const measurement = await locator.evaluate(measureSelectionContrast);
+  if (measurement.ratio < minimum) {
+    throw new Error(
+      `${label}: expected selection contrast >= ${minimum}, received ${measurement.ratio} `
+      + `(color ${measurement.color}, background ${measurement.background}).`,
+    );
+  }
+}
+
 export async function assertVisibleTextContrast(
   page: Page,
   label: string,
@@ -165,5 +179,47 @@ function measureElementContrast(element: Element): ContrastMeasurement {
     ratio: Number(ratio.toFixed(2)),
     color: style.color,
     background: background.slice(0, 3).map(Math.round).join(","),
+  };
+}
+
+function measureSelectionContrast(element: Element): ContrastMeasurement {
+  type Color = [number, number, number, number];
+  const canvas = document.createElement("canvas");
+  canvas.width = 1;
+  canvas.height = 1;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Contrast oracle could not create a canvas context.");
+  const parse = (value: string): Color => {
+    context.clearRect(0, 0, 1, 1);
+    context.fillStyle = value;
+    context.fillRect(0, 0, 1, 1);
+    const [red = 0, green = 0, blue = 0, alpha = 0] = context.getImageData(0, 0, 1, 1).data;
+    return [red, green, blue, alpha / 255];
+  };
+  const luminance = (color: Color): number => {
+    const values = color.slice(0, 3).map((channel) => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * values[0]! + 0.7152 * values[1]! + 0.0722 * values[2]!;
+  };
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  const style = getComputedStyle(element, "::selection");
+  const foreground = parse(style.color);
+  const background = parse(style.backgroundColor);
+  selection?.removeAllRanges();
+  const foregroundLuminance = luminance(foreground);
+  const backgroundLuminance = luminance(background);
+  const ratio = (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+    / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+  return {
+    text: element.textContent?.trim().replace(/\s+/g, " ").slice(0, 80) || "",
+    ratio: Number(ratio.toFixed(2)),
+    color: style.color,
+    background: style.backgroundColor,
   };
 }
