@@ -372,7 +372,10 @@ class FakeHostedAnalysisProvider implements HostedAnalysisProvider {
         { label: "Due date", value: "Not stated" },
         { label: "Status", value: "Open" },
       ],
-      evidence: { timestamp: "00:00:02" },
+      evidence: {
+        timestamp: "00:00:02",
+        reporterQuote: "The upload could not be completed. Please try again.",
+      },
       steps: [
         "Open the finished analysis.",
         "Read the visible error message.",

@@ -157,6 +157,9 @@
   semantic palette on bare `:root`, switches both together under the system
   dark scheme, and honors explicit class or `data-theme` overrides. Hosted
   browser proof measures actual composited text contrast in both schemes.
+- Web stylesheets and `apps/web/app.config.*` are theme-contract paths, not
+  presentation-only changes: adaptive PR gating upgrades them to the sharded
+  tier so the hosted contrast contract always runs.
 - Studio Home composes existing operational jobs, rebuildable run summaries,
   and sanitized connection presence without persisting a dashboard-specific
   aggregate. It revalidates after client navigation.

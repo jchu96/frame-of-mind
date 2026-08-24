@@ -141,7 +141,7 @@ function hostedAttemptId(value: StoredRun): string | undefined {
             </div>
           </dl>
 
-          <div v-if="item.result.evidence?.reporterQuote || item.result.evidence?.verbatimUiText" class="mt-5 border border-default bg-elevated p-4">
+          <div v-if="item.result.evidence?.reporterQuote || item.result.evidence?.verbatimUiText" data-run-finding-evidence class="mt-5 border border-default bg-elevated p-4">
             <p class="fom-kicker text-muted">Evidence excerpt</p>
             <blockquote v-if="item.result.evidence.reporterQuote" class="mt-2 text-sm italic leading-6">
               “{{ item.result.evidence.reporterQuote }}”

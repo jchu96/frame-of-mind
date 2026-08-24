@@ -1198,3 +1198,10 @@
   Workflow and auth gates passed and regenerated 60 reviewed screenshots: 15
   states in light/dark at desktop and 390px, including empty Results, the
   findings viewer, and sign-in.
+- Closed the adversarial theme-review blocker by upgrading stylesheet and app
+  configuration changes to the sharded gate tier, with a failing-then-passing
+  `main.css`-only policy test. Added actual `::selection` contrast coverage,
+  raised the light dimmed/accented pair from 4.49:1 to 4.92:1, and rendered the
+  published evidence-excerpt fixture for both-scheme browser proof. Kept the
+  Workflow screenshot rotation within its `00-*` through `13-*` ownership so
+  partial runs no longer remove the auth contract's tracked sign-in receipts.

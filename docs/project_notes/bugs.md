@@ -611,3 +611,11 @@
   detail values, numbered evidence steps, and semantic badges at 4.5:1 or
   better, audits every visible text node in the captured hosted surfaces, and
   writes light/dark desktop and 390px screenshot receipts.
+- Review follow-up: the first implementation left stylesheets PR-safe even
+  though this contrast oracle runs only in the hosted lane. Theme stylesheets
+  and `app.config.*` now force the sharded tier with a
+  `theme_contract_paths` receipt. The same correction gives `::selection` a
+  stable dark foreground, clears the dimmed-on-accented token matrix, and makes
+  the published evidence excerpt a required both-scheme fixture. The Workflow
+  screenshot rotation now preserves the auth contract's separately owned
+  `14-sign-in-*` receipts instead of deleting the shared directory wholesale.
