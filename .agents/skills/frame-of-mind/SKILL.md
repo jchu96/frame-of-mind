@@ -196,7 +196,13 @@ frameofmind analyze "<meeting-id>" \
   --transcript-offset "01:02:47"
 ```
 
-Use `--max-moments 3` for a bounded trial. Avoid `--keep-upload` unless the
+Use `--max-moments 3` for a bounded trial — expect `outcome=partial` with a
+truncation warning, which is honest for a trial. For full coverage of an
+episode-length recording use `--max-moments 30` or more: pass-1 indexing is
+non-deterministic (the same recording has indexed 16–28 candidates across
+identical runs), so set the limit with headroom and require
+`outcome=complete` / zero `omittedByLimit` before treating timestamps or
+findings as covering the whole recording. Avoid `--keep-upload` unless the
 user explicitly accepts remote retention.
 
 For an experimental in-depth review, add `--depth deep` and an explicit model.
@@ -241,7 +247,10 @@ Review in this order:
 5. `analysis.json`, including rejected candidates
 
 Verify identity, recipe provenance, model, alignment, evidence timestamps,
-explicit facts versus inference, accepted/rejected/failed counts, and
+explicit facts versus inference, accepted/rejected/failed counts, the outcome
+status (`complete` requires zero failures AND zero limit-omitted candidates;
+`partial` with `omittedByLimit > 0` means the back of the recording is
+missing — rerun with a higher `--max-moments` before drafting from it), and
 `remoteFile.deleted: true` unless retention was intentional. If no normal
 bundle exists, inspect `failure-manifest.json`; never request the raw provider
 failure. Load `references/analysis-contracts.md` for exact file semantics.

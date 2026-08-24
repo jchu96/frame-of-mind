@@ -619,3 +619,16 @@
   the published evidence excerpt a required both-scheme fixture. The Workflow
   screenshot rotation now preserves the auth contract's separately owned
   `14-sign-in-*` receipts instead of deleting the shared directory wholesale.
+
+## 2026-08-24 — Limit-truncated analyses reported outcome=complete
+
+Reproduce (pre-fix): deep-analyze a recording whose pass-1 index exceeds
+`--max-moments` (default 10); pass 2 interrogates only the first N candidates
+chronologically, drops the rest, and the summary still prints
+`outcome=complete` — a real episode lost everything after ~24 minutes with no
+signal beyond the easily missed `omitted by limit` count. Fixed in PR #111:
+truncation now yields `outcome=partial`, an interrogation-stage warning, CLI
+stderr warning, artifact coverage notices, and the outcome projects into
+Studio views and exports (#112). Validating test:
+`test/analysis-orchestrator.test.ts` "reports omission-only truncation as
+partial with a coverage warning".
