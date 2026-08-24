@@ -11,7 +11,9 @@ const next = computed(() => safeHostedNext(route.query.next));
 const { data: session } = await useFetch<SessionInfo>("/api/session", {
   headers: useRequestHeaders(["cookie"]),
 });
-if (session.value?.principal) await navigateTo(next.value);
+if (session.value?.principal) {
+  await navigateTo(session.value.accessState === "approved" ? next.value : "/request-access");
+}
 
 const schema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
@@ -46,7 +48,7 @@ function friendlyAuthMessage(code: string | undefined): string {
     return "Email sign-in is not enabled on this deployment.";
   }
   if (code === "EMAIL_NOT_INVITED") {
-    return "This email has not been invited to Frame of Mind.";
+    return "Email sign-in is available after your access is approved. Continue with GitHub to request access.";
   }
   if (code === "MAGIC_LINK_COOLDOWN") {
     return "A sign-in link was sent recently. Check your inbox or try again in a minute.";
@@ -123,7 +125,7 @@ async function sendMagicLink(event: FormSubmitEvent<SignInForm>) {
           <p class="text-sm font-semibold text-muted">Frame of Mind</p>
           <h1 class="text-3xl font-black tracking-tight text-highlighted">Sign in</h1>
           <p class="text-sm leading-6 text-muted">
-            Use an invited GitHub account or request a one-time email link.
+            Continue with GitHub to sign in or request access. Approved accounts can also use a one-time email link.
           </p>
         </div>
       </template>
@@ -145,7 +147,7 @@ async function sendMagicLink(event: FormSubmitEvent<SignInForm>) {
           <UFormField
             name="email"
             label="Email address"
-            description="We will send a one-time sign-in link if email sign-in is enabled."
+            description="We will send a one-time sign-in link if this account is already approved and email sign-in is enabled."
           >
             <UInput
               v-model="state.email"

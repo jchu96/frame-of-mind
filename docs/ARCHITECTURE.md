@@ -715,10 +715,14 @@ limits explicit even for the contract maximum of 1,000 findings.
 
 Local unauthenticated mode is loopback-only. The committed hosted mode combines
 a Cloudflare Access policy over the complete hostname with in-Worker validation
-of the Access JWT signature, issuer, audience, and algorithm. The proposed
-[ADR 0019](adr/0019-pluggable-auth-modes.md) spike proves that the same single
-middleware seam can instead bind `ba:<userId>` from Better Auth, optionally
-behind Access. This is not yet an accepted deployment constraint.
+of the Access JWT signature, issuer, audience, and algorithm. Accepted
+[ADR 0019](adr/0019-pluggable-auth-modes.md) lets the same middleware seam use
+Better Auth, optionally behind Access. [ADR 0020](adr/0020-self-serve-access-requests.md)
+then separates authentication from authorization: any verified GitHub identity
+may establish a session, but only a D1 membership with `state='approved'`
+binds `ba:<userId>` into the downstream principal context. Other sessions can
+reach only their bounded session and request-access surfaces, before any run,
+media, provider, spend, Workflow, or R2 handler executes.
 
 ### Hosted execution and Studio topology (dark)
 

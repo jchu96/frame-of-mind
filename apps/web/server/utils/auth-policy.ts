@@ -27,6 +27,12 @@ export function isBetterAuthPublicPath(path: string): boolean {
     || path === "/__nuxt_error";
 }
 
+export function isBetterAuthLimitedSessionPath(path: string): boolean {
+  return path === "/api/session"
+    || path === "/request-access"
+    || path === "/api/access/request";
+}
+
 export function parseAuthMode(value: unknown): AuthMode {
   if (
     value === "off"

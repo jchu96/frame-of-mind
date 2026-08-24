@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  isBetterAuthLimitedSessionPath,
   isBetterAuthPublicPath,
   isLoopbackAddress,
   isLoopbackHost,
@@ -78,6 +79,15 @@ describe("authentication policy", () => {
       "/api/runs",
       "/hosted/activity",
     ]) expect(isBetterAuthPublicPath(path)).toBe(false);
+  });
+
+  test("limits unapproved sessions to status and access-request surfaces", () => {
+    for (const path of ["/api/session", "/request-access", "/api/access/request"]) {
+      expect(isBetterAuthLimitedSessionPath(path)).toBe(true);
+    }
+    for (const path of ["/", "/api/runs", "/api/hosted/media", "/request-access/extra"]) {
+      expect(isBetterAuthLimitedSessionPath(path)).toBe(false);
+    }
   });
 
   test("accepts only same-origin relative hosted return paths", () => {
