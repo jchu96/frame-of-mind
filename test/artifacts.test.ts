@@ -132,6 +132,57 @@ describe("analysis Markdown rendering", () => {
     })).toThrow();
   });
 
+  it("rejects a complete status when candidates were omitted by the moment limit", () => {
+    expect(() => analysisOutcomeSchema.parse({
+      schemaVersion: 1,
+      runId: "truncated-complete",
+      status: "complete",
+      candidates: {
+        indexed: 16,
+        selected: 10,
+        omittedByLimit: 6,
+        validated: 10,
+        accepted: 10,
+        rejected: 0,
+        failed: 0,
+      },
+      failures: [],
+    })).toThrow();
+  });
+
+  it("reports a truncated run as partial and renders the coverage notice", () => {
+    const analysis = {
+      schemaVersion: 3 as const,
+      runId: "truncated-partial",
+      recipe: { id: "recipe", label: "Recipe" },
+      context: { mode: "none" as const },
+      model: "gemini-test",
+      matchNotes: "Synthetic match.",
+      items: [],
+    };
+    const outcome = analysisOutcomeSchema.parse({
+      schemaVersion: 1,
+      runId: analysis.runId,
+      status: "partial",
+      candidates: {
+        indexed: 16,
+        selected: 10,
+        omittedByLimit: 6,
+        validated: 10,
+        accepted: 10,
+        rejected: 0,
+        failed: 0,
+      },
+      failures: [],
+    });
+
+    const markdown = renderAnalysis(analysis, outcome);
+    expect(markdown).toContain("Analysis outcome: partial");
+    expect(markdown).toContain("Coverage truncated: 6 indexed candidate(s)");
+    expect(markdown).toContain("--max-moments");
+    expect(markdown).not.toContain("failed validation");
+  });
+
   it("rejects impossible failure ordinals, ranges, duplicates, and issue metadata", () => {
     const base = {
       schemaVersion: 1 as const,
