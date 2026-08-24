@@ -4,9 +4,9 @@ import {
   startHostedHarness,
 } from "../support/hosted-harness";
 
-// REVIEW-fom-auth.md: an uninvited magic-link request must not reach the
+// REVIEW-fom-auth.md: a non-approved magic-link request must not reach the
 // captured mailer. This activates when the Better Auth implementation lands.
-test("@adversarial uninvited sign-in leaves the magic-link mailer empty", async () => {
+test("@adversarial non-approved email sign-in leaves the magic-link mailer empty", async () => {
   test.skip(!hasBetterAuthSupport(), "Better Auth PR #75 is not present on this base.");
   const hosted = await startHostedHarness("better-auth");
   try {

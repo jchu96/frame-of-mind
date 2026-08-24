@@ -218,15 +218,22 @@
   write-only Files capability.
 - Better Auth 1.7.1 is workerd-compatible through the direct D1 adapter when
   the Cloudflare bundle externalizes `node:async_hooks`. D1 migration 0006
-  stores Better Auth dates as ISO text and invitations as normalized email.
+  stores Better Auth dates as ISO text and membership as normalized email;
+  migration 0010 adds requested, approved, and revoked states while backfilling
+  existing rows as approved.
 - Hosted auth binds one principal in middleware: Access uses its validated
   subject; Better Auth uses `ba:<userId>`; stacked mode still uses the Better
   Auth principal and records the outer Access subject separately. Access JWT
   subjects cannot begin with the reserved `ba:` prefix.
 - Better Auth 1.7.1 magic-link verification is a session-minting GET that
   atomically consumes its token on the first fetch. The hosted integration
-  rejects uninvited sends in a before-hook so no verification row or mail is
-  created, then rechecks the invite before session insertion.
+  limits sends to approved membership rows, while GitHub authentication is
+  open and the global middleware binds no downstream principal until the
+  membership state is approved.
+- An unapproved Better Auth session can reach only `/api/session`,
+  `/request-access`, and its idempotent request mutation. One HMAC-keyed IP
+  bucket rate-limits new requests, and only the first row insert may send the
+  command-only maintainer notification.
 - Hosted magic-link admission conditionally updates the invite row before
   delivery, allowing one send per email each 60 seconds even across concurrent
   requests; production also caps the route at three requests per 15 minutes.

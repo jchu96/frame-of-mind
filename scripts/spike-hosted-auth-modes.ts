@@ -111,6 +111,9 @@ try {
   if (!firstMigration.includes("0009_magic_link_cooldown.sql")) {
     throw new Error("D1 omitted migration 0009_magic_link_cooldown.sql.");
   }
+  if (!firstMigration.includes("0010_access_requests.sql")) {
+    throw new Error("D1 omitted migration 0010_access_requests.sql.");
+  }
   const replay = await runChecked(migrationArgs, "Better Auth D1 migration replay");
   if (!/no migrations to apply/i.test(replay)) throw new Error("Better Auth migration replay was not idempotent.");
   await d1Execute(
@@ -123,7 +126,7 @@ try {
     + "('stacked@example.test','2026-08-23T00:00:00.000Z')",
     configPath,
   );
-  console.log("HOSTED_AUTH migration=PASS range=0001..0009 replay=idempotent");
+  console.log("HOSTED_AUTH migration=PASS range=0001..0010 replay=idempotent");
 
   ({ worker, output: workerOutput } = await startWorker(configPath, workerPort));
   await waitForWorker(origin, worker, 403);
@@ -143,8 +146,8 @@ try {
     await expectUninvitedMagicLinkDenied(browser, origin, configPath);
     console.log("HOSTED_AUTH magic_link_invite=PASS mailer_calls=0 verification_rows=0");
 
-    await expectUnknownLoginDenied(browser, origin);
-    console.log("HOSTED_AUTH membership=PASS unknown_email=EMAIL_NOT_INVITED");
+    await expectUnknownLoginUnapproved(browser, origin);
+    console.log("HOSTED_AUTH membership=PASS unknown_session=true protected=403");
 
     const runA = runFixture();
     runA.analysis.runId = "20260823T120001Z-better-auth-a";
@@ -595,32 +598,31 @@ async function expectStackedRebindDenied(
   }
 }
 
-async function expectUnknownLoginDenied(
+async function expectUnknownLoginUnapproved(
   browser: Awaited<ReturnType<typeof chromium.launch>>,
   origin: string,
 ): Promise<void> {
-  const context = await browser.newContext();
-  try {
-    const page = await context.newPage();
-    await page.goto(`${origin}/api/health`);
-    const result = await page.evaluate(async () => {
-      const response = await fetch("/api/auth/sign-in/social", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ provider: "github", loginHint: "unknown@example.test", callbackURL: "/api/session" }),
-      });
-      return await response.json() as { url?: string };
-    });
-    if (!result.url) throw new Error("Unknown-email fixture did not start OAuth.");
-    await page.goto(result.url);
-    if (!/email_not_invited|EMAIL_NOT_INVITED/i.test(page.url())) {
-      throw new Error(`Unknown email omitted the sanitized denial code: ${page.url()}`);
-    }
-    if (await cookieHeader(context, origin)) throw new Error("Unknown email received a session cookie.");
-  } finally {
-    // A context that already went away must not turn a passing (or failing)
-    // probe into an unrelated "browser has been closed" error.
-    await context.close().catch(() => undefined);
+  const cookie = await githubLogin(browser, origin, "unknown@example.test");
+  const session = await json<Record<string, unknown>>(
+    await expectStatus(authenticatedFetch(origin, "/api/session", cookie), 200, "unknown session"),
+  );
+  if (session.principal !== true || "accessState" in session) {
+    throw new Error(`Unknown account did not receive an unapproved session: ${JSON.stringify(session)}`);
+  }
+  await expectStatus(authenticatedFetch(origin, "/api/runs", cookie), 403, "unknown protected denial");
+  const redirect = await fetch(`${origin}/`, {
+    headers: { cookie, accept: "text/html" },
+    redirect: "manual",
+  });
+  if (redirect.status !== 302 || redirect.headers.get("location") !== "/request-access") {
+    throw new Error(`Unknown account did not redirect to request access: ${redirect.status}`);
+  }
+  const requestPage = await expectStatus(fetch(`${origin}/request-access`, {
+    headers: { cookie, accept: "text/html" },
+  }), 200, "request-access page");
+  const requestPageText = await requestPage.text();
+  if (!requestPageText.includes("Request access") || !requestPageText.includes("when approved")) {
+    throw new Error("Request-access page omitted its approval copy.");
   }
 }
 

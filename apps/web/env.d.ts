@@ -8,6 +8,11 @@ declare module "h3" {
       principal: string;
       email?: string;
     };
+    frameOfMindAccessApplicant?: {
+      userId: string;
+      email: string;
+      accessState?: "requested" | "revoked";
+    };
     frameOfMindAccessIdentity?: {
       sub: string;
       email?: string;

@@ -146,7 +146,9 @@ test.describe(`hosted sign-in (${mode})`, () => {
 
     await page.unroute("**/api/auth/sign-in/magic-link");
     await page.goto("/sign-in?error=EMAIL_NOT_INVITED");
-    await expect(page.getByText("This email has not been invited to Frame of Mind.")).toBeVisible();
+    await expect(page.getByText(
+      "Email sign-in is available after your access is approved. Continue with GitHub to request access.",
+    )).toBeVisible();
 
     await page.route("**/api/auth/sign-in/magic-link", async (route) => {
       await route.fulfill({
