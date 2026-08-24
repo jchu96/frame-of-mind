@@ -370,7 +370,9 @@ summary said `outcome=complete`.
 
 Closes the #112 seam: `AnalysisOutcome` now travels from the orchestrator's
 published run through `AnalysisProjectionInput`, the run-import contract, both
-RunStore implementations (nullable `outcome_json` column, migration 0011 +
+RunStore implementations (nullable `outcome_json` column, the
+`run_outcome_projection` migration — minted as 0011, renumbered 0012 in #114
+after racing #109's 0011 — +
 bootstrap parity), `StoredRun`, the run detail view, and Studio review
 bundle/Markdown exports. The field is optional everywhere: historical bundles,
 projections, and imports without it stay valid, and a reimport heals old rows

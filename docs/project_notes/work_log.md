@@ -1249,7 +1249,8 @@
 ## 2026-08-24 — Outcome projection carry (#112)
 
 - Carried the sanitized analysis outcome through projection, both stores
-  (SQLite ALTER guard + D1 migration 0011), StoredRun, the hosted import
+  (SQLite ALTER guard + the D1 `run_outcome_projection` migration, 0011 at
+  merge, renumbered 0012 in #114), StoredRun, the hosted import
   endpoint, Studio reimport, the run detail page (partial/failed badge +
   coverage alert), and review bundle/Markdown exports. Parity + round-trip +
   export tests added; suites green except the pre-existing Windows-only
