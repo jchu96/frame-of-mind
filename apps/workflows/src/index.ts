@@ -84,7 +84,30 @@ export class HostedAnalysisWorkflow extends WorkflowEntrypoint<
     if (this.env.HOSTED_FAKE_START_DELAY_MEDIA_ID === attempt.input.mediaId) {
       await step.sleep("contract-start-delay", "1 second");
     }
-    const provider = createHostedAnalysisProvider(this.env);
+    let reservedUnits = attempt.spendReservedUnits;
+    let transportRetryCount = 0;
+    const provider = createHostedAnalysisProvider(this.env, {
+      beforeGenerationTransportRetry: async () => {
+        const occurredAt = new Date().toISOString();
+        reservedUnits = await repository.extendSpendReservation({
+          principalSub: attempt.principalSub,
+          attemptId: attempt.attemptId,
+          expectedReservedUnits: reservedUnits,
+          occurredAt,
+        });
+        transportRetryCount += 1;
+        const claimed = await repository.claimProviderCall(
+          attempt.principalSub,
+          attempt.attemptId,
+          `transport_retry_${String(transportRetryCount).padStart(4, "0")}`,
+          "gemini_transport_retry_started",
+          occurredAt,
+        );
+        if (!claimed) {
+          throw new HostedRepositoryError("spend_retry_claim_commit_failed");
+        }
+      },
+    });
     const telemetry = createHostedTelemetry(this.env);
     const startedAt = Date.now();
     await telemetry.emit(telemetryEvent(attempt, {

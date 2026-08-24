@@ -45,6 +45,7 @@ export interface StudioJobDetail {
 
 export interface StudioJobApi {
   create(input: JobCreateRequest, createdAt: string): Promise<JobCreateResult>;
+  findByIdempotencyKey(idempotencyKey: string): Promise<AnalysisJob | undefined>;
   list(query: JobListQuery): Promise<JobListPage>;
   detail(
     jobId: string,
@@ -91,6 +92,12 @@ export class RepositoryStudioJobApi implements StudioJobApi {
     });
     if (result.kind === "created") this.notifier.notify();
     return result;
+  }
+
+  findByIdempotencyKey(
+    idempotencyKey: string,
+  ): Promise<AnalysisJob | undefined> {
+    return this.repository.getByIdempotencyKey(idempotencyKey);
   }
 
   list(query: JobListQuery): Promise<JobListPage> {

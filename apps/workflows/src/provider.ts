@@ -80,6 +80,8 @@ export type HostedContextSourceFactory = (
   attempt: HostedAnalysisAttempt,
 ) => MeetingContextSource;
 
+export type HostedGenerationTransportRetryHook = () => Promise<void>;
+
 export interface HostedGeminiAnalyzer {
   takeUsage?(): HostedProviderUsage | undefined;
   resolveRetainedFile?(
@@ -124,7 +126,10 @@ export interface HostedProviderEnv {
 
 export function createHostedAnalysisProvider(
   env: HostedProviderEnv,
-  options: { contextSource?: HostedContextSourceFactory } = {},
+  options: {
+    contextSource?: HostedContextSourceFactory;
+    beforeGenerationTransportRetry?: HostedGenerationTransportRetryHook;
+  } = {},
 ): HostedAnalysisProvider {
   if (env.HOSTED_FAKE_GEMINI === "true") {
     return new FakeHostedAnalysisProvider(
@@ -136,7 +141,14 @@ export function createHostedAnalysisProvider(
   const apiKey = env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new Error("gemini_secret_unavailable");
   return new GeminiHostedAnalysisProvider(
-    new GeminiVideoAnalyzer(apiKey),
+    new GeminiVideoAnalyzer(apiKey, undefined, {
+      ...(options.beforeGenerationTransportRetry
+        ? {
+            beforeGenerationTransportRetry:
+              options.beforeGenerationTransportRetry,
+          }
+        : {}),
+    }),
     options.contextSource,
   );
 }

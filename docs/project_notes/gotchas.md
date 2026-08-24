@@ -381,6 +381,10 @@
   attempt failed or was canceled. When any billable provider claim lacks a
   matching usage receipt, commit the full conservative reservation; only a
   complete usage set may reduce committed units to provider-reported actuals.
+- Do not multiply every planned generation by the full transport-retry budget
+  at admission. Reserve the first attempt chain, then CAS-extend by one
+  generation immediately before each actual retry; a lost extension must stop
+  the retry, and its claim remains usage-incomplete for conservative settlement.
 
 - Provider `responseJsonSchema` is a conformance aid, not the trust boundary.
   Parse as unknown and keep the originating strict Zod schema authoritative.

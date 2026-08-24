@@ -806,7 +806,7 @@ try {
   const cappedBody = await json<{ data?: { code?: string } }>(capped);
   assertEqual(
     cappedBody.data?.code,
-    "principal_spend_cap_exceeded",
+    "spend_estimate_exceeds_remaining_allowance",
     "spend-capped code",
   );
   assertEqual(
@@ -829,7 +829,7 @@ try {
   );
   assertEqual(
     cappedComposerBody.data?.code,
-    "principal_spend_cap_exceeded",
+    "spend_estimate_exceeds_remaining_allowance",
     "spend-capped composer code",
   );
   assertEqual(
