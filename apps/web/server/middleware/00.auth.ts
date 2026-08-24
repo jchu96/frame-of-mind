@@ -1,6 +1,7 @@
 import { getHeader, getRequestIP, getRequestURL, sendRedirect, type H3Event } from "h3";
 import { verifyCloudflareAccessJwt } from "../utils/access";
 import {
+  isBetterAuthLimitedSessionPath,
   isBetterAuthPublicPath,
   isTrustedLoopbackRequest,
   normalizeTeamDomain,
@@ -116,8 +117,45 @@ export default defineEventHandler(async (event) => {
       data: { code: "better_auth_session_missing" },
     });
   }
-  event.context.frameOfMindPrincipal = identity;
-  event.context.frameOfMindUser = { authMode: mode, email: identity.email, principal: true };
+  event.context.frameOfMindUser = {
+    authMode: mode,
+    email: identity.email,
+    principal: true,
+    ...(identity.accessState ? { accessState: identity.accessState } : {}),
+  };
+  if (identity.accessState !== "approved") {
+    event.context.frameOfMindAccessApplicant = {
+      userId: identity.userId,
+      email: identity.email,
+      ...(identity.accessState === "requested" || identity.accessState === "revoked"
+        ? { accessState: identity.accessState }
+        : {}),
+    };
+    if (isBetterAuthLimitedSessionPath(path)) return;
+    const redirectToRequest = event.method === "GET"
+      && path !== "/api"
+      && !path.startsWith("/api/")
+      && (getHeader(event, "accept") || "").split(",")
+        .some((value) => value.trim().startsWith("text/html"));
+    await hostedTelemetry?.emit({
+      area: "access",
+      outcome: "failed",
+      code: "better_auth_approval_required",
+      routeClass: "hosted_api",
+      status: redirectToRequest ? 302 : 403,
+      studioMode: "hosted",
+    });
+    if (redirectToRequest) return sendRedirect(event, "/request-access", 302);
+    throw createError({
+      statusCode: 403,
+      statusMessage: "Maintainer approval is required.",
+      data: { code: "access_approval_required" },
+    });
+  }
+  event.context.frameOfMindPrincipal = {
+    principal: identity.principal,
+    email: identity.email,
+  };
   await hostedTelemetry?.emit({
     area: "access",
     outcome: "succeeded",
