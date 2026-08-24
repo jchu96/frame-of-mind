@@ -1,4 +1,8 @@
 import { chromium } from "@playwright/test";
+import {
+  hostedAccessFetch,
+  withHostedAccessTimeout,
+} from "./hosted-access-timeout";
 
 export type HostedContractAuthMode = "cloudflare-access" | "better-auth";
 
@@ -72,11 +76,14 @@ export function betterAuthFixtureVars(workerOrigin: string, providerOrigin: stri
 }
 
 export async function betterAuthBrowserLogin(origin: string, email: string): Promise<string> {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await betterAuthWait(
+    "browser_launch",
+    () => chromium.launch({ headless: true, timeout: 0 }),
+  );
   try {
     return await loginWithBrowser(browser, origin, email);
   } finally {
-    await browser.close();
+    await betterAuthWait("browser_close", () => browser.close());
   }
 }
 
@@ -84,7 +91,10 @@ export async function betterAuthBrowserLogins(
   origin: string,
   emails: string[],
 ): Promise<Map<string, string>> {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await betterAuthWait(
+    "browser_launch",
+    () => chromium.launch({ headless: true, timeout: 0 }),
+  );
   try {
     const credentials = new Map<string, string>();
     for (const email of emails) {
@@ -92,7 +102,7 @@ export async function betterAuthBrowserLogins(
     }
     return credentials;
   } finally {
-    await browser.close();
+    await betterAuthWait("browser_close", () => browser.close());
   }
 }
 
@@ -101,38 +111,58 @@ async function loginWithBrowser(
   origin: string,
   email: string,
 ): Promise<string> {
-    const context = await browser.newContext();
+    const context = await betterAuthWait("browser_context", () => browser.newContext());
     try {
-      const page = await context.newPage();
-      await page.goto(`${origin}/api/health`);
-      const signIn = await page.evaluate(async (loginEmail) => {
-        const response = await fetch("/api/auth/sign-in/social", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ provider: "github", loginHint: loginEmail, callbackURL: "/api/session" }),
-        });
-        return { status: response.status, body: await response.json() as { url?: string } };
-      }, email);
+      const page = await betterAuthWait("page_create", () => context.newPage());
+      await betterAuthWait(
+        "health_goto",
+        () => page.goto(`${origin}/api/health`, { timeout: 0 }),
+      );
+      const signIn = await betterAuthWait(
+        "social_sign_in_request",
+        () => page.evaluate(async (loginEmail) => {
+          const response = await fetch("/api/auth/sign-in/social", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ provider: "github", loginHint: loginEmail, callbackURL: "/api/session" }),
+          });
+          return { status: response.status, body: await response.json() as { url?: string } };
+        }, email),
+      );
       if (signIn.status !== 200 || !signIn.body.url) {
         throw new Error(`Better Auth fixture sign-in failed for ${email}: ${signIn.status}`);
       }
-      const provider = await fetch(signIn.body.url, { redirect: "manual" });
+      const provider = await hostedAccessFetch(
+        "better_auth_browser_login provider_authorization",
+        signIn.body.url,
+        { redirect: "manual" },
+      );
       const callback = provider.headers.get("location");
       if (provider.status !== 302 || !callback) {
         throw new Error(`Fake GitHub authorization failed for ${email}: ${provider.status}`);
       }
-      const callbackResponse = await page.goto(callback);
+      const callbackResponse = await betterAuthWait(
+        "callback_goto",
+        () => page.goto(callback, { timeout: 0 }),
+      );
       if (!callbackResponse?.ok()) {
         throw new Error(`Better Auth callback failed for ${email}: ${callbackResponse?.status()}`);
       }
-      const cookie = (await context.cookies(origin))
+      const cookie = (await betterAuthWait("session_cookie", () => context.cookies(origin)))
         .map((item) => `${item.name}=${item.value}`)
         .join("; ");
       if (!cookie) throw new Error(`Better Auth omitted the session cookie for ${email}.`);
       return cookie;
     } finally {
-      await context.close();
+      await betterAuthWait("browser_context_close", () => context.close());
     }
+}
+
+function betterAuthWait<T>(label: string, operation: () => Promise<T>): Promise<T> {
+  return withHostedAccessTimeout(
+    `better_auth_browser_login ${label}`,
+    () => operation(),
+  );
 }
 
 export function hostedAuthHeaders(

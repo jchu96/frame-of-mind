@@ -27,6 +27,7 @@ import {
 } from "./prebuilt-artifact";
 import { killOwnedProcessGroup, runTimedProcess } from "./check-process";
 import { buildContentHash, scrubBuildEnvironment } from "./check-build-cache";
+import { resolveHostedAccessStepTimeoutSeconds } from "./hosted-access-timeout";
 
 type Lane = "fast" | "local" | "hosted";
 
@@ -65,6 +66,14 @@ if (JSON.stringify(steps) !== JSON.stringify(expectedSteps[lane])) {
 const timeoutSeconds = Number(process.env.FRAME_OF_MIND_STEP_TIMEOUT_SECONDS ?? "1200");
 if (!Number.isSafeInteger(timeoutSeconds) || timeoutSeconds < 1) {
   throw new Error("FRAME_OF_MIND_STEP_TIMEOUT_SECONDS must be a positive integer.");
+}
+const hostedAccessTimeoutSeconds = Number(
+  process.env.FRAME_OF_MIND_HOSTED_ACCESS_STEP_TIMEOUT_SECONDS ?? timeoutSeconds,
+);
+if (!Number.isSafeInteger(hostedAccessTimeoutSeconds) || hostedAccessTimeoutSeconds < 1) {
+  throw new Error(
+    "FRAME_OF_MIND_HOSTED_ACCESS_STEP_TIMEOUT_SECONDS must be a positive integer.",
+  );
 }
 
 const startedAt = performance.now();
@@ -117,7 +126,12 @@ try {
       );
       continue;
     }
-    const first = await runStep(step, laneEnvironment);
+    const stepTimeoutSeconds = resolveHostedAccessStepTimeoutSeconds(
+      step,
+      timeoutSeconds,
+      hostedAccessTimeoutSeconds,
+    );
+    const first = await runStep(step, laneEnvironment, 0, stepTimeoutSeconds);
     const retryTimedOutWorkflow = first.timedOut && (
       step === "test:hosted-workflows-http:better-auth"
       || (process.env.CI === "true" && step === "test:hosted-workflows-http")
@@ -129,7 +143,7 @@ try {
         `CHECK_LANE lane=${lane} step=${step} retry=1 `
         + "reason=step_timeout",
       );
-      const retry = await runStep(step, laneEnvironment, 1);
+      const retry = await runStep(step, laneEnvironment, 1, stepTimeoutSeconds);
       if (retry.exitCode !== 0) throw new LaneFailure(retry.exitCode);
     } else if (first.exitCode !== 0) {
       throw new LaneFailure(first.exitCode);
@@ -257,12 +271,13 @@ async function runStep(
   step: string,
   environment: Record<string, string>,
   retry = 0,
+  stepTimeoutSeconds = timeoutSeconds,
 ): Promise<{ exitCode: number; timedOut: boolean }> {
   const stepStartedAt = performance.now();
   const result = await runTimedProcess(["bun", "run", step], {
     cwd: resolve("."),
     env: environment,
-    timeoutSeconds,
+    timeoutSeconds: stepTimeoutSeconds,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",

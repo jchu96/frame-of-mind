@@ -13,6 +13,10 @@ import {
   startFakeGithub,
 } from "./hosted-auth-fixture";
 import { resolvePrebuiltWebOutput } from "./prebuilt-artifact";
+import {
+  hostedAccessFetch,
+  withHostedAccessTimeout,
+} from "./hosted-access-timeout";
 
 const isolation = await createE2EIsolation("hosted-access");
 const temporaryRoot = isolation.root;
@@ -251,15 +255,14 @@ try {
     await expectUnapprovedBoundary(baseUrl, requestToken);
 
     for (const email of ["request-b@example.test", "request-c@example.test"]) {
-      const response = await fetch(`${baseUrl}/api/access/request`, {
+      await expectStatus(fetch(`${baseUrl}/api/access/request`, {
         method: "POST",
         headers: {
           ...hostedAuthHeaders(betterAuthLogins!.get(email)!, baseUrl),
           "cf-connecting-ip": "198.51.100.70",
         },
         body: "{}",
-      });
-      await expectStatus(response, 200, `per-IP request ${email}`);
+      }), 200, `per-IP request ${email}`);
     }
     await expectStatus(fetch(`${baseUrl}/api/access/request`, {
       method: "POST",
@@ -285,7 +288,8 @@ try {
       },
       body: "{}",
     }), 429, "pending access-request capacity");
-    if (!(await capacityLimited.text()).includes("access_request_capacity_reached")) {
+    if (!(await responseText(capacityLimited, "pending access-request capacity body"))
+      .includes("access_request_capacity_reached")) {
       throw new Error("Pending access-request capacity omitted its stable code.");
     }
     await verifyAdminAccessSurface({
@@ -340,7 +344,7 @@ try {
     409,
     "cross-principal run ID conflict",
   );
-  const conflictText = await conflictResponse.text();
+  const conflictText = await responseText(conflictResponse, "cross-principal conflict body");
   if (!conflictText.includes("run_principal_conflict")) {
     throw new Error("Cross-principal conflict omitted run_principal_conflict.");
   }
@@ -371,9 +375,7 @@ try {
   console.log("HOSTED_ACCESS missing_header=PASS status=403");
   console.log("HOSTED_ACCESS dark=PASS hosted_creation_status=404");
 
-  wrangler.kill("SIGTERM");
-  await wrangler.exited;
-  await wranglerOutput;
+  await stopWrangler(wrangler, wranglerOutput);
   wrangler = undefined;
   wranglerOutput = undefined;
   if (hostedContractAuthMode === "better-auth") {
@@ -383,12 +385,12 @@ try {
   console.log(`HOSTED_ACCESS_CONTRACT PASSED entry=${entryFile}`);
 } catch (error) {
   if (wrangler) {
-    wrangler.kill("SIGTERM");
-    await wrangler.exited;
-  }
-  if (wranglerOutput) {
-    const [stdout, stderr] = await wranglerOutput;
-    process.stderr.write(`Hosted Access workerd output:\n${stdout}\n${stderr}`.slice(0, 12_000));
+    try {
+      await stopWrangler(wrangler, wranglerOutput, true);
+    } catch (cleanupError) {
+      wrangler.kill("SIGKILL");
+      process.stderr.write(`${String(cleanupError)}\n`);
+    }
   }
   throw error;
 } finally {
@@ -404,32 +406,48 @@ async function verifyAdminAccessSurface(input: {
   nonMaintainerToken: string;
   capturedAccessRequests: unknown[];
 }): Promise<void> {
-  const unknownApi = await fetch(`${input.baseUrl}/api/route-that-does-not-exist`, {
-    headers: hostedAuthHeaders(input.nonMaintainerToken),
-  });
-  const hiddenApi = await fetch(`${input.baseUrl}/api/admin/access`, {
-    headers: hostedAuthHeaders(input.nonMaintainerToken),
-  });
+  const unknownApi = await hostedAccessFetch(
+    "http non-maintainer unknown GET",
+    `${input.baseUrl}/api/route-that-does-not-exist`,
+    { headers: hostedAuthHeaders(input.nonMaintainerToken) },
+  );
+  const hiddenApi = await hostedAccessFetch(
+    "http non-maintainer admin GET",
+    `${input.baseUrl}/api/admin/access`,
+    { headers: hostedAuthHeaders(input.nonMaintainerToken) },
+  );
   await assertMatchingNotFoundShape(unknownApi, hiddenApi, "non-maintainer admin GET");
 
-  const unknownPost = await fetch(`${input.baseUrl}/api/route-that-does-not-exist`, {
-    method: "POST",
-    headers: adminMutationHeaders(input.nonMaintainerToken, input.baseUrl),
-    body: "{}",
-  });
-  const hiddenPost = await fetch(`${input.baseUrl}/api/admin/access/approve`, {
-    method: "POST",
-    headers: adminMutationHeaders(input.nonMaintainerToken, input.baseUrl),
-    body: JSON.stringify({ email: "request-a@example.test" }),
-  });
+  const unknownPost = await hostedAccessFetch(
+    "http non-maintainer unknown POST",
+    `${input.baseUrl}/api/route-that-does-not-exist`,
+    {
+      method: "POST",
+      headers: adminMutationHeaders(input.nonMaintainerToken, input.baseUrl),
+      body: "{}",
+    },
+  );
+  const hiddenPost = await hostedAccessFetch(
+    "http non-maintainer admin POST",
+    `${input.baseUrl}/api/admin/access/approve`,
+    {
+      method: "POST",
+      headers: adminMutationHeaders(input.nonMaintainerToken, input.baseUrl),
+      body: JSON.stringify({ email: "request-a@example.test" }),
+    },
+  );
   await assertMatchingNotFoundShape(unknownPost, hiddenPost, "non-maintainer admin POST");
 
-  const unknownHtml = await fetch(`${input.baseUrl}/route-that-does-not-exist`, {
-    headers: { ...hostedAuthHeaders(input.nonMaintainerToken), accept: "text/html" },
-  });
-  const hiddenHtml = await fetch(`${input.baseUrl}/admin/access`, {
-    headers: { ...hostedAuthHeaders(input.nonMaintainerToken), accept: "text/html" },
-  });
+  const unknownHtml = await hostedAccessFetch(
+    "http non-maintainer unknown HTML",
+    `${input.baseUrl}/route-that-does-not-exist`,
+    { headers: { ...hostedAuthHeaders(input.nonMaintainerToken), accept: "text/html" } },
+  );
+  const hiddenHtml = await hostedAccessFetch(
+    "http non-maintainer admin HTML",
+    `${input.baseUrl}/admin/access`,
+    { headers: { ...hostedAuthHeaders(input.nonMaintainerToken), accept: "text/html" } },
+  );
   await assertMatchingNotFoundShape(unknownHtml, hiddenHtml, "non-maintainer admin page");
 
   const maintainerSession = await json<Record<string, unknown>>(await expectStatus(
@@ -566,7 +584,10 @@ async function assertMatchingNotFoundShape(
   if (unknownType !== hiddenType) {
     throw new Error(`${label}: content types differ (${unknownType}/${hiddenType}).`);
   }
-  const [unknownBody, hiddenBody] = await Promise.all([unknown.text(), hidden.text()]);
+  const [unknownBody, hiddenBody] = await withHostedAccessTimeout(
+    `response_body ${label}`,
+    () => Promise.all([unknown.text(), hidden.text()]),
+  );
   if (unknownType === "application/json") {
     const unknownKeys = Object.keys(JSON.parse(unknownBody)).sort();
     const hiddenKeys = Object.keys(JSON.parse(hiddenBody)).sort();
@@ -679,17 +700,30 @@ async function expectStatus(
   expected: number,
   label: string,
 ): Promise<Response> {
-  const response = await responsePromise;
+  const response = await withHostedAccessTimeout(
+    `http ${label}`,
+    () => Promise.resolve(responsePromise),
+  );
   if (response.status !== expected) {
     throw new Error(
-      `${label}: expected HTTP ${expected}, received ${response.status}: ${await response.text()}`,
+      `${label}: expected HTTP ${expected}, received ${response.status}: ${await responseText(response, `${label} error body`)}`,
     );
   }
   return response;
 }
 
 async function json<T>(response: Response): Promise<T> {
-  return await response.json() as T;
+  return await withHostedAccessTimeout(
+    "response_body json",
+    () => response.json() as Promise<T>,
+  );
+}
+
+async function responseText(response: Response, label: string): Promise<string> {
+  return await withHostedAccessTimeout(
+    `response_body ${label}`,
+    () => response.text(),
+  );
 }
 
 function assertEqual(actual: unknown, expected: unknown, label: string): void {
@@ -710,11 +744,18 @@ async function runChecked(
     stdout: "pipe",
     stderr: "pipe",
   });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
+  const [stdout, stderr, exitCode] = await withHostedAccessTimeout(
+    `command ${label}`,
+    (signal) => {
+      signal.addEventListener("abort", () => child.kill("SIGTERM"), { once: true });
+      return Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+    },
+    60_000,
+  );
   if (exitCode !== 0) {
     throw new Error(`${label} failed (${exitCode}):\n${stdout}\n${stderr}`.slice(0, 12_000));
   }
@@ -728,12 +769,40 @@ async function waitForWorker(
   for (let attempt = 0; attempt < 200; attempt += 1) {
     if (child.exitCode !== null) break;
     try {
-      const response = await fetch(`${origin}/api/health`, { redirect: "manual" });
+      const response = await hostedAccessFetch(
+        "worker_ready health_probe",
+        `${origin}/api/health`,
+        { redirect: "manual" },
+      );
       if (response.status === 403) return;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("hosted_access_timeout:")) {
+        throw error;
+      }
       // workerd is still starting.
     }
     await Bun.sleep(100);
   }
-  throw new Error("Hosted Access contract Worker did not become ready.");
+  throw new Error("hosted_access_timeout: worker_ready health_probe");
+}
+
+async function stopWrangler(
+  child: ReturnType<typeof Bun.spawn>,
+  output: Promise<[string, string]> | undefined,
+  reportOutput = false,
+): Promise<void> {
+  child.kill("SIGTERM");
+  await withHostedAccessTimeout(
+    "wrangler_exit",
+    () => child.exited.then(() => undefined),
+  );
+  if (output) {
+    const [stdout, stderr] = await withHostedAccessTimeout(
+      "wrangler_output",
+      () => output,
+    );
+    if (reportOutput || (child.exitCode && child.exitCode !== 0)) {
+      process.stderr.write(`Hosted Access workerd output:\n${stdout}\n${stderr}`.slice(0, 12_000));
+    }
+  }
 }
