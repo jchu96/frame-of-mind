@@ -337,6 +337,7 @@ Edit these values:
 | `NUXT_BETTER_AUTH_URL` | exact HTTPS custom origin |
 | `NUXT_BETTER_AUTH_MAILER_FROM` | onboarded sender, for example `sign-in@<domain>` |
 | `NUXT_ACCESS_REQUEST_NOTIFY` | optional maintainer address for access-request notifications |
+| `NUXT_ACCESS_REQUEST_PENDING_CAP` | maximum pending self-serve access requests; defaults to `200` |
 | `services[0].service` | exact internal Workflows Worker name |
 
 Set:

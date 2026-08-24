@@ -610,7 +610,9 @@ membership data only. Anyone may continue with GitHub. An unapproved account
 is confined to `/request-access`, before run, composer, media, Gemini,
 Workflow, spend, or R2 code can run. The idempotent request sends at most one
 configured maintainer notification, and approval remains a local operator
-command. Magic links are available only to approved accounts. Delivery prefers the
+command. A global pending-row ceiling defaults to 200 and is configurable with
+`NUXT_ACCESS_REQUEST_PENDING_CAP`; a full queue returns a stable 429 without
+creating another row. Magic links are available only to approved accounts. Delivery prefers the
 public Worker's `EMAIL` binding with an explicit onboarded sender, retains the
 HTTP mailer as a no-binding fallback, and exposes only `MAILER_UNAVAILABLE` on
 delivery failure. Production also limits the route to three requests per 15
@@ -656,8 +658,9 @@ relies on the bounded provider TTL; finalized exact-name Files are deleted.
 
 The same hosted path reserves a versioned conservative token estimate before
 each initial or linked attempt and reconciles it from Gemini usage receipts on
-terminal cleanup. The v2 plan includes the maximum schema-repair generation
-and every configured transport retry for each video-bearing step. Actual usage
+terminal cleanup. The v2 plan initially reserves the maximum schema-repair
+generation for each video-bearing step, then atomically extends by one
+generation budget immediately before an actual transport retry. Actual usage
 above the reservation fails closed as indeterminate and can never increase
 committed spend beyond the reserved ceiling. Zero-claim cancellations and
 failures release their reservations; a hosted-only, principal-scoped janitor

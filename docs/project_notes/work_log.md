@@ -5,6 +5,14 @@
 - Reconciled README, architecture, deployment, testing, security, data,
   credentials, workspace, MCP, skill, and scoped-agent guidance with the live
   Better Auth Hosted Studio and the v0.4.0 sharded repository gate.
+- Replaced hosted spend's full retry-multiplied admission estimate with one
+  first-attempt generation graph and a fail-closed D1 extension before each
+  actual Gemini transport retry. Cap errors now distinguish exhausted allowance
+  from a recording that cannot fit the remaining allowance. Added a configurable
+  200-row pending access-request ceiling and made Local Studio composer replay
+  validate the existing idempotency receipt before requiring media to remain
+  usable. Focused unit, type, Local Studio HTTP, Better Auth access, and hosted
+  two-Worker contracts passed.
 
 ## 2026-08-23
 

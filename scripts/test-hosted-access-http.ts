@@ -72,6 +72,8 @@ try {
         { id: "request-b", email: "request-b@example.test" },
         { id: "request-c", email: "request-c@example.test" },
         { id: "request-d", email: "request-d@example.test" },
+        { id: "request-e", email: "request-e@example.test" },
+        { id: "request-f", email: "request-f@example.test" },
       ])
     : undefined;
   fakeMailer = hostedContractAuthMode === "better-auth"
@@ -111,6 +113,7 @@ try {
           NUXT_BETTER_AUTH_MAILER_KEY: "fixture-mailer-key",
           NUXT_BETTER_AUTH_MAILER_FROM: "sign-in@example.test",
           NUXT_ACCESS_REQUEST_NOTIFY: "maintainer@example.test",
+          NUXT_ACCESS_REQUEST_PENDING_CAP: "4",
         }
       : {
           NUXT_AUTH_MODE: "cloudflare-access",
@@ -172,6 +175,8 @@ try {
         "request-b@example.test",
         "request-c@example.test",
         "request-d@example.test",
+        "request-e@example.test",
+        "request-f@example.test",
       ])
     : undefined;
   const tokenA = hostedContractAuthMode === "better-auth"
@@ -263,7 +268,26 @@ try {
       },
       body: "{}",
     }), 429, "per-IP access-request rate limit");
-    console.log("HOSTED_ACCESS request_access=PASS session=requested protected=403 mail=maintainer_only rate_limit=429");
+    await expectStatus(fetch(`${baseUrl}/api/access/request`, {
+      method: "POST",
+      headers: {
+        ...hostedAuthHeaders(betterAuthLogins!.get("request-e@example.test")!, baseUrl),
+        "cf-connecting-ip": "198.51.100.71",
+      },
+      body: "{}",
+    }), 200, "final pending access-request slot");
+    const capacityLimited = await expectStatus(fetch(`${baseUrl}/api/access/request`, {
+      method: "POST",
+      headers: {
+        ...hostedAuthHeaders(betterAuthLogins!.get("request-f@example.test")!, baseUrl),
+        "cf-connecting-ip": "198.51.100.72",
+      },
+      body: "{}",
+    }), 429, "pending access-request capacity");
+    if (!(await capacityLimited.text()).includes("access_request_capacity_reached")) {
+      throw new Error("Pending access-request capacity omitted its stable code.");
+    }
+    console.log("HOSTED_ACCESS request_access=PASS session=requested protected=403 mail=maintainer_only rate_limit=429 pending_cap=429");
   }
 
   await expectStatus(fetch(`${baseUrl}/api/runs`), 403, "missing Access assertion");

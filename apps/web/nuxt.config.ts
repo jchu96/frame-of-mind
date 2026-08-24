@@ -731,6 +731,7 @@ export default defineNuxtConfig({
     betterAuthMailerKey: "",
     betterAuthMailerFrom: "",
     accessRequestNotify: "",
+    accessRequestPendingCap: 200,
     betterAuthAllowInsecureTestProviders: false,
     hostedWorkflowsEnabled: false,
     hostedSpendPrincipalCapUnits: HOSTED_PRINCIPAL_CAP_UNITS_DEFAULT,

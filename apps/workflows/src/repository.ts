@@ -8,7 +8,9 @@ import {
   type SealedHostedMediaReceipt,
 } from "./contracts.js";
 import {
+  hostedSpendMaximumReservationUnits,
   hostedProviderUsageSchema,
+  hostedSpendRetryExtensionUnits,
   type HostedProviderUsage,
 } from "./spend.js";
 
@@ -99,9 +101,13 @@ export interface HostedD1PreparedStatement {
   run(): Promise<unknown>;
 }
 
+interface HostedD1Result {
+  meta?: { changes?: number };
+}
+
 export interface HostedD1Database {
   prepare(query: string): HostedD1PreparedStatement;
-  batch(statements: HostedD1PreparedStatement[]): Promise<unknown>;
+  batch(statements: HostedD1PreparedStatement[]): Promise<HostedD1Result[]>;
 }
 
 export class HostedWorkflowRepository {
@@ -715,6 +721,101 @@ export class HostedWorkflowRepository {
     }
   }
 
+  async extendSpendReservation(input: {
+    principalSub: string;
+    attemptId: string;
+    expectedReservedUnits: number;
+    occurredAt: string;
+  }): Promise<number> {
+    if (
+      !Number.isSafeInteger(input.expectedReservedUnits)
+      || input.expectedReservedUnits < 1
+    ) {
+      throw new HostedRepositoryError("spend_reservation_extension_conflict");
+    }
+    const attempt = await this.getAttempt(input.principalSub, input.attemptId);
+    if (!attempt) {
+      throw new HostedRepositoryError("hosted_attempt_not_found");
+    }
+    const extensionUnits = hostedSpendRetryExtensionUnits(attempt.input.spendPlan);
+    const maximumReservedUnits = hostedSpendMaximumReservationUnits(
+      attempt.input.spendPlan,
+    );
+    const nextReservedUnits = input.expectedReservedUnits + extensionUnits;
+    if (
+      !Number.isSafeInteger(nextReservedUnits)
+      || nextReservedUnits > maximumReservedUnits
+    ) {
+      throw new HostedRepositoryError("spend_reservation_extension_exhausted");
+    }
+    const results = await this.database.batch([
+      this.database.prepare(`
+        UPDATE hosted_spend_reservations AS reservation
+        SET reserved_units = ?, updated_at = ?
+        WHERE reservation.principal_sub = ? AND reservation.attempt_id = ?
+          AND reservation.state = 'reserved' AND reservation.reserved_units = ?
+          AND EXISTS (
+            SELECT 1 FROM hosted_principal_spend spend
+            WHERE spend.principal_sub = reservation.principal_sub
+              AND spend.committed_units + COALESCE((
+                SELECT SUM(active.reserved_units)
+                FROM hosted_spend_reservations active
+                WHERE active.principal_sub = spend.principal_sub
+                  AND active.state = 'reserved'
+              ), 0) + ? <= spend.cap_units
+          )
+      `).bind(
+        nextReservedUnits,
+        input.occurredAt,
+        input.principalSub,
+        input.attemptId,
+        input.expectedReservedUnits,
+        extensionUnits,
+      ),
+      this.database.prepare(`
+        UPDATE hosted_analysis_attempts
+        SET spend_reserved_units = ?, updated_at = ?
+        WHERE principal_sub = ? AND attempt_id = ?
+          AND spend_reserved_units = ?
+          AND EXISTS (
+            SELECT 1 FROM hosted_spend_reservations reservation
+            WHERE reservation.principal_sub = ?
+              AND reservation.attempt_id = ?
+              AND reservation.state = 'reserved'
+              AND reservation.reserved_units = ?
+          )
+      `).bind(
+        nextReservedUnits,
+        input.occurredAt,
+        input.principalSub,
+        input.attemptId,
+        input.expectedReservedUnits,
+        input.principalSub,
+        input.attemptId,
+        nextReservedUnits,
+      ),
+    ]);
+    if (
+      results[0]?.meta?.changes !== 1
+      || results[1]?.meta?.changes !== 1
+    ) {
+      const current = await this.database.prepare(`
+        SELECT reserved_units FROM hosted_spend_reservations
+        WHERE principal_sub = ? AND attempt_id = ? AND state = 'reserved'
+      `).bind(input.principalSub, input.attemptId).first<{
+        reserved_units: number;
+      }>();
+      if (!current) {
+        throw new HostedRepositoryError("spend_reservation_unavailable");
+      }
+      if (current.reserved_units !== input.expectedReservedUnits) {
+        throw new HostedRepositoryError("spend_reservation_extension_conflict");
+      }
+      throw new HostedRepositoryError("principal_spend_cap_exceeded");
+    }
+    return nextReservedUnits;
+  }
+
   async events(
     principalSub: string,
     attemptId: string,
@@ -934,7 +1035,8 @@ export class HostedWorkflowRepository {
           WHERE claims.principal_sub = reservation.principal_sub
             AND claims.attempt_id = reservation.attempt_id
             AND (claims.step_name IN ('transcribe', 'index')
-              OR claims.step_name LIKE 'interrogate_%')) AS claimed_calls,
+              OR claims.step_name LIKE 'interrogate_%'
+              OR claims.step_name LIKE 'transport_retry_%')) AS claimed_calls,
         (SELECT COUNT(*) FROM hosted_provider_usage usage
           WHERE usage.principal_sub = reservation.principal_sub
             AND usage.attempt_id = reservation.attempt_id) AS usage_calls,
@@ -1012,8 +1114,13 @@ export class HostedWorkflowRepository {
     ) {
       throw new HostedRepositoryError("principal_spend_cap_unavailable");
     }
-    if (spend.committed_units + spend.reserved_units + reserveUnits > spend.cap_units) {
-      throw new HostedRepositoryError("principal_spend_cap_exceeded");
+    const usedUnits = spend.committed_units + spend.reserved_units;
+    if (usedUnits + reserveUnits > spend.cap_units) {
+      throw new HostedRepositoryError(
+        usedUnits < spend.cap_units
+          ? "spend_estimate_exceeds_remaining_allowance"
+          : "principal_spend_cap_exceeded",
+      );
     }
     throw new HostedRepositoryError("hosted_attempt_create_conflict");
   }

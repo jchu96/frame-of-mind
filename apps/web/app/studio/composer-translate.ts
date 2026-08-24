@@ -67,24 +67,69 @@ export function translateComposerJob(
     throw new StudioJobInputUnavailableError("recipe_receipt_mismatch");
   }
 
+  return composerJobRequest(input.payload, media, media.sha256, resolved);
+}
+
+/**
+ * Reconstructs the immutable request for an existing idempotency key without
+ * requiring its one-shot media to remain usable. The repository still compares
+ * the exact immutable digest and rejects a changed request.
+ */
+export function translateComposerReplay(
+  input: TranslateComposerJobInput,
+): JobCreateRequest {
+  if ("custom" in input.payload.recipe) {
+    throw new StudioJobInputUnavailableError(
+      "custom_recipe_staging_unavailable",
+    );
+  }
+  const media = input.mediaSession;
+  if (
+    !media
+    || media.id !== input.payload.mediaSessionId
+    || !media.sha256
+  ) {
+    throw new StudioJobInputUnavailableError("media_not_found");
+  }
+  assertRetentionMatches(input.payload.retention, media);
+  const resolved = input.resolvedRecipe;
+  if (!resolved) {
+    throw new StudioJobInputUnavailableError("recipe_not_found");
+  }
+  if (
+    resolved.custom
+    || resolved.recipe.id !== input.payload.recipe.id
+    || resolved.revision !== input.payload.recipe.revision
+  ) {
+    throw new StudioJobInputUnavailableError("recipe_receipt_mismatch");
+  }
+  return composerJobRequest(input.payload, media, media.sha256, resolved);
+}
+
+function composerJobRequest(
+  payload: ComposerPayload,
+  media: MediaSession,
+  mediaSha256: string,
+  resolved: ResolvedComposerRecipe,
+): JobCreateRequest {
   return jobCreateRequestSchema.parse({
-    idempotencyKey: input.payload.idempotencyKey,
+    idempotencyKey: payload.idempotencyKey,
     input: {
       mediaSessionId: media.id,
-      mediaSha256: media.sha256,
-      context: input.payload.context,
+      mediaSha256,
+      context: payload.context,
       recipe: {
         id: resolved.recipe.id,
         custom: false,
         revision: resolved.revision,
         sha256: resolved.sha256,
       },
-      model: input.payload.model,
-      ...(input.payload.focus ? { focus: input.payload.focus } : {}),
-      ...(input.payload.transcriptOffsetSeconds === undefined
+      model: payload.model,
+      ...(payload.focus ? { focus: payload.focus } : {}),
+      ...(payload.transcriptOffsetSeconds === undefined
         ? {}
         : {
-            transcriptOffsetSeconds: input.payload.transcriptOffsetSeconds,
+            transcriptOffsetSeconds: payload.transcriptOffsetSeconds,
           }),
       retention: media.retention,
     },
