@@ -100,11 +100,14 @@ export const analysisOutcomeSchema = z.strictObject({
     }
     ordinals.add(failure.candidateOrdinal);
   }
-  const expectedStatus = value.candidates.failed === 0
-    ? "complete"
-    : value.candidates.validated === 0
-      ? "failed"
-      : "partial";
+  // "complete" is a coverage claim, not just a validation claim: a run that
+  // silently dropped indexed candidates to the moment limit must not report
+  // itself complete (that lie cost a real episode its back half, 2026-08-24).
+  const expectedStatus = value.candidates.failed > 0 && value.candidates.validated === 0
+    ? "failed"
+    : value.candidates.failed > 0 || value.candidates.omittedByLimit > 0
+      ? "partial"
+      : "complete";
   if (value.status !== expectedStatus) {
     context.addIssue({
       code: "custom",

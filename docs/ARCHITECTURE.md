@@ -503,7 +503,9 @@ It intentionally excludes:
 
 The strict auxiliary v1 outcome records:
 
-- `complete`, `partial`, or `failed` status for selected detail work;
+- `complete`, `partial`, or `failed` status covering both validation of
+  selected detail work and index coverage (`complete` additionally requires
+  zero limit-omitted candidates; omission-only truncation reports `partial`);
 - indexed, selected, limit-omitted, validated, accepted, rejected, and failed
   candidate counts;
 - per-candidate ordinal and bounded time range;

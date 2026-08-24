@@ -47,12 +47,25 @@ export async function reimportPublishedJobRun(input: {
     if (error instanceof StudioRunReimportError) throw error;
     throw new StudioRunReimportError("run_bundle_not_found");
   }
+  // The sanitized coverage outcome is auxiliary: reimport carries it when the
+  // bundle has one (bounded by the same pair budget) but never fails a run
+  // whose bundle predates it.
+  let outcomeText: string | undefined;
+  try {
+    const outcomeStats = await stat(join(directory, "analysis-outcome.json"));
+    if (outcomeStats.isFile() && outcomeStats.size <= MAXIMUM_RUN_PAIR_BYTES) {
+      outcomeText = await readFile(join(directory, "analysis-outcome.json"), "utf8");
+    }
+  } catch {
+    // Absent outcome artifact: legacy bundle, import the pair alone.
+  }
 
   let run;
   try {
     run = await validateVersionedRunImport({
       analysis: JSON.parse(analysisText),
       manifest: JSON.parse(manifestText),
+      ...(outcomeText !== undefined ? { outcome: JSON.parse(outcomeText) } : {}),
     });
   } catch {
     throw new StudioRunReimportError("run_bundle_invalid");

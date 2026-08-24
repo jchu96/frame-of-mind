@@ -352,3 +352,32 @@ retired. Because Gemini provides no File identity or documented session revoke
 before finalize, pre-final cancel/expiry abandons D1, refuses seal, and relies
 on provider TTL; principal-scoped open-session recovery is the fallback when a
 best-effort page-exit DELETE is lost.
+
+## 2026-08-24 — Truncated analyses report partial, never complete
+
+`AnalysisOutcome.status: "complete"` is now a coverage claim as well as a
+validation claim. A run whose pass-2 interrogation dropped indexed candidates
+to the `--max-moments` limit reports `partial`, emits an interrogation-stage
+truncation warning, renders explicit coverage notices in the markdown/HTML
+artifacts, and the CLI prints a stderr WARNING with the rerun remedy. The
+schema invariant tightened in place at outcome schemaVersion 1: previously
+valid `complete` documents with `omittedByLimit > 0` are exactly the dishonest
+ones and are now rejected. Motivating failure: an episode-length recording
+lost everything past ~24 minutes to the default cap of 10 while the run
+summary said `outcome=complete`.
+
+## 2026-08-24 — The coverage outcome rides beside the durable pair into projections
+
+Closes the #112 seam: `AnalysisOutcome` now travels from the orchestrator's
+published run through `AnalysisProjectionInput`, the run-import contract, both
+RunStore implementations (nullable `outcome_json` column, migration 0011 +
+bootstrap parity), `StoredRun`, the run detail view, and Studio review
+bundle/Markdown exports. The field is optional everywhere: historical bundles,
+projections, and imports without it stay valid, and a reimport heals old rows
+when `analysis-outcome.json` exists in the run directory. Validation lives in
+`validateVersionedRunImport` (outcome schema + run-ID match, fail closed on
+mismatch) rather than inside the strict zod import union, because
+analysis-outcome.ts already imports schema primitives and a runtime cycle is
+not acceptable. The run bundle remains the sole authority; the projection
+carries the already-sanitized outcome verbatim and the export allowlists it.
+No ADR: no trust boundary, retention, or ownership change.

@@ -180,8 +180,8 @@ export interface AnalysisProgressReporter {
 }
 
 export type AnalysisProjectionInput =
-  | { analysis: AnalysisRun; manifest: RunManifest }
-  | { analysis: AnalysisRunV3; manifest: RunManifestV3 };
+  | { analysis: AnalysisRun; manifest: RunManifest; outcome?: AnalysisOutcome }
+  | { analysis: AnalysisRunV3; manifest: RunManifestV3; outcome?: AnalysisOutcome };
 
 export type PublishedAnalysisRun = AnalysisProjectionInput & {
   readonly directory: string;
@@ -767,18 +767,27 @@ export class AnalysisOrchestrator {
           });
         }
 
+        const omittedByLimit = index.moments.length - candidates.length;
+        if (omittedByLimit > 0) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "interrogating",
+            message:
+              `Analysis truncated: ${omittedByLimit} indexed candidate(s) were not interrogated because of the configured moment limit (${options.maxIncidents}). Coverage stops early; rerun with a higher --max-moments to analyze the full recording.`,
+          });
+        }
         const outcome = analysisOutcomeSchema.parse({
           schemaVersion: 1,
           runId,
-          status: failures.length === 0
-            ? "complete"
-            : items.length === 0
-              ? "failed"
-              : "partial",
+          status: failures.length > 0 && items.length === 0
+            ? "failed"
+            : failures.length > 0 || omittedByLimit > 0
+              ? "partial"
+              : "complete",
           candidates: {
             indexed: index.moments.length,
             selected: candidates.length,
-            omittedByLimit: index.moments.length - candidates.length,
+            omittedByLimit,
             validated: items.length,
             accepted: items.filter((item) => item.result.accepted).length,
             rejected: items.filter((item) => !item.result.accepted).length,
@@ -1220,13 +1229,21 @@ function projectionInputFrom(
     published.analysis.schemaVersion === 2
     && published.manifest.schemaVersion === 2
   ) {
-    return { analysis: published.analysis, manifest: published.manifest };
+    return {
+      analysis: published.analysis,
+      manifest: published.manifest,
+      outcome: published.outcome,
+    };
   }
   if (
     published.analysis.schemaVersion === 3
     && published.manifest.schemaVersion === 3
   ) {
-    return { analysis: published.analysis, manifest: published.manifest };
+    return {
+      analysis: published.analysis,
+      manifest: published.manifest,
+      outcome: published.outcome,
+    };
   }
   throw new Error("Run contract schema versions do not match.");
 }

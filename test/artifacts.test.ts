@@ -132,6 +132,143 @@ describe("analysis Markdown rendering", () => {
     })).toThrow();
   });
 
+  it("rejects a complete status when candidates were omitted by the moment limit", () => {
+    expect(() => analysisOutcomeSchema.parse({
+      schemaVersion: 1,
+      runId: "truncated-complete",
+      status: "complete",
+      candidates: {
+        indexed: 16,
+        selected: 10,
+        omittedByLimit: 6,
+        validated: 10,
+        accepted: 10,
+        rejected: 0,
+        failed: 0,
+      },
+      failures: [],
+    })).toThrow();
+  });
+
+  it("reports a truncated run as partial and renders the coverage notice", async () => {
+    const analysis = {
+      schemaVersion: 3 as const,
+      runId: "truncated-partial",
+      recipe: { id: "recipe", label: "Recipe" },
+      context: { mode: "none" as const },
+      model: "gemini-test",
+      matchNotes: "Synthetic match.",
+      items: [],
+    };
+    const outcome = analysisOutcomeSchema.parse({
+      schemaVersion: 1,
+      runId: analysis.runId,
+      status: "partial",
+      candidates: {
+        indexed: 16,
+        selected: 10,
+        omittedByLimit: 6,
+        validated: 10,
+        accepted: 10,
+        rejected: 0,
+        failed: 0,
+      },
+      failures: [],
+    });
+
+    const markdown = renderAnalysis(analysis, outcome);
+    expect(markdown).toContain("Analysis outcome: partial");
+    expect(markdown).toContain("Coverage truncated: 6 indexed candidate(s)");
+    expect(markdown).toContain("--max-moments");
+    expect(markdown).not.toContain("failed validation");
+
+    const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-truncated-"));
+    temporaryDirectories.push(directory);
+    const manifest: RunManifestV3 = {
+      schemaVersion: 3,
+      toolVersion: "0.3.0",
+      promptRevision: "synthetic",
+      runId: analysis.runId,
+      startedAt: "2026-08-24T12:00:00.000Z",
+      completedAt: "2026-08-24T12:01:00.000Z",
+      context: { mode: "none" },
+      recipe: {
+        id: analysis.recipe.id,
+        label: analysis.recipe.label,
+        custom: false,
+        revision: "synthetic",
+        sha256: "a".repeat(64),
+      },
+      model: analysis.model,
+      recordingSha256: "b".repeat(64),
+      analysisSha256: "c".repeat(64),
+      recordingMimeType: "video/mp4",
+      mediaSource: "local-file",
+      analysis: {
+        maxIncidents: 10,
+        indexFps: 0.5,
+        indexResolution: "low",
+        interrogationResolution: "medium",
+      },
+      artifacts: ["analysis.json", "analysis-outcome.json", "analysis.md", "report.html", "manifest.json"],
+    };
+    const writableOutcome = analysisOutcomeSchema.parse({
+      schemaVersion: 1,
+      runId: analysis.runId,
+      status: "partial",
+      candidates: {
+        indexed: 6,
+        selected: 0,
+        omittedByLimit: 6,
+        validated: 0,
+        accepted: 0,
+        rejected: 0,
+        failed: 0,
+      },
+      failures: [],
+    });
+    await writeArtifacts(directory, analysis, manifest, writableOutcome);
+    const truncatedHtml = await readFile(join(directory, "report.html"), "utf8");
+    expect(truncatedHtml).toContain("Partial analysis");
+    expect(truncatedHtml).toContain("never interrogated because of the configured moment limit");
+    expect(truncatedHtml).toContain("--max-moments");
+    expect(truncatedHtml).not.toContain("failed validation");
+  });
+
+  it("keeps failed priority when nothing validated even with omitted candidates", () => {
+    const outcome = analysisOutcomeSchema.parse({
+      schemaVersion: 1,
+      runId: "failed-and-truncated",
+      status: "failed",
+      candidates: {
+        indexed: 3,
+        selected: 2,
+        omittedByLimit: 1,
+        validated: 0,
+        accepted: 0,
+        rejected: 0,
+        failed: 2,
+      },
+      failures: [
+        {
+          candidateOrdinal: 1,
+          start: "00:00:01",
+          end: "00:00:02",
+          code: "invalid_json",
+          attempts: 2,
+        },
+        {
+          candidateOrdinal: 2,
+          start: "00:00:02",
+          end: "00:00:03",
+          code: "response_missing",
+          attempts: 2,
+        },
+      ],
+    });
+    expect(outcome.status).toBe("failed");
+  });
+
   it("rejects impossible failure ordinals, ranges, duplicates, and issue metadata", () => {
     const base = {
       schemaVersion: 1 as const,

@@ -392,9 +392,20 @@ export const versionedRunImportSchema = z.union([
   runImportV3Schema,
 ]);
 
-export type RunImport = z.infer<typeof runImportSchema>;
-export type RunImportV3 = z.infer<typeof runImportV3Schema>;
-export type VersionedRunImport = z.infer<typeof versionedRunImportSchema>;
+// The optional coverage outcome rides beside the durable pair when a run is
+// projected. It is validated by `validateVersionedRunImport` (integrity.ts)
+// with `analysisOutcomeSchema` rather than inlined here: analysis-outcome.ts
+// imports this module's primitives, so a runtime import back into it would be
+// a circular module cycle. The type-only import below erases at runtime.
+import type { AnalysisOutcome } from "./analysis-outcome.js";
+
+export type RunImport = z.infer<typeof runImportSchema> & {
+  outcome?: AnalysisOutcome;
+};
+export type RunImportV3 = z.infer<typeof runImportV3Schema> & {
+  outcome?: AnalysisOutcome;
+};
+export type VersionedRunImport = RunImport | RunImportV3;
 
 export function isRunImportV2(
   input: VersionedRunImport,

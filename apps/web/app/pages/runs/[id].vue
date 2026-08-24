@@ -38,6 +38,19 @@ function formatDate(value: string): string {
     ? value
     : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(date);
 }
+const coverageNoticeText = computed(() => {
+  const outcome = run.value?.outcome;
+  if (!outcome || outcome.status === "complete") return undefined;
+  const reasons = [
+    outcome.candidates.failed > 0
+      ? `${outcome.candidates.failed} candidate response(s) failed validation and were excluded`
+      : "",
+    outcome.candidates.omittedByLimit > 0
+      ? `${outcome.candidates.omittedByLimit} of ${outcome.candidates.indexed} indexed candidate(s) were never interrogated because of the configured moment limit, so later parts of the recording are missing from these findings`
+      : "",
+  ].filter(Boolean).join("; ");
+  return `${reasons}.`;
+});
 function hostedAttemptId(value: StoredRun): string | undefined {
   return value.runId.startsWith("hosted_attempt_")
     ? value.runId.slice("hosted_".length)
@@ -70,10 +83,25 @@ function hostedAttemptId(value: StoredRun): string | undefined {
           <div class="flex flex-wrap items-center gap-2">
             <UBadge color="primary" variant="soft">{{ run.recipeLabel }}</UBadge>
             <UBadge color="neutral" variant="outline" class="capitalize">{{ runContext(run) }}</UBadge>
+            <UBadge
+              v-if="run.outcome && run.outcome.status !== 'complete'"
+              :color="run.outcome.status === 'partial' ? 'warning' : 'error'"
+              variant="soft"
+              class="capitalize"
+            >{{ run.outcome.status }}</UBadge>
           </div>
           <h1 class="mt-4 text-4xl font-black tracking-[-0.045em] sm:text-5xl">
             {{ runTitle(run) }}
           </h1>
+          <UAlert
+            v-if="coverageNoticeText"
+            class="mt-5 max-w-3xl"
+            :color="run.outcome?.status === 'partial' ? 'warning' : 'error'"
+            variant="soft"
+            icon="i-lucide-scissors"
+            :title="run.outcome?.status === 'partial' ? 'Partial analysis' : 'Analysis failed'"
+            :description="coverageNoticeText"
+          />
           <p class="mt-5 max-w-3xl leading-7 text-muted">{{ run.matchNotes }}</p>
           <p class="mt-3 max-w-3xl text-sm text-muted">This is the published output. Open the review workspace to inspect timestamped evidence finding by finding.</p>
           <UButton class="mt-5" :to="`/review/${encodeURIComponent(run.runId)}`" color="neutral" variant="outline" label="Review findings" icon="i-lucide-scan-search" />

@@ -1,4 +1,5 @@
 import { versionedRunImportSchema } from "../../../../../src/domain/schemas";
+import { analysisOutcomeSchema } from "../../../../../src/domain/analysis-outcome";
 import { analysisDigest } from "../../../../../src/domain/integrity";
 import { readLimitedText, RequestBodyTooLargeError } from "../../utils/request-body";
 import { assertTrustedJsonMutation } from "../../utils/request-security";
@@ -28,7 +29,12 @@ export default defineEventHandler(async (event) => {
     }
     throw createError({ statusCode: 400, statusMessage: "Run import must be valid UTF-8 JSON." });
   }
-  const parsed = versionedRunImportSchema.safeParse(body);
+  // The optional coverage outcome rides beside the strict durable pair
+  // (exported review bundles include it since the outcome projection landed).
+  const { outcome: rawOutcome, ...bundle } = (
+    typeof body === "object" && body !== null ? body : {}
+  ) as Record<string, unknown>;
+  const parsed = versionedRunImportSchema.safeParse(bundle);
   if (!parsed.success) {
     throw createError({
       statusCode: 422,
@@ -45,11 +51,25 @@ export default defineEventHandler(async (event) => {
       statusMessage: "Run bundle integrity check failed.",
     });
   }
+  let outcome;
+  if (rawOutcome !== undefined) {
+    const parsedOutcome = analysisOutcomeSchema.safeParse(rawOutcome);
+    if (!parsedOutcome.success || parsedOutcome.data.runId !== parsed.data.manifest.runId) {
+      throw createError({
+        statusCode: 422,
+        statusMessage: "Run bundle outcome is invalid.",
+      });
+    }
+    outcome = parsedOutcome.data;
+  }
 
   const store = await getRunStore(event);
   let result: { runId: string; created: boolean };
   try {
-    result = await store.importRun(parsed.data, event.context.frameOfMindUser?.email);
+    result = await store.importRun(
+      outcome ? { ...parsed.data, outcome } : parsed.data,
+      event.context.frameOfMindUser?.email,
+    );
   } catch (error) {
     if (error instanceof D1ProjectionLimitError) {
       throw createError({ statusCode: 422, statusMessage: error.message });

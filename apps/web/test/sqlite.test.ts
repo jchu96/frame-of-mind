@@ -108,6 +108,43 @@ describe("local SQLite projection", () => {
     expect(JSON.stringify(input)).toBe(submittedBytes);
   });
 
+  test("round-trips the analysis outcome projection and keeps it optional", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
+    temporaryDirectories.push(directory);
+    const store = createLocalRunStore(join(directory, "runs.sqlite"), LOCAL_SINGLE_USER_PRINCIPAL);
+    const input = await videoRunFixture();
+    const outcome = {
+      schemaVersion: 1 as const,
+      runId: input.manifest.runId,
+      status: "partial" as const,
+      candidates: {
+        indexed: 3,
+        selected: 1,
+        omittedByLimit: 2,
+        validated: 1,
+        accepted: 1,
+        rejected: 0,
+        failed: 0,
+      },
+      failures: [],
+    };
+
+    await store.importRun({ ...input, outcome });
+    const stored = await store.getRun(input.manifest.runId);
+    expect(stored?.outcome).toEqual(outcome);
+
+    // A re-import without outcome (legacy bundle shape) clears the column.
+    await store.importRun(input);
+    const cleared = await store.getRun(input.manifest.runId);
+    expect(cleared?.outcome).toBeUndefined();
+
+    // A mismatched outcome run ID fails closed.
+    await expect(store.importRun({
+      ...input,
+      outcome: { ...outcome, runId: "other-run" },
+    })).rejects.toThrow("run ID does not match");
+  });
+
   test("rejects a run ID reused across v2 and v3 projection tables", async () => {
     const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-web-test-"));
     temporaryDirectories.push(directory);
@@ -133,6 +170,7 @@ describe("local SQLite projection", () => {
       "0001_initial.sql",
       "0002_video_only_projection.sql",
       "0003_principal_scope.sql",
+      "0011_run_outcome_projection.sql",
     ].map((name) => readFile(
       new URL(`../db/migrations/${name}`, import.meta.url),
       "utf8",
@@ -143,6 +181,7 @@ describe("local SQLite projection", () => {
       migrated.exec(migrations[0]!);
       migrated.exec(migrations[1]!);
       migrated.transaction(() => applySqlStatements(migrated, migrations[2]!)).immediate();
+      migrated.exec(migrations[3]!);
       bootstrapped.exec(schemaSql);
       const schemaRows = (database: Database) => database.query<{
         type: string;
@@ -321,6 +360,9 @@ function insertLegacyV2Projection(
     undefined,
     "legacy@example.com",
   ).slice(2, -2);
+  // The legacy 0001-era schema predates outcome_json; drop that value so the
+  // positional insert matches the 17 legacy columns.
+  values.splice(15, 1);
   database.query(`
     INSERT INTO analysis_runs (
       run_id, meeting_id, meeting_title, provider, transport, recipe_id,
