@@ -568,3 +568,10 @@
     timeout; #113). Fix: compare the lane's conclusion on main's recent runs
     before treating it as PR-induced — and fix or re-tier the lane instead of
     learning to ignore it.
+13. **Concurrent PRs race migration prefixes.** Symptom: two merged PRs both
+    ship `0011_*.sql` (#109 and #111, 2026-08-24). Cause: prefixes are chosen
+    at branch time, not merge time. Fix: Wrangler tracks applied migrations
+    by full filename, so nothing breaks — but renumber the not-yet-applied
+    duplicate promptly (verify with `wrangler d1 migrations list --remote`
+    first; #114) and grep tests/docs for the old filename. Before minting a
+    prefix, check open PRs for competing migrations, not just `db/migrations/`.
