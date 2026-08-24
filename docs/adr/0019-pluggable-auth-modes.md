@@ -18,7 +18,7 @@ stacked option where Access remains the outer entrance. The downstream data,
 Workflow, spend, and publication contracts must not know which perimeter
 proved the principal.
 
-## Proposed Decision
+## Decision
 
 `NUXT_AUTH_MODE` is explicit and accepts four modes:
 
@@ -88,8 +88,8 @@ Better Auth modes, and D1 load includes session/invite operations. A five-minute
 signed cookie cache reduces hot-path D1 reads but creates a bounded revocation
 delay.
 
-This ADR is proposed. The spike proves feasibility but does not authorize a
-deployment, production migration, or change to the committed Wrangler mode.
+ADR 0020 subsequently separates authentication from membership approval while
+preserving this principal seam and the committed Wrangler mode.
 
 ## Alternatives Considered
 

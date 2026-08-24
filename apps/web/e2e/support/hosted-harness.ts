@@ -346,8 +346,9 @@ function hostedSeedSql(authMode: HostedAuthMode): string {
 }
 
 function hostedPrincipalSeedSql(rows: string[][]): string {
-  const sealedAt = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + 6 * 86_400_000).toISOString();
+  const sealedAtMs = Date.now();
+  const sealedAt = new Date(sealedAtMs).toISOString();
+  const expiresAt = new Date(sealedAtMs + 6 * 86_400_000).toISOString();
   const digest = "a".repeat(64);
   return `
     INSERT INTO hosted_principal_spend (

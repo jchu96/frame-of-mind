@@ -3,6 +3,7 @@ import { APIError } from "better-auth/api";
 import type { SendEmail } from "@cloudflare/workers-types";
 import {
   CLOUDFLARE_EMAIL_ERROR_CODES,
+  createAccessRequestNotifier,
   createMagicLinkMailer,
 } from "../server/utils/magic-link-mailer";
 
@@ -151,6 +152,63 @@ describe("magic-link mailer", () => {
     await expectMailerUnavailable(mailer.send({ email, url }));
     expect(logged).toEqual(["E_EMAIL_SEND_FAILED"]);
     expect(httpCalls).toBe(0);
+  });
+});
+
+describe("access-request notifier", () => {
+  test("sends one command-only maintainer message through the existing binding", async () => {
+    const messages: unknown[] = [];
+    const notifier = createAccessRequestNotifier({
+      emailBinding: {
+        async send(message: unknown) {
+          messages.push(message);
+          return { messageId: "fixture-message" };
+        },
+      } as SendEmail,
+      from: "sign-in@example.test",
+    });
+
+    await notifier.send({
+      requesterEmail: " Requester@Example.Test ",
+      notifyEmail: " Maintainer@Example.Test ",
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      to: "maintainer@example.test",
+      from: { email: "sign-in@example.test", name: "Frame of Mind" },
+      subject: "Frame of Mind access request",
+    });
+    const message = messages[0] as { text: string; html: string };
+    expect(message.text).toContain("bun run approve 'requester@example.test'");
+    expect(message.html).not.toContain("<a ");
+    expect(message.text).not.toContain("http");
+  });
+
+  test("uses the configured HTTP fallback without adding requester content", async () => {
+    const requests: Array<{ input: string; body: unknown }> = [];
+    const notifier = createAccessRequestNotifier({
+      httpOrigin: "https://mailer.example.test",
+      httpKey: "fixture-key",
+      fetch: async (input, init) => {
+        requests.push({ input: String(input), body: JSON.parse(String(init?.body)) });
+        return new Response(null, { status: 202 });
+      },
+    });
+
+    await notifier.send({
+      requesterEmail: "requester@example.test",
+      notifyEmail: "maintainer@example.test",
+    });
+
+    expect(requests).toEqual([{
+      input: "https://mailer.example.test/access-request",
+      body: {
+        notifyEmail: "maintainer@example.test",
+        requesterEmail: "requester@example.test",
+        command: "bun run approve 'requester@example.test'",
+      },
+    }]);
   });
 });
 
