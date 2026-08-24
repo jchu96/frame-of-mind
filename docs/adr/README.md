@@ -39,6 +39,7 @@ decision may be made in place.
 | [0018](0018-hosted-studio-trust-boundary.md) | Host Studio creation behind principal-scoped Cloudflare execution; 4 MiB materialization-bound Amendment 1 remains proposed in PR #65 | Proposed | 2026-08-22 |
 | [0019](0019-pluggable-auth-modes.md) | Make hosted authentication a pluggable Access, Better Auth, or stacked perimeter | Accepted | 2026-08-23 |
 | [0020](0020-self-serve-access-requests.md) | Separate sign-in from maintainer-approved hosted access | Accepted | 2026-08-23 |
+| [0021](0021-admin-approval-surface.md) | Gate the admin approval surface with a deploy-time maintainer allowlist | Accepted | 2026-08-24 |
 
 ## Adding An ADR
 

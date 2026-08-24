@@ -10,11 +10,20 @@ import {
   usesCloudflareAccess,
 } from "../utils/auth-policy";
 import { principalFromBetterAuthSession } from "../utils/better-auth";
+import {
+  isAdminAccessPath,
+  hideAdminAccessRoute,
+} from "../utils/admin-access";
+import {
+  normalizeAccessEmail,
+  parseMaintainerAllowlist,
+} from "../utils/access-membership";
 import { safeHostedNext } from "../../shared/utils/hosted-auth";
 import { getHostedRouteTelemetry } from "#frame-hosted-telemetry";
 
 export default defineEventHandler(async (event) => {
   const path = event.path.split("?", 1)[0] || "";
+  const adminAccessPath = isAdminAccessPath(path);
   const hostedRoute = path === "/api/hosted"
     || path.startsWith("/api/hosted/")
     || path === "/hosted"
@@ -42,6 +51,7 @@ export default defineEventHandler(async (event) => {
 
   event.context.frameOfMindUser = { authMode: mode };
   if (mode === "off") {
+    if (adminAccessPath) hideAdminAccessRoute(path);
     if (hostedRoute && config.hostedWorkflowsEnabled === true) {
       throw createError({ statusCode: 403, statusMessage: "Hosted authentication is required." });
     }
@@ -62,12 +72,19 @@ export default defineEventHandler(async (event) => {
   }
 
   if (usesCloudflareAccess(mode)) {
-    const identity = await authenticateCloudflareAccess(event, hostedTelemetry);
+    let identity;
+    try {
+      identity = await authenticateCloudflareAccess(event, hostedTelemetry);
+    } catch (error) {
+      if (adminAccessPath) hideAdminAccessRoute(path);
+      throw error;
+    }
     event.context.frameOfMindAccessIdentity = {
       sub: identity.sub,
       ...(identity.email ? { email: identity.email } : {}),
     };
     if (mode === "cloudflare-access") {
+      if (adminAccessPath) hideAdminAccessRoute(path);
       event.context.frameOfMindPrincipal = {
         principal: identity.principal,
         ...(identity.email ? { email: identity.email } : {}),
@@ -81,6 +98,7 @@ export default defineEventHandler(async (event) => {
       return;
     }
     if (identity.principal.startsWith("service:")) {
+      if (adminAccessPath) hideAdminAccessRoute(path);
       throw createError({
         statusCode: 403,
         statusMessage: "A user Access identity is required.",
@@ -94,6 +112,7 @@ export default defineEventHandler(async (event) => {
   if (isBetterAuthPublicPath(path)) return;
   const identity = await principalFromBetterAuthSession(event);
   if (!identity) {
+    if (adminAccessPath) hideAdminAccessRoute(path);
     const redirectToSignIn = event.method === "GET"
       && path !== "/api"
       && !path.startsWith("/api/")
@@ -131,6 +150,7 @@ export default defineEventHandler(async (event) => {
         ? { accessState: identity.accessState }
         : {}),
     };
+    if (adminAccessPath) hideAdminAccessRoute(path);
     if (isBetterAuthLimitedSessionPath(path)) return;
     const redirectToRequest = event.method === "GET"
       && path !== "/api"
@@ -156,6 +176,14 @@ export default defineEventHandler(async (event) => {
     principal: identity.principal,
     email: identity.email,
   };
+  const normalizedEmail = normalizeAccessEmail(identity.email);
+  if (parseMaintainerAllowlist(config.maintainerEmails).has(normalizedEmail)) {
+    event.context.frameOfMindMaintainer = { email: normalizedEmail };
+    event.context.frameOfMindUser.maintainer = true;
+  }
+  if (adminAccessPath && !event.context.frameOfMindMaintainer) {
+    hideAdminAccessRoute(path);
+  }
   await hostedTelemetry?.emit({
     area: "access",
     outcome: "succeeded",

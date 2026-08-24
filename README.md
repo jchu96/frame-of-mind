@@ -609,8 +609,12 @@ Better Auth authenticates first, then the same global middleware binds
 membership data only. Anyone may continue with GitHub. An unapproved account
 is confined to `/request-access`, before run, composer, media, Gemini,
 Workflow, spend, or R2 code can run. The idempotent request sends at most one
-configured maintainer notification, and approval remains a local operator
-command. A global pending-row ceiling defaults to 200 and is configurable with
+configured maintainer notification. Routine approval is available at
+`/admin/access` only to approved sessions named by the deploy-time
+`NUXT_MAINTAINER_EMAILS` allowlist; an empty allowlist keeps the surface dark,
+and changing who is a maintainer still requires configuration plus deployment.
+The CLI remains the recovery and operator path. A global pending-row ceiling
+defaults to 200 and is configurable with
 `NUXT_ACCESS_REQUEST_PENDING_CAP`; a full queue returns a stable 429 without
 creating another row. Magic links are available only to approved accounts. Delivery prefers the
 public Worker's `EMAIL` binding with an explicit onboarded sender, retains the
@@ -619,7 +623,7 @@ delivery failure. Production also limits the route to three requests per 15
 minutes and atomically reserves a 60-second cooldown on each approved email;
 API requests remain JSON 403s.
 See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
-and [accepted ADRs 0019 and 0020](docs/adr/0020-self-serve-access-requests.md).
+and [accepted ADRs 0019–0021](docs/adr/0021-admin-approval-surface.md).
 
 The live reference hosted path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. An authenticated

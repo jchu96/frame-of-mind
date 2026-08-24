@@ -114,6 +114,9 @@ try {
   if (!firstMigration.includes("0010_access_requests.sql")) {
     throw new Error("D1 omitted migration 0010_access_requests.sql.");
   }
+  if (!firstMigration.includes("0011_admin_access.sql")) {
+    throw new Error("D1 omitted migration 0011_admin_access.sql.");
+  }
   const replay = await runChecked(migrationArgs, "Better Auth D1 migration replay");
   if (!/no migrations to apply/i.test(replay)) throw new Error("Better Auth migration replay was not idempotent.");
   await d1Execute(
@@ -126,7 +129,7 @@ try {
     + "('stacked@example.test','2026-08-23T00:00:00.000Z')",
     configPath,
   );
-  console.log("HOSTED_AUTH migration=PASS range=0001..0010 replay=idempotent");
+  console.log("HOSTED_AUTH migration=PASS range=0001..0011 replay=idempotent");
 
   ({ worker, output: workerOutput } = await startWorker(configPath, workerPort));
   await waitForWorker(origin, worker, 403);
