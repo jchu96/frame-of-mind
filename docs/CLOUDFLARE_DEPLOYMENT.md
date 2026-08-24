@@ -184,7 +184,7 @@ after the D1 cap reservation commits. D1 stores that URL as principal/media-
 bound AES-GCM ciphertext.
 
 Deploy order is deliberate: apply migrations through
-`0009_magic_link_cooldown.sql`,
+`0010_access_requests.sql`,
 deploy the sibling Workflows Worker, verify its bindings, then deploy the Nuxt
 caller with the service binding. Keep hosted routes disabled for a new
 deployment until the reviewed release checks in this runbook pass.
@@ -210,7 +210,7 @@ bun run rehearse:hosted-release
 ```
 
 It builds the previous review-only and current hosted artifacts, applies D1
-migrations `0001` through `0009` to an isolated local clone and replays them as
+migrations `0001` through `0010` to an isolated local clone and replays them as
 an idempotent no-op, validates both Worker binding graphs, scans the boundary,
 runs the local byte-stability import regression, and dry-runs both the current
 and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.
@@ -336,6 +336,7 @@ Edit these values:
 | `NUXT_AUTH_MODE` | `better-auth` for the reference topology |
 | `NUXT_BETTER_AUTH_URL` | exact HTTPS custom origin |
 | `NUXT_BETTER_AUTH_MAILER_FROM` | onboarded sender, for example `sign-in@<domain>` |
+| `NUXT_ACCESS_REQUEST_NOTIFY` | optional maintainer address for access-request notifications |
 | `services[0].service` | exact internal Workflows Worker name |
 
 Set:
@@ -347,9 +348,11 @@ Set:
 
 The committed example remains an Access compatibility starting point; the
 operator-owned reference configuration makes the explicit change above.
-Better Auth requires:
+Better Auth is the reference topology; Access-only and stacked modes remain
+compatibility adapters. Better Auth requires:
 
-- migrations `0006_better_auth.sql` and `0009_magic_link_cooldown.sql` on the
+- migrations `0006_better_auth.sql`, `0009_magic_link_cooldown.sql`, and
+  `0010_access_requests.sql` on the
   public Worker's D1 database;
 - `NUXT_BETTER_AUTH_URL` set to the exact HTTPS custom origin;
 - a magic-link sender and optional fallback HTTPS mailer origin as Worker
@@ -684,7 +687,7 @@ storage.
 
 ### Tables do not exist
 
-Apply all pending migrations through `0009_magic_link_cooldown.sql` to the
+Apply all pending migrations through `0010_access_requests.sql` to the
 same database ID bound to both Workers.
 Check `wrangler d1 migrations list ... --remote`.
 
@@ -702,25 +705,51 @@ Better Auth session.
 
 ## Managing who can sign in
 
-Better Auth membership is an email invitation in D1, claimed by the first
-successful user ID. It is membership authority, not row ownership:
+The Better Auth reference instance keeps membership as a stateful D1 row.
+Sign-in establishes identity; only an `approved` membership binds the
+downstream principal. It is membership authority, not row ownership.
+
+Access-only and stacked compatibility deployments keep their outer membership
+in one Access **group** ("Frame of Mind testers") that the application policy
+points at. Adding or removing a tester never edits the policy. Use the
+compatibility CLI or the mode-aware CLI instead of the dashboard:
+
+```bash
+export FRAME_OF_MIND_ACCESS_ENV=<PRIVATE_SECRETS_DIR>/access.env   # token, account id, group id — never committed
+bun scripts/access-users.ts list
+bun scripts/access-users.ts add someone@example.com
+bun scripts/access-users.ts remove someone@example.com
+bun scripts/studio-users.ts --mode cloudflare-access list
+```
+
+The token needs `Access: Organizations, Identity Providers, and Groups: Edit`.
+The CLI refuses to remove the last member. Login methods (Google, One-time PIN,
+GitHub) are configured once as identity providers; membership is by email,
+which works for any provider that returns a verified email.
+
+Manage the Better Auth reference membership and access-request queue through
+D1:
 
 ```bash
 export FRAME_OF_MIND_WRANGLER_CONFIG=apps/web/wrangler.jsonc
 export FRAME_OF_MIND_D1_DATABASE=frame-of-mind
 bun scripts/studio-users.ts --mode better-auth list
+bun scripts/studio-users.ts --mode better-auth list-requests
 bun scripts/studio-users.ts --mode better-auth add "<email-address>"
+bun run approve "<email-address>"
+bun scripts/studio-users.ts --mode better-auth deny "<email-address>"
 bun scripts/studio-users.ts --mode better-auth remove "<email-address>"
 ```
 
-These commands target remote D1 by default. Removing an invitation
-does not reassign or delete existing `ba:<userId>` rows and is not by itself a
-session revocation; account/session removal needs a separately reviewed
-operator action.
-
-Access-only and stacked compatibility deployments manage their outer group
-through `scripts/access-users.ts` or `studio-users.ts --mode cloudflare-access`.
-That group is not authoritative on the Better Auth reference instance.
+These commands target remote D1 by default. `add` is the pre-approval command;
+`approve`, `deny`, and `remove` record `decided_by` and preserve the row.
+Set `FRAME_OF_MIND_ACCESS_DECIDED_BY` to an operator label or accept the
+`maintainer-cli` default. Set `NUXT_ACCESS_REQUEST_NOTIFY` to send one
+command-only notification to the maintainer; when it is absent, requests are
+still recorded. In stacked mode, a person must be present in both the Access
+group and the D1 membership list. Revocation does not reassign or delete
+existing `ba:<userId>` rows; the global middleware observes the state before
+binding that principal.
 
 ### Enable magic-link email
 
@@ -736,17 +765,21 @@ absent. To enable the binding path:
 3. Set `NUXT_BETTER_AUTH_MAILER_FROM=sign-in@<onboarded-domain>`. An empty
    value with a present binding fails closed as `E_MAILER_FROM_UNSET`; it never
    enables the HTTP fallback.
-4. Redeploy, request a link for an invited email, and verify the five-minute
+4. Optionally set `NUXT_ACCESS_REQUEST_NOTIFY=<maintainer-email>`. That address
+   must be allowed by any destination-restricted binding.
+5. Redeploy, request a link for an approved email, and verify the five-minute
    one-time link arrives with both plain-text and HTML parts.
 
-For the first canary, restrict the binding to the exact invited addresses.
-Keep this operator-managed list synchronized with the D1 invite list:
+For the first canary, restrict the binding to exact approved addresses plus the
+maintainer notification address. Keep this operator-managed list synchronized
+with D1 membership and `NUXT_ACCESS_REQUEST_NOTIFY`:
 
 ```jsonc
 "send_email": [{
   "name": "EMAIL",
   "allowed_destination_addresses": [
-    "<invited-email-address>"
+    "<approved-email-address>",
+    "<maintainer-email-address>"
   ]
 }]
 ```
@@ -772,7 +805,7 @@ message ID:
 
 Every row above maps to `MAILER_UNAVAILABLE`; GitHub sign-in remains available.
 Production limits `/sign-in/magic-link` to three requests per 15 minutes and
-also reserves each invited email for 60 seconds before delivery. A second
+also reserves each approved email for 60 seconds before delivery. A second
 request in that window returns `MAGIC_LINK_COOLDOWN` and does not call either
 mailer transport.
 
@@ -785,11 +818,17 @@ mailer transport.
 1. [Create the D1 database](#3-create-the-d1-database).
 2. [Copy the operator-owned `wrangler.jsonc` from the committed example](#4-create-the-local-wrangler-configuration).
 3. [Apply the D1 migrations](#5-apply-the-d1-migration).
-4. [Configure Better Auth sign-in](#6-configure-better-auth-sign-in).
-5. [Build and deploy](#7-build-and-deploy) with hosted creation disabled.
-6. [Verify fail-closed behavior](#8-verify-fail-closed-behavior).
-7. Run `bun run check:sharded` through `gate-lock`, then enable hosted creation
-   and submit one generated, non-sensitive canary recording.
+4. [Create one GitHub login application](#optional-github-login-application).
+5. [Configure Better Auth sign-in](#6-configure-better-auth-sign-in).
+6. [Configure Better Auth access approval](#managing-who-can-sign-in).
+7. [Build and deploy](#7-build-and-deploy) with hosted creation disabled.
+8. [Verify fail-closed behavior](#8-verify-fail-closed-behavior).
+9. Add only the hosted capabilities you need: [Email Service for magic
+   links](#enable-magic-link-email), [private R2 retained
+   media](#private-retained-media-r2-shape), and the [internal Workflows
+   Worker](#workflows-worker-configuration-shape).
+10. Run `bun run check:sharded` through `gate-lock`, then enable hosted creation
+    and submit one generated, non-sensitive canary recording.
 
 ### Optional GitHub login application
 
@@ -809,7 +848,22 @@ Put the resulting values in an uncommitted file, for example
 `<PRIVATE_SECRETS_DIR>/github-oauth.env`, as `GITHUB_CLIENT_ID=…` and
 `GITHUB_CLIENT_SECRET=…`.
 
-Install `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` with `wrangler secret put` and
-set `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID` as a non-secret Worker variable. Keep
-`NUXT_AUTH_MODE=better-auth`; GitHub is an additional sign-in method, not a
-different principal or perimeter.
+Before deployment, apply migrations through `0010_access_requests.sql`, install the
+`NUXT_BETTER_AUTH_SECRET` Worker secret, and optionally pre-approve accounts with
+`bun scripts/studio-users.ts --mode better-auth add "<email-address>"`.
+
+1. **Create the GitHub login application** using one of the two options above.
+2. **Secrets + vars** (operator): `wrangler secret put
+   NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`; in `wrangler.jsonc` vars set
+   `NUXT_BETTER_AUTH_GITHUB_CLIENT_ID`, `NUXT_BETTER_AUTH_URL=https://<YOUR_HOSTNAME>`,
+   and `NUXT_AUTH_MODE=better-auth`. GitHub is an additional sign-in method,
+   not a different principal or perimeter.
+3. **Optional email sign-in**: onboard the sending domain, add the `EMAIL`
+   binding, set `NUXT_BETTER_AUTH_MAILER_FROM`, and redeploy. Use the restricted
+   canary binding above until every approved address has been exercised.
+4. **Deploy and verify** with hosted creation disabled: an approved GitHub
+   identity lands on the viewer with `GET /api/session` showing a `ba:`
+   principal; an unapproved identity lands on `/request-access` and receives
+   403 from run, hosted, media, and composer APIs.
+5. Run the locked sharded gate, enable hosted creation, and submit one
+   generated, non-sensitive canary recording.

@@ -718,10 +718,16 @@ Local unauthenticated mode is loopback-only. Hosted mode selects one explicit,
 fail-closed authentication adapter. The reference instance binds a Better Auth
 session to `ba:<userId>` and uses invite-gated email magic links delivered by
 the public Worker's Cloudflare Email Service binding. Its former Access
-application has been deleted. Access-only and stacked modes remain tested
-compatibility adapters at the same principal seam; they are not the reference
-deployment. [ADR 0019](adr/0019-pluggable-auth-modes.md) preserves the decision
-history and supported mode contract.
+application has been deleted. Better Auth separates authentication from
+authorization: any verified GitHub identity may establish a session, but only
+a D1 membership with `state='approved'` binds `ba:<userId>` into the downstream
+principal context. Other sessions can reach only their bounded session and
+request-access surfaces, before any run, media, provider, spend, Workflow, or
+R2 handler executes. Access-only and stacked modes remain tested compatibility
+adapters at the same principal seam; they are not the reference deployment.
+[ADR 0019](adr/0019-pluggable-auth-modes.md) preserves the supported mode
+contract, and [ADR 0020](adr/0020-self-serve-access-requests.md) defines the
+access-request boundary.
 
 ### Hosted execution and Studio topology
 

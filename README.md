@@ -56,7 +56,7 @@ flowchart LR
     b --> d["findings bundle<br>timestamps · quotes · screenshots"]
 ```
 
-There is also a hosted Studio (invite-gated, same evidence contract) — the
+There is also a hosted Studio (approval-gated, same evidence contract) — the
 maintainer's reference instance runs at
 [fom.flickerventures.com](https://fom.flickerventures.com).
 
@@ -77,7 +77,8 @@ maintainer's reference instance runs at
   repository hygiene, fresh-clone platform testing, the sharded repository
   gate, branch protection, and the operator/adversarial release gate are live.
 - The maintainer's public deployment at <https://fom.flickerventures.com> is
-  the reference instance; hosted analysis creation is live there behind sign-in (invite-gated while ADR 0020 self-serve requests are in progress).
+  the reference instance; hosted analysis creation is live there behind Better
+  Auth sign-in and ADR 0020's self-serve access-approval boundary.
 - Hosted Studio is live on the reference instance. Principal scoping (Slice 1),
   durable Workflows (Phase 3), composer/activity/publication (Phase 4), and
   retention, evidence, spend, and telemetry Tasks 5.1–5.4, plus Phase 6
@@ -590,11 +591,12 @@ It exercises local D1 migration replay, both Worker dry-runs, boundary
 fixtures, byte-stable local import, and the previous-artifact rollback drill;
 success prints `HOSTED_RELEASE_REHEARSAL PASSED`.
 
-The committed generic example remains an Access compatibility starting point;
-the operator-owned reference configuration uses `better-auth`. Better Auth
-provides live invite-gated magic-link sessions, optional GitHub OAuth, and D1
-email invitations without changing the downstream principal-scoped contracts.
-Run its built-Worker browser proof with:
+The committed generic example remains a `cloudflare-access` compatibility
+starting point; the operator-owned reference configuration uses `better-auth`.
+Better Auth provides live approved-account magic links, optional GitHub OAuth,
+and D1-backed self-serve access requests without changing the downstream
+principal-scoped contracts. Access-only and stacked modes remain compatibility
+adapters. Run the built-Worker browser proof with:
 
 ```bash
 bun run check:hosted-auth
@@ -602,17 +604,20 @@ bun run test:hosted-access-http:better-auth
 bun run test:hosted-workflows-http:better-auth
 ```
 
-Better Auth binds `ba:<userId>` once in middleware; email is display and
-membership data only. In Better Auth modes, anonymous browser pages redirect
-to `/sign-in`, where an invited user can continue with GitHub or request a
-magic link when email delivery is configured. Magic-link delivery prefers the
+Better Auth authenticates first, then the same global middleware binds
+`ba:<userId>` only when D1 membership is `approved`; email is display and
+membership data only. Anyone may continue with GitHub. An unapproved account
+is confined to `/request-access`, before run, composer, media, Gemini,
+Workflow, spend, or R2 code can run. The idempotent request sends at most one
+configured maintainer notification, and approval remains a local operator
+command. Magic links are available only to approved accounts. Delivery prefers the
 public Worker's `EMAIL` binding with an explicit onboarded sender, retains the
 HTTP mailer as a no-binding fallback, and exposes only `MAILER_UNAVAILABLE` on
 delivery failure. Production also limits the route to three requests per 15
-minutes and atomically reserves a 60-second cooldown on each invited email;
+minutes and atomically reserves a 60-second cooldown on each approved email;
 API requests remain JSON 403s.
 See the [spike receipt](docs/spikes/hosted-auth-modes-spike-2026-08-23.md)
-and [accepted ADR 0019](docs/adr/0019-pluggable-auth-modes.md).
+and [accepted ADRs 0019 and 0020](docs/adr/0020-self-serve-access-requests.md).
 
 The live reference hosted path uses an internal sibling Workflows Worker,
 reached from the public Nuxt Worker through a service binding. An authenticated

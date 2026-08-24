@@ -6,7 +6,7 @@ import { runFixture, videoRunFixture } from "../apps/web/test/fixtures";
 import { analysisDigest } from "../src/domain/integrity";
 import { createE2EIsolation } from "../apps/web/e2e/support/isolation";
 import {
-  betterAuthBrowserLogin,
+  betterAuthBrowserLogins,
   betterAuthFixtureVars,
   hostedAuthHeaders,
   hostedContractAuthMode,
@@ -31,6 +31,8 @@ const webOutput = prebuiltOutput ?? resolve("apps/web/.output");
 let wrangler: ReturnType<typeof Bun.spawn> | undefined;
 let jwksServer: ReturnType<typeof Bun.serve> | undefined;
 let fakeGithub: ReturnType<typeof startFakeGithub> | undefined;
+let fakeMailer: ReturnType<typeof Bun.serve> | undefined;
+const capturedAccessRequests: unknown[] = [];
 let wranglerOutput: Promise<[string, string]> | undefined;
 
 try {
@@ -66,7 +68,24 @@ try {
     ? startFakeGithub([
         { id: "access-a", email: "access-a@example.test" },
         { id: "access-b", email: "access-b@example.test" },
+        { id: "request-a", email: "request-a@example.test" },
+        { id: "request-b", email: "request-b@example.test" },
+        { id: "request-c", email: "request-c@example.test" },
+        { id: "request-d", email: "request-d@example.test" },
       ])
+    : undefined;
+  fakeMailer = hostedContractAuthMode === "better-auth"
+    ? Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        async fetch(request) {
+          if (new URL(request.url).pathname !== "/access-request" || request.method !== "POST") {
+            return new Response("not found", { status: 404 });
+          }
+          capturedAccessRequests.push(await request.json());
+          return new Response(null, { status: 202 });
+        },
+      })
     : undefined;
 
   await writeFile(configPath, JSON.stringify({
@@ -86,7 +105,13 @@ try {
       migrations_dir: resolve("apps/web/db/migrations"),
     }],
     vars: hostedContractAuthMode === "better-auth"
-      ? betterAuthFixtureVars(baseUrl, fakeGithub!.origin)
+      ? {
+          ...betterAuthFixtureVars(baseUrl, fakeGithub!.origin),
+          NUXT_BETTER_AUTH_MAILER_ORIGIN: `http://127.0.0.1:${fakeMailer!.port}`,
+          NUXT_BETTER_AUTH_MAILER_KEY: "fixture-mailer-key",
+          NUXT_BETTER_AUTH_MAILER_FROM: "sign-in@example.test",
+          NUXT_ACCESS_REQUEST_NOTIFY: "maintainer@example.test",
+        }
       : {
           NUXT_AUTH_MODE: "cloudflare-access",
           NUXT_CLOUDFLARE_ACCESS_TEAM_DOMAIN: issuer,
@@ -139,14 +164,24 @@ try {
 
   await waitForWorker(baseUrl, wrangler);
 
+  const betterAuthLogins = hostedContractAuthMode === "better-auth"
+    ? await betterAuthBrowserLogins(baseUrl, [
+        "access-a@example.test",
+        "access-b@example.test",
+        "request-a@example.test",
+        "request-b@example.test",
+        "request-c@example.test",
+        "request-d@example.test",
+      ])
+    : undefined;
   const tokenA = hostedContractAuthMode === "better-auth"
-    ? await betterAuthBrowserLogin(baseUrl, "access-a@example.test")
+    ? betterAuthLogins!.get("access-a@example.test")!
     : await signAccessToken(keys.privateKey, issuer, {
         sub: "hosted-user-subject-a",
         email: "recycled-seat@example.test",
       });
   const tokenB = hostedContractAuthMode === "better-auth"
-    ? await betterAuthBrowserLogin(baseUrl, "access-b@example.test")
+    ? betterAuthLogins!.get("access-b@example.test")!
     : await signAccessToken(keys.privateKey, issuer, {
         sub: "hosted-user-subject-b",
         email: "recycled-seat@example.test",
@@ -155,6 +190,81 @@ try {
     sub: "",
     common_name: "hosted-contract.access",
   });
+
+  if (hostedContractAuthMode === "better-auth") {
+    const requestToken = betterAuthLogins!.get("request-a@example.test")!;
+    const initialSession = await json<Record<string, unknown>>(
+      await expectStatus(authenticatedFetch(baseUrl, "/api/session", requestToken), 200, "unapproved session"),
+    );
+    if ("accessState" in initialSession) throw new Error("Unknown principal already had membership state.");
+    await expectUnapprovedBoundary(baseUrl, requestToken);
+
+    const requestHeaders = {
+      ...hostedAuthHeaders(requestToken, baseUrl),
+      "cf-connecting-ip": "198.51.100.70",
+    };
+    const requested = await json<Record<string, unknown>>(await expectStatus(fetch(
+      `${baseUrl}/api/access/request`,
+      { method: "POST", headers: requestHeaders, body: "{}" },
+    ), 200, "create access request"));
+    assertEqual(requested, {
+      state: "requested",
+      created: true,
+      notificationSent: true,
+    }, "created access request");
+    await expectStatus(fetch(`${baseUrl}/api/access/request`, {
+      method: "POST",
+      headers: requestHeaders,
+      body: "{}",
+    }), 200, "idempotent access request");
+    assertEqual(capturedAccessRequests.length, 1, "one maintainer notification per principal");
+    assertEqual(capturedAccessRequests[0], {
+      notifyEmail: "maintainer@example.test",
+      requesterEmail: "request-a@example.test",
+      command: "bun run approve 'request-a@example.test'",
+    }, "maintainer notification contract");
+    await expectStatus(fetch(`${baseUrl}/api/auth/sign-in/magic-link`, {
+      method: "POST",
+      headers: {
+        origin: baseUrl,
+        "content-type": "application/json",
+        "cf-connecting-ip": "198.51.100.70",
+      },
+      body: JSON.stringify({
+        email: "request-a@example.test",
+        name: "Request A",
+        callbackURL: "/api/session",
+      }),
+    }), 403, "requested account magic-link denial");
+    assertEqual(capturedAccessRequests.length, 1, "no requester email after access request");
+
+    const requestedSession = await json<Record<string, unknown>>(
+      await expectStatus(authenticatedFetch(baseUrl, "/api/session", requestToken), 200, "requested session"),
+    );
+    assertEqual(requestedSession.accessState, "requested", "requested membership state");
+    await expectUnapprovedBoundary(baseUrl, requestToken);
+
+    for (const email of ["request-b@example.test", "request-c@example.test"]) {
+      const response = await fetch(`${baseUrl}/api/access/request`, {
+        method: "POST",
+        headers: {
+          ...hostedAuthHeaders(betterAuthLogins!.get(email)!, baseUrl),
+          "cf-connecting-ip": "198.51.100.70",
+        },
+        body: "{}",
+      });
+      await expectStatus(response, 200, `per-IP request ${email}`);
+    }
+    await expectStatus(fetch(`${baseUrl}/api/access/request`, {
+      method: "POST",
+      headers: {
+        ...hostedAuthHeaders(betterAuthLogins!.get("request-d@example.test")!, baseUrl),
+        "cf-connecting-ip": "198.51.100.70",
+      },
+      body: "{}",
+    }), 429, "per-IP access-request rate limit");
+    console.log("HOSTED_ACCESS request_access=PASS session=requested protected=403 mail=maintainer_only rate_limit=429");
+  }
 
   await expectStatus(fetch(`${baseUrl}/api/runs`), 403, "missing Access assertion");
   if (hostedContractAuthMode === "cloudflare-access") {
@@ -229,11 +339,17 @@ try {
     : "HOSTED_ACCESS service=PASS not_applicable=better_auth");
   console.log("HOSTED_ACCESS missing_header=PASS status=403");
   console.log("HOSTED_ACCESS dark=PASS hosted_creation_status=404");
-  console.log(`HOSTED_ACCESS_CONTRACT PASSED entry=${entryFile}`);
 
   wrangler.kill("SIGTERM");
   await wrangler.exited;
   await wranglerOutput;
+  wrangler = undefined;
+  wranglerOutput = undefined;
+  if (hostedContractAuthMode === "better-auth") {
+    await verifyMaintainerCommands();
+    console.log("HOSTED_ACCESS maintainer_cli=PASS approve_alias=true deny=true remove=revoked list_requests=true");
+  }
+  console.log(`HOSTED_ACCESS_CONTRACT PASSED entry=${entryFile}`);
 } catch (error) {
   if (wrangler) {
     wrangler.kill("SIGTERM");
@@ -247,7 +363,77 @@ try {
 } finally {
   jwksServer?.stop(true);
   fakeGithub?.stop();
+  fakeMailer?.stop(true);
   await isolation.cleanup();
+}
+
+async function expectUnapprovedBoundary(origin: string, token: string): Promise<void> {
+  await expectStatus(authenticatedFetch(origin, "/api/runs", token), 403, "unapproved runs denial");
+  await expectStatus(authenticatedFetch(origin, "/api/hosted/configuration", token), 403, "unapproved hosted denial");
+  for (const path of ["/api/hosted/media", "/api/hosted/composer/jobs"]) {
+    await expectStatus(fetch(`${origin}${path}`, {
+      method: "POST",
+      headers: hostedAuthHeaders(token, origin),
+      body: "{}",
+    }), 403, `unapproved mutation denial ${path}`);
+  }
+}
+
+async function verifyMaintainerCommands(): Promise<void> {
+  const commandEnvironment = {
+    FRAME_OF_MIND_D1_DATABASE: databaseName,
+    FRAME_OF_MIND_D1_LOCAL: "1",
+    FRAME_OF_MIND_D1_PERSIST_TO: persistRoot,
+    FRAME_OF_MIND_WRANGLER_CONFIG: configPath,
+    FRAME_OF_MIND_ACCESS_DECIDED_BY: "fixture-operator",
+  };
+  await runChecked(
+    ["bun", "run", "approve", "request-a@example.test"],
+    "approve package alias",
+    commandEnvironment,
+  );
+  await runChecked(
+    ["bun", "scripts/studio-users.ts", "--mode", "better-auth", "deny", "request-b@example.test"],
+    "deny request command",
+    commandEnvironment,
+  );
+  await runChecked(
+    ["bun", "scripts/studio-users.ts", "--mode", "better-auth", "remove", "access-a@example.test"],
+    "remove member command",
+    commandEnvironment,
+  );
+  await runChecked(
+    ["bun", "scripts/studio-users.ts", "--mode", "better-auth", "add", "preapproved@example.test"],
+    "pre-approve member command",
+    commandEnvironment,
+  );
+  const requests = await runChecked(
+    ["bun", "scripts/studio-users.ts", "--mode", "better-auth", "list-requests"],
+    "list requests command",
+    commandEnvironment,
+  );
+  if (!requests.includes("request-c@example.test") || requests.includes("request-a@example.test")) {
+    throw new Error(`Maintainer request list had the wrong state: ${requests}`);
+  }
+  const rows = await runChecked([
+    "bunx", "wrangler", "d1", "execute", databaseName,
+    "--local", "--config", configPath, "--persist-to", persistRoot,
+    "--command", "SELECT email, state, decided_by FROM hosted_auth_invites "
+      + "WHERE email IN ('request-a@example.test','request-b@example.test',"
+      + "'access-a@example.test','preapproved@example.test') ORDER BY email",
+    "--json",
+  ], "maintainer command state query");
+  for (const expected of [
+    "request-a@example.test",
+    "request-b@example.test",
+    "access-a@example.test",
+    "preapproved@example.test",
+    "approved",
+    "revoked",
+    "fixture-operator",
+  ]) {
+    if (!rows.includes(expected)) throw new Error(`Maintainer state query omitted ${expected}: ${rows}`);
+  }
 }
 
 async function signAccessToken(
@@ -302,10 +488,14 @@ function assertEqual(actual: unknown, expected: unknown, label: string): void {
   }
 }
 
-async function runChecked(command: string[], label: string): Promise<void> {
+async function runChecked(
+  command: string[],
+  label: string,
+  additions: Record<string, string> = {},
+): Promise<string> {
   const child = Bun.spawn(command, {
     cwd: process.cwd(),
-    env: createE2EEnvironment(process.env),
+    env: createE2EEnvironment(process.env, additions),
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -318,6 +508,7 @@ async function runChecked(command: string[], label: string): Promise<void> {
   if (exitCode !== 0) {
     throw new Error(`${label} failed (${exitCode}):\n${stdout}\n${stderr}`.slice(0, 12_000));
   }
+  return stdout;
 }
 
 async function waitForWorker(

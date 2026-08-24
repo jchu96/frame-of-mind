@@ -64,4 +64,5 @@ export interface SessionInfo {
     | "cloudflare-access+better-auth";
   email?: string;
   principal?: true;
+  accessState?: "requested" | "approved" | "revoked";
 }
