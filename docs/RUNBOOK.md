@@ -1419,7 +1419,10 @@ both the outer Access group and the Better Auth membership list.
 confined to the request page; `approve`, `deny`, and `remove` record a state
 transition instead of deleting the audit row. Set `NUXT_ACCESS_REQUEST_NOTIFY`
 to the maintainer destination for one request notification, or leave it unset
-to record requests without sending mail.
+to record requests without sending mail. `NUXT_ACCESS_REQUEST_PENDING_CAP`
+defaults to `200`; when that many rows remain in `requested`, new applicants
+receive `429 access_request_capacity_reached` until a maintainer transitions a
+row.
 
 In Better Auth modes, anonymous HTML page requests redirect to
 `/sign-in?next=<same-origin-relative-path>`. The page offers GitHub OAuth and a
@@ -1463,12 +1466,17 @@ The 300 tokens/second figure follows Google's current
 If duration, rate, headroom, call graph, cap state, or estimate is invalid, job
 creation fails closed. Cap exhaustion returns
 `principal_spend_cap_exceeded` before dispatch, so no Workflow instance is
-created. Linked retries reserve the immutable prior attempt plan. Terminal
+created. If some allowance remains but the recording estimate cannot fit,
+creation instead returns `spend_estimate_exceeds_remaining_allowance`. Linked
+retries reserve the immutable prior attempt plan. Terminal
 cleanup commits provider usage when every billable claim has a usage receipt;
 otherwise it commits the full reservation rather than understating spend. The
-`hosted-video-v2` plan reserves both possible structured generations (initial
-plus schema repair) and all five transport attempts for every video-bearing
-step. If observed usage still exceeds the reservation, the attempt becomes
+`hosted-video-v2` plan initially reserves both possible structured generations
+(initial plus schema repair) for every video-bearing step. Immediately before
+each real transport retry, D1 atomically extends the same reservation by one
+generation budget; a cap or CAS loss prevents the retry. A retry without a
+usage receipt keeps settlement on the full-reservation fallback. If observed
+usage still exceeds the reservation, the attempt becomes
 indeterminate with `spend_actual_exceeds_reservation`, publication is blocked,
 and committed spend is capped at the reserved amount. A failed or canceled
 attempt with zero provider claims releases its reservation.

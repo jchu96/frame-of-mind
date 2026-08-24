@@ -44,6 +44,7 @@ describe("hosted Studio UX pass 3", () => {
       ["recipe_receipt_mismatch", "choose-goal", "This goal was updated."],
       ["recipe_not_found", "choose-goal", "This goal was updated."],
       ["principal_spend_cap_exceeded", "contact-support", "You've used this account's analysis allowance."],
+      ["spend_estimate_exceeds_remaining_allowance", "upload-again", "This recording is too long for the account's remaining analysis allowance."],
       ["principal_spend_cap_unavailable", "retry", "We couldn't check this account's analysis allowance."],
       ["spend_duration_unavailable", "upload-again", "We couldn't read this recording's length."],
       ["spend_policy_unavailable", "retry", "Analysis limits are temporarily unavailable."],

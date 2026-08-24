@@ -88,6 +88,7 @@ export function throwHostedJobHttpError(error: unknown): never {
         || error.code === "hosted_attempt_create_conflict"
         ? 409
         : error.code === "principal_spend_cap_exceeded"
+          || error.code === "spend_estimate_exceeds_remaining_allowance"
           ? 429
           : error.code.includes("missing") || error.code.includes("expired")
             ? 422

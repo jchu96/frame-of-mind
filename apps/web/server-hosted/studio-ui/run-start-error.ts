@@ -113,6 +113,13 @@ export function hostedRunStartErrorCopy(code?: string): HostedRunStartErrorCopy 
       action: contactSupportAction,
     };
   }
+  if (code === "spend_estimate_exceeds_remaining_allowance") {
+    return {
+      message: "This recording is too long for the account's remaining analysis allowance.",
+      nextAction: "Upload a shorter recording to continue.",
+      action: uploadAgainAction,
+    };
+  }
   if (code && temporarySpendCodes.has(code)) {
     return {
       message: temporarySpendCodes.get(code)!,

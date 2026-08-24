@@ -1283,6 +1283,7 @@ describe("Gemini generation transport handling", () => {
   it("retries transient transport statuses before succeeding", async () => {
     let calls = 0;
     const delays: number[] = [];
+    const retries: Array<{ phase: string; retry: number }> = [];
     const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
       generateContent: async () => {
         calls += 1;
@@ -1291,6 +1292,9 @@ describe("Gemini generation transport handling", () => {
       },
       sleep: async (milliseconds) => {
         delays.push(milliseconds);
+      },
+      beforeGenerationTransportRetry: async (retry) => {
+        retries.push(retry);
       },
     });
 
@@ -1302,6 +1306,32 @@ describe("Gemini generation transport handling", () => {
     )).resolves.toMatchObject({ accepted: true });
     expect(calls).toBe(3);
     expect(delays).toEqual([1_000, 2_000]);
+    expect(retries).toEqual([
+      { phase: "detail", retry: 1 },
+      { phase: "detail", retry: 2 },
+    ]);
+  });
+
+  it("fails closed before issuing a retry when its reservation hook fails", async () => {
+    let calls = 0;
+    const analyzer = new GeminiVideoAnalyzer("test-api-key", "gemini-3.6-flash", {
+      generateContent: async () => {
+        calls += 1;
+        throw transientError();
+      },
+      sleep: async () => {},
+      beforeGenerationTransportRetry: async () => {
+        throw new Error("spend_reservation_extension_conflict");
+      },
+    });
+
+    await expect(analyzer.interrogate(
+      activeFile,
+      validIndexResponse.moments[0]!,
+      meeting.transcript,
+      recipe,
+    )).rejects.toThrow("spend_reservation_extension_conflict");
+    expect(calls).toBe(1);
   });
 
   it("rides out a burst of capacity errors longer than the old two-retry budget", async () => {

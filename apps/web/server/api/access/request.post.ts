@@ -8,6 +8,7 @@ import { createAccessRequestNotifier } from "../../utils/magic-link-mailer";
 
 const RATE_WINDOW_SECONDS = 15 * 60;
 const RATE_LIMIT = 3;
+export const ACCESS_REQUEST_PENDING_CAP_DEFAULT = 200;
 
 export default defineEventHandler(async (event) => {
   assertTrustedJsonMutation(event);
@@ -37,16 +38,44 @@ export default defineEventHandler(async (event) => {
 
   await reserveRequestRateLimit(event, database);
   const now = new Date().toISOString();
+  const pendingCap = accessRequestPendingCap(useRuntimeConfig(event));
   const inserted = await database.prepare(
     "INSERT OR IGNORE INTO hosted_auth_invites "
     + "(email, claimed_user_id, invited_at, claimed_at, state, requested_at) "
-    + "VALUES (?1, ?2, ?3, ?3, 'requested', ?3)",
-  ).bind(applicant.email, applicant.userId, now).run();
+    + "SELECT ?1, ?2, ?3, ?3, 'requested', ?3 "
+    + "WHERE (SELECT COUNT(*) FROM hosted_auth_invites WHERE state = 'requested') < ?4",
+  ).bind(applicant.email, applicant.userId, now, pendingCap).run();
   if (!inserted.success) {
     throw createError({ statusCode: 503, statusMessage: "Access request could not be recorded." });
   }
   if (inserted.meta.changes !== 1) {
-    return { state: "requested" as const, created: false, notificationSent: false };
+    const raced = await database.prepare(
+      "SELECT state, claimed_user_id FROM hosted_auth_invites "
+      + "WHERE email = ?1 OR claimed_user_id = ?2 LIMIT 1",
+    ).bind(applicant.email, applicant.userId).first<{
+      state: "requested" | "approved" | "revoked";
+      claimed_user_id: string | null;
+    }>();
+    if (raced) {
+      if (raced.claimed_user_id !== null && raced.claimed_user_id !== applicant.userId) {
+        throw createError({ statusCode: 403, statusMessage: "Access request identity mismatch." });
+      }
+      return { state: raced.state, created: false, notificationSent: false };
+    }
+    const pending = await database.prepare(
+      "SELECT COUNT(*) AS count FROM hosted_auth_invites WHERE state = 'requested'",
+    ).first<{ count: number }>();
+    if (pending && pending.count >= pendingCap) {
+      throw createError({
+        statusCode: 429,
+        statusMessage: "Access request capacity is temporarily full.",
+        data: { code: "access_request_capacity_reached" },
+      });
+    }
+    throw createError({
+      statusCode: 503,
+      statusMessage: "Access request could not be recorded.",
+    });
   }
 
   const config = useRuntimeConfig(event);
@@ -113,6 +142,20 @@ async function keyedIp(ip: string, secret: string): Promise<string> {
 
 function configString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+export function accessRequestPendingCap(config: {
+  accessRequestPendingCap?: unknown;
+}): number {
+  const value = Number(config.accessRequestPendingCap);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 10_000) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: "Access request capacity is unavailable.",
+      data: { code: "access_request_capacity_unavailable" },
+    });
+  }
+  return value;
 }
 
 function integrationOrigin(value: unknown, allowLoopback: boolean): string | undefined {
