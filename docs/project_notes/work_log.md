@@ -1,7 +1,15 @@
 # Work Log
 
+## 2026-08-24
+
+- Reconciled README, architecture, deployment, testing, security, data,
+  credentials, workspace, MCP, skill, and scoped-agent guidance with the live
+  Better Auth Hosted Studio and the v0.4.0 sharded repository gate.
+
 ## 2026-08-23
 
+- Correction: the earlier required-hosted-contract description was superseded
+  the same evening; `hosted-contracts` is advisory pending issue #96.
 - Repaired the root-script dependency contract after repeated red runs went
   unnoticed: root scripts now own their `jose` dependency and repository
   hygiene rejects undeclared bare imports under `scripts/` and `test/`.

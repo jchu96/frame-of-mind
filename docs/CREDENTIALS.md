@@ -3,21 +3,22 @@
 This guide explains how to authenticate Frame of Mind without putting a secret
 in the repository or chat.
 
-Status as of 2026-08-22: Local Studio resolves Gemini/Granola keys from the
+Status as of 2026-08-24: Local Studio resolves Gemini/Granola keys from the
 environment or process memory and keeps provider OAuth in exact-resource
 private files; these paths are covered by
 [`runtime-secrets.test.ts`](../apps/web/test/runtime-secrets.test.ts) and
-[`oauth.test.ts`](../test/oauth.test.ts). Hosted creation remains dark and
-undeployed. Its Tier A proposal permits `GEMINI_API_KEY` only on the internal
-Workflows Worker; Tier B provider-token custody is pending. See
+[`oauth.test.ts`](../test/oauth.test.ts). Hosted creation is live on the
+reference instance. It keeps `GEMINI_API_KEY` in Worker secret storage and does
+not expose provider-token custody in the Tier A path. See
 [DATA_CLASSIFICATION.md](DATA_CLASSIFICATION.md) and
 [ADR 0018](adr/0018-hosted-studio-trust-boundary.md).
 
-The proposed Better Auth hosted mode adds three public-Nuxt-Worker secrets:
-`NUXT_BETTER_AUTH_SECRET`, `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET`, and
-`NUXT_BETTER_AUTH_MAILER_KEY`. Store them with Worker secret bindings, never in
-Wrangler JSON. They do not move `GEMINI_API_KEY` out of the internal Workflows
-Worker. See proposed [ADR 0019](adr/0019-pluggable-auth-modes.md).
+The live Better Auth mode requires `NUXT_BETTER_AUTH_SECRET` on the public
+Worker. `NUXT_BETTER_AUTH_GITHUB_CLIENT_SECRET` is required only when GitHub
+login is enabled; `NUXT_BETTER_AUTH_MAILER_KEY` is required only for the HTTP
+mailer fallback. The reference email path uses the `EMAIL` service binding and
+needs no mailer API key. Store secrets with Worker secret bindings, never in
+Wrangler JSON. See [ADR 0019](adr/0019-pluggable-auth-modes.md).
 
 ## Short answer
 
