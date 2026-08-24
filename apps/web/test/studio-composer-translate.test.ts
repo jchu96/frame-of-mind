@@ -6,6 +6,7 @@ import {
 } from "../../../src/domain/studio-schemas";
 import {
   translateComposerJob,
+  translateComposerReplay,
 } from "../server-local/studio-jobs/composer-translate";
 import { StudioJobInputUnavailableError } from "../server-local/studio-jobs/analysis-options";
 
@@ -150,6 +151,26 @@ describe("Studio composer job translation", () => {
       resolvedRecipe,
       now,
     }), "media_retention_expired");
+  });
+
+  test("reconstructs an exact replay after ephemeral media was consumed", () => {
+    const consumed = media({
+      status: "deleted",
+      retention: { mode: "ephemeral", expiresAt: now },
+    });
+    expect(translateComposerReplay({
+      payload: payload(),
+      mediaSession: consumed,
+      resolvedRecipe,
+      now,
+    })).toMatchObject({
+      idempotencyKey: "studio-run-0001",
+      input: {
+        mediaSessionId: consumed.id,
+        mediaSha256: sha256,
+        retention: consumed.retention,
+      },
+    });
   });
 
   test("fails closed for custom, missing, changed, or custom-resolved recipes", () => {

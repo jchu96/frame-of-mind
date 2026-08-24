@@ -7,7 +7,10 @@ import { getLocalMediaStaging } from "../studio-media/service.js";
 import { StudioJobInputUnavailableError } from "./analysis-options.js";
 import { getStudioJobApi } from "./api-service.js";
 import { resolveComposerRecipe } from "./composer-recipe.js";
-import { translateComposerJob } from "./composer-translate.js";
+import {
+  translateComposerJob,
+  translateComposerReplay,
+} from "./composer-translate.js";
 import { readJobJson, throwJobHttpError } from "./http.js";
 
 export default defineEventHandler(async (event) => {
@@ -21,16 +24,16 @@ export default defineEventHandler(async (event) => {
     }
     const now = new Date().toISOString();
     const resolvedRecipe = await resolveComposerRecipe(payload.recipe.id);
+    const api = getStudioJobApi();
+    const existing = await api.findByIdempotencyKey(payload.idempotencyKey);
     const mediaSession = await (await getLocalMediaStaging()).get(
       payload.mediaSessionId,
     );
-    const request = translateComposerJob({
-      payload,
-      mediaSession,
-      resolvedRecipe,
-      now,
-    });
-    const result = await getStudioJobApi().create(request, now);
+    const translation = { payload, mediaSession, resolvedRecipe, now };
+    const request = existing
+      ? translateComposerReplay(translation)
+      : translateComposerJob(translation);
+    const result = await api.create(request, now);
     setResponseStatus(event, result.kind === "created" ? 201 : 200);
     return result;
   } catch (error) {

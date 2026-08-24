@@ -60,8 +60,7 @@ export const hostedSpendEstimator: HostedSpendEstimator = {
     }
     const callCount = 1 + 1 + config.maxInterrogationCalls;
     const plannedGenerationAttempts = callCount
-      * GEMINI_STRUCTURED_GENERATIONS_PER_STEP
-      * GEMINI_GENERATION_TRANSPORT_ATTEMPTS;
+      * GEMINI_STRUCTURED_GENERATIONS_PER_STEP;
     if (
       !Number.isSafeInteger(callCount)
       || callCount < 3
@@ -93,6 +92,29 @@ export const hostedSpendEstimator: HostedSpendEstimator = {
     });
   },
 };
+
+export function hostedSpendRetryExtensionUnits(plan: HostedSpendPlan): number {
+  const parsed = hostedSpendPlanSchema.parse(plan);
+  const units = Math.ceil(
+    parsed.durationSeconds * parsed.videoTokensPerSecond,
+  ) + parsed.promptOutputHeadroomPerCall;
+  if (!Number.isSafeInteger(units) || units < 1) {
+    throw new HostedSpendPolicyError("spend_estimate_unavailable");
+  }
+  return units;
+}
+
+export function hostedSpendMaximumReservationUnits(
+  plan: HostedSpendPlan,
+): number {
+  const parsed = hostedSpendPlanSchema.parse(plan);
+  const maximum = parsed.estimatedTokens
+    * parsed.callGraph.transportAttemptsPerGeneration;
+  if (!Number.isSafeInteger(maximum) || maximum < parsed.estimatedTokens) {
+    throw new HostedSpendPolicyError("spend_estimate_unavailable");
+  }
+  return maximum;
+}
 
 export class HostedSpendPolicyError extends Error {
   constructor(readonly code: string) {

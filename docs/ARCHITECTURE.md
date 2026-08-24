@@ -786,9 +786,11 @@ Phase 5a adds two ports without changing the local `AnalysisJobExecutor`.
 Creation derives a versioned estimated-token plan from sealed media duration,
 a configured maximum video-call graph, Google's documented conservative 300
 tokens/second default-resolution rate, and prompt/output headroom. D1 reserves
-that estimate atomically for initial and linked attempts, then terminal cleanup
-settles provider usage or conservatively commits the reservation when usage is
-incomplete. A separate strict telemetry port accepts codes and structural
+the first-attempt generation graph atomically for initial and linked attempts.
+The Gemini adapter extends the same reservation by one generation budget before
+each actual transport retry and fails closed on a cap or CAS loss. Terminal
+cleanup then settles provider usage or conservatively commits the reservation
+when usage is incomplete. A separate strict telemetry port accepts codes and structural
 fields only. The Nuxt caller forwards Access and spend outcomes internally;
 the Workflows sibling owns optional Sentry delivery, publication/cleanup
 outcomes, and stays inert without its own `SENTRY_DSN`. Upload telemetry stays

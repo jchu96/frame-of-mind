@@ -149,6 +149,9 @@ export class GeminiVideoAnalyzer {
     parameters: DeleteFileParameters,
   ) => Promise<unknown>;
   private readonly sleep: (milliseconds: number) => Promise<void>;
+  private readonly beforeGenerationTransportRetry: (
+    input: GeminiGenerationTransportRetry,
+  ) => Promise<void>;
   private readonly now: () => number;
   private pendingUsage: GeminiTokenUsage = {
     promptTokens: 0,
@@ -177,6 +180,8 @@ export class GeminiVideoAnalyzer {
       ((parameters) => ai.files.delete(parameters));
     this.sleep = dependencies.sleep ??
       ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+    this.beforeGenerationTransportRetry =
+      dependencies.beforeGenerationTransportRetry ?? (async () => {});
     this.now = dependencies.now ?? (() => performance.now());
     this.model = model;
   }
@@ -622,6 +627,10 @@ export class GeminiVideoAnalyzer {
           && isRetryableTransportError(error)
         ) {
           await this.sleep(generationRetryDelayMs(attempt));
+          await this.beforeGenerationTransportRetry({
+            phase,
+            retry: attempt + 1,
+          });
           continue;
         }
         // A detail-generation failure is candidate-scoped: the orchestrator
@@ -845,7 +854,15 @@ export interface GeminiAnalyzerDependencies {
   getFile?: (parameters: GetFileParameters) => Promise<GeminiFile>;
   deleteFile?: (parameters: DeleteFileParameters) => Promise<unknown>;
   sleep?: (milliseconds: number) => Promise<void>;
+  beforeGenerationTransportRetry?: (
+    input: GeminiGenerationTransportRetry,
+  ) => Promise<void>;
   now?: () => number;
+}
+
+export interface GeminiGenerationTransportRetry {
+  phase: "index" | "detail" | "transcribe";
+  retry: number;
 }
 
 export interface GeminiTokenUsage {

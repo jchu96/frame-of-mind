@@ -334,6 +334,7 @@ Edit these values:
 | `NUXT_CLOUDFLARE_ACCESS_AUD` | Access application audience from step 6 |
 | `NUXT_BETTER_AUTH_MAILER_FROM` | onboarded sender, for example `sign-in@<domain>` |
 | `NUXT_ACCESS_REQUEST_NOTIFY` | optional maintainer address for access-request notifications |
+| `NUXT_ACCESS_REQUEST_PENDING_CAP` | maximum pending self-serve access requests; defaults to `200` |
 | `services[0].service` | exact internal Workflows Worker name |
 
 Keep:

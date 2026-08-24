@@ -24,6 +24,7 @@ import {
 } from "../../workflows/src/repository";
 import {
   hostedSpendEstimator,
+  hostedSpendRetryExtensionUnits,
   type HostedSpendPolicyConfig,
 } from "../../workflows/src/spend";
 
@@ -36,7 +37,7 @@ const spendConfig: HostedSpendPolicyConfig = {
   videoTokensPerSecond: 300,
   promptOutputHeadroomPerCall: 100,
   maxInterrogationCalls: 1,
-  principalCapUnits: 23_999,
+  principalCapUnits: 4_799,
 };
 const spendPlan = hostedSpendEstimator.estimate(1, spendConfig);
 
@@ -52,7 +53,7 @@ describe("hosted Workflow durability", () => {
         structuredGenerationsPerCall: GEMINI_STRUCTURED_GENERATIONS_PER_STEP,
         transportAttemptsPerGeneration: GEMINI_GENERATION_TRANSPORT_ATTEMPTS,
       },
-      estimatedTokens: 12_000,
+      estimatedTokens: 2_400,
     });
   });
 
@@ -266,7 +267,9 @@ describe("hosted Workflow durability", () => {
         jobId: "job_contract_0003",
         attemptId: "attempt_contract_0003",
         workflowInstanceId: "workflow_contract_0003",
-      })).rejects.toMatchObject({ code: "principal_spend_cap_exceeded" });
+      })).rejects.toMatchObject({
+        code: "spend_estimate_exceeds_remaining_allowance",
+      });
 
       const claims = await Promise.all([
         repository.claimProviderCall(
@@ -393,6 +396,83 @@ describe("hosted Workflow durability", () => {
         "media_expired_0001",
         now,
       )).rejects.toMatchObject({ code: "sealed_media_receipt_expired" });
+    } finally {
+      await fixture.miniflare.dispose();
+    }
+  });
+
+  test("extends one generation budget only when a transport retry fires", async () => {
+    const fixture = await hostedRepositoryFixture();
+    try {
+      const extensionUnits = hostedSpendRetryExtensionUnits(spendPlan);
+      const capUnits = spendPlan.estimatedTokens + extensionUnits;
+      await seedPrincipal(fixture.database, principalA, capUnits);
+      await seedMedia(fixture.database, principalA, "media_retry_spend_0001");
+      const repository = new HostedWorkflowRepository(
+        fixture.database as unknown as HostedD1Database,
+      );
+      const created = await repository.createInitialAttempt({
+        principalSub: principalA,
+        idempotencyKey: "retry-spend-key",
+        immutableInput: hostedInput("media_retry_spend_0001"),
+        createdAt: now,
+        jobId: "job_retry_spend_0001",
+        attemptId: "attempt_retry_spend_0001",
+        workflowInstanceId: "workflow_retry_spend_0001",
+      });
+      expect(created.attempt.spendReservedUnits).toBe(spendPlan.estimatedTokens);
+
+      const extended = await repository.extendSpendReservation({
+        principalSub: principalA,
+        attemptId: created.attempt.attemptId,
+        expectedReservedUnits: spendPlan.estimatedTokens,
+        occurredAt: now,
+      });
+      expect(extended).toBe(capUnits);
+      expect(await repository.getAttempt(principalA, created.attempt.attemptId))
+        .toMatchObject({ spendReservedUnits: capUnits });
+      await expect(repository.extendSpendReservation({
+        principalSub: principalA,
+        attemptId: created.attempt.attemptId,
+        expectedReservedUnits: spendPlan.estimatedTokens,
+        occurredAt: now,
+      })).rejects.toMatchObject({
+        code: "spend_reservation_extension_conflict",
+      });
+
+      await repository.claimProviderCall(
+        principalA,
+        created.attempt.attemptId,
+        "transcribe",
+        "gemini_transcribe_started",
+        now,
+      );
+      await repository.claimProviderCall(
+        principalA,
+        created.attempt.attemptId,
+        "transport_retry_0001",
+        "gemini_transport_retry_started",
+        now,
+      );
+      await repository.recordProviderUsage({
+        principalSub: principalA,
+        attemptId: created.attempt.attemptId,
+        stepName: "transcribe",
+        usage: { promptTokens: 80, outputTokens: 20, totalTokens: 100 },
+        occurredAt: now,
+      });
+      await expect(repository.finishAttempt({
+        principalSub: principalA,
+        attemptId: created.attempt.attemptId,
+        stage: "failed",
+        occurredAt: now,
+        errorCode: "provider_call_failed",
+        cleanupCompleted: true,
+      })).resolves.toMatchObject({
+        reservedUnits: capUnits,
+        committedUnits: capUnits,
+        code: "spend_reconciled_reservation_fallback",
+      });
     } finally {
       await fixture.miniflare.dispose();
     }
