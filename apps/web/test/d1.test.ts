@@ -345,7 +345,7 @@ describe("D1 projection contract", () => {
         "0001_initial.sql",
         "0002_video_only_projection.sql",
         "0003_principal_scope.sql",
-        "0011_run_outcome_projection.sql",
+        "0012_run_outcome_projection.sql",
       ].map((name) => readFile(
         new URL(`../db/migrations/${name}`, import.meta.url),
         "utf8",
