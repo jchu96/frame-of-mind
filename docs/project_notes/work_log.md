@@ -1236,3 +1236,12 @@
   published evidence-excerpt fixture for both-scheme browser proof. Kept the
   Workflow screenshot rotation within its `00-*` through `13-*` ownership so
   partial runs no longer remove the auth contract's tracked sign-in receipts.
+
+## 2026-08-24 — Outcome honesty for limit-truncated runs
+
+- Tightened `analysisOutcomeSchema` so `complete` requires zero
+  `omittedByLimit` in addition to zero failures; analyze emitter, artifact
+  renderers (markdown blockquote + HTML aside), and CLI stderr warning all
+  surface truncation with the `--max-moments` remedy. Validated by
+  `test/artifacts.test.ts` (complete+omitted rejected; partial truncation
+  notice rendered) and the existing orchestrator suite — 46/46 passing.

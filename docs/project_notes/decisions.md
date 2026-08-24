@@ -352,3 +352,16 @@ retired. Because Gemini provides no File identity or documented session revoke
 before finalize, pre-final cancel/expiry abandons D1, refuses seal, and relies
 on provider TTL; principal-scoped open-session recovery is the fallback when a
 best-effort page-exit DELETE is lost.
+
+## 2026-08-24 — Truncated analyses report partial, never complete
+
+`AnalysisOutcome.status: "complete"` is now a coverage claim as well as a
+validation claim. A run whose pass-2 interrogation dropped indexed candidates
+to the `--max-moments` limit reports `partial`, emits an interrogation-stage
+truncation warning, renders explicit coverage notices in the markdown/HTML
+artifacts, and the CLI prints a stderr WARNING with the rerun remedy. The
+schema invariant tightened in place at outcome schemaVersion 1: previously
+valid `complete` documents with `omittedByLimit > 0` are exactly the dishonest
+ones and are now rejected. Motivating failure: an episode-length recording
+lost everything past ~24 minutes to the default cap of 10 while the run
+summary said `outcome=complete`.
