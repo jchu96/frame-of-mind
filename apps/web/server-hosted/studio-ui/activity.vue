@@ -84,15 +84,15 @@ async function cancel(job: AnalysisJob): Promise<void> {
     <UCard v-if="jobs.length === 0" class="mt-8 text-center">
       <h2 class="text-xl font-black">No analyses yet</h2>
       <p class="mt-2 text-sm text-muted">Start an analysis to see its progress here.</p>
-      <UButton class="mt-5" to="/hosted/new/intent" label="Start an analysis" icon="i-lucide-plus" />
+      <UButton class="mt-5" to="/hosted/new/intent" external label="Start an analysis" icon="i-lucide-plus" />
     </UCard>
     <UCard v-else class="mt-8">
       <ul class="divide-y divide-default">
         <li v-for="job in jobs" :key="job.id" class="flex flex-wrap items-center justify-between gap-4 py-4">
           <div>
-            <NuxtLink :to="`/hosted/activity/${encodeURIComponent(job.id)}`" class="font-bold hover:text-primary">
+            <a :href="`/hosted/activity/${encodeURIComponent(job.id)}`" class="font-bold hover:text-primary">
               {{ label(job) }}<template v-if="job.attempt > 1"> · Try {{ job.attempt }}</template>
-            </NuxtLink>
+            </a>
             <p class="mt-1 text-sm text-muted">
               {{ recordingLabel(job) }} · Started
               <time :datetime="job.createdAt" :title="job.createdAt">{{ relative(job.createdAt) }}</time>
