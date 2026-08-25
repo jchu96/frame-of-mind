@@ -10,5 +10,9 @@ const SENSITIVE_TELEMETRY_CODE_PATTERNS = [
 
 export function isSafeTelemetryCode(value: string): boolean {
   return TELEMETRY_CODE_PATTERN.test(value)
-    && !SENSITIVE_TELEMETRY_CODE_PATTERNS.some((pattern) => pattern.test(value));
+    && !containsSensitiveTelemetryText(value);
+}
+
+export function containsSensitiveTelemetryText(value: string): boolean {
+  return SENSITIVE_TELEMETRY_CODE_PATTERNS.some((pattern) => pattern.test(value));
 }
