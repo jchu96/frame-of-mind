@@ -191,7 +191,7 @@ function formatDate(value: string): string {
     <div v-if="blockers.length" class="mt-6 max-w-4xl space-y-3">
       <UAlert v-for="blocker in blockers" :key="blocker.code" color="warning" variant="soft" :title="blocker.message">
         <template #actions>
-          <UButton :to="blocker.link" size="xs" color="neutral" variant="outline" :label="blocker.action" />
+          <UButton :to="blocker.link" external size="xs" color="neutral" variant="outline" :label="blocker.action" />
         </template>
       </UAlert>
     </div>

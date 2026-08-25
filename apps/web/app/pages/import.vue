@@ -96,7 +96,7 @@ async function importRun() {
               <UButton type="submit" :loading="busy" :disabled="!analysis || !manifest">
                 Validate and import
               </UButton>
-              <UButton to="/" color="neutral" variant="ghost">Cancel</UButton>
+              <UButton to="/" external color="neutral" variant="ghost">Cancel</UButton>
             </div>
           </form>
         </div>
@@ -110,7 +110,7 @@ async function importRun() {
           :description="success.created ? 'The results were saved.' : 'The saved results were updated.'"
         >
           <template #actions>
-            <UButton :to="`/runs/${encodeURIComponent(success.runId)}`" size="sm">Open run</UButton>
+            <UButton :to="`/runs/${encodeURIComponent(success.runId)}`" external size="sm">Open run</UButton>
           </template>
         </UAlert>
         <UAlert

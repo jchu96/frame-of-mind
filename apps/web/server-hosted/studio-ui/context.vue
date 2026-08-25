@@ -29,6 +29,6 @@ function save(): void {
       <h2 class="text-xl font-black">Recording only</h2>
       <p class="mt-2 text-muted">Hosted analysis uses the recording only. Transcript and meeting-notes sources are coming later.</p>
     </UCard>
-    <UButton v-if="saved" class="mt-6" to="/hosted/new/recording" label="Continue" trailing-icon="i-lucide-arrow-right" />
+    <UButton v-if="saved" class="mt-6" to="/hosted/new/recording" external label="Continue" trailing-icon="i-lucide-arrow-right" />
   </main>
 </template>

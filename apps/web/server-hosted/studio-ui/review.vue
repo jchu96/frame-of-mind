@@ -176,7 +176,7 @@ function downloadBundle(): void {
       Loading the review workspace…
     </div>
     <template v-else-if="run">
-      <NuxtLink :to="`/runs/${encodeURIComponent(run.runId)}`" class="text-sm font-bold text-primary">← Back to published output</NuxtLink>
+      <a :href="`/runs/${encodeURIComponent(run.runId)}`" class="text-sm font-bold text-primary">← Back to published output</a>
       <section class="mt-6 flex flex-wrap items-start justify-between gap-5">
         <div>
           <p class="fom-kicker text-primary">Review workspace</p>

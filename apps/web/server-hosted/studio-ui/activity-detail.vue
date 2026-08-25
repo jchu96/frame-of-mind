@@ -140,7 +140,7 @@ async function copySupportDetails(): Promise<void> {
 
 <template>
   <main v-if="job" class="fom-shell py-8" data-hosted-activity-page="detail">
-    <NuxtLink to="/hosted/activity" class="text-sm font-bold text-primary">← Activity</NuxtLink>
+    <a href="/hosted/activity" class="text-sm font-bold text-primary">← Activity</a>
     <div class="mt-5 flex flex-wrap items-start justify-between gap-4">
       <div>
         <p class="fom-kicker text-primary">{{ job.attempt > 1 ? `Try ${job.attempt}` : "Analysis" }}</p>
@@ -149,8 +149,8 @@ async function copySupportDetails(): Promise<void> {
       </div>
       <div class="flex flex-wrap items-center gap-3">
         <UBadge size="lg" :color="statusColor(job)">{{ activityStageLabel(job.stage) }}</UBadge>
-        <UButton v-if="job.runId" :to="`/runs/${encodeURIComponent(job.runId)}`" label="View results" icon="i-lucide-arrow-right" />
-        <UButton v-if="terminalFailure" to="/hosted/new/intent" label="Start a new analysis" icon="i-lucide-plus" />
+        <UButton v-if="job.runId" :to="`/runs/${encodeURIComponent(job.runId)}`" external label="View results" icon="i-lucide-arrow-right" />
+        <UButton v-if="terminalFailure" to="/hosted/new/intent" external label="Start a new analysis" icon="i-lucide-plus" />
       </div>
     </div>
     <UAlert v-if="notice" class="mt-6" color="warning" :description="notice" />
@@ -163,7 +163,7 @@ async function copySupportDetails(): Promise<void> {
         <div><dt class="text-muted">Updated</dt><dd><time :datetime="job.updatedAt" :title="job.updatedAt">{{ relative(job.updatedAt) }}</time></dd></div>
       </dl>
       <p v-if="job.terminal?.code" class="mt-4 text-sm">Support code: <code>{{ job.terminal.code }}</code></p>
-      <div class="mt-5 flex flex-wrap gap-3"><UButton v-if="actions.actions.some((item) => item.id === 'cancel')" label="Cancel" color="neutral" variant="outline" @click="cancel" /><UButton v-if="actions.actions.some((item) => item.id === 'retry')" label="Try again" @click="retry" /><UButton v-if="job.runId" :to="`/review/${encodeURIComponent(job.runId)}`" label="Open review workspace" icon="i-lucide-external-link" /><UButton label="Copy details for support" icon="i-lucide-copy" color="neutral" variant="outline" @click="copySupportDetails" /></div>
+      <div class="mt-5 flex flex-wrap gap-3"><UButton v-if="actions.actions.some((item) => item.id === 'cancel')" label="Cancel" color="neutral" variant="outline" @click="cancel" /><UButton v-if="actions.actions.some((item) => item.id === 'retry')" label="Try again" @click="retry" /><UButton v-if="job.runId" :to="`/review/${encodeURIComponent(job.runId)}`" external label="Open review workspace" icon="i-lucide-external-link" /><UButton label="Copy details for support" icon="i-lucide-copy" color="neutral" variant="outline" @click="copySupportDetails" /></div>
       <p v-if="supportMessage" class="mt-3 text-sm text-muted" role="status">{{ supportMessage }}</p>
       <p v-if="actions.whyNot && job.stage !== 'succeeded'" class="mt-4 text-sm text-muted">{{ actions.whyNot }}</p>
     </UCard>
