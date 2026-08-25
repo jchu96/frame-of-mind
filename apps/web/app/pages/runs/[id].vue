@@ -68,15 +68,15 @@ function hostedAttemptId(value: StoredRun): string | undefined {
         title="Could not load this run"
         description="The results could not be loaded. Try again, or ask the workspace owner for help."
       />
-      <UButton to="/" color="neutral" variant="ghost" class="mt-4">Return to all runs</UButton>
+      <UButton to="/" external color="neutral" variant="ghost" class="mt-4">Return to all runs</UButton>
     </main>
     <main v-else-if="run" class="fom-shell py-10 sm:py-14">
-      <NuxtLink
-        :to="hostedAttemptId(run) ? `/hosted/activity/${encodeURIComponent(hostedAttemptId(run)!)}` : '/'"
+      <a
+        :href="hostedAttemptId(run) ? `/hosted/activity/${encodeURIComponent(hostedAttemptId(run)!)}` : '/'"
         class="text-sm font-bold text-primary hover:underline"
       >
         {{ hostedAttemptId(run) ? "← Back to activity" : "← All analyses" }}
-      </NuxtLink>
+      </a>
 
       <section class="mt-6 grid gap-8 lg:grid-cols-[1fr_20rem]">
         <div>
@@ -104,7 +104,7 @@ function hostedAttemptId(value: StoredRun): string | undefined {
           />
           <p class="mt-5 max-w-3xl leading-7 text-muted">{{ run.matchNotes }}</p>
           <p class="mt-3 max-w-3xl text-sm text-muted">This is the published output. Open the review workspace to inspect timestamped evidence finding by finding.</p>
-          <UButton class="mt-5" :to="`/review/${encodeURIComponent(run.runId)}`" color="neutral" variant="outline" label="Review findings" icon="i-lucide-scan-search" />
+          <UButton class="mt-5" :to="`/review/${encodeURIComponent(run.runId)}`" external color="neutral" variant="outline" label="Review findings" icon="i-lucide-scan-search" />
         </div>
 
         <aside class="border border-default bg-elevated/80 p-5 text-sm">

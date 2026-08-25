@@ -84,7 +84,7 @@ function formatDate(value: string): string {
     <HostedComposerStepper current="recording" :intent-ready="intentReady" :recording-ready="Boolean(media)" />
     <UAlert v-if="typeof route.query.reason === 'string' && !media" class="mb-6" color="warning" variant="soft" :description="route.query.reason" />
     <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <UForm :state="{ retention }" class="space-y-6" @submit="start">
+      <UForm id="hosted-recording-form" :state="{ retention }" class="space-y-6" @submit="start">
         <header>
           <h1 class="text-4xl font-black text-highlighted">Add your recording</h1>
           <p class="mt-4 max-w-2xl text-default">
@@ -96,6 +96,7 @@ function formatDate(value: string): string {
             v-if="!media && !draft"
             class="mt-4"
             to="/hosted/activity"
+            external
             label="Back to Activity"
             color="neutral"
             variant="outline"
@@ -171,16 +172,17 @@ function formatDate(value: string): string {
               Replace
             </UButton>
           </div>
-          <UFormField
-            v-else
-            label="Screen recording"
-            :description="fieldHelp"
-            :error="fieldError"
-            required
-          >
+          <div v-else class="text-sm">
+            <label for="hosted-recording-file" class="block font-medium text-default after:ms-0.5 after:text-error after:content-['*']">
+              Screen recording
+            </label>
+            <p id="hosted-recording-file-description" class="text-muted">{{ fieldHelp }}</p>
             <UFileUpload
+              id="hosted-recording-file"
               v-model="fileModel"
               accept=".mp4,.mov,.m4v,.webm,video/mp4,video/quicktime,video/webm"
+              aria-describedby="hosted-recording-file-description"
+              :aria-invalid="Boolean(fieldError)"
               label="Drop a recording here"
               description="or choose one from this device"
               icon="i-lucide-video"
@@ -191,22 +193,40 @@ function formatDate(value: string): string {
               :file-image="false"
               class="min-h-52 w-full"
             />
-          </UFormField>
+            <p v-if="fieldError" class="mt-2 text-error">{{ fieldError }}</p>
+          </div>
 
-          <UFormField
+          <fieldset
             v-if="!media"
-            class="mt-6"
-            name="retention"
-            label="After analysis"
-            description="Choose how long Gemini may keep this recording."
+            class="mt-6 text-sm"
+            aria-describedby="hosted-retention-description"
           >
-            <URadioGroup
-              v-model="retention"
-              :items="retentionOptions"
-              variant="card"
-              :disabled="busy || Boolean(draft) || Boolean(media) || openSessions.length > 0"
-            />
-          </UFormField>
+            <legend class="block font-medium text-default">After analysis</legend>
+            <p id="hosted-retention-description" class="text-muted">
+              Choose how long Gemini may keep this recording.
+            </p>
+            <div class="mt-1 flex flex-col gap-y-1">
+              <label
+                v-for="option in retentionOptions"
+                :key="option.value"
+                class="flex items-start rounded-lg border p-3.5"
+                :class="retention === option.value ? 'border-primary' : 'border-muted'"
+              >
+                <input
+                  v-model="retention"
+                  type="radio"
+                  name="retention"
+                  :value="option.value"
+                  :disabled="busy || Boolean(draft) || Boolean(media) || openSessions.length > 0"
+                  class="mt-0.5 size-4 accent-primary"
+                />
+                <span class="ms-2 w-full">
+                  <span class="block font-medium text-default">{{ option.label }}</span>
+                  <span class="block text-muted">{{ option.description }}</span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
         </UCard>
 
         <UCard v-if="phase !== 'idle' && !media">
@@ -279,7 +299,7 @@ function formatDate(value: string): string {
             </UButton>
           </div>
         </UCard>
-        <UButton v-if="media" to="/hosted/new/run" trailing-icon="i-lucide-arrow-right">
+        <UButton v-if="media" to="/hosted/new/run" external trailing-icon="i-lucide-arrow-right">
           Continue
         </UButton>
       </UForm>
