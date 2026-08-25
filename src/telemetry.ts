@@ -21,6 +21,16 @@ export function cliAnalysisTracer(): AnalysisTracer | undefined {
   return CLI_TRACING_ENABLED ? createSentryAnalysisTracer() : undefined;
 }
 
+/**
+ * Drain the transport before the short-lived CLI process exits; without
+ * this, successful traces are delivery-racy (errors already flush via
+ * captureCliException). Never throws.
+ */
+export async function flushCliTelemetry(): Promise<void> {
+  if (!CLI_TELEMETRY_ENABLED) return;
+  await Sentry.flush(2_000).catch(() => false);
+}
+
 export async function captureCliException(
   code: string,
   tags: TelemetryTags,

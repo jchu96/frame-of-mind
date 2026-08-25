@@ -505,13 +505,15 @@ export class AnalysisOrchestrator {
                   },
                 }, async (span) => {
                   const usageBefore = usageCountsOf(analyzer);
-                  audioRemote = await analyzer.upload(audioPath, "audio/aac");
-                  assertNotCanceled(execution.signal);
-                  const transcribed = await analyzer.transcribe!(audioRemote);
-                  span.setAttributes(
-                    usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
-                  );
-                  return transcribed;
+                  try {
+                    audioRemote = await analyzer.upload(audioPath, "audio/aac");
+                    assertNotCanceled(execution.signal);
+                    return await analyzer.transcribe!(audioRemote);
+                  } finally {
+                    span.setAttributes(
+                      usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
+                    );
+                  }
                 });
                 transcribed.push({
                   segments: offsetTranscriptionSegments(segments, window.startSeconds),
@@ -680,19 +682,22 @@ export class AnalysisOrchestrator {
           attributes: chatAttributes,
         }, async (span) => {
           const usageBefore = usageCountsOf(analyzer);
-          const indexed = await analyzer.index(
-            remote,
-            meeting,
-            options.recipe,
-            options.focus,
-            indexFps,
-            derivedTranscript,
-          );
-          span.setAttributes({
-            ...usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
-            "frame_of_mind.candidates_indexed": indexed.moments.length,
-          });
-          return indexed;
+          try {
+            const indexed = await analyzer.index(
+              remote,
+              meeting,
+              options.recipe,
+              options.focus,
+              indexFps,
+              derivedTranscript,
+            );
+            span.setAttributes({
+              "frame_of_mind.candidates_indexed": indexed.moments.length,
+            });
+            return indexed;
+          } finally {
+            span.setAttributes(usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)));
+          }
         });
         assertNotCanceled(execution.signal);
         let alignment: RunManifest["transcriptAlignment"] | undefined;
@@ -757,27 +762,35 @@ export class AnalysisOrchestrator {
               },
             }, async (span) => {
               const usageBefore = usageCountsOf(analyzer);
-              const detail = await analyzer.interrogate(
-                remote,
-                candidate,
-                effectiveTranscript && (alignment || transcriptIsDerived)
-                  ? nearbyTranscript(
-                      effectiveTranscript,
-                      candidate.start,
-                      candidate.end,
-                      45,
-                      transcriptIsDerived ? 0 : alignment?.offsetSeconds ?? 0,
-                    )
-                  : undefined,
-                options.recipe,
-                options.focus,
-                transcriptIsDerived,
-              );
-              span.setAttributes({
-                ...usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
-                "frame_of_mind.candidate_accepted": detail.accepted,
-              });
-              return detail;
+              try {
+                const detail = await analyzer.interrogate(
+                  remote,
+                  candidate,
+                  effectiveTranscript && (alignment || transcriptIsDerived)
+                    ? nearbyTranscript(
+                        effectiveTranscript,
+                        candidate.start,
+                        candidate.end,
+                        45,
+                        transcriptIsDerived ? 0 : alignment?.offsetSeconds ?? 0,
+                      )
+                    : undefined,
+                  options.recipe,
+                  options.focus,
+                  transcriptIsDerived,
+                );
+                span.setAttributes({ "frame_of_mind.candidate_accepted": detail.accepted });
+                return detail;
+              } catch (error) {
+                if (error instanceof CandidateAnalysisError) {
+                  span.setAttributes({ "frame_of_mind.candidate_failure_code": error.code });
+                }
+                throw error;
+              } finally {
+                // Failed calls still consumed tokens; attach the delta before
+                // the error propagates so failure-path spend stays queryable.
+                span.setAttributes(usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)));
+              }
             });
             assertNotCanceled(execution.signal);
             assertEvidenceWithinCandidate(
