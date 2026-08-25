@@ -15,12 +15,45 @@ const title = computed(() => route.path.startsWith("/hosted/activity/")
         ? "Results"
         : "Results");
 const { data: session } = await useFetch<SessionInfo>("/api/session");
+function followHostedLink(event: MouseEvent, to: string): void {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  void navigateTo(to);
+}
 const navigation = computed<NavigationMenuItem[]>(() => [
-  { label: "New analysis", icon: "i-lucide-plus", to: "/hosted/new/intent" },
-  { label: "Activity", icon: "i-lucide-activity", to: "/hosted/activity" },
-  { label: "Results", icon: "i-lucide-library", to: "/", exact: true },
+  {
+    label: "New analysis",
+    icon: "i-lucide-plus",
+    to: "/hosted/new/intent",
+    external: true,
+    active: route.path.startsWith("/hosted/new/"),
+    onClick: (event: MouseEvent) => followHostedLink(event, "/hosted/new/intent"),
+  },
+  {
+    label: "Activity",
+    icon: "i-lucide-activity",
+    to: "/hosted/activity",
+    external: true,
+    active: route.path.startsWith("/hosted/activity"),
+    onClick: (event: MouseEvent) => followHostedLink(event, "/hosted/activity"),
+  },
+  {
+    label: "Results",
+    icon: "i-lucide-library",
+    to: "/",
+    external: true,
+    active: route.path === "/" || route.path.startsWith("/review/") || route.path.startsWith("/runs/"),
+    onClick: (event: MouseEvent) => followHostedLink(event, "/"),
+  },
   ...(session.value?.maintainer
-    ? [{ label: "Access", icon: "i-lucide-shield-check", to: "/admin/access" }]
+    ? [{
+        label: "Access",
+        icon: "i-lucide-shield-check",
+        to: "/admin/access",
+        external: true,
+        active: route.path === "/admin/access",
+        onClick: (event: MouseEvent) => followHostedLink(event, "/admin/access"),
+      }]
     : []),
 ]);
 
@@ -51,12 +84,12 @@ async function signOut(): Promise<void> {
   <UDashboardGroup data-hosted-studio-shell="true" storage-key="frame-of-mind-hosted-shell">
     <UDashboardSidebar id="hosted-navigation" collapsible class="bg-elevated/40">
       <template #header="{ collapsed }">
-        <NuxtLink to="/" class="flex items-center gap-3">
+        <a href="/" class="flex items-center gap-3" @click="followHostedLink($event, '/')">
           <span class="grid size-9 place-items-center rounded-md bg-primary text-inverted">
             <UIcon name="i-lucide-scan-eye" class="size-6" />
           </span>
           <span v-if="!collapsed" class="font-black">Frame of Mind</span>
-        </NuxtLink>
+        </a>
       </template>
       <UNavigationMenu data-hosted-navigation :items="navigation" orientation="vertical" tooltip />
       <template #footer="{ collapsed }">
@@ -66,7 +99,7 @@ async function signOut(): Promise<void> {
             <span aria-hidden="true">·</span>
             <button type="button" class="shrink-0 font-bold text-primary hover:underline" @click="signOut">Sign out</button>
           </p>
-          <NuxtLink to="/import" class="text-muted hover:text-highlighted hover:underline">Import a run</NuxtLink>
+          <a href="/import" class="text-muted hover:text-highlighted hover:underline" @click="followHostedLink($event, '/import')">Import a run</a>
         </div>
       </template>
     </UDashboardSidebar>
@@ -78,7 +111,7 @@ async function signOut(): Promise<void> {
             <p class="sr-only">{{ title }}</p>
           </template>
           <template #right>
-            <UButton v-if="!route.path.startsWith('/hosted/new/')" to="/hosted/new/intent" icon="i-lucide-plus" label="New analysis" size="sm" />
+            <UButton v-if="!route.path.startsWith('/hosted/new/')" to="/hosted/new/intent" external icon="i-lucide-plus" label="New analysis" size="sm" />
           </template>
         </UDashboardNavbar>
       </template>

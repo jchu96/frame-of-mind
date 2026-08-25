@@ -76,21 +76,20 @@ watch(focus, () => { if (!restoring && selected.value) save(); });
         <p class="mt-4 text-sm font-bold text-primary">{{ selected === recipe.id ? "Selected" : "Choose" }}</p>
       </UCard>
     </div>
-    <UFormField
-      class="mt-6"
-      name="focus"
-      for="hosted-optional-focus"
-      label="Optional focus"
-      help="Optional. Narrows what the analysis pays attention to."
-    >
+    <div class="mt-6">
+      <label for="hosted-optional-focus" class="block font-medium text-default">Optional focus</label>
       <UTextarea
         id="hosted-optional-focus"
         v-model="focus"
         :maxlength="10000"
-        class="w-full"
+        aria-describedby="hosted-optional-focus-help"
+        class="mt-2 w-full"
         placeholder="e.g. only the part about the billing bug"
       />
-    </UFormField>
-    <UButton v-if="saved" class="mt-6" to="/hosted/new/recording" label="Continue" trailing-icon="i-lucide-arrow-right" />
+      <p id="hosted-optional-focus-help" class="mt-2 text-muted">
+        Optional. Narrows what the analysis pays attention to.
+      </p>
+    </div>
+    <UButton v-if="saved" class="mt-6" to="/hosted/new/recording" external label="Continue" trailing-icon="i-lucide-arrow-right" />
   </main>
 </template>
