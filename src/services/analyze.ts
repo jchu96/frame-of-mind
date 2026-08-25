@@ -35,6 +35,11 @@ import { GranolaClient } from "../adapters/granola-mcp.js";
 import { GranolaApiClient } from "../adapters/granola-api.js";
 import { FileContextSource } from "../adapters/file-context.js";
 import { DEFAULT_GEMINI_MODEL, GeminiVideoAnalyzer, promptPrefix } from "../adapters/gemini.js";
+import {
+  NOOP_ANALYSIS_TRACER,
+  type AnalysisTracer,
+  type TraceAttributes,
+} from "../lib/telemetry-trace.js";
 import { GeminiFileError } from "../adapters/gemini-files.js";
 import {
   createRunId,
@@ -196,6 +201,11 @@ export interface AnalyzeExecutionOptions {
   signal?: AbortSignal;
   progress?: AnalysisProgressReporter;
   projection?: AnalysisProjectionPublisher;
+  /**
+   * Content-free tracing port (ADR 0022). Optional and inert by default;
+   * the CLI injects a Sentry-backed tracer only when the operator opted in.
+   */
+  tracer?: AnalysisTracer;
 }
 
 interface MeetingAnalysisIndex {
@@ -242,6 +252,12 @@ export interface AnalysisVideoAnalyzer {
   ): Promise<AnalysisDetail>;
   transcribe?(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
+  /**
+   * Non-destructive cumulative token counts since construction. Distinct
+   * from the spend path's draining `takeUsage`; used only to attribute
+   * per-span token deltas when tracing is active.
+   */
+  usageSnapshot?(): { promptTokens: number; outputTokens: number; totalTokens: number } | undefined;
 }
 
 interface BluedotMediaContextSource extends MeetingContextSource {
@@ -395,6 +411,12 @@ export class AnalysisOrchestrator {
       await ensureDirectory(stagingDirectory);
 
       const analyzer = this.createAnalyzer(options.apiKey, options);
+      const tracer = execution.tracer ?? NOOP_ANALYSIS_TRACER;
+      const chatAttributes: TraceAttributes = {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "google_genai",
+        "gen_ai.request.model": analyzer.model,
+      };
       const indexFps = requireIndexFps(options.indexFps ?? 0.5);
       if (options.model && analyzer.model !== options.model) {
         throw new Error(
@@ -473,9 +495,26 @@ export class AnalysisOrchestrator {
               const finalAttempt = attempt === TRANSCRIPTION_WINDOW_ATTEMPTS;
               let audioRemote: GeminiFile | undefined;
               try {
-                audioRemote = await analyzer.upload(audioPath, "audio/aac");
-                assertNotCanceled(execution.signal);
-                const segments = await analyzer.transcribe(audioRemote);
+                const segments = await tracer.span({
+                  op: "gen_ai.chat",
+                  name: "gemini transcribe",
+                  attributes: {
+                    ...chatAttributes,
+                    "frame_of_mind.window": windowNumber + 1,
+                    "frame_of_mind.windows": windows.length,
+                  },
+                }, async (span) => {
+                  const usageBefore = usageCountsOf(analyzer);
+                  try {
+                    audioRemote = await analyzer.upload(audioPath, "audio/aac");
+                    assertNotCanceled(execution.signal);
+                    return await analyzer.transcribe!(audioRemote);
+                  } finally {
+                    span.setAttributes(
+                      usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
+                    );
+                  }
+                });
                 transcribed.push({
                   segments: offsetTranscriptionSegments(segments, window.startSeconds),
                   nominalStartSeconds: window.nominalStartSeconds,
@@ -549,22 +588,30 @@ export class AnalysisOrchestrator {
       assertNotCanceled(execution.signal);
       let remote: GeminiFile;
       try {
-        if (options.remoteFileName) {
-          if (typeof analyzer.resolveRetainedFile !== "function") {
-            throw new GeminiFileError(
-              "The configured analyzer cannot reuse a retained Gemini file.",
+        remote = await tracer.span({
+          op: "analysis.stage",
+          name: "stage upload",
+          attributes: {
+            "frame_of_mind.stage": "upload",
+            "frame_of_mind.byte_count": recordingSizeBytes,
+          },
+        }, async () => {
+          if (options.remoteFileName) {
+            if (typeof analyzer.resolveRetainedFile !== "function") {
+              throw new GeminiFileError(
+                "The configured analyzer cannot reuse a retained Gemini file.",
+                options.remoteFileName,
+                "not_obtained",
+              );
+            }
+            return analyzer.resolveRetainedFile(
               options.remoteFileName,
-              "not_obtained",
+              recordingSha256,
+              recordingSizeBytes,
             );
           }
-          remote = await analyzer.resolveRetainedFile(
-            options.remoteFileName,
-            recordingSha256,
-            recordingSizeBytes,
-          );
-        } else {
-          remote = await analyzer.upload(localVideo, mimeType);
-        }
+          return analyzer.upload(localVideo, mimeType);
+        });
       } catch (error) {
         if (error instanceof AnalysisCanceledError) throw error;
         assertNotCanceled(execution.signal);
@@ -629,14 +676,29 @@ export class AnalysisOrchestrator {
           message: "Pass 1/2: indexing the whole recording…",
         });
         assertNotCanceled(execution.signal);
-        const index = await analyzer.index(
-          remote,
-          meeting,
-          options.recipe,
-          options.focus,
-          indexFps,
-          derivedTranscript,
-        );
+        const index = await tracer.span({
+          op: "gen_ai.chat",
+          name: "gemini index",
+          attributes: chatAttributes,
+        }, async (span) => {
+          const usageBefore = usageCountsOf(analyzer);
+          try {
+            const indexed = await analyzer.index(
+              remote,
+              meeting,
+              options.recipe,
+              options.focus,
+              indexFps,
+              derivedTranscript,
+            );
+            span.setAttributes({
+              "frame_of_mind.candidates_indexed": indexed.moments.length,
+            });
+            return indexed;
+          } finally {
+            span.setAttributes(usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)));
+          }
+        });
         assertNotCanceled(execution.signal);
         let alignment: RunManifest["transcriptAlignment"] | undefined;
         if (hasContext) {
@@ -691,22 +753,45 @@ export class AnalysisOrchestrator {
         for (const [indexNumber, candidate] of candidates.entries()) {
           assertNotCanceled(execution.signal);
           try {
-            const result = await analyzer.interrogate(
-              remote,
-              candidate,
-              effectiveTranscript && (alignment || transcriptIsDerived)
-                ? nearbyTranscript(
-                    effectiveTranscript,
-                    candidate.start,
-                    candidate.end,
-                    45,
-                    transcriptIsDerived ? 0 : alignment?.offsetSeconds ?? 0,
-                  )
-                : undefined,
-              options.recipe,
-              options.focus,
-              transcriptIsDerived,
-            );
+            const result = await tracer.span({
+              op: "gen_ai.chat",
+              name: "gemini interrogate",
+              attributes: {
+                ...chatAttributes,
+                "frame_of_mind.candidate_ordinal": indexNumber + 1,
+              },
+            }, async (span) => {
+              const usageBefore = usageCountsOf(analyzer);
+              try {
+                const detail = await analyzer.interrogate(
+                  remote,
+                  candidate,
+                  effectiveTranscript && (alignment || transcriptIsDerived)
+                    ? nearbyTranscript(
+                        effectiveTranscript,
+                        candidate.start,
+                        candidate.end,
+                        45,
+                        transcriptIsDerived ? 0 : alignment?.offsetSeconds ?? 0,
+                      )
+                    : undefined,
+                  options.recipe,
+                  options.focus,
+                  transcriptIsDerived,
+                );
+                span.setAttributes({ "frame_of_mind.candidate_accepted": detail.accepted });
+                return detail;
+              } catch (error) {
+                if (error instanceof CandidateAnalysisError) {
+                  span.setAttributes({ "frame_of_mind.candidate_failure_code": error.code });
+                }
+                throw error;
+              } finally {
+                // Failed calls still consumed tokens; attach the delta before
+                // the error propagates so failure-path spend stays queryable.
+                span.setAttributes(usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)));
+              }
+            });
             assertNotCanceled(execution.signal);
             assertEvidenceWithinCandidate(
               result.evidence?.timestamp,
@@ -940,14 +1025,30 @@ export class AnalysisOrchestrator {
             };
         const validated = await validateVersionedRunImport({ analysis, manifest });
         assertNotCanceled(execution.signal);
-        await writeArtifacts(
-          stagingDirectory,
-          validated.analysis,
-          validated.manifest,
-          outcome,
-        );
-        assertNotCanceled(execution.signal);
-        await rename(stagingDirectory, outputDirectory);
+        await tracer.span({
+          op: "analysis.stage",
+          name: "stage publish",
+          attributes: {
+            "frame_of_mind.stage": "publish",
+            "frame_of_mind.outcome": outcome.status,
+            "frame_of_mind.candidates_indexed": outcome.candidates.indexed,
+            "frame_of_mind.candidates_selected": outcome.candidates.selected,
+            "frame_of_mind.candidates_omitted_by_limit": outcome.candidates.omittedByLimit,
+            "frame_of_mind.candidates_validated": outcome.candidates.validated,
+            "frame_of_mind.candidates_accepted": outcome.candidates.accepted,
+            "frame_of_mind.candidates_rejected": outcome.candidates.rejected,
+            "frame_of_mind.candidates_failed": outcome.candidates.failed,
+          },
+        }, async () => {
+          await writeArtifacts(
+            stagingDirectory!,
+            validated.analysis,
+            validated.manifest,
+            outcome,
+          );
+          assertNotCanceled(execution.signal);
+          await rename(stagingDirectory!, outputDirectory);
+        });
         stagingDirectory = undefined;
         // Once the bundle is published its cleanup state must remain immutable.
         // Failed cleanup may be retried in `finally` only while publication has
@@ -1220,6 +1321,30 @@ function isMeetingAnalysisIndex(
   index: AnalysisIndex,
 ): index is MeetingAnalysisIndex {
   return "isRelevantCall" in index && "transcriptAlignment" in index;
+}
+
+type TracedUsageCounts = { promptTokens: number; outputTokens: number; totalTokens: number };
+
+function usageCountsOf(analyzer: AnalysisVideoAnalyzer): TracedUsageCounts | undefined {
+  return typeof analyzer.usageSnapshot === "function" ? analyzer.usageSnapshot() : undefined;
+}
+
+function usageDeltaAttributes(
+  before: TracedUsageCounts | undefined,
+  after: TracedUsageCounts | undefined,
+): TraceAttributes {
+  if (!before || !after) return {};
+  const input = after.promptTokens - before.promptTokens;
+  const output = after.outputTokens - before.outputTokens;
+  const total = after.totalTokens - before.totalTokens;
+  if (![input, output, total].every((count) => Number.isSafeInteger(count) && count >= 0)) {
+    return {};
+  }
+  return {
+    "gen_ai.usage.input_tokens": input,
+    "gen_ai.usage.output_tokens": output,
+    "gen_ai.usage.total_tokens": total,
+  };
 }
 
 function projectionInputFrom(

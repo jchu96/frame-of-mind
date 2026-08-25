@@ -1261,3 +1261,12 @@
   coverage alert), and review bundle/Markdown exports. Parity + round-trip +
   export tests added; suites green except the pre-existing Windows-only
   EBUSY temp-dir cleanup and permission-bit flakes (verified present on main).
+
+## 2026-08-24 — AI-agent tracing (ADR 0022)
+
+- Added the content-free tracing port + Sentry tracer + transaction
+  scrubber, wired gen_ai spans through the orchestrator seams and CLI root,
+  and lifetime token snapshots in the Gemini adapter. Validated by
+  `test/telemetry-trace.test.ts` (allowlist construction, content rejection)
+  and the orchestrator vocabulary-compliance test — 111 tests green across
+  the touched suites; typecheck clean.

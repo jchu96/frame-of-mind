@@ -1,5 +1,7 @@
 import * as Sentry from "@sentry/bun";
-import { CLI_TELEMETRY_ENABLED } from "./instrument.js";
+import { CLI_TELEMETRY_ENABLED, CLI_TRACING_ENABLED } from "./instrument.js";
+import { createSentryAnalysisTracer } from "./lib/sentry-tracer.js";
+import type { AnalysisTracer } from "./lib/telemetry-trace.js";
 import {
   normalizeTelemetryTags,
   SanitizedTelemetryError,
@@ -8,6 +10,25 @@ import {
 
 export function isCliTelemetryEnabled(): boolean {
   return CLI_TELEMETRY_ENABLED;
+}
+
+export function isCliTracingEnabled(): boolean {
+  return CLI_TRACING_ENABLED;
+}
+
+/** The CLI's tracer, or undefined when tracing is not opted in. */
+export function cliAnalysisTracer(): AnalysisTracer | undefined {
+  return CLI_TRACING_ENABLED ? createSentryAnalysisTracer() : undefined;
+}
+
+/**
+ * Drain the transport before the short-lived CLI process exits; without
+ * this, successful traces are delivery-racy (errors already flush via
+ * captureCliException). Never throws.
+ */
+export async function flushCliTelemetry(): Promise<void> {
+  if (!CLI_TELEMETRY_ENABLED) return;
+  await Sentry.flush(2_000).catch(() => false);
 }
 
 export async function captureCliException(

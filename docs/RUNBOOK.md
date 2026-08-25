@@ -1363,7 +1363,28 @@ only sanitized error codes, job stage and opaque job ID, recipe ID/revision,
 model ID, duration, version/mode, and platform. It never sends transcripts,
 recordings, findings or analysis output, paths, filenames, meeting IDs, keys or
 tokens, request/response bodies, query-bearing URLs, emails, or IP addresses.
-Tracing, Replay, profiling, logs, and user feedback remain disabled.
+Replay, profiling, logs, and user feedback remain disabled.
+
+CLI runs may additionally opt into content-free analysis tracing
+([ADR 0022](adr/0022-content-free-analysis-tracing.md)):
+
+```bash
+SENTRY_DSN="<your-public-sentry-dsn>"
+FRAME_OF_MIND_TRACING=1
+# optional, 0–1, default 1
+FRAME_OF_MIND_TRACES_SAMPLE_RATE=1
+```
+
+With both set, each `frameofmind analyze` emits one `gen_ai.invoke_agent`
+transaction with `gen_ai.chat` spans per provider call (transcribe window,
+index, per-candidate interrogation) and `analysis.stage` spans for upload and
+publish. Spans carry only fixed vocabulary names, provider/model identifiers,
+token counts, durations, and the sanitized outcome arithmetic (status plus
+candidate counts, so truncation and failure rates are queryable in Sentry's
+AI agents views). Prompt, response, transcript, and tool content attributes
+are never set and are stripped by construction if a regression adds one. A
+DSN without `FRAME_OF_MIND_TRACING=1` stays codes-only errors exactly as
+before. Studio and hosted surfaces do not trace.
 The current Cloudflare build excludes the Sentry Nuxt module and DSN. Hosted
 execution uses a separate strict event port: Nuxt forwards codes/structural
 fields over its internal service binding. The reference release keeps hosted

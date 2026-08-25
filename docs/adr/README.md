@@ -40,6 +40,7 @@ decision may be made in place.
 | [0019](0019-pluggable-auth-modes.md) | Make hosted authentication a pluggable Access, Better Auth, or stacked perimeter | Accepted | 2026-08-23 |
 | [0020](0020-self-serve-access-requests.md) | Separate sign-in from maintainer-approved hosted access | Accepted | 2026-08-23 |
 | [0021](0021-admin-approval-surface.md) | Gate the admin approval surface with a deploy-time maintainer allowlist | Accepted | 2026-08-24 |
+| [0022](0022-content-free-analysis-tracing.md) | Content-free analysis tracing extends opt-in telemetry | Accepted | 2026-08-24 |
 
 ## Adding An ADR
 
