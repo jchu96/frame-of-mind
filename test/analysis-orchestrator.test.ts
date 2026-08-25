@@ -1316,6 +1316,50 @@ describe("AnalysisOrchestrator", () => {
     expect(persisted.status).toBe("partial");
   });
 
+  it("emits only vocabulary spans with content-free attributes when a tracer is injected", async () => {
+    const { ANALYSIS_SPAN_NAMES, ANALYSIS_SPAN_OPS, isSafeTraceAttributeValue } =
+      await import("../src/lib/telemetry-trace.js");
+    const recorded: Array<{ op: string; name: string; attributes: Record<string, unknown> }> = [];
+    const tracer = {
+      span: async (
+        descriptor: { op: string; name: string; attributes?: Record<string, unknown> },
+        callback: (span: { setAttributes(a: Record<string, unknown>): void }) => Promise<unknown>,
+      ) => {
+        const entry = {
+          op: descriptor.op,
+          name: descriptor.name,
+          attributes: { ...(descriptor.attributes ?? {}) },
+        };
+        recorded.push(entry);
+        return callback({
+          setAttributes: (attributes) => Object.assign(entry.attributes, attributes),
+        });
+      },
+    };
+    const fixture = await createFixture();
+    fixture.options.maxIncidents = 2;
+
+    await createOrchestrator(fixture).analyze(fixture.options, {
+      tracer: tracer as never,
+    });
+
+    expect(recorded.length).toBeGreaterThanOrEqual(3);
+    const ops = new Set<string>(ANALYSIS_SPAN_OPS);
+    const names = new Set<string>(ANALYSIS_SPAN_NAMES);
+    for (const span of recorded) {
+      expect(ops.has(span.op)).toBe(true);
+      expect(names.has(span.name)).toBe(true);
+      for (const value of Object.values(span.attributes)) {
+        expect(isSafeTraceAttributeValue(value)).toBe(true);
+      }
+    }
+    const publish = recorded.find((span) => span.name === "stage publish");
+    expect(publish?.attributes["frame_of_mind.outcome"]).toBe("complete");
+    expect(recorded.some((span) => span.name === "gemini interrogate")).toBe(true);
+    expect(recorded.some((span) => span.name === "gemini index")).toBe(true);
+    expect(recorded.some((span) => span.name === "stage upload")).toBe(true);
+  });
+
   it("publishes a failed sanitized outcome and cleanup receipt when every detail fails", async () => {
     const fixture = await createFixture();
     fixture.analyzer.interrogate = vi.fn(async () => {

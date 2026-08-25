@@ -383,3 +383,16 @@ analysis-outcome.ts already imports schema primitives and a runtime cycle is
 not acceptable. The run bundle remains the sole authority; the projection
 carries the already-sanitized outcome verbatim and the export allowlists it.
 No ADR: no trust boundary, retention, or ownership change.
+
+## 2026-08-24 — Content-free tracing joins the opt-in telemetry boundary
+
+ADR 0022 amends ADR 0017: with `SENTRY_DSN` plus `FRAME_OF_MIND_TRACING=1`,
+CLI runs emit gen_ai-convention spans (invoke_agent root, chat per provider
+call with token deltas, stage spans carrying the sanitized outcome counts)
+under the same allowlist-construction discipline — closed name vocabulary,
+identifier-or-numeric attribute values, and a `beforeSendTransaction` that
+builds a new event and drops anything outside the vocabulary. Services and
+adapters depend only on the pure `AnalysisTracer` port (inert by default);
+the Sentry implementation is CLI-wired, the adapter's non-destructive
+`usageSnapshot()` keeps the hosted spend `takeUsage()` window untouched, and
+hosted/Studio surfaces keep their ADR 0017 posture.

@@ -21,6 +21,7 @@ import { redactUrlForDisplay } from "./lib/http.js";
 import { telemetryCodeFromError } from "./lib/sentry-telemetry.js";
 import {
   captureCliException,
+  cliAnalysisTracer,
   isCliTelemetryEnabled,
 } from "./telemetry.js";
 import {
@@ -147,18 +148,43 @@ program
         process.on("SIGINT" as never, cancel);
         let result;
         try {
-          result = await analyzeMeeting(
-            analyzeOptions,
-            {
-              signal: cancellation.signal,
-              progress: {
-                report(event) {
-                  stage = event.stage;
-                  CLI_ANALYSIS_PROGRESS.report(event);
-                },
+          const execution = {
+            signal: cancellation.signal,
+            progress: {
+              report(event: AnalysisProgressEvent) {
+                stage = event.stage;
+                CLI_ANALYSIS_PROGRESS.report(event);
               },
             },
-          );
+          };
+          const tracer = cliAnalysisTracer();
+          result = tracer
+            ? await tracer.span({
+              op: "gen_ai.invoke_agent",
+              name: "analyze run",
+              attributes: {
+                "gen_ai.operation.name": "invoke_agent",
+                "gen_ai.provider.name": "google_genai",
+                "gen_ai.request.model": analyzeOptions.model ?? "default",
+                "frame_of_mind.recipe_id": analyzeOptions.recipe.id,
+                "frame_of_mind.recipe_revision": analyzeOptions.recipe.revision,
+                "frame_of_mind.depth": String(flags.depth),
+                "frame_of_mind.max_moments": analyzeOptions.maxIncidents,
+                "frame_of_mind.context_mode": analyzeOptions.contextProvider ?? "none",
+              },
+            }, async (span) => {
+              const analyzed = await analyzeMeeting(analyzeOptions!, { ...execution, tracer });
+              span.setAttributes({
+                "frame_of_mind.outcome": analyzed.outcome.status,
+                "frame_of_mind.candidates_indexed": analyzed.outcome.candidates.indexed,
+                "frame_of_mind.candidates_omitted_by_limit":
+                  analyzed.outcome.candidates.omittedByLimit,
+                "frame_of_mind.candidates_accepted": analyzed.outcome.candidates.accepted,
+                "frame_of_mind.candidates_failed": analyzed.outcome.candidates.failed,
+              });
+              return analyzed;
+            })
+            : await analyzeMeeting(analyzeOptions, execution);
         } finally {
           process.off("SIGINT" as never, cancel);
         }
