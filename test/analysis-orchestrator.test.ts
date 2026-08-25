@@ -1317,7 +1317,7 @@ describe("AnalysisOrchestrator", () => {
   });
 
   it("emits only vocabulary spans with content-free attributes when a tracer is injected", async () => {
-    const { ANALYSIS_SPAN_NAMES, ANALYSIS_SPAN_OPS, isSafeTraceAttributeValue } =
+    const { ANALYSIS_SPAN_NAMES, ANALYSIS_SPAN_OPS, isSafeTraceAttribute } =
       await import("../src/lib/telemetry-trace.js");
     const recorded: Array<{ op: string; name: string; attributes: Record<string, unknown> }> = [];
     const tracer = {
@@ -1349,8 +1349,8 @@ describe("AnalysisOrchestrator", () => {
     for (const span of recorded) {
       expect(ops.has(span.op)).toBe(true);
       expect(names.has(span.name)).toBe(true);
-      for (const value of Object.values(span.attributes)) {
-        expect(isSafeTraceAttributeValue(value)).toBe(true);
+      for (const [key, value] of Object.entries(span.attributes)) {
+        expect(isSafeTraceAttribute(key, value)).toBe(true);
       }
     }
     const publish = recorded.find((span) => span.name === "stage publish");
@@ -1358,6 +1358,66 @@ describe("AnalysisOrchestrator", () => {
     expect(recorded.some((span) => span.name === "gemini interrogate")).toBe(true);
     expect(recorded.some((span) => span.name === "gemini index")).toBe(true);
     expect(recorded.some((span) => span.name === "stage upload")).toBe(true);
+  });
+
+  it("attaches token deltas and failure codes to failed provider spans", async () => {
+    const recorded: Array<{ name: string; attributes: Record<string, unknown> }> = [];
+    const tracer = {
+      span: async (
+        descriptor: { op: string; name: string; attributes?: Record<string, unknown> },
+        callback: (span: { setAttributes(a: Record<string, unknown>): void }) => Promise<unknown>,
+      ) => {
+        const entry = { name: descriptor.name, attributes: { ...(descriptor.attributes ?? {}) } };
+        recorded.push(entry);
+        return callback({
+          setAttributes: (attributes) => Object.assign(entry.attributes, attributes),
+        });
+      },
+    };
+    const fixture = await createFixture();
+    fixture.options.maxIncidents = 2;
+    // Simulated provider usage: every interrogation consumes tokens whether
+    // or not it validates, exactly like the real adapter's recordUsage.
+    let consumedPromptTokens = 0;
+    (fixture.analyzer as unknown as {
+      usageSnapshot(): { promptTokens: number; outputTokens: number; totalTokens: number };
+    }).usageSnapshot = () => ({
+      promptTokens: consumedPromptTokens,
+      outputTokens: consumedPromptTokens,
+      totalTokens: consumedPromptTokens * 2,
+    });
+    fixture.analyzer.index = vi.fn(async () => ({
+      ...indexResult(),
+      moments: [1, 2].map((second) => ({
+        ...indexResult().moments[0]!,
+        start: `00:00:0${second}`,
+        end: `00:00:0${second + 1}`,
+      })),
+    }));
+    fixture.analyzer.interrogate = vi.fn(async (_file, candidate) => {
+      consumedPromptTokens += 100;
+      if (candidate.start === "00:00:01") {
+        throw new CandidateAnalysisError({ code: "invalid_json", attempts: 2 });
+      }
+      return {
+        ...detailResult(),
+        accepted: true,
+        evidence: { timestamp: candidate.start },
+      };
+    });
+
+    await createOrchestrator(fixture).analyze(fixture.options, { tracer: tracer as never });
+
+    const interrogations = recorded.filter((span) => span.name === "gemini interrogate");
+    expect(interrogations).toHaveLength(2);
+    const [failed, succeeded] = interrogations;
+    // The failed call's billable tokens stay queryable, with its code.
+    expect(failed?.attributes["frame_of_mind.candidate_failure_code"]).toBe("invalid_json");
+    expect(failed?.attributes["gen_ai.usage.input_tokens"]).toBe(100);
+    expect(failed?.attributes["frame_of_mind.candidate_accepted"]).toBeUndefined();
+    // The next candidate's delta is not cross-contaminated by the failure.
+    expect(succeeded?.attributes["gen_ai.usage.input_tokens"]).toBe(100);
+    expect(succeeded?.attributes["frame_of_mind.candidate_accepted"]).toBe(true);
   });
 
   it("publishes a failed sanitized outcome and cleanup receipt when every detail fails", async () => {

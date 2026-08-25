@@ -36,53 +36,105 @@ export const ANALYSIS_SPAN_NAMES = [
 ] as const;
 export type AnalysisSpanName = (typeof ANALYSIS_SPAN_NAMES)[number];
 
-export const TRACE_ATTRIBUTE_KEYS = [
-  "gen_ai.operation.name",
-  "gen_ai.provider.name",
-  "gen_ai.request.model",
-  "gen_ai.usage.input_tokens",
-  "gen_ai.usage.output_tokens",
-  "gen_ai.usage.total_tokens",
-  "frame_of_mind.stage",
-  "frame_of_mind.phase",
-  "frame_of_mind.recipe_id",
-  "frame_of_mind.recipe_revision",
-  "frame_of_mind.depth",
-  "frame_of_mind.context_mode",
-  "frame_of_mind.max_moments",
-  "frame_of_mind.window",
-  "frame_of_mind.windows",
-  "frame_of_mind.candidate_ordinal",
-  "frame_of_mind.candidate_accepted",
-  "frame_of_mind.candidates_indexed",
-  "frame_of_mind.candidates_selected",
-  "frame_of_mind.candidates_omitted_by_limit",
-  "frame_of_mind.candidates_validated",
-  "frame_of_mind.candidates_accepted",
-  "frame_of_mind.candidates_rejected",
-  "frame_of_mind.candidates_failed",
-  "frame_of_mind.outcome",
-  "frame_of_mind.byte_count",
-  "frame_of_mind.duration_ms",
-  "frame_of_mind.derived_transcript",
+// Per-key validators: a value is admitted only when its KEY expects exactly
+// that kind of value. Structural fields are closed enums, the model is
+// grammar-checked against provider model-ID shapes, counts must be safe
+// non-negative integers, and no generic "identifier-shaped" rule exists —
+// operator-authored strings (custom recipe metadata, filenames, meeting-like
+// IDs, hex digests) have no key that accepts them.
+const nonNegativeInt = (value: unknown): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+const bool = (value: unknown): value is boolean => typeof value === "boolean";
+const oneOf = (...allowed: string[]) => {
+  const set = new Set(allowed);
+  return (value: unknown): value is string => typeof value === "string" && set.has(value);
+};
+// Gemini/Gemma model IDs only — the sensitive-content screen still applies.
+const GEMINI_MODEL_PATTERN = /^(gemini|gemma)[a-z0-9.-]{0,60}$/;
+const modelId = (value: unknown): value is string =>
+  typeof value === "string"
+  && GEMINI_MODEL_PATTERN.test(value)
+  && !containsSensitiveTelemetryText(value);
+
+// Built-in recipe IDs plus the "custom" bucket. Operator-authored custom
+// recipe IDs never leave the process; callers map them to "custom".
+export const BUILT_IN_RECIPE_TRACE_IDS = [
+  "issue-review",
+  "decisions",
+  "requirements",
+  "action-items",
+  "repo-plan",
+  "communication-coaching",
 ] as const;
-export type TraceAttributeKey = (typeof TRACE_ATTRIBUTE_KEYS)[number];
+
+export const TRACE_ATTRIBUTE_VALIDATORS = {
+  "gen_ai.operation.name": oneOf("chat", "invoke_agent"),
+  "gen_ai.provider.name": oneOf("google_genai"),
+  "gen_ai.request.model": modelId,
+  "gen_ai.usage.input_tokens": nonNegativeInt,
+  "gen_ai.usage.output_tokens": nonNegativeInt,
+  "gen_ai.usage.total_tokens": nonNegativeInt,
+  "frame_of_mind.stage": oneOf("upload", "publish"),
+  "frame_of_mind.recipe_id": oneOf(...BUILT_IN_RECIPE_TRACE_IDS, "custom"),
+  "frame_of_mind.depth": oneOf("standard", "deep"),
+  "frame_of_mind.context_mode": oneOf("bluedot", "granola", "file", "none"),
+  "frame_of_mind.max_moments": nonNegativeInt,
+  "frame_of_mind.window": nonNegativeInt,
+  "frame_of_mind.windows": nonNegativeInt,
+  "frame_of_mind.candidate_ordinal": nonNegativeInt,
+  "frame_of_mind.candidate_accepted": bool,
+  "frame_of_mind.candidate_failure_code": oneOf(
+    "response_missing",
+    "invalid_json",
+    "schema_validation",
+    "evidence_out_of_range",
+    "generation_failed",
+  ),
+  "frame_of_mind.candidates_indexed": nonNegativeInt,
+  "frame_of_mind.candidates_selected": nonNegativeInt,
+  "frame_of_mind.candidates_omitted_by_limit": nonNegativeInt,
+  "frame_of_mind.candidates_validated": nonNegativeInt,
+  "frame_of_mind.candidates_accepted": nonNegativeInt,
+  "frame_of_mind.candidates_rejected": nonNegativeInt,
+  "frame_of_mind.candidates_failed": nonNegativeInt,
+  "frame_of_mind.outcome": oneOf("complete", "partial", "failed"),
+  "frame_of_mind.byte_count": nonNegativeInt,
+  "frame_of_mind.duration_ms": nonNegativeInt,
+  "frame_of_mind.derived_transcript": bool,
+} as const;
+
+export type TraceAttributeKey = keyof typeof TRACE_ATTRIBUTE_VALIDATORS;
+export const TRACE_ATTRIBUTE_KEYS = Object.keys(
+  TRACE_ATTRIBUTE_VALIDATORS,
+) as TraceAttributeKey[];
 
 export type TraceAttributeValue = string | number | boolean;
 export type TraceAttributes = Partial<Record<TraceAttributeKey, TraceAttributeValue>>;
 
 const ALLOWED_SPAN_OPS = new Set<string>(ANALYSIS_SPAN_OPS);
 const ALLOWED_SPAN_NAMES = new Set<string>(ANALYSIS_SPAN_NAMES);
-const ALLOWED_ATTRIBUTE_KEYS = new Set<string>(TRACE_ATTRIBUTE_KEYS);
-// Sentry's SDK stamps internal bookkeeping keys onto span data; they carry
-// only SDK-owned identifiers (op, origin, source, sample rates).
-const SENTRY_INTERNAL_ATTRIBUTE_PATTERN = /^sentry\.[a-z_.]{1,40}$/;
+// Sentry's SDK stamps internal bookkeeping onto span data. Fixed keys only;
+// values must be SDK-identifier shaped and pass the sensitive screen.
+const SENTRY_INTERNAL_ATTRIBUTE_KEYS = new Set([
+  "sentry.op",
+  "sentry.origin",
+  "sentry.source",
+  "sentry.sample_rate",
+]);
+const sentryInternalValue = (value: unknown): value is string | number =>
+  (typeof value === "number" && Number.isFinite(value))
+  || (typeof value === "string"
+    && TRACE_VALUE_PATTERN.test(value)
+    && !containsSensitiveTelemetryText(value));
 
-export function isSafeTraceAttributeValue(value: unknown): value is TraceAttributeValue {
-  if (typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value !== "string") return false;
-  return TRACE_VALUE_PATTERN.test(value) && !containsSensitiveTelemetryText(value);
+export function isSafeTraceAttribute(key: string, value: unknown): boolean {
+  const validator = (TRACE_ATTRIBUTE_VALIDATORS as Record<
+    string,
+    ((candidate: unknown) => boolean) | undefined
+  >)[key];
+  if (validator) return validator(value);
+  if (SENTRY_INTERNAL_ATTRIBUTE_KEYS.has(key)) return sentryInternalValue(value);
+  return false;
 }
 
 export function scrubTraceAttributes(
@@ -91,11 +143,8 @@ export function scrubTraceAttributes(
   if (!data) return {};
   const scrubbed: Record<string, TraceAttributeValue> = {};
   for (const [key, value] of Object.entries(data)) {
-    const allowed = ALLOWED_ATTRIBUTE_KEYS.has(key)
-      || SENTRY_INTERNAL_ATTRIBUTE_PATTERN.test(key);
-    if (!allowed) continue;
-    if (!isSafeTraceAttributeValue(value)) continue;
-    scrubbed[key] = value;
+    if (!isSafeTraceAttribute(key, value)) continue;
+    scrubbed[key] = value as TraceAttributeValue;
   }
   return scrubbed;
 }

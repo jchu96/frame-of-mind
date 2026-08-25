@@ -36,6 +36,11 @@ Spans describe the shape of a run, never its content:
 - `analysis.stage` spans wrap upload and publish; publish carries the
   sanitized outcome status and candidate-count arithmetic, making truncation
   and failure-code rates queryable and alertable.
+- Failure paths stay measurable: a provider call that errors still attaches
+  its consumed token delta, and candidate failures carry their sanitized
+  `CandidateAnalysisError` code as a closed-enum attribute.
+- The CLI flushes the transport after the root span closes so successful
+  traces are not delivery-racy in a short-lived process.
 
 The content attributes defined by the convention
 (`gen_ai.input.messages`, `gen_ai.output.messages`,
@@ -45,9 +50,15 @@ scrubber removes them by construction if any future code sets one.
 Enforcement follows ADR 0017's allowlist-construction discipline, applied
 twice:
 
-1. Span names come from a closed vocabulary of identifiers and attribute
-   values must be identifier-shaped or numeric (`isSafeTraceAttributeValue`),
-   filtered at set time by the tracer implementation.
+1. Span names come from a closed vocabulary of identifiers and attributes
+   are validated PER KEY (`TRACE_ATTRIBUTE_VALIDATORS`): structural fields
+   are closed enums, the model must match a provider model-ID grammar,
+   counts must be non-negative safe integers, SDK-internal `sentry.*` keys
+   are a fixed set, and no generic "identifier-shaped" rule exists — so
+   operator-authored strings (custom recipe metadata, filename-shaped or
+   meeting-shaped identifiers, hex digests) have no key that accepts them.
+   Custom recipe IDs map to the closed `custom` bucket before any span is
+   created. Filtering happens at set time in the tracer implementation.
 2. `beforeSendTransaction` never edits and forwards the SDK event. It
    constructs a new transaction from a closed allowlist; a root transaction
    outside the vocabulary drops the whole event, a child span outside it is

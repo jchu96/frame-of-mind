@@ -3,7 +3,7 @@ import {
   ANALYSIS_SPAN_NAMES,
   ANALYSIS_SPAN_OPS,
   NOOP_ANALYSIS_TRACER,
-  isSafeTraceAttributeValue,
+  isSafeTraceAttribute,
   scrubSentryTransactionEvent,
   scrubTraceAttributes,
 } from "../src/lib/telemetry-trace.js";
@@ -54,23 +54,47 @@ function transactionFixture() {
 }
 
 describe("trace attribute safety", () => {
-  it("accepts identifier-shaped values and counts", () => {
-    expect(isSafeTraceAttributeValue("gemini-3.7-flash")).toBe(true);
-    expect(isSafeTraceAttributeValue("issue-review")).toBe(true);
-    expect(isSafeTraceAttributeValue(42)).toBe(true);
-    expect(isSafeTraceAttributeValue(true)).toBe(true);
+  it("admits per-key valid values", () => {
+    expect(isSafeTraceAttribute("gen_ai.request.model", "gemini-3.7-flash")).toBe(true);
+    expect(isSafeTraceAttribute("frame_of_mind.recipe_id", "issue-review")).toBe(true);
+    expect(isSafeTraceAttribute("frame_of_mind.recipe_id", "custom")).toBe(true);
+    expect(isSafeTraceAttribute("gen_ai.usage.input_tokens", 42)).toBe(true);
+    expect(isSafeTraceAttribute("frame_of_mind.candidate_accepted", true)).toBe(true);
+    expect(isSafeTraceAttribute(
+      "frame_of_mind.candidate_failure_code",
+      "schema_validation",
+    )).toBe(true);
   });
 
-  it("rejects content-shaped, path-shaped, and secret-shaped values", () => {
-    expect(isSafeTraceAttributeValue("she said the fibroid was 9 cm")).toBe(false);
-    expect(isSafeTraceAttributeValue("C:\\Users\\someone\\video.mp4")).toBe(false);
-    expect(isSafeTraceAttributeValue("/home/user/recording.mp4")).toBe(false);
-    expect(isSafeTraceAttributeValue("a".repeat(64))).toBe(false);
-    expect(isSafeTraceAttributeValue(Number.NaN)).toBe(false);
-    expect(isSafeTraceAttributeValue({ nested: true })).toBe(false);
+  it("rejects identifier-SHAPED private values under allowed keys", () => {
+    // The blocker case: operator-controlled strings that look like
+    // identifiers must find no key that accepts them.
+    expect(isSafeTraceAttribute("gen_ai.request.model", "customer-call.mp4")).toBe(false);
+    expect(isSafeTraceAttribute("gen_ai.request.model", "a".repeat(40))).toBe(false);
+    expect(isSafeTraceAttribute("gen_ai.request.model", "sk-live_0123456789abcdef")).toBe(false);
+    expect(isSafeTraceAttribute("frame_of_mind.recipe_id", "alices-meeting-notes")).toBe(false);
+    expect(isSafeTraceAttribute("frame_of_mind.recipe_id", "alice-meeting-2026-08-24")).toBe(false);
+    expect(isSafeTraceAttribute("frame_of_mind.depth", "gemini-3.7-flash")).toBe(false);
+    expect(isSafeTraceAttribute("frame_of_mind.outcome", "custom-status")).toBe(false);
+    // Numeric keys reject strings; string keys reject numbers.
+    expect(isSafeTraceAttribute("gen_ai.usage.input_tokens", "42")).toBe(false);
+    expect(isSafeTraceAttribute("gen_ai.usage.input_tokens", -1)).toBe(false);
+    expect(isSafeTraceAttribute("gen_ai.usage.input_tokens", 1.5)).toBe(false);
+    expect(isSafeTraceAttribute("frame_of_mind.recipe_id", 7)).toBe(false);
   });
 
-  it("drops non-allowlisted attribute keys even with safe values", () => {
+  it("rejects content-shaped, path-shaped, and secret-shaped values everywhere", () => {
+    for (const key of ["gen_ai.request.model", "frame_of_mind.recipe_id", "sentry.op"]) {
+      expect(isSafeTraceAttribute(key, "she said the fibroid was 9 cm")).toBe(false);
+      expect(isSafeTraceAttribute(key, "C:\\Users\\someone\\video.mp4")).toBe(false);
+      expect(isSafeTraceAttribute(key, "/home/user/recording.mp4")).toBe(false);
+      expect(isSafeTraceAttribute(key, "a".repeat(64))).toBe(false);
+      expect(isSafeTraceAttribute(key, Number.NaN)).toBe(false);
+      expect(isSafeTraceAttribute(key, { nested: true })).toBe(false);
+    }
+  });
+
+  it("drops non-allowlisted keys, unknown sentry keys, and per-key invalid values", () => {
     expect(scrubTraceAttributes({
       "gen_ai.request.model": "gemini-3.7-flash",
       "gen_ai.input.messages": "safe_looking_value",
@@ -78,6 +102,8 @@ describe("trace attribute safety", () => {
       "gen_ai.system_instructions": "safe_looking_value",
       "custom.free_text": "hello",
       "sentry.origin": "manual",
+      "sentry.unexpected_future_key": "value",
+      "frame_of_mind.recipe_id": "not-a-built-in-recipe",
     })).toEqual({
       "gen_ai.request.model": "gemini-3.7-flash",
       "sentry.origin": "manual",

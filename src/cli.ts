@@ -22,6 +22,7 @@ import { telemetryCodeFromError } from "./lib/sentry-telemetry.js";
 import {
   captureCliException,
   cliAnalysisTracer,
+  flushCliTelemetry,
   isCliTelemetryEnabled,
 } from "./telemetry.js";
 import {
@@ -158,33 +159,49 @@ program
             },
           };
           const tracer = cliAnalysisTracer();
-          result = tracer
-            ? await tracer.span({
-              op: "gen_ai.invoke_agent",
-              name: "analyze run",
-              attributes: {
-                "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.provider.name": "google_genai",
-                "gen_ai.request.model": analyzeOptions.model ?? "default",
-                "frame_of_mind.recipe_id": analyzeOptions.recipe.id,
-                "frame_of_mind.recipe_revision": analyzeOptions.recipe.revision,
-                "frame_of_mind.depth": String(flags.depth),
-                "frame_of_mind.max_moments": analyzeOptions.maxIncidents,
-                "frame_of_mind.context_mode": analyzeOptions.contextProvider ?? "none",
-              },
-            }, async (span) => {
-              const analyzed = await analyzeMeeting(analyzeOptions!, { ...execution, tracer });
-              span.setAttributes({
-                "frame_of_mind.outcome": analyzed.outcome.status,
-                "frame_of_mind.candidates_indexed": analyzed.outcome.candidates.indexed,
-                "frame_of_mind.candidates_omitted_by_limit":
-                  analyzed.outcome.candidates.omittedByLimit,
-                "frame_of_mind.candidates_accepted": analyzed.outcome.candidates.accepted,
-                "frame_of_mind.candidates_failed": analyzed.outcome.candidates.failed,
+          if (tracer) {
+            // Root metadata must agree with the provider spans: resolve the
+            // model exactly as the analyzer does, and map operator-authored
+            // custom recipe IDs to the closed "custom" bucket (ADR 0022 —
+            // operator-authored strings never leave the process).
+            const resolvedModel = analyzeOptions.model
+              ?? process.env.GEMINI_MODEL
+              ?? DEFAULT_GEMINI_MODEL;
+            const builtInRecipe = listBuiltInRecipes()
+              .some((recipe) => recipe.id === analyzeOptions!.recipe.id);
+            try {
+              result = await tracer.span({
+                op: "gen_ai.invoke_agent",
+                name: "analyze run",
+                attributes: {
+                  "gen_ai.operation.name": "invoke_agent",
+                  "gen_ai.provider.name": "google_genai",
+                  "gen_ai.request.model": resolvedModel,
+                  "frame_of_mind.recipe_id": builtInRecipe
+                    ? analyzeOptions.recipe.id
+                    : "custom",
+                  "frame_of_mind.depth": String(flags.depth),
+                  "frame_of_mind.max_moments": analyzeOptions.maxIncidents,
+                  "frame_of_mind.context_mode": analyzeOptions.contextProvider ?? "none",
+                },
+              }, async (span) => {
+                const analyzed = await analyzeMeeting(analyzeOptions!, { ...execution, tracer });
+                span.setAttributes({
+                  "frame_of_mind.outcome": analyzed.outcome.status,
+                  "frame_of_mind.candidates_indexed": analyzed.outcome.candidates.indexed,
+                  "frame_of_mind.candidates_omitted_by_limit":
+                    analyzed.outcome.candidates.omittedByLimit,
+                  "frame_of_mind.candidates_accepted": analyzed.outcome.candidates.accepted,
+                  "frame_of_mind.candidates_failed": analyzed.outcome.candidates.failed,
+                });
+                return analyzed;
               });
-              return analyzed;
-            })
-            : await analyzeMeeting(analyzeOptions, execution);
+            } finally {
+              await flushCliTelemetry();
+            }
+          } else {
+            result = await analyzeMeeting(analyzeOptions, execution);
+          }
         } finally {
           process.off("SIGINT" as never, cancel);
         }
