@@ -160,6 +160,12 @@ export class GeminiVideoAnalyzer {
   };
   private pendingUsageAvailable = true;
   private pendingUsageCalls = 0;
+  private lifetimeUsage: GeminiTokenUsage = {
+    promptTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+  };
+  private lifetimeUsageAvailable = true;
 
   constructor(
     apiKey: string,
@@ -602,6 +608,15 @@ export class GeminiVideoAnalyzer {
     }
   }
 
+  /**
+   * Non-destructive cumulative usage since construction, for content-free
+   * span attribution (ADR 0022). Independent of `takeUsage`'s draining
+   * window so the hosted spend path stays untouched.
+   */
+  usageSnapshot(): GeminiTokenUsage | undefined {
+    return this.lifetimeUsageAvailable ? { ...this.lifetimeUsage } : undefined;
+  }
+
   takeUsage(): GeminiTokenUsage | undefined {
     const usage = this.pendingUsageCalls > 0 && this.pendingUsageAvailable
       ? { ...this.pendingUsage }
@@ -662,13 +677,20 @@ export class GeminiVideoAnalyzer {
       || (promptTokens ?? 0) > (totalTokens ?? 0)
     ) {
       this.pendingUsageAvailable = false;
+      this.lifetimeUsageAvailable = false;
       return;
     }
     this.pendingUsage.promptTokens += promptTokens as number;
     this.pendingUsage.outputTokens += (totalTokens as number) - (promptTokens as number);
     this.pendingUsage.totalTokens += totalTokens as number;
+    this.lifetimeUsage.promptTokens += promptTokens as number;
+    this.lifetimeUsage.outputTokens += (totalTokens as number) - (promptTokens as number);
+    this.lifetimeUsage.totalTokens += totalTokens as number;
     if (!Object.values(this.pendingUsage).every(Number.isSafeInteger)) {
       this.pendingUsageAvailable = false;
+    }
+    if (!Object.values(this.lifetimeUsage).every(Number.isSafeInteger)) {
+      this.lifetimeUsageAvailable = false;
     }
   }
 
