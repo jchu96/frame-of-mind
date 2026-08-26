@@ -1,0 +1,63 @@
+name: Feature request
+description: Suggest an idea or enhancement for Frame of Mind
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Who encounters this problem, in what workflow, and why does it matter?
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired-outcome
+    attributes:
+      label: Desired outcome
+      description: What should a successful user-visible outcome look like?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      description: Which part of Frame of Mind would this affect?
+      options:
+        - CLI
+        - Web
+        - Workflows
+        - Hosted / Studio
+        - CI gate
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed solution
+      description: What behavior would you like to see? Implementation details are optional.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and current workaround
+      description: What other approaches or workarounds have you considered, and what do they cost?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Contract or trust-boundary impact
+      description: Select every area the request may change so maintainers can route design review.
+      options:
+        - label: Authentication or authorization
+        - label: Retention or data ownership
+        - label: Provider or media handling
+        - label: Durable `analysis.json` or `manifest.json` contracts
+    validations:
+      required: false

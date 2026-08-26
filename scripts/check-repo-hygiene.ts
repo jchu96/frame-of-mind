@@ -1,6 +1,10 @@
 import { lstat } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { extname, resolve } from "node:path";
+import {
+  commitSubjectFailures,
+  runCommitMessageSelfTest,
+} from "./validate-commit-message";
 
 type Finding = {
   location: string;
@@ -693,6 +697,8 @@ function runSelfTest(): void {
     throw new Error("Repository hygiene self-test failed for the reviewed UX proof allowlist.");
   }
 
+  runCommitMessageSelfTest();
+
   const missingBareImports = undeclaredBareImports(
     ["node:fs/promises", "./fixture", "jose", "@playwright/test"],
     new Set(["@playwright/test"]),
@@ -849,6 +855,15 @@ async function scanWorkingTree(): Promise<void> {
           pattern: `undeclared-root-import:${packageName}`,
         });
       }
+    }
+  }
+
+  for (const failure of commitSubjectFailures(repositoryRoot)) {
+    for (const error of failure.errors) {
+      findings.push({
+        location: failure.commit.slice(0, 12),
+        pattern: `invalid-commit-subject:${error}`,
+      });
     }
   }
 
