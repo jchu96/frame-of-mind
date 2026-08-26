@@ -10,8 +10,10 @@
 - Recorded source provenance at `pymc-labs/daimon@bd31039`.
 - Opened draft pull request [#121](https://github.com/jchu96/frame-of-mind/pull/121):
   `chore: adopt contribution conventions (CONTRIBUTING, templates, commit hooks)`.
-- Required CI-shaped `check:pr` lanes pass. The full local sharded upgrade also
-  found and reproduced an unrelated hosted-auth copy assertion on unchanged
-  `origin/main`; the draft records that base failure without weakening the gate.
+- Required CI-shaped `check:pr` lanes pass. A full local sharded run reproduced
+  an unrelated hosted-auth copy assertion on unchanged `origin/main`; GitHub's
+  hosted lane separately hit the pre-existing D1 `SQLITE_BUSY_SNAPSHOT` flake
+  in Better Auth workflow testing (also seen on main run `32927066193`). Neither
+  failure is attributed to this documentation and repository-tooling diff.
 
 DONE fomcontrib
