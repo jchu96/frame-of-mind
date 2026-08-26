@@ -16,7 +16,7 @@ body:
       label: Impact observed
       description: Quantify the affected runs, users, time, cost, or output when evidence permits.
     validations:
-      required: false
+      required: true
 
   - type: textarea
     id: reproduction
