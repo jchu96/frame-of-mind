@@ -8,6 +8,10 @@
 - Added a repository-owned Conventional Commit hook and matching CI hygiene
   enforcement, including focused fixtures for invalid subjects.
 - Recorded source provenance at `pymc-labs/daimon@bd31039`.
-- Pull request title: `chore: adopt contribution conventions (CONTRIBUTING, templates, commit hooks)`
+- Opened draft pull request [#121](https://github.com/jchu96/frame-of-mind/pull/121):
+  `chore: adopt contribution conventions (CONTRIBUTING, templates, commit hooks)`.
+- Required CI-shaped `check:pr` lanes pass. The full local sharded upgrade also
+  found and reproduced an unrelated hosted-auth copy assertion on unchanged
+  `origin/main`; the draft records that base failure without weakening the gate.
 
 DONE fomcontrib
