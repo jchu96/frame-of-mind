@@ -16,6 +16,7 @@ const conventionalSubject = new RegExp(
   `^(?:${allowedTypes.join("|")})(?:\\([a-z0-9][a-z0-9._/-]*\\))?!?: [a-z].*$`,
 );
 const emoji = /[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Regional_Indicator}\u200d\ufe0f\u20e3]/u;
+const gitGeneratedSubject = /^(?:Merge |Revert ")/;
 
 export type CommitSubjectFailure = {
   readonly commit: string;
@@ -23,6 +24,11 @@ export type CommitSubjectFailure = {
 };
 
 export function validateCommitSubject(subject: string): string[] {
+  // Git runs commit-msg for merge and revert commits, whose generated subjects
+  // do not use Conventional Commit syntax. Exempt only those generated forms:
+  // historical emoji subjects remain invalid, and the hook validates only new commits.
+  if (gitGeneratedSubject.test(subject)) return [];
+
   const errors: string[] = [];
   if (!conventionalSubject.test(subject)) {
     errors.push(
@@ -51,6 +57,8 @@ export function runCommitMessageSelfTest(): void {
     { subject: "chore: x", valid: true },
     { subject: "fix(web): prevent stale results", valid: true },
     { subject: "chore!: remove obsolete workflow", valid: true },
+    { subject: "Merge branch 'main' into feature", valid: true },
+    { subject: 'Revert "feat: add contribution checks"', valid: true },
     { subject: "Fixed stuff", valid: false },
     { subject: "feat: Added thing.", valid: false },
     { subject: "✨ feat: add a thing", valid: false },

@@ -134,6 +134,13 @@ describe("check lanes", () => {
     });
   });
 
+  test("propagates an explicit PR base to each commit-validation lane", async () => {
+    const runner = await readFile("scripts/run-check-sharded.ts", "utf8");
+    expect(runner).toContain(
+      '...(baseRef ? { FRAME_OF_MIND_GATE_BASE_REF: baseRef } : {}),',
+    );
+  });
+
   test("wires the CI jobs to the complete lane set", async () => {
     const workflow = await readFile(".github/workflows/ci.yml", "utf8");
     expect(workflow).toContain("timeout-minutes: 15");
