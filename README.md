@@ -782,6 +782,9 @@ bun run check:sharded
 bun run check
 ```
 
+`hooks:install` preserves any existing custom `core.hooksPath`: migrate those
+hooks or unset that repository setting explicitly before retrying installation.
+
 Local E2E and hosted-contract runners serialize their resource-heavy
 workerd/Chromium lifetimes across worktrees while retaining private ports,
 temporary state, D1/Worker/Workflow names, and report directories per run.

@@ -14,7 +14,7 @@ body:
     id: impact
     attributes:
       label: Impact observed
-      description: Quantify the affected runs, users, time, cost, or output when evidence permits.
+      description: Quantify the affected runs, users, time, cost, or output; if exact values are unavailable, describe the known scope and uncertainty.
     validations:
       required: true
 
