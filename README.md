@@ -763,6 +763,7 @@ configuration stays in the four gitignored files listed under
 
 ```bash
 bun install --frozen-lockfile
+bun run hooks:install
 bun run typecheck
 bun run test
 bun run test:web
@@ -784,6 +785,9 @@ bun run check
 Local E2E and hosted-contract runners serialize their resource-heavy
 workerd/Chromium lifetimes across worktrees while retaining private ports,
 temporary state, D1/Worker/Workflow names, and report directories per run.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for issue-writing guidance, commit
+conventions, pull request expectations, and the required review gates.
 
 Do not upgrade `@google/genai` or `@modelcontextprotocol/sdk` without
 verifying official authentication, Files upload, structured output, video
