@@ -93,21 +93,33 @@ hosted lane:
 | Job | Status | Budget | Command and ownership |
 |---|---|---:|---|
 | `check` | required | 15 minutes | `bun run check:pr --base origin/<base>` with fast and local lanes; production audit follows |
+| `auth-contract` | required | 15 minutes | `bun run check:auth-contract`; built Worker, ephemeral local D1, and synthetic GitHub OAuth prove the minimum Better Auth authorization boundary without secrets |
 | `browser-e2e` | required | 15 minutes | independently installs Chromium and runs the synthetic Studio browser suite |
 | `fresh-clone` (Ubuntu, macOS, Windows) | required | 15 minutes each | frozen Ubuntu/macOS fresh builds plus the Windows install-only contract |
 | `hosted-contracts` | advisory (`continue-on-error`) | 40 minutes | needs `check`, installs Chromium, then runs `bun run check:lane:hosted` with 30-minute logical-step bounds, a five-minute Better Auth access-step cap, and gate parallelism 1 |
 | `serial-check` | nightly/manual | 120 minutes | serial fallback over the complete logical gate |
 
 The `check` job sets `FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1`, so CI runs
-fast and local lanes there while `hosted-contracts` reports the hosted lane
-separately. Hosted remains advisory because the Workflows contract exceeds its
-budget on the 2-core runner; [issue #96](https://github.com/jchu96/frame-of-mind/issues/96)
-tracks restoring a reliable required hosted check. Local `check:pr` calls retain
+fast and local lanes there. `auth-contract` separately requires the hosted
+identity and authorization invariant: migrations apply and replay, missing and
+unapproved sessions cannot reach protected routes, approved sessions own only
+their `ba:<userId>` rows, foreign detail is 404, the admin surface is dark to a
+non-maintainer, and revocation is enforced on the next request. Every identity,
+secret, OAuth provider, and D1 database in that job is synthetic and run-local;
+the workflow references no GitHub secret, so public-fork pull requests exercise
+the same contract.
+
+The complete `hosted-contracts` lane remains advisory because the Workflows
+contract exceeds its budget on the 2-core runner; [issue #96](https://github.com/jchu96/frame-of-mind/issues/96)
+tracks restoring the broader hosted suite as a reliable required check. Local `check:pr` calls retain
 the fail-closed adaptive tier selection described in [Gate tiers](#gate-tiers),
 and `bun run check:sharded` remains the repository's complete pre-merge gate.
 
 When CI is red, start with the owning job. A `check` failure belongs to hygiene,
-types, unit tests, local builds/contracts, or the production audit. A
+types, unit tests, local builds/contracts, or the production audit. An
+`auth-contract` failure belongs to the built Better Auth/D1 identity,
+membership, principal-isolation, or revocation boundary; it is not repaired by
+adding a CI secret. A
 `hosted-contracts` failure belongs to the Cloudflare/Workflows contracts,
 hosted browser projects, or release rehearsal; confirm the Chromium install
 step before diagnosing application authentication. A `fresh-clone` failure is

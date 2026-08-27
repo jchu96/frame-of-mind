@@ -40,6 +40,7 @@
     "check:cloudflare-boundary:self-test": "bun --no-env-file scripts/test-cloudflare-boundary.ts",
     "check:hosted-entry": "bun --no-env-file scripts/test-hosted-entry.ts",
     "check:hosted-auth": "bun --no-env-file scripts/spike-hosted-auth-modes.ts",
+    "check:auth-contract": "FRAME_OF_MIND_HOSTED_CONTRACT_AUTH_MODE=better-auth FRAME_OF_MIND_HOSTED_ACCESS_SCOPE=required bun --no-env-file scripts/test-hosted-access-http.ts",
     "rehearse:hosted-release": "bun --no-env-file scripts/rehearse-hosted-release.ts",
     "check": "bun run check:repo-hygiene && bun run typecheck && bun run test && bun run test:web && bun run build:cli && bun run build:web && bun run test:studio-http && bun run test:hosted-access-http && bun run test:hosted-access-http:better-auth && bun run test:hosted-workflows-http && bun run test:hosted-workflows-http:better-auth && bun run test:hosted-media-http && bun run check:hosted-auth && bun run check:e2e && bun run rehearse:hosted-release && bun run spike:studio-streaming",
     "check:lane:fast": "bun scripts/run-check-lane.ts fast check:repo-hygiene typecheck test test:web",

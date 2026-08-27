@@ -25,6 +25,14 @@ const configPath = join(temporaryRoot, "wrangler.jsonc");
 const databaseName = isolation.databaseName;
 const audience = "frame-of-mind-hosted-access-contract";
 const keyId = "hosted-access-contract-key";
+const accessScope = process.env.FRAME_OF_MIND_HOSTED_ACCESS_SCOPE || "full";
+if (accessScope !== "full" && accessScope !== "required") {
+  throw new Error("FRAME_OF_MIND_HOSTED_ACCESS_SCOPE must be 'full' or 'required'.");
+}
+const requiredAuthContract = accessScope === "required";
+if (requiredAuthContract && hostedContractAuthMode !== "better-auth") {
+  throw new Error("The required hosted-access scope supports only Better Auth.");
+}
 const entrySelection = process.env.FRAME_OF_MIND_HOSTED_ACCESS_ENTRY || "index";
 if (entrySelection !== "index" && entrySelection !== "hosted-entry") {
   throw new Error("FRAME_OF_MIND_HOSTED_ACCESS_ENTRY must be 'index' or 'hosted-entry'.");
@@ -38,6 +46,21 @@ let fakeGithub: ReturnType<typeof startFakeGithub> | undefined;
 let fakeMailer: ReturnType<typeof Bun.serve> | undefined;
 const capturedAccessRequests: unknown[] = [];
 let wranglerOutput: Promise<[string, string]> | undefined;
+const requiredBetterAuthProfiles = [
+  { id: "access-a", email: "access-a@example.test" },
+  { id: "access-b", email: "access-b@example.test" },
+  { id: "request-a", email: "request-a@example.test" },
+];
+const extendedBetterAuthProfiles = [
+  { id: "request-b", email: "request-b@example.test" },
+  { id: "request-c", email: "request-c@example.test" },
+  { id: "request-d", email: "request-d@example.test" },
+  { id: "request-e", email: "request-e@example.test" },
+  { id: "request-f", email: "request-f@example.test" },
+];
+const betterAuthProfiles = requiredAuthContract
+  ? requiredBetterAuthProfiles
+  : [...requiredBetterAuthProfiles, ...extendedBetterAuthProfiles];
 
 try {
   console.log("HOSTED_ACCESS build=START cloudflare_module");
@@ -69,18 +92,9 @@ try {
   const workerPort = await isolation.reservePort();
   const baseUrl = `http://127.0.0.1:${workerPort}`;
   fakeGithub = hostedContractAuthMode === "better-auth"
-    ? startFakeGithub([
-        { id: "access-a", email: "access-a@example.test" },
-        { id: "access-b", email: "access-b@example.test" },
-        { id: "request-a", email: "request-a@example.test" },
-        { id: "request-b", email: "request-b@example.test" },
-        { id: "request-c", email: "request-c@example.test" },
-        { id: "request-d", email: "request-d@example.test" },
-        { id: "request-e", email: "request-e@example.test" },
-        { id: "request-f", email: "request-f@example.test" },
-      ])
+    ? startFakeGithub(betterAuthProfiles)
     : undefined;
-  fakeMailer = hostedContractAuthMode === "better-auth"
+  fakeMailer = hostedContractAuthMode === "better-auth" && !requiredAuthContract
     ? Bun.serve({
         hostname: "127.0.0.1",
         port: 0,
@@ -113,12 +127,14 @@ try {
     vars: hostedContractAuthMode === "better-auth"
       ? {
           ...betterAuthFixtureVars(baseUrl, fakeGithub!.origin),
-          NUXT_BETTER_AUTH_MAILER_ORIGIN: `http://127.0.0.1:${fakeMailer!.port}`,
-          NUXT_BETTER_AUTH_MAILER_KEY: "fixture-mailer-key",
-          NUXT_BETTER_AUTH_MAILER_FROM: "sign-in@example.test",
-          NUXT_ACCESS_REQUEST_NOTIFY: "maintainer@example.test",
-          NUXT_ACCESS_REQUEST_PENDING_CAP: "4",
           NUXT_MAINTAINER_EMAILS: " Access-A@Example.Test ",
+          ...(!requiredAuthContract ? {
+            NUXT_BETTER_AUTH_MAILER_ORIGIN: `http://127.0.0.1:${fakeMailer!.port}`,
+            NUXT_BETTER_AUTH_MAILER_KEY: "fixture-mailer-key",
+            NUXT_BETTER_AUTH_MAILER_FROM: "sign-in@example.test",
+            NUXT_ACCESS_REQUEST_NOTIFY: "maintainer@example.test",
+            NUXT_ACCESS_REQUEST_PENDING_CAP: "4",
+          } : {}),
         }
       : {
           NUXT_AUTH_MODE: "cloudflare-access",
@@ -173,16 +189,7 @@ try {
   await waitForWorker(baseUrl, wrangler);
 
   const betterAuthLogins = hostedContractAuthMode === "better-auth"
-    ? await betterAuthBrowserLogins(baseUrl, [
-        "access-a@example.test",
-        "access-b@example.test",
-        "request-a@example.test",
-        "request-b@example.test",
-        "request-c@example.test",
-        "request-d@example.test",
-        "request-e@example.test",
-        "request-f@example.test",
-      ])
+    ? await betterAuthBrowserLogins(baseUrl, betterAuthProfiles.map(({ email }) => email))
     : undefined;
   const tokenA = hostedContractAuthMode === "better-auth"
     ? betterAuthLogins!.get("access-a@example.test")!
@@ -220,85 +227,89 @@ try {
     assertEqual(requested, {
       state: "requested",
       created: true,
-      notificationSent: true,
+      notificationSent: !requiredAuthContract,
     }, "created access request");
     await expectStatus(fetch(`${baseUrl}/api/access/request`, {
       method: "POST",
       headers: requestHeaders,
       body: "{}",
     }), 200, "idempotent access request");
-    assertEqual(capturedAccessRequests.length, 1, "one maintainer notification per principal");
-    assertEqual(capturedAccessRequests[0], {
-      notifyEmail: "maintainer@example.test",
-      requesterEmail: "request-a@example.test",
-      command: "bun run approve 'request-a@example.test'",
-    }, "maintainer notification contract");
-    await expectStatus(fetch(`${baseUrl}/api/auth/sign-in/magic-link`, {
-      method: "POST",
-      headers: {
-        origin: baseUrl,
-        "content-type": "application/json",
-        "cf-connecting-ip": "198.51.100.70",
-      },
-      body: JSON.stringify({
-        email: "request-a@example.test",
-        name: "Request A",
-        callbackURL: "/api/session",
-      }),
-    }), 403, "requested account magic-link denial");
-    assertEqual(capturedAccessRequests.length, 1, "no requester email after access request");
-
     const requestedSession = await json<Record<string, unknown>>(
       await expectStatus(authenticatedFetch(baseUrl, "/api/session", requestToken), 200, "requested session"),
     );
     assertEqual(requestedSession.accessState, "requested", "requested membership state");
     await expectUnapprovedBoundary(baseUrl, requestToken);
+    if (requiredAuthContract) {
+      assertEqual(capturedAccessRequests.length, 0, "required contract sends no email");
+      console.log("HOSTED_AUTH_REQUIRED request_access=PASS session=requested protected=403 mail=disabled");
+    } else {
+      assertEqual(capturedAccessRequests.length, 1, "one maintainer notification per principal");
+      assertEqual(capturedAccessRequests[0], {
+        notifyEmail: "maintainer@example.test",
+        requesterEmail: "request-a@example.test",
+        command: "bun run approve 'request-a@example.test'",
+      }, "maintainer notification contract");
+      await expectStatus(fetch(`${baseUrl}/api/auth/sign-in/magic-link`, {
+        method: "POST",
+        headers: {
+          origin: baseUrl,
+          "content-type": "application/json",
+          "cf-connecting-ip": "198.51.100.70",
+        },
+        body: JSON.stringify({
+          email: "request-a@example.test",
+          name: "Request A",
+          callbackURL: "/api/session",
+        }),
+      }), 403, "requested account magic-link denial");
+      assertEqual(capturedAccessRequests.length, 1, "no requester email after access request");
 
-    for (const email of ["request-b@example.test", "request-c@example.test"]) {
+      for (const email of ["request-b@example.test", "request-c@example.test"]) {
+        await expectStatus(fetch(`${baseUrl}/api/access/request`, {
+          method: "POST",
+          headers: {
+            ...hostedAuthHeaders(betterAuthLogins!.get(email)!, baseUrl),
+            "cf-connecting-ip": "198.51.100.70",
+          },
+          body: "{}",
+        }), 200, `per-IP request ${email}`);
+      }
       await expectStatus(fetch(`${baseUrl}/api/access/request`, {
         method: "POST",
         headers: {
-          ...hostedAuthHeaders(betterAuthLogins!.get(email)!, baseUrl),
+          ...hostedAuthHeaders(betterAuthLogins!.get("request-d@example.test")!, baseUrl),
           "cf-connecting-ip": "198.51.100.70",
         },
         body: "{}",
-      }), 200, `per-IP request ${email}`);
+      }), 429, "per-IP access-request rate limit");
+      await expectStatus(fetch(`${baseUrl}/api/access/request`, {
+        method: "POST",
+        headers: {
+          ...hostedAuthHeaders(betterAuthLogins!.get("request-e@example.test")!, baseUrl),
+          "cf-connecting-ip": "198.51.100.71",
+        },
+        body: "{}",
+      }), 200, "final pending access-request slot");
+      const capacityLimited = await expectStatus(fetch(`${baseUrl}/api/access/request`, {
+        method: "POST",
+        headers: {
+          ...hostedAuthHeaders(betterAuthLogins!.get("request-f@example.test")!, baseUrl),
+          "cf-connecting-ip": "198.51.100.72",
+        },
+        body: "{}",
+      }), 429, "pending access-request capacity");
+      if (!(await responseText(capacityLimited, "pending access-request capacity body"))
+        .includes("access_request_capacity_reached")) {
+        throw new Error("Pending access-request capacity omitted its stable code.");
+      }
+      await verifyAdminAccessSurface({
+        baseUrl,
+        maintainerToken: tokenA,
+        nonMaintainerToken: tokenB,
+        capturedAccessRequests,
+      });
+      console.log("HOSTED_ACCESS request_access=PASS session=requested protected=403 mail=maintainer_only rate_limit=429 pending_cap=429");
     }
-    await expectStatus(fetch(`${baseUrl}/api/access/request`, {
-      method: "POST",
-      headers: {
-        ...hostedAuthHeaders(betterAuthLogins!.get("request-d@example.test")!, baseUrl),
-        "cf-connecting-ip": "198.51.100.70",
-      },
-      body: "{}",
-    }), 429, "per-IP access-request rate limit");
-    await expectStatus(fetch(`${baseUrl}/api/access/request`, {
-      method: "POST",
-      headers: {
-        ...hostedAuthHeaders(betterAuthLogins!.get("request-e@example.test")!, baseUrl),
-        "cf-connecting-ip": "198.51.100.71",
-      },
-      body: "{}",
-    }), 200, "final pending access-request slot");
-    const capacityLimited = await expectStatus(fetch(`${baseUrl}/api/access/request`, {
-      method: "POST",
-      headers: {
-        ...hostedAuthHeaders(betterAuthLogins!.get("request-f@example.test")!, baseUrl),
-        "cf-connecting-ip": "198.51.100.72",
-      },
-      body: "{}",
-    }), 429, "pending access-request capacity");
-    if (!(await responseText(capacityLimited, "pending access-request capacity body"))
-      .includes("access_request_capacity_reached")) {
-      throw new Error("Pending access-request capacity omitted its stable code.");
-    }
-    await verifyAdminAccessSurface({
-      baseUrl,
-      maintainerToken: tokenA,
-      nonMaintainerToken: tokenB,
-      capturedAccessRequests,
-    });
-    console.log("HOSTED_ACCESS request_access=PASS session=requested protected=403 mail=maintainer_only rate_limit=429 pending_cap=429");
   }
 
   await expectStatus(fetch(`${baseUrl}/api/runs`), 403, "missing Access assertion");
@@ -365,6 +376,9 @@ try {
     404,
     "hosted creation remains dark",
   );
+  if (requiredAuthContract) {
+    await verifyRequiredAuthRevocation(baseUrl, tokenA, tokenB);
+  }
 
   console.log(`HOSTED_ACCESS principal_a=PASS own=${runA.manifest.runId} foreign_detail=404`);
   console.log(`HOSTED_ACCESS principal_b=PASS own=${runB.manifest.runId} foreign_detail=404`);
@@ -378,11 +392,16 @@ try {
   await stopWrangler(wrangler, wranglerOutput);
   wrangler = undefined;
   wranglerOutput = undefined;
-  if (hostedContractAuthMode === "better-auth") {
+  if (requiredAuthContract) {
+    await verifyRequiredPrincipalMapping();
+    console.log("HOSTED_AUTH_REQUIRED principal=PASS prefix=ba ownership=isolated revocation=next_request");
+  } else if (hostedContractAuthMode === "better-auth") {
     await verifyMaintainerCommands();
     console.log("HOSTED_ACCESS maintainer_cli=PASS approve_alias=true deny=true remove=revoked list_requests=true");
   }
-  console.log(`HOSTED_ACCESS_CONTRACT PASSED entry=${entryFile}`);
+  console.log(requiredAuthContract
+    ? `HOSTED_AUTH_REQUIRED_CONTRACT PASSED entry=${entryFile}`
+    : `HOSTED_ACCESS_CONTRACT PASSED entry=${entryFile}`);
 } catch (error) {
   if (wrangler) {
     try {
@@ -398,6 +417,72 @@ try {
   fakeGithub?.stop();
   fakeMailer?.stop(true);
   await isolation.cleanup();
+}
+
+async function verifyRequiredAuthRevocation(
+  baseUrl: string,
+  maintainerToken: string,
+  memberToken: string,
+): Promise<void> {
+  const unknownApi = await hostedAccessFetch(
+    "required non-maintainer unknown GET",
+    `${baseUrl}/api/route-that-does-not-exist`,
+    { headers: hostedAuthHeaders(memberToken) },
+  );
+  const hiddenApi = await hostedAccessFetch(
+    "required non-maintainer admin GET",
+    `${baseUrl}/api/admin/access`,
+    { headers: hostedAuthHeaders(memberToken) },
+  );
+  await assertMatchingNotFoundShape(unknownApi, hiddenApi, "required admin darkness");
+
+  const maintainerSession = await json<Record<string, unknown>>(await expectStatus(
+    authenticatedFetch(baseUrl, "/api/session", maintainerToken),
+    200,
+    "required maintainer session",
+  ));
+  assertEqual(maintainerSession.maintainer, true, "required maintainer capability");
+  const revoked = await adminAction(
+    baseUrl,
+    maintainerToken,
+    "revoke",
+    "access-b@example.test",
+  );
+  assertEqual(revoked.state, "revoked", "required member revocation");
+  await expectStatus(
+    authenticatedFetch(baseUrl, "/api/runs", memberToken),
+    403,
+    "revocation observed on next request",
+  );
+  const revokedSession = await json<Record<string, unknown>>(await expectStatus(
+    authenticatedFetch(baseUrl, "/api/session", memberToken),
+    200,
+    "revoked session status",
+  ));
+  assertEqual(revokedSession.accessState, "revoked", "revoked membership state");
+}
+
+async function verifyRequiredPrincipalMapping(): Promise<void> {
+  const rowsJson = await runChecked([
+    "bunx", "wrangler", "d1", "execute", databaseName,
+    "--local", "--config", configPath, "--persist-to", persistRoot,
+    "--command", "SELECT u.email, u.id AS user_id, r.principal_sub "
+      + "FROM better_auth_user u JOIN analysis_run_registry r "
+      + "ON r.principal_sub = 'ba:' || u.id "
+      + "WHERE u.email IN ('access-a@example.test','access-b@example.test') "
+      + "ORDER BY u.email",
+    "--json",
+  ], "required principal mapping query");
+  const resultSets = JSON.parse(rowsJson) as Array<{
+    results?: Array<{ email?: string; user_id?: string; principal_sub?: string }>;
+  }>;
+  const rows = resultSets.flatMap(({ results }) => results ?? []);
+  assertEqual(rows.length, 2, "required principal mapping row count");
+  for (const row of rows) {
+    if (!row.user_id || row.principal_sub !== `ba:${row.user_id}`) {
+      throw new Error(`Required principal mapping was invalid for ${row.email ?? "unknown"}.`);
+    }
+  }
 }
 
 async function verifyAdminAccessSurface(input: {

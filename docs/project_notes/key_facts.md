@@ -1,5 +1,12 @@
 # Key Facts
 
+- Public pull requests require a secret-free `auth-contract` CI job. It builds
+  the real Cloudflare Worker, applies and replays migrations against an
+  ephemeral local D1, and uses synthetic GitHub OAuth identities to prove
+  membership denial, `ba:<userId>` ownership, cross-principal 404s, a dark
+  non-maintainer admin surface, and next-request revocation. The broader hosted
+  Workflows/media/browser/release lane remains advisory under issue #96.
+
 - A 2026-08-23 live Chromium spike proved that a Gemini resumable session
   started with the API key in a header returns upload/control URLs containing
   only `upload_id` and `upload_protocol`; direct browser PUT, restart/query,
