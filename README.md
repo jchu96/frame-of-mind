@@ -230,10 +230,16 @@ frameofmind doctor
 
 Contributors should run the required pull-request gate; hosted-sensitive
 changes automatically upgrade it to the full three-lane gate when a base ref
-is supplied:
+is supplied unless the CI-equivalent lane split is explicit:
 
 ```bash
-FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
+FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1 FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
+```
+
+For Better Auth or D1 boundary changes, run the focused required contract too:
+
+```bash
+bun run check:auth-contract
 ```
 
 Run `bun run check:sharded` before every merge and for the complete nightly
