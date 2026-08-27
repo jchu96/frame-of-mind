@@ -1,5 +1,18 @@
 # Work Log
 
+## 2026-08-27
+
+- Split the minimum Better Auth/D1 authorization invariant from the advisory
+  hosted lane. `bun run check:auth-contract` now exercises the built Worker,
+  synthetic OAuth, isolated local D1 migration replay, requested/approved/
+  revoked membership, `ba:<userId>` row ownership, principal isolation, and
+  immediate revocation without a repository secret or API-key plugin. The
+  focused contract emitted `HOSTED_AUTH_REQUIRED_CONTRACT PASSED`, and the
+  CI-equivalent `check:pr --base origin/main` fast/local lanes passed after the
+  contribution-conventions merge. Two full-sharded attempts separately
+  reproduced the advisory hosted-media Playwright connection flake after its
+  contract had printed PASS; the focused hosted-media contract passed alone.
+
 ## 2026-08-24
 
 - Bounded issue #113's Better Auth hosted-access fixture: Chromium lifecycle,
