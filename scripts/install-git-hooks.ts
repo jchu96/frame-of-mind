@@ -51,6 +51,10 @@ export function installGitHooks(
 
 async function runSelfTest(): Promise<void> {
   const fixtureRoot = await mkdtemp(join(tmpdir(), "frame-of-mind-hooks-install-"));
+  const originalGlobalConfig = process.env.GIT_CONFIG_GLOBAL;
+  const originalNoSystemConfig = process.env.GIT_CONFIG_NOSYSTEM;
+  process.env.GIT_CONFIG_GLOBAL = join(fixtureRoot, "isolated-global.gitconfig");
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
   try {
     assertGit(fixtureRoot, ["init", "--quiet"]);
 
@@ -80,10 +84,32 @@ async function runSelfTest(): Promise<void> {
       throw new Error("Git-hooks installer self-test did not explain how to resolve refusal.");
     }
 
-    console.log("Git-hooks installer self-test: passed (3 fixtures).");
+    assertGit(fixtureRoot, ["config", "--local", "--unset", "core.hooksPath"]);
+    assertGit(fixtureRoot, ["config", "--global", "core.hooksPath", "global-hooks"]);
+    if (installGitHooks(fixtureRoot, () => {}, () => {}) === 0) {
+      throw new Error("Git-hooks installer self-test replaced a global hooks path.");
+    }
+    const effectiveGlobalPath = git(fixtureRoot, ["config", "--get", "core.hooksPath"]);
+    const localPath = git(fixtureRoot, ["config", "--local", "--get", "core.hooksPath"]);
+    if (
+      effectiveGlobalPath.exitCode !== 0
+      || effectiveGlobalPath.stdout.trim() !== "global-hooks"
+      || localPath.exitCode !== 1
+    ) {
+      throw new Error("Git-hooks installer self-test did not preserve the global hooks path.");
+    }
+
+    console.log("Git-hooks installer self-test: passed (4 fixtures).");
   } finally {
+    restoreEnvironmentVariable("GIT_CONFIG_GLOBAL", originalGlobalConfig);
+    restoreEnvironmentVariable("GIT_CONFIG_NOSYSTEM", originalNoSystemConfig);
     await rm(fixtureRoot, { recursive: true, force: true });
   }
+}
+
+function restoreEnvironmentVariable(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
 }
 
 function pointsToRepositoryHooks(repositoryRoot: string, configuredPath: string): boolean {
@@ -116,6 +142,7 @@ function git(
 ): { readonly exitCode: number; readonly stdout: string } {
   const result = Bun.spawnSync(["git", ...args], {
     cwd: workingDirectory,
+    env: process.env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
