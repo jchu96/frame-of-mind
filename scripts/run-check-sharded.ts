@@ -109,6 +109,7 @@ async function runLane(lane: LaneName): Promise<LaneResult> {
     cwd: resolve("."),
     env: {
       ...process.env,
+      ...(baseRef ? { FRAME_OF_MIND_GATE_BASE_REF: baseRef } : {}),
       [BUILD_DIR_ENV]: join(root, `${lane}-nuxt-build`),
     },
     stdin: "ignore",
