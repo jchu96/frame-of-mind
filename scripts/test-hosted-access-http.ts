@@ -241,7 +241,7 @@ try {
     await expectUnapprovedBoundary(baseUrl, requestToken);
     if (requiredAuthContract) {
       assertEqual(capturedAccessRequests.length, 0, "required contract sends no email");
-      console.log("HOSTED_AUTH_REQUIRED request_access=PASS session=requested protected=403 mail=disabled");
+      console.log("HOSTED_AUTH_REQUIRED request_access=PASS session=requested protected=403 admin=dark mail=disabled");
     } else {
       assertEqual(capturedAccessRequests.length, 1, "one maintainer notification per principal");
       assertEqual(capturedAccessRequests[0], {
@@ -692,6 +692,28 @@ async function expectUnapprovedBoundary(origin: string, token: string): Promise<
       body: "{}",
     }), 403, `unapproved mutation denial ${path}`);
   }
+
+  await expectStatus(hostedAccessFetch(
+    "unapproved hidden admin GET",
+    `${origin}/api/admin/access`,
+    { headers: hostedAuthHeaders(token) },
+  ), 404, "unapproved admin GET darkness");
+
+  await expectStatus(hostedAccessFetch(
+    "unapproved hidden admin POST",
+    `${origin}/api/admin/access/approve`,
+    {
+      method: "POST",
+      headers: adminMutationHeaders(token, origin),
+      body: JSON.stringify({ email: "access-a@example.test" }),
+    },
+  ), 404, "unapproved admin POST darkness");
+
+  await expectStatus(hostedAccessFetch(
+    "unapproved hidden admin HTML",
+    `${origin}/admin/access`,
+    { headers: { ...hostedAuthHeaders(token), accept: "text/html" } },
+  ), 404, "unapproved admin page darkness");
 }
 
 async function verifyMaintainerCommands(): Promise<void> {

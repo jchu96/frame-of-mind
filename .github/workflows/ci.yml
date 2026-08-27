@@ -62,6 +62,17 @@ jobs:
       - name: Run required Better Auth and D1 contract
         run: bun run check:auth-contract
 
+      - name: Upload Better Auth contract failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: auth-contract-playwright-report
+          path: |
+            playwright-report/
+            test-results/playwright/artifacts/
+          if-no-files-found: ignore
+          retention-days: 7
+
   hosted-contracts:
     needs: check
     runs-on: ubuntu-latest

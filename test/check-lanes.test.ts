@@ -181,6 +181,9 @@ describe("check lanes", () => {
     expect(authJob).toContain("timeout-minutes: 15");
     expect(authJob).toContain("bunx playwright install --with-deps chromium");
     expect(authJob).toContain("bun run check:auth-contract");
+    expect(authJob).toContain("if: failure()");
+    expect(authJob).toContain("name: auth-contract-playwright-report");
+    expect(authJob).toContain("test-results/playwright/artifacts/");
     expect(authJob).not.toContain("continue-on-error");
     expect(authJob).not.toContain("secrets.");
   });
