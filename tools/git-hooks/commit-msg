@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+repository_root="$(git rev-parse --show-toplevel)"
+exec bun --no-env-file "$repository_root/scripts/validate-commit-message.ts" "$1"
