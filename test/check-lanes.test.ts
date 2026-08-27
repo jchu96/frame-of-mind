@@ -165,6 +165,29 @@ describe("check lanes", () => {
     }
   });
 
+  test("keeps a secret-free Better Auth and D1 contract required", async () => {
+    const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
+      scripts: Record<string, string>;
+    };
+    expect(packageJson.scripts["check:auth-contract"]).toBe(
+      "FRAME_OF_MIND_HOSTED_CONTRACT_AUTH_MODE=better-auth "
+        + "FRAME_OF_MIND_HOSTED_ACCESS_SCOPE=required "
+        + "bun --no-env-file scripts/test-hosted-access-http.ts",
+    );
+
+    const workflow = await readFile(".github/workflows/ci.yml", "utf8");
+    const authJob = workflow.match(/\n  auth-contract:\n([\s\S]*?)\n  hosted-contracts:/)?.[1];
+    expect(authJob).toBeDefined();
+    expect(authJob).toContain("timeout-minutes: 15");
+    expect(authJob).toContain("bunx playwright install --with-deps chromium");
+    expect(authJob).toContain("bun run check:auth-contract");
+    expect(authJob).toContain("if: failure()");
+    expect(authJob).toContain("name: auth-contract-playwright-report");
+    expect(authJob).toContain("test-results/playwright/artifacts/");
+    expect(authJob).not.toContain("continue-on-error");
+    expect(authJob).not.toContain("secrets.");
+  });
+
   test("keys builds by the non-documentation git tree and scrubbed environment", async () => {
     expect(isBuildInputPath("node_modules")).toBe(false);
     expect(isBuildInputPath("apps/web/.nuxt/builds/meta.json")).toBe(false);

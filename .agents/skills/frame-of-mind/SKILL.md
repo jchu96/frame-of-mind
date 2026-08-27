@@ -397,7 +397,11 @@ gate-lock bun run check:pr
 The adaptive PR gate runs fast/local for safe documentation changes and
 upgrades contract-bearing paths to the complete sharded tier. Run
 `gate-lock bun run check:sharded` for the complete pre-merge gate. Read
-`docs/TESTING.md` for lane ownership and issue #96's advisory hosted CI status.
+`docs/TESTING.md` for lane ownership. `bun run check:auth-contract` is the
+required, secret-free Better Auth/D1 boundary for public pull requests; it uses
+synthetic OAuth identities and ephemeral local D1. Do not add a repository
+secret or enable Better Auth's API-key plugin to make this gate run. Issue #96
+tracks the broader advisory hosted lane.
 Use `$ci-gate-design` when changing gate topology or diagnosing a slow or red
 gate; do not weaken coverage to make timing green.
 

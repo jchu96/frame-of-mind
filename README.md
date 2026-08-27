@@ -230,21 +230,31 @@ frameofmind doctor
 
 Contributors should run the required pull-request gate; hosted-sensitive
 changes automatically upgrade it to the full three-lane gate when a base ref
-is supplied:
+is supplied unless the CI-equivalent lane split is explicit:
 
 ```bash
-FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
+FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1 FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
+```
+
+For Better Auth or D1 boundary changes, run the focused required contract too:
+
+```bash
+bun run check:auth-contract
 ```
 
 Run `bun run check:sharded` before every merge and for the complete nightly
 gate. `bun run check` remains the serial fallback.
 
-GitHub CI keeps required checks and hosted proof separate: the 15-minute
-`check` job runs fast and local through `check:pr`; the advisory 40-minute
-`hosted-contracts` job installs Chromium and reports the hosted lane while
+GitHub CI keeps the minimum hosted trust-boundary proof required without making
+the complete hosted suite a merge bottleneck. The secret-free `auth-contract`
+job builds the Worker against an ephemeral local D1 and proves synthetic Better
+Auth sign-in, membership denial, `ba:<userId>` ownership, principal isolation,
+and next-request revocation. The advisory 40-minute `hosted-contracts` job
+retains the broader Workflows, media, browser, and release proof while
 [issue #96](https://github.com/jchu96/frame-of-mind/issues/96) tracks its
-2-core timing. The three required fresh-clone platforms and independent
-browser E2E job remain separate failure domains. See
+2-core timing. No repository secret or Better Auth API-key plugin is needed for
+pull requests, including forks. The required `check`, three fresh-clone
+platforms, and browser E2E job remain separate failure domains. See
 [docs/TESTING.md](docs/TESTING.md#ci).
 
 The full fresh-clone Studio boot is continuously tested on macOS and Linux.
@@ -775,6 +785,7 @@ bun run hosted:local                 # human-driveable hosted Workers; Ctrl+C to
 bun run build
 bun run build:web:cloudflare
 bun run test:hosted-access-http
+bun run check:auth-contract                  # secret-free required Better Auth/D1 boundary
 bun run test:hosted-media-http              # fake Files API + real Chromium direct-upload contract
 bun run rehearse:hosted-release
 bun run check:pr
