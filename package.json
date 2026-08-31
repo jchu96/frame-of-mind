@@ -86,7 +86,7 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@google/genai": "2.18.0",
+    "@google/genai": "2.19.0",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@sentry/bun": "10.70.0",
     "commander": "15.0.0",
