@@ -1086,9 +1086,12 @@ async function betterAuthPrincipal(email: string): Promise<string> {
 }
 
 function seedSql(): string {
-  const sealedAt = "2026-08-22T00:00:00.000Z";
-  const expiresAt = "2026-08-29T00:00:00.000Z";
-  const expiredAt = "2026-08-21T00:00:00.000Z";
+  // Keep normal receipts live and the janitor receipt expired on every run.
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const sealedAt = new Date(now - day).toISOString();
+  const expiresAt = new Date(now + 6 * day).toISOString();
+  const expiredAt = new Date(now - 2 * day).toISOString();
   const mediaFixtures = [
     { principal: principalA, mediaId: normalMedia, retention: "retained", expiresAt },
     { principal: principalA, mediaId: crashMedia, retention: "ephemeral", expiresAt },
