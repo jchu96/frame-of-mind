@@ -1,5 +1,27 @@
 # Key Facts
 
+- 2026-09-08: Release PR [#132](https://github.com/jchu96/frame-of-mind/pull/132)
+  shipped [v0.5.0](https://github.com/jchu96/frame-of-mind/releases/tag/v0.5.0)
+  on merge commit `f9609ab`; the
+  [v0.4.0 release](https://github.com/jchu96/frame-of-mind/releases/tag/v0.4.0)
+  was backfilled on the existing `2f27ad7` tag target. Required CI passed at the
+  release PR head; `hosted-contracts` remains advisory under #113 and #96.
+- 2026-09-08: [#133](https://github.com/jchu96/frame-of-mind/pull/133) bounds
+  the hosted Activity hydration wait to 30 seconds before installing its display
+  fixture. Release PR #132 merged as `f9609ab`, then #133 merged as `1858109`,
+  then the annotated `v0.5.0` tag was created pointing at `f9609ab`, excluding
+  #133. The harness fix does not resolve the advisory hosted lane's remaining
+  failures.
+- 2026-09-08: Post-release Dependabot merges
+  [#126](https://github.com/jchu96/frame-of-mind/pull/126),
+  [#127](https://github.com/jchu96/frame-of-mind/pull/127),
+  [#129](https://github.com/jchu96/frame-of-mind/pull/129),
+  [#128](https://github.com/jchu96/frame-of-mind/pull/128), and
+  [#131](https://github.com/jchu96/frame-of-mind/pull/131) updated the Sentry,
+  Better Auth, GenAI, and development stacks on `main`. The current manifests
+  pin Vitest `5.0.0` (major update), `@playwright/test` `1.63.0`, and Wrangler
+  `4.129.0`; these are later than the release tag's dependencies.
+
 - 2026-09-08: The local analysis orchestrator probes duration once before run creation or Gemini calls, refuses known durations over 7200 seconds (overridable with positive-integer `FRAME_OF_MIND_MAX_VIDEO_SECONDS`), and reuses the probe for transcription with the existing unknown-duration fallback.
 
 - Public pull requests require a secret-free `auth-contract` CI job. It builds

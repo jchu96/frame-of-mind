@@ -703,7 +703,7 @@ Delete stale runs through a file manager or exact verified path. Never run a
 broad recursive delete against home, application-data root, or repository root.
 
 Hosted D1 projections need an explicit owner and retention period because they
-can contain meeting quotes and visible UI text. Version 0.3.0 does not automate
+can contain meeting quotes and visible UI text. Frame of Mind does not automate
 hosted expiry. Use the ID-validated preview, delete, and verification procedure
 in [CLOUDFLARE_DEPLOYMENT.md](CLOUDFLARE_DEPLOYMENT.md#hosted-retention-and-exact-run-purge);
 never delete by a partial title or meeting-name search.
@@ -773,16 +773,16 @@ Check:
 On timeout, the CLI attempts remote deletion. Do not use `--keep-upload` as a
 troubleshooting shortcut.
 
-Version 0.3.0 deliberately does not call `@google/genai`
-`files.upload()`. The production adapter uses Google's documented two-step
+The production adapter deliberately does not call `@google/genai`
+`files.upload()`. It uses Google's documented two-step
 resumable protocol, streams the local file, validates the exact Gemini upload
 host, keeps the API key in a header, and continues to use the SDK for status,
 generation, and deletion.
 
-If an older release returns an empty upload 404, upgrade to v0.3.0 and run
-`bun run smoke:gemini` with generated media before diagnosing credentials.
-If v0.3.0 fails, preserve only the sanitized phase/status error and open a
-maintainer follow-up.
+If an older release returns an empty upload 404, upgrade to the current release
+and run `bun run smoke:gemini` with generated media before diagnosing credentials.
+If the current release fails, preserve only the sanitized phase/status error
+and open a maintainer follow-up.
 
 ### 6.5 Gemini model name rejected
 

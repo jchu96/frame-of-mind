@@ -4,6 +4,24 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-09-08 — Release tags identify reviewed merge commits; required CI decides merges
+
+Prepare releases on `release/vX.Y.Z`, review the PR, and merge with a merge
+commit. Put the annotated tag on that exact release merge commit, then create
+the GitHub release with `gh release create --verify-tag`. This preserves the
+reviewed integration point even when `main` advances; a backfilled release uses
+its existing tag rather than moving it. Split harness fixes into their own PR,
+as with [#133](https://github.com/jchu96/frame-of-mind/pull/133).
+
+The six required CI contexts at the exact PR head are the merge oracle:
+`check`, `browser-e2e`, `auth-contract`, and the three `fresh-clone` jobs.
+Run `check:sharded` locally when the machine is unloaded, or serialize with
+`FRAME_OF_MIND_GATE_PARALLELISM=1` on a busy machine. A local advisory hosted
+failure under load is not itself a release blocker; record it and distinguish
+base-known #113/#96 failures from new regressions. This retains the maintainer's
+2026-08-23 non-blocking decision for the broader hosted lane without claiming
+that lane passed. See [Versioning](../VERSIONING.md#release-checklist).
+
 ## 2026-08-24 — Maintainer authority stays in deployment configuration
 
 ADR 0021 adds browser access to the existing membership transition state

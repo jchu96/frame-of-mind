@@ -39,8 +39,9 @@ permission to remove coverage from the complete gate.
   or presentation assets under `apps/web/app/**` (`.vue`, images, icons, and
   fonts). Stylesheets and app configuration are excluded because they can
   define the `--ui-*` semantic tokens whose contrast contract runs in hosted.
-- `bun run check:sharded` runs fast, local, and hosted lanes for every merge to
-  `main` and every nightly gate.
+- `bun run check:sharded` runs all fast, local, and hosted lanes. Run it locally
+  when the machine is unloaded; required CI at the exact PR head is the merge
+  oracle. On a busy machine, defer it or use `FRAME_OF_MIND_GATE_PARALLELISM=1`.
 - Every path outside that safe allowlist upgrades `check:pr` to sharded. This
   includes `src/**`, `apps/web/server*/**`, `apps/workflows/**`, `scripts/**`,
   `db/migrations/**`, `package.json`, `bun.lock`, Nuxt configuration, and
@@ -109,11 +110,18 @@ secret, OAuth provider, and D1 database in that job is synthetic and run-local;
 the workflow references no GitHub secret, so public-fork pull requests exercise
 the same contract.
 
-The complete `hosted-contracts` lane remains advisory because the Workflows
-contract exceeds its budget on the 2-core runner; [issue #96](https://github.com/jchu96/frame-of-mind/issues/96)
-tracks restoring the broader hosted suite as a reliable required check. Local `check:pr` calls retain
-the fail-closed adaptive tier selection described in [Gate tiers](#gate-tiers),
-and `bun run check:sharded` remains the repository's complete pre-merge gate.
+The complete `hosted-contracts` lane is not a required branch-protection
+context; neither is `serial-check`. It remains non-blocking by maintainer
+decision on 2026-08-23. As of 2026-09-08 it has been steadily red on `main`
+since 2026-08-31. Observed failures include the audit-query timeout in
+`test:hosted-access-http:better-auth`, the media-test step timeout, and the
+Better Auth Workflow terminal-stage assertion. These remain open in
+[issue #113](https://github.com/jchu96/frame-of-mind/issues/113) and
+[issue #96](https://github.com/jchu96/frame-of-mind/issues/96); an advisory run
+is not a passing receipt for the broader hosted boundary. Local `check:pr`
+calls retain the fail-closed adaptive tier selection described in
+[Gate tiers](#gate-tiers). Run `check:sharded` on an unloaded machine and record
+any failures separately from the six required CI contexts.
 
 When CI is red, start with the owning job. A `check` failure belongs to hygiene,
 types, unit tests, local builds/contracts, or the production audit. An

@@ -41,18 +41,27 @@ smoke tests require explicit local credentials and are not part of CI.
 ## Quality gates
 
 Use the focused commands while developing, then run the pull-request gate
-before requesting review. The full sharded gate is the pre-merge and nightly
-check across fast, local, and hosted lanes.
+before requesting review. Run the full sharded gate across fast, local, and
+hosted lanes when the machine is unloaded; required CI at the exact PR head is
+the merge oracle.
 
 ```bash
 bun run typecheck       # CLI, web, and workflows type checking
 bun run test            # Vitest CLI and domain suite
 bun run check:pr        # required pull-request gate
-bun run check:sharded   # complete sharded gate
+bun run check:sharded   # complete gate when the machine is unloaded
 ```
 
-The PR gate selects the necessary lanes from the diff. See `docs/TESTING.md`
-for web, browser, hosted-contract, and change-class-specific commands.
+The PR gate selects the necessary lanes from the diff. On a busy machine,
+defer the full run or set `FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes.
+The broader `hosted-contracts` CI job is not a required context and remains
+non-blocking by maintainer decision on 2026-08-23. As of 2026-09-08 it has been
+steadily red on `main` since 2026-08-31, with Better Auth access audit-query,
+media-step timeout, and Better Auth Workflow terminal-stage failures tracked in
+[#113](https://github.com/jchu96/frame-of-mind/issues/113) and
+[#96](https://github.com/jchu96/frame-of-mind/issues/96).
+See [Testing](docs/TESTING.md#ci) for the six required contexts and web,
+browser, hosted-contract, and change-class-specific commands.
 
 ## Writing issues
 

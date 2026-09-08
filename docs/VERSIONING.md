@@ -22,22 +22,46 @@ versions for durable schemas and prompts.
 
 ## Release checklist
 
-1. Update package version.
+1. Create `release/vX.Y.Z` from current `main` and update the package version.
 2. Update `CHANGELOG.md`.
 3. Confirm README and runbook commands.
 4. Confirm official provider and Google links.
 5. Run `bun install --frozen-lockfile`.
-6. Run `bun run check`.
+6. Run `bun run check:sharded` locally when the machine is unloaded. On a busy
+   machine, defer the full run or serialize lanes with
+   `FRAME_OF_MIND_GATE_PARALLELISM=1`. Required GitHub CI at the exact PR head
+   is the merge oracle: `check`, `browser-e2e`, `auth-contract`, and all three
+   `fresh-clone` jobs must be green. A local advisory hosted-lane failure under
+   load is not itself a release blocker; record it and compare with base-known
+   failures in [#113](https://github.com/jchu96/frame-of-mind/issues/113) and
+   [#96](https://github.com/jchu96/frame-of-mind/issues/96). Investigate a new
+   regression rather than treating every hosted failure as known debt.
 7. Run `bun run smoke:gemini` with a maintainer key and generated media.
 8. Validate the repository skill.
 9. Test the skill installer in a temporary home directory.
 10. Run `bun audit --production --audit-level=high`.
 11. Review generated package contents.
 12. Confirm no secrets, recordings, transcripts, or runs are tracked.
-13. Commit with the release version.
-14. Create an annotated `vX.Y.Z` tag.
-15. Push commit and tag.
-16. Create a GitHub release from the changelog.
+13. Commit with `release: vX.Y.Z`, push the release branch, and open a PR against
+    `main`. Split harness or test fixes discovered during preparation into their
+    own reviewed PRs, as with the hydration-wait fix in
+    [#133](https://github.com/jchu96/frame-of-mind/pull/133).
+14. Complete review and verify required CI at the final PR head, then merge the
+    release PR with a **merge commit**. Record that merge commit's full SHA.
+15. Create the annotated tag on that **release merge commit**, not the release
+    branch head or a later `main` tip, then push the tag:
+    `git tag -a vX.Y.Z <release-merge-sha> -m "Frame of Mind vX.Y.Z"` and
+    `git push origin vX.Y.Z`.
+16. Create the GitHub release from the changelog with the existing tag verified:
+    `gh release create vX.Y.Z --verify-tag --title "Frame of Mind vX.Y.Z" --notes-file <release-notes-path>`.
+
+### Release history
+
+- `v0.4.0` tags merge commit `2f27ad7`; its GitHub release was backfilled on
+  2026-09-08 without moving the tag.
+- `v0.5.0` tags release PR [#132](https://github.com/jchu96/frame-of-mind/pull/132)'s
+  merge commit `f9609ab`; its GitHub release was published on 2026-09-08.
+- `v0.3.0` has no tag or GitHub release.
 
 ## Model and dependency updates
 
