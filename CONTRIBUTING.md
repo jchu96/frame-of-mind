@@ -96,7 +96,8 @@ generated analyses into a public issue.
   review.
 - Use plain Conventional Commit subjects with no emoji. Subjects must use
   `type(scope): lowercase description` (the scope is optional) and must not end
-  in a period. The local `commit-msg` hook provides fast feedback, and
+  in a period. Release commits use `release: vX.Y.Z`. The local `commit-msg`
+  hook provides fast feedback, and
   `check:repo-hygiene` enforces the same rule in CI.
 - When a PR is substantially agent-authored, say so in the PR body and name the
   human or machine review that checked it. Machine-assistance disclosure is the

@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository        | `jchu96/frame-of-mind`                      |
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
-| Current version   | `0.4.0`                                     |
+| Current version   | `0.5.0`                                     |
 | Default model     | `gemini-3.7-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
@@ -28,7 +28,7 @@ Context and video are sensitive inputs. The operator controls authorization,
 retention, review, and publishing. Frame of Mind produces drafts with
 provenance; it does not make product, personnel, or engineering decisions.
 
-Current release status: the v0.4.0 production adapter bypasses the failing SDK
+Current release status: the v0.5.0 production adapter bypasses the failing SDK
 upload wrapper with Google's documented resumable protocol and derives a
 provider-safe response schema from the authoritative local Zod contract. Run
 the synthetic canary in section 1.5 before the first sensitive analysis and
@@ -177,7 +177,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.3.0
+0.5.0
 ```
 
 ### 1.5 Configure Gemini

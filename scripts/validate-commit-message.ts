@@ -7,6 +7,7 @@ const allowedTypes = [
   "fix",
   "perf",
   "refactor",
+  "release",
   "revert",
   "style",
   "test",
@@ -55,6 +56,7 @@ export function runCommitMessageSelfTest(): void {
   const fixtures = [
     { subject: "feat: add contribution checks", valid: true },
     { subject: "chore: x", valid: true },
+    { subject: "release: v0.5.0", valid: true },
     { subject: "fix(web): prevent stale results", valid: true },
     { subject: "chore!: remove obsolete workflow", valid: true },
     { subject: "Merge branch 'main' into feature", valid: true },

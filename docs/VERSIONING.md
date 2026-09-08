@@ -7,9 +7,9 @@ versions for durable schemas and prompts.
 
 | Surface | Current | Change rule |
 |---|---:|---|
-| CLI/package | `0.3.0` | Semantic Versioning |
-| `analysis.json` schema | `2` | increment for breaking shape/meaning |
-| `manifest.json` schema | `2` | increment for breaking provenance changes |
+| CLI/package | `0.5.0` | Semantic Versioning |
+| `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
+| `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
