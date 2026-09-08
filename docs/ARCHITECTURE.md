@@ -249,7 +249,7 @@ or the stable `content-addressed` marker.
 
 ### 4.5 Gemini analysis
 
-The current backend uses the Gemini Developer API. Version 0.3.0 uploads
+The current backend uses the Gemini Developer API. It uploads
 through Google's documented two-step resumable Files REST protocol, then uses
 the official `@google/genai` SDK for file status, generation, and deletion.
 
