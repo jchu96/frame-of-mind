@@ -25,14 +25,14 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260821.1",
-    "@iconify-json/lucide": "1.2.124",
-    "@iconify-json/simple-icons": "^1.2.93",
-    "@types/bun": "1.4.0",
+    "@cloudflare/workers-types": "5.20260905.1",
+    "@iconify-json/lucide": "1.2.129",
+    "@iconify-json/simple-icons": "^1.2.94",
+    "@types/bun": "1.4.1",
     "miniflare": "4.20260730.0",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
-    "vue-tsc": "3.3.10",
-    "wrangler": "4.125.0"
+    "vue-tsc": "3.3.11",
+    "wrangler": "4.129.0"
   }
 }
