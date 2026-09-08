@@ -8,8 +8,10 @@
   release PR head; `hosted-contracts` remains advisory under #113 and #96.
 - 2026-09-08: [#133](https://github.com/jchu96/frame-of-mind/pull/133) bounds
   the hosted Activity hydration wait to 30 seconds before installing its display
-  fixture. It merged after the release tag; it does not resolve the advisory
-  hosted lane's remaining failures.
+  fixture. Release PR #132 merged as `f9609ab`, then #133 merged as `1858109`,
+  then the annotated `v0.5.0` tag was created pointing at `f9609ab`, excluding
+  #133. The harness fix does not resolve the advisory hosted lane's remaining
+  failures.
 - 2026-09-08: Post-release Dependabot merges
   [#126](https://github.com/jchu96/frame-of-mind/pull/126),
   [#127](https://github.com/jchu96/frame-of-mind/pull/127),

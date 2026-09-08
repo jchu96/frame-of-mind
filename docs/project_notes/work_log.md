@@ -10,7 +10,9 @@
   the release PR head; the broader hosted lane remained advisory and red.
 - Split the hydration-wait harness correction into
   [#133](https://github.com/jchu96/frame-of-mind/pull/133), merged at `1858109`
-  after the release. The Activity display fixture waits for client hydration
+  after #132's `f9609ab` merge and before tag creation. The annotated `v0.5.0`
+  tag was then created pointing at `f9609ab`, excluding #133.
+  The Activity display fixture waits for client hydration
   with a 30-second bound and named failure; the isolated Better Auth Workflow
   probe passed. This is a harness correction, not a fix for the advisory lane.
 - Merged five Dependabot updates after the release: Sentry Nuxt
@@ -21,7 +23,7 @@
   group [#131](https://github.com/jchu96/frame-of-mind/pull/131). The development
   group landed last and separately for bisectability, including the Vitest 5
   major (`5.0.0`), Playwright `1.63.0`, and Wrangler `4.129.0`. These updates
-  and #133 are on `main` after the release tag, not in the tagged package.
+  and #133 are outside the tagged release commit, not in the tagged package.
 
 ## 2026-08-27
 
