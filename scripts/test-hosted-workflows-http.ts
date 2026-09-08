@@ -1628,6 +1628,18 @@ async function verifyHostedBrowserContract(
     const activityFixtures = hostedActivityFixtures();
     await page.goto(`${origin}/hosted/activity`);
     await page.locator("[data-hosted-activity-page=list]").waitFor();
+    // Server-rendered DOM can appear before Nuxt finishes its client data fetch.
+    // Keep the real API response in place until hydration is complete, then
+    // install display fixtures; otherwise the fixture itself causes a mismatch.
+    await page.waitForFunction(() => {
+      const root = document.querySelector("#__nuxt") as (HTMLElement & {
+        __vue_app__?: { config: { globalProperties: { $nuxt?: { isHydrating: boolean } } } };
+      }) | null;
+      return root?.__vue_app__?.config.globalProperties.$nuxt?.isHydrating === false;
+    }, undefined, { timeout: 30_000 }).catch((cause: unknown) => {
+      throw new Error("HOSTED_WORKFLOW Activity hydration wait failed (30000 ms)", { cause });
+    });
+    console.log("HOSTED_WORKFLOW hydration=PASS activity_fixture_after_hydration=true");
     assertEqual(hydrationMismatches, [], "Activity SSR hydration mismatches");
     await page.route("**/api/hosted/jobs", async (route) => {
       await route.fulfill({

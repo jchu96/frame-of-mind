@@ -1,5 +1,18 @@
 # Bugs and Failure History
 
+## 2026-09-08 — Activity display fixture raced client hydration
+
+- Symptom: the Better Auth Workflows browser contract reported a hydration
+  mismatch at `10-activity-list` during v0.5.0 preparation.
+- Cause: finding the server-rendered Activity element did not prove hydration
+  had finished. A diagnostic observed `isHydrating=true` immediately before
+  the harness replaced the jobs API response with display fixtures.
+- Fix: wait for the real Nuxt app to finish hydration before asserting that
+  hydration was clean and installing the response fixture. Keep the mismatch
+  assertion. The complete diagnostic Workflows contract passed with that wait;
+  no Activity application code changed. The wait has an explicit 30,000 ms
+  timeout and names the Activity hydration stage if it fails (Sol review).
+
 ## 2026-08-24 — Better Auth hosted-access fixture could wait forever in CI
 
 - Symptom: the advisory hosted lane printed the migration receipt, then the
