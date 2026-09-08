@@ -1,5 +1,7 @@
 # Key Facts
 
+- 2026-09-08: The local analysis orchestrator probes duration once before run creation or Gemini calls, refuses known durations over 7200 seconds (overridable with positive-integer `FRAME_OF_MIND_MAX_VIDEO_SECONDS`), and reuses the probe for transcription with the existing unknown-duration fallback.
+
 - Public pull requests require a secret-free `auth-contract` CI job. It builds
   the real Cloudflare Worker, applies and replays migrations against an
   ephemeral local D1, and uses synthetic GitHub OAuth identities to prove

@@ -298,6 +298,8 @@ rotation, and Windows setup live in [docs/CREDENTIALS.md](docs/CREDENTIALS.md).
 > future Vertex backend needs private Cloud Storage staging and explicit
 > cleanup.
 
+`FRAME_OF_MIND_MAX_VIDEO_SECONDS` sets the local CLI/Studio video duration limit in positive integer seconds (default `7200`); known longer recordings fail before transcription or upload, while unknown durations proceed unchanged.
+
 ### Authorize meeting context
 
 ```bash

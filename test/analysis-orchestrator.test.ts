@@ -30,6 +30,125 @@ afterEach(async () => {
 });
 
 describe("AnalysisOrchestrator", () => {
+  describe("video duration preflight", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    async function durationFixture(duration: number | undefined) {
+      vi.stubEnv("FRAME_OF_MIND_MAX_VIDEO_SECONDS", undefined);
+      const fixture = await createFixture();
+      fixture.meeting.transcript = undefined;
+      const analyzer = {
+        ...fixture.analyzer,
+        transcribe: vi.fn(async () => [
+          { start: "00:00:02", end: "00:00:04", speaker: "Speaker 1", text: "Please add the report." },
+        ]),
+      };
+      const createAnalyzer = vi.fn(() => analyzer);
+      const probeDurationSeconds = vi.fn(async () => duration);
+      const extractAudioTrack = vi.fn(async (_video: string, destination: string) => {
+        await writeFile(destination, "synthetic-audio");
+        return true;
+      });
+      const orchestrator = new AnalysisOrchestrator({
+        createContextSource: () => fixture.context,
+        createAnalyzer,
+        createRunId: () => "duration-run",
+        sleep: async () => undefined,
+        probeDurationSeconds,
+        extractAudioTrack,
+      });
+      return { ...fixture, analyzer, createAnalyzer, probeDurationSeconds, extractAudioTrack, orchestrator };
+    }
+
+    it("refuses 9000 seconds with hours and remedies before transcription, upload, or run creation", async () => {
+      const fixture = await durationFixture(9000);
+      await expect(fixture.orchestrator.analyze(fixture.options)).rejects.toThrow(
+        "Recording is 2.5 h; the selected model's video window is 2.0 h at this media resolution. " +
+          "Split the recording or lower media resolution.",
+      );
+      expect(fixture.probeDurationSeconds).toHaveBeenCalledTimes(1);
+      expect(fixture.createAnalyzer).not.toHaveBeenCalled();
+      expect(fixture.extractAudioTrack).not.toHaveBeenCalled();
+      expect(fixture.analyzer.transcribe).not.toHaveBeenCalled();
+      expect(fixture.analyzer.upload).not.toHaveBeenCalled();
+      await expect(stat(fixture.outputRoot)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(fixture.options.video!, "utf8")).toBe("synthetic-video");
+      expect(fixture.context.close).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps unknown duration to one transcription window and uploads the video", async () => {
+      const fixture = await durationFixture(undefined);
+      const signal = new AbortController().signal;
+      await fixture.orchestrator.analyze(fixture.options, { signal });
+      expect(fixture.probeDurationSeconds).toHaveBeenCalledExactlyOnceWith(fixture.options.video, { signal });
+      expect(fixture.extractAudioTrack).toHaveBeenCalledExactlyOnceWith(
+        fixture.options.video, expect.stringContaining("derived-audio-1.aac"), { signal },
+      );
+      expect(fixture.analyzer.transcribe).toHaveBeenCalledTimes(1);
+      expect(fixture.analyzer.upload).toHaveBeenCalledTimes(2);
+      expect(fixture.analyzer.upload).toHaveBeenLastCalledWith(fixture.options.video, "video/mp4");
+    });
+
+    it("allows exactly 7200 seconds and reuses the probe for transcription windows", async () => {
+      const fixture = await durationFixture(7200);
+      await fixture.orchestrator.analyze(fixture.options);
+      expect(fixture.probeDurationSeconds).toHaveBeenCalledTimes(1);
+      expect(fixture.analyzer.transcribe).toHaveBeenCalledTimes(12);
+      expect(fixture.analyzer.upload).toHaveBeenLastCalledWith(fixture.options.video, "video/mp4");
+    });
+
+    it("refuses 7201 seconds even when derived transcription is disabled", async () => {
+      const fixture = await durationFixture(7201);
+      await expect(fixture.orchestrator.analyze({ ...fixture.options, derivedTranscript: false }))
+        .rejects.toThrow("video window is 2.0 h");
+      expect(fixture.createAnalyzer).not.toHaveBeenCalled();
+      expect(fixture.analyzer.upload).not.toHaveBeenCalled();
+    });
+
+    it("allows 9000 seconds with FRAME_OF_MIND_MAX_VIDEO_SECONDS=10000", async () => {
+      const fixture = await durationFixture(9000);
+      vi.stubEnv("FRAME_OF_MIND_MAX_VIDEO_SECONDS", "10000");
+      await fixture.orchestrator.analyze(fixture.options);
+      expect(fixture.probeDurationSeconds).toHaveBeenCalledTimes(1);
+      expect(fixture.analyzer.transcribe).toHaveBeenCalledTimes(15);
+      expect(fixture.analyzer.upload).toHaveBeenLastCalledWith(fixture.options.video, "video/mp4");
+      // Resolve the environment afresh on each run, even with the same instance.
+      vi.stubEnv("FRAME_OF_MIND_MAX_VIDEO_SECONDS", "7200");
+      await expect(fixture.orchestrator.analyze(fixture.options)).rejects.toThrow("video window is 2.0 h");
+      expect(fixture.createAnalyzer).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects invalid FRAME_OF_MIND_MAX_VIDEO_SECONDS before any probe or context work", async () => {
+      const fixture = await durationFixture(9000);
+      for (const value of ["0", "-1", "invalid", "", "1.5", "Infinity", "1e4", "9007199254740992"]) {
+        vi.stubEnv("FRAME_OF_MIND_MAX_VIDEO_SECONDS", value);
+        await expect(fixture.orchestrator.analyze(fixture.options)).rejects.toThrow(
+          "FRAME_OF_MIND_MAX_VIDEO_SECONDS must be a positive integer number of seconds",
+        );
+      }
+      expect(fixture.probeDurationSeconds).not.toHaveBeenCalled();
+      expect(fixture.context.connect).not.toHaveBeenCalled();
+      expect(fixture.createAnalyzer).not.toHaveBeenCalled();
+      await expect(stat(fixture.outputRoot)).rejects.toMatchObject({ code: "ENOENT" });
+    });
+
+    it("honors cancellation during the probe before creating a run or analyzer", async () => {
+      const fixture = await durationFixture(undefined);
+      const controller = new AbortController();
+      fixture.probeDurationSeconds.mockImplementation(async () => {
+        controller.abort();
+        return undefined;
+      });
+      await expect(fixture.orchestrator.analyze(fixture.options, { signal: controller.signal }))
+        .rejects.toBeInstanceOf(AnalysisCanceledError);
+      expect(fixture.probeDurationSeconds).toHaveBeenCalledExactlyOnceWith(
+        fixture.options.video, { signal: controller.signal },
+      );
+      expect(fixture.createAnalyzer).not.toHaveBeenCalled();
+      await expect(stat(fixture.outputRoot)).rejects.toMatchObject({ code: "ENOENT" });
+    });
+  });
+
   it("uses an explicit staged MIME type before hashing an extensionless recording", async () => {
     const fixture = await createFixture();
     const sealedVideo = join(fixture.outputRoot, "..", "media.sealed");

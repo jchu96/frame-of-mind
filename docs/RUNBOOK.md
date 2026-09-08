@@ -304,6 +304,8 @@ JSON file should expose recognizable transcript/title/date keys.
 
 ## 3. Standard analysis procedure
 
+Local CLI/Studio analysis refuses known recording durations above `FRAME_OF_MIND_MAX_VIDEO_SECONDS` (default `7200`, positive integer seconds) before transcription, upload, or run creation; unknown durations proceed with the existing fallback.
+
 ### 3.1 Identify the desired output
 
 ```bash

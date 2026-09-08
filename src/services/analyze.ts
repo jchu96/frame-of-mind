@@ -82,6 +82,18 @@ import {
 // per remaining candidate.
 const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
 
+const DEFAULT_MAX_VIDEO_SECONDS = 7200;
+
+function resolveMaxVideoSeconds(): number {
+  const value = process.env.FRAME_OF_MIND_MAX_VIDEO_SECONDS;
+  if (value === undefined) return DEFAULT_MAX_VIDEO_SECONDS;
+  const seconds = Number(value);
+  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(seconds)) {
+    throw new Error("FRAME_OF_MIND_MAX_VIDEO_SECONDS must be a positive integer number of seconds");
+  }
+  return seconds;
+}
+
 // Verbatim transcription is bounded by the model's output budget, not the
 // audio length, so long recordings are transcribed in windows with a short
 // lead-in overlap for boundary context.
@@ -311,6 +323,7 @@ export class AnalysisOrchestrator {
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
+    const maxVideoSeconds = resolveMaxVideoSeconds();
     const runId = requireSafeRunId(this.nextRunId());
     const startedAt = this.now();
     const hasContext = hasMeetingContext(options);
@@ -393,6 +406,16 @@ export class AnalysisOrchestrator {
       if (recordingSizeBytes > MAX_RECORDING_BYTES) {
         throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
       }
+      assertNotCanceled(execution.signal);
+      const duration = await this.probeDuration(localVideo, { signal: execution.signal });
+      assertNotCanceled(execution.signal);
+      if (duration !== undefined && duration > maxVideoSeconds) {
+        throw new Error(
+          `Recording is ${(duration / 3600).toFixed(1)} h; the selected model's video window is ` +
+            `${(maxVideoSeconds / 3600).toFixed(1)} h at this media resolution. ` +
+            "Split the recording or lower media resolution.",
+        );
+      }
       const recordingSha256 = await sha256File(localVideo);
       if (
         options.expectedVideoSha256
@@ -440,8 +463,6 @@ export class AnalysisOrchestrator {
         // recording, so the audio is transcribed in bounded windows and
         // stitched back onto recording time. When the duration is unknown the
         // plan degrades to one window, matching the previous behavior.
-        const duration = await this.probeDuration(localVideo, { signal: execution.signal });
-        assertNotCanceled(execution.signal);
         const windows = planTranscriptionWindows(
           duration ?? TRANSCRIPTION_WINDOW_SECONDS,
           TRANSCRIPTION_WINDOW_SECONDS,
