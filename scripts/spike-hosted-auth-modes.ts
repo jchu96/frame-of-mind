@@ -624,7 +624,7 @@ async function expectUnknownLoginUnapproved(
     headers: { cookie, accept: "text/html" },
   }), 200, "request-access page");
   const requestPageText = await requestPage.text();
-  if (!requestPageText.includes("Request access") || !requestPageText.includes("when approved")) {
+  if (!requestPageText.includes("Request access") || !requestPageText.includes("Access is approved by the maintainer before any recording can be uploaded or analyzed.")) {
     throw new Error("Request-access page omitted its approval copy.");
   }
 }
