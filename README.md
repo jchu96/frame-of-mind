@@ -96,7 +96,7 @@ hesitation, the exact state before a problem, and the examples people point
 at instead of naming. Frame of Mind reasons over both — and every finding
 must cite visible or spoken evidence, or it is rejected.
 
-Under the hood, v0.4.0 uses Google's documented resumable Files upload
+Under the hood, Frame of Mind uses Google's documented resumable Files upload
 protocol and a Gemini-safe response schema while the complete Zod contract
 stays authoritative locally. An invalid structured response gets one
 regeneration attempt with sanitized feedback; a terminal failure is isolated
@@ -242,18 +242,25 @@ For Better Auth or D1 boundary changes, run the focused required contract too:
 bun run check:auth-contract
 ```
 
-Run `bun run check:sharded` before every merge and for the complete nightly
-gate. `bun run check` remains the serial fallback.
+Run `bun run check:pr` for pull requests and `bun run check:sharded` when the
+machine is unloaded. On a busy machine, defer the full run or use
+`FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes. Required CI at the exact
+PR head is the merge oracle; `bun run check` remains the serial fallback.
 
 GitHub CI keeps the minimum hosted trust-boundary proof required without making
 the complete hosted suite a merge bottleneck. The secret-free `auth-contract`
 job builds the Worker against an ephemeral local D1 and proves synthetic Better
 Auth sign-in, membership denial, `ba:<userId>` ownership, principal isolation,
-and next-request revocation. The advisory 40-minute `hosted-contracts` job
-retains the broader Workflows, media, browser, and release proof while
-[issue #96](https://github.com/jchu96/frame-of-mind/issues/96) tracks its
-2-core timing. No repository secret or Better Auth API-key plugin is needed for
-pull requests, including forks. The required `check`, three fresh-clone
+and next-request revocation. The 40-minute `hosted-contracts` job runs the
+broader Workflows, media, browser, and release checks, but is not a required
+context. As of 2026-09-08 it has been steadily red on `main` since 2026-08-31:
+observed failures include the audit-query timeout in
+`test:hosted-access-http:better-auth`, the media-test step timeout, and the
+Better Auth Workflow terminal-stage assertion. These remain tracked in
+[issue #113](https://github.com/jchu96/frame-of-mind/issues/113) and
+[issue #96](https://github.com/jchu96/frame-of-mind/issues/96), non-blocking by
+maintainer decision on 2026-08-23. No repository secret or Better Auth API-key
+plugin is needed for pull requests, including forks. The required `check`, three fresh-clone
 platforms, and browser E2E job remain separate failure domains. See
 [docs/TESTING.md](docs/TESTING.md#ci).
 
