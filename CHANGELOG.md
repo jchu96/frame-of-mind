@@ -5,6 +5,53 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-08
+
+### Added
+
+- Self-serve hosted access requests with clear submission feedback, followed
+  by maintainer approval before Studio access (#99).
+- A maintainer-only `/admin/access` surface to review requests and approve,
+  deny, or revoke membership, with revocation enforced on the next request
+  (#109).
+- Content-free AI-agent tracing behind a second, explicit telemetry opt-in;
+  spans cover analysis phases and report sanitized failure codes without
+  recordings, transcripts, prompts, or model output (ADR 0022; #119).
+
+### Fixed
+
+- Refuse local CLI/Studio recordings above the configured duration limit
+  before transcription, upload, or run creation; the default is 7,200 seconds
+  and `FRAME_OF_MIND_MAX_VIDEO_SECONDS` can override it (commit 374229c;
+  landed directly without a pull request). Limit-truncated analyses now report
+  `partial`; candidate coverage outcomes
+  survive SQLite/D1 projection, Studio views, re-import, and exports instead
+  of presenting omitted work as complete (#111).
+- Renumbered the run-outcome projection migration to `0012` to avoid the
+  access-administration migration collision (#114).
+- Corrected hosted light/dark contrast and hydration mismatches across
+  sign-in and composer pages (#105, #118).
+- Reserve hosted spend for the initial generation chain and extend it
+  atomically before transport retries; corrected allowance feedback,
+  access-request capacity handling, and local composer replay (#107).
+- Bounded hosted access-contract waits and restored CLI SIGINT handler
+  compatibility with current Bun types (#116, #108).
+
+### Changed
+
+- Refreshed hosted operations, credentials, deployment, and repository-skill
+  guidance; documented truncation and hosted-test lessons (#106, #110, #115).
+- Added contribution templates and commit conventions with isolated hook
+  self-tests and explicit PR gate base handling (#121, #122).
+- Required a secret-free Better Auth/D1 authorization contract in CI and
+  installed Chromium in the serial-check job (#123, #100). Updated hosted
+  fixtures to use run-relative expiry and current approval copy (direct
+  commits 81d0436, d81f467).
+- Dependencies: updated `@google/genai` to 2.18.0, Vue to 3.5.41, `jose` to
+  6.2.9, and grouped development dependencies (#101, #102, #103, #104). Raised
+  the patched `fast-uri` override floor to 3.1.6, resolving 3.1.7, to clear
+  high-severity production advisories (direct commit 7a57ad5).
+
 ## [0.4.0] - 2026-08-24
 
 ### Added
@@ -27,17 +74,6 @@ Semantic Versioning.
   tier, and per-step timeouts.
 - Public-repository hygiene detectors for cloud resource identifiers, and a
   scheme-aware light/dark theme with enforced WCAG AA contrast.
-
-### Changed
-
-- GitHub CI runs the lane-based jobs and is green again; a red required check
-  now blocks merges via branch protection.
-- Hosted access is invite-gated today; self-serve access requests (ADR 0020)
-  are in progress.
-
-
-### Added
-
 - Long recordings now derive a transcript in bounded windows. Audio beyond ten
   minutes is extracted, uploaded, and transcribed one window at a time, each
   window after the first starting fifteen seconds early for boundary context,
@@ -103,6 +139,10 @@ Semantic Versioning.
 
 ### Changed
 
+- GitHub CI runs the lane-based jobs and is green again; a red required check
+  now blocks merges via branch protection.
+- Hosted access is invite-gated today; self-serve access requests (ADR 0020)
+  are in progress.
 - Bumped the prompt revision to `2026-07-28.3`.
 - On schema-2 manifests a derived transcript changes the referent of two
   existing fields: `transcriptSha256` records the derived text's digest and

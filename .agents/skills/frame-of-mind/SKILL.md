@@ -1,6 +1,7 @@
 ---
 name: frame-of-mind
-version: 2026-08-24.1
+metadata:
+  version: "2026-08-24.1"
 description: Operate Frame of Mind across its local video-understanding CLI and Studio plus the hosted Studio at fom.flickerventures.com. Use for Bluedot, Granola, or file-backed meeting analysis with screen recordings and Gemini; decisions, requirements, action items, repository plans, UX reviews, communication/self-review, technical or process walkthroughs, video Q&A, transcript alignment, and portable HTML/Markdown/JSON artifacts. Also use for hosted access requests, inviting/approving/revoking users, /admin/access, hosted run status, Cloudflare deploy/rollback routing, D1 migrations, spend caps, retained R2 media, and release gates.
 ---
 
