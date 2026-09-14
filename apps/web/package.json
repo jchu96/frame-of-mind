@@ -14,7 +14,7 @@
     "typecheck": "nuxi typecheck && tsc -p tsconfig.server-local.json --noEmit"
   },
   "dependencies": {
-    "@better-auth/core": "1.7.1",
+    "@better-auth/core": "1.7.4",
     "@nuxt/ui": "4.10.0",
     "@sentry/nuxt": "10.73.0",
     "better-auth": "1.7.2",
