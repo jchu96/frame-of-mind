@@ -1248,6 +1248,14 @@ Read official release notes before changing pins.
 
 ### Dependency advisory note
 
+The exact `sharp` 0.35.5 override clears GHSA-rgj7-g3m4-5g8c and
+GHSA-wq5f-xc86-pv6w. Miniflare's latest stable 4.20260730.0 and the Miniflare
+alpha bundled with Wrangler 4.129.0 both require vulnerable 0.35.2. Remove the
+override after upgrading both parents to supported releases that resolve
+patched sharp without it, then rerun the frozen-install audit with CI's Bun
+1.3.14. Newer Bun releases can classify this dependency differently under
+`--production`, so a host-only audit is insufficient.
+
 The Better Auth 1.7.7 security update requires migration
 `0013_better_auth_provider_identity.sql` before deploying the new Worker.
 Back up D1, apply all pending migrations locally, and verify the hosted auth
