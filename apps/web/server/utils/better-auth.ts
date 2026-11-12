@@ -246,7 +246,6 @@ export function createBetterAuth(event: H3Event) {
           scopes: ["user:email"],
           pkce: true,
           requireEmailVerification: true,
-          accountIssuer: "https://github.com",
           mapProfileToUser: (profile) => ({
             email: String(profile.email || ""),
             name: String(profile.name || profile.login || "GitHub user"),

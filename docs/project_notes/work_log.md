@@ -1,5 +1,15 @@
 # Work Log
 
+## 2026-11-12
+
+- Updated production dependency pins and their locked transitive dependencies
+  to clear the high/critical audit (baseline: 47 advisories). The patched Better
+  Auth API requires migration 0013: existing account data and user ownership are
+  preserved, retired issuer metadata becomes optional, and conflicting provider
+  identities fail closed. The fast lane and populated-account migration tests
+  pass; full-gate and mutation receipts are recorded in the dependency-audit
+  handoff. See [ADR 0023](../adr/0023-better-auth-provider-account-identity.md).
+
 ## 2026-09-08
 
 - Released [v0.5.0](https://github.com/jchu96/frame-of-mind/releases/tag/v0.5.0)

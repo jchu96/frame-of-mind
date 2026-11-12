@@ -1248,6 +1248,16 @@ Read official release notes before changing pins.
 
 ### Dependency advisory note
 
+The Better Auth 1.7.7 security update requires migration
+`0013_better_auth_provider_identity.sql` before deploying the new Worker.
+Back up D1, apply all pending migrations locally, and verify the hosted auth
+contracts before a remote upgrade. Migration 0013 preserves account data and
+user ownership while allowing new accounts without the retired issuer field.
+A duplicate `(provider_id, account_id)` aborts migration: review the conflicting
+identities; do not delete or merge rows automatically. Rolling back to Better
+Auth 1.7.2 requires the reviewed pre-upgrade database backup as well as the old
+artifact. See [ADR 0023](adr/0023-better-auth-provider-account-identity.md).
+
 The pinned MCP SDK currently brings transitive Hono advisories that affect its
 static-server path. Frame of Mind does not use that path. CI fails high/critical
 production advisories, while moderate findings are reviewed and documented.
