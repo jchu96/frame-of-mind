@@ -78,7 +78,7 @@ sessions) and sibling Worker (for analysis):
 ```bash
 node apps/web/node_modules/wrangler/bin/wrangler.js secret put GEMINI_API_KEY \
   --config apps/workflows/wrangler.jsonc
-bunx wrangler secret put GEMINI_API_KEY --cwd apps/web --config wrangler.jsonc
+./apps/web/node_modules/.bin/wrangler secret put GEMINI_API_KEY --cwd apps/web --config wrangler.jsonc
 ```
 
 The Workflows Worker shape is:
@@ -298,13 +298,13 @@ apps/web/.output/public
 ## 2. Authenticate Wrangler
 
 ```bash
-bunx wrangler whoami
+./apps/web/node_modules/.bin/wrangler whoami
 ```
 
 If necessary:
 
 ```bash
-bunx wrangler login
+./apps/web/node_modules/.bin/wrangler login
 ```
 
 Verify the account name and ID before continuing.
@@ -312,7 +312,7 @@ Verify the account name and ID before continuing.
 ## 3. Create the D1 database
 
 ```bash
-bunx wrangler d1 create frame-of-mind
+./apps/web/node_modules/.bin/wrangler d1 create frame-of-mind
 ```
 
 Record the returned database ID. It is infrastructure metadata, not an API
@@ -394,7 +394,7 @@ empty for Slice 1, but the migration never assumes that fact.
 Test against Wrangler's local D1 first:
 
 ```bash
-bunx wrangler d1 migrations apply frame-of-mind \
+./apps/web/node_modules/.bin/wrangler d1 migrations apply frame-of-mind \
   --local \
   --config apps/web/wrangler.jsonc
 ```
@@ -402,7 +402,7 @@ bunx wrangler d1 migrations apply frame-of-mind \
 Inspect migration status:
 
 ```bash
-bunx wrangler d1 migrations list frame-of-mind \
+./apps/web/node_modules/.bin/wrangler d1 migrations list frame-of-mind \
   --local \
   --config apps/web/wrangler.jsonc
 ```
@@ -410,7 +410,7 @@ bunx wrangler d1 migrations list frame-of-mind \
 Apply to the remote database only after the local command succeeds:
 
 ```bash
-bunx wrangler d1 migrations apply frame-of-mind \
+./apps/web/node_modules/.bin/wrangler d1 migrations apply frame-of-mind \
   --remote \
   --config apps/web/wrangler.jsonc
 ```
@@ -434,7 +434,7 @@ explicit disabled-hosted fixture remains 404.
 After migration, verify no sentinel survived:
 
 ```bash
-bunx wrangler d1 execute frame-of-mind \
+./apps/web/node_modules/.bin/wrangler d1 execute frame-of-mind \
   --remote \
   --config apps/web/wrangler.jsonc \
   --command "SELECT (SELECT count(*) FROM analysis_runs WHERE principal_sub = '__legacy_unclaimed__') + (SELECT count(*) FROM analysis_items WHERE principal_sub = '__legacy_unclaimed__') + (SELECT count(*) FROM analysis_run_registry WHERE principal_sub = '__legacy_unclaimed__') + (SELECT count(*) FROM video_analysis_runs WHERE principal_sub = '__legacy_unclaimed__') + (SELECT count(*) FROM video_analysis_items WHERE principal_sub = '__legacy_unclaimed__') AS sentinel_rows"
@@ -477,7 +477,7 @@ Before a deploy, produce both module dry-run receipts without contacting the
 deployment API:
 
 ```bash
-bunx wrangler deploy --dry-run --outdir "<PRIVATE_TEMP_DIRECTORY>/fom-public-bundle" \
+./apps/web/node_modules/.bin/wrangler deploy --dry-run --outdir "<PRIVATE_TEMP_DIRECTORY>/fom-public-bundle" \
   --cwd apps/web --config wrangler.jsonc
 node apps/web/node_modules/wrangler/bin/wrangler.js deploy \
   --dry-run --outdir "<PRIVATE_TEMP_DIRECTORY>/fom-workflow-bundle" \
@@ -491,7 +491,7 @@ Stop if either includes error `100329`.
 Deploy from `apps/web` so Wrangler paths match the configuration:
 
 ```bash
-bunx wrangler deploy --cwd apps/web --config wrangler.jsonc
+./apps/web/node_modules/.bin/wrangler deploy --cwd apps/web --config wrangler.jsonc
 ```
 
 Neither Worker bundle contains a secret literal. The public and internal
@@ -554,7 +554,7 @@ principal isolation again before calling rotation complete.
 Before a migration:
 
 ```bash
-bunx wrangler d1 export frame-of-mind \
+./apps/web/node_modules/.bin/wrangler d1 export frame-of-mind \
   --remote \
   --output "/private/backup/frame-of-mind.sql" \
   --config apps/web/wrangler.jsonc
@@ -603,7 +603,7 @@ case "$FOM_RUN_ID" in
     ;;
 esac
 
-bunx wrangler d1 execute frame-of-mind \
+./apps/web/node_modules/.bin/wrangler d1 execute frame-of-mind \
   --remote \
   --config apps/web/wrangler.jsonc \
   --command "SELECT principal_sub, run_id, schema_version FROM analysis_run_registry WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID';"
@@ -614,7 +614,7 @@ when policy requires recovery, then delete both possible child families, the
 registry row, and both possible parent families for that composite key:
 
 ```bash
-bunx wrangler d1 execute frame-of-mind \
+./apps/web/node_modules/.bin/wrangler d1 execute frame-of-mind \
   --remote \
   --config apps/web/wrangler.jsonc \
   --command "DELETE FROM analysis_items WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID'; DELETE FROM video_analysis_items WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID'; DELETE FROM analysis_run_registry WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID'; DELETE FROM analysis_runs WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID'; DELETE FROM video_analysis_runs WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID';"
@@ -623,7 +623,7 @@ bunx wrangler d1 execute frame-of-mind \
 Verify that all five counts sum to zero:
 
 ```bash
-bunx wrangler d1 execute frame-of-mind \
+./apps/web/node_modules/.bin/wrangler d1 execute frame-of-mind \
   --remote \
   --config apps/web/wrangler.jsonc \
   --command "SELECT (SELECT COUNT(*) FROM analysis_runs WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') + (SELECT COUNT(*) FROM video_analysis_runs WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') + (SELECT COUNT(*) FROM analysis_items WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') + (SELECT COUNT(*) FROM video_analysis_items WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') + (SELECT COUNT(*) FROM analysis_run_registry WHERE principal_sub = '$FOM_PRINCIPAL_SUB' AND run_id = '$FOM_RUN_ID') AS remaining_rows;"

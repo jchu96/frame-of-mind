@@ -49,7 +49,7 @@
     "check:pr": "bun scripts/run-check-sharded.ts --tier pr",
     "check:sharded": "bun scripts/run-check-sharded.ts --tier sharded",
     "check:e2e": "FRAME_OF_MIND_E2E_SUITE=check bun --no-env-file scripts/run-playwright-e2e.ts",
-    "check:repo-hygiene": "bun --no-env-file scripts/install-git-hooks.ts --self-test && bun --no-env-file scripts/check-repo-hygiene.ts --self-test && bun --no-env-file scripts/check-repo-hygiene.ts",
+    "check:repo-hygiene": "bun --no-env-file scripts/install-git-hooks.ts --self-test && bun --no-env-file scripts/check-repo-hygiene.ts --self-test && bun --no-env-file test scripts/wrangler-pin.test.ts && bun --no-env-file scripts/check-repo-hygiene.ts",
     "dev": "bun src/cli.ts",
     "install:skill": "node scripts/install-skill.mjs",
     "smoke:gemini": "bun scripts/smoke-gemini.ts",

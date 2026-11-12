@@ -654,30 +654,35 @@ async function hostedRepositoryFixture(includeHostedMigration = true) {
   const miniflare = new Miniflare({
     modules: true,
     script: "export default { fetch() { return new Response('ok'); } }",
-    d1Databases: { DB: "frame-of-mind-hosted-workflow-test" },
+    d1Databases: { DB: `frame-of-mind-hosted-workflow-test-${crypto.randomUUID()}` },
   });
-  const database = await miniflare.getD1Database("DB");
-  const names = [
-    "0001_initial.sql",
-    "0002_video_only_projection.sql",
-    "0003_principal_scope.sql",
-    ...(includeHostedMigration
-      ? [
-          "0004_hosted_workflows.sql",
-          "0005_hosted_spend_telemetry.sql",
-          "0007_hosted_direct_media.sql",
-          "0008_hosted_retention_evidence.sql",
-        ]
-      : []),
-  ];
-  for (const name of names) {
-    const sql = await readFile(
-      new URL(`../db/migrations/${name}`, import.meta.url),
-      "utf8",
-    );
-    await applyMigration(database, sql);
+  try {
+    const database = await miniflare.getD1Database("DB");
+    const names = [
+      "0001_initial.sql",
+      "0002_video_only_projection.sql",
+      "0003_principal_scope.sql",
+      ...(includeHostedMigration
+        ? [
+            "0004_hosted_workflows.sql",
+            "0005_hosted_spend_telemetry.sql",
+            "0007_hosted_direct_media.sql",
+            "0008_hosted_retention_evidence.sql",
+          ]
+        : []),
+    ];
+    for (const name of names) {
+      const sql = await readFile(
+        new URL(`../db/migrations/${name}`, import.meta.url),
+        "utf8",
+      );
+      await applyMigration(database, sql);
+    }
+    return { miniflare, database };
+  } catch (error) {
+    await miniflare.dispose();
+    throw error;
   }
-  return { miniflare, database };
 }
 
 async function applyMigration(

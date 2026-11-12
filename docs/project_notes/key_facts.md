@@ -59,8 +59,8 @@
 - Granola MCP advertises `get_meetings` and paid-plan `get_meeting_transcript` tools.
 - Granola also documents `GET https://public-api.granola.ai/v1/notes/{note_id}?include=transcript` for API-key automation.
 - Frame of Mind exposes Granola REST only through explicit `--granola-transport api`; MCP remains the default.
-- As of 2026-08-22 the repository pins the official `@google/genai` 2.17.1
-  package (PR #50; 2.13.0 before that) and the analyzer defaults to
+- The repository pins the official `@google/genai` package in `package.json`;
+  the analyzer defaults to
   `gemini-3.7-flash` (b38f8f2; 3.6 flaked at the detail phase). The SDK's
   core client retry (`httpOptions.retryOptions`, 2.15+) is opt-in and not
   used; transport retry remains the adapter's own (PR #47/#48). Verified by

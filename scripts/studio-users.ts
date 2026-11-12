@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /** Manage hosted Studio membership in Access or Better Auth mode. */
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type {
   AdminAccessAction,
   AdminAccessState,
@@ -11,6 +12,8 @@ import {
   isValidAccessEmail,
   normalizeAccessEmail,
 } from "../apps/web/server/utils/access-membership";
+
+const wranglerBin = resolve(import.meta.dir, "../apps/web/node_modules/.bin/wrangler");
 
 type Rule =
   | { email: { email: string } }
@@ -133,7 +136,7 @@ async function manageBetterAuth(command: string, values: string[]): Promise<void
     return;
   }
   const child = Bun.spawn([
-    "bunx", "wrangler", "d1", "execute", database,
+    wranglerBin, "d1", "execute", database,
     target,
     "--config", config,
     ...persistenceArgs,
@@ -244,7 +247,7 @@ async function executeBetterAuthD1Json(
   statement: string,
 ): Promise<Array<Record<string, unknown>>> {
   const child = Bun.spawn([
-    "bunx", "wrangler", "d1", "execute", database,
+    wranglerBin, "d1", "execute", database,
     target,
     "--config", config,
     ...persistenceArgs,

@@ -18,6 +18,8 @@ import {
   withHostedAccessTimeout,
 } from "./hosted-access-timeout";
 
+const wranglerBin = resolve(import.meta.dir, "../apps/web/node_modules/.bin/wrangler");
+
 const isolation = await createE2EIsolation("hosted-access");
 const temporaryRoot = isolation.root;
 const persistRoot = isolation.persistRoot;
@@ -145,7 +147,7 @@ try {
   }, null, 2));
 
   const migrationArgs = [
-    "bunx", "wrangler", "d1", "migrations", "apply",
+    wranglerBin, "d1", "migrations", "apply",
     databaseName,
     "--local",
     "--config", configPath,
@@ -155,7 +157,7 @@ try {
   await runChecked(migrationArgs, "idempotent D1 migration replay");
   if (hostedContractAuthMode === "better-auth") {
     await runChecked([
-      "bunx", "wrangler", "d1", "execute", databaseName,
+      wranglerBin, "d1", "execute", databaseName,
       "--local", "--config", configPath, "--persist-to", persistRoot,
       "--command", "INSERT INTO hosted_auth_invites (email, invited_at) VALUES "
         + "('access-a@example.test','2026-08-23T00:00:00.000Z'),"
@@ -166,7 +168,7 @@ try {
 
   const childEnvironment = createE2EEnvironment(process.env);
   wrangler = Bun.spawn([
-    "bunx", "wrangler", "dev",
+    wranglerBin, "dev",
     "--local",
     "--config", configPath,
     "--persist-to", persistRoot,
@@ -464,7 +466,7 @@ async function verifyRequiredAuthRevocation(
 
 async function verifyRequiredPrincipalMapping(): Promise<void> {
   const rowsJson = await runChecked([
-    "bunx", "wrangler", "d1", "execute", databaseName,
+    wranglerBin, "d1", "execute", databaseName,
     "--local", "--config", configPath, "--persist-to", persistRoot,
     "--command", "SELECT u.email, u.id AS user_id, r.principal_sub "
       + "FROM better_auth_user u JOIN analysis_run_registry r "
@@ -624,7 +626,7 @@ async function verifyAdminAccessSurface(input: {
   assertEqual(input.capturedAccessRequests.length, mailCount, "admin actions send no email");
 
   const audit = await runChecked([
-    "bunx", "wrangler", "d1", "execute", databaseName,
+    wranglerBin, "d1", "execute", databaseName,
     "--local", "--config", configPath, "--persist-to", persistRoot,
     "--command", "SELECT actioned_by, actioned_at FROM hosted_auth_invites "
       + "WHERE email = 'request-a@example.test'",
@@ -753,7 +755,7 @@ async function verifyMaintainerCommands(): Promise<void> {
     throw new Error(`Maintainer request list had the wrong state: ${requests}`);
   }
   const rows = await runChecked([
-    "bunx", "wrangler", "d1", "execute", databaseName,
+    wranglerBin, "d1", "execute", databaseName,
     "--local", "--config", configPath, "--persist-to", persistRoot,
     "--command", "SELECT email, state, decided_by, actioned_by, actioned_at FROM hosted_auth_invites "
       + "WHERE email IN ('request-a@example.test','request-b@example.test',"

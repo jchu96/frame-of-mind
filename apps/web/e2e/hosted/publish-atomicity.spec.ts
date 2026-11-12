@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { test, expect } from "@playwright/test";
 import { analysisDigest } from "../../../../src/domain/integrity";
@@ -19,14 +19,12 @@ test("publish step validates the pair and the partial-write fixture rolls back",
   });
   try {
     const database = await miniflare.getD1Database("DB");
-    for (const name of [
-      "0001_initial.sql",
-      "0002_video_only_projection.sql",
-      "0003_principal_scope.sql",
-    ]) {
+    const migrations = new URL("../../db/migrations/", import.meta.url);
+    const names = (await readdir(migrations)).filter((name) => name.endsWith(".sql")).sort();
+    for (const name of names) {
       await applyMigration(
         database,
-        await readFile(`apps/web/db/migrations/${name}`, "utf8"),
+        await readFile(new URL(name, migrations), "utf8"),
       );
     }
     const pair = await videoRunFixture();
@@ -62,6 +60,6 @@ async function applyMigration(
   database: Awaited<ReturnType<Miniflare["getD1Database"]>>,
   sql: string,
 ): Promise<void> {
-  await database.batch(sql.split(";").map((statement) => statement.trim())
+  await database.batch(sql.replace(/^--.*$/gm, "").split(";").map((statement) => statement.trim())
     .filter(Boolean).map((statement) => database.prepare(statement)));
 }
