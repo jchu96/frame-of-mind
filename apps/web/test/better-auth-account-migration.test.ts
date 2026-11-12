@@ -7,6 +7,14 @@ const migration = (name: string) => readFileSync(
 );
 const upgrade = migration("0013_better_auth_provider_identity.sql");
 
+function applyUpgrade(db: Database): void {
+  // Execute statements separately, as the D1 migration runner does. Bun 1.3.14
+  // can swallow a middle-statement error in one multi-statement exec call.
+  for (const statement of upgrade.replace(/^--.*$/gm, "").split(";")) {
+    if (statement.trim()) db.exec(statement);
+  }
+}
+
 function fixture(): Database {
   const db = new Database(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
@@ -26,7 +34,7 @@ describe("Better Auth provider identity migration", () => {
     const db = fixture();
     try {
       const before = db.query("SELECT * FROM better_auth_account").all();
-      db.transaction(() => db.exec(upgrade))();
+      db.transaction(() => applyUpgrade(db))();
       expect(db.query("SELECT * FROM better_auth_account").all()).toEqual(before);
       const insert = db.prepare(`INSERT INTO better_auth_account
         (id, account_id, provider_id, user_id, created_at, updated_at)
@@ -50,7 +58,7 @@ describe("Better Auth provider identity migration", () => {
         VALUES ('conflict', 'subject-a', 'github', 'https://other.example.test',
           'user-a', '2026-11-12', '2026-11-12')`);
       const before = db.query("SELECT * FROM better_auth_account ORDER BY id").all();
-      expect(() => db.transaction(() => db.exec(upgrade))()).toThrow(/UNIQUE/);
+      expect(() => db.transaction(() => applyUpgrade(db))()).toThrow(/UNIQUE/);
       expect(db.query("SELECT * FROM better_auth_account ORDER BY id").all()).toEqual(before);
     } finally {
       db.close();
