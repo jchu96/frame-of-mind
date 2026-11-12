@@ -4,6 +4,22 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-11-12 — Default analysis model moves to Gemini 4 Hydrogen
+
+`gemini-4-hydrogen` replaces `gemini-3.7-flash` as the pinned default. Google
+documents Hydrogen as GA and as the recommended upgrade from 3.8 Flash and
+earlier. It accepts video through the Files API on the stable `generateContent`
+path, and none of its migration items change this repository's request shape:
+no thinking config, caching, sampling parameters or output cap is sent, and
+`responseJsonSchema` and global `mediaResolution` remain supported. The 3.7 id
+had already become a silent alias for `gemini-3.8-flash`. Accepted costs:
+per-token price is twice 3.8 Flash's until 2026-12-31 and equal from
+2027-01-01, and the default `high` thinking level adds output tokens and
+latency. Any future `thinkingLevel` override is a separate request-shape
+decision. Live proof is the credentialed `bun run smoke:gemini`. Flash-class
+remains the default tier, per the 2026-07-28 decision below. Evidence and
+citations: `DECISION-gemini-4-hydrogen.md`.
+
 ## 2026-09-08 — Release tags identify reviewed merge commits; required CI decides merges
 
 Prepare releases on `release/vX.Y.Z`, review the PR, and merge with a merge

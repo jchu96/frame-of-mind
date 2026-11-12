@@ -95,7 +95,7 @@ describe("Studio meeting catalog", () => {
 describe("Studio recipe catalog", () => {
   test("projects built-ins without exposing analysis instructions", async () => {
     const catalog = await studioRecipeCatalog();
-    expect(catalog.defaultModel).toBe("gemini-3.7-flash");
+    expect(catalog.defaultModel).toBe("gemini-4-hydrogen");
     expect(catalog.recipes.length).toBeGreaterThan(0);
     expect(catalog.recipes[0]).toEqual({
       id: expect.any(String),

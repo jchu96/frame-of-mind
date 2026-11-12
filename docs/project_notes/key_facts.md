@@ -1,5 +1,18 @@
 # Key Facts
 
+- 2026-11-12: The analyzer default (`DEFAULT_GEMINI_MODEL`) and
+  `.env.example` are `gemini-4-hydrogen`, which became GA on 2026-11-12. It
+  takes video through the Files API on `generateContent` and has a 1,048,576-token
+  unified context, default `high` thinking (`minimal` is rejected), and paid
+  pricing of $1.50 / $7.50 per 1M input/output tokens
+  ([model page](https://ai.google.dev/gemini-api/docs/models/gemini-4-hydrogen),
+  [pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-4-hydrogen)).
+  The previous default, `gemini-3.7-flash`, is deprecated with no shutdown
+  date. Google routes its requests to `gemini-3.8-flash`
+  ([deprecations](https://ai.google.dev/gemini-api/docs/deprecations)), so a
+  pinned 3.7 id no longer names the model that ran. `test/gemini-model.test.ts`
+  pins the default and the example env and docs that state it.
+
 - 2026-09-08: Release PR [#132](https://github.com/jchu96/frame-of-mind/pull/132)
   shipped [v0.5.0](https://github.com/jchu96/frame-of-mind/releases/tag/v0.5.0)
   on merge commit `f9609ab`; the
@@ -60,8 +73,9 @@
 - Granola also documents `GET https://public-api.granola.ai/v1/notes/{note_id}?include=transcript` for API-key automation.
 - Frame of Mind exposes Granola REST only through explicit `--granola-transport api`; MCP remains the default.
 - As of 2026-08-22 the repository pins the official `@google/genai` 2.17.1
-  package (PR #50; 2.13.0 before that) and the analyzer defaults to
-  `gemini-3.7-flash` (b38f8f2; 3.6 flaked at the detail phase). The SDK's
+  package (PR #50; 2.13.0 before that) and the analyzer defaulted to
+  `gemini-3.7-flash` (b38f8f2; 3.6 flaked at the detail phase; superseded
+  2026-11-12, see below). The SDK's
   core client retry (`httpOptions.retryOptions`, 2.15+) is opt-in and not
   used; transport retry remains the adapter's own (PR #47/#48). Verified by
   fault-injection probe and `bun run smoke:gemini` under Bun before merge.

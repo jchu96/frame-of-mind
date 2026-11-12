@@ -16,7 +16,7 @@ reviewed GitHub issue, use
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
 | Current version   | `0.5.0`                                     |
-| Default model     | `gemini-3.7-flash`                          |
+| Default model     | `gemini-4-hydrogen`                         |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
 | Durable outputs   | local `analysis.json` and `manifest.json`   |

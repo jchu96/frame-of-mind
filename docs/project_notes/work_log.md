@@ -1308,3 +1308,11 @@
   `test/telemetry-trace.test.ts` (allowlist construction, content rejection)
   and the orchestrator vocabulary-compliance test — 111 tests green across
   the touched suites; typecheck clean.
+
+## 2026-11-12 — Default model to Gemini 4 Hydrogen
+
+- Verified `gemini-4-hydrogen` on Google's model, pricing, deprecation and
+  video pages, then moved `DEFAULT_GEMINI_MODEL`, `.env.example` (which had
+  drifted to 3.6), the README, RUNBOOK and VIDEO_UNDERSTANDING to it. Added
+  `test/gemini-model.test.ts`. Reverting the constant to `gemini-3.7-flash`
+  turns it and `apps/web/test/studio-catalog.test.ts` red.

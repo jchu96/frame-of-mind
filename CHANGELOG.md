@@ -5,6 +5,13 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- The default analysis model is now `gemini-4-hydrogen` (Gemini 4 Hydrogen,
+  GA 2026-11-12), replacing `gemini-3.7-flash`, which Google now routes to
+  `gemini-3.8-flash`. `.env.example` matches the new default. Pass `--model` or
+  `GEMINI_MODEL` to keep a previous model.
+
 ## [0.5.0] - 2026-09-08
 
 ### Added
