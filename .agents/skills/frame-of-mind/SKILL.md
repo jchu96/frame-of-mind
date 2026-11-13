@@ -63,7 +63,7 @@ Read only the sources needed for the task:
 
 ### Install and verify
 
-Use Bun 1.3.14 or newer:
+Use Bun 1.4.4 or newer:
 
 ```bash
 bun install --frozen-lockfile

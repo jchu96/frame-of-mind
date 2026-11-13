@@ -620,6 +620,9 @@ export default defineNuxtConfig({
   vite: {
     define: { __SENTRY_TRACING__: "false" },
   },
+  // Inline Zod in both SSR stages so relocated cache artifacts never import
+  // locale modules from the build checkout's Bun package store.
+  build: { transpile: ["zod"] },
   css: ["~/assets/css/main.css"],
   app: {
     head: {
