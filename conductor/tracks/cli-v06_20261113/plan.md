@@ -1,7 +1,7 @@
 # Implementation Plan: Command-Line Tool v0.6.0
 
 **Track ID:** `cli-v06_20261113`
-**Status:** Active - wave 0 open as draft PR #147
+**Status:** Active - wave 0 merged (PR #147); wave 1 next
 
 ## Overview
 
@@ -14,22 +14,22 @@ scope are in the [specification](./spec.md).
 
 | Wave | Lanes | Status |
 | ---- | ----- | ------ |
-| 0 | Groundwork, serial in one branch: command and transcription seams, upload retention (lane 3 Part A, ADR 0024), small fixes, parallel detail pass | `[~]` draft PR #147, in review |
-| 1 | Declared clocks, in parallel with transcribe and its formats | `[ ]` |
+| 0 | Groundwork, serial in one branch: command and transcription seams, upload retention (lane 3 Part A, ADR 0024), small fixes, parallel detail pass | `[x]` PR #147, merge commit `41766a0` |
+| 1 | Declared clocks (with the issue #120 guard), in parallel with transcribe and its formats | `[ ]` |
 | 2 | Word-accurate times, in parallel with ffmpeg helpers | `[ ]` |
 | 3 | Ask again without uploading again (lane 3 Part B) | `[ ]` |
 | 4 | Local MCP server | `[ ]` needs the ADR named in the specification |
 
-## Wave 0 contents (PR #147)
+## Wave 0 contents (PR #147, merged)
 
-- `[~]` Seams: command registration, output and app-data roots, transcription
+- `[x]` Seams: command registration, output and app-data roots, transcription
   constants moved; `doctor` reports ffprobe.
-- `[~]` Upload retention is an operator setting: flag, then
+- `[x]` Upload retention is an operator setting: flag, then
   `FRAME_OF_MIND_UPLOAD_RETENTION`, then `provider`.
-- `[~]` Small fixes: `--version` through a linked install, `key set` with
+- `[x]` Small fixes: `--version` through a linked install, `key set` with
   hidden input, best-N candidate selection, per-run notes, ffmpeg in the CI
   `check` job.
-- `[~]` Parallel detail pass: `--detail-concurrency`, default 1, maximum 8.
+- `[x]` Parallel detail pass: `--detail-concurrency`, default 1, maximum 8.
 
 ## Supporting work
 
@@ -37,8 +37,8 @@ scope are in the [specification](./spec.md).
 | ---- | ------ |
 | Production dependency advisories cleared (PR #145) | `[x]` |
 | Cached builds portable across checkouts; Bun pinned to 1.4.4 (PR #146) | `[x]` |
-| Hosted sign-in workflow test made deterministic by upgrading the local database emulator (issues #96, #113) | `[~]` started 2026-11-13; no pull request yet |
-| Website-only CI jobs scoped to changes that can affect the website, with required checks still reporting on every pull request | `[ ]` after the item above |
+| Local database emulator upgrade to fix the hosted sign-in workflow test (issues #96, #113) | `[!]` tried 2026-11-13; still failed at Wrangler 4.148.0; no pull request |
+| Hosted steps that fail on an unchanged tree leave the default pull-request gate and run nightly and before every deploy instead | `[ ]` replaces the item above |
 
 ## Verification
 

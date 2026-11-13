@@ -1,7 +1,7 @@
 # Track: Command-Line Tool v0.6.0 - Times an Editor Can Cut On
 
 **ID:** `cli-v06_20261113`
-**Status:** Active - wave 0 open as draft PR #147
+**Status:** Active - wave 0 merged (PR #147); wave 1 next
 
 ## Documents
 
@@ -11,10 +11,11 @@
 
 ## Progress
 
-- Waves: 0/5 merged
-- Current focus: wave 0 (groundwork) in draft PR #147; its checks are on the
-  pull request. The advisory `hosted-contracts` job is tracked in issues #96
-  and #113.
+- Waves: 1/5 merged
+- Wave 0 (groundwork) merged in PR #147, merge commit `41766a0`.
+- Current focus: wave 1, declared clocks in parallel with transcribe and its
+  formats; not yet started.
+- The advisory `hosted-contracts` job is tracked in issues #96 and #113.
 
 ## Origin
 
@@ -28,9 +29,12 @@ then word-accurate times, then asking again without uploading again.
 - No lane edits files under `apps/web`. The website imports shared code that
   lanes do change, including `src/services/analyze.ts`, `src/domain/schemas.ts`
   and `src/adapters/gemini.ts`, so website checks still run on those changes.
-- Upload retention: on `main`, `analyze` deletes its upload when the run ends.
-  PR #147 proposes ADR 0024, under which a plain `analyze` keeps its upload
-  until the provider expires it and `--delete-upload` deletes it.
+- Upload retention is an operator setting (ADR 0024): a plain `analyze`
+  keeps its upload until the provider expires it; `--retention run` or
+  `--delete-upload` deletes it when the run ends.
+- One clock: every time the tool computes or stores is seconds to the
+  millisecond, labelled with its clock. Exact timecode at a declared frame
+  rate is an opt-in output rendering only.
 
 ## Quick Links
 
