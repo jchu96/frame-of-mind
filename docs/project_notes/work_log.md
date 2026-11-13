@@ -3,7 +3,7 @@
 ## 2026-11-12
 
 - Updated production dependency pins and their locked transitive dependencies
-  to clear the high/critical audit (baseline: 47 advisories). The patched Better
+  to clear the high/critical audit (CI Bun 1.3.14 baseline: 49 advisories). The patched Better
   Auth API requires migration 0013: existing account data and user ownership are
   preserved, retired issuer metadata becomes optional, and conflicting provider
   identities fail closed. The fast lane and populated-account migration tests
