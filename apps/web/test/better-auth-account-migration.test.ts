@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const migration = (name: string) => readFileSync(
   new URL(`../db/migrations/${name}`, import.meta.url), "utf8",
@@ -30,6 +30,32 @@ function fixture(): Database {
 }
 
 describe("Better Auth provider identity migration", () => {
+  // Review 2026-11-13: migration 0013 can cascade-delete incoming references.
+  // Retire this restriction when the account rebuild preserves referencing rows.
+  test("all migrations keep better_auth_account free of incoming foreign keys", () => {
+    const files = readdirSync(new URL("../db/migrations/", import.meta.url), {
+      recursive: true,
+    }).filter((name) => name.endsWith(".sql")).sort();
+    expect(files.length).toBeGreaterThan(0);
+    const db = new Database(":memory:");
+    try {
+      db.exec("PRAGMA foreign_keys = ON");
+      for (const name of files) {
+        db.transaction(() => db.exec(migration(name)))();
+        const references = db.query(`
+          SELECT schema.name AS child_table, fk."from" AS child_column
+          FROM sqlite_schema AS schema, pragma_foreign_key_list(schema.name) AS fk
+          WHERE schema.type = 'table' AND lower(fk."table") = 'better_auth_account'
+        `).all();
+        expect(references, `${name} must not reference better_auth_account`).toEqual([]);
+      }
+      expect(db.query("SELECT name FROM sqlite_schema WHERE name = 'better_auth_account'").all())
+        .toEqual([{ name: "better_auth_account" }]);
+    } finally {
+      db.close();
+    }
+  });
+
   test("preserves existing ownership and accepts issuer-free accounts with provider isolation", () => {
     const db = fixture();
     try {

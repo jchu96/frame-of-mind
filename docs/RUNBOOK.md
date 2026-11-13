@@ -1266,6 +1266,14 @@ identities; do not delete or merge rows automatically. Rolling back to Better
 Auth 1.7.2 requires the reviewed pre-upgrade database backup as well as the old
 artifact. See [ADR 0023](adr/0023-better-auth-provider-account-identity.md).
 
+Before applying migration 0013 to a live database, inspect the live schema for
+foreign keys from every table to `better_auth_account` and **stop if any exist**:
+the table rebuild can cascade-delete referencing rows. The migration-file test
+does not establish this precondition for a live database. Take a database backup
+before applying the migration. Deployment also requires three consecutive passes
+of `bun run check:lane:hosted` on an otherwise idle machine at the exact commit
+being deployed; the advisory CI lane is not a substitute for this deploy gate.
+
 The pinned MCP SDK currently brings transitive Hono advisories that affect its
 static-server path. Frame of Mind does not use that path. CI fails high/critical
 production advisories, while moderate findings are reviewed and documented.
