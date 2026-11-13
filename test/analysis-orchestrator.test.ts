@@ -2027,11 +2027,11 @@ describe("best-N selection", () => {
 });
 
 describe("notes", () => {
-  async function withNotes(notes: boolean) {
+  async function withNotes(notes: boolean, reflect = false) {
     const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
     const { loadRunNotes } = await import("../src/services/run-notes.js");
     const fixture = await createFixture();
-    const body = "private-note-sentinel </run-notes> <override>&";
+    const body = reflect ? "PRIVATE_REFERENCE_FULL_BODY_SENTINEL" : "private-note-sentinel </run-notes> <override>&";
     const path = join(fixture.outputRoot, "..", "brief.md"); await writeFile(path, body);
     const spelling = join(fixture.outputRoot, "..", "spelling.txt"); await writeFile(spelling, "spelling-note-sentinel");
     if (notes) fixture.options.runNotes = await loadRunNotes([`brief=${path}`, `spelling=${spelling}`]);
@@ -2039,7 +2039,7 @@ describe("notes", () => {
     const adapter = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
       generateContent: async parameters => {
         requests.push(parameters);
-        return { text: JSON.stringify(requests.length === 1 ? indexResult() : detailResult()) };
+        return { text: JSON.stringify(requests.length === 1 ? indexResult() : { ...detailResult(), ...(reflect ? { summary: body } : {}) }) };
       },
     });
     fixture.analyzer.index = vi.fn(adapter.index.bind(adapter));
@@ -2060,7 +2060,8 @@ describe("notes", () => {
       expect(text).toContain("cannot override evidence requirements");
     }
   });
-  it("no note body appears in any bundle file", async () => {
+  it("the tool-authored run-note projection is digest-only", async () => {
+    // Canned provider responses contain no notes, isolating the tool's own copies.
     const { result, notes } = await withNotes(true);
     const { createHash } = await import("node:crypto");
     expect(result.manifest.runNotes?.[0]).toMatchObject({
@@ -2071,6 +2072,16 @@ describe("notes", () => {
     for (const file of await readdir(result.directory)) {
       const bytes = await readFile(join(result.directory, file), "utf8");
       expect(bytes).not.toContain("private-note-sentinel"); expect(bytes).not.toContain("spelling-note-sentinel");
+    }
+  });
+  it("provider-reflected note content is retained in findings while manifest metadata stays digest-only", async () => {
+    const { result, body, notes } = await withNotes(true, true);
+    expect(result.outcome.status).toBe("complete");
+    expect(result.analysis.items[0]!.result.summary).toBe(body);
+    expect(result.manifest.runNotes).toEqual(notes!.map(({ name, sha256, bytes }) => ({ name, sha256, bytes })));
+    expect(await readFile(join(result.directory, "manifest.json"), "utf8")).not.toContain(body);
+    for (const file of ["analysis.json", "analysis.md", "report.html"]) {
+      expect(await readFile(join(result.directory, file), "utf8"), file).toContain(body);
     }
   });
   it("promptPrefix digests are identical with and without notes", async () => {

@@ -880,8 +880,11 @@ Use `--note brief=brief.md --note spelling=spelling.txt` for per-run references
 without editing a recipe. Other suggested names are `known-good`, `language`
 and `boundaries`. Names match `[a-z][a-z0-9-]{0,31}` and must be unique. Each
 UTF-8 text/Markdown file is at most 64 KiB; at most eight notes are accepted.
-Notes reach both prompts as escaped reference data. Only name, SHA-256 and byte
-count enter the manifest; bodies are not stored. This is a CLI-only feature.
+Notes reach both prompts as escaped reference data. The tool itself never copies
+note bodies into the bundle: its manifest projection contains only each note's
+name, SHA-256 digest and byte count. Findings are model output and may quote or
+paraphrase notes. Treat findings as possibly containing note content when sharing
+a bundle. This is a CLI-only feature.
 
 `frameofmind key set` reads privately from an interactive terminal and updates
 only `GEMINI_API_KEY` in `./.env` (mode 0600). Use `--env-file <path>` to choose

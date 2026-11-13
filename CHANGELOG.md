@@ -7,7 +7,10 @@ Semantic Versioning.
 
 - 2026-11-13: Added opt-in parallel detail analysis, adopted from a field contribution, with ordered results and a completion-time breaker spend bound.
 
-- 2026-11-13: Fixed linked CLI execution and package version reporting; added hidden key entry, best-N selection, full indexed coverage with `--max-moments all`, per-run notes, and ffmpeg in the CI check job.
+- 2026-11-13: Fixed linked CLI execution and package version reporting; added hidden key entry, best-N selection, full indexed coverage with `--max-moments all`, per-run notes, and ffmpeg in the CI check job. The tool's run-note projection
+  contains only names, digests and byte counts; model findings may quote or
+  paraphrase notes and should be treated as possibly containing note content
+  when sharing a bundle.
 
 - 2026-11-13: CLI recording uploads now default to provider expiry, with explicit run cleanup and visible expiry/size limit (ADR 0024).
 

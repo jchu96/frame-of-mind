@@ -1,5 +1,14 @@
 import { readFileSync } from "node:fs";
-import { expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+import { afterAll, beforeAll, expect, it } from "vitest";
+import { buildCliFixture } from "./helpers/cli-build.js";
+
+let root: string | undefined;
+// Compilation has its own setup timeout; assertion tests keep the default.
+beforeAll(async () => { root = await buildCliFixture("9.8.7"); }, 60_000);
+afterAll(async () => { if (root) await rm(root, { recursive: true, force: true }); });
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -21,13 +30,6 @@ it("release versions match the newest changelog section", () => {
   expect(expected![1], "RUNBOOK installation expected version").toBe(version);
 });
 
-it("the CLI --version equals package.json after a version bump fixture", async () => {
-  const { execFileSync } = await import("node:child_process");
-  const { rm } = await import("node:fs/promises");
-  const { join } = await import("node:path");
-  const { buildCliFixture } = await import("./helpers/cli-build.js");
-  const root = await buildCliFixture("9.8.7");
-  try {
-    expect(execFileSync("node", [join(root, "dist", "cli.js"), "--version"], { encoding: "utf8" }).trim()).toBe("9.8.7");
-  } finally { await rm(root, { recursive: true, force: true }); }
+it("the CLI --version equals package.json after a version bump fixture", () => {
+  expect(execFileSync("node", [join(root!, "dist", "cli.js"), "--version"], { encoding: "utf8" }).trim()).toBe("9.8.7");
 });

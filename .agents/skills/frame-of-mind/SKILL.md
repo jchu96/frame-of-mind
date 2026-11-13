@@ -63,7 +63,10 @@ Read only the sources needed for the task:
 
 Never ask the operator to paste an API key: direct them to `frameofmind key set`
 in their own terminal. Use `--note name=path` for per-run references instead of
-editing a recipe for one job.
+editing a recipe for one job. The tool itself never copies note bodies into the
+bundle; the manifest records only names, digests and byte counts. Model findings
+may quote or paraphrase notes. Treat findings as possibly containing note content
+when sharing a bundle.
 
 ## Local CLI and Studio
 

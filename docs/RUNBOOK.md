@@ -2224,5 +2224,8 @@ Supply up to eight uniquely named UTF-8 text/Markdown notes (64 KiB each).
 Names match `[a-z][a-z0-9-]{0,31}`; `brief`, `spelling`, `known-good`, `language`
 and `boundaries` are suggestions. The notes are escaped reference data in the
 index and detail requests and cannot override evidence requirements or schemas.
-The bundle records their digests and byte counts, not their bodies. Studio
-context staging remains a separate policy.
+The tool itself never copies note bodies into the bundle: the manifest records
+only their names, SHA-256 digests and byte counts. Findings are model output and
+may quote or paraphrase notes, including a complete note body in a valid response.
+When sharing a bundle, treat findings as possibly containing note content.
+Studio context staging remains a separate policy.
