@@ -233,12 +233,10 @@ frameofmind key set
 frameofmind doctor
 ```
 
-Contributors should run the required pull-request gate; hosted-sensitive
-changes automatically upgrade it to the full three-lane gate when a base ref
-is supplied unless the CI-equivalent lane split is explicit:
+Contributors run the fast/local pull-request gate for every change:
 
 ```bash
-FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1 FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
+bun run check:pr
 ```
 
 For Better Auth or D1 boundary changes, run the focused required contract too:
@@ -247,27 +245,19 @@ For Better Auth or D1 boundary changes, run the focused required contract too:
 bun run check:auth-contract
 ```
 
-Run `bun run check:pr` for pull requests and `bun run check:sharded` when the
-machine is unloaded. On a busy machine, defer the full run or use
-`FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes. Required CI at the exact
-PR head is the merge oracle; `bun run check` remains the serial fallback.
+The whole hosted lane runs nightly and on manual dispatch, and must pass
+`gate-lock bun run check:deploy` for release validation. Deploy with
+`gate-lock bun run deploy:hosted web` (or `workflows`): every invocation runs the
+default gate and whole hosted lane before invoking Wrangler on the same source. `check:sharded` remains an explicit all-lane run; `check` remains the
+complete serial fallback.
 
-GitHub CI keeps the minimum hosted trust-boundary proof required without making
-the complete hosted suite a merge bottleneck. The secret-free `auth-contract`
-job builds the Worker against an ephemeral local D1 and proves synthetic Better
-Auth sign-in, membership denial, `ba:<userId>` ownership, principal isolation,
-and next-request revocation. The 40-minute `hosted-contracts` job runs the
-broader Workflows, media, browser, and release checks, but is not a required
-context. As of 2026-09-08 it has been steadily red on `main` since 2026-08-31:
-observed failures include the audit-query timeout in
-`test:hosted-access-http:better-auth`, the media-test step timeout, and the
-Better Auth Workflow terminal-stage assertion. These remain tracked in
-[issue #113](https://github.com/jchu96/frame-of-mind/issues/113) and
-[issue #96](https://github.com/jchu96/frame-of-mind/issues/96), non-blocking by
-maintainer decision on 2026-08-23. No repository secret or Better Auth API-key
-plugin is needed for pull requests, including forks. The required `check`, three fresh-clone
-platforms, and browser E2E job remain separate failure domains. See
-[docs/TESTING.md](docs/TESTING.md#ci).
+Required CI at the exact PR head remains the merge oracle: `check`,
+`auth-contract`, `browser-e2e`, and all three `fresh-clone` jobs. The secret-free
+`auth-contract` builds the Worker against ephemeral local D1 and proves
+synthetic Better Auth sign-in, membership, ownership, isolation and revocation.
+No repository secret or Better Auth API-key plugin is needed for pull requests,
+including forks. See [testing](docs/TESTING.md#ci) and the
+[hosted quarantine return rule](docs/HOSTED_GATE_QUARANTINE.md).
 
 The full fresh-clone Studio boot is continuously tested on macOS and Linux.
 On Windows, use WSL or Git Bash with Bun 1.4.4+ and keep the checkout on LF:
@@ -818,6 +808,7 @@ bun run test:hosted-media-http              # fake Files API + real Chromium dir
 bun run rehearse:hosted-release
 bun run check:pr
 bun run check:sharded
+bun run check:deploy
 bun run check
 ```
 

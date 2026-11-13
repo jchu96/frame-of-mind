@@ -4,6 +4,20 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-11-13 — Default PR checks exclude the whole hosted lane
+
+Unchanged-source failures invalidate the hosted lane as a default PR signal,
+including on a busy shared machine. Fast/local now run for every PR path;
+the complete hosted lane runs nightly/manual and must pass before deployment.
+The required auth, browser, and fresh-clone jobs stay unchanged. This supersedes
+the gate-selection and release-waiver portion of the 2026-09-08 note below;
+release tag and merge policy are unchanged. The previous direct Wrangler
+procedure had no executable hosted check. Review showed writable success
+receipts could authorize deployment without executing either gate. The deploy
+wrapper therefore runs both gates in each invocation and only continues to
+Wrangler after success with unchanged HEAD and source inputs. Check-only
+preflight does not authorize a later deployment.
+
 ## 2026-09-08 — Release tags identify reviewed merge commits; required CI decides merges
 
 Prepare releases on `release/vX.Y.Z`, review the PR, and merge with a merge

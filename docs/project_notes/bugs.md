@@ -1,5 +1,15 @@
 # Bugs and Failure History
 
+## 2026-11-13 — Hosted checks failed on unchanged source
+
+- Evidence: at base `41766a0`, four reduced hosted-lane passes preceded a
+  fifth-run `check:hosted-auth` sign-out fixture failure. Two successful E2E
+  runs needed a browser retry. The machine was shared and busy.
+- Cause: not established; this evidence does not attribute the failures to load.
+- Disposition: move the whole hosted lane to nightly/manual and the checked
+  deploy prerequisite. No hosted test, timeout, retry, or pin changed.
+- Return criterion: [hosted gate quarantine](../HOSTED_GATE_QUARANTINE.md).
+
 ## 2026-11-12 — Publication atomicity fixture drifted from D1 migrations
 
 - Symptom: the partial-write test failed with a missing `outcome_json` column
@@ -655,8 +665,10 @@
   writes light/dark desktop and 390px screenshot receipts.
 - Review follow-up: the first implementation left stylesheets PR-safe even
   though this contrast oracle runs only in the hosted lane. Theme stylesheets
-  and `app.config.*` now force the sharded tier with a
-  `theme_contract_paths` receipt. The same correction gives `::selection` a
+  and `app.config.*` originally forced the sharded tier with a
+  `theme_contract_paths` receipt. The 2026-11-13 whole-lane quarantine supersedes
+  that selection; the contrast oracle remains nightly and pre-deploy. The same
+  correction gives `::selection` a
   stable dark foreground, clears the dimmed-on-accented token matrix, and makes
   the published evidence excerpt a required both-scheme fixture. The Workflow
   screenshot rotation now preserves the auth contract's separately owned
