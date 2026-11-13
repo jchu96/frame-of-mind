@@ -10,7 +10,11 @@
   pass; full-gate and mutation receipts are recorded in the dependency-audit
   handoff. The heading typography and selected Intent-card border/shadow
   differences are accepted as part of this dependency update, together with
-  the accounts migration. Apply migration 0013 after a D1 backup and before
+  the accounts migration. Bundle application icons from Vue and TypeScript,
+  including both Studio trees, to avoid the upgraded icon module's broken
+  late-loading provider selection. The hosted browser contract now asserts
+  rendered masks for the Recording and completed Activity icons.
+  Apply migration 0013 after a D1 backup and before
   deploying the patched Worker; source delivery does not deploy it.
   See [ADR 0023](../adr/0023-better-auth-provider-account-identity.md).
 

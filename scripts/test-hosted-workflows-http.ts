@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { exportJWK, generateKeyPair, SignJWT, type KeyLike } from "jose";
 import { validateVersionedRunImport } from "../src/domain/integrity";
 import {
@@ -1261,6 +1261,16 @@ async function verifyHostedBrowserContract(
       }));
     }
     const page = await context.newPage();
+    const assertIconMasks = async (names: readonly string[]): Promise<void> => {
+      for (const name of names) {
+        const icon = page.locator(`[class~="i-lucide:${name}"]`);
+        await expect(icon, `Hosted ${name} icon must render a mask`).toHaveCSS(
+          "mask-image",
+          /^url\(.+\)$/,
+        );
+        console.log(`HOSTED_ICON_MASK icon=${name} status=PASS`);
+      }
+    };
     const hydrationMismatches: string[] = [];
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -1434,6 +1444,7 @@ async function verifyHostedBrowserContract(
     await page.getByText(/An unfinished upload expires after 1 hour\./).waitFor();
     await page.getByText("Keep for 30 days", { exact: true }).waitFor();
     await assertRecordingCopyUsesUxGlossary(page);
+    await assertIconMasks(["video", "cloud-upload", "shield-check", "image-off"]);
     await capture("03-recording-empty", "Keep for 30 days");
     await page.evaluate((id) => {
       sessionStorage.setItem(
@@ -1570,6 +1581,7 @@ async function verifyHostedBrowserContract(
     await capture("06-activity-running");
     const results = page.getByRole("link", { name: "View results" });
     await results.waitFor();
+    await assertIconMasks(["external-link"]);
     await capture("07-activity-completed");
     await results.click();
     await page.waitForURL(/\/runs\/hosted_attempt_/);

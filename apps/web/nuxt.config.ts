@@ -602,6 +602,13 @@ export default defineNuxtConfig({
     ...(sentryNuxtEnabled ? ["@sentry/nuxt/module"] : []),
     "@nuxt/ui",
   ],
+  icon: {
+    clientBundle: {
+      // Include both Studio trees outside app/ and icons in TypeScript maps.
+      // Application icons must not depend on a late Iconify API request.
+      scan: { globInclude: ["**/*.{vue,ts}"] },
+    },
+  },
   sentry: {
     telemetry: false,
     sourcemaps: { disable: true },
