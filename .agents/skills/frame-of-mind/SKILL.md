@@ -212,6 +212,10 @@ identical runs), so set the limit with headroom and require
 findings as covering the whole recording. CLI uploads remain until provider
 expiry by default; use `--delete-upload` when terminal cleanup is requested.
 
+For long runs, opt into `--concurrency 6` within the key's rate limits. It
+overlaps detail calls without changing results or their order; default is one,
+maximum eight. In-flight retry spend is bounded as documented in the runbook.
+
 For an experimental in-depth review, add `--depth deep` and an explicit model.
 `deep` means denser indexing plus layered prompting with that one model; it is
 not a shipped mixed-model synthesis pipeline. Treat mutable aliases such as

@@ -1674,6 +1674,119 @@ describe("AnalysisOrchestrator", () => {
     expect(failureManifest).toMatchObject({ status: "failed", phase: "detail" });
   });
 
+  it("commits overlapping detail calls in candidate order identical to a sequential run", async () => {
+    async function run(detailConcurrency: number) {
+      const fixture = await createFixture();
+      const index = indexResult();
+      fixture.options.maxIncidents = 6;
+      fixture.options.screenshots = true;
+      fixture.options.detailConcurrency = detailConcurrency;
+      fixture.analyzer.index = vi.fn(async () => ({
+        ...index,
+        moments: [1, 2, 3, 4, 5, 6, 7].map((second) => ({
+          ...index.moments[0]!,
+          start: `00:00:0${second}`,
+          end: `00:00:0${second + 1}`,
+        })),
+      }));
+      let inFlight = 0;
+      let maxInFlight = 0;
+      fixture.analyzer.interrogate = vi.fn(async (_file, candidate: IndexedMoment) => {
+        const second = Number(candidate.start.slice(-1));
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        try {
+          // Earlier candidates finish later so completion order is reversed.
+          await new Promise((resolve) => setTimeout(resolve, (8 - second) * 3));
+          if (second === 2) {
+            throw new CandidateAnalysisError({ code: "schema_validation", attempts: 2 });
+          }
+          return {
+            ...detailResult(),
+            title: `Moment ${second}`,
+            accepted: second !== 4,
+            evidence: { timestamp: candidate.start },
+          };
+        } finally {
+          inFlight -= 1;
+        }
+      });
+      const screenshots: string[] = [];
+      const events: AnalysisProgressEvent[] = [];
+      const orchestrator = new AnalysisOrchestrator({
+        createContextSource: () => fixture.context,
+        createAnalyzer: () => fixture.analyzer,
+        createRunId: () => "run-test",
+        now: () => "2026-07-27T12:00:00.000Z",
+        sleep: async () => undefined,
+        extractScreenshot: vi.fn(async (_video: string, timestamp: string, destination: string) => {
+          screenshots.push(`${timestamp}->${destination.split("/").pop()}`);
+          await writeFile(destination, "png");
+          return true;
+        }),
+      });
+      const result = await orchestrator.analyze(fixture.options, {
+        progress: { report: (event) => events.push(event) },
+      });
+      return { result, events, screenshots, maxInFlight };
+    }
+
+    const sequential = await run(1);
+    const concurrent = await run(3);
+
+    expect(sequential.maxInFlight).toBe(1);
+    expect(concurrent.maxInFlight).toBe(3);
+    expect(concurrent.result.analysis.items).toEqual(sequential.result.analysis.items);
+    expect(concurrent.result.outcome).toEqual(sequential.result.outcome);
+    expect(concurrent.screenshots).toEqual(sequential.screenshots);
+    expect(concurrent.events).toEqual(sequential.events);
+    expect(sequential.result.analysis.items.map((item) => item.result.title)).toEqual([
+      "Moment 1", "Moment 3", "Moment 4", "Moment 5", "Moment 6",
+    ]);
+    expect(sequential.result.outcome.candidates).toMatchObject({
+      indexed: 7, selected: 6, omittedByLimit: 1, failed: 1, accepted: 4, rejected: 1,
+    });
+    const completed = concurrent.events.flatMap((event) =>
+      event.kind === "progress" && event.stage === "interrogating" ? [event.progress.completed] : []);
+    expect(completed).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it("rejects an out-of-range detail concurrency before any provider work", async () => {
+    const fixture = await createFixture();
+    for (const detailConcurrency of [0, 9, 1.5]) {
+      await expect(createOrchestrator(fixture).analyze({ ...fixture.options, detailConcurrency }))
+        .rejects.toThrow("Detail concurrency must be an integer from 1 to 8.");
+    }
+    expect(fixture.context.connect).not.toHaveBeenCalled();
+    expect(fixture.analyzer.upload).not.toHaveBeenCalled();
+  });
+
+  it("starts no new detail call after cancellation while overlapping calls settle", async () => {
+    const fixture = await createFixture();
+    const index = indexResult();
+    fixture.options.maxIncidents = 6;
+    fixture.options.detailConcurrency = 2;
+    fixture.analyzer.index = vi.fn(async () => ({
+      ...index,
+      moments: [1, 2, 3, 4, 5, 6].map((second) => ({
+        ...index.moments[0]!,
+        start: `00:00:0${second}`,
+        end: `00:00:0${second + 1}`,
+      })),
+    }));
+    const controller = new AbortController();
+    fixture.analyzer.interrogate = vi.fn(async (_file, candidate: IndexedMoment) => {
+      if (candidate.start === "00:00:02") controller.abort();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { ...detailResult(), evidence: { timestamp: candidate.start } };
+    });
+
+    await expect(createOrchestrator(fixture).analyze(fixture.options, { signal: controller.signal }))
+      .rejects.toBeInstanceOf(AnalysisCanceledError);
+    expect(fixture.analyzer.interrogate).toHaveBeenCalledTimes(2);
+    expect(fixture.analyzer.delete).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps isolating generation failures that are not systematic", async () => {
     const fixture = await createFixture();
     const index = indexResult();
@@ -1963,5 +2076,181 @@ describe("notes", () => {
   it("promptPrefix digests are identical with and without notes", async () => {
     const baseline = await withNotes(false); const noted = await withNotes(true);
     expect(noted.result.manifest.promptProvenance).toEqual(baseline.result.manifest.promptProvenance);
+  });
+});
+
+describe("concurrency", () => {
+  it("all-failing detail calls at 6 stop within 3 + 6 - 1 interrogate calls", async () => {
+    const fixture = await createFixture();
+    fixture.options.maxIncidents = 20;
+    fixture.options.detailConcurrency = 6;
+    fixture.analyzer.index.mockResolvedValue({
+      ...indexResult(),
+      moments: Array.from({ length: 20 }, (_, i) => ({
+        ...indexResult().moments[0]!,
+        start: `00:00:${String(i + 1).padStart(2, "0")}`,
+        end: `00:00:${String(i + 2).padStart(2, "0")}`,
+      })),
+    });
+    // The first request is slow while later requests fail immediately. A spend
+    // bound must also hold when completions are out of order, not just in sync.
+    let releaseFirst!: () => void;
+    const first = new Promise<void>(resolve => { releaseFirst = resolve; });
+    let calls = 0;
+    let release: ReturnType<typeof setTimeout> | undefined;
+    fixture.analyzer.interrogate.mockImplementation(async (_file, candidate: IndexedMoment) => {
+      calls += 1;
+      if (calls === 20) releaseFirst();
+      if (candidate.start === "00:00:01") {
+        release = setTimeout(releaseFirst, 25);
+        await first;
+      }
+      throw new CandidateAnalysisError({ code: "generation_failed", attempts: 1 });
+    });
+    // Release the held call even if dispatch correctly stops before all 20.
+    try {
+      await expect(createOrchestrator(fixture).analyze(fixture.options))
+        .rejects.toThrow("aborting as a systematic failure");
+    } finally { if (release) clearTimeout(release); releaseFirst(); }
+    expect(calls, "interrogate calls must be bounded by 3 + 6 - 1").toBeLessThanOrEqual(8);
+    console.log(`P3 calls=${calls} extra_calls_vs_sequential=${calls - 3} bound=8`);
+  });
+});
+
+describe("concurrency", () => {
+  async function parallelFixture(limit: number, count = 12) {
+    const fixture = await createFixture();
+    fixture.options.detailConcurrency = limit;
+    fixture.options.maxIncidents = count;
+    fixture.analyzer.index.mockResolvedValue({ ...indexResult(), moments: Array.from({ length: count }, (_, i) => ({
+      ...indexResult().moments[0]!, start: `00:00:${String(i + 1).padStart(2, "0")}`,
+      end: `00:00:${String(i + 2).padStart(2, "0")}`,
+    })) });
+    return fixture;
+  }
+
+  it.each(["success", "schema_validation"])("resumes after three out-of-order generation failures when the earlier call is %s", async (first) => {
+    async function run(limit: number) {
+      const fixture = await parallelFixture(limit);
+      fixture.analyzer.interrogate.mockImplementation(async (_file, candidate) => {
+        const ordinal = Number(candidate.start.slice(-2));
+        if (ordinal === 1) {
+          await new Promise(resolve => setTimeout(resolve, 25));
+          if (first === "schema_validation") throw new CandidateAnalysisError({ code: first, attempts: 2 });
+        } else if (ordinal <= 4) throw new CandidateAnalysisError({ code: "generation_failed", attempts: 1 });
+        return { ...detailResult(), evidence: { timestamp: candidate.start } };
+      });
+      const result = await createOrchestrator(fixture).analyze(fixture.options);
+      expect(fixture.analyzer.interrogate).toHaveBeenCalledTimes(12);
+      return result;
+    }
+    const sequential = await run(1); const parallel = await run(6);
+    expect(parallel.analysis.items).toEqual(sequential.analysis.items);
+    expect(parallel.outcome).toEqual(sequential.outcome);
+  });
+
+  it("best-N detail results and bundle content stay in chronological order at 1 and 6", async () => {
+    async function run(limit: number) {
+      const fixture = await parallelFixture(limit);
+      fixture.options.maxIncidents = 6;
+      const index = await fixture.analyzer.index();
+      index.moments.forEach((moment, i) => { moment.importance = i % 2 ? "high" : "low"; });
+      fixture.analyzer.interrogate.mockImplementation(async (_file, candidate) => {
+        await new Promise(resolve => setTimeout(resolve, 13 - Number(candidate.start.slice(-2))));
+        return { ...detailResult(), evidence: { timestamp: candidate.start } };
+      });
+      return createOrchestrator(fixture).analyze(fixture.options);
+    }
+    const sequential = await run(1); const parallel = await run(6);
+    expect(parallel.analysis.items.map(item => item.candidate.start)).toEqual([2,4,6,8,10,12].map(i => `00:00:${String(i).padStart(2, "0")}`));
+    expect(parallel.outcome).toEqual(sequential.outcome);
+    for (const name of await readdir(sequential.directory)) {
+      expect(await readFile(join(parallel.directory, name), "utf8"), name).toBe(await readFile(join(sequential.directory, name), "utf8"));
+    }
+  });
+
+  it("429 at concurrency 6 exhausts only existing retries within the fake clock bound", async () => {
+    const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
+    const { GEMINI_GENERATION_TRANSPORT_RETRIES } = await import("../src/adapters/gemini-generation-policy.js");
+    const fixture = await parallelFixture(6, 20);
+    const calls: Array<{ attempts: number; waits: number[] }> = [];
+    fixture.analyzer.interrogate.mockImplementation(async (...args) => {
+      const call = { attempts: 0, waits: [] as number[] }; calls.push(call);
+      const adapter = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+        // Gemini API troubleshooting documents 429 RESOURCE_EXHAUSTED:
+        // https://ai.google.dev/gemini-api/docs/troubleshooting
+        generateContent: async () => { call.attempts += 1; throw { status: 429, message: "RESOURCE_EXHAUSTED" }; },
+        sleep: async milliseconds => { call.waits.push(milliseconds); },
+      });
+      return adapter.interrogate(...args);
+    });
+    await expect(createOrchestrator(fixture).analyze(fixture.options)).rejects.toThrow("aborting as a systematic failure");
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls.length).toBeLessThanOrEqual(8);
+    for (const call of calls) {
+      expect(call.attempts).toBe(1 + GEMINI_GENERATION_TRANSPORT_RETRIES);
+      expect(call.waits).toEqual([1000, 2000, 4000, 8000]);
+      expect(call.waits.reduce((sum, ms) => sum + ms, 0)).toBeLessThanOrEqual(15000);
+    }
+    console.log(`P4 calls=${calls.length} transport_attempts=${calls.reduce((n, c) => n + c.attempts, 0)} extra_calls_vs_sequential=${calls.length - 3} per_call_fake_wait_ms=15000`);
+  });
+
+  it("429 responses recovered by retries never count as breaker failures", async () => {
+    const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
+    const fixture = await parallelFixture(6);
+    const attempts: number[] = [];
+    fixture.analyzer.interrogate.mockImplementation(async (...args) => {
+      const id = attempts.length; attempts.push(0);
+      const adapter = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+        generateContent: async () => {
+          attempts[id]! += 1;
+          if (attempts[id]! <= 4) throw { status: 429, message: "RESOURCE_EXHAUSTED" };
+          return { text: JSON.stringify({ ...detailResult(), evidence: { timestamp: args[1].start } }) };
+        }, sleep: async () => undefined,
+      });
+      return adapter.interrogate(...args);
+    });
+    const result = await createOrchestrator(fixture).analyze(fixture.options);
+    expect(attempts).toEqual(Array(12).fill(5));
+    expect(result.outcome.candidates.failed).toBe(0);
+    expect(result.analysis.items).toHaveLength(12);
+  });
+
+  it("per-span token attributes are omitted above 1", async () => {
+    const fixture = await parallelFixture(6);
+    let tokens = 0;
+    Object.assign(fixture.analyzer, { usageSnapshot: () => ({ promptTokens: tokens, outputTokens: tokens, totalTokens: tokens * 2 }) });
+    fixture.analyzer.interrogate.mockImplementation(async (_file, candidate) => {
+      tokens += 100;
+      return { ...detailResult(), evidence: { timestamp: candidate.start } };
+    });
+    const spans: Array<{ name: string; attributes: Record<string, unknown> }> = [];
+    const tracer = { span: async (
+      descriptor: { name: string; attributes?: Record<string, unknown> },
+      callback: (span: { setAttributes(a: Record<string, unknown>): void }) => Promise<unknown>,
+    ) => {
+      const span = { name: descriptor.name, attributes: { ...descriptor.attributes } }; spans.push(span);
+      return callback({ setAttributes: attrs => { Object.assign(span.attributes, attrs); } });
+    } };
+    await createOrchestrator(fixture).analyze(fixture.options, { tracer: tracer as never });
+    const details = spans.filter(span => span.name === "gemini interrogate");
+    expect(details).toHaveLength(12);
+    for (const span of details) expect(Object.keys(span.attributes).filter(key => key.startsWith("gen_ai.usage."))).toEqual([]);
+  });
+
+  it("records wall clock for twelve 200 ms details at 1 and 6", async () => {
+    const elapsed: number[] = [];
+    for (const limit of [1, 6]) {
+      const fixture = await parallelFixture(limit);
+      fixture.analyzer.interrogate.mockImplementation(async (_file, candidate) => {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        return { ...detailResult(), evidence: { timestamp: candidate.start } };
+      });
+      const start = performance.now();
+      const result = await createOrchestrator(fixture).analyze(fixture.options);
+      elapsed.push(Math.round(performance.now() - start));
+      expect(result.analysis.items).toHaveLength(12);
+    }
+    console.log(`P8 fake_200ms_details=12 concurrency_1_ms=${elapsed[0]} concurrency_6_ms=${elapsed[1]}`);
   });
 });

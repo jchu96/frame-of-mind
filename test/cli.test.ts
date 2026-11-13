@@ -43,6 +43,32 @@ describe("analyze CLI option assembly", () => {
     expect(disabled.derivedTranscript).toBe(false);
   });
 
+  describe("detail concurrency", () => {
+    afterEach(() => vi.unstubAllEnvs());
+
+    it("defaults to 1, reads the environment, and lets the flag win", async () => {
+      vi.stubEnv("FRAME_OF_MIND_DETAIL_CONCURRENCY", undefined);
+      expect((await buildAnalyzeOptions(undefined, baseFlags, "synthetic-key")).detailConcurrency).toBe(1);
+      vi.stubEnv("FRAME_OF_MIND_DETAIL_CONCURRENCY", "4");
+      expect((await buildAnalyzeOptions(undefined, baseFlags, "synthetic-key")).detailConcurrency).toBe(4);
+      expect((await buildAnalyzeOptions(undefined, {
+        ...baseFlags,
+        concurrency: "8",
+      }, "synthetic-key")).detailConcurrency).toBe(8);
+    });
+
+    it("rejects values outside 1-8 from the flag or the environment", async () => {
+      vi.stubEnv("FRAME_OF_MIND_DETAIL_CONCURRENCY", undefined);
+      for (const concurrency of ["0", "9", "1.5", "two", "-1", ""]) {
+        await expect(buildAnalyzeOptions(undefined, { ...baseFlags, concurrency }, "synthetic-key"))
+          .rejects.toThrow("--concurrency must be an integer from 1 to 8.");
+      }
+      vi.stubEnv("FRAME_OF_MIND_DETAIL_CONCURRENCY", "12");
+      await expect(buildAnalyzeOptions(undefined, baseFlags, "synthetic-key"))
+        .rejects.toThrow("FRAME_OF_MIND_DETAIL_CONCURRENCY must be an integer from 1 to 8.");
+    });
+  });
+
   it("requires a meeting ID when context is selected", async () => {
     await expect(buildAnalyzeOptions(undefined, {
       ...baseFlags,

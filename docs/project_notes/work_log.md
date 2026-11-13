@@ -1330,3 +1330,5 @@
 - 2026-11-13: Added the command/transcription seams and CLI recording-upload retention setting (ADR 0024); default retention, flag precedence, visible expiry, and terminal cleanup verified offline.
 
 - 2026-11-13: Added CLI install/key/limit/notes fixes and ffmpeg in CI; coverage includes built symlink invocation, hidden terminal input, best-N order, note digests and escaped provider requests.
+
+- 2026-11-13: Parallel detail pass adopted from a field contribution; completed failures bound dispatch, results remain ordered, and 429s retain the existing retry policy. In-flight cancellation requires an adapter interface follow-up.

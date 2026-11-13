@@ -9,6 +9,7 @@ import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 import {
   analyzeMeeting,
+  MAX_DETAIL_CONCURRENCY,
   type AnalysisProgressEvent,
   type AnalyzeOptions,
   type AnalyzeResult,
@@ -75,6 +76,7 @@ export interface AnalyzeCliFlags {
   retention?: string;
   remoteFile?: string;
   derivedTranscript: boolean;
+  concurrency?: string;
 }
 
 program
@@ -146,6 +148,7 @@ program
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
   .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
+  .option("--concurrency <n>", "Parallel Gemini detail requests in pass 2 (default 1)")
   .option("--no-screenshots", "Skip ffmpeg screenshots")
   .option("--no-derived-transcript", "Skip deriving a transcript from the recording audio when no transcript is supplied")
   .option("--retention <mode>", "Upload retention: provider (default) or run; overrides FRAME_OF_MIND_UPLOAD_RETENTION")
@@ -323,6 +326,10 @@ export async function buildAnalyzeOptions(
   if (!Number.isSafeInteger(maxIncidents) || maxIncidents > 1_000) {
     throw new Error("--max-moments must be between 1 and 1000.");
   }
+  const detailConcurrency = parseDetailConcurrency(
+    flags.concurrency,
+    process.env.FRAME_OF_MIND_DETAIL_CONCURRENCY,
+  );
   if (flags.remoteFile) {
     if (!flags.video) {
       throw new Error("--remote-file requires --video so the local recording can be verified and screenshotted.");
@@ -344,6 +351,7 @@ export async function buildAnalyzeOptions(
     indexFps: recipeResult.indexFps,
     outputRoot: flags.output,
     maxIncidents,
+    detailConcurrency,
     screenshots: flags.screenshots,
     keepUpload: retention === "provider",
     retention,
@@ -420,6 +428,16 @@ function parseProvider(value: string, allowFile: boolean): ContextProvider {
     throw new Error(`Unknown provider '${value}'. Expected ${providers.join(", ")}.`);
   }
   return value as ContextProvider;
+}
+
+function parseDetailConcurrency(flag: string | undefined, environment: string | undefined): number {
+  const [label, value] = flag !== undefined
+    ? ["--concurrency", flag]
+    : ["FRAME_OF_MIND_DETAIL_CONCURRENCY", environment || "1"];
+  if (!/^[1-9]\d*$/.test(value) || Number(value) > MAX_DETAIL_CONCURRENCY) {
+    throw new Error(`${label} must be an integer from 1 to ${MAX_DETAIL_CONCURRENCY}.`);
+  }
+  return Number(value);
 }
 
 function parseGranolaTransport(value: string): "mcp" | "api" {

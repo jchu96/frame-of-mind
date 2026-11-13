@@ -69,6 +69,7 @@ import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./t
 import { extractScreenshot } from "./screenshots.js";
 import { writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
+import { mapWithConcurrency } from "../lib/concurrency.js";
 import {
   analysisOutcomeSchema,
   CandidateAnalysisError,
@@ -131,6 +132,11 @@ interface AnalyzeOptionsBase {
    */
   remoteFileName?: string;
   derivedTranscript?: boolean;
+  /**
+   * Maximum overlapping pass-2 detail requests (1-8, default 1). Results are
+   * still committed in candidate order.
+   */
+  detailConcurrency?: number;
 }
 
 export type ContextEnrichedAnalyzeOptions = AnalyzeOptionsBase & {
@@ -328,6 +334,7 @@ export class AnalysisOrchestrator {
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
     const maxVideoSeconds = resolveMaxVideoSeconds();
+    const detailConcurrency = requireDetailConcurrency(options.detailConcurrency ?? 1);
     const runId = requireSafeRunId(this.nextRunId());
     const startedAt = this.now();
     const hasContext = hasMeetingContext(options);
@@ -778,7 +785,25 @@ export class AnalysisOrchestrator {
           stage: "interrogating",
           message: "Pass 2/2: interrogating indexed candidates…",
         });
-        for (const [indexNumber, candidate] of candidates.entries()) {
+        // Detail calls may overlap (bounded by `detailConcurrency`), but every
+        // result is committed strictly in candidate order, so items,
+        // screenshots, failure accounting, the circuit breaker, and progress
+        // counts match a sequential run.
+        type DetailAttempt =
+          | { kind: "validated"; result: AnalysisDetail }
+          | { kind: "failed"; error: CandidateAnalysisError };
+        // Admission counts completions rather than ordered commits: a slow
+        // early request must not let faster failing workers refill forever.
+        // Once an ordered result rules out a systematic leading failure, the
+        // original per-candidate isolation policy can continue normally.
+        let completedGenerationFailures = 0;
+        const canStartDetail = () => completedGenerationFailures < GENERATION_FAILURE_CIRCUIT_BREAKER
+          || items.length > 0
+          || failures.some(failure => failure.code !== "generation_failed");
+        const interrogateCandidate = async (
+          candidate: IndexedMoment,
+          indexNumber: number,
+        ): Promise<DetailAttempt> => {
           assertNotCanceled(execution.signal);
           try {
             const result = await tracer.span({
@@ -789,7 +814,9 @@ export class AnalysisOrchestrator {
                 "frame_of_mind.candidate_ordinal": indexNumber + 1,
               },
             }, async (span) => {
-              const usageBefore = usageCountsOf(analyzer);
+              // Cumulative-snapshot deltas are only attributable to this span
+              // when no other detail call can overlap it.
+              const usageBefore = detailConcurrency === 1 ? usageCountsOf(analyzer) : undefined;
               try {
                 const detail = await analyzer.interrogate(
                   remote,
@@ -812,15 +839,35 @@ export class AnalysisOrchestrator {
                 return detail;
               } catch (error) {
                 if (error instanceof CandidateAnalysisError) {
+                  if (error.code === "generation_failed") completedGenerationFailures += 1;
                   span.setAttributes({ "frame_of_mind.candidate_failure_code": error.code });
                 }
                 throw error;
               } finally {
                 // Failed calls still consumed tokens; attach the delta before
                 // the error propagates so failure-path spend stays queryable.
-                span.setAttributes(usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)));
+                if (usageBefore) {
+                  span.setAttributes(usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)));
+                }
               }
             });
+            return { kind: "validated", result };
+          } catch (error) {
+            if (error instanceof CandidateAnalysisError) {
+              return { kind: "failed", error };
+            }
+            throw error;
+          }
+        };
+        const screenshotDirectory = stagingDirectory;
+        const commitCandidate = async (
+          attempt: DetailAttempt,
+          indexNumber: number,
+        ): Promise<void> => {
+          const candidate = candidates[indexNumber]!;
+          try {
+            if (attempt.kind === "failed") throw attempt.error;
+            const result = attempt.result;
             assertNotCanceled(execution.signal);
             assertEvidenceWithinCandidate(
               result.evidence?.timestamp,
@@ -830,7 +877,7 @@ export class AnalysisOrchestrator {
             const item: AnalysisItem = { candidate, result };
             if (options.screenshots && result.accepted) {
               const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
-              const screenshotPath = join(stagingDirectory, screenshotName);
+              const screenshotPath = join(screenshotDirectory, screenshotName);
               if (await this.screenshot(localVideo, result.evidence?.timestamp || candidate.start, screenshotPath)) {
                 item.screenshot = screenshotName;
               }
@@ -879,7 +926,12 @@ export class AnalysisOrchestrator {
             },
             message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${candidate.start}`,
           });
-        }
+        };
+        await mapWithConcurrency(candidates, detailConcurrency, interrogateCandidate, {
+          onResult: commitCandidate,
+          canStart: canStartDetail,
+          signal: execution.signal,
+        });
 
         const omittedByLimit = index.moments.length - candidates.length;
         if (omittedByLimit > 0) {
@@ -1329,6 +1381,15 @@ function requireSafeRunId(value: string): string {
     safePathSegment(value) !== value
   ) {
     throw new Error("Generated run ID is not a safe path segment.");
+  }
+  return value;
+}
+
+export const MAX_DETAIL_CONCURRENCY = 8;
+
+function requireDetailConcurrency(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_DETAIL_CONCURRENCY) {
+    throw new Error(`Detail concurrency must be an integer from 1 to ${MAX_DETAIL_CONCURRENCY}.`);
   }
   return value;
 }

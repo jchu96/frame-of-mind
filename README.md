@@ -439,12 +439,18 @@ frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|non
 | `--model <id>` | Gemini model for both current passes |
 | `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |
 | `--note <name=path>` | per-run UTF-8 text/Markdown reference, repeatable up to 8 |
+| `--concurrency <n>` | parallel pass-2 detail requests (1-8), default `FRAME_OF_MIND_DETAIL_CONCURRENCY` or `1`; results stay in candidate order |
 | `--no-screenshots` | run without ffmpeg screenshots |
 | `--no-derived-transcript` | skip transcribing the recording's own audio |
 | `--retention <provider\|run>` | keep recording upload to provider expiry (default), or delete on command completion |
 | `--keep-upload` / `--delete-upload` | aliases for `--retention provider` / `--retention run` |
 | `--remote-file <name>` | reuse a retained Gemini upload (`files/...`) of the same recording |
 | `-o, --output <path>` | override private application-data root |
+
+At concurrency L, an all-generation-failure run starts at most `3 + L - 1`
+detail calls. In-flight calls may finish their existing four transport retries;
+429s count toward the breaker only after retries are exhausted. See the
+[runbook](docs/RUNBOOK.md) for cancellation and spend bounds.
 
 CLI recording uploads are kept until provider expiry by default. Set
 `--retention run` (or `--delete-upload`) to delete at the end, on success or

@@ -314,6 +314,20 @@ JSON file should expose recognizable transcript/title/date keys.
 
 Local CLI/Studio analysis refuses known recording durations above `FRAME_OF_MIND_MAX_VIDEO_SECONDS` (default `7200`, positive integer seconds) before transcription, upload, or run creation; unknown durations proceed with the existing fallback.
 
+`FRAME_OF_MIND_DETAIL_CONCURRENCY` (integer `1`-`8`, default `1`) sets how many pass-2 Gemini detail requests the CLI overlaps when `--concurrency` is absent; the flag wins. Results, screenshots, and outcome accounting stay in candidate order. Raise it only within the key's rate limits: each extra slot multiplies request bursts, and per-span token attributes are omitted above `1` because overlapping calls cannot be attributed.
+
+When every detail call fails at generation, limit L starts at most `3 + L - 1`
+calls. Admission pauses at three completed generation failures while earlier
+results settle in input order; a validated or non-generation failure preserves
+the sequential per-candidate isolation policy. In-flight calls are awaited,
+not canceled: the detail adapter currently has no abort-signal input. Each
+may still spend up to four transport retries. A 429 follows the existing
+1/2/4/8-second backoff and counts toward the breaker only after retries are
+exhausted. There is no adaptive concurrency or new retry policy. Run cancellation
+stops new starts; already-started provider requests may finish. Studio and hosted
+callers retain the default of one.
+
+
 ### 3.1 Identify the desired output
 
 ```bash
