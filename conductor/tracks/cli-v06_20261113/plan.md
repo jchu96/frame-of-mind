@@ -29,7 +29,8 @@ scope are in the [specification](./spec.md).
 - `[x]` Small fixes: `--version` through a linked install, `key set` with
   hidden input, best-N candidate selection, per-run notes, ffmpeg in the CI
   `check` job.
-- `[x]` Parallel detail pass: `--detail-concurrency`, default 1, maximum 8.
+- `[x]` Parallel detail pass: `--concurrency` (or
+  `FRAME_OF_MIND_DETAIL_CONCURRENCY`), default 1, maximum 8.
 
 ## Supporting work
 
