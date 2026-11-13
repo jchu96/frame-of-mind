@@ -30,6 +30,8 @@ without composing command-line arguments.
 - Operators converting recorded workflows into actions and process improvements
 - Researchers reviewing screen-based interviews
 - Individual contributors who need private, local processing before sharing
+- Video editors preparing cuts from long recordings, on a private copy of the
+  command-line tool
 
 The first Studio release targets one user on one machine. Team-hosted execution
 is a later deployment mode.
