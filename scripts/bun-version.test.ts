@@ -9,6 +9,21 @@ const trackedPaths = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" 
   .split("\0").filter(Boolean);
 const manifest = JSON.parse(await readFile("package.json", "utf8"));
 const pin = /^bun@(\d+\.\d+\.\d+)$/.exec(manifest.packageManager)?.[1];
+// Current installation/runtime requirements, not historical measurements in
+// changelogs, ADRs, incident notes, or dated experiments. CLAUDE.md aliases point
+// at the corresponding AGENTS.md source. Add new Bun setup instructions here.
+const currentBunRequirementDocs = [
+  ".agents/skills/frame-of-mind/SKILL.md",
+  ".github/AGENTS.md",
+  "AGENTS.md",
+  "CONTRIBUTING.md",
+  "README.md",
+  "apps/web/server-local/AGENTS.md",
+  "conductor/tech-stack.md",
+  "docs/CLOUDFLARE_DEPLOYMENT.md",
+  "docs/RUNBOOK.md",
+  "docs/SKILL_INSTALLATION.md",
+];
 
 // Incident 2026-11-13: CI's Bun pin drifted from the documented runtime.
 // Retire when workflows and documentation consume packageManager directly.
@@ -29,10 +44,7 @@ test("Bun versions in workflows and current documentation agree with packageMana
   }
   expect(setups, "at least one live setup-bun step is required").toBeGreaterThan(0);
 
-  for (const path of trackedPaths.filter((path) => path.endsWith(".md"))) {
-    // Dated experimental receipts and incident records describe past runs, not
-    // installation requirements. Preserve their original runtime provenance.
-    if (path.startsWith("docs/spikes/") || path.startsWith("docs/project_notes/")) continue;
+  for (const path of currentBunRequirementDocs) {
     const source = await readFile(path, "utf8");
     for (const match of source.matchAll(/\b[Bb]un(?:[\s|]+|[-@])v?(\d+\.\d+(?:\.\d+)?)/g)) {
       if (match[1] !== pin) violations.push(`${path}: Bun ${match[1]} != packageManager Bun ${pin}`);
