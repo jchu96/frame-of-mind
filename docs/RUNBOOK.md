@@ -1248,6 +1248,12 @@ verified clock. `manifest.clock.transcriptClock` is `exact-ms` when conversion
 is representable, `unverified` otherwise. Neither value verifies the model's
 alignment against the recording.
 
+Explicit numeric transcript offsets supplied through the service/API follow the
+same rule before indexing: unrepresentable offsets or mapped times retain the
+original transcript, labelled `transcript not windowed` and `transcript clock
+unverified`. Exact offsets still window and rebase timestamped lines when the
+video duration is known. This does not change CLI offset parsing.
+
 ## 7. Security and incident response
 
 ### 7.1 Lost or reassigned device

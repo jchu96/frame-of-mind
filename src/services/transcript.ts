@@ -100,7 +100,9 @@ export function nearbyTranscript(
 /** Only timestamped lines can be mapped safely; prose-only context remains intact. */
 export function windowTranscript(transcript: string, offsetSeconds: number, durationSeconds: number | undefined): { text: string; windowed: boolean } {
   const timed = transcript.split(/\r?\n/).map(line => ({ line, match: line.match(LINE_TIME) })).filter(entry => entry.match);
-  if (!timed.length || durationSeconds === undefined) return { text: transcript, windowed: false };
+  // Preserve legacy numeric API inputs when exact windowing is unavailable.
+  // The orchestrator labels the unchanged context as unwindowed/unverified.
+  if (!timed.length || durationSeconds === undefined || !transcriptOffsetVerified(offsetSeconds, transcript)) return { text: transcript, windowed: false };
   return { windowed: true, text: timed.flatMap(({ line, match }) => {
     const time = transcriptToFile(clockTime("transcript", timestampToSeconds(match![1]!) * 1000), offsetSeconds);
     return time.ms >= 0 && time.ms < durationSeconds * 1000

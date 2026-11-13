@@ -753,7 +753,7 @@ export class AnalysisOrchestrator {
           const window = windowTranscript(meeting.transcript, options.transcriptOffsetSeconds, duration);
           indexMeeting = { ...meeting, transcript: window.text };
           clock.transcriptWindow = window.windowed ? "windowed" : "not-windowed";
-          if (!window.windowed) await reportWarning(progress, { kind: "warning", stage: "indexing", message: "transcript not windowed: timestamped lines and a known video duration are required." });
+          if (!window.windowed) await reportWarning(progress, { kind: "warning", stage: "indexing", message: "transcript not windowed: timestamped lines, a known video duration, and exact millisecond alignment are required." });
         }
         const index = await tracer.span({
           op: "gen_ai.chat",

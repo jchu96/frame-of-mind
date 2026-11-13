@@ -511,6 +511,10 @@ Legacy model transcript offsets that cannot be represented exactly in integer
 milliseconds retain their previous context selection without rounding. The run
 reports `transcript clock unverified`; the manifest keeps the original offset.
 This does not relax the explicit `--timeline-offset` format.
+The same compatibility rule applies to explicit numeric transcript offsets from
+service/API callers. If exact millisecond windowing is unavailable, indexing
+receives the original transcript and the run is labelled `transcript not
+windowed` and `transcript clock unverified`; no offset is rounded.
 
 ## Launch the local Studio
 

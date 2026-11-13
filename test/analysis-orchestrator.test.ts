@@ -2428,3 +2428,52 @@ describe("clock review alignment", () => {
     }
   });
 });
+
+describe("clock review explicit window", () => {
+  it.each([
+    { offset: 0.1234, verified: false }, { offset: -0.1234, verified: false },
+    { offset: 1e-7, verified: false }, { offset: -1e-7, verified: false },
+    { offset: Number.MIN_VALUE, verified: false }, { offset: Number.MAX_VALUE, verified: false },
+    { offset: -Number.MAX_VALUE, verified: false }, { offset: -9007199254740, verified: false },
+    { offset: 0, verified: true }, { offset: 1.001, verified: true },
+    { offset: -1.001, verified: true }, { offset: 130, verified: true },
+  ])("explicit numeric offset $offset preserves compatibility across windowing boundaries", async ({ offset, verified }) => {
+    const { secondsToTimestamp, timestampToSeconds } = await import("../src/lib/time.js");
+    const seconds = [0, 1, 10, 119, 120, 121, 130, 131, 250];
+    const cases = [
+      { mode: "absolute" as const, duration: 120, timed: true },
+      { mode: "relative" as const, duration: 120, timed: true },
+      { mode: "unverified" as const, duration: 120, timed: true },
+      { mode: "absolute" as const, duration: undefined, timed: true },
+      { mode: "absolute" as const, duration: 120, timed: false },
+    ];
+    for (const { mode, duration, timed } of cases) {
+      const f = await createFixture();
+      const transcript = timed ? seconds.map(s => `[${secondsToTimestamp(s)}] Speaker 1: synthetic context ${s}`).join("\n") : "Synthetic prose context.";
+      f.meeting.transcript = transcript;
+      const events: AnalysisProgressEvent[] = [];
+      const analyzer = { ...f.analyzer, probeClipClock: vi.fn(async () => 27) };
+      const orchestrator = new AnalysisOrchestrator({ createContextSource: () => f.context, createAnalyzer: () => analyzer,
+        probeDurationSeconds: async () => duration,
+        calibrateClipClock: async () => ({ model: "gemini-test", checkedAt: "2026-11-01T00:00:00Z", result: mode, evidence: { flashFileSeconds: 27, clipStartSeconds: 20, reportedSeconds: mode === "absolute" ? 27 : mode === "relative" ? 7 : 15 } }),
+      });
+      const result = await orchestrator.analyze({ ...f.options, transcriptOffsetSeconds: offset }, { progress: { report: event => { events.push(event); } } });
+      const clockVerified = verified || (!timed && offset === -9007199254740);
+      const windowed = clockVerified && timed && duration !== undefined;
+      const expectedIndex = windowed ? seconds.filter(s => s - offset >= 0 && s - offset < duration).map(s => `[${secondsToTimestamp(s - offset)}] Speaker 1: synthetic context ${s}`).join("\n") : transcript;
+      expect(f.analyzer.index.mock.calls[0]![1].transcript).toBe(expectedIndex);
+      const candidate = indexResult().moments[0]!;
+      const from = Math.max(0, timestampToSeconds(candidate.start) + offset - 45);
+      const to = timestampToSeconds(candidate.end) + offset + 45;
+      const expectedDetail = timed ? seconds.filter(s => s >= from && s <= to).map(s => `[${secondsToTimestamp(s)}] Speaker 1: synthetic context ${s}`).join("\n") : "";
+      expect(f.analyzer.interrogate.mock.calls[0]![2]).toBe(expectedDetail);
+      expect(result.outcome.status).toBe("complete");
+      expect(result.manifest.transcriptAlignment).toMatchObject({ offsetSeconds: offset, method: "explicit" });
+      expect(result.manifest.clock).toMatchObject({ modelClipClock: mode, transcriptClock: clockVerified ? "exact-ms" : "unverified", transcriptWindow: windowed ? "windowed" : "not-windowed" });
+      if (!clockVerified) {
+        for (const artifact of ["analysis.md", "report.html"]) expect(await readFile(join(result.directory, artifact), "utf8")).toContain("transcript clock unverified");
+        expect(events).toContainEqual(expect.objectContaining({ kind: "warning", message: expect.stringContaining("exact millisecond alignment") }));
+      }
+    }
+  });
+});

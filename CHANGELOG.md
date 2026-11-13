@@ -327,3 +327,5 @@ Semantic Versioning.
 - 2026-11-13: Added declared clocks, exact optional timeline timecode, synthetic clip-clock calibration, and pre-limit out-of-range candidate filtering (#120).
 
 - 2026-11-13: Clock review fixes retain legacy model alignments with an unverified label, require full frame timing for media-derived rates, and settle upload streams before deleting calibration scratch.
+
+- 2026-11-13: Preserve explicit numeric transcript offsets that cannot be windowed exactly; retain context and label the clock unverified instead of aborting before indexing.
