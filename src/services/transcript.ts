@@ -58,7 +58,7 @@ export function nearbyTranscript(
   offsetSeconds = 0,
 ): string {
   if (!transcript) return "";
-  const from = Math.max(-offsetSeconds, timestampToSeconds(start) - paddingSeconds) * 1000;
+  const from = Math.max(transcriptToFile(clockTime("transcript", 0), offsetSeconds).ms, (timestampToSeconds(start) - paddingSeconds) * 1000);
   const to = (timestampToSeconds(end) + paddingSeconds) * 1000;
   const lines = transcript.split(/\r?\n/);
   const timed = lines

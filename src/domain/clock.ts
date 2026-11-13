@@ -36,11 +36,14 @@ export function fileToTimeline(time: ClockTime<FileClock>, offsetMs: number): Cl
 export function timelineToSource(time: ClockTime<"timeline">, offsetMs: number): SourceTime {
   return clockTime("source", time.ms - offsetMs, time.precisionMs);
 }
+function signedSecondsMs(value: number): number {
+  return (value < 0 ? -1 : 1) * parseSecondsMs(String(Math.abs(value)));
+}
 export function transcriptToFile(time: ClockTime<"transcript">, offsetSeconds: number): SourceTime {
-  return clockTime("source", time.ms - offsetSeconds * 1000, time.precisionMs);
+  return clockTime("source", time.ms - signedSecondsMs(offsetSeconds), time.precisionMs);
 }
 export function clipToFile(time: ClockTime<"clip">, clipStartSeconds: number, mode: ClipClock): SourceTime {
-  return clockTime("source", time.ms + (mode === "relative" ? clipStartSeconds * 1000 : 0), time.precisionMs);
+  return clockTime("source", time.ms + (mode === "relative" ? signedSecondsMs(clipStartSeconds) : 0), time.precisionMs);
 }
 
 const safeNatural = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);

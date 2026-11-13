@@ -23,6 +23,12 @@ describe("declaration", () => {
   it("--timecode-rate without --timeline-offset is refused with the offset hint", () => expect(() => declareClock(undefined, "25")).toThrow("--timeline-offset (use 0"));
 });
 describe("transcript", () => {
+  it("preserves signed millisecond transcript offsets without float rounding", () => {
+    expect(transcriptToFile(clockTime("transcript", 2000), 1.001).ms).toBe(999);
+    expect(transcriptToFile(clockTime("transcript", 2000), -1.001).ms).toBe(3001);
+    expect(() => transcriptToFile(clockTime("transcript", 2000), 1.0005)).toThrow();
+    expect(nearbyTranscript("[00:00:02] Speaker 1: synthetic line", "00:00:01", "00:00:02", 0, 1.001)).toBe("");
+  });
   it("transcriptToFile matches nearbyTranscript's existing window for offset -130", () => {
     const transcript = "[00:00:00] Speaker 1: synthetic first\n[00:00:05] Speaker 1: synthetic inside\n[00:00:11] Speaker 1: synthetic after";
     const slice = nearbyTranscript(transcript, "00:02:10", "00:02:20", 0, -130);
