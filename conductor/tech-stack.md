@@ -48,7 +48,7 @@
 
 ## Key Dependencies
 
-- Bun 1.3.14 or newer for install, workspaces, scripts, tests, and local runtime
+- Bun 1.4.4 or newer for install, workspaces, scripts, tests, and local runtime
 - `@google/genai` for Gemini Files and structured video analysis
 - `@modelcontextprotocol/sdk` for Bluedot and Granola MCP
 - Zod for all untrusted boundaries

@@ -2,7 +2,7 @@
 
 ## Package Manager
 
-- Use Bun 1.3.14 or newer: `bun install`, `bun run dev`, `bun run check`.
+- Use Bun 1.4.4 or newer: `bun install`, `bun run dev`, `bun run check`.
 - Keep `bun.lock` synchronized with the root workspace; do not recreate `package-lock.json`.
 
 ## File-Scoped Commands

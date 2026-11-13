@@ -151,7 +151,7 @@ bun run build
 bun link
 ```
 
-Requirements are Bun 1.3.14+, Node.js 22+, and Git. GitHub CLI is optional;
+Requirements are Bun 1.4.4+, Node.js 22+, and Git. GitHub CLI is optional;
 without it:
 
 ```bash

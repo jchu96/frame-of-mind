@@ -110,13 +110,25 @@ Install [Node.js 22 or newer](https://nodejs.org/en/download) for the linked
 CLI executable, then [Bun](https://bun.sh/docs/installation) for workspace
 commands. Open a fresh terminal and check both:
 
-Require Bun 1.3.14 or newer:
+Require Bun 1.4.4 or newer:
 
 ```bash
 bun --version
 node --version
 git --version
 ```
+
+The exact tested release is the root `package.json` `packageManager` pin.
+CI and current installation docs must agree with that pin; repository hygiene
+checks reject drift. Use the pinned release when reproducing a gate or audit.
+
+Gate build caches remain enabled by default. Nuxt bundles Zod through
+`build.transpile` so the relocated Studio server does not depend on locale
+modules in the original checkout's Bun package store. After changing bundling,
+verify both a cold build and a cache hit from a second checkout, using a private
+`FRAME_OF_MIND_BUILD_CACHE` directory under the same parent as the usual cache.
+A cache under the OS temporary directory can produce a different import layout
+and miss a failure seen under the home directory.
 
 Require Node.js 22+ for the linked CLI executable and Git for cloning. The
 repository's install, test, web, and release workflow uses Bun. GitHub CLI is
@@ -1236,7 +1248,7 @@ bun --no-env-file scripts/test-fresh-clone.ts fresh
 ```
 
 macOS and Linux CI run the complete headless Studio boot. Windows support uses
-WSL or Git Bash with Bun 1.3.14+ and an LF checkout:
+WSL or Git Bash with Bun 1.4.4+ and an LF checkout:
 
 ```bash
 git config --global core.autocrlf false
@@ -1285,7 +1297,7 @@ GHSA-wq5f-xc86-pv6w. Miniflare's latest stable 4.20260730.0 and the Miniflare
 alpha bundled with Wrangler 4.129.0 both require vulnerable 0.35.2. Remove the
 override after upgrading both parents to supported releases that resolve
 patched sharp without it, then rerun the frozen-install audit with CI's Bun
-1.3.14. Newer Bun releases can classify this dependency differently under
+1.4.4. Newer Bun releases can classify this dependency differently under
 `--production`, so a host-only audit is insufficient.
 
 The Better Auth 1.7.7 security update requires migration

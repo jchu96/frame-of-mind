@@ -27,7 +27,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
@@ -54,7 +54,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
@@ -94,7 +94,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
@@ -117,7 +117,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
@@ -155,7 +155,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Test installation from a fresh clone
         run: bun --no-env-file scripts/test-fresh-clone.ts ${{ matrix.mode }}
@@ -171,7 +171,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.4
 
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
