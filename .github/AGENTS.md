@@ -2,7 +2,7 @@
 
 ## Workflows
 
-- Use Bun 1.3.14 and `bun install --frozen-lockfile`.
+- Use Bun 1.4.4 and `bun install --frozen-lockfile`.
 - Run `bun run check` on pushes and pull requests.
 - Fail CI for high or critical production dependency advisories.
 - Keep workflows read-only unless a separate release process is approved.

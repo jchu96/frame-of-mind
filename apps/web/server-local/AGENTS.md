@@ -2,7 +2,7 @@
 
 ## Package Manager
 
-Use **Bun 1.3.14+**: `bun install --frozen-lockfile`, `bun test`, `bun run typecheck:web`.
+Use **Bun 1.4.4+**: `bun install --frozen-lockfile`, `bun test`, `bun run typecheck:web`.
 
 ## Boundary
 

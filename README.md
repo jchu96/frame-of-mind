@@ -13,7 +13,7 @@ exact moment.
 
 [![CI](https://github.com/jchu96/frame-of-mind/actions/workflows/ci.yml/badge.svg)](https://github.com/jchu96/frame-of-mind/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Bun 1.3+](https://img.shields.io/badge/bun-1.3+-black.svg)](package.json)
+[![Bun 1.4.4](https://img.shields.io/badge/bun-1.4.4-black.svg)](package.json)
 
 [Install](#install) ·
 [Quickstart](#analyze) ·
@@ -198,7 +198,7 @@ The durable source of truth is local:
 
 ## Requirements
 
-- Bun 1.3.14+ (Node.js 22+ for the linked `frameofmind` executable)
+- Bun 1.4.4+ (Node.js 22+ for the linked `frameofmind` executable)
 - `ffmpeg` for smoke tests, derivative clips, screenshots, and derived transcripts
 - A Gemini Developer API key
 - Bluedot, Granola, or local context (optional — video-only runs are supported)
@@ -265,7 +265,7 @@ platforms, and browser E2E job remain separate failure domains. See
 [docs/TESTING.md](docs/TESTING.md#ci).
 
 The full fresh-clone Studio boot is continuously tested on macOS and Linux.
-On Windows, use WSL or Git Bash with Bun 1.3.14+ and keep the checkout on LF:
+On Windows, use WSL or Git Bash with Bun 1.4.4+ and keep the checkout on LF:
 
 ```bash
 git config --global core.autocrlf false

@@ -176,6 +176,15 @@ locations are deliberately destination-only. The default cache is
 hit prints `build=CACHED <hash8>` and is copied into the run-owned temporary
 tree before consumers start.
 
+Zod is bundled through Nuxt's `build.transpile` option so cached SSR chunks do
+not import locale files from a checkout's Bun package store. To test relocation,
+use two checkouts with identical sources and one private cache under the home
+directory. Invoke `bun --no-env-file scripts/run-check-lane.ts local build:cli
+build:web test:studio-http spike:studio-streaming` from each with the same
+`PATH`, `HOME`, `TMPDIR`, and `CI`; require `build=CACHED` on the second run.
+The `bun run` wrapper adds checkout-specific entries to `PATH`, which can make
+two otherwise identical checkouts build different cache entries.
+
 The quarantine file is
 [`apps/web/e2e/flaky-quarantine.json`](../apps/web/e2e/flaky-quarantine.json).
 It must remain an explicit JSON array; zero entries is the normal state.

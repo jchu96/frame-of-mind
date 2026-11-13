@@ -23,7 +23,7 @@ enter logs, fixtures, or repository history.
 
 ## Dev setup
 
-Install Bun 1.3.14 or newer, then install the locked workspace and the local
+Install Bun 1.4.4 or newer, then install the locked workspace and the local
 commit hook:
 
 ```bash

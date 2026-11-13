@@ -262,7 +262,7 @@ References:
 
 ## Prerequisites
 
-- Bun 1.3.14 or newer;
+- Bun 1.4.4 or newer;
 - a Cloudflare account with Workers and D1;
 - a domain in the same account or a routable custom hostname;
 - a sender domain onboarded to Cloudflare Email Service;
