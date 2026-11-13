@@ -1,20 +1,26 @@
 #!/usr/bin/env node
 import "./instrument.js";
+import { realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 import {
   analyzeMeeting,
+  MAX_DETAIL_CONCURRENCY,
   type AnalysisProgressEvent,
   type AnalyzeOptions,
+  type AnalyzeResult,
 } from "./services/analyze.js";
 import { BluedotClient, DEFAULT_BLUEDOT_MCP_URL } from "./adapters/bluedot-mcp.js";
 import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.js";
 import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
+import { VERSION } from "./version.js";
+import { registerKey } from "./commands/key.js";
+import { loadRunNotes } from "./services/run-notes.js";
+import { resolveRetention } from "./domain/retention.js";
 import type { ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
 import { redactUrlForDisplay } from "./lib/http.js";
@@ -32,12 +38,17 @@ import {
   withAnalysisDepth,
 } from "./recipes/index.js";
 
+import { defaultOutputRoot } from "./lib/paths.js";
+import { registerSession } from "./commands/session.js";
+import { registerMedia } from "./commands/media.js";
+import { registerTranscribe } from "./commands/transcribe.js";
+
 loadDotenv({ quiet: true });
 
-const program = new Command()
+export const program = new Command()
   .name("frameofmind")
   .description("Video in. Understanding out. Run structured analysis recipes over meeting recordings.")
-  .version("0.3.0");
+  .version(VERSION);
 
 const geminiModelSchema = z.string()
   .min(1)
@@ -54,14 +65,18 @@ export interface AnalyzeCliFlags {
   contextFile?: string;
   transcriptOffset?: string;
   focus?: string;
+  note?: string[];
   depth: string;
   model?: string;
   output: string;
   maxMoments: string;
   screenshots: boolean;
   keepUpload?: boolean;
+  deleteUpload?: boolean;
+  retention?: string;
   remoteFile?: string;
   derivedTranscript: boolean;
+  concurrency?: string;
 }
 
 program
@@ -85,6 +100,7 @@ program
       ["GEMINI_API_KEY", Boolean(process.env.GEMINI_API_KEY)],
       ["GRANOLA_API_KEY (optional)", Boolean(process.env.GRANOLA_API_KEY)],
       ["ffmpeg (optional: screenshots, derived transcript)", await executableExists("ffmpeg")],
+      ["ffprobe (optional: duration probe, media helpers)", await executableExists("ffprobe")],
     ] as const;
     for (const [name, ready] of checks) process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
     process.stdout.write(
@@ -109,6 +125,11 @@ program
     }
   });
 
+registerSession(program);
+registerMedia(program);
+registerTranscribe(program);
+registerKey(program);
+
 program
   .command("analyze")
   .description("Analyze one video with optional Bluedot, Granola, or local context.")
@@ -125,10 +146,14 @@ program
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
-  .option("--max-moments <count>", "Maximum candidate moments to interrogate", "10")
+  .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
+  .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
+  .option("--concurrency <n>", "Parallel Gemini detail requests in pass 2 (default 1)")
   .option("--no-screenshots", "Skip ffmpeg screenshots")
   .option("--no-derived-transcript", "Skip deriving a transcript from the recording audio when no transcript is supplied")
-  .option("--keep-upload", "Leave the Gemini file until its provider expiration time")
+  .option("--retention <mode>", "Upload retention: provider (default) or run; overrides FRAME_OF_MIND_UPLOAD_RETENTION")
+  .option("--keep-upload", "Alias for --retention provider")
+  .option("--delete-upload", "Alias for --retention run")
   .option("--remote-file <name>", "Reuse a retained Gemini upload (files/...) of this exact recording; skips re-upload and never deletes it")
   .action(
     async (
@@ -205,20 +230,7 @@ program
         } finally {
           process.off("SIGINT" as never, cancel);
         }
-        const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
-        process.stdout.write(
-          `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
-            `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
-        );
-        const remoteFile = result.manifest.remoteFile;
-        const retentionRequested = Boolean(flags.keepUpload || flags.remoteFile);
-        if (retentionRequested && remoteFile && !remoteFile.deleted && remoteFile.name) {
-          process.stdout.write(
-            `Retained Gemini upload: ${remoteFile.name}` +
-              `${remoteFile.expirationTime ? ` (provider expiration ${remoteFile.expirationTime})` : ""}. ` +
-              `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
-          );
-        }
+        printAnalysisSummary(result);
       } catch (error) {
         await captureCliException(
           telemetryCodeFromError(error, "analysis_failed"),
@@ -233,7 +245,7 @@ program
               : {}),
             durationMs: Math.max(0, Date.now() - startedAt),
             studioMode: "cli",
-            version: "0.3.0",
+            version: VERSION,
           },
         );
         throw error;
@@ -241,11 +253,34 @@ program
     },
   );
 
+export function printAnalysisSummary(result: AnalyzeResult): void {
+  const { selected, indexed, omittedByLimit } = result.outcome.candidates;
+  process.stdout.write(
+    `Interrogated ${selected} of ${indexed} indexed candidates` +
+    (omittedByLimit ? ` (${omittedByLimit} lower-importance dropped; --max-moments all to analyse every one).\n` : ".\n"),
+  );
+  const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
+  process.stdout.write(
+    `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
+      `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
+  );
+  const remoteFile = result.manifest.remoteFile;
+  if (remoteFile && !remoteFile.deleted && remoteFile.name) {
+    process.stdout.write(
+      `Retained Gemini upload: ${remoteFile.name}` +
+        ` (${remoteFile.expirationTime ? `provider expiration ${remoteFile.expirationTime}` : "expiration not reported"}; per-file limit 2 GB). ` +
+        `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
+    );
+  }
+}
+
 export async function buildAnalyzeOptions(
   meetingId: string | undefined,
   flags: AnalyzeCliFlags,
   apiKey: string,
 ): Promise<AnalyzeOptions> {
+  const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
+  const runNotes = await loadRunNotes(flags.note);
   const recipeResult = await withAnalysisDepth(
     await loadRecipe(flags.recipe, flags.recipeFile),
     analysisDepthSchema.parse(flags.depth),
@@ -286,11 +321,15 @@ export async function buildAnalyzeOptions(
   if (videoOnly && flags.transcriptOffset) {
     throw new Error("--transcript-offset requires meeting or file context.");
   }
-  if (!/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
-  const maxIncidents = Number(flags.maxMoments);
+  if (flags.maxMoments !== "all" && !/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
+  const maxIncidents = flags.maxMoments === "all" ? 1_000 : Number(flags.maxMoments);
   if (!Number.isSafeInteger(maxIncidents) || maxIncidents > 1_000) {
     throw new Error("--max-moments must be between 1 and 1000.");
   }
+  const detailConcurrency = parseDetailConcurrency(
+    flags.concurrency,
+    process.env.FRAME_OF_MIND_DETAIL_CONCURRENCY,
+  );
   if (flags.remoteFile) {
     if (!flags.video) {
       throw new Error("--remote-file requires --video so the local recording can be verified and screenshotted.");
@@ -308,11 +347,14 @@ export async function buildAnalyzeOptions(
     apiKey,
     ...(model ? { model } : {}),
     ...(flags.focus ? { focus: flags.focus } : {}),
+    ...(runNotes.length ? { runNotes } : {}),
     indexFps: recipeResult.indexFps,
     outputRoot: flags.output,
     maxIncidents,
+    detailConcurrency,
     screenshots: flags.screenshots,
-    keepUpload: Boolean(flags.keepUpload),
+    keepUpload: retention === "provider",
+    retention,
     ...(flags.remoteFile ? { remoteFileName: flags.remoteFile } : {}),
     derivedTranscript: flags.derivedTranscript !== false,
   };
@@ -353,7 +395,7 @@ const CLI_ANALYSIS_PROGRESS = {
 } satisfies { report(event: AnalysisProgressEvent): void };
 
 program.showSuggestionAfterError();
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   program.parseAsync().catch((error: unknown) => {
     process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
@@ -388,22 +430,21 @@ function parseProvider(value: string, allowFile: boolean): ContextProvider {
   return value as ContextProvider;
 }
 
+function parseDetailConcurrency(flag: string | undefined, environment: string | undefined): number {
+  const [label, value] = flag !== undefined
+    ? ["--concurrency", flag]
+    : ["FRAME_OF_MIND_DETAIL_CONCURRENCY", environment || "1"];
+  if (!/^[1-9]\d*$/.test(value) || Number(value) > MAX_DETAIL_CONCURRENCY) {
+    throw new Error(`${label} must be an integer from 1 to ${MAX_DETAIL_CONCURRENCY}.`);
+  }
+  return Number(value);
+}
+
 function parseGranolaTransport(value: string): "mcp" | "api" {
   if (value !== "mcp" && value !== "api") {
     throw new Error("--granola-transport must be mcp or api.");
   }
   return value;
-}
-
-function defaultOutputRoot(): string {
-  if (process.env.FRAME_OF_MIND_OUTPUT) return resolve(process.env.FRAME_OF_MIND_OUTPUT);
-  if (process.platform === "darwin") {
-    return join(homedir(), "Library", "Application Support", "frame-of-mind", "runs");
-  }
-  if (process.platform === "win32") {
-    return join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "frame-of-mind", "runs");
-  }
-  return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "frame-of-mind", "runs");
 }
 
 function capitalize(value: string): string {

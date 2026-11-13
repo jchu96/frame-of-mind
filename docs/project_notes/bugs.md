@@ -674,3 +674,9 @@ stderr warning, artifact coverage notices, and the outcome projects into
 Studio views and exports (#112). Validating test:
 `test/analysis-orchestrator.test.ts` "reports omission-only truncation as
 partial with a coverage warning".
+
+## 2026-11-13 — Linked CLI returned no output
+
+The main-module guard compared the module URL to unresolved argv[1], so a
+linked executable never dispatched commands. Resolve the executable realpath;
+the built-CLI symlink test and package-version bump fixture prevent recurrence.

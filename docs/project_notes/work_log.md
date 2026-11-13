@@ -1326,3 +1326,9 @@
   `test/telemetry-trace.test.ts` (allowlist construction, content rejection)
   and the orchestrator vocabulary-compliance test — 111 tests green across
   the touched suites; typecheck clean.
+
+- 2026-11-13: Added the command/transcription seams and CLI recording-upload retention setting (ADR 0024); default retention, flag precedence, visible expiry, and terminal cleanup verified offline.
+
+- 2026-11-13: Added CLI install/key/limit/notes fixes and ffmpeg in CI; coverage includes built symlink invocation, hidden terminal input, best-N order, note digests and escaped provider requests. Review clarified that only the tool-authored note projection is digest-only; model findings may reflect note content. Build fixtures now compile in setup hooks before runtime assertions.
+
+- 2026-11-13: Parallel detail pass adopted from a field contribution; completed failures bound dispatch, results remain ordered, and 429s retain the existing retry policy. In-flight cancellation requires an adapter interface follow-up.

@@ -32,6 +32,9 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Run pull-request gate
         env:
           FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE: "1"
