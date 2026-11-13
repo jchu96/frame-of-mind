@@ -54,10 +54,19 @@ Read only the sources needed for the task:
 - Never copy a canonical provider OAuth token to a custom MCP endpoint. Custom
   endpoints must be HTTPS and complete isolated authorization.
 - Never delete an operator-supplied local video. Delete temporary derivatives
-  and Gemini uploads by default.
+  and downloads. CLI recording uploads remain until provider expiry by default;
+  show that expiry (or unknown) and the 2 GB limit. Use `--retention run` only
+  when terminal deletion is requested. Studio keeps its explicit policy.
 - Do not publish, message, approve access, deploy, or create tickets without
   authority for that exact external action.
 - Review every generated record before treating it as true or actionable.
+
+Never ask the operator to paste an API key: direct them to `frameofmind key set`
+in their own terminal. Use `--note name=path` for per-run references instead of
+editing a recipe for one job. The tool itself never copies note bodies into the
+bundle; the manifest records only names, digests and byte counts. Model findings
+may quote or paraphrase notes. Treat findings as possibly containing note content
+when sharing a bundle.
 
 ## Local CLI and Studio
 
@@ -203,8 +212,12 @@ episode-length recording use `--max-moments 30` or more: pass-1 indexing is
 non-deterministic (the same recording has indexed 16–28 candidates across
 identical runs), so set the limit with headroom and require
 `outcome=complete` / zero `omittedByLimit` before treating timestamps or
-findings as covering the whole recording. Avoid `--keep-upload` unless the
-user explicitly accepts remote retention.
+findings as covering the whole recording. CLI uploads remain until provider
+expiry by default; use `--delete-upload` when terminal cleanup is requested.
+
+For long runs, opt into `--concurrency 6` within the key's rate limits. It
+overlaps detail calls without changing results or their order; default is one,
+maximum eight. In-flight retry spend is bounded as documented in the runbook.
 
 For an experimental in-depth review, add `--depth deep` and an explicit model.
 `deep` means denser indexing plus layered prompting with that one model; it is
@@ -250,9 +263,10 @@ Review in this order:
 Verify identity, recipe provenance, model, alignment, evidence timestamps,
 explicit facts versus inference, accepted/rejected/failed counts, the outcome
 status (`complete` requires zero failures AND zero limit-omitted candidates;
-`partial` with `omittedByLimit > 0` means the back of the recording is
+`partial` with `omittedByLimit > 0` means lower-importance candidates are
 missing — rerun with a higher `--max-moments` before drafting from it), and
-`remoteFile.deleted: true` unless retention was intentional. If no normal
+remote retention matching the resolved policy (`deleted: false` is normal for
+default `provider` retention). If no normal
 bundle exists, inspect `failure-manifest.json`; never request the raw provider
 failure. Load `references/analysis-contracts.md` for exact file semantics.
 

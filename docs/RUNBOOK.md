@@ -66,8 +66,8 @@ stateDiagram-v2
     LocalInputs --> ProviderContext: OAuth query
     ProviderContext --> RemoteVideo: Gemini upload
     RemoteVideo --> Analysis: Files state ACTIVE
-    Analysis --> RemoteDeleted: normal cleanup
-    Analysis --> RemoteRetained: explicit keep-upload
+    Analysis --> RemoteDeleted: retention run
+    Analysis --> RemoteRetained: retention provider (default)
     RemoteDeleted --> StagedRun
     RemoteRetained --> StagedRun
     StagedRun --> PublishedRun: atomic rename
@@ -90,7 +90,7 @@ Normal non-durable data:
 - staging directories;
 - raw provider responses;
 - full transcript copies;
-- Gemini uploaded video.
+- Gemini uploaded video: provider expiry by default; `--retention run` deletes at command completion.
 
 ## 1. First-time setup
 
@@ -104,7 +104,11 @@ Before cloning or running:
 - confirm the chosen Google project/billing owner;
 - do not use production-sensitive material as a first test.
 
-### 1.2 Install Bun
+### 1.2 Install Node.js and Bun
+
+Install [Node.js 22 or newer](https://nodejs.org/en/download) for the linked
+CLI executable, then [Bun](https://bun.sh/docs/installation) for workspace
+commands. Open a fresh terminal and check both:
 
 Require Bun 1.4.4 or newer:
 
@@ -196,11 +200,15 @@ Expected version:
 
 Follow [CREDENTIALS.md](CREDENTIALS.md).
 
-Minimum current shell:
+Recommended local key entry:
 
 ```bash
-export GEMINI_API_KEY="your-key"
+frameofmind key set
 ```
+
+The prompt hides the key and atomically updates `GEMINI_API_KEY` in `./.env`
+with mode 0600. Use `--env-file <path>` to select another dotenv file.
+Non-TTY input is refused. Existing environment-based key resolution still works.
 
 Rules:
 
@@ -318,6 +326,20 @@ JSON file should expose recognizable transcript/title/date keys.
 
 Local CLI/Studio analysis refuses known recording durations above `FRAME_OF_MIND_MAX_VIDEO_SECONDS` (default `7200`, positive integer seconds) before transcription, upload, or run creation; unknown durations proceed with the existing fallback.
 
+`FRAME_OF_MIND_DETAIL_CONCURRENCY` (integer `1`-`8`, default `1`) sets how many pass-2 Gemini detail requests the CLI overlaps when `--concurrency` is absent; the flag wins. Results, screenshots, and outcome accounting stay in candidate order. Raise it only within the key's rate limits: each extra slot multiplies request bursts, and per-span token attributes are omitted above `1` because overlapping calls cannot be attributed.
+
+When every detail call fails at generation, limit L starts at most `3 + L - 1`
+calls. Admission pauses at three completed generation failures while earlier
+results settle in input order; a validated or non-generation failure preserves
+the sequential per-candidate isolation policy. In-flight calls are awaited,
+not canceled: the detail adapter currently has no abort-signal input. Each
+may still spend up to four transport retries. A 429 follows the existing
+1/2/4/8-second backoff and counts toward the breaker only after retries are
+exhausted. There is no adaptive concurrency or new retry policy. Run cancellation
+stops new starts; already-started provider requests may finish. Studio and hosted
+callers retain the default of one.
+
+
 ### 3.1 Identify the desired output
 
 ```bash
@@ -386,7 +408,12 @@ controlled. Prefer a local download.
 --max-moments 3
 ```
 
-This limits the close interrogation pass. The full video is still indexed.
+This selects the best candidates by importance (high, medium, low), breaking
+ties by start time, and reports them in recording order. The default is 10.
+Use `--max-moments all` to interrogate every indexed candidate. The first stdout
+summary line states the selected/indexed/dropped counts; a partial run omits
+lower-importance candidates, which can occur anywhere in the recording.
+The full video is still indexed.
 “Full video” means the exact operator-selected `--video`, not every recording
 available for the meeting.
 
@@ -782,7 +809,7 @@ Check:
 - provider status;
 - video decodes locally.
 
-On timeout, the CLI attempts remote deletion. Do not use `--keep-upload` as a
+On timeout, `--retention run` attempts remote deletion; default `provider` retains the recording upload. Do not use retention as a
 troubleshooting shortcut.
 
 The production adapter deliberately does not call `@google/genai`
@@ -874,7 +901,7 @@ and one cleanup state:
 
 - `not_obtained` when upload failed before a remote identity was returned;
 - `confirmed_deleted`;
-- `intentionally_retained` when `--keep-upload` was explicit;
+- `intentionally_retained` for default `provider` retention or explicit `--keep-upload`;
 - `unconfirmed` when deletion did not complete.
 
 It contains no provider response, error message, transcript, focus text, signed
@@ -1064,7 +1091,7 @@ Neither failure aborts a run. Without screenshots the accepted records keep
 their timestamps and lose their frames; without a derived transcript the
 analysis proceeds on recording evidence alone.
 
-### 6.21 Cleanup warning
+### 6.21 Upload retention and cleanup
 
 If manifest says:
 
@@ -1076,7 +1103,12 @@ If manifest says:
 }
 ```
 
-The Gemini file normally expires automatically, but:
+Under default `provider` retention, this is normal: the CLI shows the provider
+expiration (or "expiration not reported") and the 2 GB per-file limit.
+`--retention run` / `--delete-upload` requests terminal deletion;
+`FRAME_OF_MIND_UPLOAD_RETENTION` sets a default overridden by explicit flags.
+To delete a kept upload deliberately, or investigate unconfirmed cleanup after
+choosing `run`:
 
 1. record the run ID and expiration time;
 2. inspect only that run's private `manifest.json` or `failure-manifest.json`;
@@ -2192,3 +2224,20 @@ Provide only sanitized facts:
 
 Never include keys, tokens, signed URLs, transcripts, screenshots, recordings,
 raw provider payloads, or raw model responses in a public issue.
+
+### 3.13 Run notes
+
+```bash
+frameofmind analyze --source none --video "<recording.mp4>" \
+  --note brief="<brief.md>" --note language="<language.txt>"
+```
+
+Supply up to eight uniquely named UTF-8 text/Markdown notes (64 KiB each).
+Names match `[a-z][a-z0-9-]{0,31}`; `brief`, `spelling`, `known-good`, `language`
+and `boundaries` are suggestions. The notes are escaped reference data in the
+index and detail requests and cannot override evidence requirements or schemas.
+The tool itself never copies note bodies into the bundle: the manifest records
+only their names, SHA-256 digests and byte counts. Findings are model output and
+may quote or paraphrase notes, including a complete note body in a valid response.
+When sharing a bundle, treat findings as possibly containing note content.
+Studio context staging remains a separate policy.

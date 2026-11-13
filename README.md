@@ -210,6 +210,10 @@ runs but is a mutable alias, so it is less reproducible than a pinned model.
 
 ## Install
 
+Install [Node.js 22 or newer](https://nodejs.org/en/download) for the linked
+command and [Bun](https://bun.sh/docs/installation) for the workspace. Verify
+`node --version` and `bun --version` before continuing.
+
 ```bash
 gh repo clone jchu96/frame-of-mind
 cd frame-of-mind
@@ -225,6 +229,7 @@ Verify:
 frameofmind --help
 frameofmind --version
 frameofmind recipes
+frameofmind key set
 frameofmind doctor
 ```
 
@@ -432,19 +437,33 @@ frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|non
 | `--focus <text>` | prioritize a repository/workflow/concern |
 | `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
 | `--model <id>` | Gemini model for both current passes |
-| `--max-moments <n>` | cap close interrogation, default `10` |
+| `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |
+| `--note <name=path>` | per-run UTF-8 text/Markdown reference, repeatable up to 8 |
+| `--concurrency <n>` | parallel pass-2 detail requests (1-8), default `FRAME_OF_MIND_DETAIL_CONCURRENCY` or `1`; results stay in candidate order |
 | `--no-screenshots` | run without ffmpeg screenshots |
 | `--no-derived-transcript` | skip transcribing the recording's own audio |
-| `--keep-upload` | retain Gemini upload until provider expiration |
+| `--retention <provider\|run>` | keep recording upload to provider expiry (default), or delete on command completion |
+| `--keep-upload` / `--delete-upload` | aliases for `--retention provider` / `--retention run` |
 | `--remote-file <name>` | reuse a retained Gemini upload (`files/...`) of the same recording |
 | `-o, --output <path>` | override private application-data root |
 
-Avoid `--keep-upload` during normal operation. Its intended use is iterating on
-the same long recording: a `--keep-upload` run prints the retained file name,
-and a follow-up run with `--remote-file <name>` plus the same `--video` skips
-the re-upload. The reused file is verified against the local recording's
-SHA-256 and is never deleted by the reusing run; it expires on the provider's
-schedule (about 48 hours).
+At concurrency L, an all-generation-failure run starts at most `3 + L - 1`
+detail calls. In-flight calls may finish their existing four transport retries;
+429s count toward the breaker only after retries are exhausted. See the
+[runbook](docs/RUNBOOK.md) for cancellation and spend bounds.
+
+CLI recording uploads are kept until provider expiry by default. Set
+`--retention run` (or `--delete-upload`) to delete at the end, on success or
+failure. Flags override `FRAME_OF_MIND_UPLOAD_RETENTION`, which overrides the
+`provider` default; invalid settings fail before upload. `--keep-upload` remains
+an alias for `provider`. Conflicting flags are refused.
+
+A kept run prints `Retained Gemini upload: files/… (provider expiration …;
+per-file limit 2 GB)` or `expiration not reported`. Reuse it with
+`--remote-file <name>` and the same `--video`; SHA-256 and size are checked.
+A reusing run never deletes an upload it did not create. Gemini normally
+expires files after 48 hours. Temporary local derivatives and downloads are
+still removed. Studio retention is unchanged; see [ADR 0024](docs/adr/0024-upload-retention-is-an-operator-setting.md).
 
 ## Launch the local Studio
 
@@ -848,3 +867,25 @@ metadata, OAuth, and cleanup contracts.
 - Bluedot MCP may not return media.
 - Automatic transcript alignment is model-derived — verify via `manifest.json`.
 - No built-in external publishing yet.
+
+### Candidate limits and run notes
+
+The index accepts at most 1,000 candidates, and numeric `--max-moments` values
+range from 1 to 1,000. There is no separate 200-candidate cap. `all` interrogates
+every returned candidate; it cannot recover candidates omitted by the model's
+index response budget. The default stays 10. The first summary line reports
+selected, indexed, and dropped counts. Results remain in recording order.
+
+Use `--note brief=brief.md --note spelling=spelling.txt` for per-run references
+without editing a recipe. Other suggested names are `known-good`, `language`
+and `boundaries`. Names match `[a-z][a-z0-9-]{0,31}` and must be unique. Each
+UTF-8 text/Markdown file is at most 64 KiB; at most eight notes are accepted.
+Notes reach both prompts as escaped reference data. The tool itself never copies
+note bodies into the bundle: its manifest projection contains only each note's
+name, SHA-256 digest and byte count. Findings are model output and may quote or
+paraphrase notes. Treat findings as possibly containing note content when sharing
+a bundle. This is a CLI-only feature.
+
+`frameofmind key set` reads privately from an interactive terminal and updates
+only `GEMINI_API_KEY` in `./.env` (mode 0600). Use `--env-file <path>` to choose
+another dotenv file. Piped input is refused; never paste a key into chat.

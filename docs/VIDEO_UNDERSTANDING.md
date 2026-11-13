@@ -186,9 +186,9 @@ Current operational constraints:
 
 - recording input must be video;
 - per-file size is capped at 2 GB;
-- uploads are temporary and provider expiration is a backstop;
-- the exact remote file is deleted by default after success or failure;
-- `--keep-upload` is an explicit retention exception;
+- CLI recording uploads are kept to provider expiry by default (`provider`);
+- `--retention run` / `--delete-upload` deletes after success or failure;
+- `--keep-upload` aliases `provider`; kept runs show expiry and the 2 GB limit;
 - the operator's local `--video` is never deleted;
 - temporary downloaded or derivative media is separately cleaned up.
 

@@ -459,3 +459,10 @@ repository and record its hash in a future manifest revision.
 - [ ] Inferred intent is labeled and has evidence plus an alternative.
 - [ ] High-stakes technical guidance names required external verification.
 - [ ] SOP steps distinguish demonstrated behavior from recommended procedure.
+
+## Per-run references
+
+Keep enduring analysis preferences in recipes. Pass a job brief, spelling list,
+language instruction or known-good reference with `--note name=path` for one
+run instead of forking the recipe. Notes are escaped data in both passes and
+do not alter the stable recipe prompt-prefix digest.

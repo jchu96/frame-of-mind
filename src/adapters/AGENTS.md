@@ -44,7 +44,7 @@
 - Fail with an actionable fallback: local video, local context, or provider reauthorization.
 - Keep provider-specific enums and response normalization inside adapters.
 - Redact secret-bearing URLs and payloads from errors.
-- Close transports, callback listeners, and remote files in `finally` paths.
+- Close transports and callback listeners in `finally` paths. Recording upload lifetime follows the orchestrator's resolved retention (ADR 0024); temporary derived audio and unsuccessful upload processing retain their existing cleanup guarantees.
 
 ## Tests
 

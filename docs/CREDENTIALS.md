@@ -347,3 +347,11 @@ billing are organization-owned.
 - [Vertex AI Gemini quickstart](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/start/quickstart)
 - [Google Cloud authentication](https://docs.cloud.google.com/docs/authentication)
 - [Set up local Application Default Credentials](https://docs.cloud.google.com/docs/authentication/set-up-adc-local-dev-environment)
+
+## Private terminal entry
+
+Run `frameofmind key set` in an interactive terminal. It hides input and
+atomically writes only the `GEMINI_API_KEY` assignment in `./.env`, preserving
+other entries and setting mode 0600. `--env-file <path>` selects another dotenv
+file. This uses ADR 0008's existing dotenv path, not a new credential store.
+Never paste a key into a chat; non-TTY input is refused.
