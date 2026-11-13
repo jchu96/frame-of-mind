@@ -1,0 +1,18 @@
+{
+  "id": "cli-v06_20261113",
+  "title": "Command-Line Tool v0.6.0: Times an Editor Can Cut On",
+  "type": "feature",
+  "status": "active",
+  "created": "2026-11-13T00:00:00Z",
+  "updated": "2026-11-13T12:00:00Z",
+  "current_phase": 0,
+  "phases": {
+    "total": 5,
+    "completed": 0
+  },
+  "tasks": {
+    "total": 0,
+    "completed": 0
+  },
+  "commits": []
+}
