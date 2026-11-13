@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import "./instrument.js";
 import { access } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
@@ -31,6 +30,11 @@ import {
   loadRecipe,
   withAnalysisDepth,
 } from "./recipes/index.js";
+
+import { defaultOutputRoot } from "./lib/paths.js";
+import { registerSession } from "./commands/session.js";
+import { registerMedia } from "./commands/media.js";
+import { registerTranscribe } from "./commands/transcribe.js";
 
 loadDotenv({ quiet: true });
 
@@ -85,6 +89,7 @@ program
       ["GEMINI_API_KEY", Boolean(process.env.GEMINI_API_KEY)],
       ["GRANOLA_API_KEY (optional)", Boolean(process.env.GRANOLA_API_KEY)],
       ["ffmpeg (optional: screenshots, derived transcript)", await executableExists("ffmpeg")],
+      ["ffprobe (optional: duration probe, media helpers)", await executableExists("ffprobe")],
     ] as const;
     for (const [name, ready] of checks) process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
     process.stdout.write(
@@ -108,6 +113,10 @@ program
       process.stdout.write(`${recipe.id.padEnd(14)} ${recipe.description}\n`);
     }
   });
+
+registerSession(program);
+registerMedia(program);
+registerTranscribe(program);
 
 program
   .command("analyze")
@@ -393,17 +402,6 @@ function parseGranolaTransport(value: string): "mcp" | "api" {
     throw new Error("--granola-transport must be mcp or api.");
   }
   return value;
-}
-
-function defaultOutputRoot(): string {
-  if (process.env.FRAME_OF_MIND_OUTPUT) return resolve(process.env.FRAME_OF_MIND_OUTPUT);
-  if (process.platform === "darwin") {
-    return join(homedir(), "Library", "Application Support", "frame-of-mind", "runs");
-  }
-  if (process.platform === "win32") {
-    return join(process.env.LOCALAPPDATA || join(homedir(), "AppData", "Local"), "frame-of-mind", "runs");
-  }
-  return join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "frame-of-mind", "runs");
 }
 
 function capitalize(value: string): string {

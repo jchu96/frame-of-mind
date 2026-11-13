@@ -62,6 +62,7 @@ import {
   planTranscriptionWindows,
   probeDurationSeconds,
 } from "./audio.js";
+import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
 import { writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
@@ -94,11 +95,6 @@ function resolveMaxVideoSeconds(): number {
   return seconds;
 }
 
-// Verbatim transcription is bounded by the model's output budget, not the
-// audio length, so long recordings are transcribed in windows with a short
-// lead-in overlap for boundary context.
-const TRANSCRIPTION_WINDOW_SECONDS = 600;
-const TRANSCRIPTION_OVERLAP_SECONDS = 15;
 // One failed window discards the whole transcript, so a window that exhausts
 // the adapter's per-request retries is re-uploaded and transcribed once more
 // after a pause long enough to outlast a load-shedding episode.
