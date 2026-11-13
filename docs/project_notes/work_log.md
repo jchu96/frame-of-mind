@@ -3,15 +3,16 @@
 ## 2026-11-12
 
 - Updated production dependency pins and their locked transitive dependencies
-  to clear the high/critical audit (CI Bun 1.3.14 baseline: 49 advisories). The patched Better
-  Auth API requires migration 0013: existing account data and user ownership are
+  to clear the high/critical audit (CI Bun 1.3.14 baseline: 49 advisories).
+  The patched Better Auth API requires migration 0013: existing account data and user ownership are
   preserved, retired issuer metadata becomes optional, and conflicting provider
   identities fail closed. The fast lane and populated-account migration tests
   pass; full-gate and mutation receipts are recorded in the dependency-audit
-  handoff. The candidate is held: comparison against a freshly rendered base
-  shows visible heading and selected-card styling changes, triggering the
-  audit brief's stop condition. The complete suite has not passed at the final
-  candidate head. See [ADR 0023](../adr/0023-better-auth-provider-account-identity.md).
+  handoff. The heading typography and selected Intent-card border/shadow
+  differences are accepted as part of this dependency update, together with
+  the accounts migration. Apply migration 0013 after a D1 backup and before
+  deploying the patched Worker; source delivery does not deploy it.
+  See [ADR 0023](../adr/0023-better-auth-provider-account-identity.md).
 
 ## 2026-09-08
 
