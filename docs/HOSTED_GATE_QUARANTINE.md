@@ -20,3 +20,5 @@ wrapper prevents the 2026-11-13 gate move from dropping hosted checks
 at deployment. Review demonstrated that writable success receipts could bypass
 those checks, so the wrapper now runs them itself; retire that wrapper when an enforced deployment pipeline checks
 hosted coverage for the exact source it deploys.
+
+The wrapper guards against forgetting the hosted lane, not against a person who runs Wrangler directly or replaces a tool it calls.

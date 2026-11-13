@@ -498,7 +498,7 @@ Deploy the sibling first, then the public Worker. Each command reruns the gates:
 
 ```bash
 gate-lock bun run deploy:hosted --config apps/workflows/wrangler.jsonc
-gate-lock bun run deploy:hosted --cwd apps/web --config wrangler.jsonc
+gate-lock bun run deploy:hosted --config apps/web/wrangler.jsonc
 ```
 
 For release validation without deploying, use `gate-lock bun run check:deploy`.

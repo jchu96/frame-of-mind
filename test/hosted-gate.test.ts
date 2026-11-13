@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -13,6 +13,70 @@ const hostedSteps = [
 ];
 
 describe("hosted gate separation", () => {
+  test("MISS deploy-target-contained: external targets refuse before either gate runs", async () => {
+    const root = await fixture();
+    const outside = await mkdtemp(join(tmpdir(), "unchecked-deploy-"));
+    try {
+      await put(outside, "wrangler.jsonc", '{"main":"worker.js"}');
+      await put(outside, "worker.js", "// unchecked source\n");
+      await symlink(outside, join(root, "external"), "junction");
+      await put(root, ".gitignore", "external\n");
+      await put(root, "external-main.json", JSON.stringify({ main: join(outside, "worker.js") }));
+      await put(root, "external-assets.json", JSON.stringify({ assets: { directory: outside } }));
+      await commit(root);
+      const config = join(outside, "wrangler.jsonc");
+      const cases = [
+        ["--cwd", outside], [`--cwd=${outside}`], ["-cwd", outside],
+        ["--cwd", "apps/web"], // No cwd override, including an internal one.
+        ["--config", config], [`--config=${config}`], ["-c", config], [`-c${config}`], [`-c=${config}`],
+        ["--config", "external/wrangler.jsonc"], ["--config=external/wrangler.jsonc"],
+        [join(outside, "worker.js")], [outside], ["external/worker.js"],
+        ["--assets", outside], [`--assets=${outside}`], ["--site", "external"],
+        ["--script", join(outside, "worker.js")],
+        ["--config", "external-main.json"], ["--config", "external-assets.json"],
+      ];
+      for (const args of cases) {
+        const result = await run(root, ["bun", "run", "deploy:hosted", ...args]);
+        expect(result.code, args.join(" ") + "\n" + result.stdout).toBe(1);
+        expect(result.stderr).toContain(args[0]!.split("=")[0]!);
+        await refused(root, result);
+        expect(result.stderr).toContain("reason=deploy_argument_");
+        expect(result.stdout).not.toContain("FIXTURE_LANE");
+        await expect(readFile(join(root, ".git/execution.log"))).rejects.toThrow();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("documented deploy targets and supported path forms reach Wrangler after both gates", async () => {
+    const root = await fixture();
+    try {
+      for (const target of ["apps/workflows", "apps/web"]) {
+        await put(root, `${target}/wrangler.jsonc`, await readFile(`${target}/wrangler.jsonc.example`, "utf8"));
+      }
+      await put(root, "apps/workflows/src/index.ts", "// fixture worker\n");
+      await put(root, "apps/web/.output/server/hosted-entry.mjs", "// fixture built worker\n");
+      await mkdir(join(root, "apps/web/.output/public"), { recursive: true });
+      await commit(root);
+      for (const args of [
+        ["--config", "apps/workflows/wrangler.jsonc"],
+        ["--config", "apps/web/wrangler.jsonc"],
+        ["--config=apps/web/wrangler.jsonc"], ["-c", "apps/web/wrangler.jsonc"],
+        ["source.ts"], ["apps/web/.output/public"], ["--assets", "apps/web/.output/public"],
+      ]) {
+        await rm(join(root, ".git/execution.log"), { force: true });
+        const result = await run(root, ["bun", "run", "deploy:hosted", ...args]);
+        expect(result.code, result.stderr).toBe(0);
+        const order = (await readFile(join(root, ".git/execution.log"), "utf8")).trim().split("\n");
+        expect(order.slice(0, 2).sort()).toEqual(["fast", "local"]);
+        expect(order.slice(2)).toEqual(["hosted", "wrangler"]);
+        console.log(`DEPLOY_TARGET allowed=${args.join(" ")} gates=PASS wrangler=synthetic`);
+      }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }, 30_000);
+
   test("MISS deploy-needs-hosted: hand-written fresh or stale receipts cannot bypass failing hosted checks", async () => {
     for (const age of [0, 25 * 60 * 60 * 1000]) {
       const root = await fixture();
@@ -101,7 +165,7 @@ describe("hosted gate separation", () => {
         expect(order.slice(0, 2).sort()).toEqual(["fast", "local"]);
         expect(order.slice(2)).toEqual(["hosted", "wrangler"]);
         expect(JSON.parse(await readFile(join(root, ".git/deployed.json"), "utf8")))
-          .toEqual(["deploy", "--config", "fixture.json"]);
+          .toEqual(["deploy", "--config", await realpath(join(root, "fixture.json"))]);
       }
       console.log("DEPLOY_FIXTURE green=PASS same_invocation=true wrangler=synthetic");
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -183,6 +247,12 @@ appendFileSync(".git/execution.log", "wrangler\\n");
 writeFileSync(".git/deployed.json", JSON.stringify(process.argv.slice(2)));
 console.log("SYNTHETIC_WRANGLER");
 `);
+  // Use the installed parser for real JSONC/TOML semantics, but a synthetic deploy executable.
+  await put(root, "apps/web/node_modules/wrangler/package.json", JSON.stringify({
+    main: await realpath("apps/web/node_modules/wrangler/wrangler-dist/cli.js"),
+  }));
+  await put(root, "wrangler.jsonc", '{"main":"source.ts"}\n');
+  await put(root, "fixture.json", '{"main":"source.ts"}\n');
   await put(root, "source.ts", "// fixture\n");
   await git(root, ["init", "-q"]);
   await commit(root);
