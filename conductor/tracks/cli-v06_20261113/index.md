@@ -12,8 +12,9 @@
 ## Progress
 
 - Waves: 0/5 merged
-- Current focus: wave 0 (groundwork) in draft PR #147. Its required checks
-  pass; the advisory `hosted-contracts` job fails (issues #96, #113).
+- Current focus: wave 0 (groundwork) in draft PR #147; its checks are on the
+  pull request. The advisory `hosted-contracts` job is tracked in issues #96
+  and #113.
 
 ## Origin
 
