@@ -78,7 +78,7 @@ describe("hosted gate separation", () => {
   test("quarantine records an issue and a measurable return rule for the whole lane", async () => {
     const quarantine = await readFile("docs/HOSTED_GATE_QUARANTINE.md", "utf8");
     expect(quarantine).toContain("check:lane:hosted");
-    expect(quarantine).toMatch(/\[.*?\]\(https:\/\/github.com\/jchu96\/frame-of-mind\/issues\/(?:\d+|PENDING)\)/);
+    expect(quarantine).toMatch(/\[.*?\]\(https:\/\/github.com\/jchu96\/frame-of-mind\/issues\/\d+\)/);
     expect(quarantine).toContain("ten consecutive");
     expect(quarantine).toContain("three consecutive nightly");
     expect(quarantine).toContain("without retries");

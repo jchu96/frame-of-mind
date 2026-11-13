@@ -2,9 +2,7 @@
 
 | Scope | Tracking | Return rule |
 |---|---|---|
-| Whole `check:lane:hosted` (all eight steps unchanged) | [Hosted lane reliability — issue pending](https://github.com/jchu96/frame-of-mind/issues/PENDING) | ten consecutive local passes on the shared machine and three consecutive nightly passes at an unchanged source revision, without retries |
-
-The issue link is a placeholder for the maintainer to replace before merge.
+| Whole `check:lane:hosted` (all eight steps unchanged) | [#113 — hosted-contracts advisory lane has been red on main](https://github.com/jchu96/frame-of-mind/issues/113) | ten consecutive local passes on the shared machine and three consecutive nightly passes at an unchanged source revision, without retries |
 
 On 2026-11-13, the reduced lane passed four times, then failed hosted auth
 on the fifth run at unchanged base `41766a0`. Two successful runs needed an
