@@ -694,3 +694,5 @@ linked executable never dispatched commands. Resolve the executable realpath;
 the built-CLI symlink test and package-version bump fixture prevent recurrence.
 
 - 2026-11-13: Adopting standalone transcription exposed a literal round-trip oracle incompatible with the existing caption reader; ADR 0025 preserves reader normalisation, and tests use a separate structural arrow oracle.
+
+- 2026-11-13: Six process starts inherited the complete parent environment. They now pass an explicit media/opener allow-list; per-site child captures verify the shipped calls, while a simple source convention check flags plain imports outside the helper and does not detect computed or indirect access.

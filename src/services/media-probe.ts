@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { childEnvironment, execFile } from "../lib/child-env.js";
 import { promisify } from "node:util";
 import { parseTimecodeRate, rationalRate, type TimecodeSpec } from "../domain/clock.js";
 
@@ -7,7 +7,7 @@ const timingError = "Variable frame rate or unverifiable frame timing is not sup
 export async function probeFrameRate(
   path: string, choice: "from-media" | "from-media:df" | "from-media:ndf" = "from-media",
   read = async () => {
-    const result = await exec("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames:frame=pts,duration,pkt_duration", "-of", "json", path], { timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
+    const result = await exec("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames:frame=pts,duration,pkt_duration", "-of", "json", path], { env: childEnvironment("media"), timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
     if (result.stderr.trim()) throw new Error(timingError);
     return result.stdout;
   },

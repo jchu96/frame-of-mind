@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- 2026-11-13: Limit media tools and OAuth browser openers to explicit runtime environment variables so CLI and local Studio credentials stay in the parent process.
+
 - 2026-11-13: Adopted a contributed standalone `transcribe` workflow with private SRT/speaker files, optional source-clock JSON, visible audio retention, one window retry and cue-safe rendering.
 
 - 2026-11-13: Treat contradictory HTTP/JSON provider statuses as other across SDK calls and direct uploads without parsing message text or changing retries.

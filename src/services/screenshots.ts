@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { childEnvironment, spawn } from "../lib/child-env.js";
 import { access, chmod, rm } from "node:fs/promises";
 import { timestampToSeconds } from "../lib/time.js";
 
@@ -9,7 +9,7 @@ export async function extractScreenshot(video: string, timestamp: string, destin
       "-hide_banner", "-loglevel", "error", "-y",
       "-ss", String(seconds), "-i", video,
       "-frames:v", "1", "-q:v", "2", destination,
-    ], { stdio: "ignore" });
+    ], { env: childEnvironment("media"), stdio: "ignore" });
     child.once("error", () => resolve(null));
     child.once("close", resolve);
   });

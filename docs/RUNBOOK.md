@@ -1184,6 +1184,31 @@ Neither failure aborts a run. Without screenshots the accepted records keep
 their timestamps and lose their frames; without a derived transcript the
 analysis proceeds on recording evidence alone.
 
+Media tools receive only `PATH`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`,
+`DYLD_FALLBACK_LIBRARY_PATH`, `LANG`, `LANGUAGE`, `HOME`, `TMPDIR`, `TMP`,
+`TEMP`, and the locale variables `LC_ALL`, `LC_ADDRESS`, `LC_COLLATE`,
+`LC_CTYPE`, `LC_IDENTIFICATION`, `LC_MEASUREMENT`, `LC_MESSAGES`, `LC_MONETARY`,
+`LC_NAME`, `LC_NUMERIC`, `LC_PAPER`, `LC_TELEPHONE`, `LC_TIME`.
+Windows additionally carries `SystemRoot`, `WINDIR`, `PATHEXT`, `USERPROFILE`;
+variable names are matched case-insensitively and keep their original spelling.
+
+The OAuth browser opener additionally receives `DISPLAY`, `WAYLAND_DISPLAY`,
+`XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `XDG_DATA_HOME`,
+`XDG_DATA_DIRS`, `XDG_CONFIG_HOME`, `XDG_CONFIG_DIRS`, `XDG_CACHE_HOME`,
+`XDG_CURRENT_DESKTOP`, `XDG_SESSION_TYPE`, `DESKTOP_SESSION`, `BROWSER`, and
+Windows `ComSpec`. Other variables, including provider credentials, are omitted.
+These lists apply to the CLI and local Studio.
+
+A convention check keeps plain process-module access in the shared helper. It
+does not detect computed or indirect access; per-site marker tests run the
+children to verify the helper environment at each shipped call.
+
+If a tool works in your shell but fails here, report the OS, executable name,
+and the **name and purpose** of any required missing variable. Do not include
+its value, an environment dump, credentials, media paths, or authorization URLs.
+The allow-list must be reviewed before adding a variable; do not forward the
+whole environment to work around a failure.
+
 ### 6.21 Upload retention and cleanup
 
 If manifest says:
