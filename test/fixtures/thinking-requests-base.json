@@ -1,0 +1,40 @@
+{
+  "base": "95ae2422a64e49e65d144fef3ff9ef77e7001fd0",
+  "calls": [
+    {
+      "name": "video-only index",
+      "capture": {
+        "bytes": 2564,
+        "sha256": "7b0994b8ce43e189129fa3a44f9553f4862a156b5c5f491b81a46cfbed14fa39"
+      }
+    },
+    {
+      "name": "meeting index",
+      "capture": {
+        "bytes": 3268,
+        "sha256": "81247707940709ffe44518a284b3a1c69071efed8f0d201ec921ebfc31fd6b85"
+      }
+    },
+    {
+      "name": "detail",
+      "capture": {
+        "bytes": 3574,
+        "sha256": "afa654058abbe4afc6b7e307e1ed2bc34464df0dbe1241da1df9df14a3ce3def"
+      }
+    },
+    {
+      "name": "transcription",
+      "capture": {
+        "bytes": 1977,
+        "sha256": "f614ececce867e3c50be9b062404f0fbad52d35c534e2bd7a09c89637d33b808"
+      }
+    },
+    {
+      "name": "calibration",
+      "capture": {
+        "bytes": 605,
+        "sha256": "7def3ae728efbc41d4b635052d27bc4320a71972a4d9d7c854e6827aecb72943"
+      }
+    }
+  ]
+}

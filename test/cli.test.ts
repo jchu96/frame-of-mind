@@ -139,3 +139,78 @@ describe("clock flags", () => {
     expect(await buildAnalyzeOptions(undefined, { ...baseFlags, timelineOffset: "12.345", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false }, "synthetic-key")).toMatchObject({ timelineOffset: "12.345", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false });
   });
 });
+
+describe("thinking level", () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+  async function rejectValue(value: string) {
+    const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
+    const upload = vi.spyOn(GeminiVideoAnalyzer.prototype, "upload").mockRejectedValue(new Error("Unexpected upload"));
+    const { program } = await import("../src/cli.js");
+    vi.stubEnv("GEMINI_API_KEY", "synthetic-key");
+    vi.stubEnv("GEMINI_THINKING_LEVEL", undefined);
+    await expect(program.parseAsync(["analyze", "--source", "none", "--video", "package.json", "--thinking-level", value], { from: "user" }))
+      .rejects.toThrow("low, medium, high, xhigh");
+    vi.stubEnv("GEMINI_THINKING_LEVEL", value);
+    await expect(buildAnalyzeOptions(undefined, baseFlags, "synthetic-key"))
+      .rejects.toThrow("low, medium, high, xhigh");
+    expect(upload).not.toHaveBeenCalled();
+  }
+  it("minimal is rejected before any upload, naming the four values", async () => {
+    await rejectValue("minimal");
+  });
+  it("MEDIUM and an empty value are rejected before any upload", async () => {
+    for (const value of ["MEDIUM", ""]) await rejectValue(value);
+  });
+  it("--thinking-level low overrides GEMINI_THINKING_LEVEL=high", async () => {
+    vi.stubEnv("GEMINI_THINKING_LEVEL", "high");
+    const options = await buildAnalyzeOptions(undefined, { ...baseFlags, thinkingLevel: "low" }, "synthetic-key");
+    expect(options).toHaveProperty("thinkingLevel", "low");
+    expect((await buildAnalyzeOptions(undefined, baseFlags, "synthetic-key")).thinkingLevel).toBe("high");
+  });
+  it.each(["low", "medium", "high", "xhigh"])("accepts %s and leaves unset absent", async thinkingLevel => {
+    vi.stubEnv("GEMINI_THINKING_LEVEL", undefined);
+    expect((await buildAnalyzeOptions(undefined, { ...baseFlags, thinkingLevel }, "synthetic-key")).thinkingLevel).toBe(thinkingLevel);
+    expect(await buildAnalyzeOptions(undefined, baseFlags, "synthetic-key")).not.toHaveProperty("thinkingLevel");
+  });
+  it("the summary names model, level and prompt and output tokens and no prompt text", async () => {
+    const { printAnalysisSummary } = await import("../src/cli.js");
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const result = {
+      directory: "synthetic-run", analysis: { items: [], matchNotes: "PRIVATE-SYNTHETIC-PROMPT" },
+      manifest: { model: "gemini-test", thinkingLevel: "medium" }, usage: { promptTokens: 123, outputTokens: 45, totalTokens: 168 },
+      outcome: { status: "complete", candidates: { indexed: 0, selected: 0, validated: 0, accepted: 0, rejected: 0, failed: 0, omittedByLimit: 0 } },
+    } as Parameters<typeof printAnalysisSummary>[0];
+    printAnalysisSummary(result);
+    const output = stdout.mock.calls.map(([text]) => text).join("");
+    expect(output).toContain("Model: gemini-test; thinking level: medium; prompt tokens: 123; output tokens: 45.");
+    expect(output).not.toContain("PRIVATE-SYNTHETIC-PROMPT");
+    stdout.mockClear();
+    delete result.manifest.thinkingLevel; delete result.usage;
+    printAnalysisSummary(result);
+    expect(stdout.mock.calls.map(([text]) => text).join("")).toContain("Model: gemini-test; thinking level: provider default; usage not reported.");
+  });
+});
+
+describe("thinking level integration", () => {
+  it("the analyze flag reaches the default adapter and its published manifest", async () => {
+    const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
+    const { createDefaultAnalysisOrchestrator } = await import("../src/services/analyze.js");
+    const root = await mkdtemp(join(tmpdir(), "thinking-cli-"));
+    const video = join(root, "synthetic.mp4"); await writeFile(video, "synthetic");
+    vi.stubEnv("GEMINI_THINKING_LEVEL", "high");
+    vi.spyOn(GeminiVideoAnalyzer.prototype, "upload").mockResolvedValue({ name: "files/synthetic", uri: "https://generativelanguage.googleapis.com/v1beta/files/synthetic", mimeType: "video/mp4" });
+    const bodies: unknown[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return Response.json({ candidates: [{ content: { parts: [{ text: '{"matchNotes":"Synthetic","moments":[]}' }] } }], usageMetadata: { promptTokenCount: 12, totalTokenCount: 19 } });
+    });
+    try {
+      const options = await buildAnalyzeOptions(undefined, { ...baseFlags, video, output: root, model: "gemini-test", thinkingLevel: "low", calibrate: false, derivedTranscript: false, keepUpload: true }, "synthetic-key");
+      const result = await createDefaultAnalysisOrchestrator().analyze(options);
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toHaveProperty("generationConfig.thinkingConfig", { thinkingLevel: "low" });
+      expect(result.manifest.thinkingLevel).toBe("low");
+      expect(result.usage).toEqual({ promptTokens: 12, outputTokens: 7, totalTokens: 19 });
+    } finally { vi.restoreAllMocks(); vi.unstubAllEnvs(); await rm(root, { recursive: true, force: true }); }
+  });
+});

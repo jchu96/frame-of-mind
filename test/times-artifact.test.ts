@@ -110,3 +110,25 @@ describe("web re-import", () => {
     }
   });
 });
+
+describe("compatibility", () => {
+  it("a manifest without thinkingLevel still parses, including in the website's re-import", async () => {
+    const { reimportPublishedJobRun, publishedRunDirectory } = await import("../apps/web/server-local/studio-jobs/run-reimport.js");
+    for (const thinkingLevel of [undefined, "medium"] as const) {
+      const result = await write();
+      const manifest = { ...result.manifest, ...(thinkingLevel === undefined ? {} : { thinkingLevel }) };
+      expect(runManifestV3Schema.parse(manifest).thinkingLevel).toBe(thinkingLevel);
+      const { context, ...base } = manifest;
+      expect(runManifestSchema.parse({ ...base, schemaVersion: 2, meetingId: "synthetic", contextProvider: "file", contextTransport: "file", transcriptSha256: "c".repeat(64), transcriptAlignment: { offsetSeconds: 0, method: "explicit", confidence: "high" } }).thinkingLevel).toBe(thinkingLevel);
+      const job = { stage: "succeeded", runId: analysis.runId, input: { context: { mode: "none" }, mediaSha256: "b".repeat(64) } } as Parameters<typeof publishedRunDirectory>[0];
+      const directory = publishedRunDirectory(job, result.dir);
+      await mkdir(directory, { recursive: true });
+      for (const name of ["analysis.json", "analysis-outcome.json"]) await copyFile(join(result.dir, name), join(directory, name));
+      await writeFile(join(directory, "manifest.json"), JSON.stringify(manifest));
+      let imported: unknown;
+      const store = { async importRun(run: unknown) { imported = await validateVersionedRunImport(run); return { runId: analysis.runId, created: true }; } } as Parameters<typeof reimportPublishedJobRun>[0]["store"];
+      await expect(reimportPublishedJobRun({ job, outputRoot: result.dir, store })).resolves.toHaveProperty("created", true);
+      expect(imported).toMatchObject({ manifest });
+    }
+  });
+});

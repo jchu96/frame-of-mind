@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Command } from "commander";
 import { ApiError } from "@google/genai";
+import { GeminiVideoAnalyzer } from "../src/adapters/gemini.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerTranscribe } from "../src/commands/transcribe.js";
 import { DEFAULT_GEMINI_MODEL, geminiModelSchema } from "../src/adapters/gemini-model.js";
@@ -302,5 +303,38 @@ describe("reviewer supplementary probes", () => {
     expect(f.analyzer.delete.mock.calls.map(([file]) => file)).toEqual(await Promise.all(f.analyzer.upload.mock.results.map(result => result.value)));
     expect(await readFile(f.input, "utf8")).toBe("synthetic media");
     await expectNoOutputs(f);
+  });
+});
+
+describe("thinking level", () => {
+  it("GEMINI_THINKING_LEVEL=medium reaches the transcription request", async () => {
+    vi.stubEnv("GEMINI_THINKING_LEVEL", "medium");
+    const f = await fixture(10);
+    // Keep the production factory and SDK; replace only filesystem/media and network I/O.
+    const { createAnalyzer: _fake, ...deps } = f.deps;
+    const requests: unknown[] = [];
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)));
+      return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ segments: [segment()] }) }] } }], usageMetadata: { promptTokenCount: 12, totalTokenCount: 15 } });
+    });
+    vi.spyOn(GeminiVideoAnalyzer.prototype, "upload").mockResolvedValue({ name: "files/synthetic", uri: "https://generativelanguage.googleapis.com/v1beta/files/synthetic", mimeType: "audio/aac" });
+    try {
+      const program = new Command().exitOverride(); registerTranscribe(program, deps);
+      await program.parseAsync(["transcribe", f.input], { from: "user" });
+      expect(process.exitCode).not.toBe(1);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toHaveProperty("generationConfig.thinkingConfig", { thinkingLevel: "medium" });
+      expect(f.deps.stdout.mock.calls.flat().join("\n")).toContain("Model: gemini-test; thinking level: medium; prompt tokens: 12; output tokens: 3.");
+    } finally { fetch.mockRestore(); }
+  });
+  it("the transcribe flag overrides the environment and invalid values never upload", async () => {
+    vi.stubEnv("GEMINI_THINKING_LEVEL", "high");
+    const f = await fixture(10); await cli(f, ["--thinking-level", "low"]);
+    expect(f.deps.createAnalyzer).toHaveBeenCalledWith("test-key", "gemini-test", "low");
+    for (const value of ["minimal", "MEDIUM", ""]) {
+      const invalid = await fixture(10); await cli(invalid, ["--thinking-level", value]);
+      expect(invalid.analyzer.upload).not.toHaveBeenCalled();
+      expect(invalid.deps.stderr.mock.calls.flat().join("\n")).toContain("low, medium, high, xhigh");
+    }
   });
 });

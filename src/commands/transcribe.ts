@@ -7,6 +7,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
     .argument("<input>", "local video or audio recording")
     .option("-o, --output <dir>", "output directory (default: beside the recording)")
     .option("--model <id>", "Gemini model ID")
+    .option("--thinking-level <level>", "Gemini thinking level: low, medium, high, xhigh (unset: provider default)")
     .option("--retention <policy>", "audio upload retention: provider (default) or run")
     .option("--keep-upload", "alias for --retention provider")
     .option("--delete-upload", "alias for --retention run")

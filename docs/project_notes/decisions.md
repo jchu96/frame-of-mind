@@ -1,5 +1,7 @@
 # Decision Notes
 
+- 2026-11-13: Thinking level is operator-selected or absent, never inferred; one sender covers calibration, repairs and all analysis/transcription calls. Optional manifest provenance needs no version bump. SDK 2.21.0 passes documented lower-case levels through despite its narrower enum; offline SDK wire tests cover all four values.
+
 Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.

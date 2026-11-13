@@ -10,6 +10,7 @@ import type {
   GenerateContentResponse,
   GenerateContentResponseUsageMetadata,
   GetFileParameters,
+  ThinkingLevel as SdkThinkingLevel,
 } from "@google/genai";
 import type {
   AnalysisDetail,
@@ -17,6 +18,7 @@ import type {
   DerivedTranscriptionSegment,
   IndexedMoment,
   MeetingEvidence,
+  ThinkingLevel,
 } from "../domain/types.js";
 import { analysisDetailSchema, indexedMomentSchema } from "../domain/schemas.js";
 import {
@@ -141,7 +143,15 @@ const transcriptionSchema = z.object({
   segments: z.array(transcriptionSegmentSchema).max(5_000),
 }).strict();
 
+export function resolveThinkingLevel(flag?: string): ThinkingLevel | undefined {
+  const value = flag ?? process.env.GEMINI_THINKING_LEVEL;
+  if (value === undefined) return undefined;
+  if (value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
+  throw new Error("--thinking-level / GEMINI_THINKING_LEVEL must be one of: low, medium, high, xhigh.");
+}
+
 export class GeminiVideoAnalyzer {
+  readonly thinkingLevel: ThinkingLevel | undefined;
   readonly model: string;
   relativeEvidenceResponses = 0;
   private readonly fileUploader: GeminiFileUploader;
@@ -177,12 +187,19 @@ export class GeminiVideoAnalyzer {
     apiKey: string,
     model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
     dependencies: GeminiAnalyzerDependencies = {},
+    thinkingLevel?: string,
   ) {
+    this.thinkingLevel = resolveThinkingLevel(thinkingLevel);
     const ai = new StatusAwareGeminiClient(apiKey, MODEL_REQUEST_TIMEOUT_MS);
     this.fileUploader = dependencies.fileUploader ??
       createGeminiFileUploader(apiKey);
-    this.generateContent = dependencies.generateContent ??
-      ((parameters) => ai.models.generateContent(parameters));
+    const generateContent = dependencies.generateContent ??
+      ((parameters: GenerateContentParameters) => ai.models.generateContent(parameters));
+    // SDK 2.21.0 types omit xhigh; the wire accepts documented lower-case values.
+    // Includes calibration, response repair, and transport retries. Unset is inert.
+    this.generateContent = (parameters) => generateContent(this.thinkingLevel === undefined
+      ? parameters
+      : { ...parameters, config: { ...parameters.config, thinkingConfig: { thinkingLevel: this.thinkingLevel as SdkThinkingLevel } } });
     this.getFile = dependencies.getFile ??
       ((parameters) => ai.files.get(parameters));
     this.deleteFile = dependencies.deleteFile ??

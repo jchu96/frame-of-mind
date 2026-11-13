@@ -180,6 +180,7 @@ export const runManifestSchema = z.object({
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict(),
   model: z.string().min(1).max(240),
+  thinkingLevel: z.enum(["low", "medium", "high", "xhigh"]).optional(),
   recordingSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
   transcriptSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
   analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -261,6 +262,7 @@ export const runManifestV3Schema = z.object({
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
   }).strict(),
   model: z.string().min(1).max(240),
+  thinkingLevel: z.enum(["low", "medium", "high", "xhigh"]).optional(),
   recordingSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
   analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
   recordingMimeType: z.string().min(1).max(240).refine(

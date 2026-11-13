@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import type { File as GeminiFile } from "@google/genai";
-import { GeminiVideoAnalyzer } from "../adapters/gemini.js";
+import { GeminiVideoAnalyzer, resolveThinkingLevel } from "../adapters/gemini.js";
 import { GeminiFileError } from "../adapters/gemini-files.js";
 import { DEFAULT_GEMINI_MODEL, geminiModelSchema } from "../adapters/gemini-model.js";
 import { resolveRetention, type RetentionFlags } from "../domain/retention.js";
@@ -21,6 +21,7 @@ export interface TranscribeOptions extends RetentionFlags {
   input: string;
   output?: string;
   model?: string;
+  thinkingLevel?: string;
   json?: boolean;
   force?: boolean;
   apiKey?: string;
@@ -34,7 +35,7 @@ export interface TranscriptionAnalyzer {
   usageSnapshot?(): { promptTokens: number; outputTokens: number; totalTokens: number } | undefined;
 }
 export interface TranscribeDependencies {
-  createAnalyzer: (apiKey: string, model: string) => TranscriptionAnalyzer;
+  createAnalyzer: (apiKey: string, model: string, thinkingLevel?: string) => TranscriptionAnalyzer;
   extractAudioTrack: typeof extractAudioTrack;
   probeDurationSeconds: typeof probeDurationSeconds;
   sleep: (milliseconds: number) => Promise<void>;
@@ -53,7 +54,7 @@ function uploadLabel(remote: GeminiFile): string {
 /** Adopted standalone transcription workflow. It never creates an analysis run bundle. */
 export async function transcribe(options: TranscribeOptions, injected: Partial<TranscribeDependencies> = {}) {
   const deps: TranscribeDependencies = {
-    createAnalyzer: (key, model) => new GeminiVideoAnalyzer(key, model),
+    createAnalyzer: (key, model, thinkingLevel) => new GeminiVideoAnalyzer(key, model, {}, thinkingLevel),
     extractAudioTrack, probeDurationSeconds,
     sleep: milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)),
     stdout: line => { process.stdout.write(`${line}\n`); },
@@ -61,6 +62,9 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
     now: () => new Date().toISOString(), ...injected,
   };
   const canceled = () => { if (options.signal?.aborted) throw new TranscribeCanceledError(); };
+  let thinkingLevel;
+  try { thinkingLevel = resolveThinkingLevel(options.thinkingLevel); }
+  catch { throw new TranscribeError("--thinking-level / GEMINI_THINKING_LEVEL must be one of: low, medium, high, xhigh."); }
   const model = options.model ?? (process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
   if (!geminiModelSchema.safeParse(model).success) throw new TranscribeError("--model must be a Gemini model ID.");
   let retention;
@@ -95,7 +99,9 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   canceled();
   if (duration === undefined) throw new TranscribeError("Cannot read recording duration. Check ffprobe and the input file; see docs/RUNBOOK.md §6.20.");
   const windows = planTranscriptionWindows(duration, TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS);
-  const analyzer = deps.createAnalyzer(apiKey, model);
+  const analyzer = thinkingLevel === undefined
+    ? deps.createAnalyzer(apiKey, model)
+    : deps.createAnalyzer(apiKey, model, thinkingLevel);
   deps.stdout(`model: ${model}; duration: ${Math.round(duration)} s; windows: ${windows.length}; retention: ${retention}; upload limit: 2 GB`);
   const temp = await mkdtemp(join(tmpdir(), "fom-transcribe-"));
   const chunks: Array<{ segments: DerivedTranscriptionSegment[]; nominalStartSeconds: number }> = [];
@@ -152,6 +158,6 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   }
   deps.stdout(`segments: ${segments.length}; speakers: ${new Set(segments.map(s => s.speaker)).size}; adjustedCues: ${srt.adjustedCues}; blankCues: ${srt.blankCues}`);
   const usage = analyzer.usageSnapshot?.();
-  if (usage) deps.stdout(`tokens: ${JSON.stringify(usage)}`);
+  deps.stdout(`Model: ${model}; thinking level: ${thinkingLevel ?? "provider default"}; ${usage ? `prompt tokens: ${usage.promptTokens}; output tokens: ${usage.outputTokens}` : "usage not reported"}.`);
   return { segments, paths, adjustedCues: srt.adjustedCues, blankCues: srt.blankCues };
 }

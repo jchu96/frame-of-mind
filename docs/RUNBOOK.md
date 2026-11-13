@@ -92,6 +92,21 @@ Normal non-durable data:
 - full transcript copies;
 - Gemini uploaded video: provider expiry by default; `--retention run` deletes at command completion.
 
+## Thinking level
+
+`analyze` and `transcribe` accept `--thinking-level <level>` or
+`GEMINI_THINKING_LEVEL`. The flag takes precedence. Accepted values are exactly
+`low`, `medium`, `high`, and `xhigh` (lower-case); invalid or empty values fail
+before upload. Unset means the provider's default for the selected model: no
+thinking configuration is sent. An explicit level applies to every model call,
+including calibration and derived transcription, and is recorded as optional
+`thinkingLevel` beside `model` in the analysis manifest. Older manifests remain
+valid. The final summary names the model, level (or `provider default`), and
+prompt/output token totals (or `usage not reported`). Thinking tokens bill as
+output and are included in the output total. The tool sends no thinking budget;
+model-specific support is enforced by the provider. See
+[Gemini thinking](https://aistudio.google.com/docs/thinking?generate-content=true).
+
 ## 1. First-time setup
 
 ### 1.1 Confirm authorization

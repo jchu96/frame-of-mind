@@ -2477,3 +2477,20 @@ describe("clock review explicit window", () => {
     }
   });
 });
+
+describe("thinking level", () => {
+  it("the manifest records thinkingLevel medium beside the model", async () => {
+    const fixture = await createFixture();
+    Object.assign(fixture.analyzer, { thinkingLevel: "medium", usageSnapshot: () => ({ promptTokens: 14, outputTokens: 8, totalTokens: 22 }) });
+    const result = await createOrchestrator(fixture).analyze(fixture.options);
+    expect(result.manifest).toMatchObject({ model: "gemini-test", thinkingLevel: "medium" });
+    expect(JSON.parse(await readFile(join(result.directory, "manifest.json"), "utf8"))).toHaveProperty("thinkingLevel", "medium");
+    expect(result.usage).toEqual({ promptTokens: 14, outputTokens: 8, totalTokens: 22 });
+  });
+  it("an unset level leaves the manifest field absent", async () => {
+    const fixture = await createFixture();
+    const result = await createOrchestrator(fixture).analyze(fixture.options);
+    expect(result.manifest).not.toHaveProperty("thinkingLevel");
+    expect(JSON.parse(await readFile(join(result.directory, "manifest.json"), "utf8"))).not.toHaveProperty("thinkingLevel");
+  });
+});

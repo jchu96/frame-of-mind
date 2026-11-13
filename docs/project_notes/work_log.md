@@ -1,5 +1,7 @@
 # Work Log
 
+- 2026-11-13: Added explicit thinking levels with flag-over-environment precedence, pre-upload validation, optional v2/v3 manifest provenance and content-free token summaries. Offline request captures cover both indexes, detail, transcription and calibration; website re-import accepts old and explicit-level manifests.
+
 ## 2026-11-13
 
 - Preserved conflicting structured provider statuses before SDK message conversion; disagreement now stays other across lookup, generation, polling and direct uploads. SDK refusal fixtures and per-response concurrency tests cover the compatibility seam.

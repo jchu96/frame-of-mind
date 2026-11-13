@@ -12,6 +12,7 @@ import { z } from "zod";
 import type {
   AnalysisDetail,
   AnalysisRecipe,
+  ThinkingLevel,
   AnalysisRun,
   AnalysisRunV3,
   AnalysisItem,
@@ -121,6 +122,7 @@ interface AnalyzeOptionsBase {
   recipeRevision: string;
   apiKey: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
   video?: string;
   videoMimeType?: string;
   expectedVideoSha256?: string;
@@ -259,6 +261,7 @@ export interface AnalysisVideoAnalyzer {
   probeClipClock?(file: GeminiFile): Promise<number>;
   readonly relativeEvidenceResponses?: number;
   readonly model: string;
+  readonly thinkingLevel?: ThinkingLevel;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
   resolveRetainedFile?(
     name: string,
@@ -316,6 +319,7 @@ export interface AnalysisOrchestratorDependencies {
 
 export type AnalyzeResult = PublishedAnalysisRun & {
   projectionWarning?: string;
+  usage?: { promptTokens: number; outputTokens: number; totalTokens: number };
 };
 
 export class AnalysisCanceledError extends Error {
@@ -1110,6 +1114,7 @@ export class AnalysisOrchestrator {
             sha256: options.recipeSha256,
           },
           model: analyzer.model,
+          ...(analyzer.thinkingLevel === undefined ? {} : { thinkingLevel: analyzer.thinkingLevel }),
           recordingSha256,
           analysisSha256,
           recordingMimeType: mimeType,
@@ -1235,6 +1240,7 @@ export class AnalysisOrchestrator {
         }
         return {
           ...published,
+          usage: analyzer.usageSnapshot?.(),
           ...(projectionWarning ? { projectionWarning } : {}),
         };
       } catch (error) {
@@ -1322,7 +1328,7 @@ export function createDefaultAnalysisOrchestrator(): AnalysisOrchestrator {
   return new AnalysisOrchestrator({
     createContextSource: defaultCreateContextSource,
     createAnalyzer: (apiKey, analyzeOptions) =>
-      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model),
+      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model, {}, analyzeOptions.thinkingLevel),
   });
 }
 

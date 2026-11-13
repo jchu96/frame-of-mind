@@ -208,6 +208,21 @@ The pipeline uses the official `@google/genai` Files API (pinned in `package.jso
 defaults to `gemini-3.7-flash`. `gemini-pro-latest` is accepted for in-depth
 runs but is a mutable alias, so it is less reproducible than a pinned model.
 
+## Thinking level
+
+`analyze` and `transcribe` accept `--thinking-level <level>` or
+`GEMINI_THINKING_LEVEL`. The flag takes precedence. Accepted values are exactly
+`low`, `medium`, `high`, and `xhigh` (lower-case); invalid or empty values fail
+before upload. Unset means the provider's default for the selected model: no
+thinking configuration is sent. An explicit level applies to every model call,
+including calibration and derived transcription, and is recorded as optional
+`thinkingLevel` beside `model` in the analysis manifest. Older manifests remain
+valid. The final summary names the model, level (or `provider default`), and
+prompt/output token totals (or `usage not reported`). Thinking tokens bill as
+output and are included in the output total. The tool sends no thinking budget;
+model-specific support is enforced by the provider. See
+[Gemini thinking](https://aistudio.google.com/docs/thinking?generate-content=true).
+
 ## Install
 
 Install [Node.js 22 or newer](https://nodejs.org/en/download) for the linked

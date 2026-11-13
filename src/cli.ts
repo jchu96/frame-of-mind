@@ -19,7 +19,7 @@ import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.j
 import { ACCEPTED_RATES, declareClock } from "./domain/clock.js";
 import { clockSummary } from "./services/artifacts.js";
 import { calibrateClipClock } from "./adapters/gemini-calibration.js";
-import { GeminiVideoAnalyzer } from "./adapters/gemini.js";
+import { GeminiVideoAnalyzer, resolveThinkingLevel } from "./adapters/gemini.js";
 import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
 import { VERSION } from "./version.js";
 import { registerKey } from "./commands/key.js";
@@ -76,6 +76,7 @@ export interface AnalyzeCliFlags {
   note?: string[];
   depth: string;
   model?: string;
+  thinkingLevel?: string;
   output: string;
   maxMoments: string;
   screenshots: boolean;
@@ -169,6 +170,7 @@ program
   .option("--focus <instruction>", "Prioritize a specific repository, workflow, or UX concern")
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
+  .option("--thinking-level <level>", "Gemini thinking level: low, medium, high, xhigh (unset: provider default)")
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
   .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
@@ -285,6 +287,8 @@ export function printAnalysisSummary(result: AnalyzeResult): void {
     (omittedByLimit ? ` (${omittedByLimit} lower-importance dropped; --max-moments all to analyse every one).\n` : ".\n"),
   );
   process.stdout.write(`${clockSummary(result.manifest.clock)}\n`);
+  const usage = result.usage;
+  process.stdout.write(`Model: ${result.manifest.model}; thinking level: ${result.manifest.thinkingLevel ?? "provider default"}; ${usage ? `prompt tokens: ${usage.promptTokens}; output tokens: ${usage.outputTokens}` : "usage not reported"}.\n`);
   const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
   process.stdout.write(
     `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
@@ -305,6 +309,7 @@ export async function buildAnalyzeOptions(
   flags: AnalyzeCliFlags,
   apiKey: string,
 ): Promise<AnalyzeOptions> {
+  const thinkingLevel = resolveThinkingLevel(flags.thinkingLevel);
   const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
   const runNotes = await loadRunNotes(flags.note);
   const recipeResult = await withAnalysisDepth(
@@ -378,6 +383,7 @@ export async function buildAnalyzeOptions(
     recipeRevision: recipeResult.revision,
     apiKey,
     ...(model ? { model } : {}),
+    ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
     ...(flags.focus ? { focus: flags.focus } : {}),
     ...(runNotes.length ? { runNotes } : {}),
     indexFps: recipeResult.indexFps,

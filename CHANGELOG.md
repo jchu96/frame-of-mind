@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- 2026-11-13: Added explicit `--thinking-level` / `GEMINI_THINKING_LEVEL` for analyze and transcribe, optional manifest provenance, and model/level/token summaries; unset requests and the default model are unchanged.
+
 - 2026-11-13: Adopted a contributed standalone `transcribe` workflow with private SRT/speaker files, optional source-clock JSON, visible audio retention, one window retry and cue-safe rendering.
 
 - 2026-11-13: Treat contradictory HTTP/JSON provider statuses as other across SDK calls and direct uploads without parsing message text or changing retries.

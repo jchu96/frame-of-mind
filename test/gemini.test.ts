@@ -4,7 +4,10 @@ import type {
   File as GeminiFile,
   GenerateContentParameters,
 } from "@google/genai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { captureThinkingRequests, refuseBudgetWithLevel } from "./helpers/thinking-requests.js";
 import { z } from "zod";
 import {
   createGeminiFileUploader,
@@ -1609,5 +1612,68 @@ describe("polling", () => {
       message: expect.stringContaining("refused"),
       uploadCleanup: deleted ? "confirmed_deleted" : "unconfirmed",
     });
+  });
+});
+
+describe("thinking level", () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+  it("index, detail and transcription requests all carry thinkingLevel medium", async () => {
+    const { requests, analyzer } = await captureThinkingRequests(GeminiVideoAnalyzer, "medium");
+    expect(requests).toHaveLength(5); // both indexes, detail, transcription, calibration
+    for (const request of requests) expect(request.config?.thinkingConfig?.thinkingLevel).toBe("medium");
+    expect(analyzer.usageSnapshot()).toEqual({ promptTokens: 35, outputTokens: 20, totalTokens: 55 });
+  });
+  it("with no flag or env no request carries thinkingConfig", async () => {
+    vi.stubEnv("GEMINI_THINKING_LEVEL", undefined);
+    const { requests } = await captureThinkingRequests(GeminiVideoAnalyzer);
+    expect(requests).toHaveLength(5);
+    for (const request of requests) expect(request.config).not.toHaveProperty("thinkingConfig");
+  });
+  it("no request carries thinkingBudget", async () => {
+    // https://aistudio.google.com/docs/thinking?generate-content=true documents HTTP 400.
+    const bad = { model: "gemini-test", contents: "synthetic", config: { thinkingConfig: { thinkingLevel: "medium", thinkingBudget: 100 } } } as GenerateContentParameters;
+    try { refuseBudgetWithLevel(bad); throw new Error("refusal fake did not refuse"); }
+    catch (error) { expect(error).toBeInstanceOf(ApiError); expect(error).toHaveProperty("status", 400); }
+    const { requests } = await captureThinkingRequests(GeminiVideoAnalyzer, "medium");
+    for (const request of requests) expect(request.config?.thinkingConfig).not.toHaveProperty("thinkingBudget");
+  });
+  it("unset requests equal the base fixtures for all four calls", async () => {
+    vi.stubEnv("GEMINI_THINKING_LEVEL", undefined);
+    const base = JSON.parse(await readFile(new URL("./fixtures/thinking-requests-base.json", import.meta.url), "utf8"));
+    const { requests } = await captureThinkingRequests(GeminiVideoAnalyzer);
+    expect(requests).toHaveLength(5);
+    for (const [i, request] of requests.entries()) {
+      const bytes = JSON.stringify(request);
+      expect({ bytes: Buffer.byteLength(bytes), sha256: createHash("sha256").update(bytes).digest("hex") }, base.calls[i].name).toEqual(base.calls[i].capture);
+    }
+  });
+  it.each(["low", "medium", "high", "xhigh"])("the pinned SDK serializes %s on the wire", async level => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", async (_url: unknown, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return Response.json({ candidates: [{ content: { parts: [{ text: '{"segments":[]}' }] } }] });
+    });
+    const analyzer = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {}, level);
+    await analyzer.transcribe(activeFile);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toHaveProperty("generationConfig.thinkingConfig", { thinkingLevel: level });
+  });
+  it("repairs and retries preserve the explicit level", async () => {
+    const requests: GenerateContentParameters[] = [];
+    const analyzer = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+      sleep: async () => {},
+      generateContent: async parameters => {
+        requests.push(parameters);
+        if (requests.length === 1) throw new ApiError({ status: 429, message: "Synthetic retry" });
+        return { text: requests.length === 2 ? "invalid JSON" : '{"segments":[]}' };
+      },
+    }, "low");
+    await analyzer.transcribe(activeFile);
+    expect(requests).toHaveLength(3);
+    for (const request of requests) expect(request.config?.thinkingConfig).toEqual({ thinkingLevel: "low" });
+  });
+  it("retains the gemini-3.7-flash default model", () => {
+    vi.stubEnv("GEMINI_MODEL", undefined);
+    expect(new GeminiVideoAnalyzer("synthetic-key").model).toBe("gemini-3.7-flash");
   });
 });
