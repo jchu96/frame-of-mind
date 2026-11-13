@@ -41,8 +41,9 @@ long-recording split-and-merge path, and a cost estimate.
 
 - The local MCP server needs an ADR first: `docs/MCP_ROADMAP.md` excludes
   analysis, upload and raw-transcript tools from the first MCP release.
-- Whether the clocks and word-accurate lanes emit frame-addressed timecode
-  for the timeline clock, or seconds only, is not yet settled. Wave 0 emits
-  no frame numbers.
+- Every time the tool computes or stores is seconds to the millisecond,
+  labelled with its clock; a timeline clock is a declared offset in seconds
+  (owner ruling, 2026-11-13). Whether exact timecode at a declared frame rate
+  is offered as an opt-in output rendering awaits the owner's confirmation.
 - Word-level alignment inside continuous speech would need a new dependency;
   until it is decided, such edges are reported as not snapped.
