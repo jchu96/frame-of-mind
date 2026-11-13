@@ -64,9 +64,9 @@ export async function assertTranscriptTarget(path: string, force = false): Promi
 export async function writePrivateAtomic(path: string, text: string, options: { force?: boolean } = {}): Promise<void> {
   await assertTranscriptTarget(path, options.force);
   const partial = `${path}.partial-${randomUUID()}`;
-  const file = await open(partial, "wx");
+  const file = await open(partial, "wx", 0o600);
   try {
-    // Set permissions before writing any speech, including under a permissive umask.
+    // Private at creation; chmod also restores owner access under a restrictive umask.
     await file.chmod(0o600);
     await file.writeFile(text, "utf8");
     await file.close();

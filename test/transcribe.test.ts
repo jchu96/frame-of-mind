@@ -246,3 +246,61 @@ describe("characterisation", () => {
     expect(renderSrt(segments).text).toBe(suppliedSrt(segments));
   });
 });
+
+describe("reviewer supplementary probes", () => {
+  it("new output directories and audio staging are private", async () => {
+    const f = await fixture(10);
+    const output = join(f.root, "exports", "nested");
+    const stagingModes: number[] = [];
+    f.deps.extractAudioTrack.mockImplementation(async (_input, path) => {
+      stagingModes.push((await stat(dirname(path))).mode & 0o777);
+      await writeFile(path, "synthetic audio"); return true;
+    });
+    await cli(f, ["--output", output]);
+    expect(process.exitCode ?? 0).toBe(0);
+    if (process.platform !== "win32") {
+      expect(stagingModes).toEqual([0o700]);
+      expect((await stat(dirname(output))).mode & 0o777).toBe(0o700);
+      expect((await stat(output)).mode & 0o777).toBe(0o700);
+    }
+  });
+  it("Y02 provider-body sentinel never reaches terminal or exported files", async () => {
+    for (const fail of [false, true]) {
+      const f = await fixture(10);
+      const providerBody = "PROVIDER-BODY-SENTINEL";
+      const error = new ApiError({ message: providerBody, status: fail ? 403 : 503 });
+      if (fail) f.analyzer.transcribe.mockRejectedValue(error);
+      else f.analyzer.transcribe.mockRejectedValueOnce(error);
+      await cli(f, ["--json"]);
+      const terminal = [...f.deps.stdout.mock.calls, ...f.deps.stderr.mock.calls].flat().join("\n");
+      expect(terminal).not.toContain(providerBody);
+      expect(terminal).not.toContain("ZEBRA-SENTINEL-LINE");
+      expect(terminal).not.toContain("test-key");
+      expect(f.analyzer.transcribe).toHaveBeenCalledTimes(2);
+      if (fail) {
+        expect(process.exitCode).toBe(1);
+        await expectNoOutputs(f);
+      } else {
+        for (const suffix of [".srt", "_speakers.txt", ".transcript.json"]) {
+          const exported = await readFile(join(f.root, `synthetic${suffix}`), "utf8");
+          expect(exported).toContain("ZEBRA-SENTINEL-LINE");
+          expect(exported).not.toContain(providerBody);
+          expect(exported).not.toContain("test-key");
+          expect(exported).not.toContain(f.input);
+        }
+      }
+    }
+  });
+  it("Y03 run retention deletes uploads on SIGINT and leaves input unchanged", async () => {
+    const f = await fixture();
+    f.analyzer.transcribe.mockResolvedValueOnce([segment()]).mockImplementationOnce(async () => {
+      process.emit("SIGINT"); return [segment()];
+    });
+    await cli(f, ["--retention", "run"]);
+    expect(process.exitCode).toBe(130);
+    expect(f.analyzer.upload).toHaveBeenCalledTimes(2);
+    expect(f.analyzer.delete.mock.calls.map(([file]) => file)).toEqual(await Promise.all(f.analyzer.upload.mock.results.map(result => result.value)));
+    expect(await readFile(f.input, "utf8")).toBe("synthetic media");
+    await expectNoOutputs(f);
+  });
+});

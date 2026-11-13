@@ -97,6 +97,59 @@ describe("json", () => {
 });
 
 describe("write", () => {
+  it("Y01 transcript temporary file is private at creation", async () => {
+    const path = await target();
+    const actual = await vi.importActual<typeof fs>("node:fs/promises");
+    const modes: number[] = [];
+    const requestedModes: unknown[] = [];
+    let failWrite = false;
+    await fs.chmod(join(path, ".."), 0o755);
+    const previousUmask = process.umask(0o022);
+    try {
+      vi.mocked(fs.open).mockImplementation(async (...args: Parameters<typeof fs.open>) => {
+        const handle = await actual.open(...args);
+        // Observe the real inode before returning it: the writer cannot chmod yet.
+        modes.push((await handle.stat()).mode & 0o777);
+        requestedModes.push(args[2]);
+        if (failWrite) {
+          const write = handle.writeFile.bind(handle);
+          vi.spyOn(handle, "writeFile").mockImplementationOnce(async () => {
+            await write("synthetic partial");
+            throw new Error("synthetic write failure");
+          });
+        }
+        return handle;
+      });
+      for (const suffix of [".srt", "_speakers.txt", ".transcript.json"]) {
+        const destination = path.replace(/\.srt$/, suffix);
+        await writePrivateAtomic(destination, "synthetic original");
+        failWrite = true;
+        await expect(writePrivateAtomic(destination, "synthetic replacement", { force: true })).rejects.toThrow("synthetic write failure");
+        expect(await fs.readFile(destination, "utf8")).toBe("synthetic original");
+        failWrite = false;
+        await writePrivateAtomic(destination, "synthetic retry", { force: true });
+      }
+      if (process.platform !== "win32") expect(modes.map(mode => mode.toString(8)), "creation modes before chmod").toEqual(Array(9).fill("600"));
+      expect(requestedModes).toEqual(Array(9).fill(0o600));
+      expect((await fs.readdir(join(path, ".."))).some(name => name.includes(".partial-"))).toBe(false);
+    } finally {
+      vi.mocked(fs.open).mockImplementation(actual.open);
+      process.umask(previousUmask);
+    }
+  });
+  it("never reuses or removes an existing temporary name", async () => {
+    const path = await target();
+    const actual = await vi.importActual<typeof fs>("node:fs/promises");
+    let existing = "";
+    vi.mocked(fs.open).mockImplementationOnce(async (...args: Parameters<typeof fs.open>) => {
+      existing = String(args[0]);
+      await actual.writeFile(existing, "synthetic existing file", { mode: 0o600 });
+      return actual.open(...args);
+    });
+    await expect(writePrivateAtomic(path, "replacement")).rejects.toMatchObject({ code: "EEXIST" });
+    expect(await fs.readFile(existing, "utf8")).toBe("synthetic existing file");
+    await expect(fs.stat(path)).rejects.toMatchObject({ code: "ENOENT" });
+  });
   it("a failure mid-write leaves the old file intact and no .partial file", async () => {
     const path = await target();
     await fs.writeFile(path, "old");
