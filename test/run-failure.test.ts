@@ -49,3 +49,10 @@ describe("run failure manifest", () => {
     }).remoteFile.cleanup).toBe("not_obtained");
   });
 });
+
+describe("schema", () => {
+  it("a stored record without provider still parses", () => {
+    expect(runFailureManifestSchema.parse({ ...baseFailure, remoteFile: { cleanup: "not_obtained" } }).error)
+      .toEqual({ code: "unexpected_failure" });
+  });
+});

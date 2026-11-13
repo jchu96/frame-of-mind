@@ -851,7 +851,7 @@ metadata, OAuth, and cleanup contracts.
 | [Local Studio threat model](docs/THREAT_MODEL.md) | session, staging, and credential boundaries |
 | [Cloudflare deployment](docs/CLOUDFLARE_DEPLOYMENT.md) | Workers, D1, Access, verification, rollback |
 | [Testing strategy](docs/TESTING.md) | test-layer ownership, browser isolation |
-| [Operations runbook](docs/RUNBOOK.md) | installation, operations, incident response |
+| [Operations runbook](docs/RUNBOOK.md) | installation, operations, incident response; troubleshooting `refused`, `not_found`, `rate_limited`, and `other` provider errors |
 | [Versioning](docs/VERSIONING.md) | release and compatibility policy |
 | [Skill installation](docs/SKILL_INSTALLATION.md) | Codex and Claude skill setup |
 | [MCP roadmap](docs/MCP_ROADMAP.md) | deferred local/hosted read-only MCP boundary |

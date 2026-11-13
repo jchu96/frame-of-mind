@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import { FileState } from "@google/genai";
 import type { File as GeminiFile } from "@google/genai";
 import { z } from "zod";
+import { classifyProviderError, providerErrorDescription, type ProviderError } from "./gemini-error-class.js";
 
 const GEMINI_UPLOAD_ENDPOINT =
   "https://generativelanguage.googleapis.com/upload/v1beta/files";
@@ -60,6 +61,7 @@ export class GeminiFileError extends Error {
     readonly remoteFileName?: string,
     readonly uploadCleanup?: GeminiUploadCleanup,
     readonly telemetryCode?: string,
+    readonly provider?: ProviderError,
   ) {
     super(message);
   }
@@ -113,11 +115,13 @@ export function createGeminiFileUploader(
           }),
           signal: AbortSignal.timeout(timeoutMs),
         });
-      } catch {
+      } catch (error) {
         throw new GeminiFileError(
-          "Gemini resumable upload start failed.",
+          `Gemini resumable upload start failed: ${providerErrorDescription(classifyProviderError(error))}.`,
           undefined,
           "not_obtained",
+          undefined,
+          classifyProviderError(error),
         );
       }
       assertSuccessfulResponse(startResponse, "resumable upload start");
@@ -140,19 +144,22 @@ export function createGeminiFileUploader(
           duplex: "half",
           signal: AbortSignal.timeout(timeoutMs),
         });
-      } catch {
+      } catch (error) {
         throw new GeminiFileError(
-          "Gemini upload finalize failed; remote cleanup cannot be confirmed.",
+          `Gemini upload finalize failed: ${providerErrorDescription(classifyProviderError(error))}; remote cleanup cannot be confirmed.`,
           undefined,
           "unconfirmed",
+          undefined,
+          classifyProviderError(error),
         );
       }
       if (!uploadResponse.ok) {
         throw new GeminiFileError(
-          `Gemini upload finalize failed (HTTP ${uploadResponse.status}); remote cleanup cannot be confirmed.`,
+          `Gemini upload finalize failed: ${providerErrorDescription(classifyProviderError(uploadResponse))}; remote cleanup cannot be confirmed.`,
           undefined,
           "unconfirmed",
           `gemini_http_${uploadResponse.status}`,
+          classifyProviderError(uploadResponse),
         );
       }
 
@@ -215,10 +222,11 @@ function fetchWithStreamingBody(
 function assertSuccessfulResponse(response: Response, phase: string): void {
   if (!response.ok) {
     throw new GeminiFileError(
-      `Gemini ${phase} failed (HTTP ${response.status}).`,
+      `Gemini ${phase} failed: ${providerErrorDescription(classifyProviderError(response))}.`,
       undefined,
       "not_obtained",
       `gemini_http_${response.status}`,
+      classifyProviderError(response),
     );
   }
 }
