@@ -22,3 +22,5 @@ those checks, so the wrapper now runs them itself; retire that wrapper when an e
 hosted coverage for the exact source it deploys.
 
 The wrapper guards against forgetting the hosted lane, not against a person who runs Wrangler directly or replaces a tool it calls.
+
+The wrapper accepts only the named targets `web` and `workflows`; flags, paths, extra arguments and `CLOUDFLARE_ENV` are refused before the gates.

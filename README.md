@@ -247,7 +247,7 @@ bun run check:auth-contract
 
 The whole hosted lane runs nightly and on manual dispatch, and must pass
 `gate-lock bun run check:deploy` for release validation. Deploy with
-`gate-lock bun run deploy:hosted --config <config>`: every invocation runs the
+`gate-lock bun run deploy:hosted web` (or `workflows`): every invocation runs the
 default gate and whole hosted lane before invoking Wrangler on the same source. `check:sharded` remains an explicit all-lane run; `check` remains the
 complete serial fallback.
 

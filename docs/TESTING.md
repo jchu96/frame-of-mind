@@ -40,7 +40,7 @@ quarantined from the default PR gate, not deleted: see the
 
 For release validation, run `gate-lock bun run check:deploy`. This runs the
 default gate followed by the whole hosted lane without deploying. Deploy with
-`gate-lock bun run deploy:hosted --config <config>`: each invocation runs both
+`gate-lock bun run deploy:hosted web` (or `workflows`): each invocation runs both
 gates itself and calls Wrangler only after they pass with unchanged HEAD and
 source inputs. Previous runs and hand-written success files cannot authorize
 a deployment. See

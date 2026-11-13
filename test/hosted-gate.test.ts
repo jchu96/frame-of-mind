@@ -26,6 +26,7 @@ describe("hosted gate separation", () => {
       await commit(root);
       const config = join(outside, "wrangler.jsonc");
       const cases = [
+        [], ["unknown"], ["web", "workflows"], ["web", "--env", "unchecked"], ["--dry-run"],
         ["--cwd", outside], [`--cwd=${outside}`], ["-cwd", outside],
         ["--cwd", "apps/web"], // No cwd override, including an internal one.
         ["--config", config], [`--config=${config}`], ["-c", config], [`-c${config}`], [`-c=${config}`],
@@ -38,9 +39,8 @@ describe("hosted gate separation", () => {
       for (const args of cases) {
         const result = await run(root, ["bun", "run", "deploy:hosted", ...args]);
         expect(result.code, args.join(" ") + "\n" + result.stdout).toBe(1);
-        expect(result.stderr).toContain(args[0]!.split("=")[0]!);
         await refused(root, result);
-        expect(result.stderr).toContain("reason=deploy_argument_");
+        expect(result.stderr).toContain("reason=deploy_target_invalid valid_targets=web,workflows");
         expect(result.stdout).not.toContain("FIXTURE_LANE");
         await expect(readFile(join(root, ".git/execution.log"))).rejects.toThrow();
       }
@@ -50,31 +50,82 @@ describe("hosted gate separation", () => {
     }
   }, 30_000);
 
-  test("documented deploy targets and supported path forms reach Wrangler after both gates", async () => {
+  test("named deploy targets reach only their fixed configs after both gates", async () => {
     const root = await fixture();
     try {
-      for (const target of ["apps/workflows", "apps/web"]) {
-        await put(root, `${target}/wrangler.jsonc`, await readFile(`${target}/wrangler.jsonc.example`, "utf8"));
-      }
-      await put(root, "apps/workflows/src/index.ts", "// fixture worker\n");
-      await put(root, "apps/web/.output/server/hosted-entry.mjs", "// fixture built worker\n");
-      await mkdir(join(root, "apps/web/.output/public"), { recursive: true });
-      await commit(root);
-      for (const args of [
-        ["--config", "apps/workflows/wrangler.jsonc"],
-        ["--config", "apps/web/wrangler.jsonc"],
-        ["--config=apps/web/wrangler.jsonc"], ["-c", "apps/web/wrangler.jsonc"],
-        ["source.ts"], ["apps/web/.output/public"], ["--assets", "apps/web/.output/public"],
-      ]) {
+      for (const target of ["web", "workflows"]) {
         await rm(join(root, ".git/execution.log"), { force: true });
-        const result = await run(root, ["bun", "run", "deploy:hosted", ...args]);
+        const result = await run(root, ["bun", "run", "deploy:hosted", target]);
         expect(result.code, result.stderr).toBe(0);
         const order = (await readFile(join(root, ".git/execution.log"), "utf8")).trim().split("\n");
         expect(order.slice(0, 2).sort()).toEqual(["fast", "local"]);
         expect(order.slice(2)).toEqual(["hosted", "wrangler"]);
-        console.log(`DEPLOY_TARGET allowed=${args.join(" ")} gates=PASS wrangler=synthetic`);
+        expect(JSON.parse(await readFile(join(root, ".git/deployed.json"), "utf8")))
+          .toEqual(["deploy", "--config", await realpath(join(root, `apps/${target}/wrangler.jsonc`))]);
+        console.log(`DEPLOY_TARGET allowed=${target} gates=PASS wrangler=synthetic`);
       }
     } finally { await rm(root, { recursive: true, force: true }); }
+  }, 30_000);
+
+  test("MISS deploy-environment-default: CLOUDFLARE_ENV cannot select an external environment main", async () => {
+    const root = await fixture();
+    const outside = await mkdtemp(join(tmpdir(), "unchecked-env-"));
+    try {
+      await put(outside, "worker.js", "// unchecked environment source\n");
+      const file = join(root, "apps/web/wrangler.jsonc");
+      const config = JSON.parse(await readFile(file, "utf8"));
+      config.env = { unchecked: { main: join(outside, "worker.js") } };
+      await writeFile(file, JSON.stringify(config));
+      await commit(root);
+      for (const value of ["unchecked", ""]) {
+        const result = await run(root, ["bun", "run", "deploy:hosted", "web"], { CLOUDFLARE_ENV: value });
+        expect(result.stdout).not.toContain("FIXTURE_LANE");
+        await refused(root, result);
+        expect(result.stderr).toContain("deploy_environment_refused:CLOUDFLARE_ENV");
+        await expect(readFile(join(root, ".git/execution.log"))).rejects.toThrow();
+      }
+      for (const file of [".env", ".env.local"]) {
+        await put(root, file, "CLOUDFLARE_ENV=unchecked\n");
+        const result = await run(root, ["bun", "--no-env-file", "scripts/hosted-deploy-gate.ts", "deploy", "web"]);
+        await refused(root, result);
+        expect(result.stderr).toContain("deploy_environment_refused:CLOUDFLARE_ENV");
+        expect(result.stdout).not.toContain("FIXTURE_LANE");
+        await rm(join(root, file));
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test("fixed config containment still refuses external main, assets, site and symlinks", async () => {
+    for (const field of ["main", "assets", "site", "symlink"]) {
+      const root = await fixture();
+      const outside = await mkdtemp(join(tmpdir(), "unchecked-fixed-"));
+      try {
+        await put(outside, "worker.js", "// external\n");
+        const path = join(root, "apps/web/wrangler.jsonc");
+        if (field === "symlink") {
+          await put(outside, "config.json", '{"main":"worker.js"}');
+          await rm(path);
+          await symlink(join(outside, "config.json"), path);
+        } else {
+          const config = JSON.parse(await readFile(path, "utf8"));
+          if (field === "main") config.main = join(outside, "worker.js");
+          if (field === "assets") config.assets = { directory: outside };
+          if (field === "site") config.site = { bucket: outside };
+          await writeFile(path, JSON.stringify(config));
+        }
+        await commit(root);
+        const result = await run(root, ["bun", "run", "deploy:hosted", "web"]);
+        await refused(root, result);
+        expect(result.stderr).toContain("deploy_argument_outside_repo:--config");
+        expect(result.stdout).not.toContain("FIXTURE_LANE");
+      } finally {
+        await rm(root, { recursive: true, force: true });
+        await rm(outside, { recursive: true, force: true });
+      }
+    }
   }, 30_000);
 
   test("MISS deploy-needs-hosted: hand-written fresh or stale receipts cannot bypass failing hosted checks", async () => {
@@ -87,7 +138,7 @@ describe("hosted gate separation", () => {
           version: 1, head, inputs: await buildContentHash(root, {}),
           hosted: "PASS", completedAt: Date.now() - age,
         }));
-        const result = await run(root, ["bun", "run", "deploy:hosted"], { FAIL_HOSTED: "1" });
+        const result = await run(root, ["bun", "run", "deploy:hosted", "web"], { FAIL_HOSTED: "1" });
         await refused(root, result);
         expect(result.stdout).toContain("FIXTURE_LANE hosted");
         expect(result.stderr).toContain("step_failed:check:lane:hosted:1");
@@ -158,14 +209,14 @@ describe("hosted gate separation", () => {
       // A previous check invocation is never reusable authorization.
       for (let attempt = 0; attempt < 2; attempt++) {
         await rm(join(root, ".git/execution.log"));
-        const result = await run(root, ["bun", "run", "deploy:hosted", "--config", "fixture.json"]);
+        const result = await run(root, ["bun", "run", "deploy:hosted", "web"]);
         expect(result.code, result.stderr).toBe(0);
         expect(result.stdout).toContain("HOSTED_DEPLOY prerequisite=PASS");
         const order = (await readFile(join(root, ".git/execution.log"), "utf8")).trim().split("\n");
         expect(order.slice(0, 2).sort()).toEqual(["fast", "local"]);
         expect(order.slice(2)).toEqual(["hosted", "wrangler"]);
         expect(JSON.parse(await readFile(join(root, ".git/deployed.json"), "utf8")))
-          .toEqual(["deploy", "--config", await realpath(join(root, "fixture.json"))]);
+          .toEqual(["deploy", "--config", await realpath(join(root, "apps/web/wrangler.jsonc"))]);
       }
       console.log("DEPLOY_FIXTURE green=PASS same_invocation=true wrangler=synthetic");
     } finally { await rm(root, { recursive: true, force: true }); }
@@ -177,7 +228,7 @@ describe("hosted gate separation", () => {
       expect((await run(root, ["bun", "run", "check:deploy"])).code).toBe(0);
       for (const mode of ["check:deploy", "deploy:hosted"]) {
         for (const failure of ["FAIL_DEFAULT", "FAIL_HOSTED"]) {
-          const result = await run(root, ["bun", "run", mode], { [failure]: "1" });
+          const result = await run(root, ["bun", "run", mode, ...(mode === "deploy:hosted" ? ["web"] : [])], { [failure]: "1" });
           await refused(root, result);
           const step = failure === "FAIL_HOSTED" ? "check:lane:hosted" : "check:pr";
           expect(result.stderr).toContain(`step_failed:${step}:1`);
@@ -192,7 +243,7 @@ describe("hosted gate separation", () => {
       const root = await fixture();
       try {
         if (change === "dirty") await put(root, "source.ts", "// dirty\n");
-        const result = await run(root, ["bun", "run", "deploy:hosted"], { CHANGE_SOURCE: change });
+        const result = await run(root, ["bun", "run", "deploy:hosted", "web"], { CHANGE_SOURCE: change });
         await refused(root, result);
         expect(result.stderr).toContain(change === "dirty" ? "tracked_tree_dirty" : "source_changed_during_check");
       } finally { await rm(root, { recursive: true, force: true }); }
@@ -251,8 +302,12 @@ console.log("SYNTHETIC_WRANGLER");
   await put(root, "apps/web/node_modules/wrangler/package.json", JSON.stringify({
     main: await realpath("apps/web/node_modules/wrangler/wrangler-dist/cli.js"),
   }));
-  await put(root, "wrangler.jsonc", '{"main":"source.ts"}\n');
-  await put(root, "fixture.json", '{"main":"source.ts"}\n');
+  for (const target of ["apps/workflows", "apps/web"]) {
+    await put(root, `${target}/wrangler.jsonc`, await readFile(`${target}/wrangler.jsonc.example`, "utf8"));
+  }
+  await put(root, "apps/workflows/src/index.ts", "// fixture worker\n");
+  await put(root, "apps/web/.output/server/hosted-entry.mjs", "// fixture built worker\n");
+  await mkdir(join(root, "apps/web/.output/public"), { recursive: true });
   await put(root, "source.ts", "// fixture\n");
   await git(root, ["init", "-q"]);
   await commit(root);

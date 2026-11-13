@@ -1,7 +1,6 @@
-import { realpath } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { parseArgs } from "node:util";
 import { buildContentHash } from "./check-build-cache";
 
 // 2026-11-13: unchanged-base hosted failures moved this lane out of the PR gate.
@@ -12,6 +11,7 @@ const mode = process.argv[2];
 if (mode !== "check" && mode !== "deploy") throw new Error("Use check or deploy.");
 
 try {
+  await requireDefaultEnvironment();
   const deployArgs = mode === "deploy" ? await checkedDeployArgs(process.argv.slice(3)) : [];
   const before = await sourceIdentity();
   for (const step of ["check:pr", "check:lane:hosted"]) {
@@ -36,21 +36,10 @@ try {
 async function checkedDeployArgs(args: string[]): Promise<string[]> {
   const root = await realpath(await git("rev-parse", "--show-toplevel"));
   if (await realpath(process.cwd()) !== root) throw new Error("deploy_argument_refused:cwd_must_be_repo_root");
-  // Do not forward unknown spellings to a second argument parser. Canonicalize
-  // this small supported surface; in particular no form of cwd reaches Wrangler.
-  for (const arg of args) {
-    if (/^--?cwd(?:=|$)/.test(arg)) throw new Error(`deploy_argument_refused:${arg}`);
+  const [target] = args;
+  if (args.length !== 1 || (target !== "web" && target !== "workflows")) {
+    throw new Error("deploy_target_invalid valid_targets=web,workflows");
   }
-  const parsed = parseArgs({
-    args: args.map((arg) => arg.startsWith("-c=") ? `--config=${arg.slice(3)}` : arg),
-    allowPositionals: true, tokens: true,
-    options: {
-      config: { type: "string", short: "c" },
-      assets: { type: "string" }, site: { type: "string" }, script: { type: "string" },
-      "dry-run": { type: "boolean" },
-    },
-  });
-  if (parsed.positionals.length > 1) throw new Error("deploy_argument_refused:multiple_entrypoints");
   async function inside(path: string, argument: string): Promise<string> {
     const absolute = resolve(path);
     let target: string;
@@ -62,16 +51,9 @@ async function checkedDeployArgs(args: string[]): Promise<string[]> {
     }
     return absolute;
   }
-  const forwarded: string[] = [];
-  for (const token of parsed.tokens) {
-    if (token.kind === "option") {
-      if (token.name === "dry-run") forwarded.push("--dry-run");
-      else forwarded.push(`--${token.name}`, await inside(token.value!, args[token.index]!));
-    }
-  }
-  const configPath = await inside(parsed.values.config ?? "wrangler.jsonc", "--config");
-  // Explicit config prevents Wrangler discovering a parent repo's configuration.
-  if (!parsed.values.config) forwarded.push("--config", configPath);
+  const configPath = await inside(
+    target === "web" ? "apps/web/wrangler.jsonc" : "apps/workflows/wrangler.jsonc", "--config",
+  );
   const { experimental_readRawConfig } = createRequire(resolve("apps/web/package.json"))("wrangler");
   let config;
   try { config = experimental_readRawConfig({ config: configPath }).rawConfig; }
@@ -81,9 +63,23 @@ async function checkedDeployArgs(args: string[]): Promise<string[]> {
   ]) {
     if (path !== undefined) await inside(resolve(dirname(configPath), path), `--config:${field}`);
   }
-  // The separator prevents a positional filename from becoming a Wrangler flag.
-  for (const path of parsed.positionals) forwarded.push("--", await inside(path, path));
-  return forwarded;
+  return ["--config", configPath];
+}
+
+async function requireDefaultEnvironment(): Promise<void> {
+  const refusal = "deploy_environment_refused:CLOUDFLARE_ENV";
+  if (process.env.CLOUDFLARE_ENV !== undefined) throw new Error(refusal);
+  // Wrangler also loads system variables from root dotenv files. Refuse the
+  // selector there without logging values or changing authentication variables.
+  for (const file of [".env", ".env.local"]) {
+    let contents: string;
+    try { contents = await readFile(file, "utf8"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (/^\s*(?:export\s+)?CLOUDFLARE_ENV(?:\s*=|:\s)/m.test(contents)) throw new Error(refusal);
+  }
 }
 
 async function sourceIdentity(): Promise<{ head: string; inputs: string }> {

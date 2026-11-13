@@ -497,9 +497,12 @@ deployment; a hand-written file or earlier successful run cannot bypass checks.
 Deploy the sibling first, then the public Worker. Each command reruns the gates:
 
 ```bash
-gate-lock bun run deploy:hosted --config apps/workflows/wrangler.jsonc
-gate-lock bun run deploy:hosted --config apps/web/wrangler.jsonc
+gate-lock bun run deploy:hosted workflows
+gate-lock bun run deploy:hosted web
 ```
+
+Only `web` and `workflows` are accepted, each with its fixed repository config.
+Flags, paths, extra arguments and `CLOUDFLARE_ENV` are refused before the gates.
 
 For release validation without deploying, use `gate-lock bun run check:deploy`.
 This does not authorize a later deployment. Use the deploy wrapper for redeploys
