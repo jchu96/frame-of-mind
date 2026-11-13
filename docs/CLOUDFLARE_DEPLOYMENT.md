@@ -215,7 +215,7 @@ an idempotent no-op, validates both Worker binding graphs, scans the boundary,
 runs the local byte-stability import regression, and dry-runs both the current
 and previous artifacts. Success ends with `HOSTED_RELEASE_REHEARSAL PASSED`.
 The 2026-08-22 baseline completes in under 60 seconds on the maintainer
-workstation, so it is part of `bun run check:sharded`.
+workstation. It remains in the whole hosted lane and `bun run check:deploy`.
 
 ### Direct-upload ceiling
 
@@ -488,11 +488,25 @@ The public receipt must name `hosted-entry.mjs`, `ASSETS`, `DB`, and
 `HOSTED_WORKFLOWS`; the sibling receipt must name `DB` and `HOSTED_WORKFLOW`.
 Stop if either includes error `100329`.
 
-Deploy from `apps/web` so Wrangler paths match the configuration:
+Before deploying, run the checked preflight from a committed tree. This runs
+the default fast/local gate and every hosted step; a failure removes any old
+receipt. The receipt lives in the worktree’s Git directory (never in source),
+expires after 24 hours, and must match both HEAD and the current source inputs.
+Tracked edits refuse, except generated hosted screenshots. Previously, direct
+Wrangler deployment had no executable check for this prerequisite.
+
+Deploy the sibling first, then the public Worker through the checked wrapper:
 
 ```bash
-./apps/web/node_modules/.bin/wrangler deploy --cwd apps/web --config wrangler.jsonc
+gate-lock bun run check:deploy
+bun run deploy:hosted --config apps/workflows/wrangler.jsonc
+bun run deploy:hosted --cwd apps/web --config wrangler.jsonc
 ```
+
+The wrapper refuses before invoking Wrangler if the hosted receipt is absent,
+invalid, expired, or for different source. Use it for redeploys and reviewed
+rollbacks as well; re-run preflight at the target revision. Direct Wrangler
+commands above are only for the module dry-runs.
 
 Neither Worker bundle contains a secret literal. The public and internal
 Workers each receive the same `GEMINI_API_KEY` through Wrangler's secret store;
@@ -838,7 +852,7 @@ mailer transport.
    links](#enable-magic-link-email), [private R2 retained
    media](#private-retained-media-r2-shape), and the [internal Workflows
    Worker](#workflows-worker-configuration-shape).
-10. Run `bun run check:sharded` through `gate-lock`, then enable hosted creation
+10. Run `gate-lock bun run check:deploy`, then enable hosted creation
     and submit one generated, non-sensitive canary recording.
 
 ### Optional GitHub login application

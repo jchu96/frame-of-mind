@@ -76,12 +76,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  hosted-contracts:
-    needs: check
+  serial-check:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    # Non-blocking while https://github.com/jchu96/frame-of-mind/issues/96 tracks 2-core timing.
-    continue-on-error: true
+    timeout-minutes: 120
     env:
       FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'
       FRAME_OF_MIND_HOSTED_ACCESS_STEP_TIMEOUT_SECONDS: '300'
@@ -99,34 +97,15 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Playwright Chromium
-        run: bunx playwright install --with-deps chromium
-
-      - name: Run hosted contract lane
-        run: bun run check:lane:hosted
-
-  serial-check:
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
-      - name: Run serial fallback gate
-        run: bun run check
+      - name: Run default gate
+        run: bun run check:pr
+
+      - name: Run whole hosted lane
+        if: ${{ !cancelled() }}
+        run: bun run check:lane:hosted
 
   fresh-clone:
     strategy:

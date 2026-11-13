@@ -1,5 +1,14 @@
 # Work Log
 
+## 2026-11-13 — Hosted gate measurement
+
+- Measured five reduced-hosted-lane runs at unchanged base `41766a0`: four
+  passes, then a hosted-auth failure. Two successful browser runs retried a
+  journey. The scope moved from one unstable step to the complete lane.
+- Preserved hosted scripts and required CI jobs; added fast/local-only PR
+  selection and executable receipt checks before Wrangler deployment.
+  Synthetic fixtures cover missing/stale receipts and failed hosted preflight.
+
 ## 2026-11-12
 
 - Updated production dependency pins and their locked transitive dependencies

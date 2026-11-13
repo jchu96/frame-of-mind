@@ -27,15 +27,13 @@ versions for durable schemas and prompts.
 3. Confirm README and runbook commands.
 4. Confirm official provider and Google links.
 5. Run `bun install --frozen-lockfile`.
-6. Run `bun run check:sharded` locally when the machine is unloaded. On a busy
-   machine, defer the full run or serialize lanes with
-   `FRAME_OF_MIND_GATE_PARALLELISM=1`. Required GitHub CI at the exact PR head
-   is the merge oracle: `check`, `browser-e2e`, `auth-contract`, and all three
-   `fresh-clone` jobs must be green. A local advisory hosted-lane failure under
-   load is not itself a release blocker; record it and compare with base-known
-   failures in [#113](https://github.com/jchu96/frame-of-mind/issues/113) and
-   [#96](https://github.com/jchu96/frame-of-mind/issues/96). Investigate a new
-   regression rather than treating every hosted failure as known debt.
+6. Run `gate-lock bun run check:deploy` at the committed release head and
+   require `CHECK_DEPLOY status=PASS`. This includes the default gate and the
+   entire hosted lane; a hosted failure blocks release/deploy even though it
+   no longer blocks ordinary pull requests. Required GitHub CI at the exact
+   PR head remains the merge oracle: `check`, `browser-e2e`, `auth-contract`,
+   and all three `fresh-clone` jobs must pass. Re-run preflight after changing
+   source or moving to the release merge commit before using `deploy:hosted`.
 7. Run `bun run smoke:gemini` with a maintainer key and generated media.
 8. Validate the repository skill.
 9. Test the skill installer in a temporary home directory.

@@ -15,12 +15,6 @@ import {
   isBuildInputPath,
   scrubBuildEnvironment,
 } from "../scripts/check-build-cache";
-import {
-  isPrSafePath,
-  isThemeContractPath,
-  selectGateTier,
-} from "../scripts/check-gate-policy";
-
 const originalPrebuiltOutput = process.env[PREBUILT_OUTPUT_ENV];
 
 afterEach(() => {
@@ -64,76 +58,6 @@ describe("check lanes", () => {
     }
   });
 
-  test("keeps PR tier only when every changed path is explicitly safe", () => {
-    const safePaths = [
-      "docs/x.md",
-      "README.md",
-      "conductor/tracks/example/spec.json",
-      "test/check-lanes.test.ts",
-      "apps/web/app/components/Callout.vue",
-      "apps/web/app/assets/logo.svg",
-    ];
-    expect(safePaths.every(isPrSafePath)).toBe(true);
-    expect(selectGateTier("pr", true, safePaths)).toEqual({
-      tier: "pr",
-      reason: "all_paths_safe",
-    });
-
-    for (const path of [
-      "src/domain/studio-schemas.ts",
-      "apps/web/server-hosted/foo.ts",
-      "apps/web/server/middleware/00.auth.ts",
-      "apps/workflows/src/index.ts",
-      "scripts/test-hosted-media-http.ts",
-      "apps/web/db/migrations/0009_example.sql",
-      "apps/web/nuxt.config.ts",
-      ".github/workflows/ci.yml",
-      "package.json",
-      "bun.lock",
-    ]) {
-      expect(selectGateTier("pr", true, [path]), path).toEqual({
-        tier: "sharded",
-        reason: "unsafe_path",
-      });
-    }
-  });
-
-  test("upgrades theme contract paths to the hosted sharded tier", () => {
-    for (const path of [
-      "apps/web/app/assets/css/main.css",
-      "apps/web/app/assets/css/tokens.scss",
-      "apps/web/app.config.ts",
-    ]) {
-      expect(isThemeContractPath(path), path).toBe(true);
-      expect(isPrSafePath(path), path).toBe(false);
-      expect(selectGateTier("pr", true, [path]), path).toEqual({
-        tier: "sharded",
-        reason: "theme_contract_paths",
-      });
-    }
-
-    expect(isThemeContractPath("apps/web/app/pages/about.vue")).toBe(false);
-    expect(isPrSafePath("apps/web/app/pages/about.vue")).toBe(true);
-  });
-
-  test("fails a PR tier closed when its default base ref is unavailable", () => {
-    expect(selectGateTier("pr", false, [])).toEqual({
-      tier: "sharded",
-      reason: "base_ref_unavailable",
-    });
-    expect(selectGateTier("pr", true, ["docs/x.md"])).toEqual({
-      tier: "pr",
-      reason: "all_paths_safe",
-    });
-  });
-
-  test("keeps the CI check job on fast and local when hosted runs separately", () => {
-    expect(selectGateTier("pr", false, ["package.json"], true)).toEqual({
-      tier: "pr",
-      reason: "hosted_lane_separate",
-    });
-  });
-
   test("propagates an explicit PR base to each commit-validation lane", async () => {
     const runner = await readFile("scripts/run-check-sharded.ts", "utf8");
     expect(runner).toContain(
@@ -148,11 +72,7 @@ describe("check lanes", () => {
       'bun run check:pr --base "origin/${{ github.base_ref || \'main\' }}"',
     );
     expect(workflow).toContain('FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE: "1"');
-    expect(workflow).toContain("hosted-contracts:\n    needs: check");
-    expect(workflow).toContain("timeout-minutes: 40");
-    expect(workflow).toContain("FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'");
-    expect(workflow).toContain("FRAME_OF_MIND_HOSTED_ACCESS_STEP_TIMEOUT_SECONDS: '300'");
-    expect(workflow).toContain("FRAME_OF_MIND_GATE_PARALLELISM: '1'");
+    expect(workflow).not.toContain("  hosted-contracts:");
     expect(workflow).toContain("bunx playwright install --with-deps chromium");
     expect(workflow).toContain("bun run check:lane:hosted");
 
@@ -176,7 +96,7 @@ describe("check lanes", () => {
     );
 
     const workflow = await readFile(".github/workflows/ci.yml", "utf8");
-    const authJob = workflow.match(/\n  auth-contract:\n([\s\S]*?)\n  hosted-contracts:/)?.[1];
+    const authJob = workflow.match(/\n  auth-contract:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:)/)?.[1];
     expect(authJob).toBeDefined();
     expect(authJob).toContain("timeout-minutes: 15");
     expect(authJob).toContain("bunx playwright install --with-deps chromium");
