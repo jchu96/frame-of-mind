@@ -128,3 +128,14 @@ describe("notes", () => {
     expect(options.maxIncidents).toBe(1000);
   });
 });
+
+describe("clock flags", () => {
+  it("rejects invalid declarations before an analyzer can be constructed", async () => {
+    for (const flags of [{ timelineOffset: "1.0005" }, { timelineOffset: "-5" }, { timecodeRate: "25" }, { timelineOffset: "0", timecodeRate: "25df" }, { timelineOffset: "0", timecodeRate: "23.98" }, { timelineOffset: "0", timecodeRate: "29.97" }, { fileClock: "clip" }]) {
+      await expect(buildAnalyzeOptions(undefined, { ...baseFlags, ...flags }, "synthetic-key")).rejects.toThrow();
+    }
+  });
+  it("passes exact clock declarations and the calibration opt-out", async () => {
+    expect(await buildAnalyzeOptions(undefined, { ...baseFlags, timelineOffset: "12.345", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false }, "synthetic-key")).toMatchObject({ timelineOffset: "12.345", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false });
+  });
+});

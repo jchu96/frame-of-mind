@@ -47,6 +47,7 @@ export const analysisOutcomeSchema = z.strictObject({
     indexed: z.number().int().min(0).max(1_000),
     selected: z.number().int().min(0).max(1_000),
     omittedByLimit: z.number().int().min(0).max(1_000),
+    outOfRange: z.number().int().min(0).max(1_000).optional(),
     validated: z.number().int().min(0).max(1_000),
     accepted: z.number().int().min(0).max(1_000),
     rejected: z.number().int().min(0).max(1_000),
@@ -54,7 +55,7 @@ export const analysisOutcomeSchema = z.strictObject({
   }),
   failures: z.array(candidateFailureSchema).max(1_000),
 }).superRefine((value, context) => {
-  if (value.candidates.selected + value.candidates.omittedByLimit !== value.candidates.indexed) {
+  if (value.candidates.selected + value.candidates.omittedByLimit + (value.candidates.outOfRange ?? 0) !== value.candidates.indexed) {
     context.addIssue({
       code: "custom",
       path: ["candidates"],

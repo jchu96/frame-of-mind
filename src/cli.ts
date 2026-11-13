@@ -16,6 +16,10 @@ import {
 } from "./services/analyze.js";
 import { BluedotClient, DEFAULT_BLUEDOT_MCP_URL } from "./adapters/bluedot-mcp.js";
 import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.js";
+import { ACCEPTED_RATES, declareClock } from "./domain/clock.js";
+import { clockSummary } from "./services/artifacts.js";
+import { calibrateClipClock } from "./adapters/gemini-calibration.js";
+import { GeminiVideoAnalyzer } from "./adapters/gemini.js";
 import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
 import { VERSION } from "./version.js";
 import { registerKey } from "./commands/key.js";
@@ -56,6 +60,10 @@ const geminiModelSchema = z.string()
   .regex(/^gemini-[a-z0-9][a-z0-9.-]*$/, "expected a Gemini model ID");
 
 export interface AnalyzeCliFlags {
+  timelineOffset?: string;
+  timecodeRate?: string;
+  fileClock?: string;
+  calibrate?: boolean;
   video?: string;
   recordingUrl?: string;
   source: string;
@@ -130,6 +138,18 @@ registerMedia(program);
 registerTranscribe(program);
 registerKey(program);
 
+program.command("calibrate")
+  .description("Measure and cache the model's clip clock using a synthetic flash.")
+  .option("--model <id>", "Gemini model ID")
+  .option("--json", "Print the measurement and token cost as JSON")
+  .action(async (flags: { model?: string; json?: boolean }) => {
+    if (!process.env.GEMINI_API_KEY) throw new Error("Set GEMINI_API_KEY before calibration.");
+    const analyzer = new GeminiVideoAnalyzer(process.env.GEMINI_API_KEY, flags.model ? geminiModelSchema.parse(flags.model) : undefined);
+    const result = await calibrateClipClock(analyzer, { force: true });
+    const tokens = analyzer.takeUsage()?.totalTokens ?? null;
+    process.stdout.write(flags.json ? `${JSON.stringify({ ...result, tokens })}\n` : `model clip clock: ${result.result}; tokens: ${tokens ?? "unknown"}\n`);
+  });
+
 program
   .command("analyze")
   .description("Analyze one video with optional Bluedot, Granola, or local context.")
@@ -141,6 +161,10 @@ program
   .option("--context-file <path>", "Transcript/meeting JSON, Markdown, text, SRT, or VTT for --source file")
   .option("--video <path>", "Use a recording already downloaded locally")
   .option("--recording-url <url>", "Use an expiring signed Bluedot media URL")
+  .option("--timeline-offset <seconds>", "Non-negative sequence offset in seconds, at most three decimals")
+  .option("--file-clock <clock>", "Input clock: source or reel", "source")
+  .option("--timecode-rate <rate>", `Timeline timecode rendering: ${ACCEPTED_RATES}`)
+  .option("--no-calibrate", "Skip clip-clock measurement and label the run unverified")
   .option("--transcript-offset <timestamp>", "Transcript time corresponding to video 00:00, for example 01:02:47")
   .option("--focus <instruction>", "Prioritize a specific repository, workflow, or UX concern")
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
@@ -254,11 +278,13 @@ program
   );
 
 export function printAnalysisSummary(result: AnalyzeResult): void {
-  const { selected, indexed, omittedByLimit } = result.outcome.candidates;
+  const { selected, indexed, omittedByLimit, outOfRange } = result.outcome.candidates;
   process.stdout.write(
     `Interrogated ${selected} of ${indexed} indexed candidates` +
+    (outOfRange ? `; ${outOfRange} out of range` : "") +
     (omittedByLimit ? ` (${omittedByLimit} lower-importance dropped; --max-moments all to analyse every one).\n` : ".\n"),
   );
+  process.stdout.write(`${clockSummary(result.manifest.clock)}\n`);
   const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
   process.stdout.write(
     `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
@@ -339,7 +365,13 @@ export async function buildAnalyzeOptions(
     }
   }
   if (flags.video) await access(resolve(flags.video));
+  declareClock(flags.timelineOffset, flags.timecodeRate);
+  const fileClock = z.enum(["source", "reel"]).parse(flags.fileClock ?? "source");
   const common = {
+    ...(flags.timelineOffset !== undefined ? { timelineOffset: flags.timelineOffset } : {}),
+    ...(flags.timecodeRate !== undefined ? { timecodeRate: flags.timecodeRate } : {}),
+    fileClock,
+    calibrate: flags.calibrate !== false,
     recipe: recipeResult.recipe,
     customRecipe: recipeResult.custom,
     recipeSha256: recipeResult.sha256,

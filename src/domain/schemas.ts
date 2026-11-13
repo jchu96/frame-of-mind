@@ -1,3 +1,4 @@
+import { runClockSchema } from "./clock.js";
 import { z } from "zod";
 import { isCanonicalTimestamp, timestampToSeconds } from "../lib/time.js";
 
@@ -211,6 +212,7 @@ export const runManifestSchema = z.object({
   runNotes: runNotesProvenanceSchema.optional(),
   derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
   promptProvenance: promptProvenanceSchema.optional(),
+  clock: runClockSchema.optional(),
   artifacts: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255)).max(1_100),
 }).strict().superRefine((value, context) => {
   if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
@@ -282,6 +284,7 @@ export const runManifestV3Schema = z.object({
   runNotes: runNotesProvenanceSchema.optional(),
   derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
   promptProvenance: promptProvenanceSchema.optional(),
+  clock: runClockSchema.optional(),
   artifacts: z.array(
     z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255),
   ).max(1_100),

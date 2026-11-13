@@ -68,6 +68,15 @@ bundle; the manifest records only names, digests and byte counts. Model findings
 may quote or paraphrase notes. Treat findings as possibly containing note content
 when sharing a bundle.
 
+## Quote times with their clocks
+
+Always quote a media time with its clock word (`source`, `reel`, or `timeline`)
+and retain the `≈1 s` marker for model times. Declare the timeline offset in
+seconds with `--timeline-offset`; optional `--timecode-rate` is an exact output
+rendering only. Never read timecode from the picture or container tags. Consult
+`manifest.clock` for measured clip-clock provenance and `times.json` for numeric
+seconds. An unverified clip clock is uncertainty to preserve when reporting.
+
 ## Local CLI and Studio
 
 ### Install and verify

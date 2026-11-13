@@ -1352,4 +1352,10 @@
 
 - 2026-11-13: Parallel detail pass adopted from a field contribution; completed failures bound dispatch, results remain ordered, and 429s retain the existing retry policy. In-flight cancellation requires an adapter interface follow-up.
 
+- 2026-11-13: Implemented the clocks lane: typed millisecond conversion, optional exact-rational timecode rendering, synthetic calibration with cleanup, transcript windowing, and the issue #120 candidate guard. Offline and mutant receipts are supplied with the change; live calibration remains a maintainer step.
+
+- 2026-11-13: Review regression coverage adds finite legacy alignment extremes, real shifted-frame media with unchanged summary rates, and an immediate-refusal transport with a pending real file open; the existing provider-sanitization test remains unchanged.
+
+- 2026-11-13: Extended clocks compatibility to explicit numeric service offsets before indexing, with regression coverage across clip modes, duration availability, transcript shapes, and exact-offset controls.
+
 - 2026-11-13: Implemented the adopted transcribe workflow and synthetic coverage for retry, retention, cancellation and private cue-safe files; 118 focused and unchanged-regression tests passed, and all 19 planted mutants failed their named tests before passing after restoration.
