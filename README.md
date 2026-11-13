@@ -210,6 +210,10 @@ runs but is a mutable alias, so it is less reproducible than a pinned model.
 
 ## Install
 
+Install [Node.js 22 or newer](https://nodejs.org/en/download) for the linked
+command and [Bun](https://bun.sh/docs/installation) for the workspace. Verify
+`node --version` and `bun --version` before continuing.
+
 ```bash
 gh repo clone jchu96/frame-of-mind
 cd frame-of-mind
@@ -225,6 +229,7 @@ Verify:
 frameofmind --help
 frameofmind --version
 frameofmind recipes
+frameofmind key set
 frameofmind doctor
 ```
 
@@ -432,7 +437,8 @@ frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|non
 | `--focus <text>` | prioritize a repository/workflow/concern |
 | `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
 | `--model <id>` | Gemini model for both current passes |
-| `--max-moments <n>` | cap close interrogation, default `10` |
+| `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |
+| `--note <name=path>` | per-run UTF-8 text/Markdown reference, repeatable up to 8 |
 | `--no-screenshots` | run without ffmpeg screenshots |
 | `--no-derived-transcript` | skip transcribing the recording's own audio |
 | `--retention <provider\|run>` | keep recording upload to provider expiry (default), or delete on command completion |
@@ -855,3 +861,22 @@ metadata, OAuth, and cleanup contracts.
 - Bluedot MCP may not return media.
 - Automatic transcript alignment is model-derived — verify via `manifest.json`.
 - No built-in external publishing yet.
+
+### Candidate limits and run notes
+
+The index accepts at most 1,000 candidates, and numeric `--max-moments` values
+range from 1 to 1,000. There is no separate 200-candidate cap. `all` interrogates
+every returned candidate; it cannot recover candidates omitted by the model's
+index response budget. The default stays 10. The first summary line reports
+selected, indexed, and dropped counts. Results remain in recording order.
+
+Use `--note brief=brief.md --note spelling=spelling.txt` for per-run references
+without editing a recipe. Other suggested names are `known-good`, `language`
+and `boundaries`. Names match `[a-z][a-z0-9-]{0,31}` and must be unique. Each
+UTF-8 text/Markdown file is at most 64 KiB; at most eight notes are accepted.
+Notes reach both prompts as escaped reference data. Only name, SHA-256 and byte
+count enter the manifest; bodies are not stored. This is a CLI-only feature.
+
+`frameofmind key set` reads privately from an interactive terminal and updates
+only `GEMINI_API_KEY` in `./.env` (mode 0600). Use `--env-file <path>` to choose
+another dotenv file. Piped input is refused; never paste a key into chat.

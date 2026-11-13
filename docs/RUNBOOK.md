@@ -104,7 +104,11 @@ Before cloning or running:
 - confirm the chosen Google project/billing owner;
 - do not use production-sensitive material as a first test.
 
-### 1.2 Install Bun
+### 1.2 Install Node.js and Bun
+
+Install [Node.js 22 or newer](https://nodejs.org/en/download) for the linked
+CLI executable, then [Bun](https://bun.sh/docs/installation) for workspace
+commands. Open a fresh terminal and check both:
 
 Require Bun 1.3.14 or newer:
 
@@ -184,11 +188,15 @@ Expected version:
 
 Follow [CREDENTIALS.md](CREDENTIALS.md).
 
-Minimum current shell:
+Recommended local key entry:
 
 ```bash
-export GEMINI_API_KEY="your-key"
+frameofmind key set
 ```
+
+The prompt hides the key and atomically updates `GEMINI_API_KEY` in `./.env`
+with mode 0600. Use `--env-file <path>` to select another dotenv file.
+Non-TTY input is refused. Existing environment-based key resolution still works.
 
 Rules:
 
@@ -374,7 +382,12 @@ controlled. Prefer a local download.
 --max-moments 3
 ```
 
-This limits the close interrogation pass. The full video is still indexed.
+This selects the best candidates by importance (high, medium, low), breaking
+ties by start time, and reports them in recording order. The default is 10.
+Use `--max-moments all` to interrogate every indexed candidate. The first stdout
+summary line states the selected/indexed/dropped counts; a partial run omits
+lower-importance candidates, which can occur anywhere in the recording.
+The full video is still indexed.
 “Full video” means the exact operator-selected `--video`, not every recording
 available for the meeting.
 
@@ -2185,3 +2198,17 @@ Provide only sanitized facts:
 
 Never include keys, tokens, signed URLs, transcripts, screenshots, recordings,
 raw provider payloads, or raw model responses in a public issue.
+
+### 3.13 Run notes
+
+```bash
+frameofmind analyze --source none --video "<recording.mp4>" \
+  --note brief="<brief.md>" --note language="<language.txt>"
+```
+
+Supply up to eight uniquely named UTF-8 text/Markdown notes (64 KiB each).
+Names match `[a-z][a-z0-9-]{0,31}`; `brief`, `spelling`, `known-good`, `language`
+and `boundaries` are suggestions. The notes are escaped reference data in the
+index and detail requests and cannot override evidence requirements or schemas.
+The bundle records their digests and byte counts, not their bodies. Studio
+context staging remains a separate policy.

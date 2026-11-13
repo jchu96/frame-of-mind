@@ -20,3 +20,14 @@ it("release versions match the newest changelog section", () => {
   expect(expected, "RUNBOOK installation expected version must exist").not.toBeNull();
   expect(expected![1], "RUNBOOK installation expected version").toBe(version);
 });
+
+it("the CLI --version equals package.json after a version bump fixture", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { rm } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const { buildCliFixture } = await import("./helpers/cli-build.js");
+  const root = await buildCliFixture("9.8.7");
+  try {
+    expect(execFileSync("node", [join(root, "dist", "cli.js"), "--version"], { encoding: "utf8" }).trim()).toBe("9.8.7");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

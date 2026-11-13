@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import "./instrument.js";
+import { realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +16,9 @@ import {
 import { BluedotClient, DEFAULT_BLUEDOT_MCP_URL } from "./adapters/bluedot-mcp.js";
 import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.js";
 import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
+import { VERSION } from "./version.js";
+import { registerKey } from "./commands/key.js";
+import { loadRunNotes } from "./services/run-notes.js";
 import { resolveRetention } from "./domain/retention.js";
 import type { ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
@@ -40,10 +44,10 @@ import { registerTranscribe } from "./commands/transcribe.js";
 
 loadDotenv({ quiet: true });
 
-const program = new Command()
+export const program = new Command()
   .name("frameofmind")
   .description("Video in. Understanding out. Run structured analysis recipes over meeting recordings.")
-  .version("0.3.0");
+  .version(VERSION);
 
 const geminiModelSchema = z.string()
   .min(1)
@@ -60,6 +64,7 @@ export interface AnalyzeCliFlags {
   contextFile?: string;
   transcriptOffset?: string;
   focus?: string;
+  note?: string[];
   depth: string;
   model?: string;
   output: string;
@@ -121,6 +126,7 @@ program
 registerSession(program);
 registerMedia(program);
 registerTranscribe(program);
+registerKey(program);
 
 program
   .command("analyze")
@@ -138,7 +144,8 @@ program
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
-  .option("--max-moments <count>", "Maximum candidate moments to interrogate", "10")
+  .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
+  .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
   .option("--no-screenshots", "Skip ffmpeg screenshots")
   .option("--no-derived-transcript", "Skip deriving a transcript from the recording audio when no transcript is supplied")
   .option("--retention <mode>", "Upload retention: provider (default) or run; overrides FRAME_OF_MIND_UPLOAD_RETENTION")
@@ -235,7 +242,7 @@ program
               : {}),
             durationMs: Math.max(0, Date.now() - startedAt),
             studioMode: "cli",
-            version: "0.3.0",
+            version: VERSION,
           },
         );
         throw error;
@@ -244,6 +251,11 @@ program
   );
 
 export function printAnalysisSummary(result: AnalyzeResult): void {
+  const { selected, indexed, omittedByLimit } = result.outcome.candidates;
+  process.stdout.write(
+    `Interrogated ${selected} of ${indexed} indexed candidates` +
+    (omittedByLimit ? ` (${omittedByLimit} lower-importance dropped; --max-moments all to analyse every one).\n` : ".\n"),
+  );
   const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
   process.stdout.write(
     `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
@@ -265,6 +277,7 @@ export async function buildAnalyzeOptions(
   apiKey: string,
 ): Promise<AnalyzeOptions> {
   const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
+  const runNotes = await loadRunNotes(flags.note);
   const recipeResult = await withAnalysisDepth(
     await loadRecipe(flags.recipe, flags.recipeFile),
     analysisDepthSchema.parse(flags.depth),
@@ -305,8 +318,8 @@ export async function buildAnalyzeOptions(
   if (videoOnly && flags.transcriptOffset) {
     throw new Error("--transcript-offset requires meeting or file context.");
   }
-  if (!/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
-  const maxIncidents = Number(flags.maxMoments);
+  if (flags.maxMoments !== "all" && !/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
+  const maxIncidents = flags.maxMoments === "all" ? 1_000 : Number(flags.maxMoments);
   if (!Number.isSafeInteger(maxIncidents) || maxIncidents > 1_000) {
     throw new Error("--max-moments must be between 1 and 1000.");
   }
@@ -327,6 +340,7 @@ export async function buildAnalyzeOptions(
     apiKey,
     ...(model ? { model } : {}),
     ...(flags.focus ? { focus: flags.focus } : {}),
+    ...(runNotes.length ? { runNotes } : {}),
     indexFps: recipeResult.indexFps,
     outputRoot: flags.output,
     maxIncidents,
@@ -373,7 +387,7 @@ const CLI_ANALYSIS_PROGRESS = {
 } satisfies { report(event: AnalysisProgressEvent): void };
 
 program.showSuggestionAfterError();
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   program.parseAsync().catch((error: unknown) => {
     process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

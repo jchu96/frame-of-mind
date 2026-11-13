@@ -144,6 +144,12 @@ const derivedTranscriptProvenanceSchema = z.object({
   sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
 }).strict();
 
+const runNotesProvenanceSchema = z.array(z.object({
+  name: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  bytes: z.number().int().min(0).max(64 * 1024),
+}).strict()).max(8);
+
 const promptProvenanceSchema = z.object({
   indexPrefixSha256: z.string().regex(/^[a-f0-9]{64}$/),
   interrogationPrefixSha256: z.string().regex(/^[a-f0-9]{64}$/),
@@ -197,10 +203,12 @@ export const runManifestSchema = z.object({
   analysis: z.object({
     focus: z.string().max(10_000).optional(),
     maxIncidents: z.number().int().min(1).max(1_000),
+    selection: z.literal("best-importance").optional(),
     indexFps: z.number().positive().max(60),
     indexResolution: z.literal("low"),
     interrogationResolution: z.literal("medium"),
   }).strict(),
+  runNotes: runNotesProvenanceSchema.optional(),
   derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
   promptProvenance: promptProvenanceSchema.optional(),
   artifacts: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255)).max(1_100),
@@ -266,10 +274,12 @@ export const runManifestV3Schema = z.object({
   analysis: z.object({
     focus: z.string().max(10_000).optional(),
     maxIncidents: z.number().int().min(1).max(1_000),
+    selection: z.literal("best-importance").optional(),
     indexFps: z.number().positive().max(60),
     indexResolution: z.literal("low"),
     interrogationResolution: z.literal("medium"),
   }).strict(),
+  runNotes: runNotesProvenanceSchema.optional(),
   derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
   promptProvenance: promptProvenanceSchema.optional(),
   artifacts: z.array(

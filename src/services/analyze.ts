@@ -1,6 +1,8 @@
 import { mkdtemp, rename, rm, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { selectCandidates } from "../domain/candidate-selection.js";
+import type { RunNote } from "../domain/run-notes.js";
 import type { UploadRetention } from "../domain/retention.js";
 import type { File as GeminiFile } from "@google/genai";
 import { z } from "zod";
@@ -114,6 +116,7 @@ interface AnalyzeOptionsBase {
   expectedVideoSha256?: string;
   recordingUrl?: string;
   focus?: string;
+  runNotes?: RunNote[];
   indexFps?: number;
   outputRoot: string;
   maxIncidents: number;
@@ -252,6 +255,7 @@ export interface AnalysisVideoAnalyzer {
     focus?: string,
     indexFps?: number,
     derivedTranscript?: string,
+    runNotes?: readonly RunNote[],
   ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
@@ -260,6 +264,7 @@ export interface AnalysisVideoAnalyzer {
     recipe: AnalysisRecipe,
     focus?: string,
     transcriptDerived?: boolean,
+    runNotes?: readonly RunNote[],
   ): Promise<AnalysisDetail>;
   transcribe?(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
@@ -712,6 +717,7 @@ export class AnalysisOrchestrator {
               options.focus,
               indexFps,
               derivedTranscript,
+              ...(options.runNotes?.length ? [options.runNotes] : []),
             );
             span.setAttributes({
               "frame_of_mind.candidates_indexed": indexed.moments.length,
@@ -765,7 +771,7 @@ export class AnalysisOrchestrator {
         const transcriptIsDerived = Boolean(derivedTranscript) && !providerTranscript;
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
-        const candidates = index.moments.slice(0, options.maxIncidents);
+        const candidates = selectCandidates(index.moments, options.maxIncidents);
         failurePhase = "detail";
         await report(progress, {
           kind: "stage",
@@ -800,6 +806,7 @@ export class AnalysisOrchestrator {
                   options.recipe,
                   options.focus,
                   transcriptIsDerived,
+                  ...(options.runNotes?.length ? [options.runNotes] : []),
                 );
                 span.setAttributes({ "frame_of_mind.candidate_accepted": detail.accepted });
                 return detail;
@@ -880,7 +887,7 @@ export class AnalysisOrchestrator {
             kind: "warning",
             stage: "interrogating",
             message:
-              `Analysis truncated: ${omittedByLimit} indexed candidate(s) were not interrogated because of the configured moment limit (${options.maxIncidents}). Coverage stops early; rerun with a higher --max-moments to analyze the full recording.`,
+              `Analysis truncated: ${omittedByLimit} indexed candidate(s) were not interrogated because of the configured moment limit (${options.maxIncidents}). Lower-importance candidates were dropped; use --max-moments all to analyze every indexed candidate.`,
           });
         }
         const outcome = analysisOutcomeSchema.parse({
@@ -1007,10 +1014,14 @@ export class AnalysisOrchestrator {
           analysis: {
             ...(options.focus ? { focus: options.focus } : {}),
             maxIncidents: options.maxIncidents,
+            selection: "best-importance" as const,
             indexFps,
             indexResolution: "low" as const,
             interrogationResolution: "medium" as const,
           },
+          ...(options.runNotes?.length
+            ? { runNotes: options.runNotes.map(({ name, sha256, bytes }) => ({ name, sha256, bytes })) }
+            : {}),
           ...(derivedTranscriptProvenance
             ? { derivedTranscript: derivedTranscriptProvenance }
             : {}),

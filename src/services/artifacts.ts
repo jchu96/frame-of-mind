@@ -100,7 +100,7 @@ export function renderAnalysis(
       ? `> ${outcome.candidates.failed} candidate response(s) failed validation and were excluded. See \`analysis-outcome.json\` for sanitized diagnostics.`
       : "",
     outcome && outcome.candidates.omittedByLimit > 0
-      ? `> Coverage truncated: ${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit. Later parts of the recording are missing from this analysis; rerun with a higher \`--max-moments\` for full coverage.`
+      ? `> Coverage truncated: ${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit. Lower-importance candidates are missing from this analysis; rerun with a higher \`--max-moments\` for full coverage.`
       : "",
     outcome && (outcome.candidates.failed > 0 || outcome.candidates.omittedByLimit > 0) ? "" : "",
     analysis.matchNotes ? "## Recording match notes" : "",
@@ -218,7 +218,7 @@ async function renderHtmlArtifact(
       ? `${outcome.candidates.failed} candidate response(s) failed validation and were excluded; sanitized diagnostics are available in <code>analysis-outcome.json</code>.`
       : "",
     outcome.candidates.omittedByLimit > 0
-      ? `${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit, so later parts of the recording are missing; rerun with a higher <code>--max-moments</code> for full coverage.`
+      ? `${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit, so lower-importance candidates are missing; rerun with a higher <code>--max-moments</code> for full coverage.`
       : "",
   ].filter(Boolean).join(" ");
   const outcomeNotice = outcome.status === "complete"

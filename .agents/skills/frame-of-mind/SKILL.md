@@ -61,6 +61,10 @@ Read only the sources needed for the task:
   authority for that exact external action.
 - Review every generated record before treating it as true or actionable.
 
+Never ask the operator to paste an API key: direct them to `frameofmind key set`
+in their own terminal. Use `--note name=path` for per-run references instead of
+editing a recipe for one job.
+
 ## Local CLI and Studio
 
 ### Install and verify
@@ -252,7 +256,7 @@ Review in this order:
 Verify identity, recipe provenance, model, alignment, evidence timestamps,
 explicit facts versus inference, accepted/rejected/failed counts, the outcome
 status (`complete` requires zero failures AND zero limit-omitted candidates;
-`partial` with `omittedByLimit > 0` means the back of the recording is
+`partial` with `omittedByLimit > 0` means lower-importance candidates are
 missing — rerun with a higher `--max-moments` before drafting from it), and
 remote retention matching the resolved policy (`deleted: false` is normal for
 default `provider` retention). If no normal
