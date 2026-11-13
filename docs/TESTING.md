@@ -28,33 +28,27 @@ value and reducing feedback time. The fast answer must still preserve the
 authority-boundary checks relevant to the change; a shorter tier is not
 permission to remove coverage from the complete gate.
 
-| Change class | `check:pr` selection | Reason receipt |
-|---|---|---|
-| Docs, Markdown, `conductor/**`, `test/**`, or presentation-only Vue/images/icons/fonts under `apps/web/app/**` | fast + local | `all_paths_safe` |
-| Stylesheets under `apps/web/app/**` or `apps/web/app.config.*` | fast + local + hosted | `theme_contract_paths` |
-| Any other contract-bearing path | fast + local + hosted | `unsafe_path` |
+`bun run check:pr` always runs fast and local, for every changed path and even
+when the comparison base is unavailable. `--base` still passes the commit
+validation base to those lanes; it does not select hosted coverage. The output
+states `CHECK_PR hosted=excluded runs=nightly,manual,check:deploy`.
 
-- `bun run check:pr` runs the fast and local lanes only when every changed path
-  is explicitly safe: `docs/**`, Markdown, `conductor/**`, `test/**` unit tests,
-  or presentation assets under `apps/web/app/**` (`.vue`, images, icons, and
-  fonts). Stylesheets and app configuration are excluded because they can
-  define the `--ui-*` semantic tokens whose contrast contract runs in hosted.
-- `bun run check:sharded` runs all fast, local, and hosted lanes. Run it locally
-  when the machine is unloaded; required CI at the exact PR head is the merge
-  oracle. On a busy machine, defer it or use `FRAME_OF_MIND_GATE_PARALLELISM=1`.
-- Every path outside that safe allowlist upgrades `check:pr` to sharded. This
-  includes `src/**`, `apps/web/server*/**`, `apps/workflows/**`, `scripts/**`,
-  `db/migrations/**`, `package.json`, `bun.lock`, Nuxt configuration, and
-  `.github/**`. The default comparison is `origin/main`; override it with
-  `FRAME_OF_MIND_GATE_BASE_REF=<ref>` or `--base <ref>`. An unavailable base
-  fails closed to the complete tier and prints
-  `tier=sharded reason=base_ref_unavailable`.
-- `bun run check` remains the serial fallback and retains its original 16-step
-  order.
+`bun run check:sharded` explicitly runs all three lanes. `bun run check`
+remains the complete 16-step serial fallback. The complete hosted lane is
+quarantined from the default PR gate, not deleted: see the
+[issue and return rule](HOSTED_GATE_QUARANTINE.md).
+
+For release validation, run `gate-lock bun run check:deploy`. This runs the
+default gate followed by the whole hosted lane without deploying. Deploy with
+`gate-lock bun run deploy:hosted web` (or `workflows`): each invocation runs both
+gates itself and calls Wrangler only after they pass with unchanged HEAD and
+source inputs. Previous runs and hand-written success files cannot authorize
+a deployment. See
+[deployment](CLOUDFLARE_DEPLOYMENT.md#7-build-and-deploy).
 
 ## Gate lanes
 
-The three lanes cover exactly the same 16 logical steps as the serial gate. A
+The three available lanes cover exactly the same 16 logical steps as the serial gate. A
 unit test parses `package.json` and rejects omissions or duplicates.
 
 | Lane | Logical checks | Shared build |
@@ -97,11 +91,10 @@ hosted lane:
 | `auth-contract` | required | 15 minutes | `bun run check:auth-contract`; built Worker, ephemeral local D1, and synthetic GitHub OAuth prove the minimum Better Auth authorization boundary without secrets |
 | `browser-e2e` | required | 15 minutes | independently installs Chromium and runs the synthetic Studio browser suite |
 | `fresh-clone` (Ubuntu, macOS, Windows) | required | 15 minutes each | frozen Ubuntu/macOS fresh builds plus the Windows install-only contract |
-| `hosted-contracts` | advisory (`continue-on-error`) | 40 minutes | needs `check`, installs Chromium, then runs `bun run check:lane:hosted` with 30-minute logical-step bounds, a five-minute Better Auth access-step cap, and gate parallelism 1 |
-| `serial-check` | nightly/manual | 120 minutes | serial fallback over the complete logical gate |
+| `serial-check` | nightly/manual | 120 minutes | default gate, then the whole hosted lane even if the default gate failed; cancellation stops both |
 
-The `check` job sets `FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1`, so CI runs
-fast and local lanes there. `auth-contract` separately requires the hosted
+The `check` job runs fast and local lanes, like the local default gate.
+`auth-contract` separately requires the hosted
 identity and authorization invariant: migrations apply and replay, missing and
 unapproved sessions cannot reach protected routes, approved sessions own only
 their `ba:<userId>` rows, foreign detail is 404, the admin surface is dark to a
@@ -110,25 +103,24 @@ secret, OAuth provider, and D1 database in that job is synthetic and run-local;
 the workflow references no GitHub secret, so public-fork pull requests exercise
 the same contract.
 
-The complete `hosted-contracts` lane is not a required branch-protection
-context; neither is `serial-check`. It remains non-blocking by maintainer
-decision on 2026-08-23. As of 2026-09-08 it has been steadily red on `main`
-since 2026-08-31. Observed failures include the audit-query timeout in
-`test:hosted-access-http:better-auth`, the media-test step timeout, and the
-Better Auth Workflow terminal-stage assertion. These remain open in
-[issue #113](https://github.com/jchu96/frame-of-mind/issues/113) and
-[issue #96](https://github.com/jchu96/frame-of-mind/issues/96); an advisory run
-is not a passing receipt for the broader hosted boundary. Local `check:pr`
-calls retain the fail-closed adaptive tier selection described in
-[Gate tiers](#gate-tiers). Run `check:sharded` on an unloaded machine and record
-any failures separately from the six required CI contexts.
+The advisory `hosted-contracts` PR job has been removed: unchanged-tree
+failures would otherwise leave a repeatedly red job on pull requests. Its
+whole lane runs in nightly/manual `serial-check`, with a nonzero result still
+failing that job. The six required PR contexts are unchanged.
+
+`check:e2e` uses the browser runner's existing retries when `CI` is set, so it
+can pass after a retried journey. In the 2026-11-13 baseline measurement this
+happened twice in four reached runs. Its lane-level `retry=0` only describes
+the lane runner, not Playwright retries. The required `browser-e2e` job runs
+`test:e2e:ci`, whose own `--fail-on-flaky-tests` flag fails on a flaky test.
+Retries and browser specs have not changed.
 
 When CI is red, start with the owning job. A `check` failure belongs to hygiene,
 types, unit tests, local builds/contracts, or the production audit. An
 `auth-contract` failure belongs to the built Better Auth/D1 identity,
 membership, principal-isolation, or revocation boundary; it is not repaired by
-adding a CI secret. A
-`hosted-contracts` failure belongs to the Cloudflare/Workflows contracts,
+adding a CI secret. A hosted-step failure in nightly/manual
+`serial-check` belongs to the Cloudflare/Workflows contracts,
 hosted browser projects, or release rehearsal; confirm the Chromium install
 step before diagnosing application authentication. A `fresh-clone` failure is
 an install/lockfile/portable-build failure—never weaken `--frozen-lockfile`.
@@ -145,6 +137,33 @@ one automatic retry only after `step_timeout`; CI extends that single-receipted
 retry to the standard Workflow contract as well. Local runs remain Better
 Auth-only. Retries print `retry=1`; deterministic non-zero exits and all other
 steps are not retried.
+
+### Accepted integration risks outside pull requests
+
+Moving the whole hosted lane removes its integration execution from the default
+PR gate and the former advisory PR job. The required `browser-e2e` job runs the
+smoke suite; it does not replace the hosted or adversarial browser projects.
+A change that leaves partial publication rows in D1 can therefore pass PR
+checks: the test that forces a database failure and verifies publication
+rollback now runs nightly and before deployment.
+
+The following risks are accepted for this quarantine. Every row runs in the
+nightly/manual **`serial-check`** job's `check:lane:hosted` step and in each
+`deploy:hosted` invocation (also in check-only `check:deploy`). The lane stops
+on failure, so earlier failures can prevent later assertions from being reached.
+A passing unit test is not equivalent to these Worker/browser integration checks.
+
+| Hosted command / nightly owner | Integration behavior no longer exercised on PRs | Coverage still required on PRs |
+|---|---|---|
+| `test:hosted-access-http` / `serial-check` | Access-authenticated ownership across two users for import, list, detail and conflicts; service callers denied browser routes; missing assertions; session projection; disabled hosted routes and admin HTTP operations. | Access JWT policy and D1 isolation unit checks; required migrations. Better Auth exercises a different auth mode. |
+| `test:hosted-access-http:better-auth` (full scope) / `serial-check` | Notification contents and deduplication, magic-link refusal, capacity/rate limits, full admin list/approve/deny/revoke/idempotency/no-mail behavior, and maintainer CLI transitions. | Required auth scope retains migrations and replay, synthetic GitHub sessions, unapproved-route denials, access-request/replay state without mail, two-user ownership, session projection, disabled hosted/admin routes, principal mapping and next-request revocation. Auth/admin/rate-limit unit checks are narrower. |
+| `test:hosted-workflows-http` / `serial-check` | Actual two-Worker execution, publication and cleanup; disabled routes; janitor/replay; spend overruns, caps and races; legacy/missing activity data; every built-in recipe; foreign job/media/run/review/support access and foreign-media creation; missing hashes; cancellation, retry, crash recovery and replay; immutable attempts; provider/adapter timeouts. Browser checks cover hydration, contrast, icons, layout, keyboard, clipboard, composer, viewer and copying. | Schema, admission, spend, maintenance, telemetry, UI-state and projection unit checks; basic run ownership in required auth. |
+| `test:hosted-workflows-http:better-auth` / `serial-check` | All preceding Workflows and browser behavior with Better Auth sessions connected to real Workflow execution. | The same narrower unit and ownership checks. Required auth does not start a Workflows worker. |
+| `test:hosted-media-http` / `serial-check` | Upload byte limits, hashes, sealing, failure cleanup and foreign-user denial; opaque/encrypted capabilities; retained R2 multipart uploads, concurrency, abort/delete/in-use/expiry/orphan handling and evidence provenance; janitor/seal races. Browser checks cover resume, tab locking, pagehide/discard/recovery, and retained versus ephemeral review. | Media-domain, seal/provider-budget, retention, evidence and range unit checks. |
+| `check:hosted-auth` / `serial-check` | Real mail binding and HTTP fallback; magic-link cooldown/no-mail; uninvited mail/verification refusal; sign-in browser UX; stacked Access subject binding and rebind denial; misconfigured auth modes refusing hosted routes; shared workerd rate-limit warnings. | GitHub login, approved/unapproved sessions and basic ownership in required auth; policy and client-IP rate-limit unit checks. |
+| `check:e2e` hosted projects / `serial-check` | Access and Better Auth composer publication journeys; database-trigger-induced publication rollback across registry/run/item tables; validation before projection. Partial publication can escape the PR checks. | Required browser smoke; D1/SQLite projection and migration tests. |
+| `check:e2e` adversarial project / `serial-check` | Foreign-user denial for every hosted ID; service callers denied browser routes; uninvited sign-in/mail boundaries; recurring upload byte-limit probes; adversarial maintenance preservation, spike-matcher and support-trap fixtures. | Some pure support-format, middleware-matcher and maintenance unit checks, without equivalent hosted/browser execution. |
+| `rehearse:hosted-release` / `serial-check` | Emitted entry determinism/delegation and no body reads; required/forbidden bundle markers; Worker bindings, configuration, auth mode and secret shape; both module dry-runs and absence of error 100329; previous-artifact rollback dry-run and rollback documentation. | Required migration application/replay; SQLite import byte stability and migration cases (including provider identity and legacy protection); real local D1 projection tests. Generic migration failure detection remains required. |
 
 ### Prebuilt artifact contract
 

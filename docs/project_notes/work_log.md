@@ -6,6 +6,19 @@
 
 - Added status-only provider error classes to CLI lookup, generation, upload and polling failures, preserving retries, telemetry and candidate codes. Version 1 failure manifests carry optional provider class/status; legacy records remain valid. Refusal and secret-redaction fixtures exercise the adapter and CLI boundaries.
 
+## 2026-11-13 — Hosted gate measurement
+
+- Measured five reduced-hosted-lane runs at unchanged base `41766a0`: four
+  passes, then a hosted-auth failure. Two successful browser runs retried a
+  journey. The scope moved from one unstable step to the complete lane.
+- Preserved hosted scripts and required CI jobs; added fast/local-only PR
+  selection and a checked Wrangler wrapper. Review exposed a writable-receipt
+  bypass; replaced it with both gates running inside each deploy invocation.
+  The forged-receipt regression failed against the old wrapper, then passed
+  with the fix. Fifteen focused tests cover gate failure, repeated execution,
+  source changes, and nightly job/step failure propagation. See the hosted
+  coverage table in TESTING for integration risks deferred from PRs.
+
 ## 2026-11-12
 
 - Updated production dependency pins and their locked transitive dependencies

@@ -3,7 +3,9 @@
 ## Workflows
 
 - Use Bun 1.4.4 and `bun install --frozen-lockfile`.
-- Run `bun run check` on pushes and pull requests.
+- Run `bun run check:pr` (fast/local only) on pushes and pull requests.
+- Keep the complete hosted lane in nightly/manual `serial-check` and the checked deploy prerequisite.
+- Preserve required `auth-contract`, `browser-e2e`, and all three `fresh-clone` jobs.
 - Fail CI for high or critical production dependency advisories.
 - Keep workflows read-only unless a separate release process is approved.
 - Never expose repository, Bluedot, or Gemini secrets to pull-request code.

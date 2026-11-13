@@ -9,6 +9,12 @@ Semantic Versioning.
 
 - 2026-11-13: Classify CLI provider failures as refused, not_found, rate_limited, or other using HTTP status; include optional classification in version 1 failure manifests.
 
+- Run fast/local checks for every pull request; retain the complete hosted lane
+  nightly, on demand, and before deployment. Add `check:deploy` and a
+  `deploy:hosted` wrapper that runs both gates successfully in the same
+  invocation before calling Wrangler; writable receipts cannot authorize deploys.
+  Required auth, browser, and fresh-clone CI jobs are unchanged.
+
 - 2026-11-13: Added opt-in parallel detail analysis, adopted from a field contribution, with ordered results and a completion-time breaker spend bound.
 
 - 2026-11-13: Fixed linked CLI execution and package version reporting; added hidden key entry, best-N selection, full indexed coverage with `--max-moments all`, per-run notes, and ffmpeg in the CI check job. The tool's run-note projection
