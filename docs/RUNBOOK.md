@@ -536,6 +536,27 @@ Analyze separate windows independently when they use different offsets. Keep
 the original recording unchanged and delete only the derived temporary clips
 after review.
 
+The transcript offset is separate from the editing timeline. Declare the
+sequence location with `--timeline-offset 0` (or unsigned seconds, up to three
+decimals) and optionally `--timecode-rate 25`. Use `--file-clock reel` for a
+reel. All printed positions name `source`, `reel`, or `timeline`; model times
+keep `≈1 s`. Read `times.json` for pointer-addressed numeric seconds.
+See README **Clocks** for the exact rate forms and `from-media` restrictions.
+
+Run `frameofmind calibrate [--model <id>] [--json]` to refresh the synthetic
+flash measurement and see its token cost. Analyze normally calibrates on first
+use and after 30 days. `--no-calibrate` labels the run unverified. The cache
+lives under the platform application-data root's `calibration/` directory;
+probe media is temporary and its remote upload is deleted on terminal paths.
+
+When the duration is known, indexing receives only timestamped transcript
+lines mapping into `[0, duration)` when an explicit transcript offset is given.
+Those lines are rebased to video time. Prose without timestamps remains
+unchanged and is labelled `transcript not windowed`. Candidates beyond the
+video end are counted in `outOfRange`, before the moment limit; unknown
+duration leaves all candidates eligible and the summary says the guard did
+not run.
+
 ### 3.7 Observe progress
 
 Normal messages:
@@ -1198,6 +1219,22 @@ and malformed projection rows rather than attempting to render them as v2.
 
 Never change only `schemaVersion`; that does not create the missing digest,
 recipe provenance, or timestamp validation.
+
+### 6.26 Clip clock unverified
+
+`clip clock unverified` means there is no usable measurement for the selected
+model, calibration was disabled, ffmpeg was unavailable, or the synthetic
+flash response did not identify either clock. Evidence keeps the historical
+file-clock interpretation; this label does not establish that interpretation
+as correct. Ensure ffmpeg is installed and run `frameofmind calibrate --json`.
+An answer near 27 s means absolute, near 7 s means relative, otherwise the
+measurement remains unverified. The probe upload is deleted even on failure.
+
+If a cached absolute measurement disagrees with runtime evidence, the run
+warns and records the relative-looking response count in `manifest.clock`.
+Refresh calibration and inspect the source before relying on those times.
+A missing ffprobe only blocks `--timecode-rate from-media`; declare the exact
+sequence rate explicitly if known. Never approximate a fractional rate.
 
 ## 7. Security and incident response
 

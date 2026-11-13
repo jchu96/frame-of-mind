@@ -1,3 +1,4 @@
+import { clockTime, transcriptToFile } from "../domain/clock.js";
 import type { DerivedTranscriptionSegment } from "../domain/types.js";
 import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
 
@@ -57,8 +58,8 @@ export function nearbyTranscript(
   offsetSeconds = 0,
 ): string {
   if (!transcript) return "";
-  const from = Math.max(0, timestampToSeconds(start) + offsetSeconds - paddingSeconds);
-  const to = timestampToSeconds(end) + offsetSeconds + paddingSeconds;
+  const from = Math.max(-offsetSeconds, timestampToSeconds(start) - paddingSeconds) * 1000;
+  const to = (timestampToSeconds(end) + paddingSeconds) * 1000;
   const lines = transcript.split(/\r?\n/);
   const timed = lines
     .map((line) => ({ line, match: line.match(LINE_TIME) }))
@@ -66,9 +67,20 @@ export function nearbyTranscript(
   if (!timed.length) return "";
   return timed
     .filter(({ match }) => {
-      const seconds = timestampToSeconds(match![1]!);
-      return seconds >= from && seconds <= to;
+      const time = transcriptToFile(clockTime("transcript", timestampToSeconds(match![1]!) * 1000), offsetSeconds);
+      return time.ms >= from && time.ms <= to;
     })
     .map(({ line }) => line)
     .join("\n");
+}
+
+/** Only timestamped lines can be mapped safely; prose-only context remains intact. */
+export function windowTranscript(transcript: string, offsetSeconds: number, durationSeconds: number | undefined): { text: string; windowed: boolean } {
+  const timed = transcript.split(/\r?\n/).map(line => ({ line, match: line.match(LINE_TIME) })).filter(entry => entry.match);
+  if (!timed.length || durationSeconds === undefined) return { text: transcript, windowed: false };
+  return { windowed: true, text: timed.flatMap(({ line, match }) => {
+    const time = transcriptToFile(clockTime("transcript", timestampToSeconds(match![1]!) * 1000), offsetSeconds);
+    return time.ms >= 0 && time.ms < durationSeconds * 1000
+      ? [line.replace(match![1]!, secondsToTimestamp(time.ms / 1000))] : [];
+  }).join("\n") };
 }

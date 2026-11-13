@@ -167,6 +167,14 @@ state as a first-class signal.
 
 ### 4.3 Semantic scope and transcript alignment
 
+Clock conversions are provider-independent pure functions in
+`src/domain/clock.ts`. `source` and `reel` identify file coordinates;
+`transcript` and `clip` are internal origins converted explicitly; `timeline`
+adds a declared integer-millisecond offset. Branded times prevent accidental
+source/reel interchange. Timecode is an opt-in output rendering of integer
+milliseconds at an exact rational rate, never an input or computational clock.
+
+
 Provider transcripts often cover the full meeting while a recording is a clip.
 Video timestamp `00:00:00` therefore does not necessarily equal transcript
 timestamp `00:00:00`.
@@ -549,6 +557,17 @@ v2 meeting runs and v3 video-only runs in separate projection table families;
 a shared schema-version registry prevents one run ID from occupying both. A
 copied, swapped, hand-edited, partially corrupted, or unsupported pair
 therefore fails closed.
+
+`times.json` is a schema-1 rendering sidecar (`kind: frame-of-mind.times`)
+with exactly one pointer per structured analysis timestamp, clock-labelled
+numeric seconds, `precisionMs`, and an optional timeline/timecode rendering.
+It does not replace `analysis.json`. Both manifest versions accept optional
+`clock` provenance: file clock, declared timeline offset/rate, measured model
+clip clock and calibration date/method, runtime discrepancy tally, duration
+guard status and transcript-window status. Old manifests still validate.
+`analysis-outcome.json` optionally counts `candidates.outOfRange`; absent means
+zero and `selected + omittedByLimit + outOfRange = indexed`. Out-of-range
+candidates are not failures and cannot consume the detail limit.
 
 ## 7. Trust boundaries
 

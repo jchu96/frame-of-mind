@@ -224,6 +224,16 @@ Prompts should:
 - request concise conclusions, not hidden chain-of-thought;
 - include a small conforming example when the schema is non-obvious.
 
+Clip-time evidence uses the measured model clock. A generated 40-second
+black video flashes white at file second 27; a single structured probe over
+seconds 20–35 distinguishes absolute (~27) from relative (~7) responses with
+±2-second tolerance. Other responses leave the clock unverified. Measurements
+are cached for 30 days per model, refreshed automatically or by `calibrate`.
+Relative evidence is converted to file time before local range validation;
+unverified mode retains the existing interpretation and labels outputs.
+Explicit-offset transcript lines are windowed and rebased before indexing.
+No prompt reads timecode from pixels or a container tag.
+
 ## Recipe patterns
 
 ### UX or implementation review

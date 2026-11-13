@@ -1,3 +1,4 @@
+import { clockTime, clipToFile, type ClipClock } from "../domain/clock.js";
 import type { RunNote } from "../domain/run-notes.js";
 import { Buffer } from "node:buffer";
 import { MediaResolution } from "@google/genai";
@@ -20,6 +21,7 @@ import type {
 import { analysisDetailSchema, indexedMomentSchema } from "../domain/schemas.js";
 import {
   clipWindow,
+  secondsToTimestamp,
   isCanonicalTimestamp,
   timestampToSeconds,
 } from "../lib/time.js";
@@ -141,6 +143,7 @@ const transcriptionSchema = z.object({
 
 export class GeminiVideoAnalyzer {
   readonly model: string;
+  relativeEvidenceResponses = 0;
   private readonly fileUploader: GeminiFileUploader;
   private readonly generateContent: (
     parameters: GenerateContentParameters,
@@ -486,10 +489,23 @@ export class GeminiVideoAnalyzer {
     focus?: string,
     transcriptDerived?: boolean,
     runNotes?: readonly RunNote[],
+    modelClipClock: ClipClock = "absolute",
   ): Promise<AnalysisDetail> {
     const window = clipWindow(candidate.start, candidate.end);
     const detailResponseSchema = z.preprocess(
-      normalizeLosslessDetailResponse,
+      (raw) => {
+        const normalized = normalizeLosslessDetailResponse(raw);
+        if (!normalized || typeof normalized !== "object") return normalized;
+        const record = normalized as { evidence?: { timestamp?: unknown } };
+        const timestamp = record.evidence?.timestamp;
+        if (typeof timestamp !== "string" || !isCanonicalTimestamp(timestamp)) return normalized;
+        const seconds = timestampToSeconds(timestamp);
+        if (window.start > window.end - window.start && seconds <= window.end - window.start
+          && seconds < window.start) this.relativeEvidenceResponses += 1;
+        if (modelClipClock !== "relative") return normalized;
+        const converted = clipToFile(clockTime("clip", seconds * 1000), window.start, modelClipClock);
+        return { ...normalized, evidence: { ...record.evidence, timestamp: secondsToTimestamp(converted.ms / 1000) } };
+      },
       analysisDetailSchema.superRefine((value, context) => {
         const timestamp = value.evidence?.timestamp;
         if (!timestamp || !isCanonicalTimestamp(timestamp)) return;
@@ -551,7 +567,9 @@ export class GeminiVideoAnalyzer {
                 "Inspect the clip closely and produce one structured analysis record.",
                 "Only include appUrl when a browser address bar is visible and fully readable in this clip. Never infer, repair, or invent a URL.",
                 "Use details as neutral label/value pairs appropriate to the recipe. Copy relevant visible text and quotes verbatim. Record only steps actually observed.",
-                `If evidence.timestamp is present, use canonical HH:MM:SS within the indexed candidate range ${candidate.start} through ${candidate.end}.`,
+                modelClipClock === "relative"
+                  ? `If evidence.timestamp is present, use canonical HH:MM:SS relative to this clip's start; the indexed candidate spans ${timestampToSeconds(candidate.start) - window.start} through ${timestampToSeconds(candidate.end) - window.start} seconds in this clip.`
+                  : `If evidence.timestamp is present, use canonical HH:MM:SS within the indexed candidate range ${candidate.start} through ${candidate.end}.`,
                 "Keep output concise: title at most 500 characters; kind at most 120; at most 100 details and 100 steps; where.step and where.surface at most 2,000 each. Do not add keys outside the response schema.",
                 "If the candidate is ambiguous, outside the recipe, or unsupported on closer inspection, set accepted=false and explain why.",
               ].join("\n")),
@@ -571,6 +589,21 @@ export class GeminiVideoAnalyzer {
       detailResponseSchema,
       "Gemini analysis response",
     );
+  }
+
+  /** One measurement, with no repair or transport retry that could mask the answer. */
+  async probeClipClock(file: GeminiFile): Promise<number> {
+    const schema = z.strictObject({ seconds: z.number().finite().nonnegative() });
+    const response = await this.generateContent({
+      model: this.model,
+      contents: [{ role: "user", parts: [
+        { fileData: { fileUri: file.uri, mimeType: file.mimeType }, videoMetadata: { startOffset: "20s", endOffset: "35s", fps: 1 } },
+        { text: "At what timestamp in seconds does the white flash start? Return only the structured answer." },
+      ] }],
+      config: { httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS }, mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW, responseMimeType: "application/json", responseJsonSchema: toGeminiProviderSchema(schema) },
+    });
+    this.recordUsage(response.usageMetadata);
+    return parseGeminiJson(response.text, schema, "Calibration response").seconds;
   }
 
   async transcribe(file: GeminiFile): Promise<DerivedTranscriptionSegment[]> {

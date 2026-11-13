@@ -406,6 +406,12 @@ frameofmind analyze "<meeting-id>" \
 The charter format (recommended for new recipes) and its slot rules are
 documented in [docs/RECIPES.md](docs/RECIPES.md).
 
+With an explicit transcript offset, timestamped context is windowed to the
+video duration and rebased before indexing. Candidates starting at or after
+the known video end are dropped before the moment limit, receive no detail
+calls, and are counted as `outOfRange` (issue #120). Unknown duration disables
+that guard and is stated in the summary.
+
 ### Command reference
 
 ```text
@@ -423,6 +429,11 @@ frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|non
 | `--context-file <path>` | required for `--source file` |
 | `--video <path>` | preferred local recording |
 | `--recording-url <url>` | validated Bluedot signed URL fallback |
+| `--timeline-offset <seconds>` | declared source/reel-to-timeline offset, up to three decimals |
+| `--file-clock source\|reel` | input media clock; defaults to source |
+| `--timecode-rate <rate>` | exact timeline timecode rendering; see Clocks for accepted forms |
+| `--no-calibrate` | skip the synthetic probe and label the clip clock unverified |
+| `calibrate [--model <id>] [--json]` | refresh the model clock measurement and report token cost |
 | `--transcript-offset <time>` | full transcript time at video `00:00` |
 | `--focus <text>` | prioritize a repository/workflow/concern |
 | `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
@@ -454,6 +465,41 @@ per-file limit 2 GB)` or `expiration not reported`. Reuse it with
 A reusing run never deletes an upload it did not create. Gemini normally
 expires files after 48 hours. Temporary local derivatives and downloads are
 still removed. Studio retention is unchanged; see [ADR 0024](docs/adr/0024-upload-retention-is-an-operator-setting.md).
+
+## Clocks
+
+Every rendered media time names its clock: `source` is time from the input
+recording's start; `reel` is time from a constructed reel's start (select it
+with `--file-clock reel`); `timeline` adds an explicitly declared offset.
+Internal conversions use integer milliseconds. Model timestamps retain an
+`≈1 s` precision marker even when frame digits are rendered.
+
+```bash
+frameofmind analyze --source none --video take.mov --timeline-offset 0 --timecode-rate 25
+frameofmind calibrate --model gemini-3.7-flash --json
+```
+
+`--timeline-offset` accepts unsigned non-negative seconds with up to three
+decimals, such as `12.345`. No timeline is inferred when it is absent.
+`--timecode-rate` requires that offset (use `0` for a sequence starting at
+zero). Accepted forms are `24`, `25`, `30`, `48`, `50`, `60`, `23.976`,
+`47.952`, `29.97df`, `29.97ndf`, `59.94df`, `59.94ndf`, or an exact positive
+`N/D` rational. Rationals at 30000/1001 or 60000/1001 require `:df` or `:ndf`.
+Aliases denote exact rationals; other decimals, including `23.98`, are refused.
+`from-media` reads ffprobe's first video stream frame rate; unequal nominal
+and average rates are refused. For 30000/1001 or 60000/1001 use
+`from-media:df` or `from-media:ndf`. Drop-frame is only valid at those rates.
+No timecode is read from container tags or pixels.
+
+The bundle adds `times.json`: one JSON pointer per structured analysis time,
+clock-labelled seconds with millisecond precision, and optional timeline
+seconds/timecode. Timecode is rendered from milliseconds and never used as
+input to a calculation. `analysis.json` is unchanged.
+
+The model's clip clock is measured automatically using a synthetic flash and
+cached per model for 30 days. `calibrate` refreshes the measurement;
+`--no-calibrate` opts out and labels the run `clip clock unverified`.
+The synthetic upload is always deleted independently of recording retention.
 
 ## Launch the local Studio
 

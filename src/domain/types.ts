@@ -1,3 +1,4 @@
+import type { RunClock } from "./clock.js";
 export type JsonObject = Record<string, unknown>;
 
 export interface MeetingEvidence {
@@ -151,6 +152,7 @@ export interface AnalysisRunV3 extends AnalysisRunBase {
 export type VersionedAnalysisRun = AnalysisRun | AnalysisRunV3;
 
 interface RunManifestBase {
+  clock?: RunClock;
   toolVersion: string;
   promptRevision: string;
   runId: string;

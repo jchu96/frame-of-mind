@@ -79,7 +79,7 @@
     "test:web": "bun test apps/web/test",
     "test:watch": "vitest",
     "typecheck": "bun run typecheck:cli && bun run typecheck:web && bun run typecheck:workflows",
-    "typecheck:cli": "tsc -p tsconfig.json --noEmit",
+    "typecheck:cli": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.clock.json",
     "typecheck:web": "bun run --cwd apps/web typecheck",
     "typecheck:workflows": "tsc -p apps/workflows/tsconfig.json --noEmit",
     "web": "bun run --cwd apps/web dev",

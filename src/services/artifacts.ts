@@ -1,3 +1,5 @@
+import { clockTime, fileToTimeline, renderTimecode, type RunClock } from "../domain/clock.js";
+import { timestampToSeconds } from "../lib/time.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
@@ -60,19 +62,22 @@ export async function writeArtifacts(
     `${JSON.stringify(validatedOutcome, null, 2)}\n`,
     { mode: 0o600 },
   );
-  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome), { mode: 0o600 });
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock), { mode: 0o600 });
   await writeFile(
     reportHtml,
     await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome),
     { mode: 0o600 },
   );
   await writeFile(manifestJson, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  return [analysisJson, outcomeJson, analysisMarkdown, reportHtml, manifestJson];
+  const timesJson = join(directory, "times.json");
+  await writeFile(timesJson, `${JSON.stringify(buildTimes(analysis, manifest.clock), null, 2)}\n`, { mode: 0o600 });
+  return [analysisJson, outcomeJson, analysisMarkdown, reportHtml, manifestJson, timesJson];
 }
 
 export function renderAnalysis(
   analysis: VersionedAnalysisRun,
   outcome?: AnalysisOutcome,
+  clock?: RunClock,
 ): string {
   const accepted = analysis.items.filter((item) => item.result.accepted);
   const heading = analysis.schemaVersion === 2
@@ -87,12 +92,13 @@ export function renderAnalysis(
     contextLine,
     `- Recipe: \`${escapeInline(analysis.recipe.id)}\``,
     `- Model: \`${escapeInline(analysis.model)}\``,
+    `- ${clockSummary(clock)}`,
     `- Accepted records: ${accepted.length}`,
     ...(outcome
       ? [
           `- Analysis outcome: ${outcome.status}`,
           `- Candidate responses: ${outcome.candidates.validated}/${outcome.candidates.selected} validated (${outcome.candidates.accepted} accepted, ${outcome.candidates.rejected} rejected)`,
-          `- Indexed candidates: ${outcome.candidates.indexed} (${outcome.candidates.omittedByLimit} omitted by the configured limit)`,
+          `- Indexed candidates: ${outcome.candidates.indexed} (${outcome.candidates.outOfRange ?? 0} out of range; ${outcome.candidates.omittedByLimit} omitted by the configured limit)`,
         ]
       : []),
     "",
@@ -113,7 +119,7 @@ export function renderAnalysis(
       `## ${index + 1}. ${escapeInline(result.title)}`,
       "",
       `- Kind: ${escapeInline(result.kind)}`,
-      `- Time: ${escapeInline(result.evidence?.timestamp || item.candidate.start)}`,
+      `- Time: ${escapeInline(renderClockTime(result.evidence?.timestamp || item.candidate.start, clock))}`,
       `- Importance: ${escapeInline(result.importance || item.candidate.importance)}`,
       `- Surface: ${escapeInline(result.where?.surface || item.candidate.surface || "Unknown")}`,
       result.where?.appUrl ? `- URL: ${escapeInline(result.where.appUrl)}` : "- URL: Not visibly confirmed",
@@ -181,7 +187,7 @@ async function renderHtmlArtifact(
           `<dt>${html(detail.label)}</dt><dd>${html(detail.value)}</dd>`).join("")}</dl>`
       : "";
     return `<article>
-      <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(result.evidence?.timestamp || item.candidate.start)}</div>
+      <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock))}</div>
       <h2>${index + 1}. ${html(result.title)}</h2>
       <p>${html(result.summary)}</p>
       ${details}
@@ -208,11 +214,11 @@ async function renderHtmlArtifact(
     : analysis.schemaVersion === 2
       ? "No provider URL retained"
       : "No external context supplied";
-  const alignment = manifest.derivedTranscript
+  const alignment = `${clockSummary(manifest.clock)}. ` + (manifest.derivedTranscript
     ? "Transcript: derived from this recording's own audio by the analysis model (offset 0); no provider or operator transcript was supplied."
     : manifest.schemaVersion === 2
       ? `Transcript alignment: ${manifest.transcriptAlignment.offsetSeconds >= 0 ? "+" : ""}${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).`
-      : "Transcript alignment: not applicable to a video-only run.";
+      : "Transcript alignment: not applicable to a video-only run.");
   const outcomeReasons = [
     outcome.candidates.failed > 0
       ? `${outcome.candidates.failed} candidate response(s) failed validation and were excluded; sanitized diagnostics are available in <code>analysis-outcome.json</code>.`
@@ -300,4 +306,52 @@ function safeHref(value: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function clockSummary(clock?: RunClock): string {
+  return `clocks: ${clock?.fileClock ?? "source"}${clock?.timeline ? `, timeline +${(clock.timeline.timelineOffsetMs / 1000).toFixed(3)} s` : ""}; model clip clock: ${clock?.modelClipClock ?? "unverified"}${!clock || clock.modelClipClock === "unverified" ? " (clip clock unverified)" : ""}${clock?.clipGuard === "unknown-duration" ? "; clip guard did not run: duration unknown" : ""}${clock?.transcriptWindow === "not-windowed" ? "; transcript not windowed" : ""}`;
+}
+
+export function renderClockTime(timestamp: string, clock?: RunClock): string {
+  const time = clockTime(clock?.fileClock ?? "source", timestampToSeconds(timestamp) * 1000);
+  let text = `${(time.ms / 1000).toFixed(3)} s ${time.clock}`;
+  if (clock?.timeline) {
+    const timeline = fileToTimeline(time, clock.timeline.timelineOffsetMs);
+    text += ` · ${(timeline.ms / 1000).toFixed(3)} s timeline`;
+    if (clock.timeline.timecode) {
+      const { rate, dropFrame } = clock.timeline.timecode;
+      text += ` · ${renderTimecode(timeline.ms, rate, dropFrame)} @${rate.den === 1 ? rate.num : `${rate.num}/${rate.den}`}`;
+    }
+  }
+  return `${text} (≈1 s)`;
+}
+
+export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock) {
+  const fileClock = clock?.fileClock ?? "source";
+  const entries: Array<{ pointer: string; source?: number; reel?: number; precisionMs: number; timeline?: number; timecode?: string }> = [];
+  const add = (pointer: string, timestamp: string) => {
+    const time = clockTime(fileClock, timestampToSeconds(timestamp) * 1000);
+    const entry: typeof entries[number] = { pointer, [fileClock]: time.ms / 1000, precisionMs: time.precisionMs };
+    if (clock?.timeline) {
+      const timeline = fileToTimeline(time, clock.timeline.timelineOffsetMs);
+      entry.timeline = timeline.ms / 1000;
+      if (clock.timeline.timecode) {
+        const { rate, dropFrame } = clock.timeline.timecode;
+        entry.timecode = renderTimecode(timeline.ms, rate, dropFrame);
+      }
+    }
+    entries.push(entry);
+  };
+  analysis.items.forEach((item, index) => {
+    add(`/items/${index}/candidate/start`, item.candidate.start);
+    add(`/items/${index}/candidate/end`, item.candidate.end);
+    if (item.result.evidence?.timestamp) add(`/items/${index}/result/evidence/timestamp`, item.result.evidence.timestamp);
+  });
+  const code = clock?.timeline?.timecode;
+  return {
+    schemaVersion: 1, kind: "frame-of-mind.times", fileClock,
+    ...(clock?.timeline ? { timeline: { timelineOffsetMs: clock.timeline.timelineOffsetMs, origin: clock.timeline.origin } } : {}),
+    ...(code ? { timecodeRate: { ...code.rate, dropFrame: code.dropFrame, rateOrigin: code.rateOrigin } } : {}),
+    entries,
+  };
 }

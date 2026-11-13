@@ -1351,3 +1351,5 @@
 - 2026-11-13: Added CLI install/key/limit/notes fixes and ffmpeg in CI; coverage includes built symlink invocation, hidden terminal input, best-N order, note digests and escaped provider requests. Review clarified that only the tool-authored note projection is digest-only; model findings may reflect note content. Build fixtures now compile in setup hooks before runtime assertions.
 
 - 2026-11-13: Parallel detail pass adopted from a field contribution; completed failures bound dispatch, results remain ordered, and 429s retain the existing retry policy. In-flight cancellation requires an adapter interface follow-up.
+
+- 2026-11-13: Implemented the clocks lane: typed millisecond conversion, optional exact-rational timecode rendering, synthetic calibration with cleanup, transcript windowing, and the issue #120 candidate guard. Offline and mutant receipts are supplied with the change; live calibration remains a maintainer step.

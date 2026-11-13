@@ -281,3 +281,5 @@
   contracts include tolerant display projection for legacy nullable D1 rows,
   pre-stream `Content-Length` reservation for retained-media parts, local email
   simulation by default, and authenticated dark-route canaries.
+
+- 2026-11-13: Model clip-clock provenance is stored in optional manifest.clock; times.json maps analysis pointers to clock-labelled seconds. The default model’s live calibration result remains unverified until a maintainer records the synthetic smoke receipt.

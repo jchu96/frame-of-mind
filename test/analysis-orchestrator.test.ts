@@ -2296,3 +2296,104 @@ describe("detail", () => {
     expect(result.outcome.failures[0]).not.toHaveProperty("provider");
   });
 });
+
+describe("clip guard", () => {
+  async function clipFixture(duration: number | undefined = 2100) {
+    const fixture = await createFixture();
+    const { secondsToTimestamp } = await import("../src/lib/time.js");
+    fixture.options.maxIncidents = 30;
+    const moments = [
+      ...Array.from({ length: 36 }, (_, i) => ({ ...indexResult().moments[0]!, speaker: "Speaker 1", start: secondsToTimestamp(2100 + i * 10), end: secondsToTimestamp(2105 + i * 10), importance: "high" as const })),
+      ...Array.from({ length: 17 }, (_, i) => ({ ...indexResult().moments[0]!, speaker: "Speaker 1", start: secondsToTimestamp(i * 10), end: secondsToTimestamp(i * 10 + 5), importance: "low" as const })),
+    ];
+    fixture.analyzer.index = vi.fn(async () => ({ ...indexResult(), moments }));
+    fixture.analyzer.interrogate = vi.fn(async (_file, candidate) => ({ ...detailResult(), evidence: { timestamp: candidate.start } }));
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => fixture.context, createAnalyzer: () => fixture.analyzer, createRunId: () => "clip-guard", probeDurationSeconds: async () => duration });
+    return { ...fixture, orchestrator };
+  }
+  it("a candidate starting at or after the video's end makes no interrogate call", async () => {
+    const f = await clipFixture(); await f.orchestrator.analyze(f.options);
+    const { timestampToSeconds } = await import("../src/lib/time.js");
+    expect(f.analyzer.interrogate).toHaveBeenCalledTimes(17);
+    expect(f.analyzer.interrogate.mock.calls.every(call => timestampToSeconds(call[1].start) < 2100)).toBe(true);
+  });
+  it("36 out-of-range candidates do not consume --max-moments 30", async () => {
+    const f = await clipFixture(); const result = await f.orchestrator.analyze(f.options);
+    expect(result.outcome.candidates).toEqual({ indexed: 53, selected: 17, outOfRange: 36, omittedByLimit: 0, validated: 17, accepted: 17, rejected: 0, failed: 0 });
+    expect(f.analyzer.interrogate).toHaveBeenCalledTimes(17);
+    console.log("K16 candidates:", JSON.stringify(result.outcome.candidates));
+  });
+  it("a clean clip run with out-of-range candidates reports complete with outOfRange 36", async () => {
+    const f = await clipFixture(); const result = await f.orchestrator.analyze(f.options);
+    expect(result.outcome.status).toBe("complete"); expect(result.outcome.failures).toEqual([]); expect(result.outcome.candidates.outOfRange).toBe(36);
+    const { printAnalysisSummary } = await import("../src/cli.js"); const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try { printAnalysisSummary(result); expect(String(output.mock.calls[0]![0])).toContain("36 out of range"); } finally { output.mockRestore(); }
+  });
+  it("an unknown duration drops no candidate and says the guard did not run", async () => {
+    const f = await clipFixture();
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => f.context, createAnalyzer: () => f.analyzer, probeDurationSeconds: async () => undefined });
+    const result = await orchestrator.analyze({ ...f.options, maxIncidents: 1000 });
+    expect(f.analyzer.interrogate).toHaveBeenCalledTimes(53); expect(result.outcome.candidates.outOfRange ?? 0).toBe(0);
+    const { clockSummary } = await import("../src/services/artifacts.js"); expect(clockSummary(result.manifest.clock)).toContain("clip guard did not run");
+  });
+  it("offset 130 and duration 2100 send only the lines in 130 to 2230 rebased to the video", async () => {
+    const f = await clipFixture();
+    const { secondsToTimestamp } = await import("../src/lib/time.js");
+    f.meeting.transcript = [0, 129, 130, 200, 2229, 2230, 9500].map(s => `[${secondsToTimestamp(s)}] Speaker 1: synthetic at ${s}`).join("\n");
+    await f.orchestrator.analyze({ ...f.options, transcriptOffsetSeconds: 130 });
+    expect(f.analyzer.index.mock.calls[0]![1].transcript).toBe("[00:00:00] Speaker 1: synthetic at 130\n[00:01:10] Speaker 1: synthetic at 200\n[00:34:59] Speaker 1: synthetic at 2229");
+    const unshifted = await clipFixture(); unshifted.meeting.transcript = f.meeting.transcript;
+    await unshifted.orchestrator.analyze(unshifted.options);
+    expect(unshifted.analyzer.index.mock.calls[0]![1].transcript).toBe(f.meeting.transcript);
+  });
+  it("untimestamped transcripts pass unchanged and are labelled not windowed", async () => {
+    const f = await clipFixture(); f.meeting.transcript = "Synthetic prose without a clock.";
+    const result = await f.orchestrator.analyze({ ...f.options, transcriptOffsetSeconds: 130 });
+    expect(f.analyzer.index.mock.calls[0]![1].transcript).toBe(f.meeting.transcript);
+    expect(result.manifest.clock?.transcriptWindow).toBe("not-windowed");
+  });
+});
+
+describe("clocks", () => {
+  it("relative-mode evidence is accepted with zero repair regenerations", async () => {
+    const f = await createFixture();
+    const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
+    const candidate = { ...indexResult().moments[0]!, speaker: "Speaker 1", start: "00:02:00", end: "00:02:10" };
+    const generateContent = vi.fn(async () => ({ text: JSON.stringify({ ...detailResult(), evidence: { timestamp: "00:00:10" } }) }));
+    const real = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", { generateContent });
+    const analyzer = { ...f.analyzer, index: vi.fn(async () => ({ ...indexResult(), moments: [candidate] })), interrogate: real.interrogate.bind(real), probeClipClock: vi.fn(async () => 7) };
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => f.context, createAnalyzer: () => analyzer, probeDurationSeconds: async () => 2100,
+      calibrateClipClock: async () => ({ model: "gemini-test", checkedAt: "2026-11-01T00:00:00Z", result: "relative", evidence: { flashFileSeconds: 27, clipStartSeconds: 20, reportedSeconds: 7 } }),
+    });
+    const result = await orchestrator.analyze({ ...f.options, timelineOffset: "12.345", timecodeRate: "25" });
+    expect(result.analysis.items[0]?.result.evidence?.timestamp).toBe("00:02:02"); expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(result.outcome.status).toBe("complete");
+    expect(result.manifest.clock?.modelClipClock).toBe("relative");
+    const times = JSON.parse(await readFile(join(result.directory, "times.json"), "utf8"));
+    expect(times.entries).toContainEqual(expect.objectContaining({ pointer: "/items/0/result/evidence/timestamp", source: 122, timeline: 134.345 }));
+  });
+  it("absolute mode leaves evidence unchanged and unverified preserves base interpretation", async () => {
+    const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
+    for (const mode of ["absolute", "unverified"] as const) {
+      const f = await createFixture(); const generateContent = vi.fn(async () => ({ text: JSON.stringify(detailResult()) }));
+      const analyzer = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", { generateContent });
+      const detail = await analyzer.interrogate({ uri: "https://example.invalid/synthetic" }, indexResult().moments[0]!, undefined, f.options.recipe, undefined, false, undefined, mode);
+      expect(detail).toEqual(detailResult()); expect(generateContent).toHaveBeenCalledTimes(1);
+    }
+  });
+  it("--no-calibrate makes no probe call and labels output unverified", async () => {
+    const f = await createFixture(); const probeClipClock = vi.fn(async () => 7); const calibrate = vi.fn();
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => f.context, createAnalyzer: () => ({ ...f.analyzer, probeClipClock }), calibrateClipClock: calibrate });
+    const result = await orchestrator.analyze({ ...f.options, calibrate: false });
+    expect(calibrate).not.toHaveBeenCalled(); expect(probeClipClock).not.toHaveBeenCalled(); expect(result.manifest.clock?.modelClipClock).toBe("unverified");
+  });
+});
+
+describe("clock preflight", () => {
+  it("from-media refusal precedes context and model calls for a local video", async () => {
+    const f = await createFixture(); const createAnalyzer = vi.fn(() => f.analyzer);
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => f.context, createAnalyzer, probeFrameRate: async () => { throw new Error("ffprobe unavailable"); } });
+    await expect(orchestrator.analyze({ ...f.options, timelineOffset: "0", timecodeRate: "from-media" })).rejects.toThrow("ffprobe unavailable");
+    expect(f.context.connect).not.toHaveBeenCalled(); expect(createAnalyzer).not.toHaveBeenCalled();
+  });
+});

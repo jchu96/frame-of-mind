@@ -113,6 +113,13 @@ recipe revision/content provenance. Re-run the original source analysis to
 migrate; do not hand-edit a v1 bundle into v2 because its evidence was not
 validated under the v2 timestamp and pairing rules.
 
+The clocks addition preserves analysis schema versions 2 and 3. Both manifest
+versions accept optional `clock` provenance, and bundles may include the new
+schema-1 `times.json` rendering sidecar. Shared readers accept the optional
+`analysis-outcome.json` `candidates.outOfRange` field (absent means zero);
+the indexed-candidate balance includes it. Timecode is rendered only and never
+changes stored analysis timestamps, numeric seconds, or analysis digests.
+
 ## Prompt revision
 
 Use a date plus sequence:

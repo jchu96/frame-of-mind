@@ -323,3 +323,5 @@ Semantic Versioning.
   deterministic high-stakes clip analysis.
 - Hosted imports are manual; there is no automatic local-to-cloud sync.
 - The MCP server is an explicitly designed next iteration, not part of v0.1.0.
+
+- 2026-11-13: Added declared clocks, exact optional timeline timecode, synthetic clip-clock calibration, and pre-limit out-of-range candidate filtering (#120).
