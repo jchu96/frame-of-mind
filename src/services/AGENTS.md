@@ -15,8 +15,12 @@
   context (ADR 0015).
 - A derived transcript aligns at offset 0 by construction; record
   `derivedTranscript` provenance in the manifest and never persist the
-  transcript body. Delete the remote audio upload in success and failure
-  paths; the local `.aac` derivative lives in the run temp dir.
+  transcript body in a run bundle. The standalone `transcribe` command may
+  write the body only at operator-selected paths outside a run bundle (ADR 0025).
+  Analyze deletes remote derived-audio uploads in success and failure paths;
+  standalone `transcribe` audio uploads follow operator retention, default
+  provider expiry, with immediate visibility. Local `.aac` derivatives are
+  removed on every terminal path.
 - CLI provider authorization may be interactive; durable Studio jobs must set
   noninteractive provider auth and fail with reconnect guidance instead of
   opening an OAuth callback from the worker.

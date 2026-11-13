@@ -432,3 +432,5 @@ hosted/Studio surfaces keep their ADR 0017 posture.
 - 2026-11-13: Clock conversions use branded integer milliseconds. Timeline seconds and rendered timecode live in times.json; analysis.json stays unchanged. Rates are declared or probed exactly; calibration is automatic per model every 30 days with an unverified opt-out. Out-of-range candidates are counted before the detail limit.
 
 - 2026-11-13: Legacy finite model transcript offsets retain base context slicing if integer-ms conversion is unrepresentable; clock.transcriptClock records unverified rather than rounding or aborting. Media-derived timecode requires exact per-frame PTS and duration evidence, not just equal summary rates.
+
+- 2026-11-13: Adopted standalone transcript files outside run bundles and operator-controlled transcription audio retention (default provider); ADR 0025 records the distinction from analyze.

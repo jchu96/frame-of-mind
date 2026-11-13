@@ -233,6 +233,18 @@ For an experimental in-depth review, add `--depth deep` and an explicit model.
 not a shipped mixed-model synthesis pipeline. Treat mutable aliases such as
 `gemini-pro-latest` as non-reproducible unless the provider resolves them.
 
+### Standalone transcript files
+
+Offer `frameofmind transcribe "<recording>" [-o "<directory>"]` when the operator
+wants reusable transcript files. It writes reference-grade source-clock SRT and
+speaker text; `--json` adds numeric-second provenance. Upload retention defaults
+to provider expiry, with immediate per-upload reporting; pass `--retention run`
+for terminal deletion. Existing files require explicit `--force` to replace.
+Use the SRT with `analyze --source file --context-file`; choose `_speakers.txt`
+when literal markup-like text must survive the SRT reader's normalisation.
+Never read the output aloud or paste transcript content into issues. Exports
+are private operator-owned speech files, outside all run bundles (ADR 0025).
+
 ### Transcript and recipe rules
 
 Transcripts resolve in order: provider transcript, operator context file,

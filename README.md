@@ -229,6 +229,7 @@ Verify:
 frameofmind --help
 frameofmind --version
 frameofmind recipes
+frameofmind transcribe --help
 frameofmind key set
 frameofmind doctor
 ```
@@ -419,6 +420,7 @@ frameofmind auth <bluedot|granola>
 frameofmind doctor
 frameofmind recipes
 frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|none> [options]
+frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|run] [--force] [--json]
 ```
 
 | Option | Purpose |
@@ -515,6 +517,34 @@ The same compatibility rule applies to explicit numeric transcript offsets from
 service/API callers. If exact millisecond windowing is unavailable, indexing
 receives the original transcript and the run is labelled `transcript not
 windowed` and `transcript clock unverified`; no offset is rounded.
+
+## Transcribe a recording
+
+```bash
+frameofmind transcribe "/path/to/interview.mov"
+frameofmind transcribe "/path/to/interview.mov" -o "/path/to/private-transcripts" --retention run --json
+frameofmind analyze interview --source file --context-file "/path/to/interview.srt" --video "/path/to/interview.mov"
+```
+
+Writes `interview.srt` and `interview_speakers.txt` beside the recording unless
+`-o` selects a directory. These are reference-grade context transcripts with
+whole-second timing in the recording's **source** clock. The speakers file
+states the origin, model, clock and timing grade. Use it as `--context-file`
+when literal markup-like text matters: the SRT reader strips `<…>` spans.
+`--json` adds `interview.transcript.json`, with numeric seconds and provenance.
+
+Audio uploads follow `--retention provider|run`, then
+`FRAME_OF_MIND_UPLOAD_RETENTION`, then `provider`. Every kept upload is reported
+immediately with its expiry (or unknown); `--keep-upload` and `--delete-upload`
+are aliases. Temporary local audio is removed on every terminal path. A failed
+window retries once, then exits without writing transcript files. Ctrl-C stops
+after the current window. Terminal output contains counts, paths, model, token
+use and upload state, never transcript text.
+
+Files are private (`0600`) and published atomically per file. Existing targets
+are refused unless `--force` is supplied. Keep them out of repositories and
+issues; retention and OS disk encryption belong to the operator. See
+[RUNBOOK §3.11](docs/RUNBOOK.md#311-transcribe) and [ADR 0025](docs/adr/0025-standalone-transcript-files.md).
 
 ## Launch the local Studio
 
