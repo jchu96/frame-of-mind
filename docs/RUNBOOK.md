@@ -1248,6 +1248,32 @@ Read official release notes before changing pins.
 
 ### Dependency advisory note
 
+The exact `sharp` 0.35.5 override clears GHSA-rgj7-g3m4-5g8c and
+GHSA-wq5f-xc86-pv6w. Miniflare's latest stable 4.20260730.0 and the Miniflare
+alpha bundled with Wrangler 4.129.0 both require vulnerable 0.35.2. Remove the
+override after upgrading both parents to supported releases that resolve
+patched sharp without it, then rerun the frozen-install audit with CI's Bun
+1.3.14. Newer Bun releases can classify this dependency differently under
+`--production`, so a host-only audit is insufficient.
+
+The Better Auth 1.7.7 security update requires migration
+`0013_better_auth_provider_identity.sql` before deploying the new Worker.
+Back up D1, apply all pending migrations locally, and verify the hosted auth
+contracts before a remote upgrade. Migration 0013 preserves account data and
+user ownership while allowing new accounts without the retired issuer field.
+A duplicate `(provider_id, account_id)` aborts migration: review the conflicting
+identities; do not delete or merge rows automatically. Rolling back to Better
+Auth 1.7.2 requires the reviewed pre-upgrade database backup as well as the old
+artifact. See [ADR 0023](adr/0023-better-auth-provider-account-identity.md).
+
+Before applying migration 0013 to a live database, inspect the live schema for
+foreign keys from every table to `better_auth_account` and **stop if any exist**:
+the table rebuild can cascade-delete referencing rows. The migration-file test
+does not establish this precondition for a live database. Take a database backup
+before applying the migration. Deployment also requires three consecutive passes
+of `bun run check:lane:hosted` on an otherwise idle machine at the exact commit
+being deployed; the advisory CI lane is not a substitute for this deploy gate.
+
 The pinned MCP SDK currently brings transitive Hono advisories that affect its
 static-server path. Frame of Mind does not use that path. CI fails high/critical
 production advisories, while moderate findings are reviewed and documented.

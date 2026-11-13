@@ -1,5 +1,16 @@
 # Bugs and Failure History
 
+## 2026-11-12 — Publication atomicity fixture drifted from D1 migrations
+
+- Symptom: the partial-write test failed with a missing `outcome_json` column
+  before reaching its forced item-write failure.
+- Cause: its literal migration list stopped at 0003 while the run store writes
+  the column introduced by 0012.
+- Fix: apply every SQL migration in filename order, stripping SQL line comments
+  before splitting statements, and retain the forced-write and rollback assertions.
+- Prevention: verify a throwaway migration is discovered without changing the
+  spec, and removing the forced trigger makes the test fail on successful publication.
+
 ## 2026-09-08 — Activity display fixture raced client hydration
 
 - Symptom: the Better Auth Workflows browser contract reported a hydration
