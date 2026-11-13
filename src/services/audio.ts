@@ -1,5 +1,4 @@
-import { childEnvironment } from "../lib/child-env.js";
-import { spawn } from "node:child_process";
+import { childEnvironment, spawn } from "../lib/child-env.js";
 import { access, chmod, rm } from "node:fs/promises";
 
 const AUDIO_EXTRACTION_TIMEOUT_MS = 10 * 60_000;

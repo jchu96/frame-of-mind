@@ -1,11 +1,10 @@
-import { childEnvironment } from "../lib/child-env.js";
+import { childEnvironment, spawn } from "../lib/child-env.js";
 import { createServer, type Server } from "node:http";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
-import { spawn } from "node:child_process";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type {
   OAuthClientInformationMixed,

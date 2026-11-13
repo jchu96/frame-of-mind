@@ -21,10 +21,13 @@ temporary directories and home variables. Browser openers additionally receive
 named desktop-session variables. Windows matching is case-insensitive and
 preserves spelling. The complete lists are in RUNBOOK §6.20.
 
-Every source process call passes this environment explicitly. Child captures
-exercise the real call sites; a source guard inventories permitted process APIs
-and refuses new unreviewed sites. A secret-name deny-list is insufficient because
-an innocuously named variable can hold a credential.
+Every shipped source process call passes this environment explicitly. The helper
+is also the shared import point for process APIs; callers still supply `env`.
+A simple convention check flags plain process-module access outside that helper
+and direct Bun access. It does not detect computed or indirect access; the real
+protection is the explicit helper environment at every shipped call, verified by
+the per-site marker tests running the children. A secret-name deny-list is
+insufficient because an innocuously named variable can hold a credential.
 
 ## Consequences
 

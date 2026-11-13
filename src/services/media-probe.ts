@@ -1,5 +1,4 @@
-import { childEnvironment } from "../lib/child-env.js";
-import { execFile } from "node:child_process";
+import { childEnvironment, execFile } from "../lib/child-env.js";
 import { promisify } from "node:util";
 import { parseTimecodeRate, rationalRate, type TimecodeSpec } from "../domain/clock.js";
 

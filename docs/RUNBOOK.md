@@ -1199,6 +1199,10 @@ The OAuth browser opener additionally receives `DISPLAY`, `WAYLAND_DISPLAY`,
 Windows `ComSpec`. Other variables, including provider credentials, are omitted.
 These lists apply to the CLI and local Studio.
 
+A convention check keeps plain process-module access in the shared helper. It
+does not detect computed or indirect access; per-site marker tests run the
+children to verify the helper environment at each shipped call.
+
 If a tool works in your shell but fails here, report the OS, executable name,
 and the **name and purpose** of any required missing variable. Do not include
 its value, an environment dump, credentials, media paths, or authorization URLs.

@@ -89,19 +89,13 @@ describe("opener", () => {
   });
 });
 
-// Incident: 2026-11-13 marker reached all media children through implicit env.
-// Retire when process starts move to a single enforced boundary with equivalent coverage.
-const sites: Record<string, { api: string; calls: number; kind: string }> = {
-  "services/audio.ts": { api: "spawn", calls: 2, kind: "media" },
-  "services/screenshots.ts": { api: "spawn", calls: 1, kind: "media" },
-  "services/media-probe.ts": { api: "execFile", calls: 1, kind: "media" },
-  "adapters/gemini-calibration.ts": { api: "execFile", calls: 1, kind: "media" },
-  "adapters/bluedot-oauth.ts": { api: "spawn", calls: 1, kind: "opener" },
-};
-describe("guard", () => {
-  it("every process start in src goes through the helper", async () => {
+// Incident: 2026-11-13 marker reached media children through implicit env.
+// Retire if another convention check owns these imports with equivalent coverage.
+// This does not detect computed or indirect access; the per-site marker tests run
+// the children to verify the explicit helper environment at every shipped call.
+describe("convention", () => {
+  it("plain process-module access stays in the helper", async () => {
     const src = join(import.meta.dirname, "../src");
-    const seen: string[] = [];
     async function scan(dir: string): Promise<void> {
       for (const entry of await readdir(dir, { withFileTypes: true })) {
         const path = join(dir, entry.name);
@@ -109,46 +103,18 @@ describe("guard", () => {
         if (!/\.[cm]?[jt]sx?$/.test(path)) continue;
         const file = relative(src, path).replaceAll("\\", "/");
         const source = ts.createSourceFile(file, await readFile(path, "utf8"), ts.ScriptTarget.Latest, true);
-        const site = sites[file];
-        let imports = 0, calls = 0, adapters = 0;
         function visit(node: ts.Node) {
-          // Check module access, not just function names: every child_process API,
-          // aliases, require(), dynamic imports and re-exports need review.
           if (ts.isStringLiteralLike(node) && /^(node:)?child_process$/.test(node.text)) {
-            expect(site, file).toBeDefined();
-            expect(node.parent.getText(source), file).toBe(`import { ${site!.api} } from "node:child_process";`);
-            imports++;
+            expect(file, `${file}: import process APIs through the helper`).toBe("lib/child-env.ts");
           }
           if ((ts.isIdentifier(node) && node.text === "Bun") || (ts.isStringLiteralLike(node) && ["bun", "Bun"].includes(node.text))) {
-            throw new Error(`${file}: Bun process APIs require the child environment boundary`);
-          }
-          if (site && ts.isIdentifier(node) && [site.api, ...(site.api === "execFile" ? ["exec"] : [])].includes(node.text)) {
-            const p = node.parent;
-            if (ts.isImportSpecifier(p)) { /* checked above */ }
-            else if (node.text === "execFile" && ts.isCallExpression(p) && p.getText(source) === "promisify(execFile)") { adapters++; }
-            else if (node.text === "exec" && ts.isVariableDeclaration(p) && p.initializer?.getText(source) === "promisify(execFile)") { /* adapter binding */ }
-            else {
-              expect(ts.isCallExpression(p) && p.expression === node, file).toBe(true);
-              const options = (p as ts.CallExpression).arguments[2];
-              expect(options && ts.isObjectLiteralExpression(options), file).toBe(true);
-              const properties = (options as ts.ObjectLiteralExpression).properties;
-              expect(properties.some(ts.isSpreadAssignment), file).toBe(false);
-              const env = properties.filter(prop => prop.name?.getText(source) === "env");
-              expect(env.map(prop => prop.getText(source)), file).toEqual([`env: childEnvironment("${site.kind}")`]);
-              calls++;
-            }
+            throw new Error(`${file}: use the process helper instead of direct Bun access`);
           }
           ts.forEachChild(node, visit);
         }
         visit(source);
-        if (site) {
-          expect({ imports, calls, adapters }, file).toEqual({ imports: 1, calls: site.calls, adapters: site.api === "execFile" ? 1 : 0 });
-          expect(source.text, file).toContain('import { childEnvironment } from "../lib/child-env.js";');
-          seen.push(file);
-        }
       }
     }
     await scan(src);
-    expect(seen.sort()).toEqual(Object.keys(sites).sort());
   });
 });

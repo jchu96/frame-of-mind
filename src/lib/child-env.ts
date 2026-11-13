@@ -1,3 +1,6 @@
+// Shared import point only; callers must still pass childEnvironment() as env.
+export { spawn, execFile } from "node:child_process";
+
 const mediaVariables = new Set([
   "PATH", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH",
   "LANG", "LANGUAGE", "HOME", "TMPDIR", "TMP", "TEMP",
