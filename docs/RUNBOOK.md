@@ -667,6 +667,56 @@ The CLI and the authenticated Local Studio composer are both supported
 execution entry points; they share `AnalysisOrchestrator` rather than invoking
 one another.
 
+### 3.11 Transcribe
+
+Run `frameofmind transcribe "<recording>" [-o "<directory>"] [--model <id>]`
+when you need reusable reference-grade context from the recording's audio.
+An adopted contribution supplies this standalone workflow. It uses the same
+600-second transcription windows, 15-second lead-in overlap, prompt, schema,
+model and merge as the analyze ladder.
+
+- Default output: `<stem>.srt` and `<stem>_speakers.txt` beside the input.
+  `--json` adds `<stem>.transcript.json`; its segment times are numeric seconds
+  and its clock is `source`. Timing is whole-second reference grade.
+- Pass the SRT to `analyze <stable-id> --source file --context-file "<stem>.srt"
+  --video "<recording>"` for repeated recipe runs. The SRT reader strips
+  markup-like `<…>` spans. **Literal text fidelity lives in `_speakers.txt`:**
+  pass that file as `--context-file` when those spans matter. The header is a
+  harmless provenance comment. JSON and speakers retain blank segments.
+- SRT cue text flattens line breaks and neutralises `-->`. Blank cues are
+  skipped and the remainder renumbered. `blankCues` and `adjustedCues` appear
+  in the JSON and terminal summary. A nonpositive cue duration gets a one-second
+  SRT end adjustment; JSON preserves original segment seconds.
+- `--retention provider|run` overrides `FRAME_OF_MIND_UPLOAD_RETENTION`; default
+  is `provider`. `--keep-upload` / `--delete-upload` alias those choices.
+  Conflicting settings fail before upload. Each kept audio upload is reported
+  immediately on stderr with its expiry or `unknown`, including failed jobs.
+  `run` attempts deletion for every returned upload, including retry attempts;
+  deletion failures are reported as unconfirmed, never silently successful.
+- Requires `GEMINI_API_KEY`, `ffmpeg`, `ffprobe`, a readable input and audio.
+  Check [§6.20](#620-ffmpeg-unavailable) for media-tool failures. Existing output
+  targets fail before upload unless `--force` is given. `--force` never permits
+  replacing the input recording itself.
+- A failed window gets one retry after 20 seconds. A second failure writes no
+  transcript files and exits non-zero; Ctrl-C stops after the current window,
+  cleans local temporary audio and exits 130 without publishing. Provider
+  exception text and transcript bodies are never printed.
+- Transcription adds approximately 32 audio tokens per second, plus output
+  tokens, overlap and retries (ADR 0015). The summary reports actual token use
+  when the adapter supplies it; provider pricing determines the cost.
+- Each output uses a same-directory temporary file, made `0600` before speech
+  is written, then atomically published. Without `--force`, a hard link refuses
+  concurrent target creation; with `--force`, rename replaces the target.
+  Temporary files are removed on failure. Publication is per file, not a
+  transaction over the set: a filesystem failure may leave earlier complete
+  files, whose paths have already been printed. Resolve permissions and use
+  `--force` deliberately for a retry.
+
+These files hold full speech content outside any run bundle. Keep them private,
+never attach them to issues or commit them, use OS disk encryption, and delete
+only the exact exports you intend to remove. There is no automatic local export
+expiry. See [ADR 0025](adr/0025-standalone-transcript-files.md).
+
 ## 4. Review procedure
 
 ### 4.1 Open manifest first

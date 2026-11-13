@@ -72,3 +72,12 @@ file, issue, or chat.
 The checker is a deterministic backstop, not a content-understanding system.
 It cannot decide whether ordinary prose or pixels are private, so human review
 is still required before adding fixtures, screenshots, examples, or logs.
+
+## Standalone transcript files
+
+`transcribe` exports SRT, speaker text and optional JSON as full speech content:
+private, never committed and never attached to issues. Files live only at the
+operator-selected output paths outside run bundles, with `0600` permissions;
+the operator controls retention and OS disk encryption. Temporary local audio
+is removed on terminal paths; remote transcription audio follows the explicit
+retention setting, default provider expiry. See [ADR 0025](adr/0025-standalone-transcript-files.md).
