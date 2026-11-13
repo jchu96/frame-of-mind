@@ -66,8 +66,8 @@ stateDiagram-v2
     LocalInputs --> ProviderContext: OAuth query
     ProviderContext --> RemoteVideo: Gemini upload
     RemoteVideo --> Analysis: Files state ACTIVE
-    Analysis --> RemoteDeleted: normal cleanup
-    Analysis --> RemoteRetained: explicit keep-upload
+    Analysis --> RemoteDeleted: retention run
+    Analysis --> RemoteRetained: retention provider (default)
     RemoteDeleted --> StagedRun
     RemoteRetained --> StagedRun
     StagedRun --> PublishedRun: atomic rename
@@ -90,7 +90,7 @@ Normal non-durable data:
 - staging directories;
 - raw provider responses;
 - full transcript copies;
-- Gemini uploaded video.
+- Gemini uploaded video: provider expiry by default; `--retention run` deletes at command completion.
 
 ## 1. First-time setup
 
@@ -770,7 +770,7 @@ Check:
 - provider status;
 - video decodes locally.
 
-On timeout, the CLI attempts remote deletion. Do not use `--keep-upload` as a
+On timeout, `--retention run` attempts remote deletion; default `provider` retains the recording upload. Do not use retention as a
 troubleshooting shortcut.
 
 The production adapter deliberately does not call `@google/genai`
@@ -862,7 +862,7 @@ and one cleanup state:
 
 - `not_obtained` when upload failed before a remote identity was returned;
 - `confirmed_deleted`;
-- `intentionally_retained` when `--keep-upload` was explicit;
+- `intentionally_retained` for default `provider` retention or explicit `--keep-upload`;
 - `unconfirmed` when deletion did not complete.
 
 It contains no provider response, error message, transcript, focus text, signed
@@ -1052,7 +1052,7 @@ Neither failure aborts a run. Without screenshots the accepted records keep
 their timestamps and lose their frames; without a derived transcript the
 analysis proceeds on recording evidence alone.
 
-### 6.21 Cleanup warning
+### 6.21 Upload retention and cleanup
 
 If manifest says:
 
@@ -1064,7 +1064,12 @@ If manifest says:
 }
 ```
 
-The Gemini file normally expires automatically, but:
+Under default `provider` retention, this is normal: the CLI shows the provider
+expiration (or "expiration not reported") and the 2 GB per-file limit.
+`--retention run` / `--delete-upload` requests terminal deletion;
+`FRAME_OF_MIND_UPLOAD_RETENTION` sets a default overridden by explicit flags.
+To delete a kept upload deliberately, or investigate unconfirmed cleanup after
+choosing `run`:
 
 1. record the run ID and expiration time;
 2. inspect only that run's private `manifest.json` or `failure-manifest.json`;

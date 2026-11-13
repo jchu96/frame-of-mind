@@ -1830,3 +1830,54 @@ function detailResult(): AnalysisDetail {
     importance: "high",
   };
 }
+
+describe("retention", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("with no flag or env the upload is not deleted and remoteFile.deleted is false", async () => {
+    const { buildAnalyzeOptions, printAnalysisSummary } = await import("../src/cli.js");
+    vi.stubEnv("FRAME_OF_MIND_UPLOAD_RETENTION", undefined);
+    const fixture = await createFixture();
+    const options = await buildAnalyzeOptions(undefined, {
+      source: "none", granolaTransport: "mcp", recipe: "requirements", depth: "standard",
+      video: fixture.options.video, output: fixture.outputRoot, maxMoments: "10",
+      screenshots: false, derivedTranscript: false,
+    }, "synthetic-key");
+    fixture.analyzer.upload.mockResolvedValue({ name: "files/test", uri: "https://generativelanguage.googleapis.com/v1beta/files/test", state: "ACTIVE", expirationTime: "2026-11-15T09:12:00Z" });
+    const result = await createOrchestrator(fixture).analyze(options);
+    expect(fixture.analyzer.delete, "zero expected deleteFile calls").toHaveBeenCalledTimes(0);
+    expect(result.manifest.remoteFile?.deleted).toBe(false);
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      printAnalysisSummary(result);
+      const output = stdout.mock.calls.map(([s]) => s).join("");
+      expect(output).toContain("provider expiration 2026-11-15T09:12:00Z");
+      expect(output).toContain("per-file limit 2 GB");
+      delete result.manifest.remoteFile!.expirationTime;
+      stdout.mockClear();
+      printAnalysisSummary(result);
+      expect(stdout.mock.calls.map(([s]) => s).join("")).toContain("expiration not reported");
+    } finally { stdout.mockRestore(); }
+  });
+
+  it("--retention run deletes the upload once on success and on failure", async () => {
+    for (const fails of [false, true]) {
+      const fixture = await createFixture();
+      fixture.options.retention = "run";
+      fixture.options.keepUpload = true; // resolved policy wins over legacy input
+      if (fails) fixture.analyzer.index.mockRejectedValue(new Error("synthetic failure"));
+      const run = createOrchestrator(fixture).analyze(fixture.options);
+      if (fails) await expect(run).rejects.toThrow("synthetic failure");
+      else expect((await run).manifest.remoteFile?.deleted).toBe(true);
+      expect(fixture.analyzer.delete).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "files/test" }));
+    }
+  });
+
+  it("provider retention also keeps an upload after analysis failure", async () => {
+    const fixture = await createFixture();
+    fixture.options.retention = "provider";
+    fixture.analyzer.index.mockRejectedValue(new Error("synthetic failure"));
+    await expect(createOrchestrator(fixture).analyze(fixture.options)).rejects.toThrow();
+    expect(fixture.analyzer.delete).not.toHaveBeenCalled();
+  });
+});

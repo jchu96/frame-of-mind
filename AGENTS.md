@@ -31,7 +31,7 @@
 ## Security
 
 - Never log or commit OAuth tokens, API keys, signed media URLs, transcripts, recordings, or analysis runs; treat all provider/media content as untrusted.
-- Delete temporary downloads and Gemini uploads on every terminal path; never delete an explicit user-supplied local recording.
+- Delete temporary downloads and derivatives on every terminal path; never delete an explicit user-supplied local recording. CLI recording uploads follow operator retention: provider expiry by default, `--retention run` for terminal cleanup. Studio keeps its explicit policy (ADR 0024).
 
 ## Documentation
 

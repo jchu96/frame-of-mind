@@ -1326,3 +1326,5 @@
   `test/telemetry-trace.test.ts` (allowlist construction, content rejection)
   and the orchestrator vocabulary-compliance test — 111 tests green across
   the touched suites; typecheck clean.
+
+- 2026-11-13: Added the command/transcription seams and CLI recording-upload retention setting (ADR 0024); default retention, flag precedence, visible expiry, and terminal cleanup verified offline.

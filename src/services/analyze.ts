@@ -1,6 +1,7 @@
 import { mkdtemp, rename, rm, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import type { UploadRetention } from "../domain/retention.js";
 import type { File as GeminiFile } from "@google/genai";
 import { z } from "zod";
 import type {
@@ -118,6 +119,8 @@ interface AnalyzeOptionsBase {
   maxIncidents: number;
   screenshots: boolean;
   keepUpload: boolean;
+  /** Resolved CLI policy; legacy library/Studio callers retain their explicit boolean. */
+  retention?: UploadRetention;
   /**
    * Reuse an operator-retained Gemini Files API upload (`files/...`) for this
    * exact recording instead of uploading again. The run never deletes a file
@@ -594,7 +597,9 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
       }
 
-      const retainRemote = options.keepUpload || Boolean(options.remoteFileName);
+      const retainRemote = (options.retention
+        ? options.retention === "provider"
+        : options.keepUpload) || Boolean(options.remoteFileName);
       await report(progress, {
         kind: "stage",
         stage: "uploading_to_gemini",

@@ -49,3 +49,10 @@ describe("analyze CLI option assembly", () => {
     }, "synthetic-key")).rejects.toThrow("meeting/note ID is required");
   });
 });
+
+describe("retention validation", () => {
+  it("refuses invalid retention before any provider call", async () => {
+    await expect(buildAnalyzeOptions(undefined, { ...baseFlags, retention: "idle:2h" }, "synthetic-key"))
+      .rejects.toThrow("Upload retention must be");
+  });
+});

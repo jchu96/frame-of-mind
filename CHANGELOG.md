@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- 2026-11-13: CLI recording uploads now default to provider expiry, with explicit run cleanup and visible expiry/size limit (ADR 0024).
+
 ## [0.5.0] - 2026-09-08
 
 ### Added

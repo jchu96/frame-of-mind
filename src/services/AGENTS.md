@@ -52,5 +52,5 @@
 ## Cleanup
 
 - Delete downloaded recordings even when analysis fails.
-- Delete Gemini uploads by default; `--keep-upload` is the only exception.
+- CLI recording uploads follow resolved retention: `provider` by default, `run` deletes on success and failure; `--keep-upload` and `--delete-upload` are aliases. Show provider expiry (or unknown) and the 2 GB limit. Studio callers keep their explicit cleanup policy (ADR 0024).
 - Never delete a local recording supplied by the user.

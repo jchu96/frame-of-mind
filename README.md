@@ -435,16 +435,23 @@ frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|non
 | `--max-moments <n>` | cap close interrogation, default `10` |
 | `--no-screenshots` | run without ffmpeg screenshots |
 | `--no-derived-transcript` | skip transcribing the recording's own audio |
-| `--keep-upload` | retain Gemini upload until provider expiration |
+| `--retention <provider\|run>` | keep recording upload to provider expiry (default), or delete on command completion |
+| `--keep-upload` / `--delete-upload` | aliases for `--retention provider` / `--retention run` |
 | `--remote-file <name>` | reuse a retained Gemini upload (`files/...`) of the same recording |
 | `-o, --output <path>` | override private application-data root |
 
-Avoid `--keep-upload` during normal operation. Its intended use is iterating on
-the same long recording: a `--keep-upload` run prints the retained file name,
-and a follow-up run with `--remote-file <name>` plus the same `--video` skips
-the re-upload. The reused file is verified against the local recording's
-SHA-256 and is never deleted by the reusing run; it expires on the provider's
-schedule (about 48 hours).
+CLI recording uploads are kept until provider expiry by default. Set
+`--retention run` (or `--delete-upload`) to delete at the end, on success or
+failure. Flags override `FRAME_OF_MIND_UPLOAD_RETENTION`, which overrides the
+`provider` default; invalid settings fail before upload. `--keep-upload` remains
+an alias for `provider`. Conflicting flags are refused.
+
+A kept run prints `Retained Gemini upload: files/… (provider expiration …;
+per-file limit 2 GB)` or `expiration not reported`. Reuse it with
+`--remote-file <name>` and the same `--video`; SHA-256 and size are checked.
+A reusing run never deletes an upload it did not create. Gemini normally
+expires files after 48 hours. Temporary local derivatives and downloads are
+still removed. Studio retention is unchanged; see [ADR 0024](docs/adr/0024-upload-retention-is-an-operator-setting.md).
 
 ## Launch the local Studio
 

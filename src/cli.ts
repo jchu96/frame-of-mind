@@ -10,10 +10,12 @@ import {
   analyzeMeeting,
   type AnalysisProgressEvent,
   type AnalyzeOptions,
+  type AnalyzeResult,
 } from "./services/analyze.js";
 import { BluedotClient, DEFAULT_BLUEDOT_MCP_URL } from "./adapters/bluedot-mcp.js";
 import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.js";
 import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
+import { resolveRetention } from "./domain/retention.js";
 import type { ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
 import { redactUrlForDisplay } from "./lib/http.js";
@@ -64,6 +66,8 @@ export interface AnalyzeCliFlags {
   maxMoments: string;
   screenshots: boolean;
   keepUpload?: boolean;
+  deleteUpload?: boolean;
+  retention?: string;
   remoteFile?: string;
   derivedTranscript: boolean;
 }
@@ -137,7 +141,9 @@ program
   .option("--max-moments <count>", "Maximum candidate moments to interrogate", "10")
   .option("--no-screenshots", "Skip ffmpeg screenshots")
   .option("--no-derived-transcript", "Skip deriving a transcript from the recording audio when no transcript is supplied")
-  .option("--keep-upload", "Leave the Gemini file until its provider expiration time")
+  .option("--retention <mode>", "Upload retention: provider (default) or run; overrides FRAME_OF_MIND_UPLOAD_RETENTION")
+  .option("--keep-upload", "Alias for --retention provider")
+  .option("--delete-upload", "Alias for --retention run")
   .option("--remote-file <name>", "Reuse a retained Gemini upload (files/...) of this exact recording; skips re-upload and never deletes it")
   .action(
     async (
@@ -214,20 +220,7 @@ program
         } finally {
           process.off("SIGINT" as never, cancel);
         }
-        const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
-        process.stdout.write(
-          `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
-            `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
-        );
-        const remoteFile = result.manifest.remoteFile;
-        const retentionRequested = Boolean(flags.keepUpload || flags.remoteFile);
-        if (retentionRequested && remoteFile && !remoteFile.deleted && remoteFile.name) {
-          process.stdout.write(
-            `Retained Gemini upload: ${remoteFile.name}` +
-              `${remoteFile.expirationTime ? ` (provider expiration ${remoteFile.expirationTime})` : ""}. ` +
-              `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
-          );
-        }
+        printAnalysisSummary(result);
       } catch (error) {
         await captureCliException(
           telemetryCodeFromError(error, "analysis_failed"),
@@ -250,11 +243,28 @@ program
     },
   );
 
+export function printAnalysisSummary(result: AnalyzeResult): void {
+  const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
+  process.stdout.write(
+    `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
+      `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
+  );
+  const remoteFile = result.manifest.remoteFile;
+  if (remoteFile && !remoteFile.deleted && remoteFile.name) {
+    process.stdout.write(
+      `Retained Gemini upload: ${remoteFile.name}` +
+        ` (${remoteFile.expirationTime ? `provider expiration ${remoteFile.expirationTime}` : "expiration not reported"}; per-file limit 2 GB). ` +
+        `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
+    );
+  }
+}
+
 export async function buildAnalyzeOptions(
   meetingId: string | undefined,
   flags: AnalyzeCliFlags,
   apiKey: string,
 ): Promise<AnalyzeOptions> {
+  const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
   const recipeResult = await withAnalysisDepth(
     await loadRecipe(flags.recipe, flags.recipeFile),
     analysisDepthSchema.parse(flags.depth),
@@ -321,7 +331,8 @@ export async function buildAnalyzeOptions(
     outputRoot: flags.output,
     maxIncidents,
     screenshots: flags.screenshots,
-    keepUpload: Boolean(flags.keepUpload),
+    keepUpload: retention === "provider",
+    retention,
     ...(flags.remoteFile ? { remoteFileName: flags.remoteFile } : {}),
     derivedTranscript: flags.derivedTranscript !== false,
   };
