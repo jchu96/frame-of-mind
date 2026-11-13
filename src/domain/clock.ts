@@ -65,6 +65,7 @@ export const runClockSchema = z.strictObject({
   calibration: z.strictObject({ model: z.string().min(1).max(240), checkedAt: z.iso.datetime(), method: z.literal("synthetic-flash") }).optional(),
   relativeEvidenceResponses: safeNatural.optional(),
   clipGuard: z.enum(["applied", "unknown-duration"]).optional(),
+  transcriptClock: z.enum(["exact-ms", "unverified"]).optional(),
   transcriptWindow: z.enum(["windowed", "not-windowed", "not-requested"]).optional(),
 });
 export type RunClock = z.infer<typeof runClockSchema>;

@@ -283,3 +283,5 @@
   simulation by default, and authenticated dark-route canaries.
 
 - 2026-11-13: Model clip-clock provenance is stored in optional manifest.clock; times.json maps analysis pointers to clock-labelled seconds. The default model’s live calibration result remains unverified until a maintainer records the synthetic smoke receipt.
+
+- 2026-11-13: Equal ffprobe r_frame_rate and avg_frame_rate can conceal variable PTS. Media-rate detection now checks every frame against the exact rational grid and refuses missing, quantized, or incomplete timing.

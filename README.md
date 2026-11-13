@@ -501,6 +501,17 @@ cached per model for 30 days. `calibrate` refreshes the measurement;
 `--no-calibrate` opts out and labels the run `clip clock unverified`.
 The synthetic upload is always deleted independently of recording retention.
 
+`from-media` also scans every frame's presentation timestamp and duration.
+Matching summary rates alone are insufficient: variable timing, missing timing,
+nonzero origins, and tick-quantized fractional timing are refused. A scan that
+cannot finish within 60 seconds or 32 MiB of probe output is also refused; use
+an explicitly known sequence rate instead.
+
+Legacy model transcript offsets that cannot be represented exactly in integer
+milliseconds retain their previous context selection without rounding. The run
+reports `transcript clock unverified`; the manifest keeps the original offset.
+This does not relax the explicit `--timeline-offset` format.
+
 ## Launch the local Studio
 
 **Frame of Mind Studio** is the local-first Nuxt application for configuring providers,

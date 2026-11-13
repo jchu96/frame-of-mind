@@ -57,7 +57,7 @@ describe("timecode", () => {
     expect(renderTimecode(60060, parseTimecodeRate("59.94df").rate, true)).toBe("00:01:00;04");
   });
   it("25df is rejected before any provider call", () => expect(() => parseTimecodeRate("25df")).toThrow());
-  it("the first and last millisecond of every frame in 24 h at 24000/1001 render to that frame", () => verifyDay(parseTimecodeRate("23.976").rate));
+  it.each([0, 3, 6, 9, 12, 15, 18, 21])("the first and last millisecond of every frame in 24 h at 24000/1001 render to that frame (3 h partition starting at %i)", hour => verifyDay(parseTimecodeRate("23.976").rate, false, hour, hour + 3));
   for (const rateName of ["24", "25", "30", "48", "50", "60", "47.952", "29.97df", "29.97ndf", "59.94df", "59.94ndf"]) {
     for (let hour = 0; hour < 24; hour += 3) it(`all frames in 24 h at ${rateName}, hours ${hour}-${hour + 3}, have exact containing-millisecond labels`, () => {
       const { rate, dropFrame } = parseTimecodeRate(rateName);

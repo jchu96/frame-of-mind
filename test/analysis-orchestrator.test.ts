@@ -2397,3 +2397,34 @@ describe("clock preflight", () => {
     expect(f.context.connect).not.toHaveBeenCalled(); expect(createAnalyzer).not.toHaveBeenCalled();
   });
 });
+
+describe("clock review alignment", () => {
+  it("finite model offsets preserve base slicing and complete with an unverified label", async () => {
+    const { clockSummary } = await import("../src/services/artifacts.js");
+    const { timestampToSeconds } = await import("../src/lib/time.js");
+    for (const offset of [0.1234, -0.1234, 1e-7, -1e-7, Number.MIN_VALUE, Number.MAX_VALUE, -Number.MAX_VALUE, -9007199254740]) {
+      const f = await createFixture();
+      f.meeting.transcript = [0, 9, 10, 15, 55, 56, 99].map(n => `[00:${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}] Speaker 1: synthetic context`).join("\n");
+      const index = indexResult(); index.transcriptAlignment.offsetSeconds = offset;
+      f.analyzer.index.mockResolvedValue(index);
+      const analyzer = { ...f.analyzer, probeClipClock: vi.fn(async () => 27) };
+      const orchestrator = new AnalysisOrchestrator({ createContextSource: () => f.context, createAnalyzer: () => analyzer,
+        calibrateClipClock: async () => ({ model: "gemini-test", checkedAt: "2026-11-01T00:00:00Z", result: "absolute", evidence: { flashFileSeconds: 27, clipStartSeconds: 20, reportedSeconds: 27 } }),
+      });
+      const result = await orchestrator.analyze(f.options);
+      const candidate = index.moments[0]!;
+      const from = Math.max(0, timestampToSeconds(candidate.start) + offset - 45);
+      const to = timestampToSeconds(candidate.end) + offset + 45;
+      const expected = f.meeting.transcript.split("\n").filter(line => {
+        const seconds = timestampToSeconds(line.slice(1, 9)); return seconds >= from && seconds <= to;
+      }).join("\n");
+      expect(f.analyzer.interrogate.mock.calls[0]![2]).toBe(expected);
+      expect(result.outcome.status).toBe("complete");
+      expect(result.manifest.transcriptAlignment?.offsetSeconds).toBe(offset);
+      expect(result.manifest.clock?.modelClipClock).toBe("absolute");
+      expect(result.manifest.clock?.transcriptClock).toBe("unverified");
+      expect(clockSummary(result.manifest.clock)).toContain("transcript clock unverified");
+      for (const artifact of ["analysis.md", "report.html"]) expect(await readFile(join(result.directory, artifact), "utf8")).toContain("transcript clock unverified");
+    }
+  });
+});

@@ -61,6 +61,7 @@ import {
   formatDerivedTranscript,
   mergeTranscriptionChunks,
   nearbyTranscript,
+  transcriptOffsetVerified,
   windowTranscript,
   offsetTranscriptionSegments,
 } from "./transcript.js";
@@ -817,6 +818,7 @@ export class AnalysisOrchestrator {
                   rationale: "Operator supplied --transcript-offset.",
                 };
         }
+        if (alignment) clock.transcriptClock = transcriptOffsetVerified(alignment.offsetSeconds, meeting?.transcript ?? derivedTranscript) ? "exact-ms" : "unverified";
         const providerTranscript = meeting?.transcript?.trim() ? meeting.transcript : undefined;
         const effectiveTranscript = providerTranscript ?? derivedTranscript;
         const transcriptIsDerived = Boolean(derivedTranscript) && !providerTranscript;

@@ -1,4 +1,6 @@
 import { createReadStream } from "node:fs";
+import type { Readable } from "node:stream";
+import { finished } from "node:stream/promises";
 import { stat } from "node:fs/promises";
 import { FileState } from "@google/genai";
 import type { File as GeminiFile } from "@google/genai";
@@ -70,7 +72,7 @@ export class GeminiFileError extends Error {
 export interface GeminiFileUploaderDependencies {
   fetch?: FetchLike;
   fileSize?: (path: string) => Promise<number>;
-  openFile?: (path: string) => NodeJS.ReadableStream;
+  openFile?: (path: string) => Readable;
   timeoutMs?: number;
 }
 
@@ -130,7 +132,13 @@ export function createGeminiFileUploader(
         startResponse.headers.get("x-goog-upload-url"),
       );
       let uploadResponse: Response;
+      let body: Readable | undefined;
+      let bodySettled: Promise<void> | undefined;
       try {
+        body = openFile(path);
+        // A transport may reject before consuming/opening the file. Own the
+        // stream until close, so callers may safely delete temporary media.
+        bodySettled = finished(body, { cleanup: true }).catch(() => undefined);
         uploadResponse = await fetchImpl(uploadUrl, {
           method: "POST",
           redirect: "error",
@@ -140,7 +148,7 @@ export function createGeminiFileUploader(
             "X-Goog-Upload-Offset": "0",
             "X-Goog-Upload-Command": "upload, finalize",
           },
-          body: openFile(path),
+          body,
           duplex: "half",
           signal: AbortSignal.timeout(timeoutMs),
         });
@@ -152,6 +160,9 @@ export function createGeminiFileUploader(
           undefined,
           classifyProviderError(error),
         );
+      } finally {
+        body?.destroy();
+        await bodySettled;
       }
       if (!uploadResponse.ok) {
         const provider = await classifyProviderResponse(uploadResponse);
@@ -209,7 +220,7 @@ export function createGeminiFileUploader(
   };
 }
 
-function openFileStream(path: string): NodeJS.ReadableStream {
+function openFileStream(path: string): Readable {
   return createReadStream(path);
 }
 

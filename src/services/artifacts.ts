@@ -309,7 +309,7 @@ function safeHref(value: string | undefined): string | undefined {
 }
 
 export function clockSummary(clock?: RunClock): string {
-  return `clocks: ${clock?.fileClock ?? "source"}${clock?.timeline ? `, timeline +${(clock.timeline.timelineOffsetMs / 1000).toFixed(3)} s` : ""}; model clip clock: ${clock?.modelClipClock ?? "unverified"}${!clock || clock.modelClipClock === "unverified" ? " (clip clock unverified)" : ""}${clock?.clipGuard === "unknown-duration" ? "; clip guard did not run: duration unknown" : ""}${clock?.transcriptWindow === "not-windowed" ? "; transcript not windowed" : ""}`;
+  return `clocks: ${clock?.fileClock ?? "source"}${clock?.timeline ? `, timeline +${(clock.timeline.timelineOffsetMs / 1000).toFixed(3)} s` : ""}; model clip clock: ${clock?.modelClipClock ?? "unverified"}${!clock || clock.modelClipClock === "unverified" ? " (clip clock unverified)" : ""}${clock?.clipGuard === "unknown-duration" ? "; clip guard did not run: duration unknown" : ""}${clock?.transcriptClock === "unverified" ? "; transcript clock unverified (legacy alignment retained)" : ""}${clock?.transcriptWindow === "not-windowed" ? "; transcript not windowed" : ""}`;
 }
 
 export function renderClockTime(timestamp: string, clock?: RunClock): string {

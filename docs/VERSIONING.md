@@ -113,6 +113,10 @@ recipe revision/content provenance. Re-run the original source analysis to
 migrate; do not hand-edit a v1 bundle into v2 because its evidence was not
 validated under the v2 timestamp and pairing rules.
 
+The optional `clock.transcriptClock` field distinguishes exact millisecond
+representability (`exact-ms`) from a retained legacy alignment (`unverified`);
+it does not change `transcriptAlignment.offsetSeconds` or assert model accuracy.
+
 The clocks addition preserves analysis schema versions 2 and 3. Both manifest
 versions accept optional `clock` provenance, and bundles may include the new
 schema-1 `times.json` rendering sidecar. Shared readers accept the optional
