@@ -8,7 +8,10 @@
   preserved, retired issuer metadata becomes optional, and conflicting provider
   identities fail closed. The fast lane and populated-account migration tests
   pass; full-gate and mutation receipts are recorded in the dependency-audit
-  handoff. See [ADR 0023](../adr/0023-better-auth-provider-account-identity.md).
+  handoff. The candidate is held: comparison against a freshly rendered base
+  shows visible heading and selected-card styling changes, triggering the
+  audit brief's stop condition. The complete suite has not passed at the final
+  candidate head. See [ADR 0023](../adr/0023-better-auth-provider-account-identity.md).
 
 ## 2026-09-08
 
