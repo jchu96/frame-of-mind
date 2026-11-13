@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { buildContentHash } from "../scripts/check-build-cache";
 
 const scripts = JSON.parse(await readFile("package.json", "utf8")).scripts as Record<string, string>;
 const hostedSteps = [
@@ -12,6 +13,24 @@ const hostedSteps = [
 ];
 
 describe("hosted gate separation", () => {
+  test("MISS deploy-needs-hosted: hand-written fresh or stale receipts cannot bypass failing hosted checks", async () => {
+    for (const age of [0, 25 * 60 * 60 * 1000]) {
+      const root = await fixture();
+      try {
+        // Reproduce the reviewer's forgery without ever invoking check:deploy.
+        const head = (await run(root, ["git", "rev-parse", "HEAD"])).stdout.trim();
+        await put(root, ".git/hosted-deploy-receipt.json", JSON.stringify({
+          version: 1, head, inputs: await buildContentHash(root, {}),
+          hosted: "PASS", completedAt: Date.now() - age,
+        }));
+        const result = await run(root, ["bun", "run", "deploy:hosted"], { FAIL_HOSTED: "1" });
+        await refused(root, result);
+        expect(result.stdout).toContain("FIXTURE_LANE hosted");
+        expect(result.stderr).toContain("step_failed:check:lane:hosted:1");
+      } finally { await rm(root, { recursive: true, force: true }); }
+    }
+  }, 30_000);
+
   test("MISS default-gate-clean: executes only fast/local for website changes and missing refs", async () => {
     const root = await fixture();
     try {
@@ -38,15 +57,22 @@ describe("hosted gate separation", () => {
   });
 
   test("MISS hosted-runs-nightly: schedule and manual events run the whole lane even after default failure", async () => {
-    const workflow = await readFile(".github/workflows/ci.yml", "utf8");
-    expect(workflow).toMatch(/^  schedule:\n    - cron: /m);
-    expect(workflow).toMatch(/^  workflow_dispatch:/m);
-    const job = workflow.match(/^  serial-check:\n([\s\S]*?)(?=^  [a-z][a-z-]*:|$(?![\s\S]))/m)?.[1];
-    expect(job).toBeDefined();
-    expect(job).toContain("github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'");
-    expect(job).toContain("run: bun run check:pr");
-    expect(job).toContain("if: ${{ !cancelled() }}\n        run: bun run check:lane:hosted");
-    expect(workflow).not.toContain("  hosted-contracts:");
+    const parsed = await run(process.cwd(), ["bun", "--no-env-file", "-e",
+      'console.log(JSON.stringify(Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text())))']);
+    expect(parsed.code, parsed.stderr).toBe(0);
+    const workflow = JSON.parse(parsed.stdout);
+    expect(workflow.on.schedule.length).toBeGreaterThan(0);
+    expect(workflow.on).toHaveProperty("workflow_dispatch");
+    const job = workflow.jobs["serial-check"];
+    expect(job.if).toBe("${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}");
+    expect(job["continue-on-error"] ?? false).toBe(false);
+    const defaults = job.steps.filter((step: { run?: string }) => step.run === "bun run check:pr");
+    const hosted = job.steps.filter((step: { run?: string }) => step.run === "bun run check:lane:hosted");
+    expect(defaults).toHaveLength(1);
+    expect(hosted).toHaveLength(1);
+    expect(hosted[0].if).toBe("${{ !cancelled() }}");
+    expect(hosted[0]["continue-on-error"] ?? false).toBe(false);
+    expect(workflow.jobs).not.toHaveProperty("hosted-contracts");
   });
 
   test("quarantine records an issue and a measurable return rule for the whole lane", async () => {
@@ -58,54 +84,55 @@ describe("hosted gate separation", () => {
     expect(quarantine).toContain("without retries");
   });
 
-  test("MISS deploy-needs-hosted: missing, invalid, stale, wrong-head and changed-source receipts refuse Wrangler", async () => {
+  test("MISS deploy-needs-hosted: every deployment runs both gates before Wrangler; check mode never deploys", async () => {
     const root = await fixture();
     try {
-      const deploy = () => run(root, ["bun", "run", "deploy:hosted", "--config", "fixture.json"]);
-      await refused(root, await deploy());
       const preflight = await run(root, ["bun", "run", "check:deploy"]);
       expect(preflight.code, preflight.stderr).toBe(0);
-      expect(preflight.stdout).toContain("FIXTURE_LANE pr");
-      expect(preflight.stdout).toContain("FIXTURE_LANE hosted");
       expect(preflight.stdout).toContain("CHECK_DEPLOY status=PASS");
-      const receiptPath = join(root, ".git/hosted-deploy-receipt.json");
-      const good = JSON.parse(await readFile(receiptPath, "utf8"));
-      for (const invalid of [
-        "not json", "null", JSON.stringify({ ...good, hosted: "FAIL" }),
-        JSON.stringify({ ...good, completedAt: Date.now() - 25 * 60 * 60 * 1000 }),
-        JSON.stringify({ ...good, completedAt: Date.now() + 60_000 }),
-        JSON.stringify({ ...good, head: "0".repeat(40) }),
-        JSON.stringify({ ...good, inputs: "different-source" }),
-      ]) {
-        await writeFile(receiptPath, invalid);
-        await refused(root, await deploy());
+      await expect(readFile(join(root, ".git/deployed.json"))).rejects.toThrow();
+      // A previous check invocation is never reusable authorization.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await rm(join(root, ".git/execution.log"));
+        const result = await run(root, ["bun", "run", "deploy:hosted", "--config", "fixture.json"]);
+        expect(result.code, result.stderr).toBe(0);
+        expect(result.stdout).toContain("HOSTED_DEPLOY prerequisite=PASS");
+        const order = (await readFile(join(root, ".git/execution.log"), "utf8")).trim().split("\n");
+        expect(order.slice(0, 2).sort()).toEqual(["fast", "local"]);
+        expect(order.slice(2)).toEqual(["hosted", "wrangler"]);
+        expect(JSON.parse(await readFile(join(root, ".git/deployed.json"), "utf8")))
+          .toEqual(["deploy", "--config", "fixture.json"]);
       }
-      await writeFile(receiptPath, JSON.stringify(good));
-      await put(root, "source.ts", "// dirty\n");
-      await refused(root, await deploy());
-      await put(root, "source.ts", "// fixture\n");
-      await put(root, "untracked.ts", "// new code\n");
-      await refused(root, await deploy());
-      await rm(join(root, "untracked.ts"));
-      const allowed = await deploy();
-      expect(allowed.code, allowed.stderr).toBe(0);
-      expect(allowed.stdout).toContain("HOSTED_DEPLOY prerequisite=PASS");
-      expect(JSON.parse(await readFile(join(root, ".git/deployed.json"), "utf8")))
-        .toEqual(["deploy", "--config", "fixture.json"]);
-      console.log("DEPLOY_FIXTURE green=PASS valid_hosted_receipt=true wrangler=synthetic");
+      console.log("DEPLOY_FIXTURE green=PASS same_invocation=true wrangler=synthetic");
     } finally { await rm(root, { recursive: true, force: true }); }
   }, 30_000);
 
-  test("hosted preflight failure propagates and invalidates the previous success", async () => {
+  test("MISS deploy-needs-hosted: default or hosted failure propagates in check and deploy modes", async () => {
     const root = await fixture();
     try {
       expect((await run(root, ["bun", "run", "check:deploy"])).code).toBe(0);
-      const failed = await run(root, ["bun", "run", "check:deploy"], { FAIL_HOSTED: "1" });
-      expect(failed.code).toBe(1);
-      expect(failed.stderr).toContain("step_failed:check:lane:hosted:1");
-      await refused(root, await run(root, ["bun", "run", "deploy:hosted"]));
-      console.log("DEPLOY_FIXTURE red=PASS hosted_exit=1 deploy_refused=true");
+      for (const mode of ["check:deploy", "deploy:hosted"]) {
+        for (const failure of ["FAIL_DEFAULT", "FAIL_HOSTED"]) {
+          const result = await run(root, ["bun", "run", mode], { [failure]: "1" });
+          await refused(root, result);
+          const step = failure === "FAIL_HOSTED" ? "check:lane:hosted" : "check:pr";
+          expect(result.stderr).toContain(`step_failed:${step}:1`);
+        }
+      }
+      console.log("DEPLOY_FIXTURE red=PASS gate_exit=1 deploy_refused=true");
     } finally { await rm(root, { recursive: true, force: true }); }
+  }, 30_000);
+
+  test("MISS deploy-source-stable: dirty source, or HEAD/input changes during checks refuse Wrangler", async () => {
+    for (const change of ["dirty", "head", "input"]) {
+      const root = await fixture();
+      try {
+        if (change === "dirty") await put(root, "source.ts", "// dirty\n");
+        const result = await run(root, ["bun", "run", "deploy:hosted"], { CHANGE_SOURCE: change });
+        await refused(root, result);
+        expect(result.stderr).toContain(change === "dirty" ? "tracked_tree_dirty" : "source_changed_during_check");
+      } finally { await rm(root, { recursive: true, force: true }); }
+    }
   }, 30_000);
 });
 
@@ -136,13 +163,23 @@ async function fixture(): Promise<string> {
       [`check:lane:${lane}`, `bun fixture-lane.ts ${lane}`])),
   } }));
   await put(root, "fixture-lane.ts", `
+import { appendFileSync, writeFileSync } from "node:fs";
 const lane = process.argv[2];
+appendFileSync(".git/execution.log", lane + "\\n");
 console.log("FIXTURE_LANE " + lane);
 if (lane === "fast") console.log("FIXTURE_LANE pr");
-process.exitCode = lane === "hosted" && process.env.FAIL_HOSTED === "1" ? 1 : 0;
+if (lane === "hosted" && process.env.CHANGE_SOURCE === "input") writeFileSync("untracked.ts", "// new code");
+if (lane === "hosted" && process.env.CHANGE_SOURCE === "head") {
+  const change = Bun.spawnSync(["git", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false",
+    "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "--allow-empty", "-qm", "new head"]);
+  if (change.exitCode !== 0) throw new Error("fixture commit failed");
+}
+process.exitCode = (lane === "hosted" && process.env.FAIL_HOSTED === "1")
+  || (lane === "fast" && process.env.FAIL_DEFAULT === "1") ? 1 : 0;
 `);
   await put(root, "apps/web/node_modules/wrangler/bin/wrangler.js", `
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
+appendFileSync(".git/execution.log", "wrangler\\n");
 writeFileSync(".git/deployed.json", JSON.stringify(process.argv.slice(2)));
 console.log("SYNTHETIC_WRANGLER");
 `);

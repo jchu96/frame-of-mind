@@ -488,25 +488,23 @@ The public receipt must name `hosted-entry.mjs`, `ASSETS`, `DB`, and
 `HOSTED_WORKFLOWS`; the sibling receipt must name `DB` and `HOSTED_WORKFLOW`.
 Stop if either includes error `100329`.
 
-Before deploying, run the checked preflight from a committed tree. This runs
-the default fast/local gate and every hosted step; a failure removes any old
-receipt. The receipt lives in the worktree’s Git directory (never in source),
-expires after 24 hours, and must match both HEAD and the current source inputs.
-Tracked edits refuse, except generated hosted screenshots. Previously, direct
-Wrangler deployment had no executable check for this prerequisite.
+Deploy from a committed tree through the checked wrapper. Every invocation
+runs the default fast/local gate and every hosted step, then invokes Wrangler
+only if both gates pass and HEAD and source inputs remain unchanged. Tracked
+edits refuse, except generated hosted screenshots. No receipt file authorizes
+deployment; a hand-written file or earlier successful run cannot bypass checks.
 
-Deploy the sibling first, then the public Worker through the checked wrapper:
+Deploy the sibling first, then the public Worker. Each command reruns the gates:
 
 ```bash
-gate-lock bun run check:deploy
-bun run deploy:hosted --config apps/workflows/wrangler.jsonc
-bun run deploy:hosted --cwd apps/web --config wrangler.jsonc
+gate-lock bun run deploy:hosted --config apps/workflows/wrangler.jsonc
+gate-lock bun run deploy:hosted --cwd apps/web --config wrangler.jsonc
 ```
 
-The wrapper refuses before invoking Wrangler if the hosted receipt is absent,
-invalid, expired, or for different source. Use it for redeploys and reviewed
-rollbacks as well; re-run preflight at the target revision. Direct Wrangler
-commands above are only for the module dry-runs.
+For release validation without deploying, use `gate-lock bun run check:deploy`.
+This does not authorize a later deployment. Use the deploy wrapper for redeploys
+and reviewed rollbacks at the target revision too. Direct Wrangler commands
+above are only for the module dry-runs.
 
 Neither Worker bundle contains a secret literal. The public and internal
 Workers each receive the same `GEMINI_API_KEY` through Wrangler's secret store;

@@ -6,8 +6,12 @@
   passes, then a hosted-auth failure. Two successful browser runs retried a
   journey. The scope moved from one unstable step to the complete lane.
 - Preserved hosted scripts and required CI jobs; added fast/local-only PR
-  selection and executable receipt checks before Wrangler deployment.
-  Synthetic fixtures cover missing/stale receipts and failed hosted preflight.
+  selection and a checked Wrangler wrapper. Review exposed a writable-receipt
+  bypass; replaced it with both gates running inside each deploy invocation.
+  The forged-receipt regression failed against the old wrapper, then passed
+  with the fix. Fifteen focused tests cover gate failure, repeated execution,
+  source changes, and nightly job/step failure propagation. See the hosted
+  coverage table in TESTING for integration risks deferred from PRs.
 
 ## 2026-11-12
 

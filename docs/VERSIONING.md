@@ -32,8 +32,9 @@ versions for durable schemas and prompts.
    entire hosted lane; a hosted failure blocks release/deploy even though it
    no longer blocks ordinary pull requests. Required GitHub CI at the exact
    PR head remains the merge oracle: `check`, `browser-e2e`, `auth-contract`,
-   and all three `fresh-clone` jobs must pass. Re-run preflight after changing
-   source or moving to the release merge commit before using `deploy:hosted`.
+   and all three `fresh-clone` jobs must pass. This check does not authorize a
+   later deployment: `gate-lock bun run deploy:hosted --config <config>` runs
+   both gates again at the revision being deployed before invoking Wrangler.
 7. Run `bun run smoke:gemini` with a maintainer key and generated media.
 8. Validate the repository skill.
 9. Test the skill installer in a temporary home directory.

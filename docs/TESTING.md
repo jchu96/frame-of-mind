@@ -38,10 +38,12 @@ remains the complete 16-step serial fallback. The complete hosted lane is
 quarantined from the default PR gate, not deleted: see the
 [issue and return rule](HOSTED_GATE_QUARANTINE.md).
 
-Before release or deployment, run `gate-lock bun run check:deploy`. This runs
-the default gate followed by the whole hosted lane and records success for
-the current commit and source inputs. `bun run deploy:hosted --config <config>`
-refuses to invoke Wrangler without that receipt. See
+For release validation, run `gate-lock bun run check:deploy`. This runs the
+default gate followed by the whole hosted lane without deploying. Deploy with
+`gate-lock bun run deploy:hosted --config <config>`: each invocation runs both
+gates itself and calls Wrangler only after they pass with unchanged HEAD and
+source inputs. Previous runs and hand-written success files cannot authorize
+a deployment. See
 [deployment](CLOUDFLARE_DEPLOYMENT.md#7-build-and-deploy).
 
 ## Gate lanes
@@ -117,8 +119,8 @@ When CI is red, start with the owning job. A `check` failure belongs to hygiene,
 types, unit tests, local builds/contracts, or the production audit. An
 `auth-contract` failure belongs to the built Better Auth/D1 identity,
 membership, principal-isolation, or revocation boundary; it is not repaired by
-adding a CI secret. A
-`hosted-contracts` failure belongs to the Cloudflare/Workflows contracts,
+adding a CI secret. A hosted-step failure in nightly/manual
+`serial-check` belongs to the Cloudflare/Workflows contracts,
 hosted browser projects, or release rehearsal; confirm the Chromium install
 step before diagnosing application authentication. A `fresh-clone` failure is
 an install/lockfile/portable-build failure—never weaken `--frozen-lockfile`.
@@ -135,6 +137,33 @@ one automatic retry only after `step_timeout`; CI extends that single-receipted
 retry to the standard Workflow contract as well. Local runs remain Better
 Auth-only. Retries print `retry=1`; deterministic non-zero exits and all other
 steps are not retried.
+
+### Accepted integration risks outside pull requests
+
+Moving the whole hosted lane removes its integration execution from the default
+PR gate and the former advisory PR job. The required `browser-e2e` job runs the
+smoke suite; it does not replace the hosted or adversarial browser projects.
+A change that leaves partial publication rows in D1 can therefore pass PR
+checks: the test that forces a database failure and verifies publication
+rollback now runs nightly and before deployment.
+
+The following risks are accepted for this quarantine. Every row runs in the
+nightly/manual **`serial-check`** job's `check:lane:hosted` step and in each
+`deploy:hosted` invocation (also in check-only `check:deploy`). The lane stops
+on failure, so earlier failures can prevent later assertions from being reached.
+A passing unit test is not equivalent to these Worker/browser integration checks.
+
+| Hosted command / nightly owner | Integration behavior no longer exercised on PRs | Coverage still required on PRs |
+|---|---|---|
+| `test:hosted-access-http` / `serial-check` | Access-authenticated ownership across two users for import, list, detail and conflicts; service callers denied browser routes; missing assertions; session projection; disabled hosted routes and admin HTTP operations. | Access JWT policy and D1 isolation unit checks; required migrations. Better Auth exercises a different auth mode. |
+| `test:hosted-access-http:better-auth` (full scope) / `serial-check` | Notification contents and deduplication, magic-link refusal, capacity/rate limits, full admin list/approve/deny/revoke/idempotency/no-mail behavior, and maintainer CLI transitions. | Required auth scope retains migrations and replay, synthetic GitHub sessions, unapproved-route denials, access-request/replay state without mail, two-user ownership, session projection, disabled hosted/admin routes, principal mapping and next-request revocation. Auth/admin/rate-limit unit checks are narrower. |
+| `test:hosted-workflows-http` / `serial-check` | Actual two-Worker execution, publication and cleanup; disabled routes; janitor/replay; spend overruns, caps and races; legacy/missing activity data; every built-in recipe; foreign job/media/run/review/support access and foreign-media creation; missing hashes; cancellation, retry, crash recovery and replay; immutable attempts; provider/adapter timeouts. Browser checks cover hydration, contrast, icons, layout, keyboard, clipboard, composer, viewer and copying. | Schema, admission, spend, maintenance, telemetry, UI-state and projection unit checks; basic run ownership in required auth. |
+| `test:hosted-workflows-http:better-auth` / `serial-check` | All preceding Workflows and browser behavior with Better Auth sessions connected to real Workflow execution. | The same narrower unit and ownership checks. Required auth does not start a Workflows worker. |
+| `test:hosted-media-http` / `serial-check` | Upload byte limits, hashes, sealing, failure cleanup and foreign-user denial; opaque/encrypted capabilities; retained R2 multipart uploads, concurrency, abort/delete/in-use/expiry/orphan handling and evidence provenance; janitor/seal races. Browser checks cover resume, tab locking, pagehide/discard/recovery, and retained versus ephemeral review. | Media-domain, seal/provider-budget, retention, evidence and range unit checks. |
+| `check:hosted-auth` / `serial-check` | Real mail binding and HTTP fallback; magic-link cooldown/no-mail; uninvited mail/verification refusal; sign-in browser UX; stacked Access subject binding and rebind denial; misconfigured auth modes refusing hosted routes; shared workerd rate-limit warnings. | GitHub login, approved/unapproved sessions and basic ownership in required auth; policy and client-IP rate-limit unit checks. |
+| `check:e2e` hosted projects / `serial-check` | Access and Better Auth composer publication journeys; database-trigger-induced publication rollback across registry/run/item tables; validation before projection. Partial publication can escape the PR checks. | Required browser smoke; D1/SQLite projection and migration tests. |
+| `check:e2e` adversarial project / `serial-check` | Foreign-user denial for every hosted ID; service callers denied browser routes; uninvited sign-in/mail boundaries; recurring upload byte-limit probes; adversarial maintenance preservation, spike-matcher and support-trap fixtures. | Some pure support-format, middleware-matcher and maintenance unit checks, without equivalent hosted/browser execution. |
+| `rehearse:hosted-release` / `serial-check` | Emitted entry determinism/delegation and no body reads; required/forbidden bundle markers; Worker bindings, configuration, auth mode and secret shape; both module dry-runs and absence of error 100329; previous-artifact rollback dry-run and rollback documentation. | Required migration application/replay; SQLite import byte stability and migration cases (including provider identity and legacy protection); real local D1 projection tests. Generic migration failure detection remains required. |
 
 ### Prebuilt artifact contract
 

@@ -7,7 +7,8 @@ Semantic Versioning.
 
 - Run fast/local checks for every pull request; retain the complete hosted lane
   nightly, on demand, and before deployment. Add `check:deploy` and a
-  `deploy:hosted` wrapper that requires its current successful hosted receipt.
+  `deploy:hosted` wrapper that runs both gates successfully in the same
+  invocation before calling Wrangler; writable receipts cannot authorize deploys.
   Required auth, browser, and fresh-clone CI jobs are unchanged.
 
 - 2026-11-13: Added opt-in parallel detail analysis, adopted from a field contribution, with ordered results and a completion-time breaker spend bound.
