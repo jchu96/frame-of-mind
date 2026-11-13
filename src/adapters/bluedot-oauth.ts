@@ -1,3 +1,4 @@
+import { childEnvironment } from "../lib/child-env.js";
 import { createServer, type Server } from "node:http";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { chmod, mkdir } from "node:fs/promises";
@@ -215,7 +216,7 @@ export async function openBrowser(url: URL): Promise<boolean> {
     process.platform === "win32" ? ["cmd", "/c", "start", "", url.toString()] :
     ["xdg-open", url.toString()];
   return new Promise<boolean>((resolve) => {
-    const child = spawn(command[0]!, command.slice(1), { stdio: "ignore" });
+    const child = spawn(command[0]!, command.slice(1), { env: childEnvironment("opener"), stdio: "ignore" });
     child.once("error", () => resolve(false));
     child.once("exit", (code) => resolve(code === 0));
   });

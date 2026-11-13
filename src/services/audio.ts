@@ -1,3 +1,4 @@
+import { childEnvironment } from "../lib/child-env.js";
 import { spawn } from "node:child_process";
 import { access, chmod, rm } from "node:fs/promises";
 
@@ -36,7 +37,7 @@ export async function extractAudioTrack(
       "-vn", "-map", "0:a:0", "-map_metadata", "-1",
       "-c:a", "aac", "-b:a", "64k", "-ac", "1",
       "-f", "adts", destination,
-    ], { stdio: "ignore" });
+    ], { env: childEnvironment("media"), stdio: "ignore" });
     const kill = () => child.kill("SIGKILL");
     const timeout = setTimeout(kill, options.timeoutMs ?? AUDIO_EXTRACTION_TIMEOUT_MS);
     options.signal?.addEventListener("abort", kill, { once: true });
@@ -80,7 +81,7 @@ export async function probeDurationSeconds(
       "-show_entries", "format=duration",
       "-of", "default=noprint_wrappers=1:nokey=1",
       media,
-    ], { stdio: ["ignore", "pipe", "ignore"] });
+    ], { env: childEnvironment("media"), stdio: ["ignore", "pipe", "ignore"] });
     let text = "";
     child.stdout?.on("data", (chunk: Buffer) => {
       // Bound the buffer; a well-formed probe answers in a few bytes.

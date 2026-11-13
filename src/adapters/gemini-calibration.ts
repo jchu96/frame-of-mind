@@ -1,3 +1,4 @@
+import { childEnvironment } from "../lib/child-env.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
@@ -29,7 +30,7 @@ export function classifyClipClock(reported: number | null): ClipClock {
 }
 export async function synthesizeFlash(path: string): Promise<boolean> {
   try {
-    await exec("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=160x90:r=1:d=40", "-vf", "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='gte(t,27)*lt(t,28)'", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", path], { timeout: 60_000, maxBuffer: 64 * 1024 });
+    await exec("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=160x90:r=1:d=40", "-vf", "drawbox=x=0:y=0:w=iw:h=ih:color=white:t=fill:enable='gte(t,27)*lt(t,28)'", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", path], { env: childEnvironment("media"), timeout: 60_000, maxBuffer: 64 * 1024 });
     await chmod(path, 0o600);
     return true;
   } catch { return false; }
