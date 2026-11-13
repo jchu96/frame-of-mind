@@ -73,6 +73,13 @@ Do not put credentials, signed URLs, or instructions to publish into context.
 
 ## Transcript ladder
 
+For reusable context, run `frameofmind transcribe "<recording>"` once and pass
+`<stem>.srt` to multiple `analyze` runs with `--source file --context-file`.
+The standalone command writes operator-owned private files outside run bundles;
+its audio uploads follow operator retention (default provider expiry), unlike
+the analyze ladder's immediate derived-audio deletion. Use `<stem>_speakers.txt`
+when literal markup-like text matters. See [ADR 0025](adr/0025-standalone-transcript-files.md).
+
 A run resolves its transcript from the first rung that produces one:
 
 1. a provider transcript from Bluedot or Granola;

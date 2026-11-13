@@ -692,3 +692,5 @@ partial with a coverage warning".
 The main-module guard compared the module URL to unresolved argv[1], so a
 linked executable never dispatched commands. Resolve the executable realpath;
 the built-CLI symlink test and package-version bump fixture prevent recurrence.
+
+- 2026-11-13: Adopting standalone transcription exposed a literal round-trip oracle incompatible with the existing caption reader; ADR 0025 preserves reader normalisation, and tests use a separate structural arrow oracle.

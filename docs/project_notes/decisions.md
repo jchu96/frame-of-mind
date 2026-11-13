@@ -428,3 +428,5 @@ adapters depend only on the pure `AnalysisTracer` port (inert by default);
 the Sentry implementation is CLI-wired, the adapter's non-destructive
 `usageSnapshot()` keeps the hosted spend `takeUsage()` window untouched, and
 hosted/Studio surfaces keep their ADR 0017 posture.
+
+- 2026-11-13: Adopted standalone transcript files outside run bundles and operator-controlled transcription audio retention (default provider); ADR 0025 records the distinction from analyze.

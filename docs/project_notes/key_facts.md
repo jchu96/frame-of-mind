@@ -281,3 +281,5 @@
   contracts include tolerant display projection for legacy nullable D1 rows,
   pre-stream `Content-Length` reservation for retained-media parts, local email
   simulation by default, and authenticated dark-route canaries.
+
+- 2026-11-13: The adopted transcribe command shares audio/window/merge helpers with analyze and writes private SRT plus speaker text; JSON is opt-in with numeric source-clock seconds.

@@ -1351,3 +1351,5 @@
 - 2026-11-13: Added CLI install/key/limit/notes fixes and ffmpeg in CI; coverage includes built symlink invocation, hidden terminal input, best-N order, note digests and escaped provider requests. Review clarified that only the tool-authored note projection is digest-only; model findings may reflect note content. Build fixtures now compile in setup hooks before runtime assertions.
 
 - 2026-11-13: Parallel detail pass adopted from a field contribution; completed failures bound dispatch, results remain ordered, and 429s retain the existing retry policy. In-flight cancellation requires an adapter interface follow-up.
+
+- 2026-11-13: Implemented the adopted transcribe workflow and synthetic coverage for retry, retention, cancellation and private cue-safe files; 118 focused and unchanged-regression tests passed, and all 19 planted mutants failed their named tests before passing after restoration.
