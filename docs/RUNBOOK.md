@@ -762,7 +762,10 @@ Actions:
 
 ### Provider error classes
 
-CLI provider failures expose a status-only class and HTTP status when available.
+CLI provider failures expose a class derived from HTTP status and checked against
+structured error status fields, plus the HTTP status when available. Contradictory
+HTTP/JSON codes or canonical statuses produce `other`, never key/project advice.
+Provider message text is not used for classification.
 The same data appears as optional `error.provider: { class, status? }` in
 `failure-manifest.json` (schema version 1). Existing records without it remain
 valid. No provider message, key, URL, or token is copied into these diagnostics.
@@ -771,7 +774,7 @@ valid. No provider message, key, URL, or token is copied into these diagnostics.
 | --- | --- | --- |
 | `refused` | 401, 403 | Check key validity and project access. For retained files, use a key from the project that uploaded the file. |
 | `not_found` | 404 | Verify the file/resource or model identity. A retained upload may have expired; upload the local recording again. |
-| `rate_limited` | 429 | Existing generation retries have been exhausted. Check usage, quota and billing; wait for a rate-window reset or adjust quota before rerunning. |
+| `rate_limited` | 429 | For generation, existing retries have been exhausted; direct uploads do not retry. Check usage, quota and billing; wait for a rate-window reset or adjust quota before rerunning. |
 | `other` | Any other status, or none | Check service availability, request configuration and network connectivity. Use the safe status and telemetry code when investigating. |
 
 A 400 remains `other`: the installed SDK exposes no structured invalid-key

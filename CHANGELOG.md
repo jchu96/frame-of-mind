@@ -5,7 +5,9 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-- 2026-11-13: Classify CLI provider failures as refused, not_found, rate_limited, or other using only HTTP status; include optional classification in version 1 failure manifests.
+- 2026-11-13: Treat contradictory HTTP/JSON provider statuses as other across SDK calls and direct uploads without parsing message text or changing retries.
+
+- 2026-11-13: Classify CLI provider failures as refused, not_found, rate_limited, or other using HTTP status; include optional classification in version 1 failure manifests.
 
 - 2026-11-13: Added opt-in parallel detail analysis, adopted from a field contribution, with ordered results and a completion-time breaker spend bound.
 

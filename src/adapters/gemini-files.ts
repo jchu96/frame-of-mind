@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import { FileState } from "@google/genai";
 import type { File as GeminiFile } from "@google/genai";
 import { z } from "zod";
-import { classifyProviderError, providerErrorDescription, type ProviderError } from "./gemini-error-class.js";
+import { classifyProviderError, classifyProviderResponse, providerErrorDescription, type ProviderError } from "./gemini-error-class.js";
 
 const GEMINI_UPLOAD_ENDPOINT =
   "https://generativelanguage.googleapis.com/upload/v1beta/files";
@@ -124,7 +124,7 @@ export function createGeminiFileUploader(
           classifyProviderError(error),
         );
       }
-      assertSuccessfulResponse(startResponse, "resumable upload start");
+      await assertSuccessfulResponse(startResponse, "resumable upload start");
 
       const uploadUrl = validateUploadUrl(
         startResponse.headers.get("x-goog-upload-url"),
@@ -154,12 +154,13 @@ export function createGeminiFileUploader(
         );
       }
       if (!uploadResponse.ok) {
+        const provider = await classifyProviderResponse(uploadResponse);
         throw new GeminiFileError(
-          `Gemini upload finalize failed: ${providerErrorDescription(classifyProviderError(uploadResponse))}; remote cleanup cannot be confirmed.`,
+          `Gemini upload finalize failed: ${providerErrorDescription(provider)}; remote cleanup cannot be confirmed.`,
           undefined,
           "unconfirmed",
           `gemini_http_${uploadResponse.status}`,
-          classifyProviderError(uploadResponse),
+          provider,
         );
       }
 
@@ -219,14 +220,15 @@ function fetchWithStreamingBody(
   return globalThis.fetch(input, init as RequestInit);
 }
 
-function assertSuccessfulResponse(response: Response, phase: string): void {
+async function assertSuccessfulResponse(response: Response, phase: string): Promise<void> {
   if (!response.ok) {
+    const provider = await classifyProviderResponse(response);
     throw new GeminiFileError(
-      `Gemini ${phase} failed: ${providerErrorDescription(classifyProviderError(response))}.`,
+      `Gemini ${phase} failed: ${providerErrorDescription(provider)}.`,
       undefined,
       "not_obtained",
       `gemini_http_${response.status}`,
-      classifyProviderError(response),
+      provider,
     );
   }
 }

@@ -1,6 +1,6 @@
 import type { RunNote } from "../domain/run-notes.js";
 import { Buffer } from "node:buffer";
-import { GoogleGenAI, MediaResolution } from "@google/genai";
+import { MediaResolution } from "@google/genai";
 import { z } from "zod";
 import type {
   DeleteFileParameters,
@@ -37,6 +37,7 @@ import {
 import { DEFAULT_GEMINI_MODEL } from "./gemini-model.js";
 import { GEMINI_GENERATION_TRANSPORT_RETRIES } from "./gemini-generation-policy.js";
 import { classifyProviderError, providerErrorDescription } from "./gemini-error-class.js";
+import { StatusAwareGeminiClient } from "./gemini-client.js";
 
 export { DEFAULT_GEMINI_MODEL } from "./gemini-model.js";
 
@@ -174,10 +175,7 @@ export class GeminiVideoAnalyzer {
     model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
     dependencies: GeminiAnalyzerDependencies = {},
   ) {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS },
-    });
+    const ai = new StatusAwareGeminiClient(apiKey, MODEL_REQUEST_TIMEOUT_MS);
     this.fileUploader = dependencies.fileUploader ??
       createGeminiFileUploader(apiKey);
     this.generateContent = dependencies.generateContent ??

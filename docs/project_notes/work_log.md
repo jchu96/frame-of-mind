@@ -2,6 +2,8 @@
 
 ## 2026-11-13
 
+- Preserved conflicting structured provider statuses before SDK message conversion; disagreement now stays other across lookup, generation, polling and direct uploads. SDK refusal fixtures and per-response concurrency tests cover the compatibility seam.
+
 - Added status-only provider error classes to CLI lookup, generation, upload and polling failures, preserving retries, telemetry and candidate codes. Version 1 failure manifests carry optional provider class/status; legacy records remain valid. Refusal and secret-redaction fixtures exercise the adapter and CLI boundaries.
 
 ## 2026-11-12

@@ -1543,8 +1543,8 @@ describe("retained Gemini file reuse", () => {
   });
 });
 
-// Numeric ApiError status semantics: https://ai.google.dev/gemini-api/docs/troubleshooting
-// and its error reference https://ai.google.dev/gemini-api/docs/api-errors .
+// Files/GenerateContent error normalization: https://github.com/googleapis/js-genai/blob/v2.21.0/src/_api_client.ts
+// Retry guidance: https://ai.google.dev/gemini-api/docs/troubleshooting .
 describe("retained file", () => {
   it.each([
     [404, "not found and may have expired"],

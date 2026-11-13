@@ -2266,8 +2266,8 @@ describe("concurrency", () => {
   });
 });
 
-// Refusal semantics: https://ai.google.dev/gemini-api/docs/troubleshooting
-// https://ai.google.dev/gemini-api/docs/api-errors (403 permission_denied).
+// Files/GenerateContent refusal shape: https://github.com/googleapis/js-genai/blob/v2.21.0/src/_api_client.ts
+// Canonical 403 mapping: https://github.com/googleapis/googleapis/blob/master/google/rpc/code.proto .
 describe("failure record", () => {
   it("an index 403 writes error.provider.class refused with status 403", async () => {
     const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
