@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- 2026-11-13: Treat contradictory HTTP/JSON provider statuses as other across SDK calls and direct uploads without parsing message text or changing retries.
+
+- 2026-11-13: Classify CLI provider failures as refused, not_found, rate_limited, or other using HTTP status; include optional classification in version 1 failure manifests.
+
 - Run fast/local checks for every pull request; retain the complete hosted lane
   nightly, on demand, and before deployment. Add `check:deploy` and a
   `deploy:hosted` wrapper that runs both gates successfully in the same

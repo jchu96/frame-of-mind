@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { FileState } from "@google/genai";
+import { ApiError, FileState } from "@google/genai";
 import type {
   File as GeminiFile,
   GenerateContentParameters,
@@ -1010,7 +1010,7 @@ describe("GeminiVideoAnalyzer", () => {
     } catch (error) {
       generationMessage = (error as Error).message;
     }
-    expect(generationMessage).toBe("Gemini index generation failed.");
+    expect(generationMessage).toBe("Gemini index generation failed: other provider error.");
     expect(generationMessage).not.toContain(privateMarker);
 
     let detailError: unknown;
@@ -1198,7 +1198,7 @@ describe("GeminiVideoAnalyzer", () => {
 
     await expect(analyzer.upload("/private/test.mp4", "video/mp4"))
       .rejects.toMatchObject({
-        message: "Gemini upload processing failed and remote cleanup could not be confirmed.",
+        message: "Gemini upload processing failed and remote cleanup could not be confirmed. Provider error: other provider error.",
         remoteFileName: "files/public-test",
         uploadCleanup: "unconfirmed",
       });
@@ -1540,5 +1540,74 @@ describe("retained Gemini file reuse", () => {
 
     await expect(analyzer.resolveRetainedFile("files/public-test", localSha256Hex, 1234))
       .rejects.toMatchObject({ name: "GeminiFileError", uploadCleanup: "not_obtained" });
+  });
+});
+
+// Files/GenerateContent error normalization: https://github.com/googleapis/js-genai/blob/v2.21.0/src/_api_client.ts
+// Retry guidance: https://ai.google.dev/gemini-api/docs/troubleshooting .
+describe("retained file", () => {
+  it.each([
+    [404, "not found and may have expired"],
+    [403, "refused and never says expired"],
+  ] as const)("a %i from files.get says %s", async (status) => {
+    const analyzer = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+      getFile: async () => { throw new ApiError({ status, message: "synthetic refusal" }); },
+      deleteFile: async () => { throw new Error("must not delete retained files"); },
+    });
+    const error = await analyzer.resolveRetainedFile("files/test", "a".repeat(64), 1).catch(e => e);
+    expect(error.provider).toEqual({ class: status === 404 ? "not_found" : "refused", status });
+    expect(error.message).toContain(`HTTP ${status}`);
+    if (status === 404) expect(error.message).toMatch(/not found.*may have expired/);
+    else {
+      expect(error.message).toMatch(/refused.*key belongs to the project/);
+      expect(error.message).not.toContain("expired");
+    }
+  });
+});
+
+describe("generation", () => {
+  it("429 on every attempt ends rate_limited after the existing retries", async () => {
+    // Include a different initial status: classifying the first failure must fail.
+    for (const initialStatus of [429, 503]) {
+      let calls = 0;
+      const waits: number[] = [];
+      const analyzer = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+        generateContent: async () => { throw new ApiError({ status: calls++ === 0 ? initialStatus : 429, message: "synthetic quota" }); },
+        sleep: async ms => { waits.push(ms); },
+      });
+      await expect(analyzer.index(activeFile, meeting, recipe)).rejects.toMatchObject({
+        provider: { class: "rate_limited", status: 429 },
+        message: "Gemini index generation failed: rate_limited (rate limited) (HTTP 429).",
+      });
+      expect(calls).toBe(5);
+      expect(waits).toEqual([1000, 2000, 4000, 8000]);
+    }
+  });
+
+  it("keeps gemini_http_403 telemetry and transcribe classification", async () => {
+    const analyzer = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+      generateContent: async () => { throw new ApiError({ status: 403, message: "synthetic refusal" }); },
+    });
+    await expect(analyzer.index(activeFile, meeting, recipe)).rejects.toMatchObject({ telemetryCode: "gemini_http_403" });
+    await expect(analyzer.transcribe(activeFile)).rejects.toMatchObject({
+      provider: { class: "refused", status: 403 },
+      message: "Gemini transcribe generation failed: the provider refused the request (HTTP 403).",
+    });
+  });
+});
+
+describe("polling", () => {
+  it.each([true, false])("preserves status through cleanup (deleted=%s)", async deleted => {
+    const analyzer = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+      fileUploader: { upload: async () => ({ ...activeFile, state: FileState.PROCESSING }) },
+      getFile: async () => { throw new ApiError({ status: 403, message: "synthetic refusal" }); },
+      deleteFile: async () => { if (!deleted) throw new Error("synthetic cleanup failure"); },
+      sleep: async () => {},
+    });
+    await expect(analyzer.upload("synthetic.mp4", "video/mp4")).rejects.toMatchObject({
+      provider: { class: "refused", status: 403 },
+      message: expect.stringContaining("refused"),
+      uploadCleanup: deleted ? "confirmed_deleted" : "unconfirmed",
+    });
   });
 });

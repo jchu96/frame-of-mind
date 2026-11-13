@@ -1,6 +1,6 @@
 import type { RunNote } from "../domain/run-notes.js";
 import { Buffer } from "node:buffer";
-import { GoogleGenAI, MediaResolution } from "@google/genai";
+import { MediaResolution } from "@google/genai";
 import { z } from "zod";
 import type {
   DeleteFileParameters,
@@ -36,6 +36,8 @@ import {
 } from "./gemini-schema.js";
 import { DEFAULT_GEMINI_MODEL } from "./gemini-model.js";
 import { GEMINI_GENERATION_TRANSPORT_RETRIES } from "./gemini-generation-policy.js";
+import { classifyProviderError, providerErrorDescription } from "./gemini-error-class.js";
+import { StatusAwareGeminiClient } from "./gemini-client.js";
 
 export { DEFAULT_GEMINI_MODEL } from "./gemini-model.js";
 
@@ -173,10 +175,7 @@ export class GeminiVideoAnalyzer {
     model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
     dependencies: GeminiAnalyzerDependencies = {},
   ) {
-    const ai = new GoogleGenAI({
-      apiKey,
-      httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS },
-    });
+    const ai = new StatusAwareGeminiClient(apiKey, MODEL_REQUEST_TIMEOUT_MS);
     this.fileUploader = dependencies.fileUploader ??
       createGeminiFileUploader(apiKey);
     this.generateContent = dependencies.generateContent ??
@@ -240,6 +239,10 @@ export class GeminiVideoAnalyzer {
       }
       return file;
     } catch (error) {
+      const provider = error instanceof GeminiFileError ? error.provider : classifyProviderError(error);
+      const failureMessage = error instanceof GeminiFileError
+        ? error.message
+        : `Gemini file upload or processing failed: ${providerErrorDescription(provider!)}.`;
       const cleanupName = uploadName ?? safeRemoteFileName(file?.name) ??
         (error instanceof GeminiFileError
           ? safeRemoteFileName(error.remoteFileName)
@@ -248,25 +251,28 @@ export class GeminiVideoAnalyzer {
         const deleted = await this.deleteByNameWithRetry(cleanupName);
         if (!deleted) {
           throw new GeminiFileError(
-            "Gemini upload processing failed and remote cleanup could not be confirmed.",
+            `Gemini upload processing failed and remote cleanup could not be confirmed.${provider ? ` Provider error: ${providerErrorDescription(provider)}.` : ""}`,
             cleanupName,
             "unconfirmed",
+            undefined,
+            provider,
           );
         }
         throw new GeminiFileError(
-          error instanceof GeminiFileError
-            ? error.message
-            : "Gemini file upload or processing failed.",
+          failureMessage,
           cleanupName,
           "confirmed_deleted",
           error instanceof GeminiFileError ? error.telemetryCode : undefined,
+          provider,
         );
       }
       if (error instanceof GeminiFileError) throw error;
       throw new GeminiFileError(
-        "Gemini file upload or processing failed.",
+        failureMessage,
         undefined,
         "unconfirmed",
+        undefined,
+        provider,
       );
     }
   }
@@ -288,11 +294,17 @@ export class GeminiVideoAnalyzer {
         name,
         config: { httpOptions: { timeout: FILE_REQUEST_TIMEOUT_MS } },
       });
-    } catch {
+    } catch (error) {
+      const provider = classifyProviderError(error);
+      const description = providerErrorDescription(provider);
       throw new GeminiFileError(
-        "The retained Gemini file could not be fetched; it may have expired.",
+        provider.class === "refused"
+          ? `The retained Gemini file could not be fetched: ${description}; check that the key belongs to the project that uploaded it.`
+          : `The retained Gemini file could not be fetched: ${description}${provider.class === "not_found" ? "; it may have expired" : ""}.`,
         name,
         "not_obtained",
+        undefined,
+        provider,
       );
     }
     const resolvedName = safeRemoteFileName(file.name);
@@ -660,10 +672,11 @@ export class GeminiVideoAnalyzer {
           throw new CandidateAnalysisError({ code: "generation_failed", attempts: 1 });
         }
         throw new GeminiFileError(
-          `Gemini ${phase} generation failed.`,
+          `Gemini ${phase} generation failed: ${providerErrorDescription(classifyProviderError(error))}.`,
           undefined,
           undefined,
           geminiHttpTelemetryCode(error),
+          classifyProviderError(error),
         );
       }
     }

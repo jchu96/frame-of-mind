@@ -1330,7 +1330,10 @@ function sanitizedFailureError(error: unknown): RunFailureManifest["error"] {
       ...(error.issues.length ? { issues: [...error.issues] } : {}),
     };
   }
-  return { code: "unexpected_failure" };
+  return {
+    code: "unexpected_failure",
+    ...(error instanceof GeminiFileError && error.provider ? { provider: error.provider } : {}),
+  };
 }
 
 function sanitizedRemoteFileMetadata(

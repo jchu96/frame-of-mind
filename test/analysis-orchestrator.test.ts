@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { File as GeminiFile } from "@google/genai";
+import { ApiError, type File as GeminiFile } from "@google/genai";
 import type {
   AnalysisDetail,
   AnalysisRecipe,
@@ -2263,5 +2263,36 @@ describe("concurrency", () => {
       expect(result.analysis.items).toHaveLength(12);
     }
     console.log(`P8 fake_200ms_details=12 concurrency_1_ms=${elapsed[0]} concurrency_6_ms=${elapsed[1]}`);
+  });
+});
+
+// Files/GenerateContent refusal shape: https://github.com/googleapis/js-genai/blob/v2.21.0/src/_api_client.ts
+// Canonical 403 mapping: https://github.com/googleapis/googleapis/blob/master/google/rpc/code.proto .
+describe("failure record", () => {
+  it("an index 403 writes error.provider.class refused with status 403", async () => {
+    const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
+    const fixture = await createFixture();
+    const adapter = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+      generateContent: async () => { throw new ApiError({ status: 403, message: "synthetic refusal" }); },
+    });
+    fixture.analyzer.index.mockImplementation((...args) => adapter.index(...args));
+    await expect(createOrchestrator(fixture).analyze(fixture.options)).rejects.toThrow("refused");
+    const receipt = JSON.parse(await readFile(join(fixture.outputRoot, fixture.meeting.id, "run-test", "failure-manifest.json"), "utf8"));
+    expect(receipt.error).toEqual({ code: "unexpected_failure", provider: { class: "refused", status: 403 } });
+    expect(receipt.schemaVersion).toBe(1);
+  });
+});
+
+describe("detail", () => {
+  it("a detail 403 is still recorded as generation_failed", async () => {
+    const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
+    const fixture = await createFixture();
+    const adapter = new GeminiVideoAnalyzer("synthetic-key", "gemini-test", {
+      generateContent: async () => { throw new ApiError({ status: 403, message: "synthetic refusal" }); },
+    });
+    fixture.analyzer.interrogate.mockImplementation((...args) => adapter.interrogate(...args));
+    const result = await createOrchestrator(fixture).analyze(fixture.options);
+    expect(result.outcome.failures).toMatchObject([{ code: "generation_failed", attempts: 1 }]);
+    expect(result.outcome.failures[0]).not.toHaveProperty("provider");
   });
 });
