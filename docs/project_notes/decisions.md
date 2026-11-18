@@ -4,6 +4,13 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-11-18 — Give transcription its own system instruction
+
+The owner approved full original-language transcription. The transcription
+instruction keeps the untrusted-media and credential protections. The ban on
+reproducing the full transcript and the recipe and focus rules apply to
+analysis. See [ADR 0015](../adr/0015-derived-transcript-from-recording-audio.md).
+
 ## 2026-11-18 — Temporary production audit exception
 
 Accept only `GHSA-fc5q-39xc-vjpf` in the CI audit step: no patched picomatch

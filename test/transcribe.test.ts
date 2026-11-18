@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Command } from "commander";
-import { ApiError } from "@google/genai";
+import { ApiError, type GenerateContentParameters } from "@google/genai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerTranscribe } from "../src/commands/transcribe.js";
 import { DEFAULT_GEMINI_MODEL, geminiModelSchema } from "../src/adapters/gemini-model.js";
@@ -14,6 +14,9 @@ import { formatDerivedTranscript } from "../src/services/transcript.js";
 import { renderSrt } from "../src/services/transcript-render.js";
 import { timestampToSeconds } from "../src/lib/time.js";
 import type { DerivedTranscriptionSegment } from "../src/domain/types.js";
+import { GeminiVideoAnalyzer } from "../src/adapters/gemini.js";
+import { GeminiHostedAnalysisProvider, resolveHostedTranscript } from "../apps/workflows/src/provider.js";
+import { expectOriginalLanguage, requestText } from "./helpers/transcription-request.js";
 
 const directories: string[] = [];
 const segment = (text = "ZEBRA-SENTINEL-LINE"): DerivedTranscriptionSegment => ({ start: "00:00:20", end: "00:00:24", speaker: "Speaker 1", text });
@@ -154,6 +157,91 @@ describe("windows", () => {
     expect(analyzer.index.mock.calls[0]![5]).toBe(formatDerivedTranscript(result.segments));
     expect(result.segments.map(s => s.start)).toEqual(["00:09:56", "00:10:05"]);
     expect(f.deps.extractAudioTrack.mock.calls[1]![2]).toEqual({ startSeconds: 585, durationSeconds: 315 });
+  });
+});
+
+describe("original-language transcription", () => {
+  const syntheticArabic = { start: "00:09:55", end: "00:09:57", speaker: "Speaker １", text: "هل هذا واضح؟" };
+  const syntheticChinese = { start: "00:09:58", end: "00:10:00", speaker: "Speaker 2", text: "现在开始。" };
+  const syntheticMixed = { start: "00:00:16", end: "00:00:18", speaker: "Speaker 2", text: "看这里 < ثم هنا。" };
+  const merged = [syntheticArabic, syntheticChinese, { ...syntheticMixed, start: "00:10:01", end: "00:10:03" }];
+  const lines = [
+    `[00:09:55] Speaker １: ${syntheticArabic.text}`,
+    `[00:09:58] Speaker 2: ${syntheticChinese.text}`,
+    `[00:10:01] Speaker 2: ${syntheticMixed.text}`,
+  ].join("\n");
+  const windows = [{ segments: [syntheticArabic, syntheticChinese] }, { segments: [syntheticMixed] }];
+
+  function capture(...responses: unknown[]) {
+    const requests: GenerateContentParameters[] = [];
+    const analyzer = new GeminiVideoAnalyzer("test-key", "gemini-test", {
+      generateContent: async request => {
+        requests.push(request);
+        return { text: JSON.stringify(responses[requests.length - 1]) };
+      },
+    });
+    vi.spyOn(analyzer, "upload").mockImplementation(async (_path, mimeType) => ({
+      name: "files/synthetic", uri: "https://example.invalid/files/synthetic", mimeType,
+    }));
+    vi.spyOn(analyzer, "delete").mockResolvedValue(undefined);
+    return { analyzer, requests };
+  }
+
+  it("captures both standalone windows and preserves the exact speech in all three exports", async () => {
+    const f = await fixture(900);
+    const { analyzer, requests } = capture(...windows);
+    const result = await transcribe({ ...f.options, json: true }, { ...f.deps, createAnalyzer: () => analyzer });
+    expect(requests).toHaveLength(2);
+    requests.forEach(expectOriginalLanguage);
+    expect(result.segments).toEqual(merged);
+    const [srt, speakers, json] = await Promise.all(result.paths.map(path => readFile(path, "utf8")));
+    expect(srt).toBe([
+      `1\n00:09:55,000 --> 00:09:57,000\n${syntheticArabic.text}`,
+      `2\n00:09:58,000 --> 00:10:00,000\n${syntheticChinese.text}`,
+      `3\n00:10:01,000 --> 00:10:03,000\n${syntheticMixed.text}`,
+      "",
+    ].join("\n\n"));
+    expect(speakers).toBe("# frame-of-mind transcript; origin: gemini-audio; model: gemini-test; clock: source; timing: reference-grade (whole-second)\n" + lines + "\n");
+    expect(JSON.parse(json!).segments).toEqual([
+      { ...syntheticArabic, start: 595, end: 597 },
+      { ...syntheticChinese, start: 598, end: 600 },
+      { ...syntheticMixed, start: 601, end: 603 },
+    ]);
+  });
+
+  it("captures analyze-derived requests and preserves escaped speech in index and detail", async () => {
+    const f = await fixture(900);
+    const candidate = { start: "00:09:58", end: "00:10:03", kind: "test", summary: "Synthetic", importance: "low" };
+    const { analyzer, requests } = capture(...windows,
+      { matchNotes: "Synthetic", moments: [candidate] },
+      { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic", evidence: { timestamp: candidate.start } },
+    );
+    const orchestrator = new AnalysisOrchestrator({ ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
+    await orchestrator.analyze({
+      contextMode: "none", video: f.input, outputRoot: join(f.root, "runs"), apiKey: "test-key",
+      recipe: { id: "requirements", label: "Synthetic", description: "Synthetic", indexInstruction: "Synthetic", interrogationInstruction: "Synthetic" },
+      customRecipe: false, recipeSha256: "a".repeat(64), recipeRevision: "synthetic", maxIncidents: 1,
+      screenshots: false, keepUpload: false, calibrate: false,
+    });
+    expect(requests).toHaveLength(4);
+    expectOriginalLanguage(requests[0]!);
+    expectOriginalLanguage(requests[1]!);
+    const escaped = lines.replace("<", "&lt;");
+    expect(requestText(requests[2]!).match(/<transcript>\n([\s\S]*?)\n<\/transcript>/)?.[1]).toBe(escaped);
+    expect(requestText(requests[3]!).match(/<nearby-transcript>\n([\s\S]*?)\n<\/nearby-transcript>/)?.[1]).toBe(escaped);
+  });
+
+  it("captures the hosted provider request and preserves the derived transcript", async () => {
+    const { analyzer, requests } = capture({ segments: merged });
+    const provider = new GeminiHostedAnalysisProvider(analyzer);
+    const segments = await provider.transcribe({
+      name: "files/synthetic", uri: "https://example.invalid/files/synthetic", mimeType: "video/mp4",
+    });
+    expect(requests).toHaveLength(1);
+    expectOriginalLanguage(requests[0]!);
+    expect(resolveHostedTranscript({ derivedSegments: segments })).toEqual({
+      origin: "gemini-audio", text: lines, alignmentOffsetSeconds: 0,
+    });
   });
 });
 
