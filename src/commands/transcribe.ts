@@ -1,9 +1,18 @@
 import type { Command } from "commander";
 import { transcribe, TranscribeCanceledError, TranscribeError, type TranscribeDependencies, type TranscribeOptions } from "../services/transcribe.js";
 
+export const transcriptionHelp = [
+  "",
+  "Transcription requests the original spoken languages, including mid-sentence switches, and forbids translation.",
+  "Speaker 1, [inaudible] and [crosstalk] are transcript format markers for speech in any language.",
+  "The CLI and local Studio use the first audio track. Hosted Studio sends the resolved media.",
+  "Live transcription fidelity on real non-English speech is untested.",
+].join("\n");
+
 export function registerTranscribe(program: Command, dependencies: Partial<TranscribeDependencies> = {}): void {
   program.command("transcribe")
     .description("Write a private reference-grade context transcript from recording audio.")
+    .addHelpText("after", transcriptionHelp)
     .argument("<input>", "local video or audio recording")
     .option("-o, --output <dir>", "output directory (default: beside the recording)")
     .option("--model <id>", "Gemini model ID")

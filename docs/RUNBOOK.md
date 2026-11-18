@@ -717,6 +717,13 @@ An adopted contribution supplies this standalone workflow. It uses the same
 600-second transcription windows, 15-second lead-in overlap, prompt, schema,
 model and merge as the analyze ladder.
 
+Standalone and derived transcription ask for the original spoken languages,
+including switches within a sentence, and instruct the model never to translate.
+`Speaker 1`, `[inaudible]` and `[crosstalk]` are format markers for speech in
+any language. The CLI and local Studio extract the first audio track. Hosted
+Studio sends the resolved media. Live transcription fidelity on real non-English
+speech is untested.
+
 - Default output: `<stem>.srt` and `<stem>_speakers.txt` beside the input.
   `--json` adds `<stem>.transcript.json`; its segment times are numeric seconds
   and its clock is `source`. Timing is whole-second reference grade.

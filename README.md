@@ -559,6 +559,13 @@ frameofmind transcribe "/path/to/interview.mov" -o "/path/to/private-transcripts
 frameofmind analyze interview --source file --context-file "/path/to/interview.srt" --video "/path/to/interview.mov"
 ```
 
+Standalone and derived transcription ask for the original spoken languages,
+including switches within a sentence, and instruct the model never to translate.
+`Speaker 1`, `[inaudible]` and `[crosstalk]` are format markers for speech in
+any language. The CLI and local Studio extract the first audio track. Hosted
+Studio sends the resolved media. Live transcription fidelity on real non-English
+speech is untested.
+
 Writes `interview.srt` and `interview_speakers.txt` beside the recording unless
 `-o` selects a directory. These are reference-grade context transcripts with
 whole-second timing in the recording's **source** clock. The speakers file

@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Transcription now requests the original spoken languages and preserves mid-sentence language switches in its instructions.
+
 - 2026-11-18: Temporarily accept the unpatched picomatch production advisory in CI, with an automatic failure after its 2026-12-18 review deadline; other high and critical advisories still fail.
 
 - 2026-11-17: Store exact times as rational frame counts; add frame/timecode timeline offsets and a language-neutral contract. `times.json` schema 2 preserves model precision without frame/timecode claims and emits exact offsets separately (ADR 0027).

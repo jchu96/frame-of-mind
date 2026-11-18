@@ -45,7 +45,7 @@ import {
 import { defaultOutputRoot } from "./lib/paths.js";
 import { registerSession } from "./commands/session.js";
 import { registerMedia } from "./commands/media.js";
-import { registerTranscribe } from "./commands/transcribe.js";
+import { registerTranscribe, transcriptionHelp } from "./commands/transcribe.js";
 
 loadDotenv({ quiet: true });
 
@@ -153,6 +153,7 @@ program.command("calibrate")
 program
   .command("analyze")
   .description("Analyze one video with optional Bluedot, Granola, or local context.")
+  .addHelpText("after", transcriptionHelp)
   .argument("[meeting-id]", "Provider meeting/note ID; omit with --source none")
   .requiredOption("--source <provider>", "Context provider: bluedot, granola, file, or none")
   .option("--granola-transport <transport>", "Granola context transport: mcp or api", "mcp")
