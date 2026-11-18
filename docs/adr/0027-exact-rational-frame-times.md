@@ -32,12 +32,16 @@ malformed or padded input. Elapsed hours do not wrap at 24.
 Ticks use 254,016,000,000 per second and serialize as decimal strings. A rate
 with fractional ticks per frame reports ticks unavailable with a reason.
 Reading seconds use the first whole millisecond inside the frame, written to
-three decimals; they are a derived containment value, not the frame boundary.
-An instant on a boundary belongs to the frame starting there. No nearest-frame
-rule is introduced. At rates above 1000 fps, some frames contain no whole
-millisecond; the current derivation explicitly refuses those frames rather
-than claiming a round trip. This representability edge is pending contract
-resolution; no supported table row relies on such a frame.
+three decimals and marked `secondsDerived: true`; they are a display, never the
+exact reconstruction path or necessarily the frame boundary. Reconstruct exact
+time from whole frames at its rate. An instant on a boundary belongs to the
+frame starting there; no nearest-frame rule is introduced.
+
+At rates above 1000 fps, some frames contain no whole millisecond. Frame 1 at
+2000/1 spans [0.5, 1) ms. Keep the accepted rate and exact frames, ticks and
+timecode; omit only `seconds` and provide `secondsUnavailable` with the reason.
+A direct request for that seconds form refuses. This edge has an independent
+table row; it never rounds to a neighboring frame or rejects the whole time.
 
 A whole-millisecond source without a video rate uses internal rate 1000/1,
 explicitly labeled as a millisecond source. Its public output contains whole

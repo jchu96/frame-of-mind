@@ -37,7 +37,7 @@ test("a drop-frame offset at a non-drop rate is refused", () => {
 
 test("an exact time carries frames, rate, ticks, timecode, dropFrame, seconds and clock", () => {
   expect(buildTimes(base.analysis, runClock("1f", "24000/1001")).timeline?.offset).toEqual({
-    clock: "timeline", frames: "1", rate: { num: 24000, den: 1001 }, ticks: "10594584000", timecode: "00:00:00:01", dropFrame: false, seconds: "0.042", origin: "declared",
+    clock: "timeline", frames: "1", rate: { num: 24000, den: 1001 }, ticks: "10594584000", timecode: "00:00:00:01", dropFrame: false, seconds: "0.042", secondsDerived: true, origin: "declared",
   });
 });
 
@@ -73,7 +73,7 @@ test("a timeline time made from a model time keeps precisionMs 1000", () => {
 test("without a declared rate exact offsets expose milliseconds seconds and ticks only", () => {
   const times = buildTimes(base.analysis, runClock("12.345"));
   expect(times.exactTimeCapability).toContain("no frames or timecode");
-  expect(times.timeline?.offset).toEqual({ clock: "timeline", milliseconds: "12345", seconds: "12.345", ticks: "3135827520000", rateBasis: "whole-millisecond source; no declared video rate", origin: "declared" });
+  expect(times.timeline?.offset).toEqual({ clock: "timeline", milliseconds: "12345", seconds: "12.345", secondsDerived: true, ticks: "3135827520000", rateBasis: "whole-millisecond source; no declared video rate", origin: "declared" });
   expect(times.entries[0]?.timeline?.seconds).toBe("22.345");
 });
 
@@ -118,4 +118,22 @@ test("fixture artifact writer emits times.json with and without a declared video
     for (const entry of times.entries) for (const time of [entry.time, entry.timeline!]) expect(Object.keys(time).sort()).toEqual(["clock", "origin", "precisionMs", "seconds"]);
     process.stdout.write(`TIME_LANE_ARTIFACT_FIXTURE ${rate ?? "no-rate"} ${JSON.stringify(times)}\n`);
   }
+});
+
+
+test("high-rate exact offsets preserve all available forms and refuse only derived seconds", async () => {
+  const clock = runClock("1f", "2000/1");
+  const offset = buildTimes(base.analysis, clock).timeline!.offset;
+  expect(offset).toEqual({ clock: "timeline", origin: "declared", frames: "1", rate: { num: 2000, den: 1 }, ticks: "127008000", timecode: "00:00:00:01", dropFrame: false, secondsDerived: true, secondsUnavailable: "No whole millisecond falls inside this frame; three-decimal derived seconds are unavailable." });
+  expect(offset).not.toHaveProperty("seconds");
+  const sidecar = buildTimes(base.analysis, clock);
+  expect(timesSchema.safeParse({ ...sidecar, timeline: { offset: { ...offset, seconds: "0.001" } } }).success).toBe(false);
+  expect(timesSchema.safeParse({ ...sidecar, timeline: { offset: { ...offset, secondsDerived: false } } }).success).toBe(false);
+  expect(clock.timeline).not.toHaveProperty("timelineOffsetMs");
+  const dir = await mkdtemp(join(tmpdir(), "time-high-rate-")); roots.push(dir);
+  await writeArtifacts(dir, base.analysis, { ...base.manifest, clock }, { schemaVersion: 1, runId: base.analysis.runId, status: "complete", candidates: { indexed: 2, selected: 2, omittedByLimit: 0, validated: 2, accepted: 2, rejected: 0, failed: 0 }, failures: [] });
+  for (const file of ["analysis.md", "report.html"]) expect(await readFile(join(dir, file), "utf8")).toContain("derived seconds unavailable");
+  expect(JSON.parse(await readFile(join(dir, "times.json"), "utf8"))).toMatchObject({ timeline: { offset } });
+  // A derived reading value is never accepted as the exact frame boundary.
+  expect(() => declareClock("0.042", "24000/1001")).toThrow("between frames 1f and 2f");
 });

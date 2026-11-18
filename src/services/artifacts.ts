@@ -311,13 +311,14 @@ function safeHref(value: string | undefined): string | undefined {
 }
 
 export function clockSummary(clock?: RunClock): string {
-  return `clocks: ${clock?.fileClock ?? "source"}${clock?.timeline ? `, timeline +${renderDeclaredOffset(clock.timeline)}` : ""}; model clip clock: ${clock?.modelClipClock ?? "unverified"}${!clock || clock.modelClipClock === "unverified" ? " (clip clock unverified)" : ""}${clock?.clipGuard === "unknown-duration" ? "; clip guard did not run: duration unknown" : ""}${clock?.transcriptClock === "unverified" ? "; transcript clock unverified (legacy alignment retained)" : ""}${clock?.transcriptWindow === "not-windowed" ? "; transcript not windowed" : ""}`;
+  return `clocks: ${clock?.fileClock ?? "source"}${clock?.timeline ? `, timeline offset ${renderDeclaredOffset(clock.timeline)}` : ""}; model clip clock: ${clock?.modelClipClock ?? "unverified"}${!clock || clock.modelClipClock === "unverified" ? " (clip clock unverified)" : ""}${clock?.clipGuard === "unknown-duration" ? "; clip guard did not run: duration unknown" : ""}${clock?.transcriptClock === "unverified" ? "; transcript clock unverified (legacy alignment retained)" : ""}${clock?.transcriptWindow === "not-windowed" ? "; transcript not windowed" : ""}`;
 }
 
 function renderDeclaredOffset(declaration: NonNullable<RunClock["timeline"]>): string {
   const time = deriveExact(declaredOffset(declaration), declaration.timecode?.dropFrame);
   const units = "frames" in time ? `${time.frames} frames @${time.rate.num}/${time.rate.den}; ${time.timecode} ${time.dropFrame ? "drop-frame" : "non-drop"}` : `${time.milliseconds} ms`;
-  return `${time.seconds} s (${units}; ${"ticks" in time ? `${time.ticks} ticks` : time.ticksUnavailable}; declared)`;
+  const seconds = time.seconds === undefined ? `derived seconds unavailable: ${time.secondsUnavailable}` : `${time.seconds} s (derived)`;
+  return `${seconds} (${units}; ${"ticks" in time ? `${time.ticks} ticks` : time.ticksUnavailable}; declared)`;
 }
 export function renderClockTime(timestamp: string, clock?: RunClock): string {
   const time = modelTime(clock?.fileClock ?? "source", timestamp);
@@ -341,7 +342,7 @@ export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock): Ti
   return timesSchema.parse({
     schemaVersion: 2, kind: "frame-of-mind.times", fileClock,
     exactTimeCapability: offset?.unit === "video-frame"
-      ? "declared video rate: frames, seconds, timecode with explicit drop-frame, ticks when whole"
+      ? "declared video rate: frames, timecode with explicit drop-frame, ticks when whole, derived seconds when a whole millisecond exists"
       : clock?.timeline?.timecode ? "legacy millisecond offset: milliseconds, seconds and ticks; no exact video-frame boundary"
       : "no declared video rate: whole milliseconds, seconds and ticks; no frames or timecode",
     ...(offset ? { timeline: { offset: { ...deriveExact(offset, clock?.timeline?.timecode?.dropFrame), origin: "declared" } } } : {}),

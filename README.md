@@ -518,7 +518,12 @@ drop-frame choice, seconds and clock. Ticks are explicitly unavailable if the
 rate cannot represent whole ticks per frame. Without a video rate, this offset
 has milliseconds, seconds and ticks only.
 
-Exact reading seconds are the first whole millisecond inside the frame. For
+Exact reading seconds are marked `secondsDerived: true` and identify the first
+whole millisecond inside the frame. Reconstruct exact time through frames at its
+rate, never these display seconds. Above 1000 fps a frame may contain no whole
+millisecond (frame 1 at 2000/1 is one example): `secondsUnavailable` explains
+the missing form, while frames, ticks and timecode remain exact. The rate is
+still accepted. For
 example, frame 1 at 24000/1001 reads `0.042` s, but its boundary is not exactly
 42 ms: use frames or ticks to transfer it exactly. Approximate timeline seconds
 are displayed to milliseconds while retaining `≈1 s`; this is not snapping.

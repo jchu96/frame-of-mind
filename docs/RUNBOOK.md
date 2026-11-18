@@ -549,7 +549,11 @@ They have no frames, ticks or timecode, including when a rate is declared.
 Markdown, HTML and progress lines retain `≈1 s; model`. The exact declared
 offset is separate under `timeline.offset`, with every available form. Use its
 frames/rate or ticks for exact transfer. Reading seconds identify the first
-whole millisecond inside a frame, not necessarily the exact frame boundary.
+whole millisecond inside a frame, not necessarily the exact frame boundary, and
+are explicitly marked derived. Do not use them to reconstruct the exact time;
+use frames at the rate. If `secondsUnavailable` appears (for example frame 1
+at 2000/1), there is no whole millisecond inside that frame. The rate is still
+accepted and all other available exact forms remain usable.
 
 With no declared rate, use seconds offsets. Exact values expose milliseconds,
 seconds and ticks only; frames and timecode are unavailable. Declare a known

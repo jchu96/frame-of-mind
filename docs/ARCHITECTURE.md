@@ -566,6 +566,9 @@ timecode. `timeline.offset` is separately exact and carries every available
 form derived by `src/domain/exact-time.ts` from whole frames at a rational rate.
 The versioned language-neutral table is `docs/contracts/time-cases.json`.
 Whole-millisecond sources use internal 1000/1, with no invented video rate.
+Reading seconds are explicitly derived; exact reconstruction uses frames/rate.
+For frames containing no whole millisecond, omit seconds with a reason while
+retaining exact frames, ticks and timecode, without rejecting the rate.
 The pure OTIO exporter is a boundary, never the arithmetic authority.
 
 The sidecar does not replace `analysis.json`. Both manifest versions accept
