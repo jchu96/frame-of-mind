@@ -14,7 +14,7 @@ const analysis: AnalysisRunV3 = {
   schemaVersion: 3, runId: "clock-test", context: { mode: "none" }, recipe: { id: "test", label: "Test" }, model: "gemini-test", matchNotes: "Matched.",
   items: [1, 2].map(i => ({ candidate: { start: `00:00:${i}0`, end: `00:00:${i}9`, kind: "test", importance: "high", summary: "Synthetic candidate" }, result: { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic evidence", evidence: { timestamp: `00:00:${i}5` } } })),
 };
-const clock = (rate?: string): RunClock => ({ fileClock: "source", timeline: declareClock("12.345", rate), modelClipClock: "unverified" });
+const clock = (rate?: string): RunClock => ({ fileClock: "source", timeline: declareClock("12", rate), modelClipClock: "unverified" });
 async function write(clocks?: RunClock) {
   const dir = await mkdtemp(join(tmpdir(), "times-test-")); roots.push(dir);
   const manifest: RunManifestV3 = {
@@ -41,16 +41,16 @@ describe("times.json", () => {
     const result = await write(); expect(JSON.stringify(result)).not.toContain("timeline");
   });
   it("model times carry precisionMs 1000", async () => {
-    const result = await write(clock()); expect(result.times.entries.every((e: { precisionMs: number }) => e.precisionMs === 1000)).toBe(true);
+    const result = await write(clock()); expect(result.times.entries.every((e: { time: { precisionMs: number } }) => e.time.precisionMs === 1000)).toBe(true);
   });
-  it("every entry value is a number of seconds with at most three decimals", async () => {
+  it("every approximate entry carries decimal seconds and its precision", async () => {
     const result = await write(clock());
-    for (const e of result.times.entries) for (const name of ["source", "timeline"]) { expect(typeof e[name]).toBe("number"); expect(/^\d+(\.\d{1,3})?$/.test(String(e[name]))).toBe(true); }
-    expect(result.times.entries[0].timeline).toBe(22.345);
+    for (const e of result.times.entries) for (const name of ["time", "timeline"]) { expect(typeof e[name].seconds).toBe("string"); expect(/^\d+\.\d{3}$/.test(e[name].seconds)).toBe(true); expect(e[name].origin).toBe("model"); }
+    expect(result.times.entries[0].timeline.seconds).toBe("22.000");
   });
   it("reel coordinates keep their clock label", () => {
     const times = buildTimes(analysis, { fileClock: "reel", modelClipClock: "absolute" });
-    expect(times.fileClock).toBe("reel"); expect(times.entries[0]).toMatchObject({ reel: 10 }); expect(times.entries[0]).not.toHaveProperty("source");
+    expect(times.fileClock).toBe("reel"); expect(times.entries[0]).toMatchObject({ time: { clock: "reel", seconds: "10.000" } }); expect(times.entries[0]).not.toHaveProperty("source");
   });
 });
 describe("render", () => {
@@ -58,7 +58,7 @@ describe("render", () => {
     const result = await write(clock("25"));
     const eyebrows = [...result.html.matchAll(/<article>\s*<div class="eyebrow">([^<]+)/g)].map(m => m[1]!);
     expect(eyebrows).toHaveLength(2);
-    for (const text of eyebrows) { expect(text).toContain("s source"); expect(text).toContain("s timeline"); expect(text).toContain("≈1 s"); expect(text).toContain("@25"); }
+    for (const text of eyebrows) { expect(text).toContain("s source"); expect(text).toContain("s timeline"); expect(text).toContain("≈1 s"); expect(text).not.toContain("@25"); expect(text).toContain("model"); }
     expect(result.html).toContain("clip clock unverified");
   });
   it("every Markdown time carries a clock label and precision marker", async () => {
@@ -71,11 +71,12 @@ describe("timecode", () => {
     const plain = await write(clock()); const rendered = await write(clock("25"));
     expect(rendered.json).toBe(plain.json);
     expect(rendered.times.entries.map(({ timecode, ...e }: Record<string, unknown>) => e)).toEqual(plain.times.entries);
-    const normalized = structuredClone(rendered.manifest); delete normalized.clock!.timeline!.timecode;
-    expect(normalized).toEqual(plain.manifest);
+    expect(rendered.manifest.clock?.timeline?.timelineOffsetMs).toBe(plain.manifest.clock?.timeline?.timelineOffsetMs);
   });
   it("a run without --timecode-rate has no timecode field anywhere", async () => {
-    expect(JSON.stringify(await write(clock()))).not.toContain("timecode");
+    const result = await write(clock());
+    expect(result.times.timeline.offset).not.toHaveProperty("timecode");
+    expect(result.times.timeline.offset).not.toHaveProperty("frames");
   });
 });
 describe("compatibility", () => {

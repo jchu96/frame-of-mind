@@ -50,6 +50,18 @@ test("the oracle agrees with every table row", () => {
 
 test("the runner executed N of N rows in both directions and every rate was exercised", () => {
   let executed = 0;
+  const completed = { timecode: 0, ticks: 0, seconds: 0 };
+  const timeRows = table.cases.filter(row => !row.refused && row.op !== "rate");
+  // These obligations come from the table, independently of the runner branches.
+  const expected = {
+    timecode: timeRows.filter(row => row.expected?.rate !== undefined).length,
+    ticks: timeRows.filter(row => row.expected?.ticks !== undefined).length,
+    seconds: timeRows.filter(row => row.expected?.seconds !== undefined).length,
+  };
+  function readBack(actual: bigint, frames: bigint, row: string): 1 {
+    expect(actual, row).toBe(frames);
+    return 1; // Count only after the read-back assertion completes.
+  }
   const rates = new Set<string>();
   for (const row of table.cases) {
     if (row.refused) {
@@ -64,14 +76,21 @@ test("the runner executed N of N rows in both directions and every rate was exer
         const time = rate ? exactTime(row.clock!, e.frames as string, rate) : fromMilliseconds(row.clock!, e.milliseconds as string);
         if (rate) {
           rates.add(`${rate.num}/${rate.den}/${row.dropFrame}`);
-          expect(fromTimecode(row.clock!, e.timecode as string, rate, row.dropFrame!).frames, row.id).toBe(time.frames);
+          completed.timecode += readBack(fromTimecode(row.clock!, e.timecode as string, rate, row.dropFrame!).frames, time.frames, row.id);
         }
-        if (e.ticks) expect(fromTicks(row.clock!, e.ticks as string, rate).frames, row.id).toBe(time.frames);
+        if (e.ticks !== undefined) completed.ticks += readBack(fromTicks(row.clock!, e.ticks as string, rate).frames, time.frames, row.id);
+        // Check display containment, without treating reading seconds as an exact boundary.
+        if (e.seconds !== undefined) completed.seconds += readBack(fromMilliseconds(row.clock!, String(BigInt((e.seconds as string).replace(".", ""))), rate).frames, time.frames, row.id);
         // Exact reconstruction uses the stored frames at the rate, never derived display seconds.
         expect(rate ? exactTime(row.clock!, e.frames as string, rate) : fromMilliseconds(row.clock!, e.milliseconds as string)).toEqual(time);
       }
     }
     executed++;
+  }
+  for (const direction of ["timecode", "ticks", "seconds"] as const) {
+    const receipt = `${direction} read-back completed ${completed[direction]} of ${expected[direction]}`;
+    expect(completed[direction], receipt).toBe(expected[direction]);
+    process.stdout.write(`${receipt}\n`);
   }
   expect(executed).toBe(table.cases.length);
   for (const rate of table.rates) expect(rates.has(`${rate.num}/${rate.den}/${rate.dropFrame}`)).toBe(true);

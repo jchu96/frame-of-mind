@@ -161,7 +161,7 @@ program
   .option("--context-file <path>", "Transcript/meeting JSON, Markdown, text, SRT, or VTT for --source file")
   .option("--video <path>", "Use a recording already downloaded locally")
   .option("--recording-url <url>", "Use an expiring signed Bluedot media URL")
-  .option("--timeline-offset <seconds>", "Non-negative sequence offset in seconds, at most three decimals")
+  .option("--timeline-offset <time>", "Sequence offset: seconds (up to 3 decimals), Nf whole frames, or HH:MM:SS:FF / HH:MM:SS;FF; video forms require --timecode-rate. Without a rate: exact milliseconds, seconds and ticks only; no frames or timecode")
   .option("--file-clock <clock>", "Input clock: source or reel", "source")
   .option("--timecode-rate <rate>", `Timeline timecode rendering: ${ACCEPTED_RATES}`)
   .option("--no-calibrate", "Skip clip-clock measurement and label the run unverified")

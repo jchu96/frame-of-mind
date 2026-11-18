@@ -537,10 +537,31 @@ the original recording unchanged and delete only the derived temporary clips
 after review.
 
 The transcript offset is separate from the editing timeline. Declare the
-sequence location with `--timeline-offset 0` (or unsigned seconds, up to three
-decimals) and optionally `--timecode-rate 25`. Use `--file-clock reel` for a
-reel. All printed positions name `source`, `reel`, or `timeline`; model times
-keep `≈1 s`. Read `times.json` for pointer-addressed numeric seconds.
+sequence location with `--timeline-offset 0` or unsigned seconds up to three
+decimals. At a declared `--timecode-rate`, also use whole frames (`86400f`) or
+timecode (`01:00:00:00`, or `00:01:00;02` with `29.97df`). Seconds between frame
+boundaries are refused with the two neighboring frames: choose the intended
+frame explicitly, rather than rounding. Use `--file-clock reel` for a reel.
+
+Read `times.json` schema 2: `entries[].time` and `entries[].timeline` are model
+observations with decimal-string seconds, `precisionMs: 1000`, origin and clock.
+They have no frames, ticks or timecode, including when a rate is declared.
+Markdown, HTML and progress lines retain `≈1 s; model`. The exact declared
+offset is separate under `timeline.offset`, with every available form. Use its
+frames/rate or ticks for exact transfer. Reading seconds identify the first
+whole millisecond inside a frame, not necessarily the exact frame boundary, and
+are explicitly marked derived. Do not use them to reconstruct the exact time;
+use frames at the rate. If `secondsUnavailable` appears (for example frame 1
+at 2000/1), there is no whole millisecond inside that frame. The rate is still
+accepted and all other available exact forms remain usable.
+
+With no declared rate, use seconds offsets. Exact values expose milliseconds,
+seconds and ticks only; frames and timecode are unavailable. Declare a known
+sequence rate, or use the exact `from-media` probe, when video frame forms are
+needed. Never infer a rate from a model timestamp. Time of day is not a cut
+point; align a time-of-day transcript through its separate transcript offset.
+Existing bundles remain valid; update sidecar consumers for schema 2 before
+reading new outputs, without relabeling old schema-1 files.
 See README **Clocks** for the exact rate forms and `from-media` restrictions.
 
 Run `frameofmind calibrate [--model <id>] [--json]` to refresh the synthetic

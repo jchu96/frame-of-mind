@@ -2365,12 +2365,12 @@ describe("clocks", () => {
     const orchestrator = new AnalysisOrchestrator({ createContextSource: () => f.context, createAnalyzer: () => analyzer, probeDurationSeconds: async () => 2100,
       calibrateClipClock: async () => ({ model: "gemini-test", checkedAt: "2026-11-01T00:00:00Z", result: "relative", evidence: { flashFileSeconds: 27, clipStartSeconds: 20, reportedSeconds: 7 } }),
     });
-    const result = await orchestrator.analyze({ ...f.options, timelineOffset: "12.345", timecodeRate: "25" });
+    const result = await orchestrator.analyze({ ...f.options, timelineOffset: "12", timecodeRate: "25" });
     expect(result.analysis.items[0]?.result.evidence?.timestamp).toBe("00:02:02"); expect(generateContent).toHaveBeenCalledTimes(1);
     expect(result.outcome.status).toBe("complete");
     expect(result.manifest.clock?.modelClipClock).toBe("relative");
     const times = JSON.parse(await readFile(join(result.directory, "times.json"), "utf8"));
-    expect(times.entries).toContainEqual(expect.objectContaining({ pointer: "/items/0/result/evidence/timestamp", source: 122, timeline: 134.345 }));
+    expect(times.entries).toContainEqual(expect.objectContaining({ pointer: "/items/0/result/evidence/timestamp", time: { clock: "source", seconds: "122.000", precisionMs: 1000, origin: "model" }, timeline: { clock: "timeline", seconds: "134.000", precisionMs: 1000, origin: "model" } }));
   });
   it("absolute mode leaves evidence unchanged and unverified preserves base interpretation", async () => {
     const { GeminiVideoAnalyzer } = await import("../src/adapters/gemini.js");
@@ -2475,5 +2475,36 @@ describe("clock review explicit window", () => {
         expect(events).toContainEqual(expect.objectContaining({ kind: "warning", message: expect.stringContaining("exact millisecond alignment") }));
       }
     }
+  });
+});
+
+describe("exact and approximate output clocks", () => {
+  it("injected analyzer runs keep model times approximate in all four outputs with and without a declared rate", async () => {
+    for (const rate of [undefined, "24000/1001"]) {
+      const fixture = await createFixture();
+      const events: AnalysisProgressEvent[] = [];
+      const result = await createOrchestrator(fixture).analyze({ ...fixture.options, calibrate: false, timelineOffset: rate ? "1f" : "12.345", timecodeRate: rate }, { progress: { report: event => { events.push(event); } } });
+      const times = JSON.parse(await readFile(join(result.directory, "times.json"), "utf8"));
+      expect(times.schemaVersion).toBe(2);
+      for (const entry of times.entries) for (const time of [entry.time, entry.timeline]) {
+        expect(Object.keys(time).sort()).toEqual(["clock", "origin", "precisionMs", "seconds"]);
+        expect(time).toMatchObject({ origin: "model", precisionMs: 1000 });
+      }
+      const md = await readFile(join(result.directory, "analysis.md"), "utf8");
+      const html = await readFile(join(result.directory, "report.html"), "utf8");
+      const progress = events.filter(e => e.message.includes("Pass 2/2") && e.message.includes(" at ")).map(e => e.message);
+      expect(progress.length).toBeGreaterThan(0);
+      const lines = [...md.split("\n").filter(line => line.startsWith("- Time:")), ...[...html.matchAll(/<article>\s*<div class="eyebrow">([^<]+)/g)].map(m => m[1]!), ...progress];
+      expect(lines.length).toBeGreaterThanOrEqual(3);
+      for (const line of lines) { expect(line).toContain("≈1 s; model"); expect(line).not.toMatch(/\d+:\d{2}:\d{2}[:;]\d{2}|frames|ticks/); }
+    }
+  });
+  it("from-media resolves a frame offset after the exact probe and before model calls", async () => {
+    const fixture = await createFixture();
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => fixture.context, createAnalyzer: () => fixture.analyzer,
+      probeFrameRate: async () => ({ rate: { num: 24000, den: 1001 }, dropFrame: false, rateOrigin: "media" }), probeDurationSeconds: async () => undefined });
+    const result = await orchestrator.analyze({ ...fixture.options, calibrate: false, timelineOffset: "1f", timecodeRate: "from-media" });
+    expect(result.manifest.clock?.timeline).toMatchObject({ exactOffset: { frames: "1", rate: { num: 24000, den: 1001 } }, timecode: { rateOrigin: "media" } });
+    expect(result.manifest.clock?.timeline).not.toHaveProperty("timelineOffsetMs");
   });
 });

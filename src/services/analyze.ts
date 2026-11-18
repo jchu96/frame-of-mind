@@ -353,8 +353,8 @@ export class AnalysisOrchestrator {
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
     const timeline: ClockDeclaration | undefined = declareClock(options.timelineOffset, options.timecodeRate);
     const clock: RunClock = runClockSchema.parse({ fileClock: options.fileClock ?? "source", ...(timeline ? { timeline } : {}), modelClipClock: "unverified" });
-    if (options.video && options.timecodeRate?.startsWith("from-media") && clock.timeline) {
-      clock.timeline.timecode = await this.frameRate(resolve(options.video), options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf");
+    if (options.video && options.timecodeRate?.startsWith("from-media")) {
+      clock.timeline = declareClock(options.timelineOffset, options.timecodeRate, await this.frameRate(resolve(options.video), options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf"));
     }
     const maxVideoSeconds = resolveMaxVideoSeconds();
     const detailConcurrency = requireDetailConcurrency(options.detailConcurrency ?? 1);
@@ -450,8 +450,8 @@ export class AnalysisOrchestrator {
             "Split the recording or lower media resolution.",
         );
       }
-      if (options.timecodeRate?.startsWith("from-media") && clock.timeline && !clock.timeline.timecode) {
-        clock.timeline.timecode = await this.frameRate(localVideo, options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf");
+      if (options.timecodeRate?.startsWith("from-media") && !clock.timeline) {
+        clock.timeline = declareClock(options.timelineOffset, options.timecodeRate, await this.frameRate(localVideo, options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf"));
       }
       clock.clipGuard = duration === undefined ? "unknown-duration" : "applied";
       const recordingSha256 = await sha256File(localVideo);
