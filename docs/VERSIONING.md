@@ -148,7 +148,11 @@ The language-neutral table at `docs/contracts/time-cases.json` has its own
 `version: 1`. Its rules and expected outputs define exact frames at rational
 rates on named clocks, half-open instant containment, explicitly selected
 drop-frame, exact decimal-string ticks, and derived seconds as the first whole
-millisecond inside a frame. Integers that may exceed JavaScript's safe range
+millisecond inside a frame, explicitly marked `secondsDerived: true`. These
+seconds are a reading form: reconstruct exact time from frames at the rate. A
+frame with no whole millisecond (for example frame 1 at 2000/1) reports
+`secondsUnavailable` instead of seconds, retaining exact frames, ticks and
+timecode. The rate is not rejected. Integers that may exceed JavaScript's safe range
 are strings in JSON. Whole-millisecond sources use an internal `1000/1` unit;
 without a declared video rate they expose milliseconds, seconds and ticks,
 with no video frame or timecode claim. Approximate times are a separate type.

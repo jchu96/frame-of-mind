@@ -87,16 +87,22 @@ export function fromTicks<C extends MediaClock>(clock: C, ticks: string, rate?: 
   if (value % step !== 0n) refuse("Ticks must identify an exact frame boundary.");
   return rate ? exactTime(clock, String(value / step), rate) : fromMilliseconds(clock, String(value / step));
 }
-/** Reading value: first whole millisecond inside the half-open frame interval. */
-export function exactSeconds(time: ExactTime): string {
+/** Derived reading form only. Reconstruct exact time from frames/rate, never this display. */
+function derivedSeconds(time: ExactTime): { seconds: string; secondsDerived: true; secondsUnavailable?: never } | { seconds?: never; secondsDerived: true; secondsUnavailable: string } {
   const num = BigInt(time.rate.num), den = BigInt(time.rate.den);
   const ms = (time.frames * 1000n * den + num - 1n) / num;
-  if (ms * num >= (time.frames + 1n) * 1000n * den) refuse("This frame contains no whole millisecond.");
-  return `${ms / 1000n}.${String(ms % 1000n).padStart(3, "0")}`;
+  if (ms * num >= (time.frames + 1n) * 1000n * den) return { secondsDerived: true, secondsUnavailable: "No whole millisecond falls inside this frame; three-decimal derived seconds are unavailable." };
+  return { seconds: `${ms / 1000n}.${String(ms % 1000n).padStart(3, "0")}`, secondsDerived: true };
+}
+/** Requesting the unavailable seconds form refuses; the other exact forms remain available. */
+export function exactSeconds(time: ExactTime): string {
+  const result = derivedSeconds(time);
+  if (result.seconds === undefined) refuse(result.secondsUnavailable);
+  return result.seconds;
 }
 export function deriveExact(time: ExactTime, dropFrame?: boolean) {
   const step = ticksPerFrame(time);
-  const common = { clock: time.clock, seconds: exactSeconds(time),
+  const common = { clock: time.clock, ...derivedSeconds(time),
     ...(step === undefined ? { ticksUnavailable: "Ticks per frame are not whole at this rate." } : { ticks: String(time.frames * step) }) };
   return time.unit === "millisecond" ? { ...common, milliseconds: String(time.frames), rateBasis: "whole-millisecond source; no declared video rate" as const }
     : { ...common, frames: String(time.frames), rate: time.rate, timecode: renderExactTimecode(time, dropFrame!), dropFrame: dropFrame! };

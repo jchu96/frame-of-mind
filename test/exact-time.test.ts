@@ -67,7 +67,8 @@ test("the runner executed N of N rows in both directions and every rate was exer
           expect(fromTimecode(row.clock!, e.timecode as string, rate, row.dropFrame!).frames, row.id).toBe(time.frames);
         }
         if (e.ticks) expect(fromTicks(row.clock!, e.ticks as string, rate).frames, row.id).toBe(time.frames);
-        expect(fromMilliseconds(row.clock!, (e.seconds as string).replace(".", "").replace(/^0+(?=\d)/, ""), rate).frames, row.id).toBe(time.frames);
+        // Exact reconstruction uses the stored frames at the rate, never derived display seconds.
+        expect(rate ? exactTime(row.clock!, e.frames as string, rate) : fromMilliseconds(row.clock!, e.milliseconds as string)).toEqual(time);
       }
     }
     executed++;
@@ -139,4 +140,17 @@ test("exact clock offsets preserve rate and reject implicit resampling", () => {
 test("the compatibility wrapper also requires an explicit drop-frame choice", () => {
   // An untyped caller must get the same refusal as an exact-time caller.
   expect(() => renderTimecode(0, { num: 30000, den: 1001 }, undefined as unknown as boolean)).toThrow("Drop-frame must be stated");
+});
+
+
+test("a high-rate frame refuses only derived seconds and keeps exact forms", () => {
+  const rate = parseTimecodeRate("2000/1").rate;
+  const time = exactTime("source", "1", rate);
+  const forms = deriveExact(time, false);
+  expect(forms).toMatchObject({ frames: "1", ticks: "127008000", timecode: "00:00:00:01", secondsDerived: true, secondsUnavailable: "No whole millisecond falls inside this frame; three-decimal derived seconds are unavailable." });
+  expect(forms).not.toHaveProperty("seconds");
+  expect(() => exactSeconds(time)).toThrow("three-decimal derived seconds are unavailable");
+  expect(fromTicks("source", forms.ticks!, rate).frames).toBe(1n);
+  expect(fromTimecode("source", forms.timecode!, rate, false).frames).toBe(1n);
+  expect(deriveExact(exactTime("source", "2", rate), false)).toMatchObject({ seconds: "0.001", secondsDerived: true });
 });

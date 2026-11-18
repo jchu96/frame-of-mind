@@ -65,7 +65,10 @@ export function oracle(row: Case): Record<string, unknown> {
   const numerator = frames * den * 1000n;
   let ms = numerator / num;
   if (numerator % num !== 0n) ms++;
-  const result: Record<string, unknown> = { clock: row.clock, seconds: `${ms / 1000n}.${String(ms % 1000n).padStart(3, "0")}` };
+  const result: Record<string, unknown> = { clock: row.clock, secondsDerived: true };
+  // An integer reading value must lie strictly before the next frame boundary.
+  if (ms * num < (frames + 1n) * den * 1000n) result.seconds = `${ms / 1000n}.${String(ms % 1000n).padStart(3, "0")}`;
+  else result.secondsUnavailable = "No whole millisecond falls inside this frame; three-decimal derived seconds are unavailable.";
   if (254016000000n * den % num !== 0n) result.ticksUnavailable = "Ticks per frame are not whole at this rate.";
   else result.ticks = String(frames * (254016000000n * den / num));
   if (!row.rate) return { ...result, milliseconds: String(frames), rateBasis: "whole-millisecond source; no declared video rate" };
