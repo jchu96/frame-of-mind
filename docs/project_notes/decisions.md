@@ -4,6 +4,17 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-11-18 — Temporary production audit exception
+
+Accept only `GHSA-fc5q-39xc-vjpf` in the CI audit step: no patched picomatch
+release exists, no user-, recipe-, or provider-supplied pattern reaches a glob
+matcher, and no vulnerable matcher code appears in the CLI dependency bundle,
+local Studio server, hosted web Worker, or analysis Worker builds. The Studio
+output contains only a copied dependency's development-dependency declaration.
+Owner: hub. Remove the exception when the advisory names a patched version,
+or re-decide by 2026-12-18; the step fails from 2026-12-19 UTC. Read-only check:
+`gh api /advisories/GHSA-fc5q-39xc-vjpf --jq '.vulnerabilities[].first_patched_version'`.
+
 ## 2026-11-13 — Default PR checks exclude the whole hosted lane
 
 Unchanged-source failures invalidate the hosted lane as a default PR signal,
