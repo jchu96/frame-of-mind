@@ -141,3 +141,29 @@ Increment when changing:
 - built-in recipe behavior.
 
 Formatting-only code changes do not require a prompt revision.
+
+## Exact-time arithmetic contract
+
+The language-neutral table at `docs/contracts/time-cases.json` has its own
+`version: 1`. Its rules and expected outputs define exact frames at rational
+rates on named clocks, half-open instant containment, explicitly selected
+drop-frame, exact decimal-string ticks, and derived seconds as the first whole
+millisecond inside a frame. Integers that may exceed JavaScript's safe range
+are strings in JSON. Whole-millisecond sources use an internal `1000/1` unit;
+without a declared video rate they expose milliseconds, seconds and ticks,
+with no video frame or timecode claim. Approximate times are a separate type.
+
+`src/domain/exact-time.ts` implements the table; `test/exact-time.test.ts`
+executes every row in both directions and checks it against the independent
+sequential-label oracle in `test/time-contract-oracle.ts`. Consumers in other
+languages can use the same table without adopting this implementation. Changes
+to the table's meaning require a new contract version. The table does not change
+existing `analysis.json`, `manifest.json` or `times.json` output versions.
+
+The pure OTIO export uses `RationalTime.1` and `TimeRange.1` (start plus duration).
+Its floating rate is explicitly lossy; unsafe integer frame values are refused.
+It is an interchange boundary, never the arithmetic implementation. Unlike OTIO,
+this contract does not infer drop-frame, truncate frame values, snap nearby
+rates, accept skipped DF labels, or wrap elapsed timecode at 24 hours. Table rows
+annotate intentional differences from OTIO defaults. Nonstandard rational rates
+(such as 11/1) use nominal-rate labels rather than claiming SMPTE conformance.
