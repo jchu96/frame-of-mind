@@ -40,6 +40,8 @@ scope are in the [specification](./spec.md).
 | Cached builds portable across checkouts; Bun pinned to 1.4.4 (PR #146) | `[x]` |
 | Local database emulator upgrade to fix the hosted sign-in workflow test (issues #96, #113) | `[!]` tried 2026-11-13; still failed at Wrangler 4.148.0; no pull request |
 | Hosted steps that fail on an unchanged tree leave the default pull-request gate and run nightly and before every deploy instead | `[ ]` replaces the item above |
+| Flaky in the pull-request gate (local lane): `test:studio-http` "same composer idempotency key replays the same job" got HTTP 500, not 200 (`scripts/test-local-studio-http.ts:66`) | `[ ]` seen 2026-11-18 on PR #158, CI run 44311269021 attempt 1; unrelated to the change; passed on rerun |
+| Flaky in the pull-request gate (fast lane): `test/hosted-gate.test.ts` "MISS deploy-needs-hosted" failed with `HOSTED_DEPLOY status=FAIL reason=source_changed_during_check` | `[ ]` seen 2026-11-18 on PR #158, CI run 44311269021 attempt 2; unrelated to the change; passed on rerun |
 
 ## Verification
 
