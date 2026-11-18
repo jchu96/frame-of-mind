@@ -115,6 +115,7 @@ export interface DerivedTranscriptionSegment {
 }
 
 export interface DerivedTranscriptProvenance {
+  requestedLanguage?: string;
   origin: "gemini-audio";
   model: string;
   sha256: string;

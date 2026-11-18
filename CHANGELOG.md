@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Both `transcribe` and `analyze` accept `--transcript-language <tag>` as a spoken-language hint for transcription only. Speech stays in its original language. The speakers header, transcript JSON and derived-transcript manifest provenance record the requested tag when used. On `analyze`, `--note language=<path>` guides analysis prompts only. Live transcription fidelity is untested.
+
 - Transcription now requests the original spoken languages and preserves mid-sentence language switches in its instructions.
 
 - 2026-11-18: Temporarily accept the unpatched picomatch production advisory in CI, with an automatic failure after its 2026-12-18 review deadline; other high and critical advisories still fail.

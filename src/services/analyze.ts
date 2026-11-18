@@ -5,6 +5,7 @@ import { mkdtemp, rename, rm, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { selectCandidates } from "../domain/candidate-selection.js";
+import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
 import type { RunNote } from "../domain/run-notes.js";
 import type { UploadRetention } from "../domain/retention.js";
 import type { File as GeminiFile } from "@google/genai";
@@ -141,6 +142,7 @@ interface AnalyzeOptionsBase {
    */
   remoteFileName?: string;
   derivedTranscript?: boolean;
+  transcriptLanguage?: string;
   /**
    * Maximum overlapping pass-2 detail requests (1-8, default 1). Results are
    * still committed in candidate order.
@@ -284,7 +286,7 @@ export interface AnalysisVideoAnalyzer {
     runNotes?: readonly RunNote[],
     modelClipClock?: ClipClock,
   ): Promise<AnalysisDetail>;
-  transcribe?(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
+  transcribe?(file: GeminiFile, requestedLanguage?: string): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
   /**
    * Non-destructive cumulative token counts since construction. Distinct
@@ -351,6 +353,7 @@ export class AnalysisOrchestrator {
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
+    const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
     const timeline: ClockDeclaration | undefined = declareClock(options.timelineOffset, options.timecodeRate);
     const clock: RunClock = runClockSchema.parse({ fileClock: options.fileClock ?? "source", ...(timeline ? { timeline } : {}), modelClipClock: "unverified" });
     if (options.video && options.timecodeRate?.startsWith("from-media")) {
@@ -577,7 +580,7 @@ export class AnalysisOrchestrator {
                   try {
                     audioRemote = await analyzer.upload(audioPath, "audio/aac");
                     assertNotCanceled(execution.signal);
-                    return await analyzer.transcribe!(audioRemote);
+                    return await analyzer.transcribe!(audioRemote, requestedLanguage);
                   } finally {
                     span.setAttributes(
                       usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
@@ -640,10 +643,17 @@ export class AnalysisOrchestrator {
               origin: "gemini-audio",
               model: analyzer.model,
               sha256: sha256Text(formatted),
+              ...(requestedLanguage && { requestedLanguage }),
             };
           }
         }
         assertNotCanceled(execution.signal);
+      } else if (requestedLanguage && meeting?.transcript?.trim()) {
+        await report(progress, {
+          kind: "stage",
+          stage: "fetching_context",
+          message: "A supplied transcript was available, so --transcript-language was not used.",
+        });
       }
 
       const retainRemote = (options.retention

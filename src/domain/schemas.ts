@@ -1,3 +1,4 @@
+import { canonicalLanguageTag } from "./transcript-language.js";
 import { runClockSchema } from "./clock.js";
 import { z } from "zod";
 import { isCanonicalTimestamp, timestampToSeconds } from "../lib/time.js";
@@ -140,6 +141,7 @@ export const versionedAnalysisRunSchema = z.union([
 const utcDateTimeSchema = z.string().datetime({ offset: false });
 
 const derivedTranscriptProvenanceSchema = z.object({
+  requestedLanguage: z.string().refine(tag => canonicalLanguageTag(tag) !== undefined).optional(),
   origin: z.literal("gemini-audio"),
   model: z.string().min(1).max(240),
   sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),

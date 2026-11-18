@@ -45,6 +45,7 @@ import {
 import { defaultOutputRoot } from "./lib/paths.js";
 import { registerSession } from "./commands/session.js";
 import { registerMedia } from "./commands/media.js";
+import { resolveTranscriptLanguage } from "./domain/transcript-language.js";
 import { registerTranscribe, transcriptionHelp } from "./commands/transcribe.js";
 
 loadDotenv({ quiet: true });
@@ -84,6 +85,7 @@ export interface AnalyzeCliFlags {
   retention?: string;
   remoteFile?: string;
   derivedTranscript: boolean;
+  transcriptLanguage?: string;
   concurrency?: string;
 }
 
@@ -175,6 +177,7 @@ program
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
   .option("--concurrency <n>", "Parallel Gemini detail requests in pass 2 (default 1)")
   .option("--no-screenshots", "Skip ffmpeg screenshots")
+  .option("--transcript-language <tag>", "Likely spoken language for derived transcription (BCP-47)")
   .option("--no-derived-transcript", "Skip deriving a transcript from the recording audio when no transcript is supplied")
   .option("--retention <mode>", "Upload retention: provider (default) or run; overrides FRAME_OF_MIND_UPLOAD_RETENTION")
   .option("--keep-upload", "Alias for --retention provider")
@@ -189,9 +192,7 @@ program
       let stage = "cli";
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
-        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, apiKey);
+        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, process.env.GEMINI_API_KEY);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
         // @types/bun 1.4.0 drops Node's signal overloads from process.on/off;
@@ -304,8 +305,10 @@ export function printAnalysisSummary(result: AnalyzeResult): void {
 export async function buildAnalyzeOptions(
   meetingId: string | undefined,
   flags: AnalyzeCliFlags,
-  apiKey: string,
+  apiKey: string | undefined,
 ): Promise<AnalyzeOptions> {
+  const transcriptLanguage = resolveTranscriptLanguage(flags.transcriptLanguage, flags.derivedTranscript);
+  if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
   const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
   const runNotes = await loadRunNotes(flags.note);
   const recipeResult = await withAnalysisDepth(
@@ -390,6 +393,7 @@ export async function buildAnalyzeOptions(
     retention,
     ...(flags.remoteFile ? { remoteFileName: flags.remoteFile } : {}),
     derivedTranscript: flags.derivedTranscript !== false,
+    ...(transcriptLanguage && { transcriptLanguage }),
   };
   return videoOnly
     ? {

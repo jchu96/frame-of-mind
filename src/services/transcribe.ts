@@ -5,6 +5,7 @@ import type { File as GeminiFile } from "@google/genai";
 import { GeminiVideoAnalyzer } from "../adapters/gemini.js";
 import { GeminiFileError } from "../adapters/gemini-files.js";
 import { DEFAULT_GEMINI_MODEL, geminiModelSchema } from "../adapters/gemini-model.js";
+import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
 import { resolveRetention, type RetentionFlags } from "../domain/retention.js";
 import type { DerivedTranscriptionSegment } from "../domain/types.js";
 import { sha256File } from "../lib/files.js";
@@ -19,6 +20,7 @@ export class TranscribeCanceledError extends TranscribeError {
 }
 export interface TranscribeOptions extends RetentionFlags {
   input: string;
+  transcriptLanguage?: string;
   output?: string;
   model?: string;
   json?: boolean;
@@ -29,7 +31,7 @@ export interface TranscribeOptions extends RetentionFlags {
 export interface TranscriptionAnalyzer {
   readonly model: string;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
-  transcribe(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
+  transcribe(file: GeminiFile, requestedLanguage?: string): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
   usageSnapshot?(): { promptTokens: number; outputTokens: number; totalTokens: number } | undefined;
 }
@@ -60,6 +62,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
     stderr: line => { process.stderr.write(`${line}\n`); },
     now: () => new Date().toISOString(), ...injected,
   };
+  const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage);
   const canceled = () => { if (options.signal?.aborted) throw new TranscribeCanceledError(); };
   const model = options.model ?? (process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
   if (!geminiModelSchema.safeParse(model).success) throw new TranscribeError("--model must be a Gemini model ID.");
@@ -115,7 +118,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
           try {
             remote = await analyzer.upload(audioPath, "audio/aac");
             if (retention === "provider") deps.stderr(`kept audio upload: ${uploadLabel(remote)}`);
-            const segments = await analyzer.transcribe(remote);
+            const segments = await analyzer.transcribe(remote, requestedLanguage);
             chunks.push({ segments: offsetTranscriptionSegments(segments, window.startSeconds), nominalStartSeconds: window.nominalStartSeconds });
             deps.stdout(`window ${index + 1}/${windows.length}: ${segments.length} segment(s)`);
             break;
@@ -140,7 +143,10 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   } finally { await rm(temp, { recursive: true, force: true }); }
   canceled();
   const segments = mergeTranscriptionChunks(chunks);
-  const provenance = { model, clock: "source" as const, recordingSha256: await sha256File(input), createdAt: deps.now() };
+  const provenance = {
+    model, clock: "source" as const, recordingSha256: await sha256File(input), createdAt: deps.now(),
+    ...(requestedLanguage && { requestedLanguage }),
+  };
   const srt = renderSrt(segments);
   const texts = [srt.text, renderSpeakers(segments, provenance), ...(options.json ? [renderTranscriptJson(segments, provenance)] : [])];
   canceled();

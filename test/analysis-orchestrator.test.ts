@@ -690,8 +690,13 @@ describe("AnalysisOrchestrator", () => {
       extractAudioTrack,
     });
 
-    const result = await orchestrator.analyze(fixture.options);
+    const events: AnalysisProgressEvent[] = [];
+    const result = await orchestrator.analyze({ ...fixture.options, transcriptLanguage: "fr-CA" }, {
+      progress: { report(event) { events.push(event); } },
+    });
 
+    expect(events.filter(event => event.message?.includes("--transcript-language was not used"))).toHaveLength(1);
+    expect(JSON.stringify(result.manifest)).not.toContain("fr-CA");
     expect(extractAudioTrack).not.toHaveBeenCalled();
     expect(analyzer.transcribe).not.toHaveBeenCalled();
     expect(result.manifest).not.toHaveProperty("derivedTranscript");

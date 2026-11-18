@@ -611,7 +611,7 @@ export class GeminiVideoAnalyzer {
     return parseGeminiJson(response.text, schema, "Calibration response").seconds;
   }
 
-  async transcribe(file: GeminiFile): Promise<DerivedTranscriptionSegment[]> {
+  async transcribe(file: GeminiFile, requestedLanguage?: string): Promise<DerivedTranscriptionSegment[]> {
     const result = await this.generateStructured({
       model: this.model,
       contents: [{
@@ -632,6 +632,7 @@ export class GeminiVideoAnalyzer {
               promptSection("task", [
                 "Transcribe the complete audio verbatim with timestamps.",
                 "Use the language or languages actually spoken. Preserve language switches within a sentence. Do not translate.",
+                ...(requestedLanguage ? [`The likely spoken language is ${requestedLanguage}, though other languages may also be present.`] : []),
                 "Split the speech into segments of at most a few sentences each.",
                 "All start and end timestamps must be canonical HH:MM:SS values with end strictly after start, measured from the beginning of this audio.",
                 "Use the format labels Speaker 1, Speaker 2 and so on for distinct voices. Keep each voice's label stable. Never guess personal names, even when a name is spoken.",

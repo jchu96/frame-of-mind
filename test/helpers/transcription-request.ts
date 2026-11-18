@@ -42,10 +42,14 @@ const invalidSegmentRepairInstruction = [
 export function expectOriginalLanguage(
   request: GenerateContentParameters,
   attempt: "initial" | "regenerated" = "initial",
+  requestedLanguage?: string,
 ): void {
+  const expectedText = requestedLanguage
+    ? transcriptionText.replace("Do not translate.", `Do not translate.\nThe likely spoken language is ${requestedLanguage}, though other languages may also be present.`)
+    : transcriptionText;
   expect(request.contents).toEqual([{
     role: "user",
-    parts: [{ fileData: expect.any(Object) }, { text: transcriptionText }],
+    parts: [{ fileData: expect.any(Object) }, { text: expectedText }],
   }]);
   expect(request.config?.systemInstruction).toBe(
     attempt === "regenerated" ? invalidSegmentRepairInstruction : transcriptionSystemInstruction,

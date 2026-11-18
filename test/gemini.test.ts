@@ -480,7 +480,7 @@ describe("GeminiVideoAnalyzer", () => {
     expect(JSON.stringify(requests[0]?.config?.responseJsonSchema)).toContain("segments");
   });
 
-  it("regenerates an invalid transcription response exactly once", async () => {
+  it.each([undefined, "fr-CA"])("regenerates an invalid transcription response exactly once with hint %s", async tag => {
     const requests: GenerateContentParameters[] = [];
     const analyzer = new GeminiVideoAnalyzer(
       "test-api-key",
@@ -501,11 +501,11 @@ describe("GeminiVideoAnalyzer", () => {
       },
     );
 
-    const segments = await analyzer.transcribe(activeFile);
+    const segments = await analyzer.transcribe(activeFile, tag);
 
     expect(requests).toHaveLength(2);
-    expectOriginalLanguage(requests[0]!);
-    expectOriginalLanguage(requests[1]!, "regenerated");
+    expectOriginalLanguage(requests[0]!, "initial", tag);
+    expectOriginalLanguage(requests[1]!, "regenerated", tag);
     expect(segments).toEqual([
       { start: "00:00:01", end: "00:00:03", speaker: "Speaker 1", text: "Recovered." },
     ]);

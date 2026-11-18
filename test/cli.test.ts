@@ -43,6 +43,15 @@ describe("analyze CLI option assembly", () => {
     expect(disabled.derivedTranscript).toBe(false);
   });
 
+  it("canonicalizes the transcription hint and rejects invalid or contradictory flags", async () => {
+    const flags = { ...baseFlags, transcriptLanguage: "zh-hant-tw" };
+    expect((await buildAnalyzeOptions(undefined, flags, "test-key")).transcriptLanguage).toBe("zh-Hant-TW");
+    await expect(buildAnalyzeOptions(undefined, { ...flags, transcriptLanguage: "en_US" }, undefined))
+      .rejects.toThrow("--transcript-language");
+    await expect(buildAnalyzeOptions(undefined, { ...flags, derivedTranscript: false }, undefined))
+      .rejects.toThrow("--transcript-language conflicts with --no-derived-transcript");
+  });
+
   describe("detail concurrency", () => {
     afterEach(() => vi.unstubAllEnvs());
 
