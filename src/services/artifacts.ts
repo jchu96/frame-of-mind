@@ -1,4 +1,6 @@
-import { clockTime, fileToTimeline, renderTimecode, type RunClock } from "../domain/clock.js";
+import { declaredOffset, type RunClock } from "../domain/clock.js";
+import { modelTime, offsetApproximate, renderApproximate, deriveExact } from "../domain/exact-time.js";
+import { timesSchema, type TimesArtifact } from "../domain/times.js";
 import { timestampToSeconds } from "../lib/time.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -309,49 +311,40 @@ function safeHref(value: string | undefined): string | undefined {
 }
 
 export function clockSummary(clock?: RunClock): string {
-  return `clocks: ${clock?.fileClock ?? "source"}${clock?.timeline ? `, timeline +${(clock.timeline.timelineOffsetMs / 1000).toFixed(3)} s` : ""}; model clip clock: ${clock?.modelClipClock ?? "unverified"}${!clock || clock.modelClipClock === "unverified" ? " (clip clock unverified)" : ""}${clock?.clipGuard === "unknown-duration" ? "; clip guard did not run: duration unknown" : ""}${clock?.transcriptClock === "unverified" ? "; transcript clock unverified (legacy alignment retained)" : ""}${clock?.transcriptWindow === "not-windowed" ? "; transcript not windowed" : ""}`;
+  return `clocks: ${clock?.fileClock ?? "source"}${clock?.timeline ? `, timeline +${renderDeclaredOffset(clock.timeline)}` : ""}; model clip clock: ${clock?.modelClipClock ?? "unverified"}${!clock || clock.modelClipClock === "unverified" ? " (clip clock unverified)" : ""}${clock?.clipGuard === "unknown-duration" ? "; clip guard did not run: duration unknown" : ""}${clock?.transcriptClock === "unverified" ? "; transcript clock unverified (legacy alignment retained)" : ""}${clock?.transcriptWindow === "not-windowed" ? "; transcript not windowed" : ""}`;
 }
 
+function renderDeclaredOffset(declaration: NonNullable<RunClock["timeline"]>): string {
+  const time = deriveExact(declaredOffset(declaration), declaration.timecode?.dropFrame);
+  const units = "frames" in time ? `${time.frames} frames @${time.rate.num}/${time.rate.den}; ${time.timecode} ${time.dropFrame ? "drop-frame" : "non-drop"}` : `${time.milliseconds} ms`;
+  return `${time.seconds} s (${units}; ${"ticks" in time ? `${time.ticks} ticks` : time.ticksUnavailable}; declared)`;
+}
 export function renderClockTime(timestamp: string, clock?: RunClock): string {
-  const time = clockTime(clock?.fileClock ?? "source", timestampToSeconds(timestamp) * 1000);
-  let text = `${(time.ms / 1000).toFixed(3)} s ${time.clock}`;
-  if (clock?.timeline) {
-    const timeline = fileToTimeline(time, clock.timeline.timelineOffsetMs);
-    text += ` · ${(timeline.ms / 1000).toFixed(3)} s timeline`;
-    if (clock.timeline.timecode) {
-      const { rate, dropFrame } = clock.timeline.timecode;
-      text += ` · ${renderTimecode(timeline.ms, rate, dropFrame)} @${rate.den === 1 ? rate.num : `${rate.num}/${rate.den}`}`;
-    }
-  }
-  return `${text} (≈1 s)`;
+  const time = modelTime(clock?.fileClock ?? "source", timestamp);
+  return [renderApproximate(time), ...(clock?.timeline ? [renderApproximate(offsetApproximate(time, declaredOffset(clock.timeline)))] : [])].join(" · ");
 }
 
-export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock) {
+export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock): TimesArtifact {
   const fileClock = clock?.fileClock ?? "source";
-  const entries: Array<{ pointer: string; source?: number; reel?: number; precisionMs: number; timeline?: number; timecode?: string }> = [];
+  const entries: TimesArtifact["entries"] = [];
+  const offset = clock?.timeline ? declaredOffset(clock.timeline) : undefined;
   const add = (pointer: string, timestamp: string) => {
-    const time = clockTime(fileClock, timestampToSeconds(timestamp) * 1000);
-    const entry: typeof entries[number] = { pointer, [fileClock]: time.ms / 1000, precisionMs: time.precisionMs };
-    if (clock?.timeline) {
-      const timeline = fileToTimeline(time, clock.timeline.timelineOffsetMs);
-      entry.timeline = timeline.ms / 1000;
-      if (clock.timeline.timecode) {
-        const { rate, dropFrame } = clock.timeline.timecode;
-        entry.timecode = renderTimecode(timeline.ms, rate, dropFrame);
-      }
-    }
-    entries.push(entry);
+    const time = modelTime(fileClock, timestamp);
+    entries.push({ pointer, time: { ...time, origin: "model" },
+      ...(offset ? { timeline: { ...offsetApproximate(time, offset), origin: "model" as const } } : {}) });
   };
   analysis.items.forEach((item, index) => {
     add(`/items/${index}/candidate/start`, item.candidate.start);
     add(`/items/${index}/candidate/end`, item.candidate.end);
     if (item.result.evidence?.timestamp) add(`/items/${index}/result/evidence/timestamp`, item.result.evidence.timestamp);
   });
-  const code = clock?.timeline?.timecode;
-  return {
-    schemaVersion: 1, kind: "frame-of-mind.times", fileClock,
-    ...(clock?.timeline ? { timeline: { timelineOffsetMs: clock.timeline.timelineOffsetMs, origin: clock.timeline.origin } } : {}),
-    ...(code ? { timecodeRate: { ...code.rate, dropFrame: code.dropFrame, rateOrigin: code.rateOrigin } } : {}),
+  return timesSchema.parse({
+    schemaVersion: 2, kind: "frame-of-mind.times", fileClock,
+    exactTimeCapability: offset?.unit === "video-frame"
+      ? "declared video rate: frames, seconds, timecode with explicit drop-frame, ticks when whole"
+      : clock?.timeline?.timecode ? "legacy millisecond offset: milliseconds, seconds and ticks; no exact video-frame boundary"
+      : "no declared video rate: whole milliseconds, seconds and ticks; no frames or timecode",
+    ...(offset ? { timeline: { offset: { ...deriveExact(offset, clock?.timeline?.timecode?.dropFrame), origin: "declared" } } } : {}),
     entries,
-  };
+  });
 }

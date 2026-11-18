@@ -122,3 +122,36 @@ export function toOtioRange(range: ExactRange) {
   if (range.start.clock !== range.duration.clock) refuse("A range start and duration must name the same clock.");
   return { OTIO_SCHEMA: "TimeRange.1" as const, start_time: toOtioTime(range.start), duration: toOtioTime(range.duration) };
 }
+
+/** Exact milliseconds only; never invent an ms value for a fractional frame boundary. */
+export function exactMilliseconds(time: ExactTime): string | undefined {
+  const value = time.frames * 1000n * BigInt(time.rate.den);
+  const divisor = BigInt(time.rate.num);
+  return value % divisor === 0n ? String(value / divisor) : undefined;
+}
+/** Declared seconds offsets must be frame boundaries, unlike instant containment. */
+export function fromBoundaryMilliseconds<C extends MediaClock>(clock: C, ms: string, rate: FrameRate): ExactTime<C> {
+  const time = fromMilliseconds(clock, ms, rate);
+  if (exactMilliseconds(time) !== ms) refuse(`Seconds offset is between frames ${time.frames}f and ${time.frames + 1n}f at ${time.rate.num}/${time.rate.den}; use a frame count or timecode.`);
+  return time;
+}
+function decimalMs(value: string): bigint {
+  if (!/^(0|[1-9]\d*)\.\d{3}$/.test(value) || value.trim() !== value) refuse("Approximate seconds must have three decimals.");
+  return BigInt(value.replace(".", ""));
+}
+function readingSeconds(ms: bigint): string { return `${ms / 1000n}.${String(ms % 1000n).padStart(3, "0")}`; }
+export function modelTime<C extends MediaClock>(clock: C, timestamp: string): ApproximateTime<C> {
+  namedClock(clock);
+  if (!/^\d{2,}:[0-5]\d:[0-5]\d$/.test(timestamp) || timestamp.trim() !== timestamp) refuse("Model time must be HH:MM:SS.");
+  const [hours, minutes, seconds] = timestamp.split(":").map(BigInt) as [bigint, bigint, bigint];
+  return { clock, seconds: readingSeconds((hours * 3600n + minutes * 60n + seconds) * 1000n), precisionMs: 1000, origin: "model" };
+}
+/** Display to milliseconds, preserving the model's stated precision and provenance. No snapping. */
+export function offsetApproximate<C extends MediaClock>(time: ApproximateTime, offset: ExactTime<C>): ApproximateTime<C> {
+  const denominator = BigInt(offset.rate.num);
+  const numerator = decimalMs(time.seconds) * denominator + offset.frames * 1000n * BigInt(offset.rate.den);
+  return { ...time, clock: offset.clock, seconds: readingSeconds((numerator + denominator - 1n) / denominator) };
+}
+export function renderApproximate(time: ApproximateTime): string {
+  return `${time.seconds} s ${time.clock} (≈${readingSeconds(BigInt(time.precisionMs)).replace(/\.?0+$/, "")} s; ${time.origin})`;
+}

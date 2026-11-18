@@ -696,3 +696,5 @@ the built-CLI symlink test and package-version bump fixture prevent recurrence.
 - 2026-11-13: Adopting standalone transcription exposed a literal round-trip oracle incompatible with the existing caption reader; ADR 0025 preserves reader normalisation, and tests use a separate structural arrow oracle.
 
 - 2026-11-13: Six process starts inherited the complete parent environment. They now pass an explicit media/opener allow-list; per-site child captures verify the shipped calls, while a simple source convention check flags plain imports outside the helper and does not detect computed or indirect access.
+
+- 2026-11-17: Nearest-ms storage lost frame identity at fractional rates: frame 2 at 24000/1001 became 83 ms and rendered frame 1; 6,593/14,386 frames at that rate and 8,393/17,983 at 30000/1001 failed in the first ten minutes. Store exact frames/rational rate; A01 sequential labels and the independent language-neutral table catch recurrence. The old millisecond containment renderer was correct for its input (ADR 0027).

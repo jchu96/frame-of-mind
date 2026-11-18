@@ -440,10 +440,12 @@ the Sentry implementation is CLI-wired, the adapter's non-destructive
 `usageSnapshot()` keeps the hosted spend `takeUsage()` window untouched, and
 hosted/Studio surfaces keep their ADR 0017 posture.
 
-- 2026-11-13: Clock conversions use branded integer milliseconds. Timeline seconds and rendered timecode live in times.json; analysis.json stays unchanged. Rates are declared or probed exactly; calibration is automatic per model every 30 days with an unverified opt-out. Out-of-range candidates are counted before the detail limit.
+- 2026-11-13 (**superseded for exact times by ADR 0027, 2026-11-17**): Clock conversions use branded integer milliseconds. Timeline seconds and rendered timecode live in times.json; analysis.json stays unchanged. Rates are declared or probed exactly; calibration is automatic per model every 30 days with an unverified opt-out. Out-of-range candidates are counted before the detail limit.
 
 - 2026-11-13: Legacy finite model transcript offsets retain base context slicing if integer-ms conversion is unrepresentable; clock.transcriptClock records unverified rather than rounding or aborting. Media-derived timecode requires exact per-frame PTS and duration evidence, not just equal summary rates.
 
 - 2026-11-13: Adopted standalone transcript files outside run bundles and operator-controlled transcription audio retention (default provider); ADR 0025 records the distinction from analyze.
 
 - 2026-11-13: Child processes receive a fresh runtime-variable allow-list, with desktop additions only for browser opening and case-insensitive Windows names. Arbitrary LC_/XDG_ prefixes are not allowed; ADR 0026 records the boundary.
+
+- 2026-11-17: Exact times are whole frames at reduced rational rates; derive all available forms with integer arithmetic. Model observations retain precision and origin, never frame/timecode claims; times.json is schema 2. Optional exactOffset provenance preserves legacy manifests. Adopt OTIO vocabulary and pure exports without its arithmetic; time-of-day cut points remain unsupported (ADR 0027).

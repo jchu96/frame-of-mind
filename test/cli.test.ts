@@ -136,6 +136,6 @@ describe("clock flags", () => {
     }
   });
   it("passes exact clock declarations and the calibration opt-out", async () => {
-    expect(await buildAnalyzeOptions(undefined, { ...baseFlags, timelineOffset: "12.345", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false }, "synthetic-key")).toMatchObject({ timelineOffset: "12.345", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false });
+    expect(await buildAnalyzeOptions(undefined, { ...baseFlags, timelineOffset: "86400f", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false }, "synthetic-key")).toMatchObject({ timelineOffset: "86400f", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false });
   });
 });

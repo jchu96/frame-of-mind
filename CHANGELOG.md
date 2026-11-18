@@ -7,6 +7,8 @@ Semantic Versioning.
 
 - 2026-11-18: Temporarily accept the unpatched picomatch production advisory in CI, with an automatic failure after its 2026-12-18 review deadline; other high and critical advisories still fail.
 
+- 2026-11-17: Store exact times as rational frame counts; add frame/timecode timeline offsets and a language-neutral contract. `times.json` schema 2 preserves model precision without frame/timecode claims and emits exact offsets separately (ADR 0027).
+
 - 2026-11-13: Limit media tools and OAuth browser openers to explicit runtime environment variables so CLI and local Studio credentials stay in the parent process.
 
 - 2026-11-13: Adopted a contributed standalone `transcribe` workflow with private SRT/speaker files, optional source-clock JSON, visible audio retention, one window retry and cue-safe rendering.

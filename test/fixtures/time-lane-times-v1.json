@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "kind": "frame-of-mind.times",
+  "fileClock": "source",
+  "timeline": {
+    "timelineOffsetMs": 12345,
+    "origin": "declared"
+  },
+  "timecodeRate": {
+    "num": 25,
+    "den": 1,
+    "dropFrame": false,
+    "rateOrigin": "declared"
+  },
+  "entries": [
+    {
+      "pointer": "/items/0/candidate/start",
+      "source": 10,
+      "precisionMs": 1000,
+      "timeline": 22.345,
+      "timecode": "00:00:22:08"
+    },
+    {
+      "pointer": "/items/0/candidate/end",
+      "source": 19,
+      "precisionMs": 1000,
+      "timeline": 31.345,
+      "timecode": "00:00:31:08"
+    },
+    {
+      "pointer": "/items/0/result/evidence/timestamp",
+      "source": 15,
+      "precisionMs": 1000,
+      "timeline": 27.345,
+      "timecode": "00:00:27:08"
+    },
+    {
+      "pointer": "/items/1/candidate/start",
+      "source": 20,
+      "precisionMs": 1000,
+      "timeline": 32.345,
+      "timecode": "00:00:32:08"
+    },
+    {
+      "pointer": "/items/1/candidate/end",
+      "source": 29,
+      "precisionMs": 1000,
+      "timeline": 41.345,
+      "timecode": "00:00:41:08"
+    },
+    {
+      "pointer": "/items/1/result/evidence/timestamp",
+      "source": 25,
+      "precisionMs": 1000,
+      "timeline": 37.345,
+      "timecode": "00:00:37:08"
+    }
+  ]
+}

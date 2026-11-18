@@ -431,9 +431,9 @@ frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|r
 | `--context-file <path>` | required for `--source file` |
 | `--video <path>` | preferred local recording |
 | `--recording-url <url>` | validated Bluedot signed URL fallback |
-| `--timeline-offset <seconds>` | declared source/reel-to-timeline offset, up to three decimals |
+| `--timeline-offset <time>` | exact sequence offset: seconds (up to three decimals), `Nf` frames, or timecode |
 | `--file-clock source\|reel` | input media clock; defaults to source |
-| `--timecode-rate <rate>` | exact timeline timecode rendering; see Clocks for accepted forms |
+| `--timecode-rate <rate>` | video rate for exact offsets; see Clocks for accepted forms |
 | `--no-calibrate` | skip the synthetic probe and label the clip clock unverified |
 | `calibrate [--model <id>] [--json]` | refresh the model clock measurement and report token cost |
 | `--transcript-offset <time>` | full transcript time at video `00:00` |
@@ -473,8 +473,9 @@ still removed. Studio retention is unchanged; see [ADR 0024](docs/adr/0024-uploa
 Every rendered media time names its clock: `source` is time from the input
 recording's start; `reel` is time from a constructed reel's start (select it
 with `--file-clock reel`); `timeline` adds an explicitly declared offset.
-Internal conversions use integer milliseconds. Model timestamps retain an
-`≈1 s` precision marker even when frame digits are rendered.
+Exact times are whole frames at a reduced rational rate. Model timestamps stay
+approximate: seconds, `≈1 s`, and `model` origin, with no frames, ticks or
+timecode. A timeline shift preserves that precision.
 
 ```bash
 frameofmind analyze --source none --video take.mov --timeline-offset 0 --timecode-rate 25
@@ -482,7 +483,22 @@ frameofmind calibrate --model gemini-3.7-flash --json
 ```
 
 `--timeline-offset` accepts unsigned non-negative seconds with up to three
-decimals, such as `12.345`. No timeline is inferred when it is absent.
+decimals, such as `12.345`; whole frames with an `f` suffix, such as `86400f`;
+or timecode such as `01:00:00:00`. Frame/timecode inputs require a declared
+video rate. The separator must match its drop-frame choice. At a declared rate,
+a seconds offset must be a whole frame boundary; otherwise the error names the
+two neighboring frames. For example, `0.5` at `24000/1001` is refused between
+`11f` and `12f`. It is never rounded. No timeline is inferred when absent.
+
+```bash
+frameofmind analyze --source none --video take.mov --timeline-offset 86400f --timecode-rate 24000/1001
+frameofmind analyze --source none --video take.mov --timeline-offset '01:00:00:00' --timecode-rate 24000/1001
+frameofmind analyze --source none --video take.mov --timeline-offset '00:01:00;02' --timecode-rate 29.97df
+```
+
+Without `--timecode-rate`, exact offsets return whole milliseconds, seconds and
+ticks, with no frames or timecode. Model observations remain approximate in
+either mode. Time-of-day cut points are not supported.
 `--timecode-rate` requires that offset (use `0` for a sequence starting at
 zero). Accepted forms are `24`, `25`, `30`, `48`, `50`, `60`, `23.976`,
 `47.952`, `29.97df`, `29.97ndf`, `59.94df`, `59.94ndf`, or an exact positive
@@ -493,10 +509,22 @@ and average rates are refused. For 30000/1001 or 60000/1001 use
 `from-media:df` or `from-media:ndf`. Drop-frame is only valid at those rates.
 No timecode is read from container tags or pixels.
 
-The bundle adds `times.json`: one JSON pointer per structured analysis time,
-clock-labelled seconds with millisecond precision, and optional timeline
-seconds/timecode. Timecode is rendered from milliseconds and never used as
-input to a calculation. `analysis.json` is unchanged.
+`times.json` schema 2 carries one JSON pointer per structured analysis time.
+Each entry has a `time` object and optional `timeline` object, both containing
+`clock`, decimal-string `seconds`, `precisionMs` and `origin: "model"`.
+`timeline.offset` separately carries the exact declared offset in every
+available form: frames/rational rate, decimal-string ticks, timecode with its
+drop-frame choice, seconds and clock. Ticks are explicitly unavailable if the
+rate cannot represent whole ticks per frame. Without a video rate, this offset
+has milliseconds, seconds and ticks only.
+
+Exact reading seconds are the first whole millisecond inside the frame. For
+example, frame 1 at 24000/1001 reads `0.042` s, but its boundary is not exactly
+42 ms: use frames or ticks to transfer it exactly. Approximate timeline seconds
+are displayed to milliseconds while retaining `≈1 s`; this is not snapping.
+`analysis.json` is unchanged. Schema-1 sidecar readers must update for schema 2;
+there is no dual-write. See [VERSIONING](docs/VERSIONING.md) and
+[ADR 0027](docs/adr/0027-exact-rational-frame-times.md).
 
 The model's clip clock is measured automatically using a synthetic flash and
 cached per model for 30 days. `calibrate` refreshes the measurement;

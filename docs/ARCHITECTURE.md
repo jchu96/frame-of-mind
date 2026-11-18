@@ -558,11 +558,20 @@ a shared schema-version registry prevents one run ID from occupying both. A
 copied, swapped, hand-edited, partially corrupted, or unsupported pair
 therefore fails closed.
 
-`times.json` is a schema-1 rendering sidecar (`kind: frame-of-mind.times`)
-with exactly one pointer per structured analysis timestamp, clock-labelled
-numeric seconds, `precisionMs`, and an optional timeline/timecode rendering.
-It does not replace `analysis.json`. Both manifest versions accept optional
-`clock` provenance: file clock, declared timeline offset/rate, measured model
+`times.json` is a schema-2 rendering sidecar (`kind: frame-of-mind.times`)
+with exactly one pointer per structured analysis timestamp. Its `time` and
+optional `timeline` objects carry approximate decimal-string seconds, named
+clock, `precisionMs` and model origin. They never carry frames, ticks or
+timecode. `timeline.offset` is separately exact and carries every available
+form derived by `src/domain/exact-time.ts` from whole frames at a rational rate.
+The versioned language-neutral table is `docs/contracts/time-cases.json`.
+Whole-millisecond sources use internal 1000/1, with no invented video rate.
+The pure OTIO exporter is a boundary, never the arithmetic authority.
+
+The sidecar does not replace `analysis.json`. Both manifest versions accept
+optional `clock.timeline.exactOffset`; `timelineOffsetMs` appears only when
+exactly representable and safe. Old ms-only manifests remain valid, including
+website re-import. Clock provenance also records file clock, rate, measured model
 clip clock and calibration date/method, runtime discrepancy tally, duration
 guard status and transcript-window status. Old manifests still validate.
 `analysis-outcome.json` optionally counts `candidates.outOfRange`; absent means
