@@ -192,7 +192,7 @@ describe("original-language transcription", () => {
     const { analyzer, requests } = capture(...windows);
     const result = await transcribe({ ...f.options, json: true }, { ...f.deps, createAnalyzer: () => analyzer });
     expect(requests).toHaveLength(2);
-    requests.forEach(expectOriginalLanguage);
+    for (const request of requests) expectOriginalLanguage(request);
     expect(result.segments).toEqual(merged);
     const [srt, speakers, json] = await Promise.all(result.paths.map(path => readFile(path, "utf8")));
     expect(srt).toBe([
