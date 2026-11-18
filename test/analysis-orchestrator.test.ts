@@ -2508,3 +2508,72 @@ describe("exact and approximate output clocks", () => {
     expect(result.manifest.clock?.timeline).not.toHaveProperty("timelineOffsetMs");
   });
 });
+
+
+describe("downloaded from-media clock preflight", () => {
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  async function downloadFixture() {
+    const fixture = await createFixture();
+    fixture.meeting.provider = "bluedot";
+    fixture.meeting.transport = "mcp";
+    const url = "https://files.app.bluedothq.com/synthetic-recording.mp4";
+    const fetch = vi.fn(async () => new Response("synthetic-download", { headers: { "content-type": "video/mp4" } }));
+    vi.stubGlobal("fetch", fetch);
+    const context = { ...fixture.context, provider: "bluedot" as const, mediaFromMeeting: () => ({ url, source: "mcp" as const }) };
+    const options = { ...fixture.options, contextProvider: "bluedot" as const, video: undefined,
+      calibrate: false, timelineOffset: "1f", timecodeRate: "from-media" };
+    return { ...fixture, context, options, fetch, url };
+  }
+
+  it("keeps the downloaded offset and resolves its timeline before upload", async () => {
+    const fixture = await downloadFixture();
+    const { runClockSchema } = await import("../src/domain/clock.js");
+    const parseClock = vi.spyOn(runClockSchema, "parse");
+    const order: string[] = [];
+    const probeFrameRate = vi.fn(async (path: string) => {
+      expect(await readFile(path, "utf8")).toBe("synthetic-download");
+      order.push("probe");
+      return { rate: { num: 24000, den: 1001 }, dropFrame: false, rateOrigin: "media" as const };
+    });
+    let clockAtUpload: unknown;
+    const upload = fixture.analyzer.upload.getMockImplementation()!;
+    fixture.analyzer.upload.mockImplementation(async (...args) => {
+      order.push("upload");
+      // Snapshot the real mutable run clock now; a later probe cannot repair this evidence.
+      clockAtUpload = structuredClone(parseClock.mock.results[0]?.value);
+      return upload(...args);
+    });
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => fixture.context,
+      createAnalyzer: () => fixture.analyzer, probeFrameRate, probeDurationSeconds: async () => undefined });
+    const result = await orchestrator.analyze(fixture.options);
+    const timeline = { exactOffset: { frames: "1", rate: { num: 24000, den: 1001 } }, timecode: { rateOrigin: "media" } };
+    expect(result.manifest.clock?.timeline, "downloaded declared offset must survive").toMatchObject(timeline);
+    expect(clockAtUpload, "timeline must exist before upload").toMatchObject({ timeline });
+    expect(order, "probe must finish before upload").toEqual(["probe", "upload"]);
+    expect(fixture.options.video).toBeUndefined();
+    expect(fixture.fetch).toHaveBeenCalledExactlyOnceWith(new URL(fixture.url), expect.any(Object));
+    expect(fixture.analyzer.upload).toHaveBeenCalledTimes(1);
+    const downloadedPath = fixture.analyzer.upload.mock.calls[0]![0];
+    expect(probeFrameRate).toHaveBeenCalledExactlyOnceWith(downloadedPath, "from-media");
+    expect(result.manifest.clock?.timeline).not.toHaveProperty("timelineOffsetMs");
+  });
+
+  it("aborts a downloaded recording on probe failure before upload or any model call", async () => {
+    const fixture = await downloadFixture();
+    const error = new Error("downloaded recording frame-rate probe failed");
+    const probeFrameRate = vi.fn(async () => { throw error; });
+    const analyzer = { ...fixture.analyzer, transcribe: vi.fn(), probeClipClock: vi.fn() };
+    const createAnalyzer = vi.fn(() => analyzer);
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => fixture.context,
+      createAnalyzer, probeFrameRate, probeDurationSeconds: async () => undefined });
+    await expect(orchestrator.analyze(fixture.options)).rejects.toBe(error);
+    expect(fixture.options.video).toBeUndefined();
+    expect(fixture.fetch).toHaveBeenCalledExactlyOnceWith(new URL(fixture.url), expect.any(Object));
+    expect(probeFrameRate).toHaveBeenCalledTimes(1);
+    expect(createAnalyzer).not.toHaveBeenCalled();
+    for (const call of [analyzer.upload, analyzer.transcribe, analyzer.probeClipClock, analyzer.index, analyzer.interrogate]) {
+      expect(call).not.toHaveBeenCalled();
+    }
+  });
+});
