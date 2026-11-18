@@ -555,7 +555,8 @@ windowed` and `transcript clock unverified`; no offset is rounded.
 
 ```bash
 frameofmind transcribe "/path/to/interview.mov"
-frameofmind transcribe "/path/to/interview.mov" -o "/path/to/private-transcripts" --retention run --json
+frameofmind transcribe "/path/to/interview.mov" --transcript-language fr-CA -o "/path/to/private-transcripts" --retention run --json
+frameofmind analyze --source none --video "/path/to/interview.mov" --transcript-language fr-CA
 frameofmind analyze interview --source file --context-file "/path/to/interview.srt" --video "/path/to/interview.mov"
 ```
 
@@ -565,6 +566,19 @@ including switches within a sentence, and instruct the model never to translate.
 any language. The CLI and local Studio extract the first audio track. Hosted
 Studio sends the resolved media. Live transcription fidelity on real non-English
 speech is untested.
+
+On both `transcribe` and `analyze`, pass `--transcript-language <tag>` (for
+example, `--transcript-language fr-CA`) to hint at the likely spoken language
+in each audio window. Other languages may also be present. The flag reaches
+transcription only. Use `--note language=<path>` on `analyze` to give language
+instructions to the index and detail analysis prompts. Wrappers must pass
+the language hint explicitly.
+
+The speakers header and optional transcript JSON record the canonical tag as
+`requestedLanguage`. An analysis that derives a transcript records it under
+`derivedTranscript.requestedLanguage` in the manifest. With a supplied transcript,
+`analyze` reports that the hint was unused. Combining the flag with
+`--no-derived-transcript` is an error.
 
 Writes `interview.srt` and `interview_speakers.txt` beside the recording unless
 `-o` selects a directory. These are reference-grade context transcripts with

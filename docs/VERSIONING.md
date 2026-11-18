@@ -109,6 +109,14 @@ reads re-validate stored manifests, rolling a deployed projection back to a
 pre-`derivedTranscript` release makes previously stored derived runs unreadable
 at detail-view time; roll the reader forward, not the bundles back.
 
+The optional `derivedTranscript.requestedLanguage` field on schema 2 and 3
+records the canonical BCP-47 hint used to derive a transcript. Its absence
+means no hint was recorded. It carries no language-detection result and
+changes neither the transcript digest nor its alignment. Both schemas use the
+same strict provenance validator across import, publication and SQLite/D1 reads.
+Roll readers forward before importing or serving bundles carrying this field.
+After such a bundle has been stored, a reader predating the field rejects it.
+
 Schema 2 is intentionally incompatible with schema 1 imports. It adds a shared
 run ID, an analysis digest in the manifest, strict canonical timestamps, and
 recipe revision/content provenance. Re-run the original source analysis to

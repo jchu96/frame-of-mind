@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { calibrateClipClock } from "../src/adapters/gemini-calibration.js";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -187,21 +189,35 @@ describe("original-language transcription", () => {
     return { analyzer, requests };
   }
 
-  it("captures both standalone windows and preserves the exact speech in all three exports", async () => {
+  it.each([undefined, "fr-ca"])("captures both standalone windows and exported provenance for hint %s", async transcriptLanguage => {
     const f = await fixture(900);
     const { analyzer, requests } = capture(...windows);
-    const result = await transcribe({ ...f.options, json: true }, { ...f.deps, createAnalyzer: () => analyzer });
+    const program = new Command().exitOverride();
+    registerTranscribe(program, { ...f.deps, createAnalyzer: () => analyzer });
+    await program.parseAsync(["transcribe", f.input, "--json", ...(transcriptLanguage ? ["--transcript-language", transcriptLanguage] : [])], { from: "user" });
+    const expectedTag = transcriptLanguage ? "fr-CA" : undefined;
     expect(requests).toHaveLength(2);
-    for (const request of requests) expectOriginalLanguage(request);
-    expect(result.segments).toEqual(merged);
-    const [srt, speakers, json] = await Promise.all(result.paths.map(path => readFile(path, "utf8")));
+    for (const request of requests) {
+      if (!expectedTag) {
+        // Complete serialized SDK request captured from the lane A merge (cf07529).
+        expect(createHash("sha256").update(JSON.stringify(request)).digest("hex"))
+          .toBe("0b00c4803ddfef3a3a9b46bc225f4dc884a6d6b32a4900668951c043e9e24ea1");
+      }
+      expectOriginalLanguage(request, "initial", expectedTag);
+    }
+    const [srt, speakers, json] = await Promise.all(["synthetic.srt", "synthetic_speakers.txt", "synthetic.transcript.json"]
+      .map(name => readFile(join(f.root, name), "utf8")));
     expect(srt).toBe([
       `1\n00:09:55,000 --> 00:09:57,000\n${syntheticArabic.text}`,
       `2\n00:09:58,000 --> 00:10:00,000\n${syntheticChinese.text}`,
       `3\n00:10:01,000 --> 00:10:03,000\n${syntheticMixed.text}`,
       "",
     ].join("\n\n"));
-    expect(speakers).toBe("# frame-of-mind transcript; origin: gemini-audio; model: gemini-test; clock: source; timing: reference-grade (whole-second)\n" + lines + "\n");
+    expect(speakers).toBe("# frame-of-mind transcript; origin: gemini-audio; model: gemini-test; clock: source; timing: reference-grade (whole-second)" + (expectedTag ? "; requestedLanguage: fr-CA" : "") + "\n" + lines + "\n");
+    const exported = JSON.parse(json!);
+    expect(exported).not.toHaveProperty("detectedLanguage");
+    if (expectedTag) expect(exported.requestedLanguage).toBe(expectedTag);
+    else expect(exported).not.toHaveProperty("requestedLanguage");
     expect(JSON.parse(json!).segments).toEqual([
       { ...syntheticArabic, start: 595, end: 597 },
       { ...syntheticChinese, start: 598, end: 600 },
@@ -209,26 +225,36 @@ describe("original-language transcription", () => {
     ]);
   });
 
-  it("captures analyze-derived requests and preserves escaped speech in index and detail", async () => {
+  it.each([undefined, "fr-ca"])("captures analyze-derived windows, calibration, index and detail for hint %s", async transcriptLanguage => {
     const f = await fixture(900);
     const candidate = { start: "00:09:58", end: "00:10:03", kind: "test", summary: "Synthetic", importance: "low" };
-    const { analyzer, requests } = capture(...windows,
+    const { analyzer, requests } = capture({ seconds: 27 }, ...windows,
       { matchNotes: "Synthetic", moments: [candidate] },
       { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic", evidence: { timestamp: candidate.start } },
     );
-    const orchestrator = new AnalysisOrchestrator({ ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
-    await orchestrator.analyze({
+    const orchestrator = new AnalysisOrchestrator({
+      ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer,
+      calibrateClipClock: provider => calibrateClipClock(provider, { cacheRoot: f.root, synthesize: async () => true }),
+    });
+    const result = await orchestrator.analyze({
       contextMode: "none", video: f.input, outputRoot: join(f.root, "runs"), apiKey: "test-key",
       recipe: { id: "requirements", label: "Synthetic", description: "Synthetic", indexInstruction: "Synthetic", interrogationInstruction: "Synthetic" },
       customRecipe: false, recipeSha256: "a".repeat(64), recipeRevision: "synthetic", maxIncidents: 1,
-      screenshots: false, keepUpload: false, calibrate: false,
+      screenshots: false, keepUpload: false, transcriptLanguage,
     });
-    expect(requests).toHaveLength(4);
-    expectOriginalLanguage(requests[0]!);
-    expectOriginalLanguage(requests[1]!);
+    expect(requests).toHaveLength(5);
+    const expectedTag = transcriptLanguage ? "fr-CA" : undefined;
+    expectOriginalLanguage(requests[1]!, "initial", expectedTag);
+    expectOriginalLanguage(requests[2]!, "initial", expectedTag);
+    for (const request of [requests[0], requests[3], requests[4]]) {
+      expect(JSON.stringify(request)).not.toContain("fr-CA");
+    }
+    expect(result.manifest.derivedTranscript).toBeDefined();
+    if (expectedTag) expect(result.manifest.derivedTranscript?.requestedLanguage).toBe(expectedTag);
+    else expect(result.manifest.derivedTranscript).not.toHaveProperty("requestedLanguage");
     const escaped = lines.replace("<", "&lt;");
-    expect(requestText(requests[2]!).match(/<transcript>\n([\s\S]*?)\n<\/transcript>/)?.[1]).toBe(escaped);
-    expect(requestText(requests[3]!).match(/<nearby-transcript>\n([\s\S]*?)\n<\/nearby-transcript>/)?.[1]).toBe(escaped);
+    expect(requestText(requests[3]!).match(/<transcript>\n([\s\S]*?)\n<\/transcript>/)?.[1]).toBe(escaped);
+    expect(requestText(requests[4]!).match(/<nearby-transcript>\n([\s\S]*?)\n<\/nearby-transcript>/)?.[1]).toBe(escaped);
   });
 
   it("captures the hosted provider request and preserves the derived transcript", async () => {
@@ -263,6 +289,15 @@ describe("output", () => {
 });
 
 describe("validation", () => {
+  it("refuses an invalid language hint before extraction, upload or generation", async () => {
+    const f = await fixture();
+    await cli(f, ["--transcript-language", "en_US"]);
+    expect(f.deps.stderr).toHaveBeenCalledWith(expect.stringContaining("--transcript-language"));
+    expect(process.exitCode).toBe(1);
+    expect(f.deps.extractAudioTrack).not.toHaveBeenCalled();
+    expect(f.analyzer.upload).not.toHaveBeenCalled();
+    expect(f.analyzer.transcribe).not.toHaveBeenCalled();
+  });
   it("uses the adapter default for unset or empty model env and lets the flag override env", async () => {
     for (const env of [undefined, "", "gemini-pro-latest"]) {
       vi.stubEnv("GEMINI_MODEL", env);

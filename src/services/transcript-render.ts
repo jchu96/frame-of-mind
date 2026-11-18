@@ -9,6 +9,7 @@ export interface TranscriptProvenance {
   model: string;
   clock: Extract<MediaClock, "source">;
   recordingSha256: string;
+  requestedLanguage?: string;
   createdAt: string;
 }
 
@@ -37,7 +38,8 @@ export function renderSrt(segments: readonly DerivedTranscriptionSegment[]): {
 }
 
 export function renderSpeakers(segments: DerivedTranscriptionSegment[], provenance: TranscriptProvenance): string {
-  return `# frame-of-mind transcript; origin: gemini-audio; model: ${provenance.model}; clock: ${provenance.clock}; timing: reference-grade (whole-second)\n${formatDerivedTranscript(segments)}\n`;
+  const hint = provenance.requestedLanguage ? `; requestedLanguage: ${provenance.requestedLanguage}` : "";
+  return `# frame-of-mind transcript; origin: gemini-audio; model: ${provenance.model}; clock: ${provenance.clock}; timing: reference-grade (whole-second)${hint}\n${formatDerivedTranscript(segments)}\n`;
 }
 
 export function renderTranscriptJson(segments: DerivedTranscriptionSegment[], provenance: TranscriptProvenance): string {

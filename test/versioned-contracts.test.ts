@@ -96,6 +96,20 @@ describe("versioned run contracts", () => {
     expect(versionedRunImportSchema.safeParse(extraKey).success).toBe(false);
   });
 
+  it.each([undefined, "fr-CA"])("reads derived provenance on schema 2 and 3 with requestedLanguage %s", async tag => {
+    const v2 = v2Pair();
+    v2.manifest.transcriptAlignment.method = "explicit";
+    v2.manifest.analysisSha256 = await analysisDigest(analysisRunSchema.parse(v2.analysis));
+    for (const pair of [v2, await videoOnlyPair()]) {
+      const derivedTranscript = {
+        origin: "gemini-audio", model: "gemini-test", sha256: v2.manifest.transcriptSha256,
+        ...(tag && { requestedLanguage: tag }),
+      };
+      const bundle = { analysis: pair.analysis, manifest: { ...pair.manifest, derivedTranscript } };
+      await expect(validateVersionedRunImport(bundle)).resolves.toEqual(bundle);
+    }
+  });
+
   it("accepts optional prompt provenance and rejects an unknown routing reason", async () => {
     const pair = await videoOnlyPair();
     const promptProvenance = {

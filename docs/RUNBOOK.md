@@ -711,7 +711,7 @@ one another.
 
 ### 3.11 Transcribe
 
-Run `frameofmind transcribe "<recording>" [-o "<directory>"] [--model <id>]`
+Run `frameofmind transcribe "<recording>" [-o "<directory>"] [--model <id>] [--transcript-language <tag>]`
 when you need reusable reference-grade context from the recording's audio.
 An adopted contribution supplies this standalone workflow. It uses the same
 600-second transcription windows, 15-second lead-in overlap, prompt, schema,
@@ -723,6 +723,21 @@ including switches within a sentence, and instruct the model never to translate.
 any language. The CLI and local Studio extract the first audio track. Hosted
 Studio sends the resolved media. Live transcription fidelity on real non-English
 speech is untested.
+
+On both `transcribe` and `analyze`, pass `--transcript-language <tag>` (for
+example, `--transcript-language fr-CA`) to hint at the likely spoken language
+in each audio window. Other languages may also be present. The flag reaches
+transcription only. Use `--note language=<path>` on `analyze` to give language
+instructions to the index and detail analysis prompts. Wrappers must pass
+the language hint explicitly. For example,
+`frameofmind analyze --source none --video "<recording>" --transcript-language fr-CA`
+uses the hint while deriving the transcript from that recording.
+
+The speakers header and optional transcript JSON record the canonical tag as
+`requestedLanguage`. An analysis that derives a transcript records it under
+`derivedTranscript.requestedLanguage` in the manifest. With a supplied transcript,
+`analyze` reports that the hint was unused. Combining the flag with
+`--no-derived-transcript` is an error.
 
 - Default output: `<stem>.srt` and `<stem>_speakers.txt` beside the input.
   `--json` adds `<stem>.transcript.json`; its segment times are numeric seconds
