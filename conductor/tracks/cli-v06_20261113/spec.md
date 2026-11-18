@@ -45,11 +45,13 @@ the reference. It reports and never changes the cut. It gives no verdict on
 taste.
 
 - **Input.** A cut list exported from the editing application, with its
-  sequence rate. The tool reads none today, so the first step is one reader
-  for one format that carries more than one video track. A rendered file
-  alone gives only approximate cuts through ffmpeg scene scores (lane 4). It
-  cannot tell the speaker from a cutaway, so that path is a later fallback,
-  labelled approximate.
+  sequence rate. The tool reads none today. The first format is the Final
+  Cut Pro XML (xmeml) that Premiere Pro exports (owner, 2026-11-18): it
+  carries every video and audio track, and its rate maps to a reduced
+  rational rate or the run refuses. A rendered file alone gives only
+  approximate cuts through ffmpeg scene scores (lane 4). It cannot tell the
+  speaker from a cutaway, so that path is a later fallback, labelled
+  approximate.
 - **Output.**
   - Shot count.
   - Shot lengths as a distribution: median, median absolute deviation and
@@ -62,9 +64,11 @@ taste.
 
   Times are whole frames in the sequence's timecode with the rate named,
   through the exact time module (ADR 0027).
-- **Cost.** No model call, no upload, and no new dependency for a text
-  format. One reader, the statistics and one renderer: about one builder
-  pass and one review.
+- **Cost.** No model call and no upload. The command-line tool has no XML
+  parser today, so the reader needs either a vetted parser dependency or a
+  bounded reader for the xmeml subset; that is settled in the brief. One
+  reader, the statistics and one renderer: about one builder pass and one
+  review.
 - **Falsifier, checked before it ships.** Take pairs of cuts an editor has
   already ranked by pace. If the measure orders them differently, it is not
   a pacing measure. Known blind spots:
@@ -72,8 +76,7 @@ taste.
   - pace carried by motion or speech rate inside a shot;
   - sound-led edits.
 - **Fit.** After lane 4's `probe`, built on the exact time module, and
-  outside the v0.6.0 waves unless the owner moves it in. Open decision: which
-  cut-list format comes first.
+  outside the v0.6.0 waves unless the owner moves it in.
 
 ## Open decisions
 
