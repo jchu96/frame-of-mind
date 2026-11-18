@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { timecodeSpecSchema, parseTimecodeRate, type FrameRate } from "./time-rate.js";
+export * from "./time-rate.js";
+import { fromMilliseconds, renderExactTimecode } from "./exact-time.js";
 import type { MediaClock } from "./media-clock.js";
 
 declare const clockBrand: unique symbol;
@@ -47,13 +50,6 @@ export function clipToFile(time: ClockTime<"clip">, clipStartSeconds: number, mo
 }
 
 const safeNatural = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
-const positiveInteger = safeNatural.min(1);
-export const rateSchema = z.strictObject({ num: positiveInteger, den: positiveInteger });
-export type FrameRate = z.infer<typeof rateSchema>;
-export const timecodeSpecSchema = z.strictObject({
-  rate: rateSchema, dropFrame: z.boolean(), rateOrigin: z.enum(["declared", "media"]),
-}).refine((v) => !v.dropFrame || isDropRate(v.rate), "Drop-frame requires 30000/1001 or 60000/1001.");
-export type TimecodeSpec = z.infer<typeof timecodeSpecSchema>;
 export const clockDeclarationSchema = z.strictObject({
   timelineOffsetMs: safeNatural, origin: z.literal("declared"), timecode: timecodeSpecSchema.optional(),
 });
@@ -70,35 +66,6 @@ export const runClockSchema = z.strictObject({
 });
 export type RunClock = z.infer<typeof runClockSchema>;
 
-export const ACCEPTED_RATES = "24, 25, 30, 48, 50, 60; 23.976, 47.952; 29.97df, 29.97ndf, 59.94df, 59.94ndf; N/D (optionally :df or :ndf); from-media, from-media:df, from-media:ndf";
-function rateError(): never { throw new Error(`Unsupported or ambiguous timecode rate. Accepted forms: ${ACCEPTED_RATES}. Drop-frame must be stated for 30000/1001 and 60000/1001.`); }
-export function rationalRate(num: number, den: number): FrameRate {
-  rateSchema.parse({ num, den });
-  let a = num; let b = den;
-  while (b) { const remainder = a % b; a = b; b = remainder; }
-  return { num: num / a, den: den / a };
-}
-export function isDropRate(rate: FrameRate): boolean {
-  return BigInt(rate.num) * BigInt(1001) === BigInt(30000) * BigInt(rate.den)
-    || BigInt(rate.num) * BigInt(1001) === BigInt(60000) * BigInt(rate.den);
-}
-export function parseTimecodeRate(value: string): TimecodeSpec {
-  const match = /^(.*?)(?::?(ndf|df))?$/.exec(value);
-  if (!match || match[0] !== value) rateError();
-  const name = match[1]!; const choice = match[2];
-  const aliases: Record<string, FrameRate> = {
-    "23.976": { num: 24000, den: 1001 }, "47.952": { num: 48000, den: 1001 },
-    "29.97": { num: 30000, den: 1001 }, "59.94": { num: 60000, den: 1001 },
-  };
-  let rate = Object.hasOwn(aliases, name) ? aliases[name] : undefined;
-  if (!rate && /^(24|25|30|48|50|60)$/.test(name)) rate = { num: Number(name), den: 1 };
-  if (!rate && /^[1-9]\d*\/[1-9]\d*$/.test(name)) {
-    const [num, den] = name.split("/").map(Number);
-    try { rate = rationalRate(num!, den!); } catch { rateError(); }
-  }
-  if (!rate || (isDropRate(rate) && !choice) || (choice === "df" && !isDropRate(rate))) rateError();
-  return { rate, dropFrame: choice === "df", rateOrigin: "declared" };
-}
 export function declareClock(offset?: string, rate?: string): ClockDeclaration | undefined {
   if (rate !== undefined && offset === undefined) throw new Error("--timecode-rate requires --timeline-offset (use 0 for a sequence starting at zero).");
   if (offset === undefined) return undefined;
@@ -108,24 +75,8 @@ export function declareClock(offset?: string, rate?: string): ClockDeclaration |
   });
 }
 
-/** Rendering only: the exact rational frame containing the millisecond instant. */
-export function renderTimecode(ms: number, rate: FrameRate, dropFrame = false): string {
+/** Compatibility rendering: the frame containing the whole-millisecond instant. */
+export function renderTimecode(ms: number, rate: FrameRate, dropFrame: boolean): string {
   if (!Number.isSafeInteger(ms) || ms < 0) throw new Error("Timecode requires non-negative integer milliseconds.");
-  rateSchema.parse(rate);
-  if (dropFrame && !isDropRate(rate)) rateError();
-  const numerator = BigInt(rate.num); const denominator = BigInt(rate.den);
-  const nominal = (numerator + denominator - BigInt(1)) / denominator;
-  let frame = BigInt(ms) * numerator / (BigInt(1000) * denominator);
-  if (dropFrame) {
-    const drop = nominal === BigInt(60) ? BigInt(4) : BigInt(2);
-    const tenMinutes = nominal * BigInt(600) - drop * BigInt(9);
-    const minute = nominal * BigInt(60) - drop;
-    const remainder = frame % tenMinutes;
-    frame += drop * BigInt(9) * (frame / tenMinutes)
-      + (remainder >= drop ? drop * ((remainder - drop) / minute) : BigInt(0));
-  }
-  const ff = frame % nominal;
-  const seconds = frame / nominal;
-  const fields = [seconds / BigInt(3600), seconds / BigInt(60) % BigInt(60), seconds % BigInt(60)].map(v => String(v).padStart(2, "0"));
-  return `${fields.join(":")}${dropFrame ? ";" : ":"}${String(ff).padStart(2, "0")}`;
+  return renderExactTimecode(fromMilliseconds("source", String(ms), rate), dropFrame);
 }
