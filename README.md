@@ -531,6 +531,8 @@ are displayed to milliseconds while retaining `≈1 s`; this is not snapping.
 there is no dual-write. See [VERSIONING](docs/VERSIONING.md) and
 [ADR 0027](docs/adr/0027-exact-rational-frame-times.md).
 
+For integrations, pass decimal seconds text and an explicit start, end or instant edge to `snapDecimalSeconds`. Use `fromPremiereMilliseconds` and `toPremiereMilliseconds` for subtitle values that an editor writes by rounding frame starts down to whole milliseconds. The pair supports declared video rates up to 1000 fps. [ADR 0028](docs/adr/0028-time-to-frame.md)
+
 The model's clip clock is measured automatically using a synthetic flash and
 cached per model for 30 days. `calibrate` refreshes the measurement;
 `--no-calibrate` opts out and labels the run `clip clock unverified`.

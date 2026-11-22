@@ -93,3 +93,45 @@ export function oracleRefusal(row: Case): string {
   if (row.dropFrame && Number(fields[1]) % 10 !== 0 && fields[2] === "00" && Number(fields[3]) < (num === 60000n ? 4 : 2)) return "Drop-frame label does not exist.";
   throw new Error(`Refusal not independently justified: ${row.id}`);
 }
+
+/** Walk the bounded fixture's frame boundaries and compare integer products directly. */
+export function entryOracle(row: EntryCase): Record<string, unknown> | string {
+  const num = BigInt(row.rate.num), den = BigInt(row.rate.den);
+  if (row.op === "snapDecimalSeconds") {
+    const [seconds, fraction = ""] = row.input.split(".");
+    const scale = BigInt("1" + "0".repeat(fraction.length));
+    const asked = (BigInt(seconds!) * scale + BigInt(fraction)) * num;
+    const step = den * scale;
+    let frame = 0n;
+    while ((frame + 1n) * step <= asked) frame++;
+    if (row.edge === "start" && frame * step < asked) frame++;
+    const difference = frame * step - asked;
+    let divisor = num * scale;
+    let remainder = difference;
+    while (remainder !== 0n) [divisor, remainder] = [remainder, divisor % remainder];
+    if (divisor < 0n) divisor = -divisor;
+    return {
+      frames: String(frame), askedSeconds: row.input, edge: row.edge, moved: difference !== 0n,
+      movement: { numerator: String(difference / divisor), denominator: String(num * scale / divisor) },
+    };
+  }
+
+  if (num > 1000n * den) return "Above 1000 fps two frames can share one whole millisecond.";
+  const written = (frame: bigint) => frame * den * 1000n / num;
+  if (row.op === "toPremiereMilliseconds") return { milliseconds: String(written(BigInt(row.input))) };
+  const ms = BigInt(row.input);
+  let frame = 0n;
+  while (written(frame) < ms) frame++;
+  if (written(frame) === ms) return { frames: String(frame) };
+  return `No frame writes ${ms} ms. It falls between the values written by frames ${frame - 1n} and ${frame}.`;
+}
+
+export type EntryCase = {
+  id: string; input: string; rate: { num: number; den: number };
+  clock: "source" | "reel" | "timeline";
+  expected?: Record<string, unknown>; refused?: string;
+  basis: "observed in an editing application" | "worked by hand";
+} & (
+  | { op: "snapDecimalSeconds"; edge: "start" | "end" | "instant" }
+  | { op: "fromPremiereMilliseconds" | "toPremiereMilliseconds" }
+);
