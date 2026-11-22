@@ -4,7 +4,7 @@ import {
   exactSeconds, exactTime, fromMilliseconds, fromPremiereMilliseconds, modelTime,
   snapDecimalSeconds, toPremiereMilliseconds,
 } from "../src/domain/exact-time.js";
-import type { Case, EntryCase } from "./time-contract-oracle.js";
+import { entryOracle, type Case, type EntryCase } from "./time-contract-oracle.js";
 
 const table = JSON.parse(readFileSync(new URL("../docs/contracts/time-cases.json", import.meta.url), "utf8")) as {
   cases: Case[]; entryCases: EntryCase[]; rates: { num: number; den: number }[];
@@ -13,6 +13,11 @@ const film = { num: 24000, den: 1001 };
 const at25 = { num: 25, den: 1 };
 
 function execute(row: EntryCase) {
+  if (row.op === "snapRange") {
+    const start = snapDecimalSeconds(row.clock, row.input, row.rate, "start");
+    const end = snapDecimalSeconds(row.clock, row.endInput, row.rate, "end");
+    return { startFrame: String(start.frames), endFrame: String(end.frames), empty: start.frames >= end.frames };
+  }
   if (row.op === "snapDecimalSeconds") {
     const { frames, rate, clock, unit, askedSeconds, edge, moved, movement } =
       snapDecimalSeconds(row.clock, row.input, row.rate, row.edge);
@@ -131,6 +136,15 @@ test("D12 both millisecond conversions refuse rates above 1000 fps", () => {
       expect(convert, "MISS D12: a rate above 1000 was accepted by the millisecond door")
         .toThrow("two frames can share one whole millisecond");
     }
+  }
+});
+
+test("D13 writer agrees with the independent millisecond search", () => {
+  for (const row of table.entryCases) {
+    if (row.op !== "toPremiereMilliseconds" || row.refused) continue;
+    const time = exactTime(row.clock, row.input, row.rate);
+    expect({ milliseconds: toPremiereMilliseconds(time) }, "MISS D13: writer and oracle disagree")
+      .toEqual(entryOracle(row));
   }
 });
 
