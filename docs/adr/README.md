@@ -44,6 +44,7 @@ decision may be made in place.
 | [0024](0024-upload-retention-is-an-operator-setting.md) | Make CLI recording-upload retention an operator setting | Accepted | 2026-11-13 |
 | [0025](0025-standalone-transcript-files.md) | Standalone private transcript files and operator-retained transcription audio | Accepted | 2026-11-13 |
 | [0026](0026-child-process-environment.md) | Allow-list child process environments | Accepted | 2026-11-13 |
+| [0028](0028-time-to-frame.md) | Choose the frame when a time enters the exact-time module | Accepted | 2026-11-22 |
 
 ## Adding An ADR
 

@@ -93,3 +93,59 @@ export function oracleRefusal(row: Case): string {
   if (row.dropFrame && Number(fields[1]) % 10 !== 0 && fields[2] === "00" && Number(fields[3]) < (num === 60000n ? 4 : 2)) return "Drop-frame label does not exist.";
   throw new Error(`Refusal not independently justified: ${row.id}`);
 }
+
+/** Walk frame boundaries for the bounded decimal fixtures. */
+function oracleSnap(input: string, edge: "start" | "end" | "instant", num: bigint, den: bigint) {
+  const [seconds, fraction = ""] = input.split(".");
+  const scale = BigInt("1" + "0".repeat(fraction.length));
+  const asked = (BigInt(seconds!) * scale + BigInt(fraction)) * num;
+  const step = den * scale;
+  let frame = 0n;
+  while ((frame + 1n) * step <= asked) frame++;
+  if (edge === "start" && frame * step < asked) frame++;
+  const difference = frame * step - asked;
+  let divisor = num * scale;
+  let remainder = difference;
+  while (remainder !== 0n) [divisor, remainder] = [remainder, divisor % remainder];
+  if (divisor < 0n) divisor = -divisor;
+  return {
+    frames: String(frame), askedSeconds: input, edge, moved: difference !== 0n,
+    movement: { numerator: String(difference / divisor), denominator: String(num * scale / divisor) },
+  };
+}
+
+export function entryOracle(row: EntryCase): Record<string, unknown> | string {
+  const num = BigInt(row.rate.num), den = BigInt(row.rate.den);
+  if (row.op === "snapDecimalSeconds") return oracleSnap(row.input, row.edge, num, den);
+  if (row.op === "snapRange") {
+    const startFrame = oracleSnap(row.input, "start", num, den).frames;
+    const endFrame = oracleSnap(row.endInput, "end", num, den).frames;
+    return { startFrame, endFrame, empty: BigInt(startFrame) >= BigInt(endFrame) };
+  }
+
+  if (num > 1000n * den) return "Above 1000 fps two frames can share one whole millisecond.";
+  const frameStep = den * 1000n;
+  if (row.op === "toPremiereMilliseconds") {
+    // Count whole millisecond boundaries up to and including the frame start.
+    const start = BigInt(row.input) * frameStep;
+    let ms = 0n;
+    while ((ms + 1n) * num <= start) ms++;
+    return { milliseconds: String(ms) };
+  }
+  const ms = BigInt(row.input);
+  let frame = 0n;
+  while (frame * frameStep < ms * num) frame++;
+  if (frame * frameStep < (ms + 1n) * num) return { frames: String(frame) };
+  return `No frame writes ${ms} ms. It falls between the values written by frames ${frame - 1n} and ${frame}.`;
+}
+
+export type EntryCase = {
+  id: string; input: string; rate: { num: number; den: number };
+  clock: "source" | "reel" | "timeline";
+  expected?: Record<string, unknown>; refused?: string;
+  basis: "observed in an editing application" | "worked by hand";
+} & (
+  | { op: "snapDecimalSeconds"; edge: "start" | "end" | "instant" }
+  | { op: "snapRange"; endInput: string }
+  | { op: "fromPremiereMilliseconds" | "toPremiereMilliseconds" }
+);

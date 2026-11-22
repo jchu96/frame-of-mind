@@ -176,7 +176,7 @@ Formatting-only code changes do not require a prompt revision.
 ## Exact-time arithmetic contract
 
 The language-neutral table at `docs/contracts/time-cases.json` has its own
-`version: 1`. Its rules and expected outputs define exact frames at rational
+`version: 2`. Its rules and expected outputs define exact frames at rational
 rates on named clocks, half-open instant containment, explicitly selected
 drop-frame, exact decimal-string ticks, and derived seconds as the first whole
 millisecond inside a frame, explicitly marked `secondsDerived: true`. These
@@ -188,9 +188,10 @@ are strings in JSON. Whole-millisecond sources use an internal `1000/1` unit;
 without a declared video rate they expose milliseconds, seconds and ticks,
 with no video frame or timecode claim. Approximate times are a separate type.
 
-`src/domain/exact-time.ts` implements the table; `test/exact-time.test.ts`
-executes every row in both directions and checks it against the independent
-sequential-label oracle in `test/time-contract-oracle.ts`. Consumers in other
+Version 2 adds `entryCases` for decimal seconds with an explicit edge and
+for Premiere subtitle milliseconds at up to 1000 fps. Consumers can continue
+to use the original `cases` array. The exact-time tests exercise both groups,
+and an independent oracle recomputes their expected outputs. Consumers in other
 languages can use the same table without adopting this implementation. Changes
 to the table's meaning require a new contract version. The table version is independent of
 the sidecar and manifest version policies above.

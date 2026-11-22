@@ -22,3 +22,11 @@ deriveExact(snapped, false);
 import { renderTimecode } from "../../src/domain/clock.js";
 // @ts-expect-error Even the millisecond compatibility renderer needs a DF choice.
 renderTimecode(0, { num: 30000, den: 1001 });
+
+import { snapDecimalSeconds } from "../../src/domain/exact-time.js";
+// @ts-expect-error Model observations retain their precision and origin.
+snapDecimalSeconds("source", approximate, exact.rate, "instant");
+// @ts-expect-error The caller must choose a frame edge.
+snapDecimalSeconds("source", "1.000", exact.rate);
+// @ts-expect-error Nearest-frame rounding is not an edge.
+snapDecimalSeconds("source", "1.000", exact.rate, "nearest");

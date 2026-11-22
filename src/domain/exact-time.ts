@@ -155,3 +155,76 @@ export function offsetApproximate<C extends MediaClock>(time: ApproximateTime, o
 export function renderApproximate(time: ApproximateTime): string {
   return `${time.seconds} s ${time.clock} (≈${readingSeconds(BigInt(time.precisionMs)).replace(/\.?0+$/, "")} s; ${time.origin})`;
 }
+
+export type FrameEdge = "start" | "end" | "instant";
+export type DecimalFrameTime<C extends MediaClock = MediaClock> = ExactTime<C> & Readonly<{
+  askedSeconds: string;
+  edge: FrameEdge;
+  moved: boolean;
+  /** Frame start minus asked time, in seconds. The denominator is positive. */
+  movement: Readonly<{ numerator: bigint; denominator: bigint }>;
+}>;
+
+function ceilQuotient(value: bigint, divisor: bigint): bigint {
+  return (value + divisor - 1n) / divisor;
+}
+
+function reducedFraction(numerator: bigint, denominator: bigint) {
+  let a = numerator < 0n ? -numerator : numerator;
+  let b = denominator;
+  while (b !== 0n) [a, b] = [b, a % b];
+  return Object.freeze({ numerator: numerator / a, denominator: denominator / a });
+}
+
+/** Select a boundary or containing frame using the exact digits supplied by the caller. */
+export function snapDecimalSeconds<C extends MediaClock>(
+  clock: C, seconds: string, rate: FrameRate, edge: FrameEdge,
+): DecimalFrameTime<C> {
+  if (edge !== "start" && edge !== "end" && edge !== "instant") {
+    throw new Error("A frame edge is required. Accepted forms: start, end or instant.");
+  }
+  if (typeof seconds !== "string" || !/^(0|[1-9]\d*)(?:\.\d+)?$/.test(seconds) || seconds.trim() !== seconds) {
+    throw new Error("Expected decimal seconds as text. Accepted forms: an unsigned unpadded whole number with an optional fraction, such as 0 or 5.010.");
+  }
+  const reduced = normalizedRate(rate);
+  const digits = BigInt(seconds.replace(".", ""));
+  const scale = 10n ** BigInt(seconds.split(".")[1]?.length ?? 0);
+  const position = digits * BigInt(reduced.num);
+  const step = scale * BigInt(reduced.den);
+  const frames = edge === "start" ? ceilQuotient(position, step) : position / step;
+  const displacement = frames * step - position;
+  return Object.freeze({
+    ...makeTime(clock, frames, reduced, "video-frame"),
+    askedSeconds: seconds, edge, moved: displacement !== 0n,
+    movement: reducedFraction(displacement, scale * BigInt(reduced.num)),
+  });
+}
+
+function premiereFrameScale(rate: FrameRate): bigint {
+  const scale = 1000n * BigInt(rate.den);
+  if (BigInt(rate.num) > scale) {
+    refuse("Above 1000 fps two frames can share one whole millisecond. Use a declared video rate of at most 1000 fps.");
+  }
+  return scale;
+}
+
+/** Invert the whole millisecond written by flooring a video frame's start. */
+export function fromPremiereMilliseconds<C extends MediaClock>(clock: C, ms: string, rate: FrameRate): ExactTime<C> {
+  if (typeof ms !== "string") refuse("Expected whole milliseconds as text.");
+  const value = natural(ms);
+  const reduced = normalizedRate(rate);
+  const scale = premiereFrameScale(reduced);
+  const num = BigInt(reduced.num);
+  // The first frame starting at or after ms is the only possible match in [ms, ms + 1).
+  const frame = ceilQuotient(value * num, scale);
+  if (frame * scale >= (value + 1n) * num) {
+    refuse(`No frame writes ${ms} ms. It falls between the values written by frames ${frame - 1n} and ${frame}.`);
+  }
+  return makeTime(clock, frame, reduced, "video-frame");
+}
+
+export function toPremiereMilliseconds(time: ExactTime): string {
+  if (time?.unit !== "video-frame") refuse("Premiere milliseconds require an exact video frame at a declared video rate.");
+  const scale = premiereFrameScale(time.rate);
+  return String(time.frames * scale / BigInt(time.rate.num));
+}
