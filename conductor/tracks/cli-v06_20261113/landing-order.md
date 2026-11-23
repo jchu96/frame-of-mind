@@ -19,7 +19,7 @@ changes.
 
 | # | Item | Waits for | Owner decision |
 |---|------|-----------|----------------|
-| 1 | This track brought up to date: waves 0 and 1 merged, the exact-time groundwork merged, flaky gate steps and follow-ups recorded (branch `docs/cli-v06-track`, 4 commits plus this page, documents only) | nothing | merge, once a pull request is open |
+| 1 | This track brought up to date: waves 0 and 1 merged, the exact-time groundwork merged, flaky gate steps and follow-ups recorded (branch `docs/cli-v06-track`, documents only) | its pull request's checks | merge |
 | 2 | Development dependency group update (PR #143): mergeable, required checks green | one review at its head | merge |
 | 3 | Silent `frameofmind` command fixed and upload retention stated truthfully | done: PR #161, merge commit `b3a2869` | none |
 | 4 | A teaching-points recipe, a labelled contact sheet, a run `--label` recorded in the manifest, settled screenshots for that recipe only, and a proposed ADR 0029 | done: PR #162, merge commit `06f2e32`. The requester reports one live run from the merged code on an instructional video: complete, 7 records accepted, three successive diagram states returned as three separate records, label recorded, contact sheet written, upload deleted. One run, not repeated here | none |
@@ -36,9 +36,8 @@ scripts and can split a character in two.
 
 ## Decisions for the owner
 
-1. **Pull requests and comments.** May the delivery lead open pull requests
-   and post the rebase request on dependency updates itself? Default: yes,
-   with each merge still on the owner's word.
+1. **Pull requests and comments.** Decided 2026-11-23: the delivery lead
+   opens pull requests itself; each merge is still on the owner's word.
 2. **`exact-time` repository.** Decided 2026-11-23: created, public, MIT,
    released at `v0.1.0`.
 3. **Bundle shape for item 8.** A single-file bundle with its runtime
