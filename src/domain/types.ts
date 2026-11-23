@@ -52,6 +52,12 @@ export interface AnalysisRecipe {
   interrogationInstruction: string;
   revision?: string;
   charter?: RecipeCharter;
+  /**
+   * Built-in recipes only; recipe files cannot set it (their schemas are
+   * strict). "settled" lets the screenshot step prefer a steadier nearby frame;
+   * absent means the direct seek to the cited time.
+   */
+  screenshotStrategy?: "settled";
 }
 
 export interface MeetingContextSource {

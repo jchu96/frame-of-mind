@@ -259,6 +259,11 @@ omits screen-review fields (`where`, verbatim UI text); on-screen text goes
 under On screen. The report still prints the index's surface line until a
 recipe can opt out of it (proposed in ADR 0029).
 
+Its screenshots, alone among recipes, prefer a settled frame within one second
+of the cited time over one caught mid-transition; the search can miss a
+low-contrast cut and show the neighbouring shot. Recipe files cannot turn this
+on, even one reusing the `teaching-points` id.
+
 The recipe originated as a hand-written custom recipe over eight one-minute
 explainer videos, which let the model name its own labels; one concept came
 back under three spellings across records. The charter fixes the vocabulary.

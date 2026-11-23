@@ -9,11 +9,13 @@ export interface ScreenshotWindow {
   end: string;
 }
 
-// Settled-frame search: sample a short window around the cited time, score
-// each frame by how much the picture changes into and out of it, and keep the
-// steadiest frame nearest the cited time, without crossing a hard cut. A
-// frame caught mid-transition scores high and loses to a settled neighbour on
-// the same shot. No model call.
+// Settled-frame search, used only when the caller passes a window (today only
+// the teaching-points recipe): sample within 1 second of the cited time, score
+// each frame by how much the picture changes into and out of it, and prefer
+// the steadiest frame nearest the cited time. A frame caught mid-transition
+// scores high and loses to a settled neighbour. Changes above the cut
+// threshold stop the search, but a low-contrast cut (two shots of similar
+// brightness) stays under it and can be crossed. No model call.
 const SEARCH_RADIUS_SECONDS = 1;
 const SAMPLE_FPS = 5;
 const THUMB_WIDTH = 64;
@@ -70,18 +72,19 @@ export function settledSearchBounds(
   return end - start >= 3 / SAMPLE_FPS ? { start, end } : undefined;
 }
 
-// A change this large between two samples 0.2 s apart is a hard cut. On the
-// eight explainer videos of 2026-11-22, cuts measured 34 to 67 grey levels and
-// the largest step inside a crossfade measured 27.
+// A change this large between two samples 0.2 s apart is treated as a cut. On
+// the eight explainer videos of 2026-11-22, cuts measured 34 to 67 grey levels
+// and the largest step inside a crossfade measured 27. A cut between shots of
+// similar brightness measures less and is not detected.
 const HARD_CUT_CHANGE = 30;
 
 /**
  * Index of the steadiest frame nearest `targetIndex`, or undefined when there
  * is nothing to compare. A frame's score is the mean absolute change from the
  * previous frame plus the change to the next; a frame with one neighbour
- * counts its one change twice. The search never crosses a hard cut, so the
- * screenshot stays on the shot the cited frame belongs to, and the cited frame
- * is kept whenever it is already about as steady as the steadiest frame.
+ * counts its one change twice. The search stops at a change above the cut
+ * threshold (a low-contrast cut stays under it), and the cited frame is kept
+ * whenever it is already about as steady as the steadiest frame.
  */
 export function pickSettledFrame(
   frames: readonly Uint8Array[],
@@ -136,7 +139,12 @@ async function extractSettledScreenshot(
 ): Promise<boolean> {
   const bounds = settledSearchBounds(seconds, window);
   if (!bounds) return false;
-  const scratch = await mkdtemp(join(dirname(destination), ".settled-"));
+  let scratch: string;
+  try {
+    scratch = await mkdtemp(join(dirname(destination), ".settled-"));
+  } catch {
+    return false;
+  }
   try {
     // One decode feeds both outputs, so thumbnail k and frame-k.png are the
     // same picture and the chosen file is kept as decoded, never re-seeked.
@@ -177,6 +185,6 @@ async function extractSettledScreenshot(
   } catch {
     return false;
   } finally {
-    await rm(scratch, { recursive: true, force: true });
+    await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
   }
 }

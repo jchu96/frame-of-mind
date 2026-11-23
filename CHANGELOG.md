@@ -9,9 +9,9 @@ Semantic Versioning.
 
 - `analyze --label <text>` records a human label for the run (for example the source title) as optional `label` in manifest schema 2 and 3, uses it as the video-only report heading, and prints it after the run path. It is never sent to the model or telemetry. Roll readers forward before importing labelled bundles.
 
-- Run bundles with screenshots gain `contact-sheet.png`: every moment screenshot tiled in one image, labelled with record number and cited time, listed in the manifest's `artifacts`. Labels are drawn in-process, so ffmpeg builds without `drawtext` work.
+- Run bundles with screenshots gain `contact-sheet.png`: up to the first 100 moment screenshots tiled in one image, labelled with record number and cited time, listed in the manifest's `artifacts`. The run warns when screenshots are left off the sheet or the sheet cannot be built, and completes either way. Labels are drawn in-process, so ffmpeg builds without `drawtext` work.
 
-- Moment screenshots avoid frames caught mid-transition: ffmpeg samples within one second of the cited time, inside the candidate range, and moves to the steadiest frame on the same shot without crossing a hard cut. Unmoved screenshots are unchanged.
+- `teaching-points` screenshots prefer a settled frame: ffmpeg samples within one second of the cited time, inside the candidate range, and prefers the steadiest frame over one caught mid-transition. It can miss a low-contrast cut and show the neighbouring shot. Every other recipe keeps the frame at the cited time, unchanged.
 
 - Added the built-in `teaching-points` charter recipe for instructional and explainer videos, with a fixed detail-label vocabulary (Teaching point, Narrator's words, Numbers, Reason given, On screen, Picture says more than words, Maker-specific), accepted and rejected exemplars, and rejection of title cards, branding and calls to subscribe.
 

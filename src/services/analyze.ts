@@ -73,7 +73,7 @@ import {
 } from "./audio.js";
 import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
-import { buildContactSheet } from "./contact-sheet.js";
+import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
 import { renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
 import { mapWithConcurrency } from "../lib/concurrency.js";
@@ -944,14 +944,14 @@ export class AnalysisOrchestrator {
             if (options.screenshots && result.accepted) {
               const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
               const screenshotPath = join(screenshotDirectory, screenshotName);
-              // The screenshot is the steadiest frame near the cited time and
-              // never leaves the candidate range (see screenshots.ts).
-              if (await this.screenshot(
-                localVideo,
-                result.evidence?.timestamp || candidate.start,
-                screenshotPath,
-                { start: candidate.start, end: candidate.end },
-              )) {
+              // Only a built-in recipe that declares the settled strategy
+              // (teaching-points) searches near the cited time; every other
+              // recipe, custom ones included, takes the direct seek.
+              const screenshotTime = result.evidence?.timestamp || candidate.start;
+              const captured = options.recipe.screenshotStrategy === "settled"
+                ? await this.screenshot(localVideo, screenshotTime, screenshotPath, { start: candidate.start, end: candidate.end })
+                : await this.screenshot(localVideo, screenshotTime, screenshotPath);
+              if (captured) {
                 item.screenshot = screenshotName;
               }
               assertNotCanceled(execution.signal);
@@ -1119,22 +1119,36 @@ export class AnalysisOrchestrator {
         };
         clock.relativeEvidenceResponses = analyzer.relativeEvidenceResponses ?? 0;
         if (clock.modelClipClock === "absolute" && clock.relativeEvidenceResponses > 0) await reportWarning(progress, { kind: "warning", stage: "interrogating", message: "Evidence clock disagrees with the cached absolute calibration; rerun calibrate." });
-        // One image tiling every moment screenshot, labelled with the record
-        // number used in analysis.md and report.html. Nonfatal and optional.
-        const contactSheet = options.screenshots
-          ? await this.contactSheet(
-              stagingDirectory!,
-              items
-                .filter((item) => item.result.accepted)
-                .flatMap((item, index) => item.screenshot
-                  ? [{
-                      record: index + 1,
-                      time: item.result.evidence?.timestamp || item.candidate.start,
-                      screenshot: item.screenshot,
-                    }]
-                  : []),
-            ).catch(() => undefined)
+        // One image tiling the moment screenshots (at most
+        // CONTACT_SHEET_MAX_TILES), labelled with the record number used in
+        // analysis.md and report.html. Nonfatal: the run completes without it.
+        const sheetEntries = options.screenshots
+          ? items
+              .filter((item) => item.result.accepted)
+              .flatMap((item, index) => item.screenshot
+                ? [{
+                    record: index + 1,
+                    time: item.result.evidence?.timestamp || item.candidate.start,
+                    screenshot: item.screenshot,
+                  }]
+                : [])
+          : [];
+        const contactSheet = sheetEntries.length
+          ? await this.contactSheet(stagingDirectory!, sheetEntries).catch(() => undefined)
           : undefined;
+        if (sheetEntries.length && !contactSheet) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "rendering",
+            message: "The contact sheet could not be built; the moment screenshots are still in the run folder.",
+          });
+        } else if (sheetEntries.length > CONTACT_SHEET_MAX_TILES) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "rendering",
+            message: `The contact sheet shows the first ${CONTACT_SHEET_MAX_TILES} of ${sheetEntries.length} screenshots; the rest are only in the run folder.`,
+          });
+        }
         assertNotCanceled(execution.signal);
         const manifestBase = {
           clock,

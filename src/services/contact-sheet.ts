@@ -22,7 +22,8 @@ const TILE_HEIGHT = 216;
 const LABEL_HEIGHT = 36;
 const GAP = 8;
 const MAX_COLUMNS = 4;
-const MAX_TILES = 100;
+/** The sheet holds at most this many tiles; later screenshots are left off. */
+export const CONTACT_SHEET_MAX_TILES = 100;
 const SCALE = 3;
 const BACKGROUND = [24, 28, 27] as const;
 const INK = [237, 243, 241] as const;
@@ -116,7 +117,7 @@ export async function buildContactSheet(
   directory: string,
   entries: readonly ContactSheetEntry[],
 ): Promise<string | undefined> {
-  const tiles = entries.filter((entry) => /^moment-\d+\.png$/.test(entry.screenshot)).slice(0, MAX_TILES);
+  const tiles = entries.filter((entry) => /^moment-\d+\.png$/.test(entry.screenshot)).slice(0, CONTACT_SHEET_MAX_TILES);
   if (!tiles.length) return undefined;
   const layout = contactSheetLayout(tiles.length);
   const canvas = Buffer.alloc(layout.width * layout.height * 3);

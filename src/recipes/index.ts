@@ -277,14 +277,19 @@ const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
     interrogationInstruction:
       "Scope every pattern to behavior observable in this recording. Separate Observation, Stated goal, Interpreted intent, Likely effect, Missed cue, Alternative interpretation, Guidance, and Suggested practice. Infer likely intent only when useful, cite its observed basis, label it as interpretation rather than an observed fact, and include a plausible alternative. Compare stated intent with observable audience response when context supplies the speaker's goal. Preserve strengths as well as growth opportunities, cite exact spoken or visible evidence, and make advice conditional on the audience and goal. Do not diagnose personality, aptitude, mental health, or protected or sensitive traits, and do not generalize one recording into a stable judgment about the person.",
   },
-  "teaching-points": compileCharterRecipe({
-    id: "teaching-points",
-    label: "Teaching points",
-    description:
-      "Extract each distinct rule, explanation, term, number, diagram, or demonstration an instructional video teaches, with what the picture shows.",
-    charter: teachingPointsCharter,
-    revision: "builtin-2026-11-22.1",
-  }),
+  // Explainer videos are where mid-transition screenshots were seen and where
+  // the settled-frame search was checked; no other recipe uses it yet.
+  "teaching-points": {
+    ...compileCharterRecipe({
+      id: "teaching-points",
+      label: "Teaching points",
+      description:
+        "Extract each distinct rule, explanation, term, number, diagram, or demonstration an instructional video teaches, with what the picture shows.",
+      charter: teachingPointsCharter,
+      revision: "builtin-2026-11-22.1",
+    }),
+    screenshotStrategy: "settled",
+  },
 };
 
 const DEFAULT_BUILT_IN_RECIPE_REVISION = "builtin-2026-07-27.1";

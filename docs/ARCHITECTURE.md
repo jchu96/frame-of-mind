@@ -378,10 +378,11 @@ runs/
         └── contact-sheet.png
 ```
 
-`contact-sheet.png` is an optional review rendering: every accepted record's
-screenshot tiled in record order and labelled with record number and cited
-time, composed in-process and encoded by ffmpeg. It is listed in the
-manifest's `artifacts` like the screenshots; a failure leaves it out.
+`contact-sheet.png` is an optional review rendering: accepted records'
+screenshots tiled in record order, up to the first 100, and labelled with
+record number and cited time, composed in-process and encoded by ffmpeg. It is
+listed in the manifest's `artifacts` like the screenshots. A failure leaves it
+out with a warning, as does leaving screenshots off it; the run completes.
 
 Runs are built in a staging directory and renamed into place after every
 artifact is written.

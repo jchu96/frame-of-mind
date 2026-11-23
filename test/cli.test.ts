@@ -88,6 +88,16 @@ describe("analyze CLI option assembly", () => {
   });
 });
 
+describe("run label", () => {
+  it("refuses Unicode line and paragraph separators inside a label", async () => {
+    const { runLabelSchema } = await import("../src/domain/schemas.js");
+    expect(runLabelSchema.safeParse("Design review \u2014 part 2").success).toBe(true);
+    for (const label of ["Design\u2028review", "Design\u2029review"]) {
+      expect(runLabelSchema.safeParse(label).success).toBe(false);
+    }
+  });
+});
+
 describe("retention validation", () => {
   it("refuses invalid retention before any provider call", async () => {
     await expect(buildAnalyzeOptions(undefined, { ...baseFlags, retention: "idle:2h" }, "synthetic-key"))

@@ -194,10 +194,11 @@ The durable source of truth is local:
 └── contact-sheet.png
 ```
 
-`contact-sheet.png` tiles every moment screenshot in one image, each labelled
-with its record number (as numbered in `analysis.md` and `report.html`) and
-cited time. It is written only when screenshots are, and like them it is
-sensitive.
+`contact-sheet.png` tiles the moment screenshots in one image, up to the first
+100, each labelled with its record number (as numbered in `analysis.md` and
+`report.html`) and cited time. The run warns when screenshots are left off it
+or it cannot be built. It is written only when screenshots are, and like them
+it is sensitive.
 
 > [!WARNING]
 > `report.html` is a rendered artifact, not the source of truth. It is safe
@@ -446,7 +447,7 @@ frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|r
 | `calibrate [--model <id>] [--json]` | refresh the model clock measurement and report token cost |
 | `--transcript-offset <time>` | full transcript time at video `00:00` |
 | `--focus <text>` | prioritize a repository/workflow/concern |
-| `--label <text>` | human label for the run (for example the source title), up to 200 characters on one line; recorded as `label` in `manifest.json`, used as the report heading, printed after the run path; never sent to the model |
+| `--label <text>` | human label for the run (for example the source title), up to 200 characters on one line; recorded as `label` in `manifest.json`; the heading of `analysis.md` and `report.html` for a video-only run, a "Label" line under the meeting title otherwise; printed after the run path; never sent to the model |
 | `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
 | `--model <id>` | Gemini model for both current passes |
 | `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |

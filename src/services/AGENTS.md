@@ -34,12 +34,16 @@
 - Interrogate only candidate clips at medium resolution.
 - Keep nearby transcript slices corroborative; visible claims require video evidence.
 - Capture screenshots only for accepted records and video media. The shipped
-  extractor invokes `ffmpeg`; screenshot failure remains nonfatal.
+  extractor invokes `ffmpeg`; screenshot failure remains nonfatal. Only a
+  built-in recipe declaring `screenshotStrategy: "settled"` (teaching-points)
+  gets the nearby settled-frame search, which can miss a low-contrast cut;
+  every other recipe takes the direct seek.
 
 ## Artifacts
 
 - Write `analysis.json`, `analysis-outcome.json`, `analysis.md`, `report.html`,
-  and `manifest.json` together. `contact-sheet.png` is optional and nonfatal.
+  and `manifest.json` together. `contact-sheet.png` is optional: it holds at
+  most 100 tiles, and a failure or left-off screenshots warn without failing.
 - Isolate only typed model-response failures per detail candidate. Keep
   schema-valid rejected records, distinguish them from failures, and record
   indexed candidates omitted by the configured limit.

@@ -28,8 +28,8 @@ export const runIdSchema = z.string()
  * hashes can be told apart. One line of printable text.
  */
 export const runLabelSchema = z.string().min(1).max(200).refine(
-  (value) => value.trim() === value && !/[\u0000-\u001F\u007F-\u009F]/.test(value),
-  "run label must be one trimmed line without control characters",
+  (value) => value.trim() === value && !/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/.test(value),
+  "run label must be one trimmed line without control characters or line separators",
 );
 
 export const timestampSchema = z.string().max(32).refine(
