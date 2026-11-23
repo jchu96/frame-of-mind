@@ -19,6 +19,7 @@ import {
 import type {
   AnalysisJobStage,
 } from "../../../../src/domain/studio-types";
+import { VERSION } from "../../../../src/version";
 import type { TelemetryTags } from "../../../../src/lib/sentry-telemetry";
 import { MediaStagingError } from "../studio-media/local-media-staging";
 import { captureStudioException } from "../telemetry";
@@ -500,7 +501,7 @@ export class LocalStudioJobWorker {
       stage: "worker",
       ...(error.jobId ? { jobId: error.jobId } : {}),
       studioMode: "local-studio",
-      version: "0.3.0",
+      version: VERSION,
     })).catch(() => undefined);
     try {
       await this.onWorkerError(error);
@@ -523,7 +524,7 @@ export class LocalStudioJobWorker {
       model: job.input.model,
       durationMs: Math.max(0, Date.now() - startedAt),
       studioMode: "local-studio",
-      version: "0.3.0",
+      version: VERSION,
     })).catch(() => undefined);
   }
 }

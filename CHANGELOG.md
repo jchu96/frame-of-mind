@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- REST requests, the web app’s public configuration, and local Studio error telemetry now report the version printed by `frameofmind --version`.
+
 ## [0.6.0-beta.2] - 2026-11-23
 
 Pre-release.
