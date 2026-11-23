@@ -52,16 +52,19 @@ bun run check:pr        # required pull-request gate
 bun run check:sharded   # complete gate when the machine is unloaded
 ```
 
-The PR gate selects the necessary lanes from the diff. On a busy machine,
+The PR gate always runs the fast and local lanes, whatever the diff touches. On a busy machine,
 defer the full run or set `FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes.
-The broader `hosted-contracts` CI job is not a required context and remains
-non-blocking by maintainer decision on 2026-08-23. As of 2026-09-08 it has been
-steadily red on `main` since 2026-08-31, with Better Auth access audit-query,
-media-step timeout, and Better Auth Workflow terminal-stage failures tracked in
+The pull-request gate does not run the hosted lane. That lane runs nightly, on
+manual dispatch, and before every deploy (`gate-lock bun run check:deploy`
+checks without deploying; `deploy:hosted` runs the same checks first);
+its known failures are tracked in
 [#113](https://github.com/jchu96/frame-of-mind/issues/113) and
-[#96](https://github.com/jchu96/frame-of-mind/issues/96).
-See [Testing](docs/TESTING.md#ci) for the six required contexts and web,
-browser, hosted-contract, and change-class-specific commands.
+[#96](https://github.com/jchu96/frame-of-mind/issues/96). A change the
+pull-request gate cannot see, such as an update to `wrangler`, a Workers
+runtime package, or an authentication library, needs one local run of
+`bun run check:lane:hosted` before it merges, with the result in the pull
+request. See [Testing](docs/TESTING.md#ci) for the required contexts and the
+web, browser, hosted-contract, and change-class-specific commands.
 
 ## Writing issues
 
@@ -108,6 +111,20 @@ generated analyses into a public issue.
   in a period. Release commits use `release: vX.Y.Z`. The local `commit-msg`
   hook provides fast feedback, and
   `check:repo-hygiene` enforces the same rule in CI.
+- Review matches what the change can break. A code change gets one independent
+  review at the exact head that will merge, by someone or something other than
+  its author; a second commit after review is checked on its own. A change
+  to prose documents only (Markdown, text, the licence) needs the automatic
+  checks and no review. Agent instruction files (`AGENTS.md`, `CLAUDE.md`)
+  and data files such as JSON are reviewed like code, because agents and
+  tools act on them. A change to
+  a merge gate, to secret handling, or to anything that deletes or uploads a
+  user's recording also needs a written list of the faults it must catch, each
+  shown failing.
+- A maker's report that the gate passed is a claim. Required CI at the exact
+  head is the receipt.
+- Working papers for a change (briefs, status notes, review notes) are never
+  committed; `.gitignore` covers the usual names.
 - When a PR is substantially agent-authored, say so in the PR body and name the
   human or machine review that checked it. Machine-assistance disclosure is the
   normal case in this repository, not an exception.

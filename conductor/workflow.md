@@ -45,10 +45,20 @@ Conductor implementation.
 
 ## Quality Gates
 
-Run from the repository root:
+Run from the repository root. `bun run check:pr` is the required
+pull-request gate: it always runs the fast and local lanes and never the
+hosted lane, which runs nightly and before deploy. Required CI at the exact head is
+the merge oracle (see `docs/TESTING.md`).
 
 ```bash
 bun install --frozen-lockfile
+gate-lock bun run check:pr
+git diff --check
+```
+
+The individual steps, for focused work or a phase boundary:
+
+```bash
 bun run typecheck
 bun run test
 bun run test:web
@@ -56,7 +66,7 @@ bun run build:cli
 bun run build:web
 bun run build:web:cloudflare
 bun audit --production --audit-level=high
-git diff --check
+bun run check:lane:hosted   # hosted lane; not part of the pull-request gate
 ```
 
 Studio phases additionally require:
