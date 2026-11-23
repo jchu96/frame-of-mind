@@ -571,7 +571,9 @@ with exactly one pointer per structured analysis timestamp. Its `time` and
 optional `timeline` objects carry approximate decimal-string seconds, named
 clock, `precisionMs` and model origin. They never carry frames, ticks or
 timecode. `timeline.offset` is separately exact and carries every available
-form derived by `src/domain/exact-time.ts` from whole frames at a rational rate.
+form derived from whole frames at a rational rate by the pinned `exact-time` package.
+The package owns exact conversions, rate and timecode validation, and media clock names.
+Frame of Mind owns approximate clock readings, signed transcript alignment and CLI flag grammar.
 The versioned language-neutral table is `docs/contracts/time-cases.json`.
 Whole-millisecond sources use internal 1000/1, with no invented video rate.
 Reading seconds are explicitly derived; exact reconstruction uses frames/rate.

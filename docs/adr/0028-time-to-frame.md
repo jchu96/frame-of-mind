@@ -9,3 +9,8 @@ A caller must be able to tell which frame a time selects and why. If each import
 - **Frames or ticks already exact.** Use `exactTime` for a frame count or `fromTicks` for whole ticks on a frame boundary. Carry that exact time through later operations. An approximate model observation keeps its precision and origin.
 
 The existing display convention serves a different purpose. `exactSeconds` gives a whole millisecond inside the frame so a reader can locate it with `fromMilliseconds`. Frame 300 reads as 12.513 s that way. Interpreting the subtitle value 12512 as an instant would place it in frame 299. Choosing the conversion at input preserves both conventions.
+
+## Implementation update, 2026-11-23
+
+The pinned `exact-time` v0.1.3 release now supplies the exact conversions, types,
+validators and case table. Frame of Mind delegates stored time fields to those validators.

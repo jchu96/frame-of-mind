@@ -11,7 +11,7 @@ versions for durable schemas and prompts.
 | `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
 | `times.json` sidecar | `2` | increment for breaking shape/meaning |
-| exact-time test table | `1` | increment for changed conversion semantics |
+| exact-time test table | `2` | increment for changed conversion semantics |
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
@@ -184,7 +184,8 @@ Formatting-only code changes do not require a prompt revision.
 
 ## Exact-time arithmetic contract
 
-The language-neutral table at `docs/contracts/time-cases.json` has its own
+The language-neutral table at `docs/contracts/time-cases.json` is copied byte for byte
+from the pinned `exact-time` release. It has its own
 `version: 2`. Its rules and expected outputs define exact frames at rational
 rates on named clocks, half-open instant containment, explicitly selected
 drop-frame, exact decimal-string ticks, and derived seconds as the first whole
@@ -199,7 +200,7 @@ with no video frame or timecode claim. Approximate times are a separate type.
 
 Version 2 adds `entryCases` for decimal seconds with an explicit edge and
 for Premiere subtitle milliseconds at up to 1000 fps. Consumers can continue
-to use the original `cases` array. The exact-time tests exercise both groups,
+to use the original `cases` array. The package also supplies `tickCases` for tick-grid conversions. Its tests exercise the table,
 and an independent oracle recomputes their expected outputs. Consumers in other
 languages can use the same table without adopting this implementation. Changes
 to the table's meaning require a new contract version. The table version is independent of

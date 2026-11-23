@@ -7,7 +7,7 @@ sourceToTimeline({ clock: "source", ms: 1000, precisionMs: 1000 }, 0);
 sourceToTimeline(clockTime("reel", 1000), 0);
 sourceToTimeline(clockTime("source", 1000), 0);
 
-import { exactTime, deriveExact, type ApproximateTime, type SnappedTime } from "../../src/domain/exact-time.js";
+import { exactTime, deriveExact, type ApproximateTime, type SnappedTime } from "exact-time";
 const approximate: ApproximateTime = { clock: "source", seconds: "1.000", precisionMs: 1000, origin: "model" };
 // @ts-expect-error Approximate times must never be rendered as exact times.
 deriveExact(approximate, false);
@@ -23,7 +23,7 @@ import { renderTimecode } from "../../src/domain/clock.js";
 // @ts-expect-error Even the millisecond compatibility renderer needs a DF choice.
 renderTimecode(0, { num: 30000, den: 1001 });
 
-import { snapDecimalSeconds } from "../../src/domain/exact-time.js";
+import { snapDecimalSeconds } from "exact-time";
 // @ts-expect-error Model observations retain their precision and origin.
 snapDecimalSeconds("source", approximate, exact.rate, "instant");
 // @ts-expect-error The caller must choose a frame edge.

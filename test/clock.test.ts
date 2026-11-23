@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clockTime, sourceToTimeline, timelineToSource, transcriptToFile, parseSecondsMs, declareClock, parseTimecodeRate, renderTimecode } from "../src/domain/clock.js";
-import { nearbyTranscript } from "../src/services/transcript.js";
+import { nearbyTranscript, windowTranscript } from "../src/services/transcript.js";
 
 import { verifyDay } from "./clock-oracle.js";
 
@@ -23,6 +23,10 @@ describe("declaration", () => {
   it("--timecode-rate without --timeline-offset is refused with the offset hint", () => expect(() => declareClock(undefined, "25")).toThrow("--timeline-offset (use 0"));
 });
 describe("transcript", () => {
+  it("drops the pre-roll cue when a one-millisecond offset moves it before the window", () => {
+    const transcript = "[00:00:00] A: synthetic pre-roll\n[00:00:01] B: synthetic in range";
+    expect(windowTranscript(transcript, 0.001, 1)).toEqual({ windowed: true, text: "[00:00:00] B: synthetic in range" });
+  });
   it("preserves signed millisecond transcript offsets without float rounding", () => {
     expect(transcriptToFile(clockTime("transcript", 2000), 1.001).ms).toBe(999);
     expect(transcriptToFile(clockTime("transcript", 2000), -1.001).ms).toBe(3001);
@@ -49,6 +53,10 @@ describe("rate", () => {
   });
 });
 describe("timecode", () => {
+  it("the compatibility wrapper also requires an explicit drop-frame choice", () => {
+    // An untyped caller must get the same refusal as an exact-time caller.
+    expect(() => renderTimecode(0, { num: 30000, den: 1001 }, undefined as unknown as boolean)).toThrow("Drop-frame must be stated");
+  });
   it("29.97 DF frame 1800 renders 00:01:00;02", () => {
     const { rate, dropFrame } = parseTimecodeRate("29.97df");
     for (const [frame, expected] of [[1799, "00:00:59;29"], [1800, "00:01:00;02"], [17982, "00:10:00;00"]] as const) {

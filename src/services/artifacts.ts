@@ -1,5 +1,5 @@
 import { declaredOffset, type RunClock } from "../domain/clock.js";
-import { modelTime, offsetApproximate, renderApproximate, deriveExact } from "../domain/exact-time.js";
+import { modelTime, offsetApproximate, renderApproximate, deriveExact } from "exact-time";
 import { timesSchema, type TimesArtifact } from "../domain/times.js";
 import { timestampToSeconds } from "../lib/time.js";
 import { readFile, writeFile } from "node:fs/promises";

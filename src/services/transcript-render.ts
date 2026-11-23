@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { link, lstat, open, rename, rm } from "node:fs/promises";
 import type { DerivedTranscriptionSegment } from "../domain/types.js";
-import type { MediaClock } from "../domain/media-clock.js";
+import type { MediaClock } from "exact-time";
 import { timestampToSeconds } from "../lib/time.js";
 import { formatDerivedTranscript } from "./transcript.js";
 

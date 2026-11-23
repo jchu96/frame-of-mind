@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { mediaClockSchema } from "./media-clock.js";
-import { rateSchema, isDropRate } from "./time-rate.js";
+import { mediaClockSchema, rateSchema, timecodeSpecSchema } from "./media-clock.js";
 const whole = z.string().regex(/^(0|[1-9]\d*)$/);
 const seconds = z.string().regex(/^(0|[1-9]\d*)\.\d{3}$/);
 const approximate = z.strictObject({
@@ -9,7 +8,12 @@ const approximate = z.strictObject({
 const exactCommon = { clock: mediaClockSchema, seconds: seconds.optional(), secondsDerived: z.literal(true), secondsUnavailable: z.string().min(1).optional(), origin: z.literal("declared"), ticks: whole.optional(), ticksUnavailable: z.string().min(1).optional() };
 const exact = z.union([
   z.strictObject({ ...exactCommon, frames: whole, rate: rateSchema, timecode: z.string().min(1), dropFrame: z.boolean() })
-    .refine(v => !v.dropFrame || isDropRate(v.rate), "Invalid drop-frame rate."),
+    .superRefine(({ rate, dropFrame, origin }, ctx) => {
+      const spec = timecodeSpecSchema.safeParse({ rate, dropFrame, rateOrigin: origin });
+      if (!spec.success) {
+        for (const issue of spec.error.issues) ctx.addIssue({ code: "custom", message: issue.message });
+      }
+    }),
   z.strictObject({ ...exactCommon, milliseconds: whole, rateBasis: z.literal("whole-millisecond source; no declared video rate") }),
 ]).refine(v => (v.ticks !== undefined) !== (v.ticksUnavailable !== undefined), "Ticks must be exact or explicitly unavailable.")
   .refine(v => (v.seconds !== undefined) !== (v.secondsUnavailable !== undefined), "Derived seconds must be present or explicitly unavailable.");
