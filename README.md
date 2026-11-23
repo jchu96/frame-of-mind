@@ -190,13 +190,19 @@ The durable source of truth is local:
 ├── analysis.md
 ├── report.html
 ├── manifest.json
-└── moment-01.png
+├── moment-01.png
+└── contact-sheet.png
 ```
+
+`contact-sheet.png` tiles every moment screenshot in one image, each labelled
+with its record number (as numbered in `analysis.md` and `report.html`) and
+cited time. It is written only when screenshots are, and like them it is
+sensitive.
 
 > [!WARNING]
 > `report.html` is a rendered artifact, not the source of truth. It is safe
 > to open locally and easy to hand to a reviewer, but it is sensitive:
-> screenshots are embedded.
+> screenshots are embedded. So is `contact-sheet.png`.
 
 ## Requirements
 

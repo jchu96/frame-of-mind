@@ -374,8 +374,14 @@ runs/
         ├── analysis.md
         ├── report.html
         ├── manifest.json
-        └── moment-01.png
+        ├── moment-01.png
+        └── contact-sheet.png
 ```
+
+`contact-sheet.png` is an optional review rendering: every accepted record's
+screenshot tiled in record order and labelled with record number and cited
+time, composed in-process and encoded by ffmpeg. It is listed in the
+manifest's `artifacts` like the screenshots; a failure leaves it out.
 
 Runs are built in a staging directory and renamed into place after every
 artifact is written.

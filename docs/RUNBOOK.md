@@ -813,7 +813,8 @@ Open:
 
 1. `analysis.md` for concise review;
 2. `report.html` for visual review;
-3. `moment-*.png` for frame evidence;
+3. `contact-sheet.png` to scan every screenshot at once, then `moment-*.png`
+   for frame evidence;
 4. `analysis.json` for accepted and rejected records.
 
 ### 4.3 Human checks

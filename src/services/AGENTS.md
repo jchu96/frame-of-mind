@@ -39,7 +39,7 @@
 ## Artifacts
 
 - Write `analysis.json`, `analysis-outcome.json`, `analysis.md`, `report.html`,
-  and `manifest.json` together.
+  and `manifest.json` together. `contact-sheet.png` is optional and nonfatal.
 - Isolate only typed model-response failures per detail candidate. Keep
   schema-valid rejected records, distinguish them from failures, and record
   indexed candidates omitted by the configured limit.

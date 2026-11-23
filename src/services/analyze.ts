@@ -73,6 +73,7 @@ import {
 } from "./audio.js";
 import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
+import { buildContactSheet } from "./contact-sheet.js";
 import { renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
 import { mapWithConcurrency } from "../lib/concurrency.js";
@@ -310,6 +311,7 @@ export interface AnalysisOrchestratorDependencies {
   now?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
   extractScreenshot?: typeof extractScreenshot;
+  buildContactSheet?: typeof buildContactSheet;
   extractAudioTrack?: typeof extractAudioTrack;
   probeDurationSeconds?: typeof probeDurationSeconds;
   calibrateClipClock?: typeof calibrateClipClock;
@@ -334,6 +336,7 @@ export class AnalysisOrchestrator {
   private readonly now: () => string;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly screenshot: typeof extractScreenshot;
+  private readonly contactSheet: typeof buildContactSheet;
   private readonly extractAudio: typeof extractAudioTrack;
   private readonly probeDuration: typeof probeDurationSeconds;
   private readonly calibrate: typeof calibrateClipClock;
@@ -346,6 +349,7 @@ export class AnalysisOrchestrator {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.screenshot = dependencies.extractScreenshot ?? extractScreenshot;
+    this.contactSheet = dependencies.buildContactSheet ?? buildContactSheet;
     this.extractAudio = dependencies.extractAudioTrack ?? extractAudioTrack;
     this.probeDuration = dependencies.probeDurationSeconds ?? probeDurationSeconds;
     this.calibrate = dependencies.calibrateClipClock ?? calibrateClipClock;
@@ -1113,6 +1117,23 @@ export class AnalysisOrchestrator {
         };
         clock.relativeEvidenceResponses = analyzer.relativeEvidenceResponses ?? 0;
         if (clock.modelClipClock === "absolute" && clock.relativeEvidenceResponses > 0) await reportWarning(progress, { kind: "warning", stage: "interrogating", message: "Evidence clock disagrees with the cached absolute calibration; rerun calibrate." });
+        // One image tiling every moment screenshot, labelled with the record
+        // number used in analysis.md and report.html. Nonfatal and optional.
+        const contactSheet = options.screenshots
+          ? await this.contactSheet(
+              stagingDirectory!,
+              items
+                .filter((item) => item.result.accepted)
+                .flatMap((item, index) => item.screenshot
+                  ? [{
+                      record: index + 1,
+                      time: item.result.evidence?.timestamp || item.candidate.start,
+                      screenshot: item.screenshot,
+                    }]
+                  : []),
+            ).catch(() => undefined)
+          : undefined;
+        assertNotCanceled(execution.signal);
         const manifestBase = {
           clock,
           toolVersion: "0.3.0",
@@ -1157,6 +1178,7 @@ export class AnalysisOrchestrator {
             "manifest.json",
             "times.json",
             ...items.flatMap((item) => (item.screenshot ? [item.screenshot] : [])),
+            ...(contactSheet ? [contactSheet] : []),
           ],
         };
         const manifest: VersionedRunManifest = meetingRunContext

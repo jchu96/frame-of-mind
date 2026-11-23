@@ -279,7 +279,8 @@ Review in this order:
 1. `manifest.json`
 2. `analysis-outcome.json`
 3. `analysis.md` or `report.html`
-4. `moment-*.png`
+4. `contact-sheet.png` (all screenshots, labelled by record and time), then
+   `moment-*.png`
 5. `analysis.json`, including rejected candidates
 
 Verify identity, recipe provenance, model, alignment, evidence timestamps,
