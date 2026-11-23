@@ -1,6 +1,6 @@
 # Landing order: work in flight on 2026-11-23
 
-Read at `main` `519f402` (PR #160, merged 2026-11-22). One delivery lead now
+Read at `main` `b3a2869` (PR #161, merged 2026-11-23). One delivery lead now
 runs this repository and the new `exact-time` library. This page lists the
 work in the order it will land, what each item waits for, and the decisions
 that belong to the owner. It is replaced, not appended to, when the order
@@ -21,11 +21,11 @@ changes.
 |---|------|-----------|----------------|
 | 1 | This track brought up to date: waves 0 and 1 merged, the exact-time groundwork merged, flaky gate steps and follow-ups recorded (branch `docs/cli-v06-track`, 4 commits plus this page, documents only) | nothing | merge, once a pull request is open |
 | 2 | Development dependency group update (PR #143): mergeable, required checks green | one review at its head | merge |
-| 3 | Silent `frameofmind` command, and the upload clean-up wording made the same in the skill and in the command help; retention behaviour unchanged (`fix/cli-silent-and-upload-docs`) | reviewed: round 1 at `f7f6bd5` held the code and found three sentences that overstated upload deletion; the wording fix at `146665e` checked clean against the code. Needs CI at that head | push the branch, open the pull request, merge |
-| 4 | A teaching-points recipe (`feat/teaching-points-recipe`) | builder reports done; one review; lands after item 3 if both touch the recipe registry | push the branch, open the pull request, merge |
+| 3 | Silent `frameofmind` command fixed and upload retention stated truthfully | done: PR #161, merge commit `b3a2869` | none |
+| 4 | A teaching-points recipe, with a steadier screenshot pick, a labelled contact sheet, a run `--label` recorded in the manifest, and a proposed ADR 0029 (`feat/teaching-points-recipe`) | built; a rebase onto `b3a2869`, then one review at the rebased head. The review rules on the additive manifest field, the screenshot threshold, and a prompt rewording not yet run live | push the branch, open the pull request, merge |
 | 5 | Dependency updates PR #136 (vue), #137 (zod), #138 (`@better-auth/core`), #139 (`jose`): each conflicts with `main` and its `Check` job failed | a rebase onto `main`, then green checks; zod and `@better-auth/core` touch durable validation and sign-in, so each gets its own review | rebase request, then merge each |
-| 6 | `exact-time` 0.1.0: the frame-exact time library extracted from `src/domain/exact-time.ts`, with Python parity; built and reviewed, held locally, not yet published | nothing technical: its check passes at the local head. A follow-up makes its test oracle independent of the module on the older millisecond and tick paths | create the public repository (MIT), push, tag v0.1.0 so CI attaches the files and their fingerprints |
-| 7 | This repository takes `exact-time` as a dependency pinned to that tag; the in-repository copy and its contract table are replaced, and the existing time tests and the portable case table must pass unchanged against the dependency | item 6 released; items 2 and 5 landed (lockfile) | merge |
+| 6 | `exact-time` 0.1.0 published: public repository, MIT, release `v0.1.0` with nine files and a `SHA256SUMS` manifest; the download-and-verify command in its README was run against the release and passed | done. Follow-ups there: an independent test oracle on the older millisecond and tick paths; the ES3 form loaded in a real editing application | none |
+| 7 | This repository takes `exact-time` as a dependency pinned to that tag; the in-repository copy and its contract table are replaced, and the existing time tests and the portable case table must pass unchanged against the dependency | items 2 and 5 landed (lockfile); item 6 is released | merge |
 | 8 | Release bundle: when a version is tagged, CI attaches the built command-line tool and its SHA-256 to the GitHub release, so a consumer downloads and verifies one file instead of rebuilding from source (today about 1 GB of source and dependencies per checkout) | item 7, so the bundle carries the pinned library; a choice of bundle shape (below) | bundle shape; the first release that carries it |
 | 9 | What the tool leaves on a Mac: a read-only survey on 2026-11-22 found no flaw in the tool itself. Its check build cache under `~/.cache/frame-of-mind/builds` is pruned to the five newest (115 MB), and no temporary folders were left behind. The remaining weight is one dependency install per checkout, about 1 GB as `du` reports it, but far less on disk: Bun on macOS clones files from its global cache, and removing two such checkouts on 2026-11-23 freed 364 MB of free space, not the 2 GB `du` reported. Item 8 removes the need for that install in a consuming checkout; here, worktrees of closed lanes are removed when their lane closes. Not yet read: what is left in the cloud (with the upload clean-up work, item 3), and whether every temporary folder the tool creates has a matching removal | the cloud read | none unless the cloud read finds a flaw |
 | 10 | Waves 2 to 4 of this track (word-accurate times and ffmpeg helpers; ask again without uploading again; local MCP server) | items 7 and 8; wave 2 specifications rewritten on the exact-time module | none until each wave's specification is ready |
@@ -39,9 +39,8 @@ scripts and can split a character in two.
 1. **Pull requests and comments.** May the delivery lead open pull requests
    and post the rebase request on dependency updates itself? Default: yes,
    with each merge still on the owner's word.
-2. **`exact-time` repository.** Create the public repository under the
-   owner's account, MIT licence, once its review is clean. Default: yes, at
-   0.1.0.
+2. **`exact-time` repository.** Decided 2026-11-23: created, public, MIT,
+   released at `v0.1.0`.
 3. **Bundle shape for item 8.** A single-file bundle with its runtime
    dependencies inside (one download, nothing to install), or the package
    tarball (smaller, but needs its runtime dependencies installed). Default:
