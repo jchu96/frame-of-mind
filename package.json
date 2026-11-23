@@ -94,7 +94,7 @@
     "@sentry/bun": "10.73.0",
     "commander": "15.0.0",
     "dotenv": "17.4.2",
-    "jose": "6.2.9",
+    "jose": "6.2.18",
     "zod": "4.6.6"
   },
   "devDependencies": {
