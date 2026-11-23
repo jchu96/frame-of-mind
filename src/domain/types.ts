@@ -21,7 +21,8 @@ export type BuiltInRecipeId =
   | "requirements"
   | "action-items"
   | "repo-plan"
-  | "communication-coaching";
+  | "communication-coaching"
+  | "teaching-points";
 
 export interface RecipeExemplar {
   verdict: "accepted" | "rejected";

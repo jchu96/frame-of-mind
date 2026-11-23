@@ -65,6 +65,7 @@ export const BUILT_IN_RECIPE_TRACE_IDS = [
   "action-items",
   "repo-plan",
   "communication-coaching",
+  "teaching-points",
 ] as const;
 
 export const TRACE_ATTRIBUTE_VALIDATORS = {

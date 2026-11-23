@@ -116,12 +116,13 @@ Analysis intent is a recipe:
 | `action-items` | commitments, owners, dates, dependencies |
 | `repo-plan` | grounded change requests, risks, validation, open questions |
 | `communication-coaching` | observed delivery, intent/impact, missed cues, guidance |
+| `teaching-points` | what an explainer video teaches: rules, reasons, numbers, diagrams, maker-specific claims |
 
 Custom JSON recipes are supported, either as two instruction strings or as a
 structured **charter** — stance, allowed questions, acceptance, label
 vocabulary, worked exemplars, rejection, and boundaries — rendered
 deterministically by the executor under the untrusted-data guard (ADR 0016).
-The built-in `issue-review` recipe is a charter. See
+The built-in `issue-review` and `teaching-points` recipes are charters. See
 [docs/RECIPES.md](docs/RECIPES.md).
 
 ## How it works

@@ -10,6 +10,7 @@ import {
   renderCharterInstruction,
   withAnalysisDepth,
 } from "../src/recipes/index.js";
+import { BUILT_IN_RECIPE_TRACE_IDS } from "../src/lib/telemetry-trace.js";
 
 describe("analysis recipes", () => {
   it("publishes stable built-in recipe identifiers", () => {
@@ -20,7 +21,69 @@ describe("analysis recipes", () => {
       "action-items",
       "repo-plan",
       "communication-coaching",
+      "teaching-points",
     ]);
+  });
+
+  it("keeps the telemetry recipe allowlist in step with the built-in registry", () => {
+    expect([...BUILT_IN_RECIPE_TRACE_IDS]).toEqual(listBuiltInRecipes().map((recipe) => recipe.id));
+  });
+
+  it("keeps every built-in charter within the custom-charter slot budgets", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-builtin-charter-"));
+    try {
+      for (const recipe of listBuiltInRecipes().filter((candidate) => candidate.charter)) {
+        const path = join(directory, `${recipe.id}.json`);
+        await writeFile(path, JSON.stringify({
+          id: recipe.id,
+          label: recipe.label,
+          description: recipe.description,
+          charter: recipe.charter,
+          revision: recipe.revision,
+        }));
+        const loaded = await loadRecipe("ignored", path);
+        expect(loaded.recipe.indexInstruction).toBe(recipe.indexInstruction);
+        expect(loaded.recipe.interrogationInstruction).toBe(recipe.interrogationInstruction);
+        expect(recipe.charter!.boundaries.length).toBeGreaterThan(0);
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fixes the teaching-points label vocabulary and spelling", () => {
+    const recipe = builtInRecipe("teaching-points");
+    const vocabulary = [
+      "Teaching point",
+      "Narrator's words",
+      "Numbers",
+      "Reason given",
+      "On screen",
+      "Picture says more than words",
+      "Maker-specific",
+    ];
+    expect(recipe.charter?.labelVocabulary).toEqual(vocabulary);
+    expect(recipe.interrogationInstruction).toContain(`Use detail labels from this vocabulary: ${vocabulary.join(", ")}.`);
+    expect(recipe.interrogationInstruction).toContain("exactly as spelled, each at most once");
+    expect(recipe.interrogationInstruction).toContain("rather than writing None");
+    for (const label of vocabulary) {
+      expect(recipe.interrogationInstruction).toContain(`${label}: `);
+    }
+    expect(recipe.charter?.exemplars.map((exemplar) => exemplar.verdict)).toEqual(["accepted", "rejected"]);
+  });
+
+  it("scopes teaching points to what the video states and rejects promotion", () => {
+    const recipe = builtInRecipe("teaching-points");
+    for (const instruction of [recipe.indexInstruction, recipe.interrogationInstruction]) {
+      expect(instruction).toContain("Never add domain knowledge");
+      expect(instruction).toContain("title cards");
+      expect(instruction).toContain("calls to subscribe");
+      expect(instruction).toContain("maker's own product");
+    }
+    expect(recipe.indexInstruction).toContain("do not split one point");
+    expect(recipe.interrogationInstruction).toContain("Picture says more than words: only when the picture shows something the words do not.");
+    expect(recipe.interrogationInstruction).toContain("omit where and evidence.verbatimUiText");
+    expect(recipe.interrogationInstruction).toContain("not mid-transition");
   });
 
   it("scopes communication coaching to observable behavior in the recording", () => {
@@ -83,8 +146,8 @@ describe("analysis recipes", () => {
     }
   });
 
-  it("compiles the issue-review charter positive-before-negative in both phases", () => {
-    const recipe = builtInRecipe("issue-review");
+  it.each(["issue-review", "teaching-points"])("compiles the %s charter positive-before-negative in both phases", (id) => {
+    const recipe = builtInRecipe(id);
     expect(recipe.charter).toBeDefined();
     for (const instruction of [recipe.indexInstruction, recipe.interrogationInstruction]) {
       const order = [
@@ -163,6 +226,8 @@ describe("analysis recipes", () => {
 
   it("scopes the revision bump to the migrated recipe only", async () => {
     expect(builtInRecipeRevision("issue-review")).toBe("builtin-2026-08-11.1");
+    expect(builtInRecipeRevision("teaching-points")).toBe("builtin-2026-11-22.1");
+    expect((await loadRecipe("teaching-points")).revision).toBe("builtin-2026-11-22.1");
     expect((await loadRecipe("issue-review")).revision).toBe(builtInRecipeRevision("issue-review"));
     for (const id of ["decisions", "requirements", "action-items", "repo-plan", "communication-coaching"]) {
       expect(builtInRecipeRevision(id)).toBe("builtin-2026-07-27.1");

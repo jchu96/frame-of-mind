@@ -7,6 +7,8 @@ Semantic Versioning.
 
 - The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. A library import opts out by setting the global `Symbol.for("frameofmind.cli.libraryImport")` flag before loading it. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
 
+- Added the built-in `teaching-points` charter recipe for instructional and explainer videos, with a fixed detail-label vocabulary (Teaching point, Narrator's words, Numbers, Reason given, On screen, Picture says more than words, Maker-specific), accepted and rejected exemplars, and rejection of title cards, branding and calls to subscribe.
+
 - Added exact decimal-to-frame snapping with explicit range edges and round-trip Premiere subtitle milliseconds at video rates up to 1000 fps (ADR 0028).
 
 - Both `transcribe` and `analyze` accept `--transcript-language <tag>` as a spoken-language hint for transcription only. Speech stays in its original language. The speakers header, transcript JSON and derived-transcript manifest provenance record the requested tag when used. On `analyze`, `--note language=<path>` guides analysis prompts only. Live transcription fidelity is untested.

@@ -148,6 +148,7 @@ frameofmind recipes
 | Owners and next actions | `action-items` |
 | Repository work or issue plan | `repo-plan` |
 | Teaching, facilitation, intent-versus-impact | `communication-coaching` |
+| What an instructional or explainer video teaches | `teaching-points` |
 
 Do not default to `issue-review` when the request names another output. Write
 `--focus` as one bounded prioritization sentence about observable targets. It

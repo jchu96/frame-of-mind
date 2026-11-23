@@ -240,6 +240,7 @@ Built-ins:
 - `action-items`
 - `repo-plan`
 - `communication-coaching`
+- `teaching-points`
 
 Recipes cannot change:
 

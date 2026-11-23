@@ -14,6 +14,7 @@ safety, cleanup, and durable schemas unchanged.
 | Commitments, owners, dates, dependencies, done conditions | `action-items` |
 | Grounded repository changes, risks, validation, open questions | `repo-plan` |
 | Communication/self-review, intent versus impact, missed cues | `communication-coaching` |
+| What an instructional or explainer video teaches: rules, reasons, numbers, diagrams | `teaching-points` |
 
 List recipes:
 
@@ -219,6 +220,47 @@ Intent is a legitimate analysis target. Label inferred intent as interpretation,
 cite its observed basis, and include a plausible alternative. Optional context
 should state the speaker's goal, audience, role, and desired feedback so the
 analysis can compare intent with observable response.
+
+### `teaching-points`
+
+A charter recipe for instructional and explainer videos. Use when a user wants:
+
+- each distinct rule, recommendation, explanation, term, or number a video
+  states;
+- what each diagram, animation, or demonstration shows;
+- the reason the video itself gives;
+- where the picture shows more than the narrator says;
+- which claims depend on the maker's own product.
+
+It rejects:
+
+- title cards, intros, outros, and branding;
+- promotion that teaches nothing;
+- calls to subscribe, like, or comment;
+- talk that only restates a point over the same picture;
+- domain knowledge, corrections, or numbers the video does not state.
+
+Detail labels are fixed, spelled exactly, used at most once per record, and
+omitted when they do not apply:
+
+- Teaching point
+- Narrator's words
+- Numbers
+- Reason given
+- On screen
+- Picture says more than words
+- Maker-specific
+
+The index pass keeps one candidate per point told over the same picture and
+starts a new one when the diagram changes. The interrogation pass places the
+evidence timestamp where the picture is settled rather than mid-transition and
+omits screen-review fields (`where`, verbatim UI text); on-screen text goes
+under On screen. The report still prints the index's surface line until a
+recipe can opt out of it (proposed in ADR 0029).
+
+The recipe originated as a hand-written custom recipe over eight one-minute
+explainer videos, which let the model name its own labels; one concept came
+back under three spellings across records. The charter fixes the vocabulary.
 
 ## Recipes versus artifact families
 
