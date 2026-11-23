@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import metadata from "../../../package.json" with { type: "json" };
 import { Miniflare } from "miniflare";
 import { describe, expect, test } from "vitest";
 import { MODEL_REQUEST_TIMEOUT_MS as GEMINI_MODEL_TIMEOUT_MS } from "../../../src/adapters/gemini";
@@ -186,6 +187,7 @@ describe("hosted Workflow durability", () => {
     const pair = await buildHostedPublishedRun(base);
     await expect(validateVersionedRunImport(pair)).resolves.toEqual(pair);
     expect(pair.manifest).toMatchObject({
+      toolVersion: metadata.version,
       runId: `hosted_${attempt.attemptId}`,
       remoteFile: { name: "files/publication", deleted: false },
       artifacts: ["analysis.json", "manifest.json"],

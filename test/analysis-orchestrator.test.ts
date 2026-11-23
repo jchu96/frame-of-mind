@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { VERSION } from "../src/version.js";
 import { ApiError, type File as GeminiFile } from "@google/genai";
 import type {
   AnalysisDetail,
@@ -898,9 +899,8 @@ describe("AnalysisOrchestrator", () => {
     await expect(
       stat(join(result.directory, "analysis.json")),
     ).resolves.toBeDefined();
-    await expect(
-      stat(join(result.directory, "manifest.json")),
-    ).resolves.toBeDefined();
+    const manifest = JSON.parse(await readFile(join(result.directory, "manifest.json"), "utf8"));
+    expect(manifest.toolVersion).toBe(VERSION);
     expect(
       JSON.parse(
         await readFile(join(result.directory, "analysis.json"), "utf8"),
@@ -1119,6 +1119,7 @@ describe("AnalysisOrchestrator", () => {
     );
     const receipt = await readFile(receiptPath, "utf8");
     expect(JSON.parse(receipt)).toMatchObject({
+      toolVersion: VERSION,
       schemaVersion: 1,
       runId: "run-test",
       status: "failed",
@@ -1245,6 +1246,7 @@ describe("AnalysisOrchestrator", () => {
       "failure-manifest.json",
     ), "utf8"));
     expect(receipt).toMatchObject({
+      toolVersion: VERSION,
       phase: "upload",
       error: { code: "unexpected_failure" },
       remoteFile: {

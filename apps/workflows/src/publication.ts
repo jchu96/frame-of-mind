@@ -1,3 +1,4 @@
+import { VERSION } from "../../../src/version.js";
 import { promptPrefix } from "../../../src/adapters/gemini.js";
 import {
   analysisDigest,
@@ -20,7 +21,6 @@ import type {
   HostedTranscriptResult,
 } from "./provider.js";
 
-const HOSTED_TOOL_VERSION = "0.3.0";
 const HOSTED_PROMPT_REVISION = "2026-08-11.1";
 
 export interface HostedPublicationInput {
@@ -84,7 +84,7 @@ export async function buildHostedPublishedRun(
     },
   };
   const manifestBase = {
-    toolVersion: HOSTED_TOOL_VERSION,
+    toolVersion: VERSION,
     promptRevision: HOSTED_PROMPT_REVISION,
     runId,
     startedAt: input.attempt.createdAt,

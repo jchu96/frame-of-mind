@@ -1,3 +1,4 @@
+import { VERSION } from "../version.js";
 import { declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
 import { probeFrameRate } from "./media-probe.js";
 import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
@@ -713,7 +714,7 @@ export class AnalysisOrchestrator {
           : reportedUploadCleanup;
         const failure = runFailureManifestSchema.parse({
           schemaVersion: 1,
-          toolVersion: "0.3.0",
+          toolVersion: VERSION,
           runId,
           status: "failed",
           phase: "upload",
@@ -1152,7 +1153,7 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
         const manifestBase = {
           clock,
-          toolVersion: "0.3.0",
+          toolVersion: VERSION,
           runId,
           startedAt,
           completedAt: this.now(),
@@ -1301,7 +1302,7 @@ export class AnalysisOrchestrator {
         }
         const failure = runFailureManifestSchema.parse({
           schemaVersion: 1,
-          toolVersion: "0.3.0",
+          toolVersion: VERSION,
           runId,
           status: "failed",
           phase: failurePhase,

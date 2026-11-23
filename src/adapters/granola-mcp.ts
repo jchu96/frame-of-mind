@@ -1,3 +1,4 @@
+import { VERSION } from "../version.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
@@ -118,7 +119,7 @@ export class GranolaClient {
   }
 
   private async attemptConnection(provider: FileOAuthProvider): Promise<void> {
-    this.client = new Client({ name: "frame-of-mind", version: "0.3.0" }, { capabilities: {} });
+    this.client = new Client({ name: "frame-of-mind", version: VERSION }, { capabilities: {} });
     this.transport = new StreamableHTTPClientTransport(this.endpoint.url, { authProvider: provider });
     await this.client.connect(this.transport);
   }
