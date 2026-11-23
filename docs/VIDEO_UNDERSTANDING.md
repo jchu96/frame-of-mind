@@ -32,6 +32,7 @@ Video analysis can support several different outcomes:
 | Repository implementation artifact | `repo-plan`, then repository grounding | findings/brief plus composer |
 | Communication or meeting self-review | `communication-coaching` | coaching report |
 | Process walkthrough to SOP | custom recipe | procedure |
+| Instructional or explainer video | `teaching-points` | technical explanation |
 | Technical or construction explanation | custom recipe | technical explanation |
 | Targeted video question | custom recipe plus `--focus` | Q&A |
 

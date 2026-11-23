@@ -73,6 +73,7 @@ import {
 } from "./audio.js";
 import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
+import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
 import { renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
 import { mapWithConcurrency } from "../lib/concurrency.js";
@@ -127,6 +128,8 @@ interface AnalyzeOptionsBase {
   expectedVideoSha256?: string;
   recordingUrl?: string;
   focus?: string;
+  /** Operator-supplied human label recorded in the manifest and reports. */
+  label?: string;
   runNotes?: RunNote[];
   indexFps?: number;
   outputRoot: string;
@@ -310,6 +313,7 @@ export interface AnalysisOrchestratorDependencies {
   now?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
   extractScreenshot?: typeof extractScreenshot;
+  buildContactSheet?: typeof buildContactSheet;
   extractAudioTrack?: typeof extractAudioTrack;
   probeDurationSeconds?: typeof probeDurationSeconds;
   calibrateClipClock?: typeof calibrateClipClock;
@@ -334,6 +338,7 @@ export class AnalysisOrchestrator {
   private readonly now: () => string;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly screenshot: typeof extractScreenshot;
+  private readonly contactSheet: typeof buildContactSheet;
   private readonly extractAudio: typeof extractAudioTrack;
   private readonly probeDuration: typeof probeDurationSeconds;
   private readonly calibrate: typeof calibrateClipClock;
@@ -346,6 +351,7 @@ export class AnalysisOrchestrator {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.screenshot = dependencies.extractScreenshot ?? extractScreenshot;
+    this.contactSheet = dependencies.buildContactSheet ?? buildContactSheet;
     this.extractAudio = dependencies.extractAudioTrack ?? extractAudioTrack;
     this.probeDuration = dependencies.probeDurationSeconds ?? probeDurationSeconds;
     this.calibrate = dependencies.calibrateClipClock ?? calibrateClipClock;
@@ -938,7 +944,14 @@ export class AnalysisOrchestrator {
             if (options.screenshots && result.accepted) {
               const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
               const screenshotPath = join(screenshotDirectory, screenshotName);
-              if (await this.screenshot(localVideo, result.evidence?.timestamp || candidate.start, screenshotPath)) {
+              // Only a built-in recipe that declares the settled strategy
+              // (teaching-points) searches near the cited time; every other
+              // recipe, custom ones included, takes the direct seek.
+              const screenshotTime = result.evidence?.timestamp || candidate.start;
+              const captured = options.recipe.screenshotStrategy === "settled"
+                ? await this.screenshot(localVideo, screenshotTime, screenshotPath, { start: candidate.start, end: candidate.end })
+                : await this.screenshot(localVideo, screenshotTime, screenshotPath);
+              if (captured) {
                 item.screenshot = screenshotName;
               }
               assertNotCanceled(execution.signal);
@@ -1106,6 +1119,37 @@ export class AnalysisOrchestrator {
         };
         clock.relativeEvidenceResponses = analyzer.relativeEvidenceResponses ?? 0;
         if (clock.modelClipClock === "absolute" && clock.relativeEvidenceResponses > 0) await reportWarning(progress, { kind: "warning", stage: "interrogating", message: "Evidence clock disagrees with the cached absolute calibration; rerun calibrate." });
+        // One image tiling the moment screenshots (at most
+        // CONTACT_SHEET_MAX_TILES), labelled with the record number used in
+        // analysis.md and report.html. Nonfatal: the run completes without it.
+        const sheetEntries = options.screenshots
+          ? items
+              .filter((item) => item.result.accepted)
+              .flatMap((item, index) => item.screenshot
+                ? [{
+                    record: index + 1,
+                    time: item.result.evidence?.timestamp || item.candidate.start,
+                    screenshot: item.screenshot,
+                  }]
+                : [])
+          : [];
+        const contactSheet = sheetEntries.length
+          ? await this.contactSheet(stagingDirectory!, sheetEntries).catch(() => undefined)
+          : undefined;
+        if (sheetEntries.length && !contactSheet) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "rendering",
+            message: "The contact sheet could not be built; the moment screenshots are still in the run folder.",
+          });
+        } else if (sheetEntries.length > CONTACT_SHEET_MAX_TILES) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "rendering",
+            message: `The contact sheet shows the first ${CONTACT_SHEET_MAX_TILES} of ${sheetEntries.length} screenshots; the rest are only in the run folder.`,
+          });
+        }
+        assertNotCanceled(execution.signal);
         const manifestBase = {
           clock,
           toolVersion: "0.3.0",
@@ -1142,6 +1186,7 @@ export class AnalysisOrchestrator {
             ? { derivedTranscript: derivedTranscriptProvenance }
             : {}),
           promptProvenance,
+          ...(options.label ? { label: options.label } : {}),
           artifacts: [
             "analysis.json",
             "analysis-outcome.json",
@@ -1150,6 +1195,7 @@ export class AnalysisOrchestrator {
             "manifest.json",
             "times.json",
             ...items.flatMap((item) => (item.screenshot ? [item.screenshot] : [])),
+            ...(contactSheet ? [contactSheet] : []),
           ],
         };
         const manifest: VersionedRunManifest = meetingRunContext

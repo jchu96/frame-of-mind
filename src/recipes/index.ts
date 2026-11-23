@@ -158,6 +158,67 @@ const issueReviewCharter: RecipeCharter = {
     "Never present an inference as an observed fact. Never invent reproduction steps, URLs, or off-screen state. Record only steps actually observed.",
 };
 
+// Instructional and explainer videos: the free-prose custom recipe this
+// replaces let the model coin its own detail labels, so one concept came back
+// under several spellings across records. The interrogation focus therefore
+// fixes each label's exact spelling and meaning.
+const teachingPointsCharter: RecipeCharter = {
+  stance:
+    "You are a careful note-taker watching an instructional or explainer video, recording exactly what it teaches so that someone who has not seen it can rely on the notes.",
+  allowedQuestions: [
+    "What rule, recommendation, explanation, term, or number does the video state?",
+    "What does each diagram, animation, or demonstration show, and does the picture show something the words do not?",
+    "What reason does the video itself give for each point?",
+    "Which claims depend on the maker's own product rather than holding generally?",
+  ],
+  acceptance:
+    "A moment qualifies when it teaches one concrete point: a stated rule or recommendation, an explanation of a cause, a named term, a number with its unit, or a diagram, animation, or demonstration that conveys content.",
+  labelVocabulary: [
+    "Teaching point",
+    "Narrator's words",
+    "Numbers",
+    "Reason given",
+    "On screen",
+    "Picture says more than words",
+    "Maker-specific",
+  ],
+  exemplars: [
+    {
+      verdict: "accepted",
+      candidate:
+        "An animation shows a pipe narrowing while its arrows speed up, and the narrator says water moves faster through the narrow section.",
+      reason:
+        "One distinct explanation, both said and shown; the arrows go under On screen and nothing is added beyond what the video states.",
+    },
+    {
+      verdict: "rejected",
+      candidate:
+        "The presenter thanks viewers on camera and asks them to subscribe while the channel logo animates.",
+      reason: "Branding and a call to subscribe teach nothing.",
+    },
+  ],
+  rejection:
+    "Reject title cards, intros and outros, branding, sponsor or product promotion that teaches nothing, and calls to subscribe, like, or comment. Reject talk that only restates a point already made over the same picture.",
+  boundaries:
+    "Record only what the video states or shows. Never add domain knowledge, corrections, numbers, or reasons the video does not give, even when they are well known. Keep the narrator's words verbatim. Never present a claim about the maker's own product as a general rule.",
+  phaseFocus: {
+    index:
+      "Index each new diagram or animation state that shows something new as its own candidate, even within one sequence, so each state keeps its own picture. Merge only when the same point is told over the same unchanged picture; do not split that into candidates seconds apart.",
+    interrogation: [
+      "Write details with these labels exactly as spelled, each at most once; omit a label that does not apply rather than writing None.",
+      "Teaching point: the point in one plain sentence.",
+      "Narrator's words: the exact spoken words.",
+      "Numbers: every number with its unit, as said or shown.",
+      "Reason given: the video's own reason, only if it gives one.",
+      "On screen: what is drawn or shown, where things are, what moves or changes.",
+      "Picture says more than words: only when the picture shows something the words do not.",
+      "Maker-specific: only when a claim depends on the maker's own product.",
+      "This is not a software screen: omit where and evidence.verbatimUiText, and put on-screen text under On screen.",
+      "Set evidence.timestamp where the picture that carries the point is fully on screen and settled, not mid-transition.",
+    ].join(" "),
+  },
+};
+
 const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
   // Per-recipe revision: only issue-review changed content in the charter
   // migration. The five untouched recipes keep the historical fallback so
@@ -215,6 +276,19 @@ const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
       "Find representative moments of observable communication: explanation structure, questioning, examples, pacing, emphasis, turn-taking, response to confusion, and repair or reframing. Include counterexamples and learner or audience signals when visible or audible. Find missed questions, objections, openings, or response cues when supported by the interaction; reject personality diagnoses and unsupported claims about aptitude, mental state, or sensitive traits.",
     interrogationInstruction:
       "Scope every pattern to behavior observable in this recording. Separate Observation, Stated goal, Interpreted intent, Likely effect, Missed cue, Alternative interpretation, Guidance, and Suggested practice. Infer likely intent only when useful, cite its observed basis, label it as interpretation rather than an observed fact, and include a plausible alternative. Compare stated intent with observable audience response when context supplies the speaker's goal. Preserve strengths as well as growth opportunities, cite exact spoken or visible evidence, and make advice conditional on the audience and goal. Do not diagnose personality, aptitude, mental health, or protected or sensitive traits, and do not generalize one recording into a stable judgment about the person.",
+  },
+  // Explainer videos are where mid-transition screenshots were seen and where
+  // the settled-frame search was checked; no other recipe uses it yet.
+  "teaching-points": {
+    ...compileCharterRecipe({
+      id: "teaching-points",
+      label: "Teaching points",
+      description:
+        "Extract each distinct rule, explanation, term, number, diagram, or demonstration an instructional video teaches, with what the picture shows.",
+      charter: teachingPointsCharter,
+      revision: "builtin-2026-11-22.1",
+    }),
+    screenshotStrategy: "settled",
   },
 };
 

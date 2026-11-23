@@ -117,6 +117,14 @@ same strict provenance validator across import, publication and SQLite/D1 reads.
 Roll readers forward before importing or serving bundles carrying this field.
 After such a bundle has been stored, a reader predating the field rejects it.
 
+The optional `label` field on manifest schema 2 and 3 records the operator's
+`--label` text: one trimmed line of 1 to 200 characters without control
+characters. Run folders are named by digests and run IDs, so the label is how
+a person tells runs apart; it is never sent to the model or to telemetry. Its
+absence means no label was given. It is added under the same additive rule and
+the same caveat: both strict validators gain it in one release, so roll
+readers forward before importing or serving labelled bundles.
+
 Schema 2 is intentionally incompatible with schema 1 imports. It adds a shared
 run ID, an analysis digest in the manifest, strict canonical timestamps, and
 recipe revision/content provenance. Re-run the original source analysis to

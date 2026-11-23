@@ -164,6 +164,16 @@ transcript. Both degrade to a warning when it is missing, so an analysis still
 completes. Use `--no-screenshots` and `--no-derived-transcript` to skip them
 deliberately rather than relying on the failure path.
 
+A moment screenshot is the frame at the cited time, with one exception: for
+the `teaching-points` recipe, ffmpeg samples five frames a second within one
+second of the cited time, inside the candidate's range, and prefers a settled
+frame when the cited one is caught mid-transition (a caption fading, a panel
+sliding in). It stops at a strong cut but can miss a low-contrast cut between
+shots of similar brightness, and so can show the neighbouring shot. When it
+does not move, the screenshot is the exact cited frame. No model call is
+involved. Every other recipe, custom recipes included, always uses the frame
+at the cited time.
+
 ### 1.4 Clone and install
 
 ```bash
@@ -510,6 +520,11 @@ frameofmind analyze \
   --recipe issue-review
 ```
 
+Video-only runs land under a folder named by the recording's digest. Add
+`--label "<source title>"` to record a human label in `manifest.json`, head
+`analysis.md` and `report.html` with it, and print it after the run path. The
+label is never sent to the model.
+
 The core orchestrator and Studio job/projection boundaries support explicit
 video-only schema-v3 runs. If a context source is selected, its failure must
 fail the run; it cannot silently downgrade to video-only. See
@@ -806,7 +821,9 @@ Open:
 
 1. `analysis.md` for concise review;
 2. `report.html` for visual review;
-3. `moment-*.png` for frame evidence;
+3. `contact-sheet.png` to scan the screenshots at once (up to the first 100;
+   the run warns when more are left off), then `moment-*.png` for frame
+   evidence;
 4. `analysis.json` for accepted and rejected records.
 
 ### 4.3 Human checks

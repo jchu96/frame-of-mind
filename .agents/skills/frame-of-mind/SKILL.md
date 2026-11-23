@@ -148,6 +148,7 @@ frameofmind recipes
 | Owners and next actions | `action-items` |
 | Repository work or issue plan | `repo-plan` |
 | Teaching, facilitation, intent-versus-impact | `communication-coaching` |
+| What an instructional or explainer video teaches | `teaching-points` |
 
 Do not default to `issue-review` when the request names another output. Write
 `--focus` as one bounded prioritization sentence about observable targets. It
@@ -278,7 +279,9 @@ Review in this order:
 1. `manifest.json`
 2. `analysis-outcome.json`
 3. `analysis.md` or `report.html`
-4. `moment-*.png`
+4. `contact-sheet.png` (up to the first 100 screenshots, labelled by record
+   and time), then
+   `moment-*.png`
 5. `analysis.json`, including rejected candidates
 
 Verify identity, recipe provenance, model, alignment, evidence timestamps,

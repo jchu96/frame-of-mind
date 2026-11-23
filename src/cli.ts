@@ -23,6 +23,7 @@ import { VERSION } from "./version.js";
 import { registerKey } from "./commands/key.js";
 import { loadRunNotes } from "./services/run-notes.js";
 import { resolveRetention } from "./domain/retention.js";
+import { runLabelSchema } from "./domain/schemas.js";
 import type { ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
 import { redactUrlForDisplay } from "./lib/http.js";
@@ -75,6 +76,7 @@ export interface AnalyzeCliFlags {
   contextFile?: string;
   transcriptOffset?: string;
   focus?: string;
+  label?: string;
   note?: string[];
   depth: string;
   model?: string;
@@ -171,6 +173,7 @@ program
   .option("--no-calibrate", "Skip clip-clock measurement and label the run unverified")
   .option("--transcript-offset <timestamp>", "Transcript time corresponding to video 00:00, for example 01:02:47")
   .option("--focus <instruction>", "Prioritize a specific repository, workflow, or UX concern")
+  .option("--label <text>", "Human label for this run (e.g. the source title), shown in the manifest and reports; never sent to the model")
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
@@ -290,7 +293,7 @@ export function printAnalysisSummary(result: AnalyzeResult): void {
   process.stdout.write(`${clockSummary(result.manifest.clock)}\n`);
   const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
   process.stdout.write(
-    `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
+    `Analysis: ${result.directory}${result.manifest.label ? ` (${result.manifest.label})` : ""}\n${accepted} accepted record(s). ` +
       `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
   );
   const remoteFile = result.manifest.remoteFile;
@@ -312,6 +315,11 @@ export async function buildAnalyzeOptions(
   if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
   const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
   const runNotes = await loadRunNotes(flags.note);
+  const labelResult = flags.label === undefined ? undefined : runLabelSchema.safeParse(flags.label.trim());
+  if (labelResult && !labelResult.success) {
+    throw new Error("--label must be one line of 1 to 200 characters without control characters.");
+  }
+  const label = labelResult?.data;
   const recipeResult = await withAnalysisDepth(
     await loadRecipe(flags.recipe, flags.recipeFile),
     analysisDepthSchema.parse(flags.depth),
@@ -384,6 +392,7 @@ export async function buildAnalyzeOptions(
     apiKey,
     ...(model ? { model } : {}),
     ...(flags.focus ? { focus: flags.focus } : {}),
+    ...(label ? { label } : {}),
     ...(runNotes.length ? { runNotes } : {}),
     indexFps: recipeResult.indexFps,
     outputRoot: flags.output,

@@ -116,12 +116,13 @@ Analysis intent is a recipe:
 | `action-items` | commitments, owners, dates, dependencies |
 | `repo-plan` | grounded change requests, risks, validation, open questions |
 | `communication-coaching` | observed delivery, intent/impact, missed cues, guidance |
+| `teaching-points` | what an explainer video teaches: rules, reasons, numbers, diagrams, maker-specific claims |
 
 Custom JSON recipes are supported, either as two instruction strings or as a
 structured **charter** — stance, allowed questions, acceptance, label
 vocabulary, worked exemplars, rejection, and boundaries — rendered
 deterministically by the executor under the untrusted-data guard (ADR 0016).
-The built-in `issue-review` recipe is a charter. See
+The built-in `issue-review` and `teaching-points` recipes are charters. See
 [docs/RECIPES.md](docs/RECIPES.md).
 
 ## How it works
@@ -189,13 +190,20 @@ The durable source of truth is local:
 ├── analysis.md
 ├── report.html
 ├── manifest.json
-└── moment-01.png
+├── moment-01.png
+└── contact-sheet.png
 ```
+
+`contact-sheet.png` tiles the moment screenshots in one image, up to the first
+100, each labelled with its record number (as numbered in `analysis.md` and
+`report.html`) and cited time. The run warns when screenshots are left off it
+or it cannot be built. It is written only when screenshots are, and like them
+it is sensitive.
 
 > [!WARNING]
 > `report.html` is a rendered artifact, not the source of truth. It is safe
 > to open locally and easy to hand to a reviewer, but it is sensitive:
-> screenshots are embedded.
+> screenshots are embedded. So is `contact-sheet.png`.
 
 ## Requirements
 
@@ -439,6 +447,7 @@ frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|r
 | `calibrate [--model <id>] [--json]` | refresh the model clock measurement and report token cost |
 | `--transcript-offset <time>` | full transcript time at video `00:00` |
 | `--focus <text>` | prioritize a repository/workflow/concern |
+| `--label <text>` | human label for the run (for example the source title), up to 200 characters on one line; recorded as `label` in `manifest.json`; the heading of `analysis.md` and `report.html` for a video-only run, a "Label" line under the meeting title otherwise; printed after the run path; never sent to the model |
 | `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
 | `--model <id>` | Gemini model for both current passes |
 | `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |

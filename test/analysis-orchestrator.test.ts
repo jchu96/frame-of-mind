@@ -1756,6 +1756,59 @@ describe("AnalysisOrchestrator", () => {
     expect(completed).toEqual([1, 2, 3, 4, 5, 6]);
   });
 
+  it("tiles accepted screenshots into a contact sheet listed in the manifest", async () => {
+    async function run(sheet: string | undefined) {
+      const fixture = await createFixture();
+      const index = indexResult();
+      fixture.options.maxIncidents = 3;
+      fixture.options.screenshots = true;
+      fixture.analyzer.index = vi.fn(async () => ({
+        ...index,
+        moments: [1, 2, 3].map((second) => ({
+          ...index.moments[0]!,
+          start: `00:00:0${second}`,
+          end: `00:00:0${second + 1}`,
+        })),
+      }));
+      fixture.analyzer.interrogate = vi.fn(async (_file, candidate: IndexedMoment) => ({
+        ...detailResult(),
+        accepted: candidate.start !== "00:00:01",
+        evidence: { timestamp: candidate.start },
+      }));
+      const sheets: unknown[] = [];
+      const orchestrator = new AnalysisOrchestrator({
+        createContextSource: () => fixture.context,
+        createAnalyzer: () => fixture.analyzer,
+        createRunId: () => "run-test",
+        now: () => "2026-07-27T12:00:00.000Z",
+        sleep: async () => undefined,
+        extractScreenshot: vi.fn(async (_video: string, _timestamp: string, destination: string) => {
+          await writeFile(destination, "png");
+          return true;
+        }),
+        buildContactSheet: vi.fn(async (_directory: string, entries) => {
+          sheets.push(entries);
+          return sheet;
+        }),
+      });
+      const result = await orchestrator.analyze(fixture.options);
+      return { result, sheets };
+    }
+
+    const built = await run("contact-sheet.png");
+    // The rejected first candidate gets no screenshot; records are numbered
+    // as analysis.md and report.html number accepted records.
+    expect(built.sheets).toEqual([[
+      { record: 1, time: "00:00:02", screenshot: "moment-02.png" },
+      { record: 2, time: "00:00:03", screenshot: "moment-03.png" },
+    ]]);
+    expect(built.result.manifest.artifacts.at(-1)).toBe("contact-sheet.png");
+
+    const failed = await run(undefined);
+    expect(failed.result.manifest.artifacts).not.toContain("contact-sheet.png");
+    expect(failed.result.outcome.status).toBe("complete");
+  });
+
   it("rejects an out-of-range detail concurrency before any provider work", async () => {
     const fixture = await createFixture();
     for (const detailConcurrency of [0, 9, 1.5]) {
@@ -2017,6 +2070,38 @@ describe("best-N selection", () => {
       expect((await readFile(join(result.directory, file), "utf8")).toLowerCase()).toContain("lower-importance");
     }
   });
+  it("--label is recorded in the manifest, headed in both reports, printed, and never sent to the model", async () => {
+    const { buildAnalyzeOptions, printAnalysisSummary } = await import("../src/cli.js");
+    const { runManifestV3Schema } = await import("../src/domain/schemas.js");
+    const fixture = await createFixture();
+    const flags = { source: "none", granolaTransport: "mcp", recipe: "teaching-points", depth: "standard", video: fixture.options.video, output: fixture.outputRoot, maxMoments: "all", screenshots: false, derivedTranscript: false };
+    const options = await buildAnalyzeOptions(undefined, { ...flags, label: "  Low <Frequency> Build-up  " }, "synthetic-key");
+    expect(options.label).toBe("Low <Frequency> Build-up");
+    const result = await createOrchestrator(fixture).analyze(options);
+    expect(result.manifest.label).toBe("Low <Frequency> Build-up");
+    expect(runManifestV3Schema.parse(result.manifest).label).toBe("Low <Frequency> Build-up");
+    expect(JSON.parse(await readFile(join(result.directory, "manifest.json"), "utf8")).label).toBe("Low <Frequency> Build-up");
+    const markdown = await readFile(join(result.directory, "analysis.md"), "utf8");
+    expect(markdown.split("\n")[0]).toBe("# Low &lt;Frequency&gt; Build\\-up");
+    const report = await readFile(join(result.directory, "report.html"), "utf8");
+    expect(report).toContain("<h1>Low &lt;Frequency&gt; Build-up</h1>");
+    expect(report).toContain("<span>Label: Low &lt;Frequency&gt; Build-up</span>");
+    const prompts = JSON.stringify([fixture.analyzer.index.mock.calls, fixture.analyzer.interrogate.mock.calls]);
+    expect(prompts).not.toContain("Frequency> Build");
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      printAnalysisSummary(result);
+      expect(stdout.mock.calls.map(([text]) => text).join("")).toContain(`Analysis: ${result.directory} (Low <Frequency> Build-up)`);
+    } finally { stdout.mockRestore(); }
+
+    for (const label of ["", "two\nlines", "tab\there", "x".repeat(201)]) {
+      await expect(buildAnalyzeOptions(undefined, { ...flags, label }, "synthetic-key")).rejects.toThrow("--label must be one line");
+    }
+    expect(runManifestV3Schema.safeParse({ ...result.manifest, label: " padded " }).success).toBe(false);
+    const { label: _omitted, ...unlabelled } = result.manifest;
+    expect(runManifestV3Schema.safeParse(unlabelled).success).toBe(true);
+  });
+
   it("--max-moments all interrogates every indexed moment without a truncation warning", async () => {
     const { buildAnalyzeOptions } = await import("../src/cli.js"); const fixture = await createFixture();
     const options = await buildAnalyzeOptions(undefined, { source: "none", granolaTransport: "mcp", recipe: "requirements", depth: "standard", video: fixture.options.video, output: fixture.outputRoot, maxMoments: "all", screenshots: false, derivedTranscript: false }, "synthetic-key");

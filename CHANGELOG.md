@@ -7,6 +7,14 @@ Semantic Versioning.
 
 - The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. A library import opts out by setting the global `Symbol.for("frameofmind.cli.libraryImport")` flag before loading it. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
 
+- `analyze --label <text>` records a human label for the run (for example the source title) as optional `label` in manifest schema 2 and 3, uses it as the video-only report heading, and prints it after the run path. It is never sent to the model or telemetry. Roll readers forward before importing labelled bundles.
+
+- Run bundles with screenshots gain `contact-sheet.png`: up to the first 100 moment screenshots tiled in one image, labelled with record number and cited time, listed in the manifest's `artifacts`. The run warns when screenshots are left off the sheet or the sheet cannot be built, and completes either way. Labels are drawn in-process, so ffmpeg builds without `drawtext` work.
+
+- `teaching-points` screenshots prefer a settled frame: ffmpeg samples within one second of the cited time, inside the candidate range, and prefers the steadiest frame over one caught mid-transition. It can miss a low-contrast cut and show the neighbouring shot. Every other recipe keeps the frame at the cited time, unchanged.
+
+- Added the built-in `teaching-points` charter recipe for instructional and explainer videos, with a fixed detail-label vocabulary (Teaching point, Narrator's words, Numbers, Reason given, On screen, Picture says more than words, Maker-specific), accepted and rejected exemplars, and rejection of title cards, branding and calls to subscribe.
+
 - Added exact decimal-to-frame snapping with explicit range edges and round-trip Premiere subtitle milliseconds at video rates up to 1000 fps (ADR 0028).
 
 - Both `transcribe` and `analyze` accept `--transcript-language <tag>` as a spoken-language hint for transcription only. Speech stays in its original language. The speakers header, transcript JSON and derived-transcript manifest provenance record the requested tag when used. On `analyze`, `--note language=<path>` guides analysis prompts only. Live transcription fidelity is untested.
