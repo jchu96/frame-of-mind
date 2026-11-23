@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Standalone CLI releases include a checksummed third-party notices file for redistribution. The release job marks pre-release tags automatically and keeps them out of Latest.
+
 ## [0.6.0-beta.1] - 2026-11-23
 
 Pre-release. First release that publishes the standalone CLI with checksums.

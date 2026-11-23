@@ -223,6 +223,11 @@ jobs:
         run: |
           commit=$(git rev-parse HEAD)
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq .sha)" = "$commit"
-          gh release create "$GITHUB_REF_NAME" release/{frameofmind.mjs,LICENSE,release.json,SHA256SUMS} \
-            --verify-tag --title "Frame of Mind $GITHUB_REF_NAME" --generate-notes \
-            --notes "Built from commit $commit."
+          flags=()
+          version=${GITHUB_REF_NAME%%+*}
+          if [[ "$version" == *-* ]]; then
+            flags+=(--prerelease --latest=false)
+          fi
+          gh release create "$GITHUB_REF_NAME" release/{frameofmind.mjs,LICENSE,THIRD-PARTY-NOTICES.txt,release.json,SHA256SUMS} \
+            "${flags[@]}" --verify-tag --title "Frame of Mind $GITHUB_REF_NAME" --generate-notes \
+            --notes "Built from commit $commit. In the single file, the error-reporting SDK’s automatic instrumentation of third-party modules is off."

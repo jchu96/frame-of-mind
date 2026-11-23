@@ -1,0 +1,2 @@
+# Preserve the upstream bytes verified by the release build.
+*.LICENSE -text
