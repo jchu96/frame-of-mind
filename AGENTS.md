@@ -4,6 +4,7 @@
 
 - Use Bun 1.4.4 or newer: `bun install`, `bun run dev`, `bun run check`.
 - Keep `bun.lock` synchronized with the root workspace; do not recreate `package-lock.json`.
+- A dependency update that touches `wrangler`, a Workers runtime package, or an authentication library needs one local `bun run check:lane:hosted` run before merge; the PR gate does not cover the hosted lane.
 
 ## File-Scoped Commands
 
@@ -14,6 +15,7 @@
 | Browser smoke | `bun run test:e2e:smoke` |
 | Typecheck | `bun run typecheck` |
 | PR gate | `bun run check:pr` |
+| Hosted lane (not in the PR gate) | `bun run check:lane:hosted` |
 | Full sharded gate | `bun run check:sharded` |
 
 ## Architecture
@@ -40,6 +42,7 @@
 - Update `README.md` for interface changes and `docs/RUNBOOK.md` for operating changes.
 - Add an ADR for decisions that alter trust boundaries, retention, or data ownership.
 - Keep scoped `AGENTS.md` files concise; `CLAUDE.md` files are symlinks to them.
+- Never commit working papers (`BRIEF-*`, `STATUS-*`, `REVIEW-*`, `STEER-*`, `MUTANTS-*`, `PR-BODY-*`); see `CONTRIBUTING.md` for review expectations.
 - `.agents/skills/frame-of-mind/` is the one real skill directory; do not add wrappers, and use the copy installer only where outward symlinks are unsuitable.
 
 ## Memory Protocols

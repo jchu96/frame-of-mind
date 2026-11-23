@@ -40,3 +40,12 @@ dossiers/
 *.m4v
 *.mov
 *.mp3
+
+# Working papers for a change; never committed
+BRIEF-*.md
+STATUS-*.md
+REVIEW-*.md
+STEER-*.md
+MUTANTS-*.md
+PR-BODY-*.md
+PM-DRAFTS-*.md
