@@ -77,6 +77,13 @@ rendering only. Never read timecode from the picture or container tags. Consult
 `manifest.clock` for measured clip-clock provenance and `times.json` for numeric
 seconds. An unverified clip clock is uncertainty to preserve when reporting.
 
+For `--snap speech`, quote both readings, for example “model end 21 s source
+(≈1 s), proposed cut 20.120 s source (10 ms audio-envelope), 880 ms earlier.”
+Name the observed pause and any alternative file times. Label a frame reference
+as containing the onset or last speech millisecond. For `no-boundary`,
+`ambiguous` or `unavailable`, quote the original model range and status. List
+refused alternatives for an ambiguous cut and listen before choosing.
+
 ## Local CLI and Studio
 
 ### Install and verify

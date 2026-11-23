@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Added `frameofmind snap` for local speech-edge searches and `analyze --snap speech` for measured cut proposals. Opted-in analyses write `times.json` schema 3 alongside the original model readings. Default runs continue to write schema 2.
+
 ## [0.6.0-beta.2] - 2026-11-23
 
 Pre-release.

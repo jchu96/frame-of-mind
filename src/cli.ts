@@ -43,6 +43,8 @@ import {
 
 import { defaultOutputRoot } from "./lib/paths.js";
 import { registerSession } from "./commands/session.js";
+import { registerSnap } from "./commands/snap.js";
+import { snapSettings } from "./domain/snap.js";
 import { registerMedia } from "./commands/media.js";
 import { resolveTranscriptLanguage } from "./domain/transcript-language.js";
 import { registerTranscribe, transcriptionHelp } from "./commands/transcribe.js";
@@ -63,6 +65,9 @@ const geminiModelSchema = z.string()
   .regex(/^gemini-[a-z0-9][a-z0-9.-]*$/, "expected a Gemini model ID");
 
 export interface AnalyzeCliFlags {
+  snap?: string;
+  snapGapMs?: string;
+  snapWindowMs?: string;
   timelineOffset?: string;
   timecodeRate?: string;
   fileClock?: string;
@@ -112,7 +117,7 @@ program
       ["Node >=22", Number(process.versions.node.split(".")[0]) >= 22],
       ["GEMINI_API_KEY", Boolean(process.env.GEMINI_API_KEY)],
       ["GRANOLA_API_KEY (optional)", Boolean(process.env.GRANOLA_API_KEY)],
-      ["ffmpeg (optional: screenshots, derived transcript)", await executableExists("ffmpeg")],
+      ["ffmpeg (optional: screenshots, derived transcript, speech snapping)", await executableExists("ffmpeg")],
       ["ffprobe (optional: duration probe, media helpers)", await executableExists("ffprobe")],
     ] as const;
     for (const [name, ready] of checks) process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
@@ -143,6 +148,7 @@ program
 
 registerSession(program);
 registerMedia(program);
+registerSnap(program);
 registerTranscribe(program);
 registerKey(program);
 
@@ -170,6 +176,9 @@ program
   .option("--context-file <path>", "Transcript/meeting JSON, Markdown, text, SRT, or VTT for --source file")
   .option("--video <path>", "Use a recording already downloaded locally")
   .option("--recording-url <url>", "Use an expiring signed Bluedot media URL")
+  .option("--snap <method>", "Propose measured record edges with speech")
+  .option("--snap-gap-ms <ms>", "Minimum observed pause (80–2000, default 250)")
+  .option("--snap-window-ms <ms>", "Search radius (250–3000, default 1500)")
   .option("--timeline-offset <time>", "Sequence offset: seconds (up to 3 decimals), Nf whole frames, or HH:MM:SS:FF / HH:MM:SS;FF; video forms require --timecode-rate. Without a rate: exact milliseconds, seconds and ticks only; no frames or timecode")
   .option("--file-clock <clock>", "Input clock: source or reel", "source")
   .option("--timecode-rate <rate>", `Timeline timecode rendering: ${ACCEPTED_RATES}`)
@@ -299,6 +308,11 @@ export function printAnalysisSummary(result: AnalyzeResult): void {
     `Analysis: ${result.directory}${result.manifest.label ? ` (${result.manifest.label})` : ""}\n${accepted} accepted record(s). ` +
       `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
   );
+  if (result.snapSummary) {
+    const { counts, total, medianShiftMs } = result.snapSummary;
+    process.stdout.write(`Speech edges: ${counts.snapped} snapped, ${counts["no-boundary"]}/${total} no-boundary, ${counts.ambiguous} ambiguous, ${counts.unavailable} unavailable` +
+      (medianShiftMs === undefined ? ".\n" : `, median signed shift ${medianShiftMs} ms (nearest rank).\n`));
+  }
   const remoteFile = result.manifest.remoteFile;
   if (remoteFile && !remoteFile.deleted && remoteFile.name) {
     process.stdout.write(
@@ -314,6 +328,9 @@ export async function buildAnalyzeOptions(
   flags: AnalyzeCliFlags,
   apiKey: string | undefined,
 ): Promise<AnalyzeOptions> {
+  if (flags.snap !== undefined && flags.snap !== "speech") throw new Error("--snap must be speech.");
+  const integer = (text?: string) => text === undefined ? undefined : /^\d+$/.test(text) && text.trim() === text ? Number(text) : NaN;
+  const settings = snapSettings(integer(flags.snapGapMs), integer(flags.snapWindowMs));
   const transcriptLanguage = resolveTranscriptLanguage(flags.transcriptLanguage, flags.derivedTranscript);
   if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
   const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
@@ -384,6 +401,7 @@ export async function buildAnalyzeOptions(
   declareClock(flags.timelineOffset, flags.timecodeRate);
   const fileClock = z.enum(["source", "reel"]).parse(flags.fileClock ?? "source");
   const common = {
+    ...(flags.snap ? { snapSettings: settings } : {}),
     ...(flags.timelineOffset !== undefined ? { timelineOffset: flags.timelineOffset } : {}),
     ...(flags.timecodeRate !== undefined ? { timecodeRate: flags.timecodeRate } : {}),
     fileClock,

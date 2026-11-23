@@ -4,6 +4,14 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-11-23 — Preserve the model time beside a measured speech cut
+
+Store pause-supported 10 ms targets in opt-in times schema 3. Schema 2 has
+strict model-only entries. A separate target preserves the original reading
+and the file-clock shift. Verify decoded packet timestamps before accepting
+PCM. Use instant containment for the onset or final speech millisecond when
+rendering a frame reference (ADRs 0027 and 0028).
+
 ## 2026-11-23 — Retire four intermittent Better Auth hosted checks
 
 The full access and Workflows HTTP steps, browser composer journey, and duplicate

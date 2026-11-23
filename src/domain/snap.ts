@@ -1,0 +1,198 @@
+import { exactSeconds, fromMilliseconds } from "exact-time";
+import type { FileClock } from "./clock.js";
+
+export type Edge = "start" | "end";
+export type SnapSettings = { method: "audio-envelope"; gapMs: number; windowMs: number };
+export function snapSettings(gapMs = 250, windowMs = 1500): SnapSettings {
+  for (const [name, value, min, max] of [["gap", gapMs, 80, 2000], ["window", windowMs, 250, 3000]] as const) {
+    if (!Number.isInteger(value) || value < min || value > max) throw new Error(`--snap-${name}-ms must be an integer from ${min} to ${max}.`);
+  }
+  return { method: "audio-envelope", gapMs, windowMs };
+}
+
+export function decimalMs(ms: number): string {
+  return exactSeconds(fromMilliseconds("source", String(ms)));
+}
+
+export type MeasuredTime = { clock: FileClock; seconds: string; precisionMs: 10; origin: "audio-envelope" };
+export type SnapResult =
+  | { status: "snapped"; target: MeasuredTime; shiftMs: number; gapMs: number; gapLowerBound?: true; alternativesMs: number[] }
+  | { status: "ambiguous" | "no-boundary"; alternativesMs: number[] }
+  | { status: "unavailable" };
+export type SnapRun = { settings: SnapSettings; records: Record<Edge, SnapResult>[] };
+
+const SAMPLES = 80;
+const WINDOW_MS = 10;
+const BLOCK = 1000;
+export interface Envelope {
+  startMs: number;
+  blocks: Float32Array[];
+  length: number;
+}
+
+/** A partial first or last window is never observed. Blocks avoid copying the meter as it grows. */
+export class SpeechMeter {
+  readonly envelope: Envelope;
+  private skip: number;
+  private lowByte: number | undefined;
+  private samples = 0;
+  private squares = 0;
+  bytes = 0;
+
+  constructor(firstSample: number) {
+    const firstWindow = Math.max(0, Math.ceil(firstSample / SAMPLES));
+    this.skip = firstWindow * SAMPLES - firstSample;
+    this.envelope = { startMs: firstWindow * WINDOW_MS, blocks: [], length: 0 };
+  }
+
+  write(chunk: Uint8Array) {
+    this.bytes += chunk.length;
+    let i = 0;
+    if (this.lowByte !== undefined && chunk.length) {
+      this.sample(this.lowByte | (chunk[i++]! << 8));
+      this.lowByte = undefined;
+    }
+    for (; i + 1 < chunk.length; i += 2) this.sample(chunk[i]! | (chunk[i + 1]! << 8));
+    if (i < chunk.length) this.lowByte = chunk[i];
+  }
+
+  private sample(unsigned: number) {
+    if (this.skip > 0) { this.skip--; return; }
+    const sample = unsigned >= 32768 ? unsigned - 65536 : unsigned;
+    this.squares += sample * sample;
+    if (++this.samples !== SAMPLES) return;
+    const { blocks, length } = this.envelope;
+    if (length % BLOCK === 0) blocks.push(new Float32Array(BLOCK));
+    blocks[blocks.length - 1]![length % BLOCK] = Math.max(-96, 10 * Math.log10(this.squares / SAMPLES / 32768 ** 2));
+    this.envelope.length++;
+    this.squares = this.samples = 0;
+  }
+
+  finish(): Envelope | undefined {
+    return this.lowByte === undefined ? this.envelope : undefined;
+  }
+}
+
+type Boundary = { ms: number; gapMs: number; gapLowerBound: boolean };
+export type Boundaries = Record<Edge, Boundary[]>;
+
+/** Sorted sliding neighborhood, [i - 1500, i + 1500), clipped at observed ends. */
+export function classify(envelope: Envelope): Boundaries {
+  const { startMs, length, blocks } = envelope;
+  const level = (i: number) => blocks[Math.floor(i / BLOCK)]![i % BLOCK]!;
+  const sorted = new Float32Array(3000);
+  let count = 0;
+  function position(value: number) {
+    let lo = 0, hi = count;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (sorted[mid]! < value) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+  const boundaries: Boundaries = { start: [], end: [] };
+  let left = 0, right = 0;
+  let onset = 0, quietSince = 0, speech = false;
+  let pendingEnd: number | undefined;
+  function finishPause(i: number) {
+    if (pendingEnd !== undefined) boundaries.end.push({
+      ms: startMs + pendingEnd * WINDOW_MS, gapMs: (i - quietSince) * WINDOW_MS, gapLowerBound: i === length,
+    });
+  }
+  for (let i = 0; i <= length; i++) {
+    let above = false;
+    if (i < length) {
+      if (left < i - 1500) {
+        const at = position(level(left++));
+        sorted.copyWithin(at, at + 1, count);
+        count--;
+      }
+      while (right < Math.min(length, i + 1500)) {
+        const value = level(right++);
+        const at = position(value);
+        sorted.copyWithin(at + 1, at, count);
+        count++;
+        sorted[at] = value;
+      }
+      above = level(i) > sorted[Math.ceil(count * 0.2) - 1]! + 10;
+    }
+    if (above && !speech) {
+      finishPause(i);
+      onset = i;
+      pendingEnd = undefined;
+    }
+    if (!above && speech) {
+      if (i - onset >= 8) {
+        boundaries.start.push({ ms: startMs + onset * WINDOW_MS, gapMs: (onset - quietSince) * WINDOW_MS, gapLowerBound: quietSince === 0 });
+        pendingEnd = i;
+      }
+      quietSince = i;
+    }
+    speech = above;
+  }
+  finishPause(length);
+  return boundaries;
+}
+
+export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: number, clock: FileClock, settings: SnapSettings): SnapResult {
+  if (!edges) return { status: "unavailable" };
+  const eligible = edges[edge].filter(e => e.gapMs >= settings.gapMs && Math.abs(e.ms - atMs) <= settings.windowMs);
+  const chosen = edge === "start" ? eligible.at(-1) : eligible[0];
+  if (!chosen) return { status: "no-boundary", alternativesMs: [] };
+  return {
+    status: "snapped", target: { clock, seconds: decimalMs(chosen.ms), precisionMs: 10, origin: "audio-envelope" },
+    shiftMs: chosen.ms - atMs, gapMs: chosen.gapMs, ...(chosen.gapLowerBound ? { gapLowerBound: true } : {}),
+    alternativesMs: eligible.filter(e => e !== chosen).map(e => e.ms),
+  };
+}
+
+type Range = Record<Edge, number>;
+export function proposeRecords(ranges: Range[], edges: Boundaries | undefined, clock: FileClock, settings: SnapSettings): SnapRun {
+  const records = ranges.map(r => ({
+    start: selectEdge(edges, "start", r.start, clock, settings),
+    end: selectEdge(edges, "end", r.end, clock, settings),
+  }));
+  const order = ranges.map((r, i) => ({ ...r, i })).sort((a, b) => a.start - b.start || a.end - b.end);
+  const overlap = (a: Range, b: Range) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+  for (;;) {
+    const conflicts = new Set<number>();
+    const proposed = ranges.map((r, i) => {
+      const { start, end } = records[i]!;
+      return { start: r.start + (start.status === "snapped" ? start.shiftMs : 0), end: r.end + (end.status === "snapped" ? end.shiftMs : 0) };
+    });
+    for (const [index, current] of order.entries()) {
+      const range = proposed[current.i]!;
+      if (range.start >= range.end) conflicts.add(current.i);
+      const prev = order[index - 1];
+      if (!prev) continue;
+      const neighbor = proposed[prev.i]!;
+      if (overlap(neighbor, range) > overlap(prev, current) || (prev.end <= current.start && neighbor.start >= range.end)) {
+        conflicts.add(prev.i);
+        conflicts.add(current.i);
+      }
+    }
+    let changed = false;
+    for (const i of conflicts) for (const edge of ["start", "end"] as const) {
+      const result = records[i]![edge];
+      if (result.status !== "snapped") continue;
+      records[i]![edge] = { status: "ambiguous", alternativesMs: [...result.alternativesMs, ranges[i]![edge] + result.shiftMs].sort((a, b) => a - b) };
+      changed = true;
+    }
+    if (!changed) return { settings, records };
+  }
+}
+
+export function summarizeSnaps(run: SnapRun) {
+  const counts = { snapped: 0, "no-boundary": 0, ambiguous: 0, unavailable: 0 };
+  const shifts: number[] = [];
+  for (const record of run.records) for (const result of [record.start, record.end]) {
+    counts[result.status]++;
+    if (result.status === "snapped") shifts.push(result.shiftMs);
+  }
+  shifts.sort((a, b) => a - b);
+  // Empirical 50th percentile (nearest rank) reports an observed shift even for an even sample.
+  const mid = (shifts.length - 1) >>> 1;
+  return { counts, total: Object.values(counts).reduce((a, b) => a + b, 0),
+    ...(shifts.length ? { medianShiftMs: shifts[mid]! } : {}) };
+}

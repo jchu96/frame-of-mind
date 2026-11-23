@@ -1,7 +1,7 @@
-import { declaredOffset, type RunClock } from "../domain/clock.js";
-import { modelTime, offsetApproximate, renderApproximate, deriveExact } from "exact-time";
-import { timesSchema, type TimesArtifact } from "../domain/times.js";
-import { timestampToSeconds } from "../lib/time.js";
+import { declaredOffset, parseSecondsMs, type ClockDeclaration, type RunClock } from "../domain/clock.js";
+import { modelTime, offsetApproximate, renderApproximate, deriveExact, offsetTime, snapDecimalSeconds, renderExactTimecode } from "exact-time";
+import { timesSchema, type StoredSnap, type TimesArtifact } from "../domain/times.js";
+import { decimalMs, type Edge, type SnapResult, type SnapRun } from "../domain/snap.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
@@ -35,6 +35,7 @@ export async function writeArtifacts(
   analysis: VersionedAnalysisRun,
   manifest: VersionedRunManifest,
   outcome: AnalysisOutcome,
+  proposals?: SnapRun,
 ): Promise<string[]> {
   if (analysis.schemaVersion !== manifest.schemaVersion) {
     throw new Error("Analysis and manifest schema versions must match.");
@@ -52,6 +53,11 @@ export async function writeArtifacts(
   ) {
     throw new Error("Analysis items and outcome candidate counts must match.");
   }
+  const times = buildTimes(analysis, manifest.clock, proposals);
+  const cuts = new Map<string, string>();
+  if (times.schemaVersion === 3) for (const entry of times.entries) {
+    if ("snap" in entry) cuts.set(entry.pointer, describeCut(entry));
+  }
   await ensureDirectory(directory);
   const analysisJson = join(directory, "analysis.json");
   const outcomeJson = join(directory, "analysis-outcome.json");
@@ -64,15 +70,15 @@ export async function writeArtifacts(
     `${JSON.stringify(validatedOutcome, null, 2)}\n`,
     { mode: 0o600 },
   );
-  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label), { mode: 0o600 });
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts), { mode: 0o600 });
   await writeFile(
     reportHtml,
-    await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome),
+    await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome, cuts),
     { mode: 0o600 },
   );
   await writeFile(manifestJson, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
   const timesJson = join(directory, "times.json");
-  await writeFile(timesJson, `${JSON.stringify(buildTimes(analysis, manifest.clock), null, 2)}\n`, { mode: 0o600 });
+  await writeFile(timesJson, `${JSON.stringify(times, null, 2)}\n`, { mode: 0o600 });
   return [analysisJson, outcomeJson, analysisMarkdown, reportHtml, manifestJson, timesJson];
 }
 
@@ -81,8 +87,9 @@ export function renderAnalysis(
   outcome?: AnalysisOutcome,
   clock?: RunClock,
   label?: string,
+  cuts?: ReadonlyMap<string, string>,
 ): string {
-  const accepted = analysis.items.filter((item) => item.result.accepted);
+  const accepted = analysis.items.map((item, originalIndex) => ({ item, originalIndex })).filter(({ item }) => item.result.accepted);
   const heading = analysis.schemaVersion === 2
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
     : label || "Video analysis";
@@ -117,13 +124,14 @@ export function renderAnalysis(
     analysis.matchNotes ? renderBlock(analysis.matchNotes) : "",
     "",
   ];
-  for (const [index, item] of accepted.entries()) {
+  for (const [index, { item, originalIndex }] of accepted.entries()) {
     const result = item.result;
     lines.push(
       `## ${index + 1}. ${escapeInline(result.title)}`,
       "",
       `- Kind: ${escapeInline(result.kind)}`,
       `- Time: ${escapeInline(renderClockTime(result.evidence?.timestamp || item.candidate.start, clock))}`,
+      ...recordCuts(cuts, originalIndex).map(line => `- ${line}`),
       `- Importance: ${escapeInline(result.importance || item.candidate.importance)}`,
       `- Surface: ${escapeInline(result.where?.surface || item.candidate.surface || "Unknown")}`,
       result.where?.appUrl ? `- URL: ${escapeInline(result.where.appUrl)}` : "- URL: Not visibly confirmed",
@@ -174,9 +182,10 @@ async function renderHtmlArtifact(
   analysis: VersionedAnalysisRun,
   manifest: VersionedRunManifest,
   outcome: AnalysisOutcome,
+  cuts: ReadonlyMap<string, string>,
 ): Promise<string> {
-  const accepted = analysis.items.filter((item) => item.result.accepted);
-  const cards = await Promise.all(accepted.map(async (item, index) => {
+  const accepted = analysis.items.map((item, originalIndex) => ({ item, originalIndex })).filter(({ item }) => item.result.accepted);
+  const cards = await Promise.all(accepted.map(async ({ item, originalIndex }, index) => {
     const result = item.result;
     let image = "";
     if (item.screenshot && /^moment-\d+\.png$/.test(basename(item.screenshot))) {
@@ -194,6 +203,7 @@ async function renderHtmlArtifact(
       <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock))}</div>
       <h2>${index + 1}. ${html(result.title)}</h2>
       <p>${html(result.summary)}</p>
+      ${recordCuts(cuts, originalIndex).map(line => `<p>${html(line)}</p>`).join("")}
       ${details}
       <dl>
         <dt>Surface</dt><dd>${html(result.where?.surface || item.candidate.surface || "Unknown")}</dd>
@@ -327,22 +337,59 @@ export function renderClockTime(timestamp: string, clock?: RunClock): string {
   return [renderApproximate(time), ...(clock?.timeline ? [renderApproximate(offsetApproximate(time, declaredOffset(clock.timeline)))] : [])].join(" · ");
 }
 
-export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock): TimesArtifact {
+function recordCuts(cuts: ReadonlyMap<string, string> | undefined, index: number): string[] {
+  return ["start", "end"].flatMap(edge => {
+    const cut = cuts?.get(`/items/${index}/candidate/${edge}`);
+    return cut ? [`Cut ${edge} · ${cut}`] : [];
+  });
+}
+
+function describeCut(entry: { time: Parameters<typeof renderApproximate>[0]; snap: StoredSnap }) {
+  const result = entry.snap;
+  const parts = [renderApproximate(entry.time), result.status as string];
+  if (result.status === "snapped") {
+    parts.push(`${result.target.seconds} s ${result.target.clock} (10 ms audio-envelope)`,
+      `shift ${result.shiftMs} ms`, `pause ${result.gapLowerBound ? "≥" : ""}${result.gapMs} ms`);
+    if (result.timeline) parts.push(`${result.timeline.seconds} s timeline (10 ms audio-envelope)`);
+    const ref = result.frameReference;
+    if (ref) parts.push(`containing frame of 10 ms audio proposal: timeline ${ref.frames} at ${ref.rate.num}/${ref.rate.den}, ${ref.timecode} ${ref.dropFrame ? "DF" : "NDF"} (${ref.basis})`);
+  }
+  if ("alternativesMs" in result && result.alternativesMs.length) parts.push(`alternatives (${entry.time.clock} ms): ${result.alternativesMs.join(", ")}`);
+  return parts.join(" · ");
+}
+
+function projectSnap(result: SnapResult, edge: Edge, declaration?: ClockDeclaration) {
+  if (result.status !== "snapped" || !declaration) return result;
+  const offset = declaredOffset(declaration);
+  const target = result.target;
+  const projected = { ...result, timeline: offsetApproximate(target, offset) };
+  const spec = declaration.timecode;
+  if (!spec) return projected;
+  const instant = edge === "start" ? target.seconds : decimalMs(parseSecondsMs(target.seconds) - 1);
+  const frame = offset.unit === "video-frame"
+    ? offsetTime(snapDecimalSeconds(target.clock, instant, spec.rate, "instant"), offset)
+    : snapDecimalSeconds("timeline", offsetApproximate({ ...target, seconds: instant }, offset).seconds, spec.rate, "instant");
+  return { ...projected, frameReference: { clock: "timeline", frames: String(frame.frames), rate: spec.rate,
+    dropFrame: spec.dropFrame, timecode: renderExactTimecode(frame, spec.dropFrame), basis: edge === "start" ? "onset" : "last-speech-ms" } };
+}
+
+export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock, proposals?: SnapRun): TimesArtifact {
   const fileClock = clock?.fileClock ?? "source";
-  const entries: TimesArtifact["entries"] = [];
+  const entries: unknown[] = [];
   const offset = clock?.timeline ? declaredOffset(clock.timeline) : undefined;
-  const add = (pointer: string, timestamp: string) => {
+  const add = (pointer: string, timestamp: string, proposal?: ReturnType<typeof projectSnap>) => {
     const time = modelTime(fileClock, timestamp);
     entries.push({ pointer, time: { ...time, origin: "model" },
-      ...(offset ? { timeline: { ...offsetApproximate(time, offset), origin: "model" as const } } : {}) });
+      ...(offset ? { timeline: { ...offsetApproximate(time, offset), origin: "model" as const } } : {}),
+      ...(proposal ? { snap: proposal } : {}) });
   };
   analysis.items.forEach((item, index) => {
-    add(`/items/${index}/candidate/start`, item.candidate.start);
-    add(`/items/${index}/candidate/end`, item.candidate.end);
+    add(`/items/${index}/candidate/start`, item.candidate.start, proposals && projectSnap(proposals.records[index]!.start, "start", clock?.timeline));
+    add(`/items/${index}/candidate/end`, item.candidate.end, proposals && projectSnap(proposals.records[index]!.end, "end", clock?.timeline));
     if (item.result.evidence?.timestamp) add(`/items/${index}/result/evidence/timestamp`, item.result.evidence.timestamp);
   });
   return timesSchema.parse({
-    schemaVersion: 2, kind: "frame-of-mind.times", fileClock,
+    schemaVersion: proposals ? 3 : 2, ...(proposals ? { snapSettings: proposals.settings } : {}), kind: "frame-of-mind.times", fileClock,
     exactTimeCapability: offset?.unit === "video-frame"
       ? "declared video rate: frames, timecode with explicit drop-frame, ticks when whole, derived seconds when a whole millisecond exists"
       : clock?.timeline?.timecode ? "legacy millisecond offset: milliseconds, seconds and ticks; no exact video-frame boundary"
