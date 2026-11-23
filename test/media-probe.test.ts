@@ -80,3 +80,15 @@ describe("frame timing", () => {
     }
   });
 });
+
+describe("helper start label", () => {
+  it("refuses conflicting, unusable, and mode-mismatched labels and distinguishes absence", async () => {
+    const {readStartLabel} = await import("../src/services/media-probe.js");
+    const rate = {num: 30000, den: 1001};
+    expect(readStartLabel([], rate)).toBeUndefined();
+    expect(() => readStartLabel(["00:00:00;00", "01:00:00;00"], rate)).toThrow("Conflicting");
+    expect(() => readStartLabel(["00:01:00;00"], rate)).toThrow();
+    expect(() => readStartLabel(["00:00:00:00"], rate, true)).toThrow();
+    expect(() => readStartLabel([""], rate)).toThrow();
+  });
+});

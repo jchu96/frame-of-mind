@@ -26,7 +26,10 @@
   opening an OAuth callback from the worker.
 - When the user scopes a topic or speaker, use timestamped transcript evidence
   to prepare the smallest useful local clip before any Gemini upload. The
-  current CLI does not auto-cut source media; this remains an operator step.
+  operator runs the local media commands separately from analysis. Use
+  `probe` for source timing, `slice` for exact ranges, `frame` for an indexed
+  image, `proxy` for upload preparation and `verify` for a full decode against
+  the expected count. Preserve private staging and input file identities.
 - Include the full relevant conversational turn, including collaborators who
   clarify, correct, or complete the request.
 - Index the entire operator-selected clip at low media resolution; “entire”

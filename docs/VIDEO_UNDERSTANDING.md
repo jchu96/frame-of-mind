@@ -134,8 +134,11 @@ at medium resolution and one frame per second. It uses only a nearby aligned
 transcript slice when transcript context exists.
 
 “Complete selected video” never means every source recording available to a
-provider. Use transcript timestamps and `ffmpeg` to create the smallest useful
-local derivative before upload when the request targets one section.
+provider. Use transcript timestamps to identify the relevant turn, then use local
+`probe` and `slice` to cut the smallest useful window at exact source frames.
+Use `frame` to inspect a particular frame, or `proxy` to prepare the entire
+recording for upload. Run `verify` with the expected count or duration before
+selecting the derivative for analysis.
 
 ## Standard and deep profiles
 

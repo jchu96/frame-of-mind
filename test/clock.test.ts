@@ -73,3 +73,10 @@ describe("timecode", () => {
     });
   }
 });
+
+it("uses the same strict seconds boundary on a named file clock", async () => {
+  const {parseFilePosition} = await import("../src/domain/clock.js");
+  const rate = { num: 25, den: 1 };
+  expect(parseFilePosition("source", "--at", "0.040", rate).frames).toBe(1n);
+  expect(() => parseFilePosition("source", "--at", "0.041", rate)).toThrow(/1f.*2f/);
+});

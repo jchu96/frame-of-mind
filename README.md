@@ -452,8 +452,20 @@ frameofmind auth <bluedot|granola>
 frameofmind doctor
 frameofmind recipes
 frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|none> [options]
+frameofmind probe <video> [--decode-check]
+frameofmind proxy <video> -o <out.mp4> [--height 720] [--allow-oversize] [--force]
+frameofmind slice <video> --from <time> --to <time> -o <out.mp4> [--force]
+frameofmind frame <video> --at <time> -o <out.png|out.jpg> [--force]
+frameofmind verify <video> (--expect-frames <n> | --expect-duration <time>)
 frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|run] [--force] [--json]
 ```
+
+The five local media commands accept `--json` and `--timecode-rate <spec>`.
+They measure constant-rate video from file frame zero. Use whole frames such as
+`2f`, elapsed timecode, or decimal seconds that fall exactly on a frame.
+Slice includes its first frame and excludes its end. Proxy and slice produce
+H.264 video with mono AAC reference audio. Verify fully decodes the file and
+exits 1 on any frame-count mismatch. See the [local media procedure](docs/RUNBOOK.md#310-prepare-and-verify-local-media).
 
 | Option | Purpose |
 |---|---|

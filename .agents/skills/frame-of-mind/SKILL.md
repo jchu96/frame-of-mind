@@ -205,6 +205,12 @@ frameofmind analyze "<stable-id>" \
   --recipe issue-review
 ```
 
+Use local `frameofmind probe "<video>" --decode-check --json` for measured
+source timing. Use `proxy` to prepare a full recording, `slice --from 2f --to
+26f` for a half-open range or `frame --at 2f` for an image. Each writer takes
+a distinct `-o` path. Run `verify --expect-frames <count>` on a prepared MP4
+before choosing it for upload. See RUNBOOK §3.10 for complete commands.
+
 For a clip from a longer meeting, pass the signed transcript-time minus
 video-time offset:
 
