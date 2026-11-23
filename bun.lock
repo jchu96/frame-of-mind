@@ -10,7 +10,7 @@
         "@sentry/bun": "10.73.0",
         "commander": "15.0.0",
         "dotenv": "17.4.2",
-        "jose": "6.2.9",
+        "jose": "6.2.18",
         "zod": "4.6.6",
       },
       "devDependencies": {
@@ -32,7 +32,7 @@
         "@sentry/nuxt": "10.73.0",
         "better-auth": "1.7.7",
         "hash-wasm": "^4.12.0",
-        "jose": "6.2.9",
+        "jose": "6.2.18",
         "nuxt": "4.6.0",
         "vue": "3.5.43",
         "zod": "4.6.6",
@@ -1314,7 +1314,7 @@
 
     "jiti": ["jiti@2.7.0", "", { "bin": { "jiti": "lib/jiti-cli.mjs" } }, "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ=="],
 
-    "jose": ["jose@6.2.9", "", {}, "sha512-XrchZOFZUl/T3vTwRe8XK+cJrGtMF4th1ARnDfwbBXFKThGhlsxEE4Zu03AD/bjJSt/9jT/mxrOCkJWOg77aPA=="],
+    "jose": ["jose@6.2.18", "", {}, "sha512-doV4thUwgkrycJH4yLeqwTGIIZphHl+pk7CPReuMIhYhncmgzdko85MaCG4YQFTxqMFr1/oEH32tZuKKovcDEg=="],
 
     "js-tokens": ["js-tokens@10.0.0", "", {}, "sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q=="],
 
