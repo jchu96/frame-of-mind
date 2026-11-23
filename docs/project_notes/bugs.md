@@ -693,6 +693,15 @@ The main-module guard compared the module URL to unresolved argv[1], so a
 linked executable never dispatched commands. Resolve the executable realpath;
 the built-CLI symlink test and package-version bump fixture prevent recurrence.
 
+2026-11-22: recurred on an operator Mac. Cause: the `bun link` target is the
+checkout's own `dist/`, last built before the fix, and the upgrade procedure
+did not rebuild it, so the stale build also showed the pre-ADR 0024 upload
+help. Any argv[1] inference stays silent when another module imports the CLI,
+so the guard is gone: loading `cli.js` runs the command unless the importer
+sets the explicit library-import flag (Vitest setup only). `test/cli-link.test.ts`
+runs `--help` through the `bun link` layout under node, bun and the shebang,
+and through an importing launcher; the old guard fails it.
+
 - 2026-11-13: Adopting standalone transcription exposed a literal round-trip oracle incompatible with the existing caption reader; ADR 0025 preserves reader normalisation, and tests use a separate structural arrow oracle.
 
 - 2026-11-13: Six process starts inherited the complete parent environment. They now pass an explicit media/opener allow-list; per-site child captures verify the shipped calls, while a simple source convention check flags plain imports outside the helper and does not detect computed or indirect access.

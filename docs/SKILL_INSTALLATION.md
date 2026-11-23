@@ -264,10 +264,12 @@ git pull --ff-only
 bun install --frozen-lockfile
 bun run check
 bun run build
+frameofmind --help
 bun run install:skill -- --target all
 ```
 
-Restart agent sessions after update.
+The linked command runs this checkout's `dist/`, so it is current only after
+`bun run build`. Restart agent sessions after update.
 
 ## Maintainer isolated test
 

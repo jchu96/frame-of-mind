@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 import "./instrument.js";
-import { realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
@@ -49,6 +47,9 @@ import { resolveTranscriptLanguage } from "./domain/transcript-language.js";
 import { registerTranscribe, transcriptionHelp } from "./commands/transcribe.js";
 
 loadDotenv({ quiet: true });
+
+/** Set to `true` on globalThis before importing to load the program without running it. */
+export const CLI_LIBRARY_IMPORT = Symbol.for("frameofmind.cli.libraryImport");
 
 export const program = new Command()
   .name("frameofmind")
@@ -432,7 +433,10 @@ const CLI_ANALYSIS_PROGRESS = {
 } satisfies { report(event: AnalysisProgressEvent): void };
 
 program.showSuggestionAfterError();
-if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
+// Loading this module runs the command. Guessing the entry point from argv[1]
+// failed silently through symlinks and launchers (bugs.md, 2026-11-13 and
+// 2026-11-22), so the only way not to run is an explicit library import.
+if ((globalThis as Record<symbol, unknown>)[CLI_LIBRARY_IMPORT] !== true) {
   program.parseAsync().catch((error: unknown) => {
     process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

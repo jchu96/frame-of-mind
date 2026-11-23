@@ -1418,8 +1418,15 @@ git status --short
 git pull --ff-only
 bun install --frozen-lockfile
 bun run check
+bun run build:cli
+frameofmind --help
 bun --no-env-file scripts/test-fresh-clone.ts upgrade
 ```
+
+The linked `frameofmind` command runs this checkout's `dist/cli.js`; a pull
+changes nothing it runs until `bun run build:cli` does. `bun run check` also
+builds, but only if every earlier step passes, so run the build explicitly and
+confirm `--help` prints usage.
 
 The upgrade proof clones the previous release tag (or the current branch's
 `origin/main` merge-base), installs it with its frozen lockfile, fast-forwards

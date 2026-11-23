@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
+
 - Added exact decimal-to-frame snapping with explicit range edges and round-trip Premiere subtitle milliseconds at video rates up to 1000 fps (ADR 0028).
 
 - Both `transcribe` and `analyze` accept `--transcript-language <tag>` as a spoken-language hint for transcription only. Speech stays in its original language. The speakers header, transcript JSON and derived-transcript manifest provenance record the requested tag when used. On `analyze`, `--note language=<path>` guides analysis prompts only. Live transcription fidelity is untested.
