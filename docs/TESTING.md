@@ -184,9 +184,11 @@ content-bearing environment pairs are part of the cache key; run-owned output
 locations are deliberately destination-only. The default cache is
 `~/.cache/frame-of-mind/builds`; override it with
 `FRAME_OF_MIND_BUILD_CACHE=<directory>` or disable it with
-`FRAME_OF_MIND_BUILD_CACHE=off`. Only the five newest entries are retained. A
-hit prints `build=CACHED <hash8>` and is copied into the run-owned temporary
-tree before consumers start.
+`FRAME_OF_MIND_BUILD_CACHE=off`. Pruning keeps the five newest published builds and preserves
+the current entry and any entry a peer is copying. Lease release directories
+are temporary, and a listed build can disappear before inspection if another
+lane prunes it first. On a hit, the lane prints `build=CACHED <hash8>` and copies
+the build into its own temporary directory before consumers start.
 
 Zod is bundled through Nuxt's `build.transpile` option so cached SSR chunks do
 not import locale files from a checkout's Bun package store. To test relocation,

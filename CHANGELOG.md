@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Concurrent check lanes can now prune the shared build cache while another lane releases a lease or copies a build.
+
 ## [0.6.0-beta.2] - 2026-11-23
 
 Pre-release.

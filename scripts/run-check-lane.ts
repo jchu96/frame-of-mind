@@ -3,7 +3,6 @@ import {
   cp,
   mkdir,
   mkdtemp,
-  readdir,
   rename,
   rm,
   stat,
@@ -27,6 +26,7 @@ import {
 } from "./prebuilt-artifact";
 import { killOwnedProcessGroup, runTimedProcess } from "./check-process";
 import { buildContentHash, scrubBuildEnvironment } from "./check-build-cache";
+import { pruneCache } from "./prune-build-cache";
 
 type Lane = "fast" | "local" | "hosted";
 
@@ -368,23 +368,6 @@ async function isCompleteCacheEntry(
       return false;
     }
   }))).every(Boolean);
-}
-
-async function pruneCache(cacheRoot: string, currentEntry: string): Promise<void> {
-  const entries = await Promise.all((await readdir(cacheRoot, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory()
-      && !entry.name.startsWith(".")
-      && !entry.name.endsWith(".lock"))
-    .map(async (entry) => ({
-      path: join(cacheRoot, entry.name),
-      mtimeMs: (await stat(join(cacheRoot, entry.name))).mtimeMs,
-    })));
-  entries.sort((left, right) => right.mtimeMs - left.mtimeMs);
-  for (const entry of entries.slice(5)) {
-    if (entry.path !== currentEntry) {
-      await rm(entry.path, { recursive: true, force: true });
-    }
-  }
 }
 
 function secondsSince(start: number): string {
