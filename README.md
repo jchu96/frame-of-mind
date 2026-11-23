@@ -232,7 +232,7 @@ node frameofmind.mjs --version
 
 On Linux, `sha256sum --check SHA256SUMS` also verifies the download. The CLI
 needs Node 22 or newer. Install ffmpeg and ffprobe for media work.
-Each release includes `THIRD-PARTY-NOTICES.txt` beside `frameofmind.mjs`.
+Releases from `v0.6.0-beta.2` on include `THIRD-PARTY-NOTICES.txt` beside `frameofmind.mjs`.
 If you redistribute the bundle, ship that release’s notices file with it.
 
 The single-file build supports the CLI’s opt-in error reporting and analysis

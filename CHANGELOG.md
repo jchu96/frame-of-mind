@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.0-beta.2] - 2026-11-23
+
+Pre-release.
+
 - Standalone CLI releases include a checksummed third-party notices file for redistribution. The release job marks pre-release tags automatically and keeps them out of Latest.
 
 - Success and failure manifests now record the tool version printed by `frameofmind --version`.
