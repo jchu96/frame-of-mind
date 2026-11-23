@@ -2,7 +2,7 @@ import type { VersionedAnalysisRun } from "./types.js";
 import {
   runImportSchema,
   versionedAnalysisRunSchema,
-  versionedRunImportSchema,
+  runImportSchemaFor,
   type RunImport,
   type VersionedRunImport,
 } from "./schemas.js";
@@ -50,7 +50,7 @@ export async function validateVersionedRunImport(
   const { outcome: rawOutcome, ...rest } = (
     typeof value === "object" && value !== null ? value : {}
   ) as Record<string, unknown>;
-  const input = versionedRunImportSchema.parse(rest);
+  const input = runImportSchemaFor(rest).parse(rest);
   const digest = await analysisDigest(input.analysis);
   if (digest !== input.manifest.analysisSha256.toLowerCase()) {
     throw new Error("analysis.json digest does not match manifest.json.");

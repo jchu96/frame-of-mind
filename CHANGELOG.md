@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Stored rate and timecode specification refusals now carry the `exact-time` error code and message.
+
 - Adopted `exact-time` v0.1.3 for exact frame, tick and timecode conversions and stored rate and media-clock validation.
 
 - Tagged releases now include a standalone Node CLI, its build commit and tool versions, and SHA-256 checksums.

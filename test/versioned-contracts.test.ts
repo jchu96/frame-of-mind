@@ -20,6 +20,30 @@ describe("versioned run contracts", () => {
     expect(versionedRunImportSchema.parse(pair).analysis.schemaVersion).toBe(2);
   });
 
+  it.each([2, 3])("reports only the invalid timecode field for a v%i manifest", async (version) => {
+    const pair = version === 2 ? v2Pair() : await videoOnlyPair();
+    const clock = {
+      fileClock: "source", modelClipClock: "unverified",
+      timeline: { timelineOffsetMs: 0, origin: "declared", timecode: {
+        rate: { num: 25, den: 0 }, dropFrame: false, rateOrigin: "declared",
+      } },
+    };
+    const input = { ...pair, manifest: { ...pair.manifest, clock } };
+    await expect(validateVersionedRunImport(input)).rejects.toMatchObject({
+      issues: [{ code: "custom", path: ["manifest", "clock", "timeline", "timecode"],
+        message: "INVALID_RATE: Rate must contain positive safe whole numbers." }],
+    });
+  });
+
+  it.each(["manifest", "analysis"] as const)("keeps the union diagnostic for an unknown %s version", async document => {
+    const pair = await videoOnlyPair();
+    const input = { ...pair, [document]: { ...pair[document], schemaVersion: 99 } };
+    const expected = versionedRunImportSchema.safeParse(input);
+    if (expected.success) throw new Error("Unexpectedly accepted a future version");
+    expect(expected.error.issues[0]?.code).toBe("invalid_union");
+    await expect(validateVersionedRunImport(input)).rejects.toHaveProperty("message", expected.error.message);
+  });
+
   it("keeps historical v2 remote expiration metadata readable", () => {
     const pair = v2Pair();
     pair.manifest.remoteFile = {

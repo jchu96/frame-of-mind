@@ -1,4 +1,4 @@
-import { versionedRunImportSchema } from "../../../../../src/domain/schemas";
+import { runImportSchemaFor } from "../../../../../src/domain/schemas";
 import { analysisOutcomeSchema } from "../../../../../src/domain/analysis-outcome";
 import { analysisDigest } from "../../../../../src/domain/integrity";
 import { readLimitedText, RequestBodyTooLargeError } from "../../utils/request-body";
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
   const { outcome: rawOutcome, ...bundle } = (
     typeof body === "object" && body !== null ? body : {}
   ) as Record<string, unknown>;
-  const parsed = versionedRunImportSchema.safeParse(bundle);
+  const parsed = runImportSchemaFor(bundle).safeParse(bundle);
   if (!parsed.success) {
     throw createError({
       statusCode: 422,

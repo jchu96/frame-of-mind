@@ -1,3 +1,7 @@
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { probeFrameRate } from "../src/services/media-probe.js";
 import { verifyDay } from "./clock-oracle.js";
@@ -7,6 +11,25 @@ describe("frame rate", () => {
     const result = await probeFrameRate("synthetic.mp4", "from-media", output("24000/1001"));
     expect(result.rate).toEqual({ num: 24000, den: 1001 }); expect(result.rateOrigin).toBe("media");
     verifyDay(result.rate, false, hour, hour + 3);
+  });
+  it("exits with the library diagnostic when ffprobe reports an unsafe rate", async () => {
+    const root = await mkdtemp(join(tmpdir(), "fom-rate-refusal-"));
+    try {
+      await writeFile(join(root, "synthetic.mp4"), "synthetic");
+      const probe = { streams: [{ r_frame_rate: "9007199254740992/1" }] };
+      await writeFile(join(root, "ffprobe"), `#!${process.execPath}\nconsole.log('${JSON.stringify(probe)}');\n`, { mode: 0o700 });
+      const result = spawnSync("bun", [
+        "--no-env-file", resolve("src/cli.ts"), "analyze", "--source", "none", "--video", "synthetic.mp4",
+        "--timeline-offset", "0", "--timecode-rate", "from-media",
+      ], {
+        cwd: root, encoding: "utf8", timeout: 10_000,
+        env: { PATH: [root, process.env.PATH].join(delimiter), HOME: root, GEMINI_API_KEY: "synthetic-key" },
+      });
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stderr.trimEnd()).toBe("frameofmind: Rate must contain positive safe whole numbers.");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
   it("a stream whose r_frame_rate and avg_frame_rate differ is refused", async () => {
     await expect(probeFrameRate("synthetic.mp4", "from-media", output("30/1", "24/1"))).rejects.toThrow("Variable frame rate");
@@ -25,10 +48,6 @@ describe("frame rate", () => {
 
 describe("frame timing", () => {
   it("matching summary rates do not admit a shifted frame in real media", async () => {
-    const { mkdtemp, rm } = await import("node:fs/promises");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-    const { execFileSync } = await import("node:child_process");
     const root = await mkdtemp(join(tmpdir(), "synthetic-clock-timing-"));
     try {
       for (const shift of [false, true]) {
