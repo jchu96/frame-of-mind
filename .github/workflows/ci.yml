@@ -6,6 +6,8 @@ on:
     branches:
       - main
       - fix/ci-green
+    tags:
+      - "v*"
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -39,6 +41,18 @@ jobs:
         env:
           FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE: "1"
         run: bun run check:pr --base "origin/${{ github.base_ref || 'main' }}"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+
+      # 2026-11-23: the first standalone build silently lost the Sentry loader.
+      # Existing checks cover installed files. Review by: 2027-02-20 (protects: user)
+      - name: Build and smoke-test the standalone CLI
+        run: |
+          node scripts/build-release.mjs
+          node scripts/smoke-release.mjs
 
       - name: Reject high or critical production advisories
         # No patched release; no user-supplied glob patterns or vulnerable matcher
@@ -179,3 +193,36 @@ jobs:
             test-results/playwright/artifacts/
           if-no-files-found: ignore
           retention-days: 7
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.22.2
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - name: Build the tagged version and verify the release files
+        run: |
+          node scripts/build-release.mjs "$GITHUB_REF_NAME"
+          (cd release && sha256sum --check SHA256SUMS)
+          node scripts/smoke-release.mjs
+      - name: Publish the verified files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          commit=$(git rev-parse HEAD)
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq .sha)" = "$commit"
+          gh release create "$GITHUB_REF_NAME" release/{frameofmind.mjs,LICENSE,release.json,SHA256SUMS} \
+            --verify-tag --title "Frame of Mind $GITHUB_REF_NAME" --generate-notes \
+            --notes "Built from commit $commit."

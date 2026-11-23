@@ -1,5 +1,7 @@
 node_modules/
 dist/
+/release/
+/.release-build-*/
 coverage/
 playwright-report/
 test-results/

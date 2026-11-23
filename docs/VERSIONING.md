@@ -53,8 +53,9 @@ versions for durable schemas and prompts.
     branch head or a later `main` tip, then push the tag:
     `git tag -a vX.Y.Z <release-merge-sha> -m "Frame of Mind vX.Y.Z"` and
     `git push origin vX.Y.Z`.
-16. Create the GitHub release from the changelog with the existing tag verified:
-    `gh release create vX.Y.Z --verify-tag --title "Frame of Mind vX.Y.Z" --notes-file <release-notes-path>`.
+16. Wait for the tag workflow to publish the verified CLI and release metadata.
+    Download the release and verify its checksums and commit as described in the
+    [release procedure](RUNBOOK.md#10-release-procedure).
 
 ### Release history
 

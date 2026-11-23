@@ -1601,6 +1601,32 @@ Pre-release:
 - `bun run check:repo-hygiene` passes; run the documented history sweep for a
   new public-release baseline.
 
+For a CLI release, bump the package versions, update the changelog and complete
+the release checklist above. Merge the reviewed release PR, then wait for green
+CI at the release merge commit on main. Tag that exact commit and push the tag:
+
+```bash
+git tag -a vX.Y.Z <release-merge-sha> -m "Frame of Mind vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+The tag job checks the package version, builds the standalone CLI, verifies its
+checksums and runs it in an empty directory before publishing. From a fresh
+directory, verify the published files and the commit recorded in the manifest:
+
+```bash
+gh release download vX.Y.Z --repo jchu96/frame-of-mind
+shasum -a 256 -c SHA256SUMS
+node -p 'require("./release.json").commit'
+node frameofmind.mjs --version
+```
+
+To reproduce the assets, check out the recorded commit in a clean directory
+and use the Node and Bun versions in `release.json`. Run
+`bun --no-env-file install --frozen-lockfile` followed by
+`node scripts/build-release.mjs vX.Y.Z`. Verify the downloaded
+`SHA256SUMS` against the files in the new `release/` directory.
+
 ## 11. Complete removal
 
 ### CLI link
