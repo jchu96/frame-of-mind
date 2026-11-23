@@ -1,8 +1,12 @@
 import { z } from "zod";
-import { timecodeSpecSchema, parseTimecodeRate, type FrameRate, type TimecodeSpec } from "./time-rate.js";
-export * from "./time-rate.js";
-import { exactTime, exactMilliseconds, fromBoundaryMilliseconds, fromTimecode, fromMilliseconds, renderExactTimecode, type ExactTime } from "./exact-time.js";
-import type { MediaClock } from "./media-clock.js";
+import {
+  exactTime, exactMilliseconds, fromBoundaryMilliseconds, fromTimecode, fromMilliseconds,
+  parseTimecodeRate, renderExactTimecode, type ExactTime, type FrameRate, type MediaClock, type TimecodeSpec,
+} from "exact-time";
+import { rateSchema, timecodeSpecSchema } from "./media-clock.js";
+
+export { ACCEPTED_RATES, isDropRate, parseTimecodeRate, rateError, rationalRate, type FrameRate, type TimecodeSpec } from "exact-time";
+export { rateSchema, timecodeSpecSchema } from "./media-clock.js";
 
 declare const clockBrand: unique symbol;
 export type ClockTime<C extends string = MediaClock> = {
@@ -51,10 +55,8 @@ export function clipToFile(time: ClockTime<"clip">, clipStartSeconds: number, mo
 
 const safeNatural = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const exactOffsetSchema = z.strictObject({
-  clock: z.literal("timeline"), frames: z.string().regex(/^(0|[1-9]\d*)$/),
-  rate: z.strictObject({ num: safeNatural.min(1), den: safeNatural.min(1) }), unit: z.enum(["video-frame", "millisecond"]),
-}).superRefine((value, ctx) => {
-  if (value.unit === "millisecond" && (value.rate.num !== 1000 || value.rate.den !== 1)) ctx.addIssue({ code: "custom", message: "Millisecond sources require internal rate 1000/1." });
+  clock: z.literal("timeline"), frames: z.string().regex(/^(0|[1-9]\d*)$/, { abort: true }),
+  rate: rateSchema, unit: z.enum(["video-frame", "millisecond"]),
 });
 export const clockDeclarationSchema = z.strictObject({
   timelineOffsetMs: safeNatural.optional(), exactOffset: exactOffsetSchema.optional(),
@@ -64,7 +66,11 @@ export const clockDeclarationSchema = z.strictObject({
   if (value.exactOffset) {
     const stored = value.exactOffset;
     const exact = stored.unit === "millisecond" ? fromMilliseconds("timeline", stored.frames) : exactTime("timeline", stored.frames, stored.rate);
-    if (exact.rate.num !== stored.rate.num || exact.rate.den !== stored.rate.den) ctx.addIssue({ code: "custom", message: "Exact offset rate must be reduced." });
+    if (exact.rate.num !== stored.rate.num || exact.rate.den !== stored.rate.den) {
+      ctx.addIssue({ code: "custom", message: stored.unit === "millisecond"
+        ? `Millisecond sources require internal rate ${exact.rate.num}/${exact.rate.den}.`
+        : "Exact offset rate must be reduced." });
+    }
     if (value.timelineOffsetMs !== undefined && exactMilliseconds(exact) !== String(value.timelineOffsetMs)) ctx.addIssue({ code: "custom", message: "Millisecond offset must be exact and agree with the frame offset." });
     if (stored.unit === "video-frame" && (!value.timecode || value.timecode.rate.num !== stored.rate.num || value.timecode.rate.den !== stored.rate.den)) ctx.addIssue({ code: "custom", message: "Video offset requires its matching declared rate and drop-frame choice." });
   }

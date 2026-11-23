@@ -1,6 +1,6 @@
 import { childEnvironment, execFile } from "../lib/child-env.js";
 import { promisify } from "node:util";
-import { parseTimecodeRate, rationalRate, type TimecodeSpec } from "../domain/clock.js";
+import { parseTimecodeRate, rationalRate, type TimecodeSpec } from "exact-time";
 
 const exec = promisify(execFile);
 const timingError = "Variable frame rate or unverifiable frame timing is not supported by --timecode-rate from-media; declare an exact sequence rate instead.";

@@ -68,6 +68,16 @@
       "dropFrame": false
     }
   ],
+  "tickCases": [
+    {"id":"grid product beyond safe integers","op":"ticksAtGrid","frames":"9007199254740993","grid":"7","expected":"63050394783186951"},
+    {"id":"zero frames on a positive grid","op":"ticksAtGrid","frames":"0","grid":"10594584000","expected":"0"},
+    {"id":"zero tick grid","op":"ticksAtGrid","frames":"1","grid":"0","refused":"INVALID_INPUT"},
+    {"id":"NTSC tick boundary starts frame two","op":"fromContainingTicks","clock":"reel","ticks":"21189168000","rate":{"num":48000,"den":2002},"expected":{"clock":"reel","frames":"2","rate":{"num":24000,"den":1001},"unit":"video-frame"}},
+    {"id":"tick before NTSC boundary belongs to frame one","op":"fromContainingTicks","clock":"source","ticks":"21189167999","rate":{"num":24000,"den":1001},"expected":{"clock":"source","frames":"1","rate":{"num":24000,"den":1001},"unit":"video-frame"}},
+    {"id":"undeclared rate retains millisecond units","op":"fromContainingTicks","clock":"timeline","ticks":"254016001","expected":{"clock":"timeline","frames":"1","rate":{"num":1000,"den":1},"unit":"millisecond"}},
+    {"id":"tick grid does not divide at 11 fps","op":"fromContainingTicks","clock":"source","ticks":"0","rate":{"num":11,"den":1},"refused":"UNREPRESENTABLE"},
+    {"id":"whole JSON rate components","op":"fromContainingTicks","clock":"reel","ticks":"10160640001","rate":{"num":25.0,"den":1.0},"expected":{"clock":"reel","frames":"1","rate":{"num":25,"den":1},"unit":"video-frame"}}
+  ],
   "cases": [
     {"id":"rate 24000/1001 ndf","op":"frames","input":"2","clock":"source","rate":{"num":24000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"0.084","ticks":"21189168000","frames":"2","rate":{"num":24000,"den":1001},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
     {"id":"rate 24/1 ndf","op":"frames","input":"2","clock":"source","rate":{"num":24,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"0.084","ticks":"21168000000","frames":"2","rate":{"num":24,"den":1},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},

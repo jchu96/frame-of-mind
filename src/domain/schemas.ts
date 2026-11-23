@@ -418,6 +418,23 @@ export const versionedRunImportSchema = z.union([
   runImportV3Schema,
 ]);
 
+function declaredVersion(document: unknown): unknown {
+  if (document && typeof document === "object" && "schemaVersion" in document) return document.schemaVersion;
+}
+
+// Preserve the union diagnostic when the documents declare conflicting or unknown versions.
+export function runImportSchemaFor(bundle: Record<string, unknown>) {
+  const manifestVersion = declaredVersion(bundle.manifest);
+  const analysisVersion = declaredVersion(bundle.analysis);
+  if (manifestVersion !== undefined && analysisVersion !== undefined && manifestVersion !== analysisVersion) {
+    return versionedRunImportSchema;
+  }
+  const version = manifestVersion === undefined ? analysisVersion : manifestVersion;
+  if (version === 2) return runImportSchema;
+  if (version === 3) return runImportV3Schema;
+  return versionedRunImportSchema;
+}
+
 // The optional coverage outcome rides beside the durable pair when a run is
 // projected. It is validated by `validateVersionedRunImport` (integrity.ts)
 // with `analysisOutcomeSchema` rather than inlined here: analysis-outcome.ts

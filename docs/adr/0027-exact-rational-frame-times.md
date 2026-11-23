@@ -98,3 +98,8 @@ millisecond field still validate and re-import through the website. Older
 strict manifest readers need an update before reading the new optional field;
 this is forward acceptance of old manifests, not backward acceptance of new
 fields. See VERSIONING for consumer migration.
+
+## Implementation update, 2026-11-23
+
+The pinned `exact-time` v0.1.3 release now supplies the exact conversions, types,
+validators and case table. Frame of Mind delegates stored time fields to those validators.

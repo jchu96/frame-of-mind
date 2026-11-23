@@ -25,6 +25,7 @@
 - Treat the v0.4 resumable upload and provider-safe schema boundary as shipped; rerun `bun run smoke:gemini` after SDK, model, upload, schema, or Bun changes.
 - For meeting-to-repository work, use `docs/MEETING_TO_ISSUE_RUNBOOK.md`; scope media with ADR 0009 and separate direct requests, collaborative clarification, and analyst inference.
 - Treat `analysis.json` and `manifest.json` as versioned durable contracts; keep built-in recipe IDs stable and validate custom recipes.
+- Import exact frame, tick and timecode conversions, rates and media-clock validators from the pinned `exact-time` release. Stored time fields use its Zod adapters in `src/domain/media-clock.ts`.
 - Keep embeddings optional and downstream; see `docs/adr/0002-optional-local-vector-retrieval.md`.
 - Keep SQLite and D1 behind the same `RunStore` projection contract; the run bundle remains authoritative.
 - Hosted mode must select an explicit auth mode and fail closed. The reference deployment uses Better Auth; Access and stacked modes are compatibility paths.

@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Stored rate and timecode specification refusals now carry the `exact-time` error code and message.
+
+- Adopted `exact-time` v0.1.3 for exact frame, tick and timecode conversions and stored rate and media-clock validation.
+
 - Tagged releases now include a standalone Node CLI, its build commit and tool versions, and SHA-256 checksums.
 
 - Removed the intermittent Better Auth access and Workflows lane steps, composer journey, and duplicate uninvited-sign-in probe. The required Better Auth access and revocation contract remains. The hosted composer journey runs only under Cloudflare Access.
