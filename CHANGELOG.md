@@ -7,6 +7,8 @@ Semantic Versioning.
 
 - The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. A library import opts out by setting the global `Symbol.for("frameofmind.cli.libraryImport")` flag before loading it. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
 
+- Moment screenshots avoid frames caught mid-transition: ffmpeg samples within one second of the cited time, inside the candidate range, and moves to the steadiest frame on the same shot without crossing a hard cut. Unmoved screenshots are unchanged.
+
 - Added the built-in `teaching-points` charter recipe for instructional and explainer videos, with a fixed detail-label vocabulary (Teaching point, Narrator's words, Numbers, Reason given, On screen, Picture says more than words, Maker-specific), accepted and rejected exemplars, and rejection of title cards, branding and calls to subscribe.
 
 - Added exact decimal-to-frame snapping with explicit range edges and round-trip Premiere subtitle milliseconds at video rates up to 1000 fps (ADR 0028).

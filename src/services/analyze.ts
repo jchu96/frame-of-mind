@@ -938,7 +938,14 @@ export class AnalysisOrchestrator {
             if (options.screenshots && result.accepted) {
               const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
               const screenshotPath = join(screenshotDirectory, screenshotName);
-              if (await this.screenshot(localVideo, result.evidence?.timestamp || candidate.start, screenshotPath)) {
+              // The screenshot is the steadiest frame near the cited time and
+              // never leaves the candidate range (see screenshots.ts).
+              if (await this.screenshot(
+                localVideo,
+                result.evidence?.timestamp || candidate.start,
+                screenshotPath,
+                { start: candidate.start, end: candidate.end },
+              )) {
                 item.screenshot = screenshotName;
               }
               assertNotCanceled(execution.signal);

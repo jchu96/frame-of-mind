@@ -164,6 +164,13 @@ transcript. Both degrade to a warning when it is missing, so an analysis still
 completes. Use `--no-screenshots` and `--no-derived-transcript` to skip them
 deliberately rather than relying on the failure path.
 
+A moment screenshot is not always the exact cited frame. ffmpeg samples five
+frames a second within one second of the cited time, staying inside the
+candidate's range, and moves to the steadiest frame on the same shot only
+when the cited frame is caught mid-transition (a caption fading, a panel
+sliding in). It never crosses a hard cut, and an unmoved screenshot is the
+exact cited frame. No model call is involved.
+
 ### 1.4 Clone and install
 
 ```bash
