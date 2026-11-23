@@ -877,8 +877,11 @@ to browser code.
 - Gemini receives the selected video and, in the current index pass, the full
   normalized meeting transcript. Video clipping does not automatically reduce
   transcript transfer.
-- Gemini upload deletion is attempted on success and failure by default; a
-  failed attempt is recorded honestly, with provider expiration as backstop.
+- CLI recording and `transcribe` audio uploads are kept until provider expiry
+  by default (ADR 0024). With `--retention run`, deletion is attempted on
+  success and failure; `analyze`'s derived-transcript audio and the synthetic
+  clock probe are always deleted. A failed attempt is recorded honestly, with
+  provider expiration as backstop.
 - Invalid JSON, schema mismatches, and overlong fields get one bounded repair
   attempt. One bad detail does not erase other validated candidates.
 - Raw MCP payloads and full transcripts are not persisted in a normal run.
