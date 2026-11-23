@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Success and failure manifests now record the tool version printed by `frameofmind --version`.
+
 ## [0.6.0-beta.1] - 2026-11-23
 
 Pre-release. First release that publishes the standalone CLI with checksums.
