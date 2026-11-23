@@ -5,7 +5,7 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-- The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
+- The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. A library import opts out by setting the global `Symbol.for("frameofmind.cli.libraryImport")` flag before loading it. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
 
 - Added exact decimal-to-frame snapping with explicit range edges and round-trip Premiere subtitle milliseconds at video rates up to 1000 fps (ADR 0028).
 

@@ -43,7 +43,8 @@ with SHA-256 provenance).
 ## Local-first, private by default
 
 Everything runs from your machine: your recording goes directly to Gemini for
-analysis and is deleted when it finishes; results live on your disk. Meeting
+analysis. By default the upload stays until the provider expires it (ADR 0024);
+`--retention run` deletes it when the run ends. Results live on your disk. Meeting
 context from Bluedot or Granola (or a plain transcript file) enriches a run
 when you have it — a bare recording works too, and Frame of Mind can derive
 its own transcript from the audio.
@@ -879,8 +880,9 @@ to browser code.
   transcript transfer.
 - CLI recording and `transcribe` audio uploads are kept until provider expiry
   by default (ADR 0024). With `--retention run`, deletion is attempted on
-  success and failure; `analyze`'s derived-transcript audio and the synthetic
-  clock probe are always deleted. A failed attempt is recorded honestly, with
+  success and failure; deletion of `analyze`'s derived-transcript audio and the
+  synthetic clock probe is always attempted, whatever the retention setting. A
+  failed attempt is recorded honestly, with
   provider expiration as backstop.
 - Invalid JSON, schema mismatches, and overlong fields get one bounded repair
   attempt. One bad detail does not erase other validated candidates.
