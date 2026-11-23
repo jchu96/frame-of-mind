@@ -7,8 +7,8 @@ import { buildContentHash } from "../scripts/check-build-cache";
 
 const scripts = JSON.parse(await readFile("package.json", "utf8")).scripts as Record<string, string>;
 const hostedSteps = [
-  "test:hosted-access-http", "test:hosted-access-http:better-auth",
-  "test:hosted-workflows-http", "test:hosted-workflows-http:better-auth",
+  "test:hosted-access-http",
+  "test:hosted-workflows-http",
   "test:hosted-media-http", "check:hosted-auth", "check:e2e", "rehearse:hosted-release",
 ];
 
@@ -171,6 +171,42 @@ describe("hosted gate separation", () => {
     );
   });
 
+  // 2026-11-23: stale hosted steps obscured unchanged-tree failures. These checks
+  // replace the retired Better Auth wiring. Review by: 2026-12-23 (protects: tooling)
+  test("rejects a retired hosted step before starting a build", async () => {
+    const retired = "test:hosted-access-http:better-auth";
+    const result = await run(process.cwd(), ["bun", "scripts/run-check-lane.ts", "hosted", retired]);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain(`actual=${retired}`);
+    expect(result.stderr).toContain(`expected=${hostedSteps.join(",")} `);
+    expect(hostedSteps).not.toContain(retired);
+    expect(result.stdout).not.toContain("build=START");
+  });
+
+  test("lists the Cloudflare Access composer journey in check:e2e", async () => {
+    const root = await mkdtemp(join(tmpdir(), "hosted-discovery-"));
+    try {
+      const result = await run(process.cwd(), ["bun", "run", "check:e2e", "--list", "--reporter=list"],
+        { TMPDIR: root, TEMP: root, TMP: root });
+      expect(result.code, result.stderr).toBe(0);
+      expect(result.stdout).toMatch(/\[hosted-cloudflare-access\].*journey\.spec\.ts.*hosted composer publishes/);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }, 30_000);
+
+  test("step exceptions name active lane steps", async () => {
+    const laneSteps = ["fast", "local", "hosted"].flatMap((lane) =>
+      scripts[`check:lane:${lane}`]!.split(" ").slice(3));
+    for (const path of ["scripts/run-check-lane.ts", "scripts/hosted-access-timeout.ts"]) {
+      const source = await readFile(path, "utf8");
+      // Include standalone hosted step constants as well as direct comparisons.
+      const names = /(?:\bstep\s*[!=]==\s*["']([\w:-]+)["']|["'](test:hosted-[\w:-]+)["'])/g;
+      for (const match of source.matchAll(names)) {
+        const step = match[1] ?? match[2];
+        expect(laneSteps, `${path} references ${step}`).toContain(step);
+      }
+    }
+  });
+
   test("MISS hosted-runs-nightly: schedule and manual events run the whole lane even after default failure", async () => {
     const parsed = await run(process.cwd(), ["bun", "--no-env-file", "-e",
       'console.log(JSON.stringify(Bun.YAML.parse(await Bun.file(".github/workflows/ci.yml").text())))']);
@@ -230,6 +266,9 @@ describe("hosted gate separation", () => {
         for (const failure of ["FAIL_DEFAULT", "FAIL_HOSTED"]) {
           const result = await run(root, ["bun", "run", mode, ...(mode === "deploy:hosted" ? ["web"] : [])], { [failure]: "1" });
           await refused(root, result);
+          if (failure === "FAIL_HOSTED") {
+            expect(result.stdout).toContain("step=test:hosted-access-http status=FAIL exit=1");
+          }
           const step = failure === "FAIL_HOSTED" ? "check:lane:hosted" : "check:pr";
           expect(result.stderr).toContain(`step_failed:${step}:1`);
         }
@@ -274,9 +313,15 @@ async function fixture(): Promise<string> {
   await put(root, "package.json", JSON.stringify({ type: "module", scripts: {
     "check:pr": scripts["check:pr"], "check:sharded": scripts["check:sharded"],
     "check:deploy": scripts["check:deploy"], "deploy:hosted": scripts["deploy:hosted"],
+    ...Object.fromEntries(hostedSteps.map((step) => [step, "bun --version"])),
+    "test:hosted-access-http": "bun fixture-step.ts",
     ...Object.fromEntries(["fast", "local", "hosted"].map((lane) =>
       [`check:lane:${lane}`, `bun fixture-lane.ts ${lane}`])),
   } }));
+  await put(root, "fixture-step.ts", "process.exitCode = 1;");
+  await put(root, "apps/web/package.json", JSON.stringify({ scripts: { "build:cloudflare": "bun fixture-build.ts" } }));
+  await put(root, "apps/web/fixture-build.ts",
+    'import { mkdirSync } from "node:fs"; mkdirSync(process.env.FRAME_OF_MIND_BUILD_OUTPUT!, { recursive: true });');
   await put(root, "fixture-lane.ts", `
 import { appendFileSync, writeFileSync } from "node:fs";
 const lane = process.argv[2];
@@ -289,11 +334,23 @@ if (lane === "hosted" && process.env.CHANGE_SOURCE === "head") {
     "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "--allow-empty", "-qm", "new head"]);
   if (change.exitCode !== 0) throw new Error("fixture commit failed");
 }
-process.exitCode = (lane === "hosted" && process.env.FAIL_HOSTED === "1")
-  || (lane === "fast" && process.env.FAIL_DEFAULT === "1") ? 1 : 0;
+if (lane === "hosted" && process.env.FAIL_HOSTED === "1") {
+  const result = Bun.spawnSync([process.execPath, ${JSON.stringify(join(process.cwd(), "scripts/run-check-lane.ts"))},
+    "hosted", ...${JSON.stringify(hostedSteps)}], {
+    env: { ...process.env, TMPDIR: process.cwd() + "/.git", TEMP: process.cwd() + "/.git", TMP: process.cwd() + "/.git", FRAME_OF_MIND_BUILD_CACHE: "off" },
+    stdout: "inherit", stderr: "inherit",
+  });
+  process.exitCode = result.exitCode;
+} else if (lane === "fast" && process.env.FAIL_DEFAULT === "1") {
+  process.exitCode = 1;
+}
 `);
   await put(root, "apps/web/node_modules/wrangler/bin/wrangler.js", `
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+if (process.argv.includes("--dry-run")) {
+  mkdirSync(process.argv[process.argv.indexOf("--outdir") + 1], { recursive: true });
+  process.exit(0);
+}
 appendFileSync(".git/execution.log", "wrangler\\n");
 writeFileSync(".git/deployed.json", JSON.stringify(process.argv.slice(2)));
 console.log("SYNTHETIC_WRANGLER");

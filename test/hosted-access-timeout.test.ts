@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
-  resolveHostedAccessStepTimeoutSeconds,
   withHostedAccessTimeout,
 } from "../scripts/hosted-access-timeout";
 
@@ -37,23 +36,5 @@ describe("hosted access timeout", () => {
       async () => { throw new Error("callback rejected"); },
       30_000,
     )).rejects.toThrow("callback rejected");
-  });
-
-  test("caps only the Better Auth hosted-access lane step", () => {
-    expect(resolveHostedAccessStepTimeoutSeconds(
-      "test:hosted-access-http:better-auth",
-      1_800,
-      300,
-    )).toBe(300);
-    expect(resolveHostedAccessStepTimeoutSeconds(
-      "test:hosted-workflows-http:better-auth",
-      1_800,
-      300,
-    )).toBe(1_800);
-    expect(resolveHostedAccessStepTimeoutSeconds(
-      "test:hosted-access-http:better-auth",
-      120,
-      300,
-    )).toBe(120);
   });
 });

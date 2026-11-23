@@ -1,15 +1,4 @@
 export const HOSTED_ACCESS_WAIT_TIMEOUT_MS = 30_000;
-export const BETTER_AUTH_HOSTED_ACCESS_STEP = "test:hosted-access-http:better-auth";
-
-export function resolveHostedAccessStepTimeoutSeconds(
-  step: string,
-  defaultTimeoutSeconds: number,
-  hostedAccessTimeoutSeconds: number,
-): number {
-  return step === BETTER_AUTH_HOSTED_ACCESS_STEP
-    ? Math.min(defaultTimeoutSeconds, hostedAccessTimeoutSeconds)
-    : defaultTimeoutSeconds;
-}
 
 export async function withHostedAccessTimeout<T>(
   label: string,

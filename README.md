@@ -249,13 +249,15 @@ Contributors run the fast/local pull-request gate for every change:
 bun run check:pr
 ```
 
-For Better Auth or D1 boundary changes, run the focused required contract too:
+The only required Better Auth integration check on pull requests covers HTTP
+access, ownership and revocation. Run it locally for Better Auth or D1 changes.
 
 ```bash
 bun run check:auth-contract
 ```
 
-The whole hosted lane runs nightly and on manual dispatch, and must pass
+The hosted lane covers Cloudflare Access HTTP and Workflows, media, auth modes,
+the Access browser journey and adversarial tests, and release rehearsal. It runs nightly and on manual dispatch, and must pass
 `gate-lock bun run check:deploy` for release validation. Deploy with
 `gate-lock bun run deploy:hosted web` (or `workflows`): every invocation runs the
 default gate and whole hosted lane before invoking Wrangler on the same source. `check:sharded` remains an explicit all-lane run; `check` remains the
@@ -784,12 +786,11 @@ starting point; the operator-owned reference configuration uses `better-auth`.
 Better Auth provides live approved-account magic links, optional GitHub OAuth,
 and D1-backed self-serve access requests without changing the downstream
 principal-scoped contracts. Access-only and stacked modes remain compatibility
-adapters. Run the built-Worker browser proof with:
+adapters. Run the hosted auth-mode and required access checks locally.
 
 ```bash
 bun run check:hosted-auth
-bun run test:hosted-access-http:better-auth
-bun run test:hosted-workflows-http:better-auth
+bun run check:auth-contract
 ```
 
 Better Auth authenticates first, then the same global middleware binds

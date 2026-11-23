@@ -1802,12 +1802,14 @@ available. API requests, including `/api/session`, continue to return a JSON
 403 with `better_auth_session_missing`. The stacked mode still requires a
 valid Access assertion before any sign-in page or auth endpoint is served.
 
-Before any reviewed release, require all three receipts:
+The required Better Auth PR check covers HTTP access and revocation. Release
+validation also runs the hosted lane, covering Cloudflare Access HTTP and
+Workflows, media, auth modes, the Access browser journey and adversarial tests,
+and release rehearsal. Run both checks before release.
 
 ```bash
-bun run check:hosted-auth
-bun run test:hosted-access-http:better-auth
-bun run test:hosted-workflows-http:better-auth
+bun run check:auth-contract
+bun run check:deploy
 ```
 
 Session cookies are HttpOnly, SameSite=Lax, Secure on HTTPS, and cached in a

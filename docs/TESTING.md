@@ -34,7 +34,7 @@ validation base to those lanes; it does not select hosted coverage. The output
 states `CHECK_PR hosted=excluded runs=nightly,manual,check:deploy`.
 
 `bun run check:sharded` explicitly runs all three lanes. `bun run check`
-remains the complete 16-step serial fallback. The complete hosted lane is
+remains the complete 14-step serial fallback. The complete hosted lane is
 quarantined from the default PR gate, not deleted: see the
 [issue and return rule](HOSTED_GATE_QUARANTINE.md).
 
@@ -48,14 +48,14 @@ a deployment. See
 
 ## Gate lanes
 
-The three available lanes cover exactly the same 16 logical steps as the serial gate. A
+The three available lanes cover exactly the same 14 logical steps as the serial gate. A
 unit test parses `package.json` and rejects omissions or duplicates.
 
 | Lane | Logical checks | Shared build |
 |---|---|---|
 | fast | repository hygiene, typechecks, CLI/unit tests, web/unit tests | none |
 | local | CLI build, node web build, Local Studio HTTP contract, streaming spike | one `node-server` artifact |
-| hosted | auth/principal contracts (Better Auth plus Access compatibility), Workflows (two auth modes), media, hosted/adversarial Playwright, release rehearsal | one `cloudflare_module` artifact and one sibling Workflows artifact |
+| hosted | Cloudflare Access HTTP and Workflows, media, hosted auth modes, hosted/adversarial Playwright, release rehearsal | one `cloudflare_module` artifact and one sibling Workflows artifact |
 
 Run one lane directly with `bun run check:lane:fast`,
 `bun run check:lane:local`, or `bun run check:lane:hosted`.
@@ -73,7 +73,7 @@ units. Waiting for a lane lease happens outside per-step timers; child contracts
 inherit a verified lease token and cannot silently bypass a different owner.
 
 On this machine, the hub-measured pre-sharding serial gate required 75–90
-minutes. The same 16-step implementation tree completed with a cold build cache
+minutes. That historical 16-step tree completed with a cold build cache
 in 324.47 seconds: fast 20.17 seconds, local 38.81 seconds, and hosted 324.46
 seconds. Hosted dominated the wall clock, led by the two Workflows HTTP modes
 at 62.61 and 95.19 seconds. A future optimization may overlap the independent
@@ -113,7 +113,6 @@ can pass after a retried journey. In the 2026-11-13 baseline measurement this
 happened twice in four reached runs. Its lane-level `retry=0` only describes
 the lane runner, not Playwright retries. The required `browser-e2e` job runs
 `test:e2e:ci`, whose own `--fail-on-flaky-tests` flag fails on a flaky test.
-Retries and browser specs have not changed.
 
 When CI is red, start with the owning job. A `check` failure belongs to hygiene,
 types, unit tests, local builds/contracts, or the production audit. An
@@ -129,14 +128,10 @@ kept its temporary clone on the checkout drive.
 
 Each logical step has a 20-minute hard timeout by default. Override it with the
 positive integer `FRAME_OF_MIND_STEP_TIMEOUT_SECONDS`; the 2-core hosted CI job
-uses 30 minutes except for `test:hosted-access-http:better-auth`, whose
-`FRAME_OF_MIND_HOSTED_ACCESS_STEP_TIMEOUT_SECONDS` cap is five minutes. A timeout prints
+uses 30 minutes. A timeout prints
 `exit=step_timeout` and terminates only the detached process group created for
-that step. The historically intermittent Better Auth Workflow contract receives
-one automatic retry only after `step_timeout`; CI extends that single-receipted
-retry to the standard Workflow contract as well. Local runs remain Better
-Auth-only. Retries print `retry=1`; deterministic non-zero exits and all other
-steps are not retried.
+that step. CI retries the Cloudflare Access Workflows HTTP step once on a timeout and prints
+`retry=1`. Local runs report the first failure.
 
 ### Accepted integration risks outside pull requests
 
@@ -156,13 +151,11 @@ A passing unit test is not equivalent to these Worker/browser integration checks
 | Hosted command / nightly owner | Integration behavior no longer exercised on PRs | Coverage still required on PRs |
 |---|---|---|
 | `test:hosted-access-http` / `serial-check` | Access-authenticated ownership across two users for import, list, detail and conflicts; service callers denied browser routes; missing assertions; session projection; disabled hosted routes and admin HTTP operations. | Access JWT policy and D1 isolation unit checks; required migrations. Better Auth exercises a different auth mode. |
-| `test:hosted-access-http:better-auth` (full scope) / `serial-check` | Notification contents and deduplication, magic-link refusal, capacity/rate limits, full admin list/approve/deny/revoke/idempotency/no-mail behavior, and maintainer CLI transitions. | Required auth scope retains migrations and replay, synthetic GitHub sessions, unapproved-route denials, access-request/replay state without mail, two-user ownership, session projection, disabled hosted/admin routes, principal mapping and next-request revocation. Auth/admin/rate-limit unit checks are narrower. |
 | `test:hosted-workflows-http` / `serial-check` | Actual two-Worker execution, publication and cleanup; disabled routes; janitor/replay; spend overruns, caps and races; legacy/missing activity data; every built-in recipe; foreign job/media/run/review/support access and foreign-media creation; missing hashes; cancellation, retry, crash recovery and replay; immutable attempts; provider/adapter timeouts. Browser checks cover hydration, contrast, icons, layout, keyboard, clipboard, composer, viewer and copying. | Schema, admission, spend, maintenance, telemetry, UI-state and projection unit checks; basic run ownership in required auth. |
-| `test:hosted-workflows-http:better-auth` / `serial-check` | All preceding Workflows and browser behavior with Better Auth sessions connected to real Workflow execution. | The same narrower unit and ownership checks. Required auth does not start a Workflows worker. |
 | `test:hosted-media-http` / `serial-check` | Upload byte limits, hashes, sealing, failure cleanup and foreign-user denial; opaque/encrypted capabilities; retained R2 multipart uploads, concurrency, abort/delete/in-use/expiry/orphan handling and evidence provenance; janitor/seal races. Browser checks cover resume, tab locking, pagehide/discard/recovery, and retained versus ephemeral review. | Media-domain, seal/provider-budget, retention, evidence and range unit checks. |
 | `check:hosted-auth` / `serial-check` | Real mail binding and HTTP fallback; magic-link cooldown/no-mail; uninvited mail/verification refusal; sign-in browser UX; stacked Access subject binding and rebind denial; misconfigured auth modes refusing hosted routes; shared workerd rate-limit warnings. | GitHub login, approved/unapproved sessions and basic ownership in required auth; policy and client-IP rate-limit unit checks. |
-| `check:e2e` hosted projects / `serial-check` | Access and Better Auth composer publication journeys; database-trigger-induced publication rollback across registry/run/item tables; validation before projection. Partial publication can escape the PR checks. | Required browser smoke; D1/SQLite projection and migration tests. |
-| `check:e2e` adversarial project / `serial-check` | Foreign-user denial for every hosted ID; service callers denied browser routes; uninvited sign-in/mail boundaries; recurring upload byte-limit probes; adversarial maintenance preservation, spike-matcher and support-trap fixtures. | Some pure support-format, middleware-matcher and maintenance unit checks, without equivalent hosted/browser execution. |
+| `check:e2e` hosted projects / `serial-check` | Cloudflare Access composer publication journey; database-trigger-induced publication rollback across registry/run/item tables; validation before projection. Partial publication can escape the PR checks. | Required browser smoke; D1/SQLite projection and migration tests. |
+| `check:e2e` adversarial project / `serial-check` | Foreign-user denial for every hosted ID; service callers denied browser routes; recurring upload byte-limit probes; adversarial maintenance preservation, spike-matcher and support-trap fixtures. | Some pure support-format, middleware-matcher and maintenance unit checks, without equivalent hosted/browser execution. |
 | `rehearse:hosted-release` / `serial-check` | Emitted entry determinism/delegation and no body reads; required/forbidden bundle markers; Worker bindings, configuration, auth mode and secret shape; both module dry-runs and absence of error 100329; previous-artifact rollback dry-run and rollback documentation. | Required migration application/replay; SQLite import byte stability and migration cases (including provider identity and legacy protection); real local D1 projection tests. Generic migration failure detection remains required. |
 
 ### Prebuilt artifact contract
@@ -240,8 +233,9 @@ HTTP mailer, Wrangler's local `send_email` simulator, and a fake Gemini port.
 The auth spike proves both mailer paths without `remote: true`; provider calls
 remain offline.
 
-Better Auth has a named Playwright project and a `HostedAuthMode` fixture seam.
-The complete hosted lane runs it alongside the Access compatibility contract.
+The hosted composer-to-findings browser journey runs only with Cloudflare Access.
+Only `auth-contract` is required on PRs for Better Auth HTTP access and
+revocation. The separate hosted auth-mode check still exercises sign-in and mail.
 
 ## Principals and sessions
 
@@ -299,8 +293,7 @@ directory. Pass 3 covers Intent, Recording empty and ready states, Review and
 start, Activity running/detail/list views, the published viewer, hosted review
 workspace, Results, Import, and the branded not-found state. The same contract
 also proves own-principal review and support access plus foreign-principal 404
-denial. The Better Auth variant runs in the full `bun run check` gate without
-replacing the Access screenshots.
+denial.
 
 Verify the live Gemini upload, index, detail, and cleanup boundary separately
 with generated media:

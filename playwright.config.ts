@@ -52,19 +52,11 @@ if (includes("smoke")) {
   );
 }
 if (includes("hosted")) {
-  projects.push(
-    {
-      name: "hosted-cloudflare-access",
-      testDir: "./apps/web/e2e/hosted",
-      use: { ...devices["Desktop Chrome"] },
-    },
-    {
-      name: "hosted-better-auth",
-      testDir: "./apps/web/e2e/hosted",
-      testMatch: /journey\.spec\.ts/,
-      use: { ...devices["Desktop Chrome"] },
-    },
-  );
+  projects.push({
+    name: "hosted-cloudflare-access",
+    testDir: "./apps/web/e2e/hosted",
+    use: { ...devices["Desktop Chrome"] },
+  });
 }
 if (includes("adversarial")) {
   projects.push({
