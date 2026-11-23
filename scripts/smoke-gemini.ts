@@ -1,3 +1,4 @@
+import { calibrateClipClock } from "../src/adapters/gemini-calibration.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -92,6 +93,10 @@ try {
     );
   }
 
+  console.log("Gemini smoke: calibrate");
+  const calibration = await calibrateClipClock(analyzer, { force: true, cacheRoot: join(smokeDirectory, "calibration") });
+  console.log(`Gemini smoke: model clip clock ${calibration.result}; reported ${calibration.evidence.reportedSeconds ?? "unverified"} s`);
+  if (calibration.result === "unverified") throw new Error("Gemini smoke clip-clock calibration is unverified; maintainer decision required.");
   console.log("Gemini smoke: passed");
 } finally {
   if (remote) {

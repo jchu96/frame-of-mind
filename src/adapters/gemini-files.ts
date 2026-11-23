@@ -1,8 +1,11 @@
 import { createReadStream } from "node:fs";
+import type { Readable } from "node:stream";
+import { finished } from "node:stream/promises";
 import { stat } from "node:fs/promises";
 import { FileState } from "@google/genai";
 import type { File as GeminiFile } from "@google/genai";
 import { z } from "zod";
+import { classifyProviderError, classifyProviderResponse, providerErrorDescription, type ProviderError } from "./gemini-error-class.js";
 
 const GEMINI_UPLOAD_ENDPOINT =
   "https://generativelanguage.googleapis.com/upload/v1beta/files";
@@ -60,6 +63,7 @@ export class GeminiFileError extends Error {
     readonly remoteFileName?: string,
     readonly uploadCleanup?: GeminiUploadCleanup,
     readonly telemetryCode?: string,
+    readonly provider?: ProviderError,
   ) {
     super(message);
   }
@@ -68,7 +72,7 @@ export class GeminiFileError extends Error {
 export interface GeminiFileUploaderDependencies {
   fetch?: FetchLike;
   fileSize?: (path: string) => Promise<number>;
-  openFile?: (path: string) => NodeJS.ReadableStream;
+  openFile?: (path: string) => Readable;
   timeoutMs?: number;
 }
 
@@ -113,20 +117,28 @@ export function createGeminiFileUploader(
           }),
           signal: AbortSignal.timeout(timeoutMs),
         });
-      } catch {
+      } catch (error) {
         throw new GeminiFileError(
-          "Gemini resumable upload start failed.",
+          `Gemini resumable upload start failed: ${providerErrorDescription(classifyProviderError(error))}.`,
           undefined,
           "not_obtained",
+          undefined,
+          classifyProviderError(error),
         );
       }
-      assertSuccessfulResponse(startResponse, "resumable upload start");
+      await assertSuccessfulResponse(startResponse, "resumable upload start");
 
       const uploadUrl = validateUploadUrl(
         startResponse.headers.get("x-goog-upload-url"),
       );
       let uploadResponse: Response;
+      let body: Readable | undefined;
+      let bodySettled: Promise<void> | undefined;
       try {
+        body = openFile(path);
+        // A transport may reject before consuming/opening the file. Own the
+        // stream until close, so callers may safely delete temporary media.
+        bodySettled = finished(body, { cleanup: true }).catch(() => undefined);
         uploadResponse = await fetchImpl(uploadUrl, {
           method: "POST",
           redirect: "error",
@@ -136,23 +148,30 @@ export function createGeminiFileUploader(
             "X-Goog-Upload-Offset": "0",
             "X-Goog-Upload-Command": "upload, finalize",
           },
-          body: openFile(path),
+          body,
           duplex: "half",
           signal: AbortSignal.timeout(timeoutMs),
         });
-      } catch {
+      } catch (error) {
         throw new GeminiFileError(
-          "Gemini upload finalize failed; remote cleanup cannot be confirmed.",
+          `Gemini upload finalize failed: ${providerErrorDescription(classifyProviderError(error))}; remote cleanup cannot be confirmed.`,
           undefined,
           "unconfirmed",
+          undefined,
+          classifyProviderError(error),
         );
+      } finally {
+        body?.destroy();
+        await bodySettled;
       }
       if (!uploadResponse.ok) {
+        const provider = await classifyProviderResponse(uploadResponse);
         throw new GeminiFileError(
-          `Gemini upload finalize failed (HTTP ${uploadResponse.status}); remote cleanup cannot be confirmed.`,
+          `Gemini upload finalize failed: ${providerErrorDescription(provider)}; remote cleanup cannot be confirmed.`,
           undefined,
           "unconfirmed",
           `gemini_http_${uploadResponse.status}`,
+          provider,
         );
       }
 
@@ -201,7 +220,7 @@ export function createGeminiFileUploader(
   };
 }
 
-function openFileStream(path: string): NodeJS.ReadableStream {
+function openFileStream(path: string): Readable {
   return createReadStream(path);
 }
 
@@ -212,13 +231,15 @@ function fetchWithStreamingBody(
   return globalThis.fetch(input, init as RequestInit);
 }
 
-function assertSuccessfulResponse(response: Response, phase: string): void {
+async function assertSuccessfulResponse(response: Response, phase: string): Promise<void> {
   if (!response.ok) {
+    const provider = await classifyProviderResponse(response);
     throw new GeminiFileError(
-      `Gemini ${phase} failed (HTTP ${response.status}).`,
+      `Gemini ${phase} failed: ${providerErrorDescription(provider)}.`,
       undefined,
       "not_obtained",
       `gemini_http_${response.status}`,
+      provider,
     );
   }
 }

@@ -41,7 +41,16 @@ jobs:
         run: bun run check:pr --base "origin/${{ github.base_ref || 'main' }}"
 
       - name: Reject high or critical production advisories
-        run: bun audit --production --audit-level=high
+        # No patched release; no user-supplied glob patterns or vulnerable matcher
+        # code in the CLI, local Studio server, or hosted Worker builds. Owner: hub.
+        # Remove when the advisory names a patched version; re-decide by 2026-12-18.
+        run: |
+          today="$(date -u +%F)"
+          if [[ "$today" > "2026-12-18" ]]; then
+            echo "AUDIT_EXCEPTION_EXPIRED GHSA-fc5q-39xc-vjpf review-by=2026-12-18"
+            exit 1
+          fi
+          bun audit --production --audit-level=high --ignore=GHSA-fc5q-39xc-vjpf
 
   auth-contract:
     runs-on: ubuntu-latest
@@ -76,12 +85,10 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  hosted-contracts:
-    needs: check
+  serial-check:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-    # Non-blocking while https://github.com/jchu96/frame-of-mind/issues/96 tracks 2-core timing.
-    continue-on-error: true
+    timeout-minutes: 120
     env:
       FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'
       FRAME_OF_MIND_HOSTED_ACCESS_STEP_TIMEOUT_SECONDS: '300'
@@ -99,34 +106,15 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install Playwright Chromium
-        run: bunx playwright install --with-deps chromium
-
-      - name: Run hosted contract lane
-        run: bun run check:lane:hosted
-
-  serial-check:
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
 
-      - name: Run serial fallback gate
-        run: bun run check
+      - name: Run default gate
+        run: bun run check:pr
+
+      - name: Run whole hosted lane
+        if: ${{ !cancelled() }}
+        run: bun run check:lane:hosted
 
   fresh-clone:
     strategy:

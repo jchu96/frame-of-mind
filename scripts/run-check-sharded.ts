@@ -21,22 +21,16 @@ const configuredBaseRef = option("--base")
   ?? process.env.FRAME_OF_MIND_GATE_BASE_REF?.trim();
 const baseRef = requestedTier === "pr" ? configuredBaseRef || "origin/main" : configuredBaseRef;
 const printTier = args.includes("--print-tier");
-const baseRefAvailable = requestedTier !== "pr" || await isRefAvailable(baseRef!);
-const changedPaths = requestedTier === "pr" && baseRefAvailable
-  ? await pathsChangedSince(baseRef!)
-  : [];
-const hostedLaneSeparate = process.env.FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE === "1";
-const selection = selectGateTier(
-  requestedTier as GateTier,
-  baseRefAvailable,
-  changedPaths,
-  hostedLaneSeparate,
-);
+const selection = selectGateTier(requestedTier as GateTier);
 const selectedTier = selection.tier;
 
 if (printTier) {
   console.log(selectedTier);
   process.exit(0);
+}
+
+if (requestedTier === "pr") {
+  console.log("CHECK_PR hosted=excluded runs=nightly,manual,check:deploy");
 }
 
 const configuredParallelism = process.env.FRAME_OF_MIND_GATE_PARALLELISM ?? "3";
@@ -129,34 +123,6 @@ async function runLane(lane: LaneName): Promise<LaneResult> {
     + `exit=${exitCode} runtime_seconds=${seconds.toFixed(2)}`,
   );
   return { lane, exitCode, seconds };
-}
-
-async function isRefAvailable(ref: string): Promise<boolean> {
-  const child = Bun.spawn(["git", "rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
-    cwd: resolve("."),
-    stdin: "ignore",
-    stdout: "ignore",
-    stderr: "ignore",
-  });
-  return await child.exited === 0;
-}
-
-async function pathsChangedSince(ref: string): Promise<string[]> {
-  const child = Bun.spawn(["git", "diff", "--name-only", `${ref}...HEAD`], {
-    cwd: resolve("."),
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  if (exitCode !== 0) {
-    throw new Error(`Could not compare gate base ${ref}: ${stderr.trim()}`);
-  }
-  return stdout.split(/\r?\n/).filter(Boolean);
 }
 
 async function pipePrefixed(

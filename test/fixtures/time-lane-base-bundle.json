@@ -1,0 +1,106 @@
+{
+  "analysis": {
+    "schemaVersion": 3,
+    "runId": "clock-test",
+    "context": {
+      "mode": "none"
+    },
+    "recipe": {
+      "id": "test",
+      "label": "Test"
+    },
+    "model": "gemini-test",
+    "matchNotes": "Matched.",
+    "items": [
+      {
+        "candidate": {
+          "start": "00:00:10",
+          "end": "00:00:19",
+          "kind": "test",
+          "importance": "high",
+          "summary": "Synthetic candidate"
+        },
+        "result": {
+          "accepted": true,
+          "kind": "test",
+          "title": "Synthetic",
+          "summary": "Synthetic evidence",
+          "evidence": {
+            "timestamp": "00:00:15"
+          }
+        }
+      },
+      {
+        "candidate": {
+          "start": "00:00:20",
+          "end": "00:00:29",
+          "kind": "test",
+          "importance": "high",
+          "summary": "Synthetic candidate"
+        },
+        "result": {
+          "accepted": true,
+          "kind": "test",
+          "title": "Synthetic",
+          "summary": "Synthetic evidence",
+          "evidence": {
+            "timestamp": "00:00:25"
+          }
+        }
+      }
+    ]
+  },
+  "manifest": {
+    "schemaVersion": 3,
+    "toolVersion": "0.5.0",
+    "promptRevision": "test",
+    "runId": "clock-test",
+    "startedAt": "2026-11-01T00:00:00Z",
+    "completedAt": "2026-11-01T00:00:01Z",
+    "context": {
+      "mode": "none"
+    },
+    "recipe": {
+      "id": "test",
+      "label": "Test",
+      "custom": false,
+      "revision": "test",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "model": "gemini-test",
+    "recordingSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "analysisSha256": "0a011a6399798e060e31cdeb5903db5c3fe4f7ead11bb8243e89810e4b516eec",
+    "recordingMimeType": "video/mp4",
+    "mediaSource": "local-file",
+    "analysis": {
+      "maxIncidents": 10,
+      "indexFps": 0.5,
+      "indexResolution": "low",
+      "interrogationResolution": "medium"
+    },
+    "artifacts": [
+      "analysis.json",
+      "analysis.md",
+      "report.html",
+      "manifest.json",
+      "analysis-outcome.json",
+      "times.json"
+    ],
+    "clock": {
+      "fileClock": "source",
+      "timeline": {
+        "timelineOffsetMs": 12345,
+        "origin": "declared",
+        "timecode": {
+          "rate": {
+            "num": 25,
+            "den": 1
+          },
+          "dropFrame": false,
+          "rateOrigin": "declared"
+        }
+      },
+      "modelClipClock": "unverified"
+    }
+  }
+}

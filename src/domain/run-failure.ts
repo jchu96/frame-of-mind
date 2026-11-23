@@ -22,6 +22,10 @@ const analysisFailureCodeSchema = z.union([
 
 const failureErrorSchema = z.strictObject({
   code: analysisFailureCodeSchema,
+  provider: z.strictObject({
+    class: z.enum(["refused", "not_found", "rate_limited", "other"]),
+    status: z.number().finite().optional(),
+  }).optional(),
   attempts: z.union([z.literal(1), z.literal(2)]).optional(),
   issues: z.array(candidateValidationIssueSchema).max(3).optional(),
 }).superRefine((value, context) => {

@@ -1,3 +1,7 @@
+import { declaredOffset, type RunClock } from "../domain/clock.js";
+import { modelTime, offsetApproximate, renderApproximate, deriveExact } from "../domain/exact-time.js";
+import { timesSchema, type TimesArtifact } from "../domain/times.js";
+import { timestampToSeconds } from "../lib/time.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
@@ -60,39 +64,45 @@ export async function writeArtifacts(
     `${JSON.stringify(validatedOutcome, null, 2)}\n`,
     { mode: 0o600 },
   );
-  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome), { mode: 0o600 });
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label), { mode: 0o600 });
   await writeFile(
     reportHtml,
     await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome),
     { mode: 0o600 },
   );
   await writeFile(manifestJson, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  return [analysisJson, outcomeJson, analysisMarkdown, reportHtml, manifestJson];
+  const timesJson = join(directory, "times.json");
+  await writeFile(timesJson, `${JSON.stringify(buildTimes(analysis, manifest.clock), null, 2)}\n`, { mode: 0o600 });
+  return [analysisJson, outcomeJson, analysisMarkdown, reportHtml, manifestJson, timesJson];
 }
 
 export function renderAnalysis(
   analysis: VersionedAnalysisRun,
   outcome?: AnalysisOutcome,
+  clock?: RunClock,
+  label?: string,
 ): string {
   const accepted = analysis.items.filter((item) => item.result.accepted);
   const heading = analysis.schemaVersion === 2
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
-    : "Video analysis";
+    : label || "Video analysis";
   const contextLine = analysis.schemaVersion === 2
     ? `- Meeting: \`${escapeInline(analysis.meeting.id)}\``
     : "- Context: Video only (no external context)";
   const lines = [
     `# ${escapeInline(heading)}`,
     "",
+    ...(label ? [`- Label: ${escapeInline(label)}`] : []),
     contextLine,
     `- Recipe: \`${escapeInline(analysis.recipe.id)}\``,
     `- Model: \`${escapeInline(analysis.model)}\``,
+    `- ${clockSummary(clock)}`,
     `- Accepted records: ${accepted.length}`,
     ...(outcome
       ? [
           `- Analysis outcome: ${outcome.status}`,
           `- Candidate responses: ${outcome.candidates.validated}/${outcome.candidates.selected} validated (${outcome.candidates.accepted} accepted, ${outcome.candidates.rejected} rejected)`,
-          `- Indexed candidates: ${outcome.candidates.indexed} (${outcome.candidates.omittedByLimit} omitted by the configured limit)`,
+          `- Indexed candidates: ${outcome.candidates.indexed} (${outcome.candidates.outOfRange ?? 0} out of range; ${outcome.candidates.omittedByLimit} omitted by the configured limit)`,
         ]
       : []),
     "",
@@ -113,7 +123,7 @@ export function renderAnalysis(
       `## ${index + 1}. ${escapeInline(result.title)}`,
       "",
       `- Kind: ${escapeInline(result.kind)}`,
-      `- Time: ${escapeInline(result.evidence?.timestamp || item.candidate.start)}`,
+      `- Time: ${escapeInline(renderClockTime(result.evidence?.timestamp || item.candidate.start, clock))}`,
       `- Importance: ${escapeInline(result.importance || item.candidate.importance)}`,
       `- Surface: ${escapeInline(result.where?.surface || item.candidate.surface || "Unknown")}`,
       result.where?.appUrl ? `- URL: ${escapeInline(result.where.appUrl)}` : "- URL: Not visibly confirmed",
@@ -181,7 +191,7 @@ async function renderHtmlArtifact(
           `<dt>${html(detail.label)}</dt><dd>${html(detail.value)}</dd>`).join("")}</dl>`
       : "";
     return `<article>
-      <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(result.evidence?.timestamp || item.candidate.start)}</div>
+      <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock))}</div>
       <h2>${index + 1}. ${html(result.title)}</h2>
       <p>${html(result.summary)}</p>
       ${details}
@@ -196,7 +206,7 @@ async function renderHtmlArtifact(
   }));
   const heading = analysis.schemaVersion === 2
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
-    : "Video analysis";
+    : manifest.label || "Video analysis";
   const providerLabel = analysis.schemaVersion === 2
     ? analysis.meeting.provider
     : "video only";
@@ -208,11 +218,11 @@ async function renderHtmlArtifact(
     : analysis.schemaVersion === 2
       ? "No provider URL retained"
       : "No external context supplied";
-  const alignment = manifest.derivedTranscript
+  const alignment = `${clockSummary(manifest.clock)}. ` + (manifest.derivedTranscript
     ? "Transcript: derived from this recording's own audio by the analysis model (offset 0); no provider or operator transcript was supplied."
     : manifest.schemaVersion === 2
       ? `Transcript alignment: ${manifest.transcriptAlignment.offsetSeconds >= 0 ? "+" : ""}${manifest.transcriptAlignment.offsetSeconds}s (${html(manifest.transcriptAlignment.method)}, ${html(manifest.transcriptAlignment.confidence)} confidence).`
-      : "Transcript alignment: not applicable to a video-only run.";
+      : "Transcript alignment: not applicable to a video-only run.");
   const outcomeReasons = [
     outcome.candidates.failed > 0
       ? `${outcome.candidates.failed} candidate response(s) failed validation and were excluded; sanitized diagnostics are available in <code>analysis-outcome.json</code>.`
@@ -247,7 +257,7 @@ async function renderHtmlArtifact(
   <header>
     <div class="eyebrow">Frame of Mind · ${html(providerLabel)} · ${html(analysis.recipe.label)}</div>
     <h1>${html(heading)}</h1>
-    <div class="meta"><span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
+    <div class="meta">${manifest.label ? `<span>Label: ${html(manifest.label)}</span>` : ""}<span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
   </header>
   ${outcomeNotice}
   <section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>
@@ -300,4 +310,44 @@ function safeHref(value: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+export function clockSummary(clock?: RunClock): string {
+  return `clocks: ${clock?.fileClock ?? "source"}${clock?.timeline ? `, timeline offset ${renderDeclaredOffset(clock.timeline)}` : ""}; model clip clock: ${clock?.modelClipClock ?? "unverified"}${!clock || clock.modelClipClock === "unverified" ? " (clip clock unverified)" : ""}${clock?.clipGuard === "unknown-duration" ? "; clip guard did not run: duration unknown" : ""}${clock?.transcriptClock === "unverified" ? "; transcript clock unverified (legacy alignment retained)" : ""}${clock?.transcriptWindow === "not-windowed" ? "; transcript not windowed" : ""}`;
+}
+
+function renderDeclaredOffset(declaration: NonNullable<RunClock["timeline"]>): string {
+  const time = deriveExact(declaredOffset(declaration), declaration.timecode?.dropFrame);
+  const units = "frames" in time ? `${time.frames} frames @${time.rate.num}/${time.rate.den}; ${time.timecode} ${time.dropFrame ? "drop-frame" : "non-drop"}` : `${time.milliseconds} ms`;
+  const seconds = time.seconds === undefined ? `derived seconds unavailable: ${time.secondsUnavailable}` : `${time.seconds} s (derived)`;
+  return `${seconds} (${units}; ${"ticks" in time ? `${time.ticks} ticks` : time.ticksUnavailable}; declared)`;
+}
+export function renderClockTime(timestamp: string, clock?: RunClock): string {
+  const time = modelTime(clock?.fileClock ?? "source", timestamp);
+  return [renderApproximate(time), ...(clock?.timeline ? [renderApproximate(offsetApproximate(time, declaredOffset(clock.timeline)))] : [])].join(" · ");
+}
+
+export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock): TimesArtifact {
+  const fileClock = clock?.fileClock ?? "source";
+  const entries: TimesArtifact["entries"] = [];
+  const offset = clock?.timeline ? declaredOffset(clock.timeline) : undefined;
+  const add = (pointer: string, timestamp: string) => {
+    const time = modelTime(fileClock, timestamp);
+    entries.push({ pointer, time: { ...time, origin: "model" },
+      ...(offset ? { timeline: { ...offsetApproximate(time, offset), origin: "model" as const } } : {}) });
+  };
+  analysis.items.forEach((item, index) => {
+    add(`/items/${index}/candidate/start`, item.candidate.start);
+    add(`/items/${index}/candidate/end`, item.candidate.end);
+    if (item.result.evidence?.timestamp) add(`/items/${index}/result/evidence/timestamp`, item.result.evidence.timestamp);
+  });
+  return timesSchema.parse({
+    schemaVersion: 2, kind: "frame-of-mind.times", fileClock,
+    exactTimeCapability: offset?.unit === "video-frame"
+      ? "declared video rate: frames, timecode with explicit drop-frame, ticks when whole, derived seconds when a whole millisecond exists"
+      : clock?.timeline?.timecode ? "legacy millisecond offset: milliseconds, seconds and ticks; no exact video-frame boundary"
+      : "no declared video rate: whole milliseconds, seconds and ticks; no frames or timecode",
+    ...(offset ? { timeline: { offset: { ...deriveExact(offset, clock?.timeline?.timecode?.dropFrame), origin: "declared" } } } : {}),
+    entries,
+  });
 }

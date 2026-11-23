@@ -43,6 +43,15 @@ describe("analyze CLI option assembly", () => {
     expect(disabled.derivedTranscript).toBe(false);
   });
 
+  it("canonicalizes the transcription hint and rejects invalid or contradictory flags", async () => {
+    const flags = { ...baseFlags, transcriptLanguage: "zh-hant-tw" };
+    expect((await buildAnalyzeOptions(undefined, flags, "test-key")).transcriptLanguage).toBe("zh-Hant-TW");
+    await expect(buildAnalyzeOptions(undefined, { ...flags, transcriptLanguage: "en_US" }, undefined))
+      .rejects.toThrow("--transcript-language");
+    await expect(buildAnalyzeOptions(undefined, { ...flags, derivedTranscript: false }, undefined))
+      .rejects.toThrow("--transcript-language conflicts with --no-derived-transcript");
+  });
+
   describe("detail concurrency", () => {
     afterEach(() => vi.unstubAllEnvs());
 
@@ -76,6 +85,16 @@ describe("analyze CLI option assembly", () => {
       recipe: "issue-review",
       depth: "standard",
     }, "synthetic-key")).rejects.toThrow("meeting/note ID is required");
+  });
+});
+
+describe("run label", () => {
+  it("refuses Unicode line and paragraph separators inside a label", async () => {
+    const { runLabelSchema } = await import("../src/domain/schemas.js");
+    expect(runLabelSchema.safeParse("Design review \u2014 part 2").success).toBe(true);
+    for (const label of ["Design\u2028review", "Design\u2029review"]) {
+      expect(runLabelSchema.safeParse(label).success).toBe(false);
+    }
   });
 });
 
@@ -126,5 +145,16 @@ describe("notes", () => {
   it("accepts all as the complete indexed population", async () => {
     const options = await buildAnalyzeOptions(undefined, { ...baseFlags, maxMoments: "all" }, "synthetic-key");
     expect(options.maxIncidents).toBe(1000);
+  });
+});
+
+describe("clock flags", () => {
+  it("rejects invalid declarations before an analyzer can be constructed", async () => {
+    for (const flags of [{ timelineOffset: "1.0005" }, { timelineOffset: "-5" }, { timecodeRate: "25" }, { timelineOffset: "0", timecodeRate: "25df" }, { timelineOffset: "0", timecodeRate: "23.98" }, { timelineOffset: "0", timecodeRate: "29.97" }, { fileClock: "clip" }]) {
+      await expect(buildAnalyzeOptions(undefined, { ...baseFlags, ...flags }, "synthetic-key")).rejects.toThrow();
+    }
+  });
+  it("passes exact clock declarations and the calibration opt-out", async () => {
+    expect(await buildAnalyzeOptions(undefined, { ...baseFlags, timelineOffset: "86400f", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false }, "synthetic-key")).toMatchObject({ timelineOffset: "86400f", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false });
   });
 });

@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 import "./instrument.js";
-import { realpathSync } from "node:fs";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
@@ -16,11 +14,16 @@ import {
 } from "./services/analyze.js";
 import { BluedotClient, DEFAULT_BLUEDOT_MCP_URL } from "./adapters/bluedot-mcp.js";
 import { GranolaClient, DEFAULT_GRANOLA_MCP_URL } from "./adapters/granola-mcp.js";
+import { ACCEPTED_RATES, declareClock } from "./domain/clock.js";
+import { clockSummary } from "./services/artifacts.js";
+import { calibrateClipClock } from "./adapters/gemini-calibration.js";
+import { GeminiVideoAnalyzer } from "./adapters/gemini.js";
 import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
 import { VERSION } from "./version.js";
 import { registerKey } from "./commands/key.js";
 import { loadRunNotes } from "./services/run-notes.js";
 import { resolveRetention } from "./domain/retention.js";
+import { runLabelSchema } from "./domain/schemas.js";
 import type { ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
 import { redactUrlForDisplay } from "./lib/http.js";
@@ -41,9 +44,13 @@ import {
 import { defaultOutputRoot } from "./lib/paths.js";
 import { registerSession } from "./commands/session.js";
 import { registerMedia } from "./commands/media.js";
-import { registerTranscribe } from "./commands/transcribe.js";
+import { resolveTranscriptLanguage } from "./domain/transcript-language.js";
+import { registerTranscribe, transcriptionHelp } from "./commands/transcribe.js";
 
 loadDotenv({ quiet: true });
+
+/** Set to `true` on globalThis before importing to load the program without running it. */
+export const CLI_LIBRARY_IMPORT = Symbol.for("frameofmind.cli.libraryImport");
 
 export const program = new Command()
   .name("frameofmind")
@@ -56,6 +63,10 @@ const geminiModelSchema = z.string()
   .regex(/^gemini-[a-z0-9][a-z0-9.-]*$/, "expected a Gemini model ID");
 
 export interface AnalyzeCliFlags {
+  timelineOffset?: string;
+  timecodeRate?: string;
+  fileClock?: string;
+  calibrate?: boolean;
   video?: string;
   recordingUrl?: string;
   source: string;
@@ -65,6 +76,7 @@ export interface AnalyzeCliFlags {
   contextFile?: string;
   transcriptOffset?: string;
   focus?: string;
+  label?: string;
   note?: string[];
   depth: string;
   model?: string;
@@ -76,6 +88,7 @@ export interface AnalyzeCliFlags {
   retention?: string;
   remoteFile?: string;
   derivedTranscript: boolean;
+  transcriptLanguage?: string;
   concurrency?: string;
 }
 
@@ -130,9 +143,22 @@ registerMedia(program);
 registerTranscribe(program);
 registerKey(program);
 
+program.command("calibrate")
+  .description("Measure and cache the model's clip clock using a synthetic flash.")
+  .option("--model <id>", "Gemini model ID")
+  .option("--json", "Print the measurement and token cost as JSON")
+  .action(async (flags: { model?: string; json?: boolean }) => {
+    if (!process.env.GEMINI_API_KEY) throw new Error("Set GEMINI_API_KEY before calibration.");
+    const analyzer = new GeminiVideoAnalyzer(process.env.GEMINI_API_KEY, flags.model ? geminiModelSchema.parse(flags.model) : undefined);
+    const result = await calibrateClipClock(analyzer, { force: true });
+    const tokens = analyzer.takeUsage()?.totalTokens ?? null;
+    process.stdout.write(flags.json ? `${JSON.stringify({ ...result, tokens })}\n` : `model clip clock: ${result.result}; tokens: ${tokens ?? "unknown"}\n`);
+  });
+
 program
   .command("analyze")
   .description("Analyze one video with optional Bluedot, Granola, or local context.")
+  .addHelpText("after", transcriptionHelp)
   .argument("[meeting-id]", "Provider meeting/note ID; omit with --source none")
   .requiredOption("--source <provider>", "Context provider: bluedot, granola, file, or none")
   .option("--granola-transport <transport>", "Granola context transport: mcp or api", "mcp")
@@ -141,8 +167,13 @@ program
   .option("--context-file <path>", "Transcript/meeting JSON, Markdown, text, SRT, or VTT for --source file")
   .option("--video <path>", "Use a recording already downloaded locally")
   .option("--recording-url <url>", "Use an expiring signed Bluedot media URL")
+  .option("--timeline-offset <time>", "Sequence offset: seconds (up to 3 decimals), Nf whole frames, or HH:MM:SS:FF / HH:MM:SS;FF; video forms require --timecode-rate. Without a rate: exact milliseconds, seconds and ticks only; no frames or timecode")
+  .option("--file-clock <clock>", "Input clock: source or reel", "source")
+  .option("--timecode-rate <rate>", `Timeline timecode rendering: ${ACCEPTED_RATES}`)
+  .option("--no-calibrate", "Skip clip-clock measurement and label the run unverified")
   .option("--transcript-offset <timestamp>", "Transcript time corresponding to video 00:00, for example 01:02:47")
   .option("--focus <instruction>", "Prioritize a specific repository, workflow, or UX concern")
+  .option("--label <text>", "Human label for this run (e.g. the source title), shown in the manifest and reports; never sent to the model")
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
@@ -150,6 +181,7 @@ program
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
   .option("--concurrency <n>", "Parallel Gemini detail requests in pass 2 (default 1)")
   .option("--no-screenshots", "Skip ffmpeg screenshots")
+  .option("--transcript-language <tag>", "Likely spoken language for derived transcription (BCP-47)")
   .option("--no-derived-transcript", "Skip deriving a transcript from the recording audio when no transcript is supplied")
   .option("--retention <mode>", "Upload retention: provider (default) or run; overrides FRAME_OF_MIND_UPLOAD_RETENTION")
   .option("--keep-upload", "Alias for --retention provider")
@@ -164,9 +196,7 @@ program
       let stage = "cli";
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
-        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, apiKey);
+        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, process.env.GEMINI_API_KEY);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
         // @types/bun 1.4.0 drops Node's signal overloads from process.on/off;
@@ -254,14 +284,16 @@ program
   );
 
 export function printAnalysisSummary(result: AnalyzeResult): void {
-  const { selected, indexed, omittedByLimit } = result.outcome.candidates;
+  const { selected, indexed, omittedByLimit, outOfRange } = result.outcome.candidates;
   process.stdout.write(
     `Interrogated ${selected} of ${indexed} indexed candidates` +
+    (outOfRange ? `; ${outOfRange} out of range` : "") +
     (omittedByLimit ? ` (${omittedByLimit} lower-importance dropped; --max-moments all to analyse every one).\n` : ".\n"),
   );
+  process.stdout.write(`${clockSummary(result.manifest.clock)}\n`);
   const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
   process.stdout.write(
-    `Analysis: ${result.directory}\n${accepted} accepted record(s). ` +
+    `Analysis: ${result.directory}${result.manifest.label ? ` (${result.manifest.label})` : ""}\n${accepted} accepted record(s). ` +
       `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
   );
   const remoteFile = result.manifest.remoteFile;
@@ -277,10 +309,17 @@ export function printAnalysisSummary(result: AnalyzeResult): void {
 export async function buildAnalyzeOptions(
   meetingId: string | undefined,
   flags: AnalyzeCliFlags,
-  apiKey: string,
+  apiKey: string | undefined,
 ): Promise<AnalyzeOptions> {
+  const transcriptLanguage = resolveTranscriptLanguage(flags.transcriptLanguage, flags.derivedTranscript);
+  if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
   const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
   const runNotes = await loadRunNotes(flags.note);
+  const labelResult = flags.label === undefined ? undefined : runLabelSchema.safeParse(flags.label.trim());
+  if (labelResult && !labelResult.success) {
+    throw new Error("--label must be one line of 1 to 200 characters without control characters.");
+  }
+  const label = labelResult?.data;
   const recipeResult = await withAnalysisDepth(
     await loadRecipe(flags.recipe, flags.recipeFile),
     analysisDepthSchema.parse(flags.depth),
@@ -339,7 +378,13 @@ export async function buildAnalyzeOptions(
     }
   }
   if (flags.video) await access(resolve(flags.video));
+  declareClock(flags.timelineOffset, flags.timecodeRate);
+  const fileClock = z.enum(["source", "reel"]).parse(flags.fileClock ?? "source");
   const common = {
+    ...(flags.timelineOffset !== undefined ? { timelineOffset: flags.timelineOffset } : {}),
+    ...(flags.timecodeRate !== undefined ? { timecodeRate: flags.timecodeRate } : {}),
+    fileClock,
+    calibrate: flags.calibrate !== false,
     recipe: recipeResult.recipe,
     customRecipe: recipeResult.custom,
     recipeSha256: recipeResult.sha256,
@@ -347,6 +392,7 @@ export async function buildAnalyzeOptions(
     apiKey,
     ...(model ? { model } : {}),
     ...(flags.focus ? { focus: flags.focus } : {}),
+    ...(label ? { label } : {}),
     ...(runNotes.length ? { runNotes } : {}),
     indexFps: recipeResult.indexFps,
     outputRoot: flags.output,
@@ -357,6 +403,7 @@ export async function buildAnalyzeOptions(
     retention,
     ...(flags.remoteFile ? { remoteFileName: flags.remoteFile } : {}),
     derivedTranscript: flags.derivedTranscript !== false,
+    ...(transcriptLanguage && { transcriptLanguage }),
   };
   return videoOnly
     ? {
@@ -395,7 +442,10 @@ const CLI_ANALYSIS_PROGRESS = {
 } satisfies { report(event: AnalysisProgressEvent): void };
 
 program.showSuggestionAfterError();
-if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
+// Loading this module runs the command. Guessing the entry point from argv[1]
+// failed silently through symlinks and launchers (bugs.md, 2026-11-13 and
+// 2026-11-22), so the only way not to run is an explicit library import.
+if ((globalThis as Record<symbol, unknown>)[CLI_LIBRARY_IMPORT] !== true) {
   program.parseAsync().catch((error: unknown) => {
     process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

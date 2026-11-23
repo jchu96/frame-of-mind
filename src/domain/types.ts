@@ -1,3 +1,4 @@
+import type { RunClock } from "./clock.js";
 export type JsonObject = Record<string, unknown>;
 
 export interface MeetingEvidence {
@@ -20,7 +21,8 @@ export type BuiltInRecipeId =
   | "requirements"
   | "action-items"
   | "repo-plan"
-  | "communication-coaching";
+  | "communication-coaching"
+  | "teaching-points";
 
 export interface RecipeExemplar {
   verdict: "accepted" | "rejected";
@@ -50,6 +52,12 @@ export interface AnalysisRecipe {
   interrogationInstruction: string;
   revision?: string;
   charter?: RecipeCharter;
+  /**
+   * Built-in recipes only; recipe files cannot set it (their schemas are
+   * strict). "settled" lets the screenshot step prefer a steadier nearby frame;
+   * absent means the direct seek to the cited time.
+   */
+  screenshotStrategy?: "settled";
 }
 
 export interface MeetingContextSource {
@@ -114,6 +122,7 @@ export interface DerivedTranscriptionSegment {
 }
 
 export interface DerivedTranscriptProvenance {
+  requestedLanguage?: string;
   origin: "gemini-audio";
   model: string;
   sha256: string;
@@ -151,6 +160,7 @@ export interface AnalysisRunV3 extends AnalysisRunBase {
 export type VersionedAnalysisRun = AnalysisRun | AnalysisRunV3;
 
 interface RunManifestBase {
+  clock?: RunClock;
   toolVersion: string;
   promptRevision: string;
   runId: string;
@@ -182,6 +192,8 @@ interface RunManifestBase {
   };
   derivedTranscript?: DerivedTranscriptProvenance;
   promptProvenance?: PromptProvenance;
+  /** Operator-supplied human label (`--label`). */
+  label?: string;
   artifacts: string[];
 }
 

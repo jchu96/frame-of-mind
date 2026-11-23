@@ -10,6 +10,8 @@ versions for durable schemas and prompts.
 | CLI/package | `0.5.0` | Semantic Versioning |
 | `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
+| `times.json` sidecar | `2` | increment for breaking shape/meaning |
+| exact-time test table | `1` | increment for changed conversion semantics |
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
@@ -27,15 +29,14 @@ versions for durable schemas and prompts.
 3. Confirm README and runbook commands.
 4. Confirm official provider and Google links.
 5. Run `bun install --frozen-lockfile`.
-6. Run `bun run check:sharded` locally when the machine is unloaded. On a busy
-   machine, defer the full run or serialize lanes with
-   `FRAME_OF_MIND_GATE_PARALLELISM=1`. Required GitHub CI at the exact PR head
-   is the merge oracle: `check`, `browser-e2e`, `auth-contract`, and all three
-   `fresh-clone` jobs must be green. A local advisory hosted-lane failure under
-   load is not itself a release blocker; record it and compare with base-known
-   failures in [#113](https://github.com/jchu96/frame-of-mind/issues/113) and
-   [#96](https://github.com/jchu96/frame-of-mind/issues/96). Investigate a new
-   regression rather than treating every hosted failure as known debt.
+6. Run `gate-lock bun run check:deploy` at the committed release head and
+   require `CHECK_DEPLOY status=PASS`. This includes the default gate and the
+   entire hosted lane; a hosted failure blocks release/deploy even though it
+   no longer blocks ordinary pull requests. Required GitHub CI at the exact
+   PR head remains the merge oracle: `check`, `browser-e2e`, `auth-contract`,
+   and all three `fresh-clone` jobs must pass. This check does not authorize a
+   later deployment: `gate-lock bun run deploy:hosted web` (or `workflows`) runs
+   both gates again at the revision being deployed before invoking Wrangler.
 7. Run `bun run smoke:gemini` with a maintainer key and generated media.
 8. Validate the repository skill.
 9. Test the skill installer in a temporary home directory.
@@ -108,11 +109,59 @@ reads re-validate stored manifests, rolling a deployed projection back to a
 pre-`derivedTranscript` release makes previously stored derived runs unreadable
 at detail-view time; roll the reader forward, not the bundles back.
 
+The optional `derivedTranscript.requestedLanguage` field on schema 2 and 3
+records the canonical BCP-47 hint used to derive a transcript. Its absence
+means no hint was recorded. It carries no language-detection result and
+changes neither the transcript digest nor its alignment. Both schemas use the
+same strict provenance validator across import, publication and SQLite/D1 reads.
+Roll readers forward before importing or serving bundles carrying this field.
+After such a bundle has been stored, a reader predating the field rejects it.
+
+The optional `label` field on manifest schema 2 and 3 records the operator's
+`--label` text: one trimmed line of 1 to 200 characters without control
+characters. Run folders are named by digests and run IDs, so the label is how
+a person tells runs apart; it is never sent to the model or to telemetry. Its
+absence means no label was given. It is added under the same additive rule and
+the same caveat: both strict validators gain it in one release, so roll
+readers forward before importing or serving labelled bundles.
+
 Schema 2 is intentionally incompatible with schema 1 imports. It adds a shared
 run ID, an analysis digest in the manifest, strict canonical timestamps, and
 recipe revision/content provenance. Re-run the original source analysis to
 migrate; do not hand-edit a v1 bundle into v2 because its evidence was not
 validated under the v2 timestamp and pairing rules.
+
+The optional `clock.transcriptClock` field distinguishes exact millisecond
+representability (`exact-ms`) from a retained legacy alignment (`unverified`);
+it does not change `transcriptAlignment.offsetSeconds` or assert model accuracy.
+
+The clocks addition preserves analysis schema versions 2 and 3. Both manifest
+versions accept optional clock provenance; `candidates.outOfRange` remains an
+optional outcome count (absent means zero). Analysis timestamps and digests do
+not change.
+
+### Time sidecar migration: schema 1 → 2
+
+New runs write only schema 2. A schema-1 reader sees `schemaVersion: 2` and must
+reject it as unsupported rather than guessing. The prior numeric `source` or
+`reel`, numeric `timeline`, top-level `precisionMs` and optional model `timecode`
+fields are gone. Each pointer now has a `time` object and optional `timeline`
+object, each with clock, decimal-string seconds, precisionMs and model origin.
+Only the exact declared offset at `timeline.offset` has frame/tick/timecode
+forms. A consumer pinned to a pre-update commit keeps producing and reading
+schema-1 bundles until it updates; historical files are not rewritten and no
+schema-1 sidecar is dual-written. Treat an old model timecode as an approximate
+observation, never as a frame-accurate cut point.
+
+Manifest changes are additive and optional: `clock.timeline.exactOffset` stores
+clock, frame count string, rational rate and unit. `timelineOffsetMs` is optional
+and may accompany it only when exactly representable and safe. A one-frame
+offset at 24000/1001 has no exact millisecond field. The new reader accepts
+manifests written at base 5a1b274, including legacy ms-only offsets between
+frames and the website re-import path. Older strict readers reject a new
+manifest carrying `exactOffset`; update the reader before importing such a
+bundle. This is forward acceptance of historical bundles, not a promise that
+older strict validators ignore new fields. `analysis.json` does not change.
 
 ## Prompt revision
 
@@ -131,3 +180,34 @@ Increment when changing:
 - built-in recipe behavior.
 
 Formatting-only code changes do not require a prompt revision.
+
+## Exact-time arithmetic contract
+
+The language-neutral table at `docs/contracts/time-cases.json` has its own
+`version: 2`. Its rules and expected outputs define exact frames at rational
+rates on named clocks, half-open instant containment, explicitly selected
+drop-frame, exact decimal-string ticks, and derived seconds as the first whole
+millisecond inside a frame, explicitly marked `secondsDerived: true`. These
+seconds are a reading form: reconstruct exact time from frames at the rate. A
+frame with no whole millisecond (for example frame 1 at 2000/1) reports
+`secondsUnavailable` instead of seconds, retaining exact frames, ticks and
+timecode. The rate is not rejected. Integers that may exceed JavaScript's safe range
+are strings in JSON. Whole-millisecond sources use an internal `1000/1` unit;
+without a declared video rate they expose milliseconds, seconds and ticks,
+with no video frame or timecode claim. Approximate times are a separate type.
+
+Version 2 adds `entryCases` for decimal seconds with an explicit edge and
+for Premiere subtitle milliseconds at up to 1000 fps. Consumers can continue
+to use the original `cases` array. The exact-time tests exercise both groups,
+and an independent oracle recomputes their expected outputs. Consumers in other
+languages can use the same table without adopting this implementation. Changes
+to the table's meaning require a new contract version. The table version is independent of
+the sidecar and manifest version policies above.
+
+The pure OTIO export uses `RationalTime.1` and `TimeRange.1` (start plus duration).
+Its floating rate is explicitly lossy; unsafe integer frame values are refused.
+It is an interchange boundary, never the arithmetic implementation. Unlike OTIO,
+this contract does not infer drop-frame, truncate frame values, snap nearby
+rates, accept skipped DF labels, or wrap elapsed timecode at 24 hours. Table rows
+annotate intentional differences from OTIO defaults. Nonstandard rational rates
+(such as 11/1) use nominal-rate labels rather than claiming SMPTE conformance.

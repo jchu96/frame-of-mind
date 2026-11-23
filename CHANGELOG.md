@@ -5,6 +5,40 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. A library import opts out by setting the global `Symbol.for("frameofmind.cli.libraryImport")` flag before loading it. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
+
+- `analyze --label <text>` records a human label for the run (for example the source title) as optional `label` in manifest schema 2 and 3, uses it as the video-only report heading, and prints it after the run path. It is never sent to the model or telemetry. Roll readers forward before importing labelled bundles.
+
+- Run bundles with screenshots gain `contact-sheet.png`: up to the first 100 moment screenshots tiled in one image, labelled with record number and cited time, listed in the manifest's `artifacts`. The run warns when screenshots are left off the sheet or the sheet cannot be built, and completes either way. Labels are drawn in-process, so ffmpeg builds without `drawtext` work.
+
+- `teaching-points` screenshots prefer a settled frame: ffmpeg samples within one second of the cited time, inside the candidate range, and prefers the steadiest frame over one caught mid-transition. It can miss a low-contrast cut and show the neighbouring shot. Every other recipe keeps the frame at the cited time, unchanged.
+
+- Added the built-in `teaching-points` charter recipe for instructional and explainer videos, with a fixed detail-label vocabulary (Teaching point, Narrator's words, Numbers, Reason given, On screen, Picture says more than words, Maker-specific), accepted and rejected exemplars, and rejection of title cards, branding and calls to subscribe.
+
+- Added exact decimal-to-frame snapping with explicit range edges and round-trip Premiere subtitle milliseconds at video rates up to 1000 fps (ADR 0028).
+
+- Both `transcribe` and `analyze` accept `--transcript-language <tag>` as a spoken-language hint for transcription only. Speech stays in its original language. The speakers header, transcript JSON and derived-transcript manifest provenance record the requested tag when used. On `analyze`, `--note language=<path>` guides analysis prompts only. Live transcription fidelity is untested.
+
+- Transcription now requests the original spoken languages and preserves mid-sentence language switches in its instructions.
+
+- 2026-11-18: Temporarily accept the unpatched picomatch production advisory in CI, with an automatic failure after its 2026-12-18 review deadline; other high and critical advisories still fail.
+
+- 2026-11-17: Store exact times as rational frame counts; add frame/timecode timeline offsets and a language-neutral contract. `times.json` schema 2 preserves model precision without frame/timecode claims and emits exact offsets separately (ADR 0027).
+
+- 2026-11-13: Limit media tools and OAuth browser openers to explicit runtime environment variables so CLI and local Studio credentials stay in the parent process.
+
+- 2026-11-13: Adopted a contributed standalone `transcribe` workflow with private SRT/speaker files, optional source-clock JSON, visible audio retention, one window retry and cue-safe rendering.
+
+- 2026-11-13: Treat contradictory HTTP/JSON provider statuses as other across SDK calls and direct uploads without parsing message text or changing retries.
+
+- 2026-11-13: Classify CLI provider failures as refused, not_found, rate_limited, or other using HTTP status; include optional classification in version 1 failure manifests.
+
+- Run fast/local checks for every pull request; retain the complete hosted lane
+  nightly, on demand, and before deployment. Add `check:deploy` and a
+  `deploy:hosted` wrapper that runs both gates successfully in the same
+  invocation before calling Wrangler; writable receipts cannot authorize deploys.
+  Required auth, browser, and fresh-clone CI jobs are unchanged.
+
 - 2026-11-13: Added opt-in parallel detail analysis, adopted from a field contribution, with ordered results and a completion-time breaker spend bound.
 
 - 2026-11-13: Fixed linked CLI execution and package version reporting; added hidden key entry, best-N selection, full indexed coverage with `--max-moments all`, per-run notes, and ffmpeg in the CI check job. The tool's run-note projection
@@ -313,3 +347,9 @@ Semantic Versioning.
   deterministic high-stakes clip analysis.
 - Hosted imports are manual; there is no automatic local-to-cloud sync.
 - The MCP server is an explicitly designed next iteration, not part of v0.1.0.
+
+- 2026-11-13: Added declared clocks, exact optional timeline timecode, synthetic clip-clock calibration, and pre-limit out-of-range candidate filtering (#120).
+
+- 2026-11-13: Clock review fixes retain legacy model alignments with an unverified label, require full frame timing for media-derived rates, and settle upload streams before deleting calibration scratch.
+
+- 2026-11-13: Preserve explicit numeric transcript offsets that cannot be windowed exactly; retain context and label the clock unverified instead of aborting before indexing.

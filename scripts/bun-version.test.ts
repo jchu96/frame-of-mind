@@ -59,5 +59,7 @@ test("CI check retains the high-severity production audit", async () => {
     (step.run ?? "").split(/\r?\n/).map((line) => line.trim()),
   );
   expect(commands, "CI check must run bun audit --production --audit-level=high")
-    .toContain("bun audit --production --audit-level=high");
+    .toContainEqual(expect.stringMatching(
+      /^bun audit --production --audit-level=high(?: --ignore=GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4})?$/,
+    ));
 });

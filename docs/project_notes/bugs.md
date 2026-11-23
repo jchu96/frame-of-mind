@@ -1,5 +1,15 @@
 # Bugs and Failure History
 
+## 2026-11-13 — Hosted checks failed on unchanged source
+
+- Evidence: at base `41766a0`, four reduced hosted-lane passes preceded a
+  fifth-run `check:hosted-auth` sign-out fixture failure. Two successful E2E
+  runs needed a browser retry. The machine was shared and busy.
+- Cause: not established; this evidence does not attribute the failures to load.
+- Disposition: move the whole hosted lane to nightly/manual and the checked
+  deploy prerequisite. No hosted test, timeout, retry, or pin changed.
+- Return criterion: [hosted gate quarantine](../HOSTED_GATE_QUARANTINE.md).
+
 ## 2026-11-12 — Publication atomicity fixture drifted from D1 migrations
 
 - Symptom: the partial-write test failed with a missing `outcome_json` column
@@ -655,8 +665,10 @@
   writes light/dark desktop and 390px screenshot receipts.
 - Review follow-up: the first implementation left stylesheets PR-safe even
   though this contrast oracle runs only in the hosted lane. Theme stylesheets
-  and `app.config.*` now force the sharded tier with a
-  `theme_contract_paths` receipt. The same correction gives `::selection` a
+  and `app.config.*` originally forced the sharded tier with a
+  `theme_contract_paths` receipt. The 2026-11-13 whole-lane quarantine supersedes
+  that selection; the contrast oracle remains nightly and pre-deploy. The same
+  correction gives `::selection` a
   stable dark foreground, clears the dimmed-on-accented token matrix, and makes
   the published evidence excerpt a required both-scheme fixture. The Workflow
   screenshot rotation now preserves the auth contract's separately owned
@@ -680,3 +692,18 @@ partial with a coverage warning".
 The main-module guard compared the module URL to unresolved argv[1], so a
 linked executable never dispatched commands. Resolve the executable realpath;
 the built-CLI symlink test and package-version bump fixture prevent recurrence.
+
+2026-11-22: recurred on an operator Mac. Cause: the `bun link` target is the
+checkout's own `dist/`, last built before the fix, and the upgrade procedure
+did not rebuild it, so the stale build also showed the pre-ADR 0024 upload
+help. Any argv[1] inference stays silent when another module imports the CLI,
+so the guard is gone: loading `cli.js` runs the command unless the importer
+sets the explicit library-import flag (Vitest setup only). `test/cli-link.test.ts`
+runs `--help` through the `bun link` layout under node, bun and the shebang,
+and through an importing launcher; the old guard fails it.
+
+- 2026-11-13: Adopting standalone transcription exposed a literal round-trip oracle incompatible with the existing caption reader; ADR 0025 preserves reader normalisation, and tests use a separate structural arrow oracle.
+
+- 2026-11-13: Six process starts inherited the complete parent environment. They now pass an explicit media/opener allow-list; per-site child captures verify the shipped calls, while a simple source convention check flags plain imports outside the helper and does not detect computed or indirect access.
+
+- 2026-11-17: Nearest-ms storage lost frame identity at fractional rates: frame 2 at 24000/1001 became 83 ms and rendered frame 1; 6,593/14,386 frames at that rate and 8,393/17,983 at 30000/1001 failed in the first ten minutes. Store exact frames/rational rate; A01 sequential labels and the independent language-neutral table catch recurrence. The old millisecond containment renderer was correct for its input (ADR 0027).

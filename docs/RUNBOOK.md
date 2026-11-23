@@ -164,6 +164,16 @@ transcript. Both degrade to a warning when it is missing, so an analysis still
 completes. Use `--no-screenshots` and `--no-derived-transcript` to skip them
 deliberately rather than relying on the failure path.
 
+A moment screenshot is the frame at the cited time, with one exception: for
+the `teaching-points` recipe, ffmpeg samples five frames a second within one
+second of the cited time, inside the candidate's range, and prefers a settled
+frame when the cited one is caught mid-transition (a caption fading, a panel
+sliding in). It stops at a strong cut but can miss a low-contrast cut between
+shots of similar brightness, and so can show the neighbouring shot. When it
+does not move, the screenshot is the exact cited frame. No model call is
+involved. Every other recipe, custom recipes included, always uses the frame
+at the cited time.
+
 ### 1.4 Clone and install
 
 ```bash
@@ -510,6 +520,11 @@ frameofmind analyze \
   --recipe issue-review
 ```
 
+Video-only runs land under a folder named by the recording's digest. Add
+`--label "<source title>"` to record a human label in `manifest.json`, head
+`analysis.md` and `report.html` with it, and print it after the run path. The
+label is never sent to the model.
+
 The core orchestrator and Studio job/projection boundaries support explicit
 video-only schema-v3 runs. If a context source is selected, its failure must
 fail the run; it cannot silently downgrade to video-only. See
@@ -535,6 +550,48 @@ nearby transcript excerpts.
 Analyze separate windows independently when they use different offsets. Keep
 the original recording unchanged and delete only the derived temporary clips
 after review.
+
+The transcript offset is separate from the editing timeline. Declare the
+sequence location with `--timeline-offset 0` or unsigned seconds up to three
+decimals. At a declared `--timecode-rate`, also use whole frames (`86400f`) or
+timecode (`01:00:00:00`, or `00:01:00;02` with `29.97df`). Seconds between frame
+boundaries are refused with the two neighboring frames: choose the intended
+frame explicitly, rather than rounding. Use `--file-clock reel` for a reel.
+
+Read `times.json` schema 2: `entries[].time` and `entries[].timeline` are model
+observations with decimal-string seconds, `precisionMs: 1000`, origin and clock.
+They have no frames, ticks or timecode, including when a rate is declared.
+Markdown, HTML and progress lines retain `≈1 s; model`. The exact declared
+offset is separate under `timeline.offset`, with every available form. Use its
+frames/rate or ticks for exact transfer. Reading seconds identify the first
+whole millisecond inside a frame, not necessarily the exact frame boundary, and
+are explicitly marked derived. Do not use them to reconstruct the exact time;
+use frames at the rate. If `secondsUnavailable` appears (for example frame 1
+at 2000/1), there is no whole millisecond inside that frame. The rate is still
+accepted and all other available exact forms remain usable.
+
+With no declared rate, use seconds offsets. Exact values expose milliseconds,
+seconds and ticks only; frames and timecode are unavailable. Declare a known
+sequence rate, or use the exact `from-media` probe, when video frame forms are
+needed. Never infer a rate from a model timestamp. Time of day is not a cut
+point; align a time-of-day transcript through its separate transcript offset.
+Existing bundles remain valid; update sidecar consumers for schema 2 before
+reading new outputs, without relabeling old schema-1 files.
+See README **Clocks** for the exact rate forms and `from-media` restrictions.
+
+Run `frameofmind calibrate [--model <id>] [--json]` to refresh the synthetic
+flash measurement and see its token cost. Analyze normally calibrates on first
+use and after 30 days. `--no-calibrate` labels the run unverified. The cache
+lives under the platform application-data root's `calibration/` directory;
+probe media is temporary and its remote upload is deleted on terminal paths.
+
+When the duration is known, indexing receives only timestamped transcript
+lines mapping into `[0, duration)` when an explicit transcript offset is given.
+Those lines are rebased to video time. Prose without timestamps remains
+unchanged and is labelled `transcript not windowed`. Candidates beyond the
+video end are counted in `outOfRange`, before the moment limit; unknown
+duration leaves all candidates eligible and the summary says the guard did
+not run.
 
 ### 3.7 Observe progress
 
@@ -667,6 +724,78 @@ The CLI and the authenticated Local Studio composer are both supported
 execution entry points; they share `AnalysisOrchestrator` rather than invoking
 one another.
 
+### 3.11 Transcribe
+
+Run `frameofmind transcribe "<recording>" [-o "<directory>"] [--model <id>] [--transcript-language <tag>]`
+when you need reusable reference-grade context from the recording's audio.
+An adopted contribution supplies this standalone workflow. It uses the same
+600-second transcription windows, 15-second lead-in overlap, prompt, schema,
+model and merge as the analyze ladder.
+
+Standalone and derived transcription ask for the original spoken languages,
+including switches within a sentence, and instruct the model never to translate.
+`Speaker 1`, `[inaudible]` and `[crosstalk]` are format markers for speech in
+any language. The CLI and local Studio extract the first audio track. Hosted
+Studio sends the resolved media. Live transcription fidelity on real non-English
+speech is untested.
+
+On both `transcribe` and `analyze`, pass `--transcript-language <tag>` (for
+example, `--transcript-language fr-CA`) to hint at the likely spoken language
+in each audio window. Other languages may also be present. The flag reaches
+transcription only. Use `--note language=<path>` on `analyze` to give language
+instructions to the index and detail analysis prompts. Wrappers must pass
+the language hint explicitly. For example,
+`frameofmind analyze --source none --video "<recording>" --transcript-language fr-CA`
+uses the hint while deriving the transcript from that recording.
+
+The speakers header and optional transcript JSON record the canonical tag as
+`requestedLanguage`. An analysis that derives a transcript records it under
+`derivedTranscript.requestedLanguage` in the manifest. With a supplied transcript,
+`analyze` reports that the hint was unused. Combining the flag with
+`--no-derived-transcript` is an error.
+
+- Default output: `<stem>.srt` and `<stem>_speakers.txt` beside the input.
+  `--json` adds `<stem>.transcript.json`; its segment times are numeric seconds
+  and its clock is `source`. Timing is whole-second reference grade.
+- Pass the SRT to `analyze <stable-id> --source file --context-file "<stem>.srt"
+  --video "<recording>"` for repeated recipe runs. The SRT reader strips
+  markup-like `<…>` spans. **Literal text fidelity lives in `_speakers.txt`:**
+  pass that file as `--context-file` when those spans matter. The header is a
+  harmless provenance comment. JSON and speakers retain blank segments.
+- SRT cue text flattens line breaks and neutralises `-->`. Blank cues are
+  skipped and the remainder renumbered. `blankCues` and `adjustedCues` appear
+  in the JSON and terminal summary. A nonpositive cue duration gets a one-second
+  SRT end adjustment; JSON preserves original segment seconds.
+- `--retention provider|run` overrides `FRAME_OF_MIND_UPLOAD_RETENTION`; default
+  is `provider`. `--keep-upload` / `--delete-upload` alias those choices.
+  Conflicting settings fail before upload. Each kept audio upload is reported
+  immediately on stderr with its expiry or `unknown`, including failed jobs.
+  `run` attempts deletion for every returned upload, including retry attempts;
+  deletion failures are reported as unconfirmed, never silently successful.
+- Requires `GEMINI_API_KEY`, `ffmpeg`, `ffprobe`, a readable input and audio.
+  Check [§6.20](#620-ffmpeg-unavailable) for media-tool failures. Existing output
+  targets fail before upload unless `--force` is given. `--force` never permits
+  replacing the input recording itself.
+- A failed window gets one retry after 20 seconds. A second failure writes no
+  transcript files and exits non-zero; Ctrl-C stops after the current window,
+  cleans local temporary audio and exits 130 without publishing. Provider
+  exception text and transcript bodies are never printed.
+- Transcription adds approximately 32 audio tokens per second, plus output
+  tokens, overlap and retries (ADR 0015). The summary reports actual token use
+  when the adapter supplies it; provider pricing determines the cost.
+- Each output uses a same-directory temporary file, made `0600` before speech
+  is written, then atomically published. Without `--force`, a hard link refuses
+  concurrent target creation; with `--force`, rename replaces the target.
+  Temporary files are removed on failure. Publication is per file, not a
+  transaction over the set: a filesystem failure may leave earlier complete
+  files, whose paths have already been printed. Resolve permissions and use
+  `--force` deliberately for a retry.
+
+These files hold full speech content outside any run bundle. Keep them private,
+never attach them to issues or commit them, use OS disk encryption, and delete
+only the exact exports you intend to remove. There is no automatic local export
+expiry. See [ADR 0025](adr/0025-standalone-transcript-files.md).
+
 ## 4. Review procedure
 
 ### 4.1 Open manifest first
@@ -692,7 +821,9 @@ Open:
 
 1. `analysis.md` for concise review;
 2. `report.html` for visual review;
-3. `moment-*.png` for frame evidence;
+3. `contact-sheet.png` to scan the screenshots at once (up to the first 100;
+   the run warns when more are left off), then `moment-*.png` for frame
+   evidence;
 4. `analysis.json` for accepted and rejected records.
 
 ### 4.3 Human checks
@@ -759,6 +890,28 @@ Actions:
 2. set the key in the current shell;
 3. run `frameofmind doctor`;
 4. do not print the value.
+
+### Provider error classes
+
+CLI provider failures expose a class derived from HTTP status and checked against
+structured error status fields, plus the HTTP status when available. Contradictory
+HTTP/JSON codes or canonical statuses produce `other`, never key/project advice.
+Provider message text is not used for classification.
+The same data appears as optional `error.provider: { class, status? }` in
+`failure-manifest.json` (schema version 1). Existing records without it remain
+valid. No provider message, key, URL, or token is copied into these diagnostics.
+
+| Class | Status | Operator action |
+| --- | --- | --- |
+| `refused` | 401, 403 | Check key validity and project access. For retained files, use a key from the project that uploaded the file. |
+| `not_found` | 404 | Verify the file/resource or model identity. A retained upload may have expired; upload the local recording again. |
+| `rate_limited` | 429 | For generation, existing retries have been exhausted; direct uploads do not retry. Check usage, quota and billing; wait for a rate-window reset or adjust quota before rerunning. |
+| `other` | Any other status, or none | Check service availability, request configuration and network connectivity. Use the safe status and telemetry code when investigating. |
+
+A 400 remains `other`: the installed SDK exposes no structured invalid-key
+reason outside its message. A status alone cannot distinguish quota from billing
+or a particular reason for refused access. Candidate detail outcomes retain
+`generation_failed`; retry policy and `gemini_http_<status>` telemetry are unchanged.
 
 ### 6.2 Gemini returns 400/401 invalid API key
 
@@ -895,8 +1048,11 @@ only failing field paths and issue codes. The adapter fails closed; it does not
 truncate, cast, expose the response, or weaken the durable schema.
 
 On a terminal whole-run failure, the orchestrator attempts exact deletion up to
-three times whenever it has a Gemini file identity and atomically publishes
-only `failure-manifest.json`. The receipt contains sanitized phase/error fields
+three times for each upload it does not retain: the recording under
+`--retention run`, and always the derived-transcript audio. A recording kept
+under the default `provider` retention, or reused with `--remote-file`, is not
+deleted and stays until provider expiry. The orchestrator then atomically
+publishes only `failure-manifest.json`. The receipt contains sanitized phase/error fields
 and one cleanup state:
 
 - `not_obtained` when upload failed before a remote identity was returned;
@@ -1091,6 +1247,31 @@ Neither failure aborts a run. Without screenshots the accepted records keep
 their timestamps and lose their frames; without a derived transcript the
 analysis proceeds on recording evidence alone.
 
+Media tools receive only `PATH`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`,
+`DYLD_FALLBACK_LIBRARY_PATH`, `LANG`, `LANGUAGE`, `HOME`, `TMPDIR`, `TMP`,
+`TEMP`, and the locale variables `LC_ALL`, `LC_ADDRESS`, `LC_COLLATE`,
+`LC_CTYPE`, `LC_IDENTIFICATION`, `LC_MEASUREMENT`, `LC_MESSAGES`, `LC_MONETARY`,
+`LC_NAME`, `LC_NUMERIC`, `LC_PAPER`, `LC_TELEPHONE`, `LC_TIME`.
+Windows additionally carries `SystemRoot`, `WINDIR`, `PATHEXT`, `USERPROFILE`;
+variable names are matched case-insensitively and keep their original spelling.
+
+The OAuth browser opener additionally receives `DISPLAY`, `WAYLAND_DISPLAY`,
+`XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `XDG_DATA_HOME`,
+`XDG_DATA_DIRS`, `XDG_CONFIG_HOME`, `XDG_CONFIG_DIRS`, `XDG_CACHE_HOME`,
+`XDG_CURRENT_DESKTOP`, `XDG_SESSION_TYPE`, `DESKTOP_SESSION`, `BROWSER`, and
+Windows `ComSpec`. Other variables, including provider credentials, are omitted.
+These lists apply to the CLI and local Studio.
+
+A convention check keeps plain process-module access in the shared helper. It
+does not detect computed or indirect access; per-site marker tests run the
+children to verify the helper environment at each shipped call.
+
+If a tool works in your shell but fails here, report the OS, executable name,
+and the **name and purpose** of any required missing variable. Do not include
+its value, an environment dump, credentials, media paths, or authorization URLs.
+The allow-list must be reviewed before adding a variable; do not forward the
+whole environment to work around a failure.
+
 ### 6.21 Upload retention and cleanup
 
 If manifest says:
@@ -1177,6 +1358,40 @@ and malformed projection rows rather than attempting to render them as v2.
 Never change only `schemaVersion`; that does not create the missing digest,
 recipe provenance, or timestamp validation.
 
+### 6.26 Clip clock unverified
+
+`clip clock unverified` means there is no usable measurement for the selected
+model, calibration was disabled, ffmpeg was unavailable, or the synthetic
+flash response did not identify either clock. Evidence keeps the historical
+file-clock interpretation; this label does not establish that interpretation
+as correct. Ensure ffmpeg is installed and run `frameofmind calibrate --json`.
+An answer near 27 s means absolute, near 7 s means relative, otherwise the
+measurement remains unverified. The probe upload is deleted even on failure.
+
+If a cached absolute measurement disagrees with runtime evidence, the run
+warns and records the relative-looking response count in `manifest.clock`.
+Refresh calibration and inspect the source before relying on those times.
+A missing ffprobe only blocks `--timecode-rate from-media`; declare the exact
+sequence rate explicitly if known. Never approximate a fractional rate.
+
+`from-media` requires the full video to have constant presentation boundaries
+and durations from zero, exactly representable in the stream time base. Equal
+summary rates do not establish that. Missing, variable, or quantized timing,
+and scans exceeding 60 seconds or 32 MiB, are refused before provider work.
+
+`transcript clock unverified` is separate from clip calibration: a legacy model
+alignment could not be represented exactly in milliseconds. Context selection
+keeps its historical behavior and original offset; it is not rounded into a
+verified clock. `manifest.clock.transcriptClock` is `exact-ms` when conversion
+is representable, `unverified` otherwise. Neither value verifies the model's
+alignment against the recording.
+
+Explicit numeric transcript offsets supplied through the service/API follow the
+same rule before indexing: unrepresentable offsets or mapped times retain the
+original transcript, labelled `transcript not windowed` and `transcript clock
+unverified`. Exact offsets still window and rebase timestamped lines when the
+video duration is known. This does not change CLI offset parsing.
+
 ## 7. Security and incident response
 
 ### 7.1 Lost or reassigned device
@@ -1223,8 +1438,15 @@ git status --short
 git pull --ff-only
 bun install --frozen-lockfile
 bun run check
+bun run build:cli
+frameofmind --help
 bun --no-env-file scripts/test-fresh-clone.ts upgrade
 ```
+
+The linked `frameofmind` command runs this checkout's `dist/cli.js`; a pull
+changes nothing it runs until `bun run build:cli` does. `bun run check` also
+builds, but only if every earlier step passes, so run the build explicitly and
+confirm `--help` prints usage.
 
 The upgrade proof clones the previous release tag (or the current branch's
 `origin/main` merge-base), installs it with its frozen lockfile, fast-forwards
@@ -1314,9 +1536,23 @@ Before applying migration 0013 to a live database, inspect the live schema for
 foreign keys from every table to `better_auth_account` and **stop if any exist**:
 the table rebuild can cascade-delete referencing rows. The migration-file test
 does not establish this precondition for a live database. Take a database backup
-before applying the migration. Deployment also requires three consecutive passes
-of `bun run check:lane:hosted` on an otherwise idle machine at the exact commit
-being deployed; the advisory CI lane is not a substitute for this deploy gate.
+before applying the migration. Use `gate-lock bun run check:deploy` for release
+validation without deployment. Deploy through
+these commands at the committed revision, sibling first:
+
+```bash
+gate-lock bun run deploy:hosted workflows
+gate-lock bun run deploy:hosted web
+```
+
+Only these named targets are accepted; unset `CLOUDFLARE_ENV` in the process
+and root dotenv files. Each deploy invocation runs fast/local and the whole hosted lane itself; only
+successful checks with unchanged HEAD and source inputs continue to Wrangler.
+A failed gate or source change refuses deployment. Tracked edits refuse,
+except screenshots regenerated by hosted contracts. This is enforced by
+`scripts/hosted-deploy-gate.ts`. It neither reads nor writes deployment success
+files: hand-written or old receipts and prior nightly/preflight success cannot
+substitute for checks in this invocation.
 
 The pinned MCP SDK currently brings transitive Hono advisories that affect its
 static-server path. Frame of Mind does not use that path. CI fails high/critical
@@ -1691,8 +1927,7 @@ runtime flag until the direct-upload and Workflow contracts both pass.
 
 Release preparation:
 
-1. Run `bun run rehearse:hosted-release`, then
-   `gate-lock bun run check:sharded`; require
+1. Run `gate-lock bun run check:deploy`; require `CHECK_DEPLOY status=PASS`,
    `HOSTED_RELEASE_REHEARSAL PASSED` and every hosted contract receipt.
 2. Record the hosted media session cap, declared-size ceiling, upload TTL, and
    retained-media days. Stop
@@ -1705,7 +1940,9 @@ Release preparation:
    entry, `DB`, `ASSETS`, `RETAINED_MEDIA`, `HOSTED_WORKFLOWS`, and
    `HOSTED_WORKFLOW`, with no `100329`.
 5. Install `GEMINI_API_KEY` as a secret on both Workers, deploy the sibling
-   first and public Worker second with the runtime flag still false. Verify
+   first through `gate-lock bun run deploy:hosted workflows`, then the public Worker
+   through `gate-lock bun run deploy:hosted web`.
+   Each invocation reruns both gates. Keep the runtime flag false. Verify
    authenticated requests to `/api/hosted/jobs`, `/api/hosted/media`, and
    `/hosted/activity` all return 404. Record status codes only.
 

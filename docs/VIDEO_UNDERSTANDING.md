@@ -32,6 +32,7 @@ Video analysis can support several different outcomes:
 | Repository implementation artifact | `repo-plan`, then repository grounding | findings/brief plus composer |
 | Communication or meeting self-review | `communication-coaching` | coaching report |
 | Process walkthrough to SOP | custom recipe | procedure |
+| Instructional or explainer video | `teaching-points` | technical explanation |
 | Technical or construction explanation | custom recipe | technical explanation |
 | Targeted video question | custom recipe plus `--focus` | Q&A |
 
@@ -72,6 +73,13 @@ plausible alternative.
 Do not put credentials, signed URLs, or instructions to publish into context.
 
 ## Transcript ladder
+
+For reusable context, run `frameofmind transcribe "<recording>"` once and pass
+`<stem>.srt` to multiple `analyze` runs with `--source file --context-file`.
+The standalone command writes operator-owned private files outside run bundles;
+its audio uploads follow operator retention (default provider expiry), unlike
+the analyze ladder's immediate derived-audio deletion. Use `<stem>_speakers.txt`
+when literal markup-like text matters. See [ADR 0025](adr/0025-standalone-transcript-files.md).
 
 A run resolves its transcript from the first rung that produces one:
 
@@ -223,6 +231,16 @@ Prompts should:
 - bound arrays and field lengths;
 - request concise conclusions, not hidden chain-of-thought;
 - include a small conforming example when the schema is non-obvious.
+
+Clip-time evidence uses the measured model clock. A generated 40-second
+black video flashes white at file second 27; a single structured probe over
+seconds 20–35 distinguishes absolute (~27) from relative (~7) responses with
+±2-second tolerance. Other responses leave the clock unverified. Measurements
+are cached for 30 days per model, refreshed automatically or by `calibrate`.
+Relative evidence is converted to file time before local range validation;
+unverified mode retains the existing interpretation and labels outputs.
+Explicit-offset transcript lines are windowed and rebased before indexing.
+No prompt reads timecode from pixels or a container tag.
 
 ## Recipe patterns
 

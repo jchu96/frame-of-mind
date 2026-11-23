@@ -43,7 +43,8 @@ with SHA-256 provenance).
 ## Local-first, private by default
 
 Everything runs from your machine: your recording goes directly to Gemini for
-analysis and is deleted when it finishes; results live on your disk. Meeting
+analysis. By default the upload stays until the provider expires it (ADR 0024);
+`--retention run` deletes it when the run ends. Results live on your disk. Meeting
 context from Bluedot or Granola (or a plain transcript file) enriches a run
 when you have it — a bare recording works too, and Frame of Mind can derive
 its own transcript from the audio.
@@ -115,12 +116,13 @@ Analysis intent is a recipe:
 | `action-items` | commitments, owners, dates, dependencies |
 | `repo-plan` | grounded change requests, risks, validation, open questions |
 | `communication-coaching` | observed delivery, intent/impact, missed cues, guidance |
+| `teaching-points` | what an explainer video teaches: rules, reasons, numbers, diagrams, maker-specific claims |
 
 Custom JSON recipes are supported, either as two instruction strings or as a
 structured **charter** — stance, allowed questions, acceptance, label
 vocabulary, worked exemplars, rejection, and boundaries — rendered
 deterministically by the executor under the untrusted-data guard (ADR 0016).
-The built-in `issue-review` recipe is a charter. See
+The built-in `issue-review` and `teaching-points` recipes are charters. See
 [docs/RECIPES.md](docs/RECIPES.md).
 
 ## How it works
@@ -188,13 +190,20 @@ The durable source of truth is local:
 ├── analysis.md
 ├── report.html
 ├── manifest.json
-└── moment-01.png
+├── moment-01.png
+└── contact-sheet.png
 ```
+
+`contact-sheet.png` tiles the moment screenshots in one image, up to the first
+100, each labelled with its record number (as numbered in `analysis.md` and
+`report.html`) and cited time. The run warns when screenshots are left off it
+or it cannot be built. It is written only when screenshots are, and like them
+it is sensitive.
 
 > [!WARNING]
 > `report.html` is a rendered artifact, not the source of truth. It is safe
 > to open locally and easy to hand to a reviewer, but it is sensitive:
-> screenshots are embedded.
+> screenshots are embedded. So is `contact-sheet.png`.
 
 ## Requirements
 
@@ -229,16 +238,15 @@ Verify:
 frameofmind --help
 frameofmind --version
 frameofmind recipes
+frameofmind transcribe --help
 frameofmind key set
 frameofmind doctor
 ```
 
-Contributors should run the required pull-request gate; hosted-sensitive
-changes automatically upgrade it to the full three-lane gate when a base ref
-is supplied unless the CI-equivalent lane split is explicit:
+Contributors run the fast/local pull-request gate for every change:
 
 ```bash
-FRAME_OF_MIND_GATE_HOSTED_LANE_SEPARATE=1 FRAME_OF_MIND_GATE_BASE_REF=origin/main bun run check:pr
+bun run check:pr
 ```
 
 For Better Auth or D1 boundary changes, run the focused required contract too:
@@ -247,27 +255,19 @@ For Better Auth or D1 boundary changes, run the focused required contract too:
 bun run check:auth-contract
 ```
 
-Run `bun run check:pr` for pull requests and `bun run check:sharded` when the
-machine is unloaded. On a busy machine, defer the full run or use
-`FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes. Required CI at the exact
-PR head is the merge oracle; `bun run check` remains the serial fallback.
+The whole hosted lane runs nightly and on manual dispatch, and must pass
+`gate-lock bun run check:deploy` for release validation. Deploy with
+`gate-lock bun run deploy:hosted web` (or `workflows`): every invocation runs the
+default gate and whole hosted lane before invoking Wrangler on the same source. `check:sharded` remains an explicit all-lane run; `check` remains the
+complete serial fallback.
 
-GitHub CI keeps the minimum hosted trust-boundary proof required without making
-the complete hosted suite a merge bottleneck. The secret-free `auth-contract`
-job builds the Worker against an ephemeral local D1 and proves synthetic Better
-Auth sign-in, membership denial, `ba:<userId>` ownership, principal isolation,
-and next-request revocation. The 40-minute `hosted-contracts` job runs the
-broader Workflows, media, browser, and release checks, but is not a required
-context. As of 2026-09-08 it has been steadily red on `main` since 2026-08-31:
-observed failures include the audit-query timeout in
-`test:hosted-access-http:better-auth`, the media-test step timeout, and the
-Better Auth Workflow terminal-stage assertion. These remain tracked in
-[issue #113](https://github.com/jchu96/frame-of-mind/issues/113) and
-[issue #96](https://github.com/jchu96/frame-of-mind/issues/96), non-blocking by
-maintainer decision on 2026-08-23. No repository secret or Better Auth API-key
-plugin is needed for pull requests, including forks. The required `check`, three fresh-clone
-platforms, and browser E2E job remain separate failure domains. See
-[docs/TESTING.md](docs/TESTING.md#ci).
+Required CI at the exact PR head remains the merge oracle: `check`,
+`auth-contract`, `browser-e2e`, and all three `fresh-clone` jobs. The secret-free
+`auth-contract` builds the Worker against ephemeral local D1 and proves
+synthetic Better Auth sign-in, membership, ownership, isolation and revocation.
+No repository secret or Better Auth API-key plugin is needed for pull requests,
+including forks. See [testing](docs/TESTING.md#ci) and the
+[hosted quarantine return rule](docs/HOSTED_GATE_QUARANTINE.md).
 
 The full fresh-clone Studio boot is continuously tested on macOS and Linux.
 On Windows, use WSL or Git Bash with Bun 1.4.4+ and keep the checkout on LF:
@@ -416,6 +416,12 @@ frameofmind analyze "<meeting-id>" \
 The charter format (recommended for new recipes) and its slot rules are
 documented in [docs/RECIPES.md](docs/RECIPES.md).
 
+With an explicit transcript offset, timestamped context is windowed to the
+video duration and rebased before indexing. Candidates starting at or after
+the known video end are dropped before the moment limit, receive no detail
+calls, and are counted as `outOfRange` (issue #120). Unknown duration disables
+that guard and is stated in the summary.
+
 ### Command reference
 
 ```text
@@ -423,6 +429,7 @@ frameofmind auth <bluedot|granola>
 frameofmind doctor
 frameofmind recipes
 frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|none> [options]
+frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|run] [--force] [--json]
 ```
 
 | Option | Purpose |
@@ -433,8 +440,14 @@ frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|non
 | `--context-file <path>` | required for `--source file` |
 | `--video <path>` | preferred local recording |
 | `--recording-url <url>` | validated Bluedot signed URL fallback |
+| `--timeline-offset <time>` | exact sequence offset: seconds (up to three decimals), `Nf` frames, or timecode |
+| `--file-clock source\|reel` | input media clock; defaults to source |
+| `--timecode-rate <rate>` | video rate for exact offsets; see Clocks for accepted forms |
+| `--no-calibrate` | skip the synthetic probe and label the clip clock unverified |
+| `calibrate [--model <id>] [--json]` | refresh the model clock measurement and report token cost |
 | `--transcript-offset <time>` | full transcript time at video `00:00` |
 | `--focus <text>` | prioritize a repository/workflow/concern |
+| `--label <text>` | human label for the run (for example the source title), up to 200 characters on one line; recorded as `label` in `manifest.json`; the heading of `analysis.md` and `report.html` for a video-only run, a "Label" line under the meeting title otherwise; printed after the run path; never sent to the model |
 | `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
 | `--model <id>` | Gemini model for both current passes |
 | `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |
@@ -464,6 +477,140 @@ per-file limit 2 GB)` or `expiration not reported`. Reuse it with
 A reusing run never deletes an upload it did not create. Gemini normally
 expires files after 48 hours. Temporary local derivatives and downloads are
 still removed. Studio retention is unchanged; see [ADR 0024](docs/adr/0024-upload-retention-is-an-operator-setting.md).
+
+## Clocks
+
+Every rendered media time names its clock: `source` is time from the input
+recording's start; `reel` is time from a constructed reel's start (select it
+with `--file-clock reel`); `timeline` adds an explicitly declared offset.
+Exact times are whole frames at a reduced rational rate. Model timestamps stay
+approximate: seconds, `≈1 s`, and `model` origin, with no frames, ticks or
+timecode. A timeline shift preserves that precision.
+
+```bash
+frameofmind analyze --source none --video take.mov --timeline-offset 0 --timecode-rate 25
+frameofmind calibrate --model gemini-3.7-flash --json
+```
+
+`--timeline-offset` accepts unsigned non-negative seconds with up to three
+decimals, such as `12.345`; whole frames with an `f` suffix, such as `86400f`;
+or timecode such as `01:00:00:00`. Frame/timecode inputs require a declared
+video rate. The separator must match its drop-frame choice. At a declared rate,
+a seconds offset must be a whole frame boundary; otherwise the error names the
+two neighboring frames. For example, `0.5` at `24000/1001` is refused between
+`11f` and `12f`. It is never rounded. No timeline is inferred when absent.
+
+```bash
+frameofmind analyze --source none --video take.mov --timeline-offset 86400f --timecode-rate 24000/1001
+frameofmind analyze --source none --video take.mov --timeline-offset '01:00:00:00' --timecode-rate 24000/1001
+frameofmind analyze --source none --video take.mov --timeline-offset '00:01:00;02' --timecode-rate 29.97df
+```
+
+Without `--timecode-rate`, exact offsets return whole milliseconds, seconds and
+ticks, with no frames or timecode. Model observations remain approximate in
+either mode. Time-of-day cut points are not supported.
+`--timecode-rate` requires that offset (use `0` for a sequence starting at
+zero). Accepted forms are `24`, `25`, `30`, `48`, `50`, `60`, `23.976`,
+`47.952`, `29.97df`, `29.97ndf`, `59.94df`, `59.94ndf`, or an exact positive
+`N/D` rational. Rationals at 30000/1001 or 60000/1001 require `:df` or `:ndf`.
+Aliases denote exact rationals; other decimals, including `23.98`, are refused.
+`from-media` reads ffprobe's first video stream frame rate; unequal nominal
+and average rates are refused. For 30000/1001 or 60000/1001 use
+`from-media:df` or `from-media:ndf`. Drop-frame is only valid at those rates.
+No timecode is read from container tags or pixels.
+
+`times.json` schema 2 carries one JSON pointer per structured analysis time.
+Each entry has a `time` object and optional `timeline` object, both containing
+`clock`, decimal-string `seconds`, `precisionMs` and `origin: "model"`.
+`timeline.offset` separately carries the exact declared offset in every
+available form: frames/rational rate, decimal-string ticks, timecode with its
+drop-frame choice, seconds and clock. Ticks are explicitly unavailable if the
+rate cannot represent whole ticks per frame. Without a video rate, this offset
+has milliseconds, seconds and ticks only.
+
+Exact reading seconds are marked `secondsDerived: true` and identify the first
+whole millisecond inside the frame. Reconstruct exact time through frames at its
+rate, never these display seconds. Above 1000 fps a frame may contain no whole
+millisecond (frame 1 at 2000/1 is one example): `secondsUnavailable` explains
+the missing form, while frames, ticks and timecode remain exact. The rate is
+still accepted. For
+example, frame 1 at 24000/1001 reads `0.042` s, but its boundary is not exactly
+42 ms: use frames or ticks to transfer it exactly. Approximate timeline seconds
+are displayed to milliseconds while retaining `≈1 s`; this is not snapping.
+`analysis.json` is unchanged. Schema-1 sidecar readers must update for schema 2;
+there is no dual-write. See [VERSIONING](docs/VERSIONING.md) and
+[ADR 0027](docs/adr/0027-exact-rational-frame-times.md).
+
+For integrations, pass decimal seconds text and an explicit start, end or instant edge to `snapDecimalSeconds`. Callers treat a range as empty when its snapped start is at or after its snapped end. Use `fromPremiereMilliseconds` and `toPremiereMilliseconds` for subtitle values that an editor writes by rounding frame starts down to whole milliseconds. The pair supports declared video rates up to 1000 fps. [ADR 0028](docs/adr/0028-time-to-frame.md)
+
+The model's clip clock is measured automatically using a synthetic flash and
+cached per model for 30 days. `calibrate` refreshes the measurement;
+`--no-calibrate` opts out and labels the run `clip clock unverified`.
+The synthetic upload is always deleted independently of recording retention.
+
+`from-media` also scans every frame's presentation timestamp and duration.
+Matching summary rates alone are insufficient: variable timing, missing timing,
+nonzero origins, and tick-quantized fractional timing are refused. A scan that
+cannot finish within 60 seconds or 32 MiB of probe output is also refused; use
+an explicitly known sequence rate instead.
+
+Legacy model transcript offsets that cannot be represented exactly in integer
+milliseconds retain their previous context selection without rounding. The run
+reports `transcript clock unverified`; the manifest keeps the original offset.
+This does not relax the explicit `--timeline-offset` format.
+The same compatibility rule applies to explicit numeric transcript offsets from
+service/API callers. If exact millisecond windowing is unavailable, indexing
+receives the original transcript and the run is labelled `transcript not
+windowed` and `transcript clock unverified`; no offset is rounded.
+
+## Transcribe a recording
+
+```bash
+frameofmind transcribe "/path/to/interview.mov"
+frameofmind transcribe "/path/to/interview.mov" --transcript-language fr-CA -o "/path/to/private-transcripts" --retention run --json
+frameofmind analyze --source none --video "/path/to/interview.mov" --transcript-language fr-CA
+frameofmind analyze interview --source file --context-file "/path/to/interview.srt" --video "/path/to/interview.mov"
+```
+
+Standalone and derived transcription ask for the original spoken languages,
+including switches within a sentence, and instruct the model never to translate.
+`Speaker 1`, `[inaudible]` and `[crosstalk]` are format markers for speech in
+any language. The CLI and local Studio extract the first audio track. Hosted
+Studio sends the resolved media. Live transcription fidelity on real non-English
+speech is untested.
+
+On both `transcribe` and `analyze`, pass `--transcript-language <tag>` (for
+example, `--transcript-language fr-CA`) to hint at the likely spoken language
+in each audio window. Other languages may also be present. The flag reaches
+transcription only. Use `--note language=<path>` on `analyze` to give language
+instructions to the index and detail analysis prompts. Wrappers must pass
+the language hint explicitly.
+
+The speakers header and optional transcript JSON record the canonical tag as
+`requestedLanguage`. An analysis that derives a transcript records it under
+`derivedTranscript.requestedLanguage` in the manifest. With a supplied transcript,
+`analyze` reports that the hint was unused. Combining the flag with
+`--no-derived-transcript` is an error.
+
+Writes `interview.srt` and `interview_speakers.txt` beside the recording unless
+`-o` selects a directory. These are reference-grade context transcripts with
+whole-second timing in the recording's **source** clock. The speakers file
+states the origin, model, clock and timing grade. Use it as `--context-file`
+when literal markup-like text matters: the SRT reader strips `<…>` spans.
+`--json` adds `interview.transcript.json`, with numeric seconds and provenance.
+
+Audio uploads follow `--retention provider|run`, then
+`FRAME_OF_MIND_UPLOAD_RETENTION`, then `provider`. Every kept upload is reported
+immediately with its expiry (or unknown); `--keep-upload` and `--delete-upload`
+are aliases. Temporary local audio is removed on every terminal path. A failed
+window retries once, then exits without writing transcript files. Ctrl-C stops
+after the current window. Terminal output contains counts, paths, model, token
+use and upload state, never transcript text.
+
+Files are private (`0600`) and published atomically per file. Existing targets
+are refused unless `--force` is supplied. Keep them out of repositories and
+issues; retention and OS disk encryption belong to the operator. See
+[RUNBOOK §3.11](docs/RUNBOOK.md#311-transcribe) and [ADR 0025](docs/adr/0025-standalone-transcript-files.md).
 
 ## Launch the local Studio
 
@@ -740,8 +887,12 @@ to browser code.
 - Gemini receives the selected video and, in the current index pass, the full
   normalized meeting transcript. Video clipping does not automatically reduce
   transcript transfer.
-- Gemini upload deletion is attempted on success and failure by default; a
-  failed attempt is recorded honestly, with provider expiration as backstop.
+- CLI recording and `transcribe` audio uploads are kept until provider expiry
+  by default (ADR 0024). With `--retention run`, deletion is attempted on
+  success and failure; deletion of `analyze`'s derived-transcript audio and the
+  synthetic clock probe is always attempted, whatever the retention setting. A
+  failed attempt is recorded honestly, with
+  provider expiration as backstop.
 - Invalid JSON, schema mismatches, and overlong fields get one bounded repair
   attempt. One bad detail does not erase other validated candidates.
 - Raw MCP payloads and full transcripts are not persisted in a normal run.
@@ -818,6 +969,7 @@ bun run test:hosted-media-http              # fake Files API + real Chromium dir
 bun run rehearse:hosted-release
 bun run check:pr
 bun run check:sharded
+bun run check:deploy
 bun run check
 ```
 
@@ -851,7 +1003,7 @@ metadata, OAuth, and cleanup contracts.
 | [Local Studio threat model](docs/THREAT_MODEL.md) | session, staging, and credential boundaries |
 | [Cloudflare deployment](docs/CLOUDFLARE_DEPLOYMENT.md) | Workers, D1, Access, verification, rollback |
 | [Testing strategy](docs/TESTING.md) | test-layer ownership, browser isolation |
-| [Operations runbook](docs/RUNBOOK.md) | installation, operations, incident response |
+| [Operations runbook](docs/RUNBOOK.md) | installation, operations, incident response; troubleshooting `refused`, `not_found`, `rate_limited`, and `other` provider errors |
 | [Versioning](docs/VERSIONING.md) | release and compatibility policy |
 | [Skill installation](docs/SKILL_INSTALLATION.md) | Codex and Claude skill setup |
 | [MCP roadmap](docs/MCP_ROADMAP.md) | deferred local/hosted read-only MCP boundary |

@@ -1,0 +1,174 @@
+{
+  "version": 2,
+  "rules": "Non-negative whole frames at a reduced rational rate on a named clock. Big integers are decimal strings. Drop-frame is explicit. Instants use half-open containment. Seconds are the first whole millisecond inside the frame, with three decimals. Ticks require whole ticks per frame. No declared video rate means a 1000/1 millisecond source, no video frames or timecode. Hours do not wrap. Approximate times cannot enter these conversions. Seconds are explicitly derived reading values, never the exact reconstruction path; use frames at the rate. If a frame contains no whole millisecond, omit seconds and state secondsUnavailable, preserving the other forms. For decimal seconds text, start selects the first boundary at or after the request, end selects the last at or before it, and instant selects the containing frame. The edge is required. Movement is frame start minus asked seconds as a reduced signed fraction. Premiere whole milliseconds are the floor of the frame start. Read them only when exactly one frame writes that value. Both Premiere conversions require video rates of at most 1000 fps.",
+  "rates": [
+    {
+      "num": 24000,
+      "den": 1001,
+      "dropFrame": false
+    },
+    {
+      "num": 24,
+      "den": 1,
+      "dropFrame": false
+    },
+    {
+      "num": 25,
+      "den": 1,
+      "dropFrame": false
+    },
+    {
+      "num": 30000,
+      "den": 1001,
+      "dropFrame": false
+    },
+    {
+      "num": 30000,
+      "den": 1001,
+      "dropFrame": true
+    },
+    {
+      "num": 30,
+      "den": 1,
+      "dropFrame": false
+    },
+    {
+      "num": 48,
+      "den": 1,
+      "dropFrame": false
+    },
+    {
+      "num": 50,
+      "den": 1,
+      "dropFrame": false
+    },
+    {
+      "num": 60000,
+      "den": 1001,
+      "dropFrame": false
+    },
+    {
+      "num": 60000,
+      "den": 1001,
+      "dropFrame": true
+    },
+    {
+      "num": 60,
+      "den": 1,
+      "dropFrame": false
+    },
+    {
+      "num": 11,
+      "den": 1,
+      "dropFrame": false
+    },
+    {
+      "num": 2000,
+      "den": 1,
+      "dropFrame": false
+    }
+  ],
+  "cases": [
+    {"id":"rate 24000/1001 ndf","op":"frames","input":"2","clock":"source","rate":{"num":24000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"0.084","ticks":"21189168000","frames":"2","rate":{"num":24000,"den":1001},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"rate 24/1 ndf","op":"frames","input":"2","clock":"source","rate":{"num":24,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"0.084","ticks":"21168000000","frames":"2","rate":{"num":24,"den":1},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"rate 25/1 ndf","op":"frames","input":"2","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"0.080","ticks":"20321280000","frames":"2","rate":{"num":25,"den":1},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"rate 30000/1001 ndf","op":"frames","input":"2","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"0.067","ticks":"16951334400","frames":"2","rate":{"num":30000,"den":1001},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true},"otio":{"differs":true,"reason":"OTIO defaults to inferred drop-frame; this row explicitly requests non-drop."}},
+    {"id":"rate 30000/1001 df","op":"frames","input":"2","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"0.067","ticks":"16951334400","frames":"2","rate":{"num":30000,"den":1001},"timecode":"00:00:00;02","dropFrame":true,"secondsDerived":true}},
+    {"id":"rate 30/1 ndf","op":"frames","input":"2","clock":"source","rate":{"num":30,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"0.067","ticks":"16934400000","frames":"2","rate":{"num":30,"den":1},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"rate 48/1 ndf","op":"frames","input":"2","clock":"source","rate":{"num":48,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"0.042","ticks":"10584000000","frames":"2","rate":{"num":48,"den":1},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"rate 50/1 ndf","op":"frames","input":"2","clock":"source","rate":{"num":50,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"0.040","ticks":"10160640000","frames":"2","rate":{"num":50,"den":1},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"rate 60000/1001 ndf","op":"frames","input":"2","clock":"source","rate":{"num":60000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"0.034","ticks":"8475667200","frames":"2","rate":{"num":60000,"den":1001},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true},"otio":{"differs":true,"reason":"OTIO defaults to inferred drop-frame; this row explicitly requests non-drop."}},
+    {"id":"rate 60000/1001 df","op":"frames","input":"2","clock":"source","rate":{"num":60000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"0.034","ticks":"8475667200","frames":"2","rate":{"num":60000,"den":1001},"timecode":"00:00:00;02","dropFrame":true,"secondsDerived":true}},
+    {"id":"rate 60/1 ndf","op":"frames","input":"2","clock":"source","rate":{"num":60,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"0.034","ticks":"8467200000","frames":"2","rate":{"num":60,"den":1},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"rate 11/1 ndf","op":"frames","input":"2","clock":"source","rate":{"num":11,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"0.182","ticksUnavailable":"Ticks per frame are not whole at this rate.","frames":"2","rate":{"num":11,"den":1},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true},"otio":{"differs":true,"reason":"OTIO timecode rejects 11 fps; this contract defines nominal-rate labels and explicitly omits non-integral ticks."}},
+    {"id":"29.97df minute","op":"frames","input":"1800","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"60.060","ticks":"15256200960000","frames":"1800","rate":{"num":30000,"den":1001},"timecode":"00:01:00;02","dropFrame":true,"secondsDerived":true}},
+    {"id":"29.97df before minute","op":"frames","input":"1799","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"60.027","ticks":"15247725292800","frames":"1799","rate":{"num":30000,"den":1001},"timecode":"00:00:59;29","dropFrame":true,"secondsDerived":true}},
+    {"id":"29.97df ten minutes","op":"frames","input":"17982","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"600.000","ticks":"152409447590400","frames":"17982","rate":{"num":30000,"den":1001},"timecode":"00:10:00;00","dropFrame":true,"secondsDerived":true}},
+    {"id":"59.94df minute","op":"frames","input":"3600","clock":"source","rate":{"num":60000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"60.060","ticks":"15256200960000","frames":"3600","rate":{"num":60000,"den":1001},"timecode":"00:01:00;04","dropFrame":true,"secondsDerived":true}},
+    {"id":"59.94df ten minutes","op":"frames","input":"35964","clock":"source","rate":{"num":60000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"600.000","ticks":"152409447590400","frames":"35964","rate":{"num":60000,"den":1001},"timecode":"00:10:00;00","dropFrame":true,"secondsDerived":true}},
+    {"id":"25:00:00;02 at 29.97df","op":"frames","input":"2697302","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"89999.977","ticks":"22861434089894400","frames":"2697302","rate":{"num":30000,"den":1001},"timecode":"25:00:00;02","dropFrame":true,"secondsDerived":true},"otio":{"differs":true,"reason":"OTIO wraps timecode at 24 hours; this contract keeps unbounded elapsed hours."}},
+    {"id":"1041.04 at 24000/1001 False","op":"frames","input":"24960","clock":"source","rate":{"num":24000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"1041.040","ticks":"264440816640000","frames":"24960","rate":{"num":24000,"den":1001},"timecode":"00:17:20:00","dropFrame":false,"secondsDerived":true}},
+    {"id":"1041.04 at 25/1 False","op":"frames","input":"26026","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"1041.040","ticks":"264440816640000","frames":"26026","rate":{"num":25,"den":1},"timecode":"00:17:21:01","dropFrame":false,"secondsDerived":true}},
+    {"id":"1041.04 at 30000/1001 False","op":"frames","input":"31200","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"1041.040","ticks":"264440816640000","frames":"31200","rate":{"num":30000,"den":1001},"timecode":"00:17:20:00","dropFrame":false,"secondsDerived":true},"otio":{"differs":true,"reason":"OTIO defaults to inferred drop-frame; this row explicitly requests non-drop."}},
+    {"id":"1041.04 at 30000/1001 True","op":"frames","input":"31200","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"1041.040","ticks":"264440816640000","frames":"31200","rate":{"num":30000,"den":1001},"timecode":"00:17:21;02","dropFrame":true,"secondsDerived":true}},
+    {"id":"1041.04 at 50/1 False","op":"frames","input":"52052","clock":"source","rate":{"num":50,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"1041.040","ticks":"264440816640000","frames":"52052","rate":{"num":50,"den":1},"timecode":"00:17:21:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"boundary instant","op":"milliseconds","input":"1001","clock":"source","rate":{"num":24000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"1.001","ticks":"254270016000","frames":"24","rate":{"num":24000,"den":1001},"timecode":"00:00:01:00","dropFrame":false,"secondsDerived":true}},
+    {"id":"one millisecond before the boundary","op":"milliseconds","input":"1000","clock":"source","rate":{"num":24000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"0.960","ticks":"243675432000","frames":"23","rate":{"num":24000,"den":1001},"timecode":"00:00:00:23","dropFrame":false,"secondsDerived":true}},
+    {"id":"10:00:00:00 at 25/1","op":"frames","input":"900000","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"expected":{"clock":"source","seconds":"36000.000","ticks":"9144576000000000","frames":"900000","rate":{"num":25,"den":1},"timecode":"10:00:00:00","dropFrame":false,"secondsDerived":true}},
+    {"id":"large exact seconds defeats Number arithmetic","op":"frames","input":"9007199254740991","clock":"source","rate":{"num":24000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"375675268916488.833","ticks":"95427529109090827392744000","frames":"9007199254740991","rate":{"num":24000,"den":1001},"timecode":"104249991374:19:01:07","dropFrame":false,"secondsDerived":true},"otio":{"differs":true,"reason":"OTIO uses double arithmetic and wraps rendered hours at 24; this contract retains exact integer arithmetic and unbounded hours."}},
+    {"id":"offset between clocks","op":"offset","input":"2","clock":"timeline","rate":{"num":24000,"den":1001},"dropFrame":false,"expected":{"clock":"timeline","seconds":"3603.684","ticks":"915393246768000","frames":"86402","rate":{"num":24000,"den":1001},"timecode":"01:00:00:02","dropFrame":false,"secondsDerived":true},"offset":"86400"},
+    {"id":"exact tick input","op":"ticks","input":"21189168000","clock":"source","rate":{"num":24000,"den":1001},"dropFrame":false,"expected":{"clock":"source","seconds":"0.084","ticks":"21189168000","frames":"2","rate":{"num":24000,"den":1001},"timecode":"00:00:00:02","dropFrame":false,"secondsDerived":true}},
+    {"id":"timecode input","op":"timecode","input":"00:01:00;02","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":true,"expected":{"clock":"source","seconds":"60.060","ticks":"15256200960000","frames":"1800","rate":{"num":30000,"den":1001},"timecode":"00:01:00;02","dropFrame":true,"secondsDerived":true}},
+    {"id":"no declared rate","op":"milliseconds","input":"1041040","clock":"source","expected":{"clock":"source","seconds":"1041.040","ticks":"264440816640000","milliseconds":"1041040","rateBasis":"whole-millisecond source; no declared video rate","secondsDerived":true},"otio":{"differs":true,"reason":"No video rate is invented; 1000/1 is explicitly a millisecond source and has no video frame or timecode output."}},
+    {"id":"rate parse 48000/2002","op":"rate","input":"48000/2002","expected":{"rate":{"num":24000,"den":1001},"dropFrame":false,"rateOrigin":"declared"}},
+    {"id":"rate parse 23.976","op":"rate","input":"23.976","expected":{"rate":{"num":24000,"den":1001},"dropFrame":false,"rateOrigin":"declared"}},
+    {"id":"rate parse 47.952","op":"rate","input":"47.952","expected":{"rate":{"num":48000,"den":1001},"dropFrame":false,"rateOrigin":"declared"}},
+    {"id":"rate parse 29.97ndf","op":"rate","input":"29.97ndf","expected":{"rate":{"num":30000,"den":1001},"dropFrame":false,"rateOrigin":"declared"}},
+    {"id":"rate parse 59.94df","op":"rate","input":"59.94df","expected":{"rate":{"num":60000,"den":1001},"dropFrame":true,"rateOrigin":"declared"}},
+    {"id":"rate refused 23.98","op":"rate","input":"23.98","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Unsupported or ambiguous timecode rate.","otio":{"differs":true,"reason":"OTIO rendering snaps nearby decimal rates to a SMPTE rate; this contract accepts only named decimal aliases."}},
+    {"id":"rate refused 29.970","op":"rate","input":"29.970","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Unsupported or ambiguous timecode rate.","otio":{"differs":true,"reason":"OTIO receives a double and cannot distinguish spelling 29.970 from 29.97; this parser refuses the unnamed spelling."}},
+    {"id":"rate refused 29.97","op":"rate","input":"29.97","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Unsupported or ambiguous timecode rate.","otio":{"differs":true,"reason":"OTIO infers drop-frame at its default rendering; this parser requires a stated choice."}},
+    {"id":"rate refused 30000/1001","op":"rate","input":"30000/1001","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Unsupported or ambiguous timecode rate.","otio":{"differs":true,"reason":"OTIO infers drop-frame at its default rendering; this parser requires a stated choice."}},
+    {"id":"rate refused 25/1:df","op":"rate","input":"25/1:df","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Unsupported or ambiguous timecode rate."},
+    {"id":"rate refused 24000/1001:df","op":"rate","input":"24000/1001:df","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Unsupported or ambiguous timecode rate."},
+    {"id":"29.97df parse 00:01:00;00 refused","op":"timecode","input":"00:01:00;00","clock":"source","rate":{"num":30000,"den":1001},"dropFrame":true,"refused":"Drop-frame label does not exist.","otio":{"differs":true,"reason":"OTIO subtracts drop labels without rejecting this nonexistent label; this contract refuses it."}},
+    {"id":"ff at or above nominal refused","op":"timecode","input":"00:00:00:25","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Frame field must be below the nominal rate."},
+    {"id":"fractional nominal ff refused","op":"timecode","input":"00:00:00:24","clock":"source","rate":{"num":24000,"den":1001},"dropFrame":false,"refused":"Frame field must be below the nominal rate."},
+    {"id":"separator refused","op":"timecode","input":"00:00:00;00","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Timecode separator must match the stated drop-frame choice."},
+    {"id":"frames '-1' refused","op":"frames","input":"-1","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Expected a non-negative unpadded whole number.","otio":{"differs":true,"reason":"OTIO can construct a negative RationalTime; this contract only admits non-negative exact times."}},
+    {"id":"ticks '-1' refused","op":"ticks","input":"-1","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Expected a non-negative unpadded whole number."},
+    {"id":"frames '' refused","op":"frames","input":"","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Expected a non-negative unpadded whole number."},
+    {"id":"frames ' 1' refused","op":"frames","input":" 1","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Expected a non-negative unpadded whole number.","otio":{"differs":true,"reason":"OTIO accepts numeric values, with no lexical padding contract; this parser refuses padded input."}},
+    {"id":"frames '01' refused","op":"frames","input":"01","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Expected a non-negative unpadded whole number.","otio":{"differs":true,"reason":"OTIO accepts numeric values, with no lexical padding contract; this parser refuses padded input."}},
+    {"id":"milliseconds '1.5' refused","op":"milliseconds","input":"1.5","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Expected a non-negative unpadded whole number."},
+    {"id":"frames '1\\n' refused","op":"frames","input":"1\n","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Expected a non-negative unpadded whole number.","otio":{"differs":true,"reason":"OTIO accepts numeric values, with no lexical padding contract; this parser refuses padded input."}},
+    {"id":"timecode '-00:00:01:00' refused","op":"timecode","input":"-00:00:01:00","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Malformed timecode."},
+    {"id":"timecode '00:60:00:00' refused","op":"timecode","input":"00:60:00:00","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Malformed timecode.","otio":{"differs":true,"reason":"OTIO parses and normalizes an out-of-range minute; this contract rejects malformed fields."}},
+    {"id":"timecode '00:00:00:00 ' refused","op":"timecode","input":"00:00:00:00 ","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Malformed timecode.","otio":{"differs":true,"reason":"OTIO reads fixed field positions and ignores trailing padding; this contract rejects padded input."}},
+    {"id":"timecode '' refused","op":"timecode","input":"","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Malformed timecode."},
+    {"id":"ticks off frame refused","op":"ticks","input":"1","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Ticks must identify an exact frame boundary."},
+    {"id":"11/1 ticks refused","op":"ticks","input":"254016000000","clock":"source","rate":{"num":11,"den":1},"dropFrame":false,"refused":"Ticks per frame are not whole at this rate."},
+    {"id":"drop choice omitted","op":"frames","input":"0","clock":"source","rate":{"num":30000,"den":1001},"refused":"Drop-frame must be stated.","otio":{"differs":true,"reason":"OTIO defaults to inferred drop-frame; this conversion requires an explicit choice."}},
+    {"id":"drop at 25 refused","op":"frames","input":"0","clock":"source","rate":{"num":25,"den":1},"dropFrame":true,"refused":"Drop-frame requires 30000/1001 or 60000/1001."},
+    {"id":"2000/1 frame 1 has no whole millisecond","op":"frames","input":"1","clock":"source","rate":{"num":2000,"den":1},"dropFrame":false,"expected":{"clock":"source","frames":"1","rate":{"num":2000,"den":1},"ticks":"127008000","timecode":"00:00:00:01","dropFrame":false,"secondsDerived":true,"secondsUnavailable":"No whole millisecond falls inside this frame; three-decimal derived seconds are unavailable."},"otio":{"differs":true,"reason":"OTIO timecode rejects 2000 fps; this contract retains exact nominal labels and ticks while refusing only the unavailable three-decimal seconds form."}},
+    {"id":"one-digit hours refused","op":"timecode","input":"0:00:00:00","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Malformed timecode."},
+    {"id":"one-digit minutes refused","op":"timecode","input":"00:0:00:00","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Malformed timecode."},
+    {"id":"one-digit seconds refused","op":"timecode","input":"00:00:0:00","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Malformed timecode."},
+    {"id":"one-digit frames refused","op":"timecode","input":"00:00:00:0","clock":"source","rate":{"num":25,"den":1},"dropFrame":false,"refused":"Malformed timecode."}
+  ],
+  "entryCases": [
+    {"id":"exact boundary start","op":"snapDecimalSeconds","input":"1.001","clock":"source","rate":{"num":24000,"den":1001},"edge":"start","basis":"worked by hand","expected":{"frames":"24","askedSeconds":"1.001","edge":"start","moved":false,"movement":{"numerator":"0","denominator":"1"}}},
+    {"id":"exact boundary end","op":"snapDecimalSeconds","input":"1.001","clock":"source","rate":{"num":24000,"den":1001},"edge":"end","basis":"worked by hand","expected":{"frames":"24","askedSeconds":"1.001","edge":"end","moved":false,"movement":{"numerator":"0","denominator":"1"}}},
+    {"id":"exact boundary instant","op":"snapDecimalSeconds","input":"1.001","clock":"source","rate":{"num":24000,"den":1001},"edge":"instant","basis":"worked by hand","expected":{"frames":"24","askedSeconds":"1.001","edge":"instant","moved":false,"movement":{"numerator":"0","denominator":"1"}}},
+    {"id":"range edges meet at one boundary","op":"snapRange","input":"0.041","endInput":"0.042","clock":"timeline","rate":{"num":24,"den":1},"basis":"worked by hand","expected":{"startFrame":"1","endFrame":"1","empty":true}},
+    {"id":"range wholly between boundaries","op":"snapRange","input":"0.001","endInput":"0.002","clock":"timeline","rate":{"num":24,"den":1},"basis":"worked by hand","expected":{"startFrame":"1","endFrame":"0","empty":true}},
+    {"id":"empty range start","op":"snapDecimalSeconds","input":"0.041","clock":"source","rate":{"num":24,"den":1},"edge":"start","basis":"worked by hand","expected":{"frames":"1","askedSeconds":"0.041","edge":"start","moved":true,"movement":{"numerator":"1","denominator":"1500"}}},
+    {"id":"empty range end","op":"snapDecimalSeconds","input":"0.042","clock":"source","rate":{"num":24,"den":1},"edge":"end","basis":"worked by hand","expected":{"frames":"1","askedSeconds":"0.042","edge":"end","moved":true,"movement":{"numerator":"-1","denominator":"3000"}}},
+    {"id":"between boundaries start","op":"snapDecimalSeconds","input":"5.01","clock":"source","rate":{"num":25,"den":1},"edge":"start","basis":"worked by hand","expected":{"frames":"126","askedSeconds":"5.01","edge":"start","moved":true,"movement":{"numerator":"3","denominator":"100"}}},
+    {"id":"between boundaries end","op":"snapDecimalSeconds","input":"5.01","clock":"source","rate":{"num":25,"den":1},"edge":"end","basis":"worked by hand","expected":{"frames":"125","askedSeconds":"5.01","edge":"end","moved":true,"movement":{"numerator":"-1","denominator":"100"}}},
+    {"id":"between boundaries instant","op":"snapDecimalSeconds","input":"5.01","clock":"source","rate":{"num":25,"den":1},"edge":"instant","basis":"worked by hand","expected":{"frames":"125","askedSeconds":"5.01","edge":"instant","moved":true,"movement":{"numerator":"-1","denominator":"100"}}},
+    {"id":"zero seconds","op":"snapDecimalSeconds","input":"0.000","clock":"source","rate":{"num":30000,"den":1001},"edge":"start","basis":"worked by hand","expected":{"frames":"0","askedSeconds":"0.000","edge":"start","moved":false,"movement":{"numerator":"0","denominator":"1"}}},
+    {"id":"one picosecond before a boundary","op":"snapDecimalSeconds","input":"0.019999999999","clock":"source","rate":{"num":50,"den":1},"edge":"instant","basis":"worked by hand","expected":{"frames":"0","askedSeconds":"0.019999999999","edge":"instant","moved":true,"movement":{"numerator":"-19999999999","denominator":"1000000000000"}}},
+    {"id":"fractional rate end","op":"snapDecimalSeconds","input":"0.017","clock":"source","rate":{"num":60000,"den":1001},"edge":"end","basis":"worked by hand","expected":{"frames":"1","askedSeconds":"0.017","edge":"end","moved":true,"movement":{"numerator":"-19","denominator":"60000"}}},
+    {"id":"submillisecond frame boundary","op":"snapDecimalSeconds","input":"0.0005","clock":"source","rate":{"num":2000,"den":1},"edge":"instant","basis":"worked by hand","expected":{"frames":"1","askedSeconds":"0.0005","edge":"instant","moved":false,"movement":{"numerator":"0","denominator":"1"}}},
+    {"id":"observed 375 ms","op":"fromPremiereMilliseconds","input":"375","clock":"source","rate":{"num":24000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"9"}},
+    {"id":"observed 1167 ms","op":"fromPremiereMilliseconds","input":"1167","clock":"source","rate":{"num":24000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"28"}},
+    {"id":"observed 12512 ms","op":"fromPremiereMilliseconds","input":"12512","clock":"source","rate":{"num":24000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"300"}},
+    {"id":"observed 13304 ms","op":"fromPremiereMilliseconds","input":"13304","clock":"source","rate":{"num":24000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"319"}},
+    {"id":"observed 20895 ms","op":"fromPremiereMilliseconds","input":"20895","clock":"source","rate":{"num":24000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"501"}},
+    {"id":"observed 21688 ms","op":"fromPremiereMilliseconds","input":"21688","clock":"source","rate":{"num":24000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"520"}},
+    {"id":"observed 41791 ms","op":"fromPremiereMilliseconds","input":"41791","clock":"source","rate":{"num":24000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"1002"}},
+    {"id":"observed 42584 ms","op":"fromPremiereMilliseconds","input":"42584","clock":"source","rate":{"num":24000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"1021"}},
+    {"id":"observed 2869 ms","op":"fromPremiereMilliseconds","input":"2869","clock":"source","rate":{"num":30000,"den":1001},"basis":"observed in an editing application","expected":{"frames":"86"}},
+    {"id":"write frame 1 at 24000/1001","op":"toPremiereMilliseconds","input":"1","clock":"source","rate":{"num":24000,"den":1001},"basis":"worked by hand","expected":{"milliseconds":"41"}},
+    {"id":"write frame 1 at 24/1","op":"toPremiereMilliseconds","input":"1","clock":"source","rate":{"num":24,"den":1},"basis":"worked by hand","expected":{"milliseconds":"41"}},
+    {"id":"write frame 1 at 25/1","op":"toPremiereMilliseconds","input":"1","clock":"source","rate":{"num":25,"den":1},"basis":"worked by hand","expected":{"milliseconds":"40"}},
+    {"id":"write frame 1 at 30000/1001","op":"toPremiereMilliseconds","input":"1","clock":"source","rate":{"num":30000,"den":1001},"basis":"worked by hand","expected":{"milliseconds":"33"}},
+    {"id":"write frame 0 at 50/1","op":"toPremiereMilliseconds","input":"0","clock":"source","rate":{"num":50,"den":1},"basis":"worked by hand","expected":{"milliseconds":"0"}},
+    {"id":"write frame 1 at 60000/1001","op":"toPremiereMilliseconds","input":"1","clock":"source","rate":{"num":60000,"den":1001},"basis":"worked by hand","expected":{"milliseconds":"16"}},
+    {"id":"write frame 1 at 1000/1","op":"toPremiereMilliseconds","input":"1","clock":"source","rate":{"num":1000,"den":1},"basis":"worked by hand","expected":{"milliseconds":"1"}},
+    {"id":"unwritten millisecond","op":"fromPremiereMilliseconds","input":"12513","clock":"source","rate":{"num":24000,"den":1001},"basis":"worked by hand","refused":"No frame writes 12513 ms. It falls between the values written by frames 300 and 301."},
+    {"id":"2000 fps refusal fromPremiereMilliseconds","op":"fromPremiereMilliseconds","input":"0","clock":"source","rate":{"num":2000,"den":1},"basis":"worked by hand","refused":"Above 1000 fps two frames can share one whole millisecond."},
+    {"id":"2000 fps refusal toPremiereMilliseconds","op":"toPremiereMilliseconds","input":"0","clock":"source","rate":{"num":2000,"den":1},"basis":"worked by hand","refused":"Above 1000 fps two frames can share one whole millisecond."}
+  ]
+}

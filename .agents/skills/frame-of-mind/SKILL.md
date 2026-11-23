@@ -68,6 +68,15 @@ bundle; the manifest records only names, digests and byte counts. Model findings
 may quote or paraphrase notes. Treat findings as possibly containing note content
 when sharing a bundle.
 
+## Quote times with their clocks
+
+Always quote a media time with its clock word (`source`, `reel`, or `timeline`)
+and retain the `≈1 s` marker for model times. Declare the timeline offset in
+seconds with `--timeline-offset`; optional `--timecode-rate` is an exact output
+rendering only. Never read timecode from the picture or container tags. Consult
+`manifest.clock` for measured clip-clock provenance and `times.json` for numeric
+seconds. An unverified clip clock is uncertainty to preserve when reporting.
+
 ## Local CLI and Studio
 
 ### Install and verify
@@ -139,6 +148,7 @@ frameofmind recipes
 | Owners and next actions | `action-items` |
 | Repository work or issue plan | `repo-plan` |
 | Teaching, facilitation, intent-versus-impact | `communication-coaching` |
+| What an instructional or explainer video teaches | `teaching-points` |
 
 Do not default to `issue-review` when the request names another output. Write
 `--focus` as one bounded prioritization sentence about observable targets. It
@@ -224,6 +234,18 @@ For an experimental in-depth review, add `--depth deep` and an explicit model.
 not a shipped mixed-model synthesis pipeline. Treat mutable aliases such as
 `gemini-pro-latest` as non-reproducible unless the provider resolves them.
 
+### Standalone transcript files
+
+Offer `frameofmind transcribe "<recording>" [-o "<directory>"]` when the operator
+wants reusable transcript files. It writes reference-grade source-clock SRT and
+speaker text; `--json` adds numeric-second provenance. Upload retention defaults
+to provider expiry, with immediate per-upload reporting; pass `--retention run`
+for terminal deletion. Existing files require explicit `--force` to replace.
+Use the SRT with `analyze --source file --context-file`; choose `_speakers.txt`
+when literal markup-like text must survive the SRT reader's normalisation.
+Never read the output aloud or paste transcript content into issues. Exports
+are private operator-owned speech files, outside all run bundles (ADR 0025).
+
 ### Transcript and recipe rules
 
 Transcripts resolve in order: provider transcript, operator context file,
@@ -257,7 +279,9 @@ Review in this order:
 1. `manifest.json`
 2. `analysis-outcome.json`
 3. `analysis.md` or `report.html`
-4. `moment-*.png`
+4. `contact-sheet.png` (up to the first 100 screenshots, labelled by record
+   and time), then
+   `moment-*.png`
 5. `analysis.json`, including rejected candidates
 
 Verify identity, recipe provenance, model, alignment, evidence timestamps,

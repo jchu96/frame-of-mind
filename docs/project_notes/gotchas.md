@@ -578,3 +578,5 @@
     duplicate promptly (verify with `wrangler d1 migrations list --remote`
     first; #114) and grep tests/docs for the old filename. Before minting a
     prefix, check open PRs for competing migrations, not just `db/migrations/`.
+
+- 2026-11-13: For the adopted transcribe workflow, SRT context parsing strips markup-like spans; use speaker text for literal fidelity. Arrow safety needs a rendered-byte assertion because flattened text alone cannot increase this reader’s cue count.

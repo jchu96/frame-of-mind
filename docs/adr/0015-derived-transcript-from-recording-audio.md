@@ -44,7 +44,10 @@ the same provider (Gemini) that already receives the pixels and audio.
    recording, so alignment is exact by construction), and its body is never
    persisted to the run bundle. As with provider transcripts, short
    model-selected quotes may still appear in accepted records; the
-   no-full-transcript rule is unchanged. An operator `--transcript-offset` is
+   no-full-transcript rule applies to analysis. Transcription has its own
+   system instruction so it can return the complete speech in its original
+   languages. It treats media as untrusted data, rejects embedded instructions,
+   and forbids exposing credentials. An operator `--transcript-offset` is
    ignored with a warning when the transcript is derived.
 5. Both manifest versions record optional provenance
    `derivedTranscript: { origin: "gemini-audio", model, sha256 }`. A v2 run

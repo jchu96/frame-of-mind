@@ -1,0 +1,11 @@
+# ADR 0028 — Choose the frame when the time enters the exact-time module
+
+Accepted 2026-11-22. Extends ADR 0027.
+
+A caller must be able to tell which frame a time selects and why. If each importer first rounds its input to milliseconds, the exact-time module receives a different time and cannot recover the original digits. Callers pass the time in the form they received, with its clock and video rate.
+
+- **Decimal seconds.** Call `snapDecimalSeconds` with the original text and an explicit edge. A range start goes up to the first boundary at or after the request. A range end goes down to the last boundary at or before it. This keeps partially covered frames out of the range. An instant belongs to the frame that contains it, including that frame’s start. A default would let the same call silently include or exclude a partial frame. The result carries the asked text, the edge and the signed difference in seconds from the request to the selected frame start. Callers treat a range as empty when its snapped start is at or after its snapped end.
+- **Milliseconds written by an editing application.** Use `fromPremiereMilliseconds` and `toPremiereMilliseconds` for subtitle values written by rounding the frame start down to a whole millisecond. Frame 300 at 24000/1001 starts at 12512.5 ms and writes 12512. To read it back, find the first frame starting at or after 12512 ms and verify that it starts before 12513 ms. A gap reports the two neighbouring frames. At up to 1000 fps each such interval contains at most one frame start. Above 1000 fps two frames can write the same value, so both conversions refuse the rate.
+- **Frames or ticks already exact.** Use `exactTime` for a frame count or `fromTicks` for whole ticks on a frame boundary. Carry that exact time through later operations. An approximate model observation keeps its precision and origin.
+
+The existing display convention serves a different purpose. `exactSeconds` gives a whole millisecond inside the frame so a reader can locate it with `fromMilliseconds`. Frame 300 reads as 12.513 s that way. Interpreting the subtitle value 12512 as an instant would place it in frame 299. Choosing the conversion at input preserves both conventions.

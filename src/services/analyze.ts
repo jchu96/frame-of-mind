@@ -1,7 +1,11 @@
+import { declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
+import { probeFrameRate } from "./media-probe.js";
+import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
 import { mkdtemp, rename, rm, rmdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { selectCandidates } from "../domain/candidate-selection.js";
+import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
 import type { RunNote } from "../domain/run-notes.js";
 import type { UploadRetention } from "../domain/retention.js";
 import type { File as GeminiFile } from "@google/genai";
@@ -58,6 +62,8 @@ import {
   formatDerivedTranscript,
   mergeTranscriptionChunks,
   nearbyTranscript,
+  transcriptOffsetVerified,
+  windowTranscript,
   offsetTranscriptionSegments,
 } from "./transcript.js";
 import {
@@ -67,7 +73,8 @@ import {
 } from "./audio.js";
 import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
-import { writeArtifacts, writeFailureManifest } from "./artifacts.js";
+import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
+import { renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { timestampToSeconds } from "../lib/time.js";
 import { mapWithConcurrency } from "../lib/concurrency.js";
 import {
@@ -106,6 +113,10 @@ const TRANSCRIPTION_WINDOW_ATTEMPTS = 2;
 const TRANSCRIPTION_WINDOW_RETRY_MS = 20_000;
 
 interface AnalyzeOptionsBase {
+  timelineOffset?: string;
+  timecodeRate?: string;
+  fileClock?: "source" | "reel";
+  calibrate?: boolean;
   recipe: AnalysisRecipe;
   customRecipe: boolean;
   recipeSha256: string;
@@ -117,6 +128,8 @@ interface AnalyzeOptionsBase {
   expectedVideoSha256?: string;
   recordingUrl?: string;
   focus?: string;
+  /** Operator-supplied human label recorded in the manifest and reports. */
+  label?: string;
   runNotes?: RunNote[];
   indexFps?: number;
   outputRoot: string;
@@ -132,6 +145,7 @@ interface AnalyzeOptionsBase {
    */
   remoteFileName?: string;
   derivedTranscript?: boolean;
+  transcriptLanguage?: string;
   /**
    * Maximum overlapping pass-2 detail requests (1-8, default 1). Results are
    * still committed in candidate order.
@@ -247,6 +261,8 @@ interface VideoOnlyAnalysisIndex {
 type AnalysisIndex = MeetingAnalysisIndex | VideoOnlyAnalysisIndex;
 
 export interface AnalysisVideoAnalyzer {
+  probeClipClock?(file: GeminiFile): Promise<number>;
+  readonly relativeEvidenceResponses?: number;
   readonly model: string;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
   resolveRetainedFile?(
@@ -271,8 +287,9 @@ export interface AnalysisVideoAnalyzer {
     focus?: string,
     transcriptDerived?: boolean,
     runNotes?: readonly RunNote[],
+    modelClipClock?: ClipClock,
   ): Promise<AnalysisDetail>;
-  transcribe?(file: GeminiFile): Promise<DerivedTranscriptionSegment[]>;
+  transcribe?(file: GeminiFile, requestedLanguage?: string): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
   /**
    * Non-destructive cumulative token counts since construction. Distinct
@@ -296,8 +313,11 @@ export interface AnalysisOrchestratorDependencies {
   now?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
   extractScreenshot?: typeof extractScreenshot;
+  buildContactSheet?: typeof buildContactSheet;
   extractAudioTrack?: typeof extractAudioTrack;
   probeDurationSeconds?: typeof probeDurationSeconds;
+  calibrateClipClock?: typeof calibrateClipClock;
+  probeFrameRate?: typeof probeFrameRate;
 }
 
 export type AnalyzeResult = PublishedAnalysisRun & {
@@ -318,8 +338,11 @@ export class AnalysisOrchestrator {
   private readonly now: () => string;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly screenshot: typeof extractScreenshot;
+  private readonly contactSheet: typeof buildContactSheet;
   private readonly extractAudio: typeof extractAudioTrack;
   private readonly probeDuration: typeof probeDurationSeconds;
+  private readonly calibrate: typeof calibrateClipClock;
+  private readonly frameRate: typeof probeFrameRate;
 
   constructor(dependencies: AnalysisOrchestratorDependencies) {
     this.createContextSource = dependencies.createContextSource;
@@ -328,11 +351,20 @@ export class AnalysisOrchestrator {
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.screenshot = dependencies.extractScreenshot ?? extractScreenshot;
+    this.contactSheet = dependencies.buildContactSheet ?? buildContactSheet;
     this.extractAudio = dependencies.extractAudioTrack ?? extractAudioTrack;
     this.probeDuration = dependencies.probeDurationSeconds ?? probeDurationSeconds;
+    this.calibrate = dependencies.calibrateClipClock ?? calibrateClipClock;
+    this.frameRate = dependencies.probeFrameRate ?? probeFrameRate;
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
+    const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
+    const timeline: ClockDeclaration | undefined = declareClock(options.timelineOffset, options.timecodeRate);
+    const clock: RunClock = runClockSchema.parse({ fileClock: options.fileClock ?? "source", ...(timeline ? { timeline } : {}), modelClipClock: "unverified" });
+    if (options.video && options.timecodeRate?.startsWith("from-media")) {
+      clock.timeline = declareClock(options.timelineOffset, options.timecodeRate, await this.frameRate(resolve(options.video), options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf"));
+    }
     const maxVideoSeconds = resolveMaxVideoSeconds();
     const detailConcurrency = requireDetailConcurrency(options.detailConcurrency ?? 1);
     const runId = requireSafeRunId(this.nextRunId());
@@ -427,6 +459,10 @@ export class AnalysisOrchestrator {
             "Split the recording or lower media resolution.",
         );
       }
+      if (options.timecodeRate?.startsWith("from-media") && !clock.timeline) {
+        clock.timeline = declareClock(options.timelineOffset, options.timecodeRate, await this.frameRate(localVideo, options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf"));
+      }
+      clock.clipGuard = duration === undefined ? "unknown-duration" : "applied";
       const recordingSha256 = await sha256File(localVideo);
       if (
         options.expectedVideoSha256
@@ -445,6 +481,16 @@ export class AnalysisOrchestrator {
       await ensureDirectory(stagingDirectory);
 
       const analyzer = this.createAnalyzer(options.apiKey, options);
+      if (options.calibrate !== false && analyzer.probeClipClock) {
+        const measured: Calibration = await this.calibrate({
+          model: analyzer.model,
+          upload: (path, mime) => analyzer.upload(path, mime),
+          probeClipClock: (file) => analyzer.probeClipClock!(file),
+          delete: (file) => analyzer.delete(file),
+        });
+        clock.modelClipClock = measured.result;
+        clock.calibration = { model: measured.model, checkedAt: measured.checkedAt, method: "synthetic-flash" };
+      }
       const tracer = execution.tracer ?? NOOP_ANALYSIS_TRACER;
       const chatAttributes: TraceAttributes = {
         "gen_ai.operation.name": "chat",
@@ -540,7 +586,7 @@ export class AnalysisOrchestrator {
                   try {
                     audioRemote = await analyzer.upload(audioPath, "audio/aac");
                     assertNotCanceled(execution.signal);
-                    return await analyzer.transcribe!(audioRemote);
+                    return await analyzer.transcribe!(audioRemote, requestedLanguage);
                   } finally {
                     span.setAttributes(
                       usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
@@ -603,10 +649,17 @@ export class AnalysisOrchestrator {
               origin: "gemini-audio",
               model: analyzer.model,
               sha256: sha256Text(formatted),
+              ...(requestedLanguage && { requestedLanguage }),
             };
           }
         }
         assertNotCanceled(execution.signal);
+      } else if (requestedLanguage && meeting?.transcript?.trim()) {
+        await report(progress, {
+          kind: "stage",
+          stage: "fetching_context",
+          message: "A supplied transcript was available, so --transcript-language was not used.",
+        });
       }
 
       const retainRemote = (options.retention
@@ -710,6 +763,14 @@ export class AnalysisOrchestrator {
           message: "Pass 1/2: indexing the whole recording…",
         });
         assertNotCanceled(execution.signal);
+        let indexMeeting = meeting;
+        clock.transcriptWindow = "not-requested";
+        if (options.transcriptOffsetSeconds !== undefined && meeting?.transcript?.trim()) {
+          const window = windowTranscript(meeting.transcript, options.transcriptOffsetSeconds, duration);
+          indexMeeting = { ...meeting, transcript: window.text };
+          clock.transcriptWindow = window.windowed ? "windowed" : "not-windowed";
+          if (!window.windowed) await reportWarning(progress, { kind: "warning", stage: "indexing", message: "transcript not windowed: timestamped lines, a known video duration, and exact millisecond alignment are required." });
+        }
         const index = await tracer.span({
           op: "gen_ai.chat",
           name: "gemini index",
@@ -719,7 +780,7 @@ export class AnalysisOrchestrator {
           try {
             const indexed = await analyzer.index(
               remote,
-              meeting,
+              indexMeeting,
               options.recipe,
               options.focus,
               indexFps,
@@ -773,12 +834,15 @@ export class AnalysisOrchestrator {
                   rationale: "Operator supplied --transcript-offset.",
                 };
         }
+        if (alignment) clock.transcriptClock = transcriptOffsetVerified(alignment.offsetSeconds, meeting?.transcript ?? derivedTranscript) ? "exact-ms" : "unverified";
         const providerTranscript = meeting?.transcript?.trim() ? meeting.transcript : undefined;
         const effectiveTranscript = providerTranscript ?? derivedTranscript;
         const transcriptIsDerived = Boolean(derivedTranscript) && !providerTranscript;
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
-        const candidates = selectCandidates(index.moments, options.maxIncidents);
+        const inRange = duration === undefined ? index.moments : index.moments.filter(candidate => timestampToSeconds(candidate.start) * 1000 < duration * 1000);
+        const outOfRange = index.moments.length - inRange.length;
+        const candidates = selectCandidates(inRange, options.maxIncidents);
         failurePhase = "detail";
         await report(progress, {
           kind: "stage",
@@ -833,7 +897,9 @@ export class AnalysisOrchestrator {
                   options.recipe,
                   options.focus,
                   transcriptIsDerived,
-                  ...(options.runNotes?.length ? [options.runNotes] : []),
+                  ...((clock.modelClipClock === "relative"
+                    ? [options.runNotes, clock.modelClipClock]
+                    : options.runNotes?.length ? [options.runNotes] : []) as [RunNote[]?, ClipClock?]),
                 );
                 span.setAttributes({ "frame_of_mind.candidate_accepted": detail.accepted });
                 return detail;
@@ -878,7 +944,14 @@ export class AnalysisOrchestrator {
             if (options.screenshots && result.accepted) {
               const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
               const screenshotPath = join(screenshotDirectory, screenshotName);
-              if (await this.screenshot(localVideo, result.evidence?.timestamp || candidate.start, screenshotPath)) {
+              // Only a built-in recipe that declares the settled strategy
+              // (teaching-points) searches near the cited time; every other
+              // recipe, custom ones included, takes the direct seek.
+              const screenshotTime = result.evidence?.timestamp || candidate.start;
+              const captured = options.recipe.screenshotStrategy === "settled"
+                ? await this.screenshot(localVideo, screenshotTime, screenshotPath, { start: candidate.start, end: candidate.end })
+                : await this.screenshot(localVideo, screenshotTime, screenshotPath);
+              if (captured) {
                 item.screenshot = screenshotName;
               }
               assertNotCanceled(execution.signal);
@@ -924,7 +997,7 @@ export class AnalysisOrchestrator {
               total: candidates.length,
               unit: "items",
             },
-            message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${candidate.start}`,
+            message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${renderClockTime(candidate.start, clock)}`,
           });
         };
         await mapWithConcurrency(candidates, detailConcurrency, interrogateCandidate, {
@@ -933,7 +1006,7 @@ export class AnalysisOrchestrator {
           signal: execution.signal,
         });
 
-        const omittedByLimit = index.moments.length - candidates.length;
+        const omittedByLimit = inRange.length - candidates.length;
         if (omittedByLimit > 0) {
           await reportWarning(progress, {
             kind: "warning",
@@ -954,6 +1027,7 @@ export class AnalysisOrchestrator {
             indexed: index.moments.length,
             selected: candidates.length,
             omittedByLimit,
+            ...(duration !== undefined ? { outOfRange } : {}),
             validated: items.length,
             accepted: items.filter((item) => item.result.accepted).length,
             rejected: items.filter((item) => !item.result.accepted).length,
@@ -1043,7 +1117,41 @@ export class AnalysisOrchestrator {
                 : "default-flash" as const,
           },
         };
+        clock.relativeEvidenceResponses = analyzer.relativeEvidenceResponses ?? 0;
+        if (clock.modelClipClock === "absolute" && clock.relativeEvidenceResponses > 0) await reportWarning(progress, { kind: "warning", stage: "interrogating", message: "Evidence clock disagrees with the cached absolute calibration; rerun calibrate." });
+        // One image tiling the moment screenshots (at most
+        // CONTACT_SHEET_MAX_TILES), labelled with the record number used in
+        // analysis.md and report.html. Nonfatal: the run completes without it.
+        const sheetEntries = options.screenshots
+          ? items
+              .filter((item) => item.result.accepted)
+              .flatMap((item, index) => item.screenshot
+                ? [{
+                    record: index + 1,
+                    time: item.result.evidence?.timestamp || item.candidate.start,
+                    screenshot: item.screenshot,
+                  }]
+                : [])
+          : [];
+        const contactSheet = sheetEntries.length
+          ? await this.contactSheet(stagingDirectory!, sheetEntries).catch(() => undefined)
+          : undefined;
+        if (sheetEntries.length && !contactSheet) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "rendering",
+            message: "The contact sheet could not be built; the moment screenshots are still in the run folder.",
+          });
+        } else if (sheetEntries.length > CONTACT_SHEET_MAX_TILES) {
+          await reportWarning(progress, {
+            kind: "warning",
+            stage: "rendering",
+            message: `The contact sheet shows the first ${CONTACT_SHEET_MAX_TILES} of ${sheetEntries.length} screenshots; the rest are only in the run folder.`,
+          });
+        }
+        assertNotCanceled(execution.signal);
         const manifestBase = {
+          clock,
           toolVersion: "0.3.0",
           runId,
           startedAt,
@@ -1078,13 +1186,16 @@ export class AnalysisOrchestrator {
             ? { derivedTranscript: derivedTranscriptProvenance }
             : {}),
           promptProvenance,
+          ...(options.label ? { label: options.label } : {}),
           artifacts: [
             "analysis.json",
             "analysis-outcome.json",
             "analysis.md",
             "report.html",
             "manifest.json",
+            "times.json",
             ...items.flatMap((item) => (item.screenshot ? [item.screenshot] : [])),
+            ...(contactSheet ? [contactSheet] : []),
           ],
         };
         const manifest: VersionedRunManifest = meetingRunContext
@@ -1330,7 +1441,10 @@ function sanitizedFailureError(error: unknown): RunFailureManifest["error"] {
       ...(error.issues.length ? { issues: [...error.issues] } : {}),
     };
   }
-  return { code: "unexpected_failure" };
+  return {
+    code: "unexpected_failure",
+    ...(error instanceof GeminiFileError && error.provider ? { provider: error.provider } : {}),
+  };
 }
 
 function sanitizedRemoteFileMetadata(
