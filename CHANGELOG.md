@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.0-beta.1] - 2026-11-23
+
+Pre-release. First release that publishes the standalone CLI with checksums.
+
 - Stored rate and timecode specification refusals now carry the `exact-time` error code and message.
 
 - Adopted `exact-time` v0.1.3 for exact frame, tick and timecode conversions and stored rate and media-clock validation.

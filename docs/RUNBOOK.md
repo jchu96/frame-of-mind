@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository        | `jchu96/frame-of-mind`                      |
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
-| Current version   | `0.5.0`                                     |
+| Current version   | `0.6.0-beta.1`                              |
 | Default model     | `gemini-3.7-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
@@ -203,7 +203,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.5.0
+0.6.0-beta.1
 ```
 
 ### 1.5 Configure Gemini
@@ -1608,6 +1608,13 @@ CI at the release merge commit on main. Tag that exact commit and push the tag:
 ```bash
 git tag -a vX.Y.Z <release-merge-sha> -m "Frame of Mind vX.Y.Z"
 git push origin vX.Y.Z
+```
+
+A pre-release uses a version with a suffix (`vX.Y.Z-beta.N`). The tag job does
+not yet mark it as a pre-release, so mark it once the job has published:
+
+```bash
+gh release edit vX.Y.Z-beta.N --repo jchu96/frame-of-mind --prerelease --latest=false
 ```
 
 The tag job checks the package version, builds the standalone CLI, verifies its

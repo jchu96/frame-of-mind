@@ -13,7 +13,7 @@ afterAll(async () => { if (root) await rm(root, { recursive: true, force: true }
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 it("release versions match the newest changelog section", () => {
-  const newestRelease = read("CHANGELOG.md").match(/^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$/m);
+  const newestRelease = read("CHANGELOG.md").match(/^## \[(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\] - \d{4}-\d{2}-\d{2}$/m);
   expect(newestRelease, "newest numbered changelog section must exist").not.toBeNull();
   const version = newestRelease![1];
   expect(JSON.parse(read("package.json")).version).toBe(version);
