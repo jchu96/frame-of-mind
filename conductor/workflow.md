@@ -46,8 +46,8 @@ Conductor implementation.
 ## Quality Gates
 
 Run from the repository root. `bun run check:pr` is the required
-pull-request gate: it selects the lanes a diff needs and excludes the hosted
-lane, which runs nightly and before deploy. Required CI at the exact head is
+pull-request gate: it always runs the fast and local lanes and never the
+hosted lane, which runs nightly and before deploy. Required CI at the exact head is
 the merge oracle (see `docs/TESTING.md`).
 
 ```bash

@@ -42,7 +42,7 @@
 - Update `README.md` for interface changes and `docs/RUNBOOK.md` for operating changes.
 - Add an ADR for decisions that alter trust boundaries, retention, or data ownership.
 - Keep scoped `AGENTS.md` files concise; `CLAUDE.md` files are symlinks to them.
-- Never commit working papers (`BRIEF-*`, `STATUS-*`, `REVIEW-*`, `STEER-*`, `MUTANTS-*`, `PR-BODY-*`); see `CONTRIBUTING.md` for review expectations.
+- Never commit working papers (`BRIEF-*`, `STATUS-*`, `REVIEW-*`, `STEER-*`, `MUTANTS-*`, `PR-BODY-*`). A change to this file is reviewed like code; see `CONTRIBUTING.md` for review expectations.
 - `.agents/skills/frame-of-mind/` is the one real skill directory; do not add wrappers, and use the copy installer only where outward symlinks are unsuitable.
 
 ## Memory Protocols

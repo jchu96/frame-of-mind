@@ -52,10 +52,11 @@ bun run check:pr        # required pull-request gate
 bun run check:sharded   # complete gate when the machine is unloaded
 ```
 
-The PR gate selects the necessary lanes from the diff. On a busy machine,
+The PR gate always runs the fast and local lanes, whatever the diff touches. On a busy machine,
 defer the full run or set `FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes.
 The pull-request gate does not run the hosted lane. That lane runs nightly, on
-manual dispatch, and before every deploy (`gate-lock bun run check:deploy`);
+manual dispatch, and before every deploy (`gate-lock bun run check:deploy`
+checks without deploying; `deploy:hosted` runs the same checks first);
 its known failures are tracked in
 [#113](https://github.com/jchu96/frame-of-mind/issues/113) and
 [#96](https://github.com/jchu96/frame-of-mind/issues/96). A change the
@@ -112,8 +113,11 @@ generated analyses into a public issue.
   `check:repo-hygiene` enforces the same rule in CI.
 - Review matches what the change can break. A code change gets one independent
   review at the exact head that will merge, by someone or something other than
-  its author; a second commit after review is checked on its own. A
-  documents-only change needs the automatic checks and no review. A change to
+  its author; a second commit after review is checked on its own. A change
+  to prose documents only (Markdown, text, the licence) needs the automatic
+  checks and no review. Agent instruction files (`AGENTS.md`, `CLAUDE.md`)
+  and data files such as JSON are reviewed like code, because agents and
+  tools act on them. A change to
   a merge gate, to secret handling, or to anything that deletes or uploads a
   user's recording also needs a written list of the faults it must catch, each
   shown failing.
