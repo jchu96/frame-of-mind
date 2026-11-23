@@ -54,7 +54,10 @@ bun run check:sharded   # complete gate when the machine is unloaded
 
 The PR gate always runs the fast and local lanes, whatever the diff touches. On a busy machine,
 defer the full run or set `FRAME_OF_MIND_GATE_PARALLELISM=1` to serialize lanes.
-The pull-request gate does not run the hosted lane. That lane runs nightly, on
+The only required Better Auth integration check on PRs is `auth-contract`,
+which covers HTTP access and revocation. The hosted lane covers Cloudflare Access
+HTTP and Workflows, media, auth modes, the Access browser journey and
+adversarial tests, and release rehearsal. That lane runs nightly, on
 manual dispatch, and before every deploy (`gate-lock bun run check:deploy`
 checks without deploying; `deploy:hosted` runs the same checks first);
 its known failures are tracked in

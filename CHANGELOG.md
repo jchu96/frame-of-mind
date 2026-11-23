@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Removed the intermittent Better Auth access and Workflows lane steps, composer journey, and duplicate uninvited-sign-in probe. The required Better Auth access and revocation contract remains. The hosted composer journey runs only under Cloudflare Access.
+
 - The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. A library import opts out by setting the global `Symbol.for("frameofmind.cli.libraryImport")` flag before loading it. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
 
 - `analyze --label <text>` records a human label for the run (for example the source title) as optional `label` in manifest schema 2 and 3, uses it as the video-only report heading, and prints it after the run path. It is never sent to the model or telemetry. Roll readers forward before importing labelled bundles.

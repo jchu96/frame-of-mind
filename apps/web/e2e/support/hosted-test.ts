@@ -5,11 +5,8 @@ import {
 } from "./hosted-harness";
 
 export const test = base.extend<{}, { hosted: HostedHarness }>({
-  hosted: [async ({}, use, workerInfo) => {
-    const authMode = workerInfo.project.name.includes("better-auth")
-      ? "better-auth"
-      : "cloudflare-access";
-    const hosted = await startHostedHarness(authMode);
+  hosted: [async ({}, use) => {
+    const hosted = await startHostedHarness("cloudflare-access");
     try {
       await use(hosted);
     } finally {

@@ -422,14 +422,18 @@ Run the built-Worker two-principal stop/go before the remote apply:
 
 ```bash
 bun run test:hosted-access-http
-bun run test:hosted-access-http:better-auth
+bun run check:auth-contract
 ```
 
-Each receipt must include `HOSTED_ACCESS_CONTRACT PASSED`, isolated list
+The Access receipt must include `HOSTED_ACCESS_CONTRACT PASSED`, isolated list
 and 404 detail lines for both principals, a 409 `run_principal_conflict`, and
 403 denials for both a service principal and a missing assertion. The contract
 also applies all migrations twice against an empty local D1 and proves the
-explicit disabled-hosted fixture remains 404.
+explicit disabled-hosted fixture remains 404. The only required PR integration
+check for Better Auth HTTP access and revocation prints
+`HOSTED_AUTH_REQUIRED_CONTRACT PASSED`. Before deploy, the hosted lane also
+runs Access HTTP and Workflows, media, auth modes, the Access browser journey
+and adversarial tests, and release rehearsal.
 
 After migration, verify no sentinel survived:
 

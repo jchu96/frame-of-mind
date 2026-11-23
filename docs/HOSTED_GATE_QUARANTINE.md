@@ -2,7 +2,7 @@
 
 | Scope | Tracking | Return rule |
 |---|---|---|
-| Whole `check:lane:hosted` (all eight steps unchanged) | [#113 — hosted-contracts advisory lane has been red on main](https://github.com/jchu96/frame-of-mind/issues/113) | ten consecutive local passes on the shared machine and three consecutive nightly passes at an unchanged source revision, without retries |
+| Whole `check:lane:hosted` (six steps) | [#113 — hosted-contracts advisory lane has been red on main](https://github.com/jchu96/frame-of-mind/issues/113) | ten consecutive local passes on the shared machine and three consecutive nightly passes at an unchanged source revision, without retries |
 
 On 2026-11-13, the reduced lane passed four times, then failed hosted auth
 on the fifth run at unchanged base `41766a0`. Two successful runs needed an
@@ -12,8 +12,11 @@ shared machine where contributors run it; load does not waive a failure.
 
 The complete lane runs nightly and on manual dispatch in `serial-check`,
 and must pass inside each `deploy:hosted` invocation before Wrangler runs.
-`check:deploy` runs the same gates for release validation without deployment. The six required PR checks
-remain in place. No test body, timeout, dependency pin, or retry changed.
+`check:deploy` runs the same gates for release validation without deployment. The six hosted steps cover Cloudflare Access HTTP, Access Workflows,
+media, auth modes, hosted/adversarial Playwright and release rehearsal. The
+composer-to-findings browser journey runs only under Cloudflare Access.
+The only required PR check for Better Auth access and revocation is
+`auth-contract`. The auth-mode check still exercises sign-in and mail in the hosted lane.
 
 The return rule is the expiry condition for this separation. The deploy
 wrapper prevents the 2026-11-13 gate move from dropping hosted checks

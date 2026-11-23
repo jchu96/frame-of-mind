@@ -40,7 +40,7 @@ describe("check lanes", () => {
       ...parseRunnerSteps(packageJson.scripts["check:lane:hosted"], "hosted"),
     ];
 
-    expect(serialSteps).toHaveLength(16);
+    expect(serialSteps).toHaveLength(14);
     expect(new Set(laneSteps).size).toBe(laneSteps.length);
     expect([...laneSteps].sort()).toEqual([...serialSteps].sort());
   });

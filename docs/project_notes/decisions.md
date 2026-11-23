@@ -4,6 +4,15 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-11-23 — Retire four intermittent Better Auth hosted checks
+
+The full access and Workflows HTTP steps, browser composer journey, and duplicate
+uninvited-sign-in probe repeatedly failed on unchanged revisions. With no users
+of the hosted interface, the owner accepted losing the Better Auth end-to-end
+workflow and extended access assertions. The required HTTP access and revocation
+contract remains. Cloudflare Access still exercises the hosted workflow and
+composer. The hosted auth-mode check still exercises sign-in and mail.
+
 ## 2026-11-18 — Give transcription its own system instruction
 
 The owner approved full original-language transcription. The transcription
