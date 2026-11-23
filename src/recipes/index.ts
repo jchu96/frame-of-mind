@@ -203,7 +203,7 @@ const teachingPointsCharter: RecipeCharter = {
     "Record only what the video states or shows. Never add domain knowledge, corrections, numbers, or reasons the video does not give, even when they are well known. Keep the narrator's words verbatim. Never present a claim about the maker's own product as a general rule.",
   phaseFocus: {
     index:
-      "Index each distinct point once, spanning the whole stretch where it is said and shown; do not split one point told over the same diagram into several candidates seconds apart. Start a new candidate when the diagram or animation changes to show something new.",
+      "Index each new diagram or animation state that shows something new as its own candidate, even within one sequence, so each state keeps its own picture. Merge only when the same point is told over the same unchanged picture; do not split that into candidates seconds apart.",
     interrogation: [
       "Write details with these labels exactly as spelled, each at most once; omit a label that does not apply rather than writing None.",
       "Teaching point: the point in one plain sentence.",

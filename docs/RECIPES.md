@@ -251,8 +251,9 @@ omitted when they do not apply:
 - Picture says more than words
 - Maker-specific
 
-The index pass keeps one candidate per point told over the same picture and
-starts a new one when the diagram changes. The interrogation pass places the
+The index pass gives each new diagram or animation state its own candidate,
+even within one sequence, and merges only a point told over the same
+unchanged picture. The interrogation pass places the
 evidence timestamp where the picture is settled rather than mid-transition and
 omits screen-review fields (`where`, verbatim UI text); on-screen text goes
 under On screen. The report still prints the index's surface line until a

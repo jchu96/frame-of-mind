@@ -80,7 +80,8 @@ describe("analysis recipes", () => {
       expect(instruction).toContain("calls to subscribe");
       expect(instruction).toContain("maker's own product");
     }
-    expect(recipe.indexInstruction).toContain("do not split one point");
+    expect(recipe.indexInstruction).toContain("each new diagram or animation state that shows something new as its own candidate");
+    expect(recipe.indexInstruction).toContain("Merge only when the same point is told over the same unchanged picture");
     expect(recipe.interrogationInstruction).toContain("Picture says more than words: only when the picture shows something the words do not.");
     expect(recipe.interrogationInstruction).toContain("omit where and evidence.verbatimUiText");
     expect(recipe.interrogationInstruction).toContain("not mid-transition");
