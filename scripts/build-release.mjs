@@ -11,19 +11,23 @@ if (tag !== undefined && tag !== `v${version}`) {
 const buildEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot };
 const bun = execFileSync("bun", ["--no-env-file", "--version"], { encoding: "utf8", env: buildEnv }).trim();
 if (`bun@${bun}` !== packageManager) throw new Error(`Use ${packageManager} for releases`);
-const inputs = ["src", "package.json", "bun.lock", "tsconfig.json", "LICENSE", "scripts/build-release.mjs"];
+const inputs = ["src", "package.json", "bun.lock", "tsconfig.json", "LICENSE", "scripts/build-release.mjs", "scripts/release-notices"];
 if (execFileSync("git", ["status", "--porcelain", "--", ...inputs], { encoding: "utf8" }).trim()) {
   throw new Error("Commit the release inputs before building");
 }
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 const stage = await mkdtemp(".release-build-");
 try {
+  const metafile = join(stage, "meta.json");
   execFileSync("bun", [
     "--no-env-file", "--no-install", "build", "src/cli.ts", "--target=node", "--format=esm",
     "--packages=bundle", "--minify-whitespace", "--env=disable",
     "--define", `__FRAMEOFMIND_RELEASE_VERSION__=${JSON.stringify(version)}`,
-    `--outfile=${join(stage, "frameofmind.mjs")}`,
+    `--metafile=${metafile}`, `--outfile=${join(stage, "frameofmind.mjs")}`,
   ], { env: buildEnv, stdio: "inherit" });
+  execFileSync("bun", ["--no-env-file", "--no-install", "scripts/release-notices/index.mjs",
+    metafile, join(stage, "THIRD-PARTY-NOTICES.txt")], { env: buildEnv, stdio: "inherit" });
+  await rm(metafile);
   await copyFile("LICENSE", join(stage, "LICENSE"));
   const metadata = { version, commit, node: process.versions.node, bun };
   await writeFile(join(stage, "release.json"), JSON.stringify(metadata, null, 2) + "\n");
