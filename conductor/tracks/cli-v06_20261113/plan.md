@@ -38,8 +38,8 @@ scope are in the [specification](./spec.md).
 | ---- | ------ |
 | Production dependency advisories cleared (PR #145) | `[x]` |
 | Cached builds portable across checkouts; Bun pinned to 1.4.4 (PR #146) | `[x]` |
-| Local database emulator upgrade to fix the hosted sign-in workflow test (issues #96, #113) | `[!]` tried 2026-11-13; still failed at Wrangler 4.148.0; no pull request |
-| Hosted steps that fail on an unchanged tree leave the default pull-request gate and run nightly and before every deploy instead | `[ ]` replaces the item above |
+| Local database emulator upgrade to fix the hosted sign-in workflow test (issues #96, #113) | `[!]` tried 2026-11-13 on a local branch and reported still failing at Wrangler 4.148.0; no pull request, so no CI record of that trial |
+| Hosted steps that fail on an unchanged tree leave the default pull-request gate and run nightly and before every deploy instead | `[x]` PR #149; replaces the item above; `docs/HOSTED_GATE_QUARANTINE.md` |
 | Transcription in the original language: every transcription request asks for the languages actually spoken, keeps mid-sentence switches and never translates; transcription has its own system instruction without the analysis guard's full-transcript line (PR #158, `cf07529`); optional `--transcript-language <BCP-47>` hint on `transcribe` and `analyze`, recorded as `requestedLanguage` (PR #159, `12c4456`) | `[x]` live fidelity on real non-English speech is not tested; one owner-run synthetic smoke is proposed in each pull request |
 | Re-pin anything that pins a frame-of-mind commit (for example an agent plugin) to `12c4456` or later, so it gets original-language transcription and the hint; once a release carries the built command-line bundle, pin the release instead | `[ ]` |
 | Full serial `check`, not the pull-request gate: the hosted Better Auth workflow spend-cap assertion (`test:hosted-workflows-http:better-auth`) expected HTTP 429 and got 201 | `[ ]` seen 2026-11-18 in a builder's local run at `a61dd29`; cause unverified; outside that change; the pull-request gate and CI passed |
@@ -47,9 +47,9 @@ scope are in the [specification](./spec.md).
 | On each tagged release, CI attaches the built command-line tool and its SHA-256, so a consumer downloads and verifies one file instead of rebuilding from source | `[ ]` |
 | Silent `frameofmind` command fixed; upload retention stated truthfully (PR #161, `b3a2869`) | `[x]` |
 | Teaching-points recipe, contact sheet, run `--label`, settled screenshots for that recipe only, ADR 0029 proposed (PR #162, `06f2e32`) | `[x]` one live run reported by the requester; ADR 0029 is still a proposal |
-| Screenshot seek is forward-only: at very low frame rates a cited time can get the next frame instead of the one on screen, or no screenshot when the last frame has passed | `[ ]` seen 2026-11-23 in review on synthetic clips at 0.25 and 0.5 fps; already on `main`; not caused by the reviewed branch |
-| Flaky in the pull-request gate (local lane): `test:studio-http` "same composer idempotency key replays the same job" got HTTP 500, not 200 (`scripts/test-local-studio-http.ts:66`) | `[ ]` seen 2026-11-18 on PR #158, CI run 44311269021 attempt 1; unrelated to the change; passed on rerun |
-| Flaky in the pull-request gate (fast lane): `test/hosted-gate.test.ts` "MISS deploy-needs-hosted" failed with `HOSTED_DEPLOY status=FAIL reason=source_changed_during_check` | `[ ]` seen 2026-11-18 on PR #158, CI run 44311269021 attempt 2; unrelated to the change; passed on rerun |
+| Screenshot seek is forward-only: at very low frame rates a cited time can get the next frame instead of the one on screen, or no screenshot when the last frame has passed | `[ ]` reported 2026-11-23 by the review of PR #162 on synthetic low-frame-rate clips; the seek code is the same on `main` |
+| Flaky in the pull-request gate (local lane): `test:studio-http` "same composer idempotency key replays the same job" got HTTP 500, not 200 (`scripts/test-local-studio-http.ts:66`) | `[ ]` seen 2026-11-18 on PR #158, CI run 44311269021 attempt 1; passed on rerun with no change to the tree; cause not established |
+| Flaky in the pull-request gate (fast lane): `test/hosted-gate.test.ts` "MISS deploy-needs-hosted" failed with `HOSTED_DEPLOY status=FAIL reason=source_changed_during_check` | `[ ]` seen 2026-11-18 on PR #158, CI run 44311269021 attempt 2; passed on rerun with no change to the tree; cause not established |
 
 ## Verification
 

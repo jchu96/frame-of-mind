@@ -47,8 +47,11 @@ taste.
 - **Input.** A cut list exported from the editing application, with its
   sequence rate. The tool reads none today. The first format is the Final
   Cut Pro XML (xmeml) that Premiere Pro exports (owner, 2026-11-18): it
-  carries every video and audio track, and its rate maps to a reduced
-  rational rate or the run refuses. A rendered file alone gives only
+  carries video and audio tracks, though the export is a conversion with
+  documented limits and may not represent everything in a project. The
+  reader states what it found (tracks, clips, anything it could not read)
+  and refuses a figure that depends on a track it does not have. Its rate
+  maps to a reduced rational rate or the run refuses. A rendered file alone gives only
   approximate cuts through ffmpeg scene scores (lane 4). It cannot tell the
   speaker from a cutaway, so that path is a later fallback, labelled
   approximate.
@@ -82,10 +85,12 @@ taste.
 
 - The local MCP server needs an ADR first: `docs/MCP_ROADMAP.md` excludes
   analysis, upload and raw-transcript tools from the first MCP release.
-- Settled 2026-11-13: every time the tool computes or stores is seconds to
-  the millisecond, labelled with its clock; a timeline clock is a declared
-  offset in seconds. Exact timecode is an opt-in output rendering at a rate
-  the caller gives or the media reports, never assumed; fractional rates are
-  exact or refused.
+- Settled 2026-11-18 by ADR 0027, which supersedes the 2026-11-13
+  seconds-to-the-millisecond rule: an exact time is a whole number of frames
+  at a rational rate, labelled with its clock; ticks, timecode with its
+  stated drop-frame mode, and seconds are derived from it. A rate is given by
+  the caller or reported by the media, never assumed; fractional rates are
+  exact or refused. A time a model reports stays approximate: seconds, with
+  no frame or timecode.
 - Word-level alignment inside continuous speech would need a new dependency;
   until it is decided, such edges are reported as not snapped.

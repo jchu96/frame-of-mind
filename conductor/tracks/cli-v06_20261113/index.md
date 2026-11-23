@@ -18,7 +18,9 @@
 - Current focus: wave 2. Its exact-time groundwork merged (PRs #154, #156,
   #160); word-accurate times and ffmpeg helpers are not started. The time
   library moves to its own `exact-time` package first (plan, supporting work).
-- The advisory `hosted-contracts` job is tracked in issues #96 and #113.
+- The hosted lane runs nightly, on manual dispatch and before deploy, not in
+  the pull-request gate (PR #149). Its known failures are tracked in issues
+  #96 and #113.
 
 ## Origin
 
