@@ -23,6 +23,15 @@ export const runIdSchema = z.string()
   .max(240)
   .regex(/^[a-zA-Z0-9._:-]+$/, "run ID contains characters that are unsafe in routes");
 
+/**
+ * Operator-supplied human label for a run (`--label`), so run folders named by
+ * hashes can be told apart. One line of printable text.
+ */
+export const runLabelSchema = z.string().min(1).max(200).refine(
+  (value) => value.trim() === value && !/[\u0000-\u001F\u007F-\u009F]/.test(value),
+  "run label must be one trimmed line without control characters",
+);
+
 export const timestampSchema = z.string().max(32).refine(
   isCanonicalTimestamp,
   "timestamp must use HH:MM:SS with valid minute and second fields",
@@ -215,6 +224,7 @@ export const runManifestSchema = z.object({
   derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
   promptProvenance: promptProvenanceSchema.optional(),
   clock: runClockSchema.optional(),
+  label: runLabelSchema.optional(),
   artifacts: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255)).max(1_100),
 }).strict().superRefine((value, context) => {
   if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
@@ -287,6 +297,7 @@ export const runManifestV3Schema = z.object({
   derivedTranscript: derivedTranscriptProvenanceSchema.optional(),
   promptProvenance: promptProvenanceSchema.optional(),
   clock: runClockSchema.optional(),
+  label: runLabelSchema.optional(),
   artifacts: z.array(
     z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255),
   ).max(1_100),

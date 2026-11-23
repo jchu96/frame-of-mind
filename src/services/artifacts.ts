@@ -64,7 +64,7 @@ export async function writeArtifacts(
     `${JSON.stringify(validatedOutcome, null, 2)}\n`,
     { mode: 0o600 },
   );
-  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock), { mode: 0o600 });
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label), { mode: 0o600 });
   await writeFile(
     reportHtml,
     await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome),
@@ -80,17 +80,19 @@ export function renderAnalysis(
   analysis: VersionedAnalysisRun,
   outcome?: AnalysisOutcome,
   clock?: RunClock,
+  label?: string,
 ): string {
   const accepted = analysis.items.filter((item) => item.result.accepted);
   const heading = analysis.schemaVersion === 2
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
-    : "Video analysis";
+    : label || "Video analysis";
   const contextLine = analysis.schemaVersion === 2
     ? `- Meeting: \`${escapeInline(analysis.meeting.id)}\``
     : "- Context: Video only (no external context)";
   const lines = [
     `# ${escapeInline(heading)}`,
     "",
+    ...(label ? [`- Label: ${escapeInline(label)}`] : []),
     contextLine,
     `- Recipe: \`${escapeInline(analysis.recipe.id)}\``,
     `- Model: \`${escapeInline(analysis.model)}\``,
@@ -204,7 +206,7 @@ async function renderHtmlArtifact(
   }));
   const heading = analysis.schemaVersion === 2
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
-    : "Video analysis";
+    : manifest.label || "Video analysis";
   const providerLabel = analysis.schemaVersion === 2
     ? analysis.meeting.provider
     : "video only";
@@ -255,7 +257,7 @@ async function renderHtmlArtifact(
   <header>
     <div class="eyebrow">Frame of Mind · ${html(providerLabel)} · ${html(analysis.recipe.label)}</div>
     <h1>${html(heading)}</h1>
-    <div class="meta"><span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
+    <div class="meta">${manifest.label ? `<span>Label: ${html(manifest.label)}</span>` : ""}<span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
   </header>
   ${outcomeNotice}
   <section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>

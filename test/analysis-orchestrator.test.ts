@@ -2070,6 +2070,38 @@ describe("best-N selection", () => {
       expect((await readFile(join(result.directory, file), "utf8")).toLowerCase()).toContain("lower-importance");
     }
   });
+  it("--label is recorded in the manifest, headed in both reports, printed, and never sent to the model", async () => {
+    const { buildAnalyzeOptions, printAnalysisSummary } = await import("../src/cli.js");
+    const { runManifestV3Schema } = await import("../src/domain/schemas.js");
+    const fixture = await createFixture();
+    const flags = { source: "none", granolaTransport: "mcp", recipe: "teaching-points", depth: "standard", video: fixture.options.video, output: fixture.outputRoot, maxMoments: "all", screenshots: false, derivedTranscript: false };
+    const options = await buildAnalyzeOptions(undefined, { ...flags, label: "  Low <Frequency> Build-up  " }, "synthetic-key");
+    expect(options.label).toBe("Low <Frequency> Build-up");
+    const result = await createOrchestrator(fixture).analyze(options);
+    expect(result.manifest.label).toBe("Low <Frequency> Build-up");
+    expect(runManifestV3Schema.parse(result.manifest).label).toBe("Low <Frequency> Build-up");
+    expect(JSON.parse(await readFile(join(result.directory, "manifest.json"), "utf8")).label).toBe("Low <Frequency> Build-up");
+    const markdown = await readFile(join(result.directory, "analysis.md"), "utf8");
+    expect(markdown.split("\n")[0]).toBe("# Low &lt;Frequency&gt; Build\\-up");
+    const report = await readFile(join(result.directory, "report.html"), "utf8");
+    expect(report).toContain("<h1>Low &lt;Frequency&gt; Build-up</h1>");
+    expect(report).toContain("<span>Label: Low &lt;Frequency&gt; Build-up</span>");
+    const prompts = JSON.stringify([fixture.analyzer.index.mock.calls, fixture.analyzer.interrogate.mock.calls]);
+    expect(prompts).not.toContain("Frequency> Build");
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      printAnalysisSummary(result);
+      expect(stdout.mock.calls.map(([text]) => text).join("")).toContain(`Analysis: ${result.directory} (Low <Frequency> Build-up)`);
+    } finally { stdout.mockRestore(); }
+
+    for (const label of ["", "two\nlines", "tab\there", "x".repeat(201)]) {
+      await expect(buildAnalyzeOptions(undefined, { ...flags, label }, "synthetic-key")).rejects.toThrow("--label must be one line");
+    }
+    expect(runManifestV3Schema.safeParse({ ...result.manifest, label: " padded " }).success).toBe(false);
+    const { label: _omitted, ...unlabelled } = result.manifest;
+    expect(runManifestV3Schema.safeParse(unlabelled).success).toBe(true);
+  });
+
   it("--max-moments all interrogates every indexed moment without a truncation warning", async () => {
     const { buildAnalyzeOptions } = await import("../src/cli.js"); const fixture = await createFixture();
     const options = await buildAnalyzeOptions(undefined, { source: "none", granolaTransport: "mcp", recipe: "requirements", depth: "standard", video: fixture.options.video, output: fixture.outputRoot, maxMoments: "all", screenshots: false, derivedTranscript: false }, "synthetic-key");

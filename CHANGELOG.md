@@ -7,6 +7,8 @@ Semantic Versioning.
 
 - The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. A library import opts out by setting the global `Symbol.for("frameofmind.cli.libraryImport")` flag before loading it. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.
 
+- `analyze --label <text>` records a human label for the run (for example the source title) as optional `label` in manifest schema 2 and 3, uses it as the video-only report heading, and prints it after the run path. It is never sent to the model or telemetry. Roll readers forward before importing labelled bundles.
+
 - Run bundles with screenshots gain `contact-sheet.png`: every moment screenshot tiled in one image, labelled with record number and cited time, listed in the manifest's `artifacts`. Labels are drawn in-process, so ffmpeg builds without `drawtext` work.
 
 - Moment screenshots avoid frames caught mid-transition: ffmpeg samples within one second of the cited time, inside the candidate range, and moves to the steadiest frame on the same shot without crossing a hard cut. Unmoved screenshots are unchanged.

@@ -517,6 +517,11 @@ frameofmind analyze \
   --recipe issue-review
 ```
 
+Video-only runs land under a folder named by the recording's digest. Add
+`--label "<source title>"` to record a human label in `manifest.json`, head
+`analysis.md` and `report.html` with it, and print it after the run path. The
+label is never sent to the model.
+
 The core orchestrator and Studio job/projection boundaries support explicit
 video-only schema-v3 runs. If a context source is selected, its failure must
 fail the run; it cannot silently downgrade to video-only. See

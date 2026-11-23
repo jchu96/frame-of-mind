@@ -446,6 +446,7 @@ frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|r
 | `calibrate [--model <id>] [--json]` | refresh the model clock measurement and report token cost |
 | `--transcript-offset <time>` | full transcript time at video `00:00` |
 | `--focus <text>` | prioritize a repository/workflow/concern |
+| `--label <text>` | human label for the run (for example the source title), up to 200 characters on one line; recorded as `label` in `manifest.json`, used as the report heading, printed after the run path; never sent to the model |
 | `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
 | `--model <id>` | Gemini model for both current passes |
 | `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |

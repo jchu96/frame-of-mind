@@ -186,6 +186,8 @@ interface RunManifestBase {
   };
   derivedTranscript?: DerivedTranscriptProvenance;
   promptProvenance?: PromptProvenance;
+  /** Operator-supplied human label (`--label`). */
+  label?: string;
   artifacts: string[];
 }
 

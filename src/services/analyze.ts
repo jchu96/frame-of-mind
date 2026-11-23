@@ -128,6 +128,8 @@ interface AnalyzeOptionsBase {
   expectedVideoSha256?: string;
   recordingUrl?: string;
   focus?: string;
+  /** Operator-supplied human label recorded in the manifest and reports. */
+  label?: string;
   runNotes?: RunNote[];
   indexFps?: number;
   outputRoot: string;
@@ -1170,6 +1172,7 @@ export class AnalysisOrchestrator {
             ? { derivedTranscript: derivedTranscriptProvenance }
             : {}),
           promptProvenance,
+          ...(options.label ? { label: options.label } : {}),
           artifacts: [
             "analysis.json",
             "analysis-outcome.json",
