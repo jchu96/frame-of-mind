@@ -1031,8 +1031,11 @@ only failing field paths and issue codes. The adapter fails closed; it does not
 truncate, cast, expose the response, or weaken the durable schema.
 
 On a terminal whole-run failure, the orchestrator attempts exact deletion up to
-three times whenever it has a Gemini file identity and atomically publishes
-only `failure-manifest.json`. The receipt contains sanitized phase/error fields
+three times for each upload it does not retain: the recording under
+`--retention run`, and always the derived-transcript audio. A recording kept
+under the default `provider` retention, or reused with `--remote-file`, is not
+deleted and stays until provider expiry. The orchestrator then atomically
+publishes only `failure-manifest.json`. The receipt contains sanitized phase/error fields
 and one cleanup state:
 
 - `not_obtained` when upload failed before a remote identity was returned;
@@ -1418,8 +1421,15 @@ git status --short
 git pull --ff-only
 bun install --frozen-lockfile
 bun run check
+bun run build:cli
+frameofmind --help
 bun --no-env-file scripts/test-fresh-clone.ts upgrade
 ```
+
+The linked `frameofmind` command runs this checkout's `dist/cli.js`; a pull
+changes nothing it runs until `bun run build:cli` does. `bun run check` also
+builds, but only if every earlier step passes, so run the build explicitly and
+confirm `--help` prints usage.
 
 The upgrade proof clones the previous release tag (or the current branch's
 `origin/main` merge-base), installs it with its frozen lockfile, fast-forwards
