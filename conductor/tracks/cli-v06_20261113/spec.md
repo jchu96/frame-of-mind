@@ -37,14 +37,60 @@ an editing project, quality-control checks, repeatable labels across takes,
 scoring a run against a finished cut, off-camera speech detection, a
 long-recording split-and-merge path, and a cost estimate.
 
+## Candidate, not scheduled: cut rhythm
+
+A read-only measure of picture pacing for a draft or finished cut, so that a
+note such as "make it pacier" can be compared with a cut the editor names as
+the reference. It reports and never changes the cut. It gives no verdict on
+taste.
+
+- **Input.** A cut list exported from the editing application, with its
+  sequence rate. The tool reads none today. The first format is the Final
+  Cut Pro XML (xmeml) that Premiere Pro exports (owner, 2026-11-18): it
+  carries video and audio tracks, though the export is a conversion with
+  documented limits and may not represent everything in a project. The
+  reader states what it found (tracks, clips, anything it could not read)
+  and refuses a figure that depends on a track it does not have. Its rate
+  maps to a reduced rational rate or the run refuses. A rendered file alone gives only
+  approximate cuts through ffmpeg scene scores (lane 4). It cannot tell the
+  speaker from a cutaway, so that path is a later fallback, labelled
+  approximate.
+- **Output.**
+  - Shot count.
+  - Shot lengths as a distribution: median, median absolute deviation and
+    percentiles, rather than a mean.
+  - The shortest and longest shots with their positions.
+  - A rolling median across the cut.
+  - Uncovered and covered speaker time, where the tracks say which is which.
+  - With a reference cut, the same figures side by side, with no verdict
+    words.
+
+  Times are whole frames in the sequence's timecode with the rate named,
+  through the exact time module (ADR 0027).
+- **Cost.** No model call and no upload. The command-line tool has no XML
+  parser today, so the reader needs either a vetted parser dependency or a
+  bounded reader for the xmeml subset; that is settled in the brief. One
+  reader, the statistics and one renderer: about one builder pass and one
+  review.
+- **Falsifier, checked before it ships.** Take pairs of cuts an editor has
+  already ranked by pace. If the measure orders them differently, it is not
+  a pacing measure. Known blind spots:
+  - the same lengths in another order;
+  - pace carried by motion or speech rate inside a shot;
+  - sound-led edits.
+- **Fit.** After lane 4's `probe`, built on the exact time module, and
+  outside the v0.6.0 waves unless the owner moves it in.
+
 ## Open decisions
 
 - The local MCP server needs an ADR first: `docs/MCP_ROADMAP.md` excludes
   analysis, upload and raw-transcript tools from the first MCP release.
-- Settled 2026-11-13: every time the tool computes or stores is seconds to
-  the millisecond, labelled with its clock; a timeline clock is a declared
-  offset in seconds. Exact timecode is an opt-in output rendering at a rate
-  the caller gives or the media reports, never assumed; fractional rates are
-  exact or refused.
+- Settled 2026-11-18 by ADR 0027, which supersedes the 2026-11-13
+  seconds-to-the-millisecond rule: an exact time is a whole number of frames
+  at a rational rate, labelled with its clock; ticks, timecode with its
+  stated drop-frame mode, and seconds are derived from it. A rate is given by
+  the caller or reported by the media, never assumed; fractional rates are
+  exact or refused. A time a model reports stays approximate: seconds, with
+  no frame or timecode.
 - Word-level alignment inside continuous speech would need a new dependency;
   until it is decided, such edges are reported as not snapped.
