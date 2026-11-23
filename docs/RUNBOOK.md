@@ -1611,7 +1611,8 @@ git push origin vX.Y.Z
 ```
 
 A pre-release uses a version with a suffix (`vX.Y.Z-beta.N`). The tag job does
-not yet mark it as a pre-release, so mark it once the job has published:
+not yet mark it as a pre-release, so GitHub shows it as the latest release from
+the moment the job publishes until you mark it. Mark it at once:
 
 ```bash
 gh release edit vX.Y.Z-beta.N --repo jchu96/frame-of-mind --prerelease --latest=false

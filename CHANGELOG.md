@@ -9,6 +9,8 @@ Semantic Versioning.
 
 Pre-release. First release that publishes the standalone CLI with checksums.
 
+Known limit: `manifest.json` written by `analyze` still records `toolVersion` as `0.3.0`; use `frameofmind --version` or `release.json` for the real version.
+
 - Stored rate and timecode specification refusals now carry the `exact-time` error code and message.
 
 - Adopted `exact-time` v0.1.3 for exact frame, tick and timecode conversions and stored rate and media-clock validation.
