@@ -1610,16 +1610,13 @@ git tag -a vX.Y.Z <release-merge-sha> -m "Frame of Mind vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-A pre-release uses a version with a suffix (`vX.Y.Z-beta.N`). The tag job does
-not yet mark it as a pre-release, so GitHub shows it as the latest release from
-the moment the job publishes until you mark it. Mark it at once:
+For a version with a pre-release suffix (`vX.Y.Z-beta.N`), the tag job marks the
+release as a pre-release and keeps it out of Latest. Plain versions use GitHub’s
+default Latest selection.
 
-```bash
-gh release edit vX.Y.Z-beta.N --repo jchu96/frame-of-mind --prerelease --latest=false
-```
-
-The tag job checks the package version, builds the standalone CLI, verifies its
-checksums and runs it in an empty directory before publishing. From a fresh
+The tag job checks the package version, builds the standalone CLI and its
+third-party notices, verifies their checksums and runs the CLI in an empty
+directory before publishing. From a fresh
 directory, verify the published files and the commit recorded in the manifest:
 
 ```bash
