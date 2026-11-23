@@ -219,6 +219,24 @@ runs but is a mutable alias, so it is less reproducible than a pinned model.
 
 ## Install
 
+### Download the standalone CLI
+
+For releases that include the bundle, choose a tag and run these commands in
+an empty directory. Replace `vX.Y.Z` with the release tag.
+
+```bash
+gh release download vX.Y.Z --repo jchu96/frame-of-mind
+shasum -a 256 -c SHA256SUMS
+node frameofmind.mjs --version
+```
+
+On Linux, `sha256sum --check SHA256SUMS` also verifies the download. The CLI
+needs Node 22 or newer. Install ffmpeg and ffprobe for media work.
+The single-file build supports the CLI’s opt-in error reporting and analysis
+spans. Automatic instrumentation of third-party modules is unavailable there.
+
+### Install from source
+
 Install [Node.js 22 or newer](https://nodejs.org/en/download) for the linked
 command and [Bun](https://bun.sh/docs/installation) for the workspace. Verify
 `node --version` and `bun --version` before continuing.

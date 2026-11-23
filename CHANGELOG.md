@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Tagged releases now include a standalone Node CLI, its build commit and tool versions, and SHA-256 checksums.
+
 - Removed the intermittent Better Auth access and Workflows lane steps, composer journey, and duplicate uninvited-sign-in probe. The required Better Auth access and revocation contract remains. The hosted composer journey runs only under Cloudflare Access.
 
 - The CLI no longer infers whether it is the entry point: loading `dist/cli.js` runs the command, so a linked or launched install can no longer exit 0 with no output. A library import opts out by setting the global `Symbol.for("frameofmind.cli.libraryImport")` flag before loading it. The upgrade steps now rebuild the linked checkout and check `frameofmind --help`.

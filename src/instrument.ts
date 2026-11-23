@@ -1,5 +1,6 @@
 import { config as loadDotenv } from "dotenv";
 import * as Sentry from "@sentry/bun";
+import { IS_RELEASE_BUNDLE } from "./version.js";
 import { scrubSentryEvent } from "./lib/sentry-telemetry.js";
 import {
   scrubSentryTransactionEvent,
@@ -39,6 +40,7 @@ if (CLI_TELEMETRY_ENABLED) {
     sendDefaultPii: false,
     tracesSampleRate: tracesSampleRate(),
     defaultIntegrations: false,
+    ...(IS_RELEASE_BUNDLE && { registerEsmLoaderHooks: false }),
     beforeSendTransaction: CLI_TRACING_ENABLED
       ? (event) =>
         scrubSentryTransactionEvent(

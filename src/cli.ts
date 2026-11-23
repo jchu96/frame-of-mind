@@ -19,7 +19,7 @@ import { clockSummary } from "./services/artifacts.js";
 import { calibrateClipClock } from "./adapters/gemini-calibration.js";
 import { GeminiVideoAnalyzer } from "./adapters/gemini.js";
 import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
-import { VERSION } from "./version.js";
+import { IS_RELEASE_BUNDLE, VERSION } from "./version.js";
 import { registerKey } from "./commands/key.js";
 import { loadRunNotes } from "./services/run-notes.js";
 import { resolveRetention } from "./domain/retention.js";
@@ -125,6 +125,9 @@ program
     process.stdout.write(
       `Telemetry: ${isCliTelemetryEnabled() ? "on (Sentry)" : "off"}\n`,
     );
+    if (IS_RELEASE_BUNDLE && isCliTelemetryEnabled()) {
+      process.stdout.write("Automatic instrumentation of third-party modules is unavailable in the single-file build.\n");
+    }
     process.stdout.write(`Artifact root: ${defaultOutputRoot()}\n`);
     if (!checks[0][1] || !checks[1][1]) process.exitCode = 1;
   });
