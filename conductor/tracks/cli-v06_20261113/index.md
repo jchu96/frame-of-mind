@@ -7,7 +7,6 @@
 
 - [Specification](./spec.md)
 - [Implementation Plan](./plan.md)
-- [Landing order](./landing-order.md): work in flight, what each item waits for, owner decisions
 - Adversarial plan review: not yet recorded
 
 ## Progress
@@ -18,7 +17,7 @@
   (PR #152, `4b95a14`).
 - Current focus: wave 2. Its exact-time groundwork merged (PRs #154, #156,
   #160); word-accurate times and ffmpeg helpers are not started. The time
-  library moves to its own `exact-time` package first (landing order).
+  library moves to its own `exact-time` package first (plan, supporting work).
 - The advisory `hosted-contracts` job is tracked in issues #96 and #113.
 
 ## Origin
