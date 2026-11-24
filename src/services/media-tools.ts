@@ -16,7 +16,7 @@ export function localVideoInput(formatName?: string) {
   return [...options, "-enable_drefs", "0"];
 }
 export const probeLimit = 32 * 1024 * 1024;
-export interface ToolOptions { signal?: AbortSignal; timeoutMs?: number; maxOutput?: number }
+export interface ToolOptions { signal?: AbortSignal; timeoutMs?: number; maxOutput?: number; inputFd?: number }
 
 export async function runMediaTool(binary: string, args: string[], options: ToolOptions = {}): Promise<string> {
   const { signal, timeoutMs = binary === "ffprobe" ? 60_000 : 600_000, maxOutput = probeLimit } = options;
@@ -24,7 +24,7 @@ export async function runMediaTool(binary: string, args: string[], options: Tool
   const prefix = binary === "ffmpeg" ? ["-nostdin", "-hide_banner", "-loglevel", "error", "-xerror"]
     : binary === "ffprobe" ? ["-v", "error"] : [];
   const child = spawn(binary, [...prefix, ...args], {
-    env: childEnvironment("media"), shell: false, stdio: ["ignore", "pipe", "pipe"],
+    env: childEnvironment("media"), shell: false, stdio: [options.inputFd ?? "ignore", "pipe", "pipe"],
   });
   return new Promise((done, reject) => {
     let failure: Error | undefined;
@@ -36,7 +36,7 @@ export async function runMediaTool(binary: string, args: string[], options: Tool
     const timer = setTimeout(() => fail(new ContractError("DECODE_FAILED", `${binary} timed out.`)), timeoutMs);
     const chunks: Buffer[] = [];
     let size = 0;
-    child.stdout.on("data", (chunk: Buffer) => {
+    child.stdout!.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > maxOutput) fail(new Error(`${binary} output exceeded its scan limit.`));
       else chunks.push(chunk);
@@ -44,7 +44,7 @@ export async function runMediaTool(binary: string, args: string[], options: Tool
     // Any diagnostic at error log level is terminal. Drain but never retain
     // raw stderr, which can contain arbitrary metadata or private pathnames.
     let diagnosticBytes = 0;
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr!.on("data", (chunk: Buffer) => {
       diagnosticBytes += chunk.length;
       failure ??= new ContractError("DECODE_FAILED", `${binary} reported a media error.`);
       if (diagnosticBytes > 64 * 1024) fail(failure);

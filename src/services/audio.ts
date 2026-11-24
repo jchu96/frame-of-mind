@@ -3,10 +3,24 @@ import { resolve } from "node:path";
 import { decimalMs, SpeechMeter, type Envelope } from "../domain/snap.js";
 import { childEnvironment, spawn } from "../lib/child-env.js";
 import { access, chmod, rm } from "node:fs/promises";
+import { closeSync, constants, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { openJobFile } from "../adapters/job-path.js";
+
+// Give job decoders a seekable descriptor and allow only its protocol. Even a
+// container referring to a secondary local file cannot ask FFmpeg to open it.
+function withAudioInput<T>(video: string, confined: boolean | undefined,
+  launch: (input: string, flags: string[], stdin: number | "ignore") => T): T {
+  if (!confined) return launch(video, [], "ignore");
+  const fd = openJobFile(video, constants.O_RDONLY);
+  try { return launch("fd:", ["-protocol_whitelist", "fd", "-format_whitelist", "mov,matroska,webm"], fd); }
+  finally { closeSync(fd); }
+}
 
 const AUDIO_EXTRACTION_TIMEOUT_MS = 10 * 60_000;
 
 export interface ExtractAudioTrackOptions {
+  confinedInput?: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
   /** Window start in seconds. Omit to start at the beginning. */
@@ -31,22 +45,28 @@ export async function extractAudioTrack(
   const code = await new Promise<number | null>((resolve) => {
     // `-ss` precedes `-i` so ffmpeg seeks the input rather than decoding and
     // discarding the leading window; `-t` then bounds the extracted length.
-    const child = spawn("ffmpeg", [
+    const child = withAudioInput(video, options.confinedInput, (input, flags, stdin) => spawn("ffmpeg", [
       "-hide_banner", "-loglevel", "error", "-y",
+      ...flags,
       ...(options.startSeconds ? ["-ss", String(options.startSeconds)] : []),
-      "-i", video,
+      "-i", input,
       ...(options.durationSeconds ? ["-t", String(options.durationSeconds)] : []),
       "-vn", "-map", "0:a:0", "-map_metadata", "-1",
       "-c:a", "aac", "-b:a", "64k", "-ac", "1",
-      "-f", "adts", destination,
-    ], { env: childEnvironment("media"), stdio: "ignore" });
+      "-f", "adts", options.confinedInput ? "pipe:1" : destination,
+    ], { env: childEnvironment("media"), stdio: [stdin, options.confinedInput ? "pipe" : "ignore", "ignore"] }));
+    // Job derivatives stream through their worker. Its death closes the pipe,
+    // so a decoder cannot keep writing a derivative after recovery.
+    const copied = options.confinedInput
+      ? pipeline(child.stdout!, createWriteStream(destination, {flags: "wx", mode: 0o600})).then(() => true, () => false)
+      : Promise.resolve(true);
     const kill = () => child.kill("SIGKILL");
     const timeout = setTimeout(kill, options.timeoutMs ?? AUDIO_EXTRACTION_TIMEOUT_MS);
     options.signal?.addEventListener("abort", kill, { once: true });
     const settle = (result: number | null) => {
       clearTimeout(timeout);
       options.signal?.removeEventListener("abort", kill);
-      resolve(result);
+      void copied.then(ok => resolve(ok ? result : null));
     };
     child.once("error", () => settle(null));
     child.once("close", settle);
@@ -67,15 +87,15 @@ export async function extractAudioTrack(
 
 const MEDIA_PROBE_TIMEOUT_MS = 60_000;
 
-async function probePositiveNumber(media: string, fields: string[], options: { signal?: AbortSignal; timeoutMs?: number }) {
+async function probePositiveNumber(media: string, fields: string[], options: { signal?: AbortSignal; timeoutMs?: number; confinedInput?: boolean }) {
   if (options.signal?.aborted) return undefined;
   const output = await new Promise<string | undefined>((resolve) => {
-    const child = spawn("ffprobe", [
+    const child = withAudioInput(media, options.confinedInput, (input, flags, stdin) => spawn("ffprobe", [
       "-v", "error",
-      ...fields,
+      ...flags, ...fields,
       "-of", "default=noprint_wrappers=1:nokey=1",
-      media,
-    ], { env: childEnvironment("media"), stdio: ["ignore", "pipe", "ignore"] });
+      input,
+    ], { env: childEnvironment("media"), stdio: [stdin, "pipe", "ignore"] }));
     let text = "";
     child.stdout?.on("data", (chunk: Buffer) => {
       // Bound the buffer; a well-formed probe answers in a few bytes.
@@ -148,6 +168,7 @@ export function planTranscriptionWindows(
 }
 
 export interface SpeechDecodeOptions {
+  confinedInput?: boolean;
   reportFailure?: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -161,17 +182,20 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
   if (options.reportFailure) await access(resolve(video));
   const deadline = Date.now() + (options.timeoutMs ?? AUDIO_EXTRACTION_TIMEOUT_MS);
   const envelope = await new Promise<Envelope | undefined>((resolveResult, reject) => {
-    const child = spawn("ffmpeg", [
+    const child = withAudioInput(resolve(video), options.confinedInput, (input, flags, stdin) => spawn("ffmpeg", [
       "-nostdin", "-v", "error", "-copyts", "-start_at_zero",
+      ...flags,
       ...(slice ? ["-ss", decimalMs(slice.startMs), "-t", decimalMs(slice.endMs - slice.startMs)] : []),
-      "-i", resolve(video), "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "8000",
+      "-i", input, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "8000",
       ...(slice ? ["-af", `atrim=end=${decimalMs(slice.endMs)}`] : []),
       "-c:a", "pcm_s16le", "-f", "tee", "[f=framecrc:flush_packets=1]pipe:2|[f=s16le]pipe:1",
-    ], { env: childEnvironment("media"), stdio: ["ignore", "pipe", "pipe"] });
+    ], { env: childEnvironment("media"), stdio: [stdin, "pipe", "pipe"] }));
+    const stdout = child.stdout!;
+    const stderr = child.stderr!;
     let failed = false;
     const stop = () => {
       failed = true;
-      child.stdout.resume();
+      stdout.resume();
       child.kill("SIGKILL");
     };
     const timeout = setTimeout(stop, options.timeoutMs ?? AUDIO_EXTRACTION_TIMEOUT_MS);
@@ -183,11 +207,11 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
     let pending = "";
 
     // Read timing before consuming PCM, even if stdout becomes readable first.
-    child.stdout.on("data", (chunk: Buffer) => {
+    stdout.on("data", (chunk: Buffer) => {
       if (!meter) return stop();
       if (!failed) meter.write(chunk);
     });
-    child.stdout.pause();
+    stdout.pause();
     const packet = (line: string) => {
       if (line.startsWith("#")) {
         if (line.trim() === "#tb 0: 1/8000") sampleClock = true;
@@ -204,10 +228,10 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
       observedBytes += size;
       if (!meter) {
         meter = new SpeechMeter(pts);
-        child.stdout.resume();
+        stdout.resume();
       }
     };
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr.setEncoding("utf8").on("data", (chunk: string) => {
       if (failed) return;
       const lines = (pending + chunk).split("\n");
       pending = lines.pop()!;
@@ -217,9 +241,9 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
         if (failed) break;
       }
     });
-    child.stderr.once("end", () => child.stdout.resume());
-    child.stdout.once("error", stop);
-    child.stderr.once("error", stop);
+    stderr.once("end", () => stdout.resume());
+    stdout.once("error", stop);
+    stderr.once("error", stop);
     let missing = false;
     child.once("error", (error: NodeJS.ErrnoException) => {
       missing = error.code === "ENOENT";
@@ -228,7 +252,7 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
     child.once("close", code => {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", stop);
-      if (code || code === null || failed || pending || !child.stdout.readableEnded || !child.stderr.readableEnded ||
+      if (code || code === null || failed || pending || !stdout.readableEnded || !stderr.readableEnded ||
           !sampleClock || (meter && meter.bytes !== observedBytes)) {
         if (options.reportFailure) reject(new ContractError(signal?.aborted ? "CANCELLED" : missing ? "CAPABILITY_MISSING" : "DECODE_FAILED",
           "Speech envelope decoding failed."));
@@ -242,7 +266,7 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
   if (!envelope?.length) return envelope;
   // Match the decoder's explicit 0:a:0 map. Its resampled PCM always reports 8000 Hz.
   const sourceSampleRateHz = await probePositiveNumber(resolve(video), ["-select_streams", "a:0", "-show_entries", "stream=sample_rate"], {
-    signal, timeoutMs: Math.min(MEDIA_PROBE_TIMEOUT_MS, Math.max(1, deadline - Date.now())),
+    signal, confinedInput: options.confinedInput, timeoutMs: Math.min(MEDIA_PROBE_TIMEOUT_MS, Math.max(1, deadline - Date.now())),
   });
   return signal?.aborted ? undefined : { ...envelope, sourceSampleRateHz };
 }

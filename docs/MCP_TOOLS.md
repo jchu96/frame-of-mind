@@ -36,6 +36,15 @@ same name. Verify it against the release's `SHA256SUMS`.
 | `map` | Sequence rate, mode, lookup status and matching track rows. | [map](../schemas/cli/map.schema.json) |
 | `analyze` | Absolute `runFolder`, `runId`, `outcome`, `acceptedCount`, `retainedUpload` and any display `warnings`. A published failure includes `error.details.runFolder`. | [analyze](../schemas/cli/analyze.schema.json) |
 | `transcribe` | Absolute `paths` for the SRT, speakers and source-clock JSON files, `model`, requested `language` (canonical tag or null), `segmentCount`, `adjustedCues` and `blankCues`. | [transcribe](../schemas/cli/transcribe.schema.json) |
+| `analyze start` | Admission receipt with a durable job ID. | [job](../schemas/cli/job.schema.json) |
+| `analyze status` | Job state, stage, percent and terminal receipt. | [job](../schemas/cli/job.schema.json) |
+| `analyze result` | Terminal receipt and absolute run folder, or a typed failure. | [job-result](../schemas/cli/job-result.schema.json) |
+| `analyze cancel` | Current job and cancellation request. | [job](../schemas/cli/job.schema.json) |
+| `transcribe start` | Admission receipt with a durable job ID. | [job](../schemas/cli/job.schema.json) |
+| `transcribe status` | Job state, stage, percent and terminal receipt. | [job](../schemas/cli/job.schema.json) |
+| `transcribe result` | Terminal receipt and absolute run folder, or a typed failure. | [job-result](../schemas/cli/job-result.schema.json) |
+| `transcribe cancel` | Current job and cancellation request. | [job](../schemas/cli/job.schema.json) |
+| `analyze dry-run` | Absolute recording path, bytes, seconds, model and retention. | [dry run](../schemas/cli/analyze-dry-run.schema.json) |
 
 ### Doctor report
 
@@ -85,12 +94,57 @@ error line, the `Warning: ` prefix and the first line of the speakers file.
 A retained upload has a `name` and an `expiresAt` timestamp (null when the
 provider supplies no expiry). Otherwise `retainedUpload` is null.
 
-Job operations, grant-file enforcement, timecode conversion and bundle-folder
-reads are future commands. Discovery advertises each once shipped. A job start
-returns jobId. Status exits 0 for every state, including `outcome_unknown`.
-A failed result returns the job fault and its mapped exit with jobId, absolute
-runFolder and receipt in error.details. An active job returns JOB_PENDING.
-Timecode conversion requires explicit drop-frame selection.
+### CLI jobs
+
+Start accepts a positional recording, an existing `--out` directory and a
+caller-generated UUID in `--request-id`. Supply `--json`, the folders
+(`--roots-file` or repeatable `--media-root` and `--output-root`),
+`--max-media-seconds`, `--max-provider-requests`, `--max-file-bytes`,
+`--allowed-models` and `--retention provider|run`. Limits are positive decimal
+integers. The per-file ceiling is 2,000,000,000 bytes. A missing grant gives
+`USAGE`. The optional `--model` must be in the comma-separated list and
+defaults to its first entry. A start takes its provider key from the launching
+process environment.
+
+Analysis requires `--recipe` with a built-in ID and accepts `--snap speech`.
+It uses standard depth and at most ten detail passes. Transcription accepts
+`--transcript-json` to add the source-clock export alongside the subtitles and
+speaker text. Dry run takes the analysis inputs and grants and needs no request
+ID. It probes locally and leaves the output directory untouched.
+
+A start writes one document, closes stdout at durable admission, and continues
+as the worker. Read stdout to EOF. Waiting for the process to exit waits for
+the whole job. An admitted worker exits 0 after any terminal outcome. Use
+`<family> status|result|cancel <job-id> --json --out <directory>` with the
+folder grant to read the outcome or request cancellation. These three calls
+use the on-disk record and spend zero provider requests.
+
+Cancellation writes a request in the job directory. The worker checks it
+before each new send, joins work in progress and applies the requested
+retention. Interrupting the worker requests the same cleanup. Poll status
+until terminal. After a worker dies, status settles unsent work as cancelled
+and an uncertain dispatch as `outcome_unknown`, with its debit and stage
+preserved. A repeated start with the original request ID returns the same job.
+A deliberate replacement supplies a fresh request ID, the grants again and
+`--after-unknown <job-id>`. Each output directory owns its request IDs and
+unknown-input history. A consumer using several output directories tracks
+replay across them itself.
+
+If the media or output grant is revoked mid-job, the worker stops new work
+and discards staged output. It may finish its own terminal record, remove its
+own scratch and use its reserved provider deletion under run retention. The
+terminal state is `cancelled` with `reason: "grant_revoked"`. If that folder
+becomes unwritable the worker writes nowhere else. After access is restored,
+status reconciles the interrupted record.
+
+Status exits 0 for every job state. Result returns `JOB_PENDING` while active.
+A failed result carries the job's code and mapped exit. Its `error.details`
+contains `jobId`, absolute `runFolder` and `receipt`. The receipt counts jobs,
+rounded-up source seconds and actual wire dispatches, and lists outputs and
+upload dispositions with provider expiry when known. Each resumable upload
+uses two POSTs. Generation, status polls and deletion each cost one request.
+A cleanup slot is reserved before acquisition. Stage, percent, cancellation
+and receipt are stored in version 1 of `job.json` under the job's directory.
 
 ### Faults and process exits
 

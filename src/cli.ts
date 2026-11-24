@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { jobInvocation } from "./commands/job-commands.js";
 import type * as Cli from "./cli-main.js";
 
 export type { AnalyzeCliFlags } from "./cli-main.js";
@@ -8,7 +9,11 @@ export let buildAnalyzeOptions: typeof Cli.buildAnalyzeOptions;
 export let printAnalysisSummary: typeof Cli.printAnalysisSummary;
 
 const libraryImport = (globalThis as Record<symbol, unknown>)[CLI_LIBRARY_IMPORT] === true;
-if (process.argv[2] === "mcp" && !libraryImport) {
+const job = !libraryImport && jobInvocation(process.argv.slice(2));
+if (job) {
+  const { runJobCommand } = await import("./commands/jobs.js");
+  await runJobCommand(job.family, job.op, process.argv.slice(4));
+} else if (process.argv[2] === "mcp" && !libraryImport) {
   const args = process.argv.slice(3);
   if (args.slice(0, args.includes("--") ? args.indexOf("--") : args.length).includes("--json")) {
     const { writeFailure, CliError } = await import("./cli-contract.js");

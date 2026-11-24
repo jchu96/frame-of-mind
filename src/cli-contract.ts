@@ -1,4 +1,5 @@
 import { Command, CommanderError } from "commander";
+import { jobInventory } from "./commands/job-commands.js";
 import { VERSION } from "./version.js";
 
 import { CLI_SCHEMA_VERSION, ContractError, failureDocument, faultCode, faultExits } from "./domain/contract-error.js";
@@ -27,6 +28,7 @@ export function capabilities(root: Command) {
       .flatMap(option => [option.short, option.long].filter((flag): flag is string => Boolean(flag)));
     commands.push({ name: command.name(), options: [...options, "--schema-version"] });
   }
+  commands.push(...jobInventory());
   return { commands, schemaVersions: Object.fromEntries(commands.map(({ name }) => [name, [CLI_SCHEMA_VERSION]])) };
 }
 
