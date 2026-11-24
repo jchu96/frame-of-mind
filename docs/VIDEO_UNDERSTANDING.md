@@ -313,9 +313,11 @@ Review in this order:
 For a speech-snapped run, read each candidate edge in `times.json` schema 3.
 For example, `time.seconds: "21.000"` with model origin has one-second
 precision. A `snap.target` of 20.120 s source with `audio-envelope` origin
-has 10 ms precision. Read `gapMs`, signed `shiftMs` and alternative file
-times before choosing a cut. Frame references locate the measured window on
-the declared timeline. The model evidence timestamp still locates the claim.
+is measured on a 10 ms grid, accurate to about ±50 ms at source rates of
+32 kHz or higher, or ±200 ms at lower or unknown rates. Read `gapMs`, signed
+`shiftMs` and alternative file times before choosing a cut. The frame
+reference locates the proposal on the declared timeline. Its uncertainty
+can span neighbouring frames. The model evidence timestamp still locates the claim.
 
 If the run aborts before a normal bundle is published, look for
 `failure-manifest.json`. It intentionally contains no raw error text or model

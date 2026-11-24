@@ -25,7 +25,7 @@ export const timesV2Schema = z.strictObject({
 });
 
 const fileClock = z.enum(["source", "reel"]);
-const measured = approximate.extend({ precisionMs: z.literal(10), origin: z.literal("audio-envelope") });
+const measured = approximate.extend({ gridMs: z.literal(10), precisionMs: z.literal([50, 200]), origin: z.literal("audio-envelope") });
 const naturalMs = z.number().int().nonnegative();
 const alternativesMs = z.array(naturalMs).refine(xs => xs.every((x, i) => i === 0 || xs[i - 1]! < x));
 const frameReference = z.strictObject({
@@ -36,7 +36,7 @@ const snap = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("snapped"), target: measured.extend({ clock: fileClock, seconds: seconds.endsWith("0") }),
     timeline: measured.extend({ clock: z.literal("timeline") }).optional(), shiftMs: z.number().int(),
     gapMs: naturalMs, gapLowerBound: z.literal(true).optional(), alternativesMs, frameReference: frameReference.optional() }),
-  z.strictObject({ status: z.literal("no-boundary"), alternativesMs: z.array(z.never()).length(0) }),
+  z.strictObject({ status: z.literal("no-boundary"), alternativesMs }),
   z.strictObject({ status: z.literal("ambiguous"), alternativesMs: alternativesMs.refine(xs => xs.length > 0) }),
   z.strictObject({ status: z.literal("unavailable") }),
 ]);
@@ -56,6 +56,7 @@ const timesV3Schema = timesV2Schema.extend({
     const measured = "snap" in e && e.snap.status === "snapped" ? e.snap : undefined;
     if (e.time.clock !== run.fileClock || !!e.timeline !== !!run.timeline ||
         (measured && (measured.target.clock !== run.fileClock || !!measured.timeline !== !!run.timeline ||
+          (measured.timeline && measured.timeline.precisionMs !== measured.target.precisionMs) ||
           measured.gapMs < run.snapSettings.gapMs || Math.abs(measured.shiftMs) > run.snapSettings.windowMs))) {
       ctx.addIssue({ code: "custom", path: ["entries", i], message: "Reading disagrees with run clock or snap settings." });
     }

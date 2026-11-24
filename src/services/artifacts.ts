@@ -1,7 +1,7 @@
 import { declaredOffset, parseSecondsMs, type ClockDeclaration, type RunClock } from "../domain/clock.js";
 import { modelTime, offsetApproximate, renderApproximate, deriveExact, offsetTime, snapDecimalSeconds, renderExactTimecode } from "exact-time";
 import { timesSchema, type StoredSnap, type TimesArtifact } from "../domain/times.js";
-import { decimalMs, type Edge, type SnapResult, type SnapRun } from "../domain/snap.js";
+import { decimalMs, describeMeasurement, type Edge, type SnapResult, type SnapRun } from "../domain/snap.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
@@ -348,11 +348,11 @@ function describeCut(entry: { time: Parameters<typeof renderApproximate>[0]; sna
   const result = entry.snap;
   const parts = [renderApproximate(entry.time), result.status as string];
   if (result.status === "snapped") {
-    parts.push(`${result.target.seconds} s ${result.target.clock} (10 ms audio-envelope)`,
+    parts.push(`${result.target.seconds} s ${result.target.clock} (${describeMeasurement(result.target)})`,
       `shift ${result.shiftMs} ms`, `pause ${result.gapLowerBound ? "≥" : ""}${result.gapMs} ms`);
-    if (result.timeline) parts.push(`${result.timeline.seconds} s timeline (10 ms audio-envelope)`);
+    if (result.timeline) parts.push(`${result.timeline.seconds} s timeline (${describeMeasurement(result.timeline)})`);
     const ref = result.frameReference;
-    if (ref) parts.push(`containing frame of 10 ms audio proposal: timeline ${ref.frames} at ${ref.rate.num}/${ref.rate.den}, ${ref.timecode} ${ref.dropFrame ? "DF" : "NDF"} (${ref.basis})`);
+    if (ref) parts.push(`containing frame of the proposal: timeline ${ref.frames} at ${ref.rate.num}/${ref.rate.den}, ${ref.timecode} ${ref.dropFrame ? "DF" : "NDF"} (${ref.basis}), proposal uncertainty can span neighbouring frames`);
   }
   if ("alternativesMs" in result && result.alternativesMs.length) parts.push(`alternatives (${entry.time.clock} ms): ${result.alternativesMs.join(", ")}`);
   return parts.join(" · ");

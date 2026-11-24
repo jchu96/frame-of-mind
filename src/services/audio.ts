@@ -64,7 +64,36 @@ export async function extractAudioTrack(
   }
 }
 
-const DURATION_PROBE_TIMEOUT_MS = 60_000;
+const MEDIA_PROBE_TIMEOUT_MS = 60_000;
+
+async function probePositiveNumber(media: string, fields: string[], options: { signal?: AbortSignal; timeoutMs?: number }) {
+  if (options.signal?.aborted) return undefined;
+  const output = await new Promise<string | undefined>((resolve) => {
+    const child = spawn("ffprobe", [
+      "-v", "error",
+      ...fields,
+      "-of", "default=noprint_wrappers=1:nokey=1",
+      media,
+    ], { env: childEnvironment("media"), stdio: ["ignore", "pipe", "ignore"] });
+    let text = "";
+    child.stdout?.on("data", (chunk: Buffer) => {
+      // Bound the buffer; a well-formed probe answers in a few bytes.
+      if (text.length < 128) text += chunk.toString("utf8");
+    });
+    const kill = () => child.kill("SIGKILL");
+    const timeout = setTimeout(kill, options.timeoutMs ?? MEDIA_PROBE_TIMEOUT_MS);
+    const settle = (value: string | undefined) => {
+      clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", kill);
+      resolve(value);
+    };
+    options.signal?.addEventListener("abort", kill, { once: true });
+    child.once("error", () => settle(undefined));
+    child.once("close", (code) => settle(code === 0 ? text : undefined));
+  });
+  const value = Number(output?.trim());
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
 
 /**
  * Reads a media file's duration in seconds with ffprobe. Mirrors the extractor
@@ -75,32 +104,7 @@ export async function probeDurationSeconds(
   media: string,
   options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<number | undefined> {
-  if (options.signal?.aborted) return undefined;
-  const output = await new Promise<string | undefined>((resolve) => {
-    const child = spawn("ffprobe", [
-      "-v", "error",
-      "-show_entries", "format=duration",
-      "-of", "default=noprint_wrappers=1:nokey=1",
-      media,
-    ], { env: childEnvironment("media"), stdio: ["ignore", "pipe", "ignore"] });
-    let text = "";
-    child.stdout?.on("data", (chunk: Buffer) => {
-      // Bound the buffer; a well-formed probe answers in a few bytes.
-      if (text.length < 128) text += chunk.toString("utf8");
-    });
-    const kill = () => child.kill("SIGKILL");
-    const timeout = setTimeout(kill, options.timeoutMs ?? DURATION_PROBE_TIMEOUT_MS);
-    const settle = (value: string | undefined) => {
-      clearTimeout(timeout);
-      options.signal?.removeEventListener("abort", kill);
-      resolve(value);
-    };
-    options.signal?.addEventListener("abort", kill, { once: true });
-    child.once("error", () => settle(undefined));
-    child.once("close", (code) => settle(code === 0 ? text : undefined));
-  });
-  const seconds = Number(String(output ?? "").trim());
-  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+  return probePositiveNumber(media, ["-show_entries", "format=duration"], options);
 }
 
 export interface TranscriptionWindow {
@@ -152,7 +156,8 @@ export interface SpeechDecodeOptions {
 export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeOptions = {}): Promise<Envelope | undefined> {
   const { signal, slice } = options;
   if (signal?.aborted) return undefined;
-  return new Promise(resolveResult => {
+  const deadline = Date.now() + (options.timeoutMs ?? AUDIO_EXTRACTION_TIMEOUT_MS);
+  const envelope = await new Promise<Envelope | undefined>(resolveResult => {
     const child = spawn("ffmpeg", [
       "-nostdin", "-v", "error", "-copyts", "-start_at_zero",
       ...(slice ? ["-ss", decimalMs(slice.startMs), "-t", decimalMs(slice.endMs - slice.startMs)] : []),
@@ -221,4 +226,11 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
       resolveResult(meter ? meter.finish() : slice ? { startMs: slice.startMs, blocks: [], length: 0 } : undefined);
     });
   });
+  if (signal?.aborted) return undefined;
+  if (!envelope?.length) return envelope;
+  // Match the decoder's explicit 0:a:0 map. Its resampled PCM always reports 8000 Hz.
+  const sourceSampleRateHz = await probePositiveNumber(resolve(video), ["-select_streams", "a:0", "-show_entries", "stream=sample_rate"], {
+    signal, timeoutMs: Math.min(MEDIA_PROBE_TIMEOUT_MS, Math.max(1, deadline - Date.now())),
+  });
+  return signal?.aborted ? undefined : { ...envelope, sourceSampleRateHz };
 }

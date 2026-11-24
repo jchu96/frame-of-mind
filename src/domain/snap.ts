@@ -14,7 +14,11 @@ export function decimalMs(ms: number): string {
   return exactSeconds(fromMilliseconds("source", String(ms)));
 }
 
-export type MeasuredTime = { clock: FileClock; seconds: string; precisionMs: 10; origin: "audio-envelope" };
+export type MeasuredTime = { clock: FileClock; seconds: string; gridMs: 10; precisionMs: 50 | 200; origin: "audio-envelope" };
+export function describeMeasurement(time: Pick<MeasuredTime, "gridMs" | "precisionMs">): string {
+  return `measured on a ${time.gridMs} ms grid, accurate to about ±${time.precisionMs} ms`;
+}
+
 export type SnapResult =
   | { status: "snapped"; target: MeasuredTime; shiftMs: number; gapMs: number; gapLowerBound?: true; alternativesMs: number[] }
   | { status: "ambiguous" | "no-boundary"; alternativesMs: number[] }
@@ -25,6 +29,7 @@ const SAMPLES = 80;
 const WINDOW_MS = 10;
 const BLOCK = 1000;
 export interface Envelope {
+  sourceSampleRateHz?: number;
   startMs: number;
   blocks: Float32Array[];
   length: number;
@@ -73,8 +78,8 @@ export class SpeechMeter {
   }
 }
 
-type Boundary = { ms: number; gapMs: number; gapLowerBound: boolean };
-export type Boundaries = Record<Edge, Boundary[]>;
+type Boundary = { ms: number; oppositeMs: number; gapMs: number; gapLowerBound: boolean };
+export type Boundaries = Record<Edge, Boundary[]> & { precisionMs: MeasuredTime["precisionMs"] };
 
 /** Sorted sliding neighborhood, [i - 1500, i + 1500), clipped at observed ends. */
 export function classify(envelope: Envelope): Boundaries {
@@ -91,13 +96,14 @@ export function classify(envelope: Envelope): Boundaries {
     }
     return lo;
   }
-  const boundaries: Boundaries = { start: [], end: [] };
+  const boundaries: Boundaries = { start: [], end: [], precisionMs: (envelope.sourceSampleRateHz ?? 0) >= 32000 ? 50 : 200 };
   let left = 0, right = 0;
   let onset = 0, quietSince = 0, speech = false;
   let pendingEnd: number | undefined;
   function finishPause(i: number) {
     if (pendingEnd !== undefined) boundaries.end.push({
-      ms: startMs + pendingEnd * WINDOW_MS, gapMs: (i - quietSince) * WINDOW_MS, gapLowerBound: i === length,
+      ms: startMs + pendingEnd * WINDOW_MS, oppositeMs: startMs + onset * WINDOW_MS,
+      gapMs: (i - quietSince) * WINDOW_MS, gapLowerBound: i === length,
     });
   }
   for (let i = 0; i <= length; i++) {
@@ -124,7 +130,10 @@ export function classify(envelope: Envelope): Boundaries {
     }
     if (!above && speech) {
       if (i - onset >= 8) {
-        boundaries.start.push({ ms: startMs + onset * WINDOW_MS, gapMs: (onset - quietSince) * WINDOW_MS, gapLowerBound: quietSince === 0 });
+        boundaries.start.push({
+          ms: startMs + onset * WINDOW_MS, oppositeMs: startMs + i * WINDOW_MS,
+          gapMs: (onset - quietSince) * WINDOW_MS, gapLowerBound: quietSince === 0,
+        });
         pendingEnd = i;
       }
       quietSince = i;
@@ -138,10 +147,15 @@ export function classify(envelope: Envelope): Boundaries {
 export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: number, clock: FileClock, settings: SnapSettings): SnapResult {
   if (!edges) return { status: "unavailable" };
   const eligible = edges[edge].filter(e => e.gapMs >= settings.gapMs && Math.abs(e.ms - atMs) <= settings.windowMs);
-  const chosen = edge === "start" ? eligible.at(-1) : eligible[0];
-  if (!chosen) return { status: "no-boundary", alternativesMs: [] };
+  // Moving outward may only finish the classified group containing the request.
+  // Groups include their onset and exclude their offset.
+  const permitted = eligible.filter(e => edge === "start"
+    ? e.ms >= atMs || atMs < e.oppositeMs
+    : e.ms <= atMs || atMs >= e.oppositeMs);
+  const chosen = edge === "start" ? permitted.at(-1) : permitted[0];
+  if (!chosen) return { status: "no-boundary", alternativesMs: eligible.map(e => e.ms) };
   return {
-    status: "snapped", target: { clock, seconds: decimalMs(chosen.ms), precisionMs: 10, origin: "audio-envelope" },
+    status: "snapped", target: { clock, seconds: decimalMs(chosen.ms), gridMs: WINDOW_MS, precisionMs: edges.precisionMs, origin: "audio-envelope" },
     shiftMs: chosen.ms - atMs, gapMs: chosen.gapMs, ...(chosen.gapLowerBound ? { gapLowerBound: true } : {}),
     alternativesMs: eligible.filter(e => e !== chosen).map(e => e.ms),
   };

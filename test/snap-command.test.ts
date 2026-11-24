@@ -31,7 +31,7 @@ test.skipIf(spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status !== 0)
       const result = await snapFile(file, { at, edge: "end", fileClock: "reel" }, decode);
       const full = proposeRecords([{ start: 0, end: ms }], edges, "reel", snapSettings()).records[0]!.end;
       expect(result.request).toEqual({ at, clock: "reel", edge: "end" });
-      expect(result.result).toMatchObject({ status: "snapped", target: { clock: "reel", precisionMs: 10 } });
+      expect(result.result).toMatchObject({ status: "snapped", target: { clock: "reel", gridMs: 10, precisionMs: 50 } });
       if (result.result.status === "snapped" && full.status === "snapped") {
         expect(Math.abs(ms + result.result.shiftMs - end)).toBeLessThanOrEqual(20);
         expect(result.result.target).toEqual(full.target);
@@ -45,7 +45,7 @@ test.skipIf(spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status !== 0)
       const cli = new Command();
       registerSnap(cli);
       await cli.parseAsync(["snap", file, "--at", "41.007", "--edge", "end", "--file-clock", "reel"], { from: "user" });
-      expect(stdout).toHaveBeenCalledWith(expect.stringMatching(/reel end 41.007 · snapped.*10 ms audio-envelope/));
+      expect(stdout).toHaveBeenCalledWith(expect.stringMatching(/reel end 41.007 · snapped.*measured on a 10 ms grid, accurate to about ±50 ms/));
       await cli.parseAsync(["snap", file, "--at", "15", "--edge", "end", "--json"], { from: "user" });
       expect(JSON.parse(String(stdout.mock.lastCall![0]))).toMatchObject({ request: { clock: "source", edge: "end", at: "15" }, result: { status: "no-boundary" } });
       expect(process.exitCode).toBe(previous);

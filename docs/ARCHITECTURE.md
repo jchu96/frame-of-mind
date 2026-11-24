@@ -349,10 +349,14 @@ All recipes share one policy:
 
 Speech snapping runs at rendering, after ordered detail results. The audio
 service decodes mono 8 kHz PCM and verifies packet presentation times on the
-file clock. Complete 80-sample windows support a local 10 ms level measurement.
-A centered 30 s noise-floor estimate and an observed pause identify a speech
-group boundary. Word identity, speaker identity and editorial intent require
-other evidence. The selector checks model ranges together and rolls back
+file clock. Complete 80-sample windows place edges on a 10 ms grid. The service
+reads the source sample rate of the same first audio stream with ffprobe.
+Accuracy is about ±50 ms at 32 kHz or higher and ±200 ms at lower or unknown
+rates. A centered 30 s noise-floor estimate identifies speech groups lasting
+at least 80 ms. The selector retains each group's extent before applying the
+pause threshold, so an outward proposal can only reach the edge of its own group.
+Word identity, speaker identity and editorial intent require other evidence.
+The selector checks model ranges together and rolls back
 conflicting proposals before the staged artifacts are published.
 
 The current neutral `details[]` contract is intentionally not presented as a

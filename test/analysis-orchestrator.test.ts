@@ -2723,8 +2723,8 @@ describe("speech proposals at publication", () => {
     expect(run.snapSummary).toEqual({ counts: { snapped: 3, "no-boundary": 3, unavailable: 0, ambiguous: 0 }, total: 6, medianShiftMs: 0 });
     for (const file of ["analysis.md", "report.html"]) {
       const report = await read(file);
-      expect(report).toContain("20.300 s source (10 ms audio-envelope)");
-      expect(report).not.toContain("10.000 s source (10 ms audio-envelope)");
+      expect(report).toContain("20.300 s source (measured on a 10 ms grid, accurate to about ±200 ms)");
+      expect(report).not.toContain("10.000 s source (measured on a 10 ms grid, accurate to about ±200 ms)");
       const evidence = file === "analysis.md" ? /^- Time:.*$/gm : /<div class="eyebrow">requirement[^<]+/g;
       expect(report.match(evidence)).toEqual((await readFile(join(control.directory, file), "utf8")).match(evidence));
     }

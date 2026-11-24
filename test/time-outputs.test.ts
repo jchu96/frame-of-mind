@@ -141,7 +141,7 @@ test("high-rate exact offsets preserve all available forms and refuse only deriv
 const settings = { method: "audio-envelope" as const, gapMs: 250, windowMs: 1500 };
 const noBoundary = { status: "no-boundary" as const, alternativesMs: [] };
 function measurement(seconds: string, shiftMs: number, clock: "source" | "reel" = "source") {
-  return { status: "snapped" as const, target: { seconds, clock, precisionMs: 10 as const, origin: "audio-envelope" as const }, shiftMs, gapMs: 780, alternativesMs: [] };
+  return { status: "snapped" as const, target: { seconds, clock, gridMs: 10 as const, precisionMs: 50 as const, origin: "audio-envelope" as const }, shiftMs, gapMs: 780, alternativesMs: [] };
 }
 function oneRecord(start: string, end: string) {
   const analysis = structuredClone(base.analysis);
@@ -181,8 +181,8 @@ test("W7 onset and exclusive end use containing frames 240 and 239 at 10.010, wi
     expect(sidecar.entries[0].time).toMatchObject({ seconds: "1.000", precisionMs: 1000, origin: "model" });
     for (const file of ["analysis.md", "report.html"]) {
       const report = await readFile(join(dir, file), "utf8");
-      expect(report).toContain("10.010 s source (10 ms audio-envelope)");
-      if (rate) expect(report).toContain("containing frame of 10 ms audio proposal: timeline 239 at 24000/1001, 00:00:09:23 NDF");
+      expect(report).toContain("10.010 s source (measured on a 10 ms grid, accurate to about ±50 ms)");
+      if (rate) expect(report).toContain("containing frame of the proposal: timeline 239 at 24000/1001, 00:00:09:23 NDF (last-speech-ms), proposal uncertainty can span neighbouring frames");
       else expect(report).not.toContain("containing frame");
     }
   }
@@ -198,7 +198,7 @@ test("W7 fractional frame translation, DF rollover and legacy whole-ms offset us
     const entry = sidecar.entries[0]!;
     if (!("snap" in entry) || entry.snap.status !== "snapped") throw new Error("Expected measured onset");
     expect(entry.snap.frameReference).toMatchObject({ frames, timecode });
-    expect(entry.snap.timeline).toMatchObject({ origin: "audio-envelope", precisionMs: 10 });
+    expect(entry.snap.timeline).toMatchObject({ origin: "audio-envelope", gridMs: 10, precisionMs: 50 });
     if (frames === "6") {
       expect(entry.snap.timeline!.seconds).toBe("0.292");
       expect(entry.timeline!.seconds).toBe("0.042");
@@ -216,7 +216,7 @@ test("W10 locked-base v2 bytes and strict v3 candidate, evidence, clock and fall
   expect(timesSchema.parse(control)).toEqual(control);
   const clock = { fileClock: "reel" as const, modelClipClock: "unverified" as const };
   const records = [
-    { start: measurement("10.250", 250, "reel"), end: noBoundary },
+    { start: measurement("10.250", 250, "reel"), end: { status: "no-boundary" as const, alternativesMs: [20930] } },
     { start: { status: "ambiguous" as const, alternativesMs: [20010] }, end: { status: "unavailable" as const } },
   ];
   const sidecar = buildTimes(base.analysis, clock, { settings, records });
@@ -231,6 +231,11 @@ test("W10 locked-base v2 bytes and strict v3 candidate, evidence, clock and fall
   invalid({ ...e, pointer: "/items/0/result/evidence/timestamp" });
   invalid({ ...e, snap: undefined });
   invalid({ ...e, snap: { status: "unavailable", shiftMs: 0 } });
-  invalid({ ...e, snap: { status: "no-boundary", alternativesMs: [10000] } });
+  invalid({ ...e, snap: { status: "no-boundary", alternativesMs: [20930, 20000] } });
+  const measured = records[0]!.start;
+  if (measured.status !== "snapped") throw new Error("Expected a measured fixture");
+  for (const overrides of [{ gridMs: undefined }, { gridMs: 20 }, { precisionMs: 10 }]) {
+    invalid({ ...e, snap: { ...measured, target: { ...measured.target, ...overrides } } });
+  }
   expect(timesSchema.safeParse({ ...sidecar, schemaVersion: 4 }).success).toBe(false);
 });

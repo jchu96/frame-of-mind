@@ -5,7 +5,7 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-- Added `frameofmind snap` for local speech-edge searches and `analyze --snap speech` for measured cut proposals. Opted-in analyses write `times.json` schema 3 alongside the original model readings. Default runs continue to write schema 2.
+- Added `frameofmind snap` for local speech-edge searches and `analyze --snap speech` for measured cut proposals. Outward proposals stay within the speech group containing the request. Targets use a 10 ms grid with about ±50 ms accuracy for source audio at 32 kHz or higher, or ±200 ms for lower or unknown rates. Opted-in analyses write `times.json` schema 3 alongside the original model readings. Default runs continue to write schema 2.
 
 ## [0.6.0-beta.2] - 2026-11-23
 

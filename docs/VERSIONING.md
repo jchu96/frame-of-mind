@@ -175,10 +175,17 @@ keep their original versions.
 In schema 3, read `snapSettings` once. Candidate start and end pointers each
 require `snap`. Evidence pointers carry only their original readings.
 `snapped` supplies a measured target, signed shift, observed pause and alternatives.
-`no-boundary` and `ambiguous` supply alternatives. `unavailable` carries only
-its status. Preserve the model entry on every path. A measured timeline target
-retains 10 ms precision. Its optional frame reference identifies the containing
-frame on the declared grid. The run import still uses analysis and manifest.
+`no-boundary` keeps the model time. Its `alternativesMs` lists the sorted
+file-clock edges refused because reaching them would cross other speech.
+This supersedes the specification's requirement that the list always be empty.
+`ambiguous` lists competing edges and `unavailable` carries only its status.
+Preserve the model entry on every path.
+
+Both file and timeline measurements carry `gridMs: 10`. Their `precisionMs`
+is 50 for source audio at 32 kHz or higher, and 200 for lower or unknown
+rates. The optional frame reference identifies the frame containing the
+proposal. Its uncertainty can span neighbouring frames. The run import
+still uses analysis and manifest.
 
 ## Prompt revision
 

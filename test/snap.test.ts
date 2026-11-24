@@ -22,7 +22,7 @@ const select = (edges: Boundaries, edge: Edge, ms: number) => selectEdge(edges, 
 const bursts: Burst[] = [[12340, 15010], [46310, 47990]];
 function knownEdges(edges: Boundaries) {
   for (const [edge, request, truth] of [["start", 12000, "12.340"], ["end", 15000, "15.010"], ["end", 48000, "47.990"]] as const) {
-    expect(select(edges, edge, request)).toMatchObject({ status: "snapped", target: { seconds: truth, precisionMs: 10 } });
+    expect(select(edges, edge, request)).toMatchObject({ status: "snapped", target: { seconds: truth, gridMs: 10, precisionMs: 200 } });
   }
 }
 test("W1 seeded bursts at 12.340, 15.010 and 47.990 survive split PCM samples", () => {
@@ -43,8 +43,8 @@ test("W3 latest start discloses the remark and search includes only its closed r
   expect(result).toMatchObject({ target: { seconds: "12.300" }, alternativesMs: [11200] });
   for (const onset of [6000, 8490, 8500, 11500, 11510]) {
     const edges = measure(generated([[onset, onset + 300]], 20000));
-    expect(select(edges, "start", 10000).status).toBe([8500, 11500].includes(onset) ? "snapped" : "no-boundary");
-    expect(select(edges, "end", 10300).status).toBe([8500, 11500].includes(onset) ? "snapped" : "no-boundary");
+    expect(select(edges, "start", 10000).status).toBe(onset === 11500 ? "snapped" : "no-boundary");
+    expect(select(edges, "end", 10300).status).toBe(onset === 8500 ? "snapped" : "no-boundary");
   }
 });
 test("W4 requires observed pauses and speech including the 250 and 80 ms thresholds", () => {
@@ -61,8 +61,8 @@ test("W4 requires observed pauses and speech including the 250 and 80 ms thresho
   expect(select(measure(generated([[4000, 5000]], 5000)), "end", 5000).status).toBe("no-boundary");
 });
 function boundaries(start: number[], end: number[]): Boundaries {
-  const point = (ms: number) => ({ ms, gapMs: 500, gapLowerBound: false });
-  return { start: start.map(point), end: end.map(point) };
+  const point = (ms: number, oppositeMs: number) => ({ ms, oppositeMs, gapMs: 500, gapLowerBound: false });
+  return { precisionMs: 50, start: start.map(ms => point(ms, ms + 500)), end: end.map(ms => point(ms, ms - 500)) };
 }
 test("W5 empty and reversed cuts roll back both proposals and disclose refused choices", () => {
   for (const start of [1100, 1200]) {

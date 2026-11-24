@@ -810,13 +810,18 @@ seeks around the requested file time and uses the same selection rule.
 `gapLowerBound: true` means the reported pause extends to the observation limit.
 
 Read the counts over both edges of every validated record, including rejections.
-The no-boundary fraction shows how often the search found no qualifying pause
-(0/0 for an empty run). The median signed shift uses the nearest-rank 50th
-percentile over successful snaps. Negative shifts move the proposed cut earlier.
+The no-boundary fraction shows how often the search found no permitted edge
+beside a qualifying pause (0/0 for an empty run). The median signed shift uses
+the nearest-rank 50th percentile over successful snaps. Negative shifts move
+the proposed cut earlier.
 
 For `ambiguous`, listen to the original range and the listed file-clock
 alternatives. These include the refused cut that would invert a record or
 worsen overlap. For `no-boundary`, listen around the whole-second model edge.
+Listed alternatives would extend the cut across another speech group.
+A successful proposal is measured on a 10 ms grid, accurate to about ±50 ms
+when the first audio stream is at least 32 kHz, or ±200 ms at lower or
+unknown rates. Its uncertainty can span frames adjacent to the reference frame.
 An `unavailable` warning means the local decode or its timing could not be
 verified. Check ffmpeg and the first audio stream. A standalone unavailable
 result sets a nonzero exit status. The reports keep the model range for review.

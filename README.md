@@ -596,9 +596,15 @@ A model end can land on the next remark. Add `--snap speech` to search the local
 audio for the earliest end followed by a pause. A start uses the latest onset
 after a pause. For example, a model end of 21 s can yield a 20.120 s source
 proposal with a 780 ms pause and another qualifying end at 21.600 s.
-The model time keeps its one-second precision. The audio target carries 10 ms
-precision and a signed shift. With a timeline rate, the reference frame contains
-the onset or the last speech millisecond before an exclusive end.
+An edge can move outward only within the speech group containing the model
+time. If the only qualifying edges cross other speech, the model time stays
+and the result lists those edges as alternatives.
+
+The model time keeps its one-second precision. The signed shift gives the
+change from that time. The audio target is measured on a 10 ms grid, accurate to about ±50 ms for source audio at 32 kHz or above
+and ±200 ms for lower or unknown rates. With a timeline rate, the reference
+frame contains the proposed onset or the last speech millisecond before an
+exclusive end. The uncertainty can span neighbouring frames.
 
 ```bash
 frameofmind analyze --source none --video take.mov --snap speech
