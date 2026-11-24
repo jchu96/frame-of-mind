@@ -295,7 +295,11 @@ provider payload, remote file name, signed URL, or key.
 frameofmind doctor
 ```
 
-Expected:
+Doctor prints the ffmpeg and ffprobe versions, the media capabilities each
+command uses, and any missing encoders, filters or formats. These checks read
+the installed tools’ listings. For example, a missing `libx264` disables
+`proxy`, `slice` and standalone calibration. Optional analysis features are
+listed separately. Doctor also checks the Node version and Gemini key.
 
 ```text
 ok Node >=22
@@ -311,6 +315,47 @@ Artifact root: <platform-specific path>
 
 For a missing media tool, check the row for the operation you need in
 [FFmpeg requirements by command](#ffmpeg-requirements-by-command).
+
+After an interrupted run, list scratch in the system temporary directory, or
+give the real path of the directory containing the media destination or the
+settled screenshots. Review the kind, path, byte count, age and owner state
+before repeating the same command with `--remove`.
+
+```bash
+frameofmind doctor --scratch
+frameofmind doctor --scratch <directory>
+frameofmind doctor --scratch <directory> --remove
+```
+
+Removal skips links, unmarked folders (including older scratch), live owners
+and uncertain process identities. A reused or inaccessible PID can keep an
+entry on the list. Each removal reports its outcome. Scratch inspection
+works without a Gemini key.
+
+For automation, `frameofmind doctor --json` writes exactly one JSON document to stdout,
+with `schemaVersion` first, and lists system-temp scratch. Human diagnostics
+go to stderr. Combine it with `--scratch <directory>` to
+select adjacent scratch, and add `--remove` to request removal. These are
+the version 1 keys. Consumers can ignore additional keys.
+
+| Field | Value |
+| --- | --- |
+| `schemaVersion` | `1` |
+| `prerequisites` | Boolean `node`, `geminiKey` and `granolaKey` checks |
+| `tools` | `ffmpeg` and `ffprobe`, each with a `version` string or null and an `error` string or null |
+| `commands[]` | `command` label and `capabilities` array |
+| `commands[].capabilities[]` | Capability `name`, boolean `present`, and listing `error` or null |
+| `leftovers[]` | `kind`, absolute `path`, `sizeBytes` and `ageMs` (null if unavailable), owner `state`, boolean `removed`, and `reason` or null |
+| `scanError` | Null on completion, `invalid_request` for removal without a scan, or `scan_failed` when the scan root could not be read |
+
+The owner state is `unproven`, `live`, `abandoned`, `live or reused PID`, or
+`unknown owner`. Only `abandoned` is eligible for removal. In a capability
+name, a vertical bar joins alternative supported input formats.
+
+The general check exits 0 when Node and the Gemini key are ready and 1 when
+either is missing. Optional media capabilities are advisory. An explicit
+`--scratch` scan exits 0 on completion, including when it skips individual
+entries. An invalid request or an unreadable scan root exits 1.
 
 ### 1.7 Install the agent skill
 

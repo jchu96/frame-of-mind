@@ -1,3 +1,4 @@
+import { requireMedia } from "../services/media-capabilities.js";
 import type { Command } from "commander";
 import { parseSecondsMs } from "../domain/clock.js";
 import { classify, describeMeasurement, selectEdge, snapSettings } from "../domain/snap.js";
@@ -31,6 +32,7 @@ export function registerSnap(program: Command) {
     .option("--file-clock <clock>", "source or reel", "source")
     .option("--json", "Print the request, settings and result as JSON")
     .action(async (video: string, flags: SnapFlags) => {
+      await requireMedia("snap");
       const output = await snapFile(video, flags);
       const { request, result } = output;
       const reading = result.status === "snapped"

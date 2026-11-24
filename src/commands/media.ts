@@ -1,3 +1,4 @@
+import { requireMedia } from "../services/media-capabilities.js";
 import { exactTime, renderExactTimecode } from "exact-time";
 import type { Command } from "commander";
 import { DecodeError } from "../services/media-probe.js";
@@ -36,6 +37,7 @@ export function registerMedia(program: Command): void {
         process.on("SIGINT", cancel);
         process.on("SIGTERM", cancel);
         try {
+          await requireMedia(name, flags, controller.signal);
           const result = await mediaHelper(name, video, flags, controller.signal);
           process.stdout.write((flags.json ? JSON.stringify(result) : describe(result)) + "\n");
           if (result.kind === "verify" && result.mismatches.length) process.exitCode = 1;

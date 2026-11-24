@@ -1,11 +1,11 @@
+import { createScratch } from "../adapters/scratch.js";
 import { VERSION } from "../version.js";
 import { modelTime } from "exact-time";
 import { classify, proposeRecords, snapSettings, summarizeSnaps, type SnapRun, type SnapSettings } from "../domain/snap.js";
 import { parseSecondsMs, declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
 import { probeFrameRate } from "./media-probe.js";
 import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
-import { mkdtemp, rename, rm, rmdir, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { rename, rm, rmdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { selectCandidates } from "../domain/candidate-selection.js";
 import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
@@ -382,7 +382,7 @@ export class AnalysisOrchestrator {
     const hasContext = hasMeetingContext(options);
     const context = hasContext ? this.createContextSource(options) : undefined;
     const progress = execution.progress ?? NOOP_PROGRESS_REPORTER;
-    const temp = await mkdtemp(join(tmpdir(), "frame-of-mind-"));
+    const temp = await createScratch("analyze");
     let meeting: MeetingEvidence | undefined;
     let localVideo = options.video ? resolve(options.video) : "";
     let downloadedMimeType: string | undefined;
