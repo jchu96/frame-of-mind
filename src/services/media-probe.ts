@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { sameRate } from "../domain/media-clock.js";
 import { z } from "zod";
 import { exactTime, fromTimecode, isDropRate, parseTimecodeRate, rationalRate, type ExactTime, type FrameRate, type TimecodeSpec } from "exact-time";
 import { localVideoInput, runMediaTool, type Recording } from "./media-tools.js";
@@ -55,7 +56,7 @@ function measureTiming(raw: unknown, independentRate?: FrameRate, requireCount =
   return { rate, count: String(frames.length) };
 }
 
-export function sameRate(a: FrameRate, b: FrameRate) { return a.num === b.num && a.den === b.den; }
+export { sameRate } from "../domain/media-clock.js";
 
 const tags = z.record(z.string(), z.string()).optional();
 const streamsSchema = z.object({
@@ -63,7 +64,7 @@ const streamsSchema = z.object({
     index: z.number().int().nonnegative(), codec_type: z.string(), codec_name: z.string().optional(),
     codec_tag_string: z.string().optional(), width: z.number().int().positive().optional(),
     height: z.number().int().positive().optional(), channels: z.number().int().positive().optional(),
-    pix_fmt: z.string().optional(), tags, disposition: z.object({ attached_pic: z.number() }).optional(),
+    r_frame_rate: z.string().optional(), pix_fmt: z.string().optional(), tags, disposition: z.object({ attached_pic: z.number() }).optional(),
   })),
   format: z.object({ format_name: z.string(), duration: z.string().optional(), tags }),
 });
@@ -96,10 +97,10 @@ export interface VideoInfo {
   approximateSeconds: number;
 }
 
-export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal): Promise<VideoInfo> {
+async function videoHeader(input: Recording, signal?: AbortSignal) {
   await input.check();
   const json = await runMediaTool("ffprobe", [...localVideoInput(), "-show_entries",
-    "stream=index,codec_type,codec_name,codec_tag_string,width,height,channels,pix_fmt:stream_disposition=attached_pic:stream_tags=timecode:format=duration,format_name:format_tags=timecode",
+    "stream=index,codec_type,codec_name,codec_tag_string,width,height,channels,pix_fmt,r_frame_rate:stream_disposition=attached_pic:stream_tags=timecode:format=duration,format_name:format_tags=timecode",
     "-of", "json", input.path], {signal});
   const {streams, format} = streamsSchema.parse(JSON.parse(json));
   const videos = streams.filter(s => s.codec_type === "video" && !s.disposition?.attached_pic);
@@ -111,6 +112,20 @@ export async function inspectVideo(input: Recording, declaration?: {rate?: Frame
   if (tracks.length && videos.length !== 1) throw new Error("Ambiguous association between video and timecode tracks.");
   const labels = [format, video, ...tracks].flatMap(s => tagValues(s.tags));
   await input.check();
+  return { format, video: { ...video, width: video.width, height: video.height, codec_name: video.codec_name }, audio, labels };
+}
+
+export async function probeStartLabel(input: Recording, rate: FrameRate) {
+  const { labels, video } = await videoHeader(input);
+  if (!labels.length) return undefined;
+  if (!video.r_frame_rate || !sameRate(parseTimecodeRate(video.r_frame_rate + ":ndf").rate, rate)) {
+    throw new Error("Video rate differs from the media reference rate.");
+  }
+  return readStartLabel(labels, rate);
+}
+
+export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal): Promise<VideoInfo> {
+  const { format, video, audio, labels } = await videoHeader(input, signal);
   const {rate, count} = measureTiming(JSON.parse(await readTiming(input.path, String(video.index), signal)), declaration?.rate, true);
   if (declaration?.rate && !sameRate(rate, declaration.rate)) throw new Error("Declared rate differs from measured video rate.");
   const fileStartLabel = readStartLabel(labels, rate, declaration?.dropFrame);

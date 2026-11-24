@@ -457,6 +457,7 @@ frameofmind proxy <video> -o <out.mp4> [--height 720] [--allow-oversize] [--forc
 frameofmind slice <video> --from <time> --to <time> -o <out.mp4> [--force]
 frameofmind frame <video> --at <time> -o <out.png|out.jpg> [--force]
 frameofmind verify <video> (--expect-frames <n> | --expect-duration <time>)
+frameofmind map <timeline.otio> (--at <time> | --source <path> --frame <n>) [--track <n>] [--timecode-rate <rate>] [--video <export>] [--json]
 frameofmind snap <video> --at <seconds|HH:MM:SS[.mmm]> --edge <start|end> [--file-clock <source|reel>] [--json]
 frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|run] [--force] [--json]
 ```
@@ -467,6 +468,12 @@ They measure constant-rate video from file frame zero. Use whole frames such as
 Slice includes its first frame and excludes its end. Proxy and slice produce
 H.264 video with mono AAC reference audio. Verify fully decodes the file and
 exits 1 on any frame-count mismatch. See the [local media procedure](docs/RUNBOOK.md#310-prepare-and-verify-local-media).
+
+Use `map` with the timeline exported alongside an edited sequence. A lookup
+such as `frameofmind map edit.otio --at 100f` reports the source file, the
+frame value stored in the edit, and the frame counted from the start of the
+media. Reverse lookup finds each use of that file value. Overlapping video
+tracks have separate rows, topmost first. [Timeline lookup procedure](docs/RUNBOOK.md#313-map-an-exported-sequence-to-source-frames)
 
 | Option | Purpose |
 |---|---|

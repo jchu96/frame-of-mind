@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   exactTime, exactMilliseconds, fromBoundaryMilliseconds, fromTimecode, fromMilliseconds,
-  parseTimecodeRate, renderExactTimecode, type ExactTime, type FrameRate, type MediaClock, type TimecodeSpec,
+  parseTimecodeRate, renderExactTimecode, snapDecimalSeconds, type ExactTime, type FrameRate, type MediaClock, type TimecodeSpec,
 } from "exact-time";
 import { rateSchema, timecodeSpecSchema } from "./media-clock.js";
 
@@ -27,8 +27,8 @@ export function parseSecondsMs(value: string): number {
   if (!/^\d+(?:\.\d{1,3})?$/.test(value) || value.trim() !== value) {
     throw new Error("Seconds must be non-negative, unsigned decimal seconds with at most three decimals.");
   }
-  const [whole, fraction = ""] = value.split(".");
-  const ms = BigInt(whole!) * BigInt(1000) + BigInt(fraction.padEnd(3, "0"));
+  const unpadded = value.replace(/^0+(?=\d)/, "");
+  const ms = snapDecimalSeconds("timeline", unpadded, { num: 1000, den: 1 }, "instant").frames;
   if (ms > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Seconds exceed the safe millisecond range.");
   return Number(ms);
 }
@@ -114,6 +114,11 @@ function convertEntry<C extends MediaClock>(clock: C, entry: ReturnType<typeof s
 
 export function parseFilePosition<C extends FileClock>(clock: C, flag: string, value: string, rate: FrameRate, dropFrame?: boolean): ExactTime<C> {
   return convertEntry(clock, strictEntry(value, flag), rate, dropFrame);
+}
+
+export function parseTimelinePosition(value: string, origin: ExactTime<"timeline">, dropFrame?: boolean): { time: ExactTime<"timeline">; absolute: boolean } {
+  const entry = strictEntry(value, "--at");
+  return { time: convertEntry("timeline", entry, origin.rate, dropFrame), absolute: entry.form === "timecode" };
 }
 
 export function declareClock(offset?: string, rate?: string, mediaRate?: TimecodeSpec): ClockDeclaration | undefined {

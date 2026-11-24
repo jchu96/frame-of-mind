@@ -10,7 +10,7 @@
         "@sentry/bun": "10.73.0",
         "commander": "15.0.0",
         "dotenv": "17.4.2",
-        "exact-time": "https://github.com/jchu96/exact-time/releases/download/v0.1.3/exact-time-0.1.3.tgz",
+        "exact-time": "https://github.com/jchu96/exact-time/releases/download/v0.1.4-beta.1/exact-time-0.1.4-beta.1.tgz",
         "jose": "6.2.18",
         "zod": "4.6.7",
       },
@@ -1093,7 +1093,7 @@
 
     "eventsource-parser": ["eventsource-parser@3.1.0", "", {}, "sha512-kJezFj9YFAMLeORyi7aCLxLbD5/qWMQnoMVlVPyHIll7lgRJCc3JVln9Vgl9nwQi0YkMnhdGTMNn7CkRRAptMg=="],
 
-    "exact-time": ["exact-time@https://github.com/jchu96/exact-time/releases/download/v0.1.3/exact-time-0.1.3.tgz", {}, "sha512-xAo8JTxlw4UnatKQg76YOdIEdo/4eP/VOSlju0BlqK62oGfi3aKPEGNXMUqoZqST20aHtZBcD+sAbhIoTp/4xw=="],
+    "exact-time": ["exact-time@https://github.com/jchu96/exact-time/releases/download/v0.1.4-beta.1/exact-time-0.1.4-beta.1.tgz", {}, "sha512-MWejl+1hSq79k3yXC4UbSoaCt2hTSNmBFD1XQdLGbFbcObzuooOG7HjMstJRYTHbaSXESp46MC+J9Sm2bFN8dA=="],
 
     "execa": ["execa@8.0.1", "", { "dependencies": { "cross-spawn": "^7.0.3", "get-stream": "^8.0.1", "human-signals": "^5.0.0", "is-stream": "^3.0.0", "merge-stream": "^2.0.0", "npm-run-path": "^5.1.0", "onetime": "^6.0.0", "signal-exit": "^4.1.0", "strip-final-newline": "^3.0.0" } }, "sha512-VyhnebXciFV2DESc+p6B+y0LjSm0krU4OgJN44qFAhBY0TJ+1V61tYD2+wHusZ6F9n5K+vl8k0sTy7PEfV4qpg=="],
 

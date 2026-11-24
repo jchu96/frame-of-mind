@@ -871,6 +871,43 @@ An `unavailable` warning means the local decode or its timing could not be
 verified. Check ffmpeg and the first audio stream. A standalone unavailable
 result sets a nonzero exit status. The reports keep the model range for review.
 
+### 3.13 Map an exported sequence to source frames
+
+Export the timeline and the small video from the same edit. Read the local
+timeline (up to 16 MiB) with one of these commands.
+
+```bash
+frameofmind map edit.otio --at 100f
+frameofmind map edit.otio --at '01:00:02;00' --timecode-rate 29.97df --track 1
+frameofmind map edit.otio --at 0f --video export.mp4 --json
+frameofmind map edit.otio --source media/take.mov --frame 86500
+```
+
+Frame counts and decimal seconds begin at sequence frame zero. Seconds accept
+up to three decimals and must fall on a frame boundary. Timecode input uses
+the sequence display clock, including its global start. Video track 1 is the
+bottom video track. Each row identifies its track. Gaps have no source,
+transitions name both neighboring clips, and speed changes and nested
+sequences identify the unresolved clip or sequence. Reverse lookup takes
+the frame value written in the timeline, including the source start timecode.
+A media frame counts from zero at the media reference's available start.
+
+Source paths in the timeline resolve relative to its directory. Give
+`--source` relative to the working directory or use the full path in the
+forward result. When ffprobe reads an agreeing start tag from local media,
+the command also prints source timecode. Otherwise the row explains why
+only frames are available.
+
+For sequence timecode, an explicit rate and mode take precedence. Otherwise
+the command checks `edit.otio.sequence.json` beside `edit.otio`. Its
+ticks per frame must identify a supported editing rate, its zero point must
+match the timeline start, and its `dropFrame` must be true or false. The
+next source is the exported video's embedded `xmpDM:startTimecode` element
+when `--video` is supplied. The reader recognizes the measured 29.97 drop
+and non-drop formats. If the mode remains unknown at a drop-capable rate,
+the output includes both marked labels. Use a frame count for the lookup
+in that case. Results go to standard output.
+
 ## 4. Review procedure
 
 ### 4.1 Open manifest first
