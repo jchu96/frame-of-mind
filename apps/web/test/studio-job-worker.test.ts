@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { VERSION } from "../../../src/version";
 import type {
   AnalysisJobExecutor,
   JobRepository,
@@ -128,6 +129,23 @@ describe("LocalStudioJobWorker", () => {
       ]);
   });
 
+  test("reports the tool version when reading the queue fails", async () => {
+    const { repository } = createRepository();
+    const captureTelemetry = mock(() => "synthetic-event-id");
+    const worker = new LocalStudioJobWorker(repository, successfulExecutor(createClock()), {
+      captureTelemetry,
+    });
+    await worker.start({ drain: false });
+    spyOn(repository, "list").mockRejectedValueOnce(new Error("queue unavailable"));
+    worker.notify();
+    await worker.whenIdle();
+
+    expect(captureTelemetry).toHaveBeenCalledWith("queue_read_failed", expect.objectContaining({
+      stage: "worker",
+      version: VERSION,
+    }));
+  });
+
   test("persists a sanitized failure without provider error content", async () => {
     const { repository } = createRepository();
     const job = await createJob(repository, "worker-failure-0001", 0);
@@ -172,7 +190,7 @@ describe("LocalStudioJobWorker", () => {
         recipeRevision: "builtin-v1",
         model: "gemini-3.6-flash",
         studioMode: "local-studio",
-        version: "0.3.0",
+        version: VERSION,
       }),
     }]);
     expect(JSON.stringify(telemetry)).not.toContain("secret transcript");

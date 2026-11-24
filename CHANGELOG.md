@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- REST requests, the web app’s public configuration, and local Studio error telemetry now report the version printed by `frameofmind --version`.
+
 - Added local `probe`, `verify`, `proxy`, `slice` and `frame` commands for measured frame counts, upload preparation, exact cuts and full-resolution frame extraction.
 
 ## [0.6.0-beta.2] - 2026-11-23
