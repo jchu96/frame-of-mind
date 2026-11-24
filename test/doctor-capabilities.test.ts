@@ -1,0 +1,99 @@
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, it, vi } from "vitest";
+import { program } from "../src/cli.js";
+
+it("reports both tool builds and refuses a missing H.264 encoder before opening the source", async () => {
+  const root = await mkdtemp(join(tmpdir(), "doctor-tools-"));
+  const previous = process.exitCode;
+  const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const report = () => stdout.mock.calls.map(([chunk]) => String(chunk)).join("");
+  try {
+    // A synthetic configured flag keeps the existing required-key check green.
+    vi.stubEnv("GEMINI_API_KEY", "fixture");
+    vi.stubEnv("PATH", root);
+    const log = join(root, "calls");
+    const standIn = `#!${process.execPath}
+const fs = require("node:fs"), path = require("node:path");
+const tool = path.basename(process.argv[1]), flag = process.argv.at(-1);
+fs.appendFileSync(${JSON.stringify(log)}, tool + " " + flag + "\\n");
+const listings = {
+  "-version": tool + " version fixture",
+  "-encoders": " V..... wrapped_avframe wrapped video\\n A..... pcm_s16le audio\\n A..... aac audio",
+  "-filters": "trim setpts fps scale anullsrc atrim aresample aformat asetpts amix color drawbox".split(" ").map(n => " ... " + n + " V->V description").join("\\n"),
+  "-formats": " D   mov,mp4,m4a container\\n D d lavfi device\\n  E  mp4 output\\n  E  null output"
+};
+if (!(flag in listings)) process.exit(2);
+console.log(listings[flag]);
+`;
+    for (const name of ["ffmpeg", "ffprobe"]) await writeFile(join(root, name), standIn, {mode: 0o700});
+    const doctor = () => program.parseAsync(["doctor"], {from: "user"});
+    process.exitCode = 0;
+    await doctor();
+    expect(process.exitCode).toBe(0);
+    expect(report()).toContain("ffmpeg version fixture");
+    expect(report()).toContain("ffprobe version fixture");
+    for (const name of ["proxy", "slice", "calibrate"]) {
+      const row = report().split("\n").find(line => line.startsWith(name + " "));
+      expect(row).toMatch(/Missing encoder:libx264\./);
+    }
+    expect(report()).toMatch(/probe needs .*Ready\./);
+    await expect(program.parseAsync(["proxy", join(root, "absent.mp4"), "-o", join(root, "out.mp4")], {from: "user"}))
+      .rejects.toThrow(/proxy.*missing.*encoder:libx264/);
+    const calls = new Set((await readFile(log, "utf8")).trim().split("\n"));
+    expect(calls).toEqual(new Set(["ffmpeg", "ffprobe"].flatMap(tool =>
+      ["-version", "-encoders", "-filters", "-formats"].map(flag => tool + " " + flag))));
+    await rm(join(root, "ffmpeg"));
+    stdout.mockClear();
+    await doctor();
+    expect(report()).toContain("ffmpeg not installed");
+    expect(process.exitCode).toBe(0);
+  } finally {
+    stdout.mockRestore();
+    vi.unstubAllEnvs();
+    process.exitCode = previous;
+    await rm(root, {recursive: true, force: true});
+  }
+});
+
+it("pins version 1 doctor JSON keys down to an individual capability and leftover", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "doctor-json-")));
+  const old = join(root, "fom-transcribe-abc123");
+  const previous = process.exitCode;
+  const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  try {
+    await mkdir(old);
+    for (const key of ["TMPDIR", "TMP", "TEMP", "PATH"]) vi.stubEnv(key, root);
+    vi.stubEnv("GEMINI_API_KEY", "");
+    await program.parseAsync(["doctor", "--json"], {from: "user"});
+    const document = () => JSON.parse(stdout.mock.calls.map(([chunk]) => String(chunk)).join(""));
+    const report = document();
+    expect(Object.keys(report)[0]).toBe("schemaVersion");
+    expect(process.exitCode).toBe(1);
+    expect(Object.keys(report).sort()).toEqual(["commands", "leftovers", "prerequisites", "scanError", "schemaVersion", "tools"]);
+    expect(report.schemaVersion).toBe(1);
+    expect(report.prerequisites).toEqual({node: true, geminiKey: false, granolaKey: expect.any(Boolean)});
+    expect(report.tools).toEqual({ffmpeg: {version: null, error: "not installed"}, ffprobe: {version: null, error: "not installed"}});
+    const row = report.commands.find((row: {command: string}) => row.command === "slice");
+    expect(row).toEqual({command: "slice", capabilities: expect.any(Array)});
+    expect(row.capabilities).toContainEqual({name: "encoder:libx264", present: false, error: "ffmpeg not installed"});
+    expect(report.leftovers).toEqual([{kind: "transcribe", path: old, sizeBytes: 0, ageMs: expect.any(Number),
+      state: "unproven", removed: false, reason: "missing or invalid marker"}]);
+    expect(report.scanError).toBeNull();
+    stdout.mockClear();
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      await program.parseAsync(["doctor", "--json", "--scratch", join(root, "missing")], {from: "user"});
+      expect(document().scanError).toBe("scan_failed");
+      expect(Object.keys(document())[0]).toBe("schemaVersion");
+      expect(stderr).toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    } finally { stderr.mockRestore(); }
+  } finally {
+    stdout.mockRestore();
+    vi.unstubAllEnvs();
+    process.exitCode = previous;
+    await rm(root, {recursive: true, force: true});
+  }
+});

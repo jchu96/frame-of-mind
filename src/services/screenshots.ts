@@ -1,5 +1,6 @@
+import { createScratch, markerName } from "../adapters/scratch.js";
 import { childEnvironment, spawn } from "../lib/child-env.js";
-import { access, chmod, mkdtemp, readdir, rename, rm } from "node:fs/promises";
+import { access, chmod, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { timestampToSeconds } from "../lib/time.js";
 
@@ -141,7 +142,7 @@ async function extractSettledScreenshot(
   if (!bounds) return false;
   let scratch: string;
   try {
-    scratch = await mkdtemp(join(dirname(destination), ".settled-"));
+    scratch = await createScratch("screenshots", dirname(destination));
   } catch {
     return false;
   }
@@ -185,6 +186,11 @@ async function extractSettledScreenshot(
   } catch {
     return false;
   } finally {
-    await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+    try { await rm(scratch, { recursive: true, force: true }); }
+    catch {
+      // The parent may become a published bundle. Even if a derivative is
+      // busy, remove its ownership marker before allowing publication.
+      await rm(join(scratch, markerName), {force: true});
+    }
   }
 }

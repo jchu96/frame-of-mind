@@ -1,7 +1,7 @@
+import { createScratch } from "./scratch.js";
 import { childEnvironment, execFile } from "../lib/child-env.js";
 import { promisify } from "node:util";
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -48,7 +48,7 @@ export async function calibrateClipClock(analyzer: CalibrationAnalyzer, options:
         && cached.result === classifyClipClock(cached.evidence.reportedSeconds)) return cached;
     } catch { /* A missing or invalid measurement must be measured again. */ }
   }
-  const directory = await mkdtemp(join(tmpdir(), "frame-of-mind-calibration-"));
+  const directory = await createScratch("calibration");
   let remote: GeminiFile | undefined;
   let reportedSeconds: number | null = null;
   try {
