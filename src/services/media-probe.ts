@@ -16,7 +16,7 @@ export async function probeFrameRate(
 }
 
 function readTiming(path: string, selector: string, signal?: AbortSignal) {
-  return runMediaTool("ffprobe", [...localVideoInput, "-select_streams", selector, "-count_frames",
+  return runMediaTool("ffprobe", [...localVideoInput(), "-select_streams", selector, "-count_frames",
     "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames,nb_read_frames:frame=pts,duration,pkt_duration",
     "-of", "json", path], {signal});
 }
@@ -65,7 +65,7 @@ const streamsSchema = z.object({
     height: z.number().int().positive().optional(), channels: z.number().int().positive().optional(),
     pix_fmt: z.string().optional(), tags, disposition: z.object({ attached_pic: z.number() }).optional(),
   })),
-  format: z.object({ duration: z.string().optional(), tags }),
+  format: z.object({ format_name: z.string(), duration: z.string().optional(), tags }),
 });
 
 type StartLabel = { value: ExactTime<"source">; dropFrame: boolean };
@@ -82,6 +82,7 @@ function tagValues(metadata: Record<string,string> | undefined) {
 }
 
 export interface VideoInfo {
+  formatName: string;
   duration: ExactTime<"source">;
   rate: FrameRate;
   dropFrame?: boolean;
@@ -97,8 +98,8 @@ export interface VideoInfo {
 
 export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal): Promise<VideoInfo> {
   await input.check();
-  const json = await runMediaTool("ffprobe", [...localVideoInput, "-show_entries",
-    "stream=index,codec_type,codec_name,codec_tag_string,width,height,channels,pix_fmt:stream_disposition=attached_pic:stream_tags=timecode:format=duration:format_tags=timecode",
+  const json = await runMediaTool("ffprobe", [...localVideoInput(), "-show_entries",
+    "stream=index,codec_type,codec_name,codec_tag_string,width,height,channels,pix_fmt:stream_disposition=attached_pic:stream_tags=timecode:format=duration,format_name:format_tags=timecode",
     "-of", "json", input.path], {signal});
   const {streams, format} = streamsSchema.parse(JSON.parse(json));
   const videos = streams.filter(s => s.codec_type === "video" && !s.disposition?.attached_pic);
@@ -116,7 +117,7 @@ export async function inspectVideo(input: Recording, declaration?: {rate?: Frame
   const dropFrame = declaration?.dropFrame ?? fileStartLabel?.dropFrame ?? (isDropRate(rate) ? undefined : false);
   if (dropFrame && !isDropRate(rate)) throw new Error("Drop-frame mode requires 30000/1001 or 60000/1001.");
   await input.check();
-  return { duration: exactTime("source", count, rate), rate, dropFrame, fileStartLabel,
+  return { formatName: format.format_name, duration: exactTime("source", count, rate), rate, dropFrame, fileStartLabel,
     width: video.width, height: video.height, codec: video.codec_name, pixelFormat: video.pix_fmt,
     videoIndex: video.index, audio, approximateSeconds: Number(format.duration) };
 }
@@ -125,7 +126,7 @@ export async function inspectVideo(input: Recording, declaration?: {rate?: Frame
 export async function decodeVideo(input: Recording, info: VideoInfo, signal?: AbortSignal) {
   await input.check();
   try {
-    await runMediaTool("ffmpeg", [...localVideoInput, "-i", input.path, "-map", `0:${info.videoIndex}`,
+    await runMediaTool("ffmpeg", [...localVideoInput(info.formatName), "-i", input.path, "-map", `0:${info.videoIndex}`,
       ...info.audio.flatMap(s => ["-map", `0:${s.index}`]), "-f", "null", "-"], {signal});
   } catch (cause) {
     throw new DecodeError(cause instanceof Error ? cause.message : "Full media decode failed.", {cause});

@@ -88,7 +88,7 @@ async function encode(input: Recording, staged: string, info: VideoInfo, from: P
   const origin = info.fileStartLabel;
   const label = origin && renderExactTimecode(offsetTime(from, origin.value), origin.dropFrame);
   await input.check();
-  await runMediaTool("ffmpeg", ["-y", "-copyts", ...localVideoInput, "-noautorotate", "-i", input.path,
+  await runMediaTool("ffmpeg", ["-y", "-copyts", ...localVideoInput(info.formatName), "-noautorotate", "-i", input.path,
     "-f", "lavfi", "-i", `anullsrc=r=${samples.hz}:cl=mono`, "-filter_complex", filter, "-map", `0:${info.videoIndex}`,
     "-map", "[a]", "-vf", vf, "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
     "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
@@ -111,7 +111,7 @@ async function encode(input: Recording, staged: string, info: VideoInfo, from: P
 async function grab(input: Recording, staged: string, info: VideoInfo, at: Position, signal?: AbortSignal) {
   const png = extname(staged) === ".png";
   await input.check();
-  await runMediaTool("ffmpeg", ["-y", ...localVideoInput, "-noautorotate", "-i", input.path, "-map", `0:${info.videoIndex}`,
+  await runMediaTool("ffmpeg", ["-y", ...localVideoInput(info.formatName), "-noautorotate", "-i", input.path, "-map", `0:${info.videoIndex}`,
     "-vf", `trim=start_frame=${at.frames},setpts=PTS-STARTPTS`, "-frames:v", "1", "-map_metadata", "-1",
     "-map_metadata:s", "-1", "-c:v", png ? "png" : "mjpeg", ...(png ? [] : ["-q:v", "2"]), "-f", "image2", "-update", "1", staged], {signal});
   const imageInput = ["-protocol_whitelist", "file", "-f", png ? "png_pipe" : "jpeg_pipe", "-i", staged];

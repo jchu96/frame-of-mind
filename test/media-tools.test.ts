@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,6 +87,26 @@ it("refuses a destination replaced during encoding and preserves its new content
     await writeFile(output, "external replacement");
   })).rejects.toThrow("Destination changed");
   expect(await readFile(output, "utf8")).toBe("external replacement");
+});
+it("refuses an input edited in place during staging", async () => {
+  // Make the edit observable even on filesystems with coarse timestamps.
+  await utimes(input, new Date(0), new Date(0));
+  const before = await stat(input, {bigint: true});
+  await expect(stageOutput(input, output, [".mp4"], false, undefined, async staged => {
+    await writeFile(staged, "candidate");
+    await writeFile(input, "Synthetic recording", {flag: "r+"});
+    expect(await stat(input, {bigint: true})).toMatchObject({dev: before.dev, ino: before.ino, size: before.size});
+  }), "same-inode edit must stop publication").rejects.toThrow("Input recording changed");
+  expect(await readFile(input, "utf8")).toBe("Synthetic recording");
+  expect(await readdir(root)).toEqual(["original.mp4"]);
+});
+
+it("explains an existing destination lock and leaves it in place", async () => {
+  const lock = join(root, ".prepared.mp4.fom-lock");
+  await mkdir(lock);
+  await expect(stageOutput(input, output, [".mp4"], false, undefined, staged => writeFile(staged, "candidate")))
+    .rejects.toThrow(/\.prepared\.mp4\.fom-lock.*interrupted run.*safe to remove.*no other frameofmind command is writing to this destination/i);
+  expect((await readdir(root)).sort()).toEqual([".prepared.mp4.fom-lock", "original.mp4"]);
 });
 it("never replaces an outside publisher that wins creation of an absent target", async () => {
   await expect(stageOutput(input, output, [".mp4"], true, undefined, async staged => {

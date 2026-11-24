@@ -1272,6 +1272,7 @@ For local `probe`, `verify`, `proxy`, `slice` or `frame` failures, check
 `ffprobe -version`, `ffmpeg -version` and the encoders in §1.3. Run
 `probe --decode-check` on the original. Unreadable packets, missing or
 variable frame timing, timeouts, and decode errors fail the command.
+If an interrupted run leaves a hidden `.<destination-name>.fom-lock` directory beside the output, it is safe to remove that directory once you confirm no other `frameofmind` command is writing to that destination.
 
 ```bash
 frameofmind analyze "<meeting-id>" \

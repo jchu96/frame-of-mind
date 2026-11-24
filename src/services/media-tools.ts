@@ -5,7 +5,14 @@ import { childEnvironment, spawn } from "../lib/child-env.js";
 
 // Only self-contained containers. In particular, never auto-open a playlist,
 // image sequence, concat script or external MOV data reference.
-export const localVideoInput = ["-protocol_whitelist", "file", "-format_whitelist", "mov,matroska,webm,avi"];
+export function localVideoInput(formatName?: string) {
+  const options = ["-protocol_whitelist", "file", "-format_whitelist", "mov,matroska,webm,avi"];
+  const demuxer = formatName?.split(",")[0];
+  // ffmpeg rejects MOV-private options for Matroska/WebM and AVI. Pin their
+  // probed demuxer so these reads cannot select MOV without the explicit flag.
+  if (demuxer === "matroska" || demuxer === "avi") return [...options, "-f", demuxer];
+  return [...options, "-enable_drefs", "0"];
+}
 export const probeLimit = 32 * 1024 * 1024;
 export interface ToolOptions { signal?: AbortSignal; timeoutMs?: number; maxOutput?: number }
 
@@ -89,7 +96,11 @@ export async function stageOutput<T>(
   // mkdir is exclusive across processes. A contender fails without ever owning
   // this directory. File creation cannot clobber an outside writer either.
   const lock = join(parent, "." + basename(target) + ".fom-lock");
-  await mkdir(lock, { mode: 0o700 });
+  try { await mkdir(lock, { mode: 0o700 }); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    throw new Error(`Lock directory "${lock}" already exists. An interrupted run can leave it behind. It is safe to remove only when no other frameofmind command is writing to this destination.`);
+  }
   try {
     const prior = await targetState(target);
     if (prior && !prior.isFile()) throw new Error("Destination must be a regular file and cannot be a link.");

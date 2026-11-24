@@ -1,10 +1,12 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { link, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
+import { link, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { childEnvironment } from "../src/lib/child-env.js";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import * as mediaTools from "../src/services/media-tools.js";
+import { mediaHelper } from "../src/services/media-helpers.js";
 
 let root: string;
 const cli = resolve("src/cli.ts");
@@ -132,7 +134,6 @@ it("keeps a representable next-day label and refuses a wrapped measurement", asy
   await expect(verifyStartLabel("24:00:00:01", "00:00:00:01")).rejects.toThrow(/24:00:00:01.*00:00:00:01.*ffmpeg version/);
 });
 it("rejects a corrupt video packet and preserves the old forced output", async () => {
-  const {writeFile} = await import("node:fs/promises");
   const path = join(root, "plain.mp4");
   const packets = probeJson(["-select_streams", "v:0", "-show_packets",
     "-show_entries", "packet=pos,size", "-of", "json", path]).packets;
@@ -146,6 +147,67 @@ it("rejects a corrupt video packet and preserves the old forced output", async (
   expect(result.status).toBe(1);
   expect(await readFile(join(root, "old.mp4"), "utf8")).toBe("keep");
   expect(await readdir(root)).toEqual(entries);
+});
+it("verify rejects a damaged final audio packet at the correct video frame count", async () => {
+  const path = join(root, "damaged-audio.mp4");
+  ffmpeg(["-i", join(root, "plain.mp4"), "-f", "lavfi", "-i", "sine=duration=1.2:sample_rate=48000",
+    "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", path]);
+  const packets = probeJson(["-select_streams", "a:0", "-show_packets", "-show_entries", "packet=pos,size",
+    "-of", "json", path]).packets;
+  const last = packets.at(-1);
+  const bytes = await readFile(path);
+  bytes.fill(255, Number(last.pos), Number(last.pos) + Number(last.size));
+  await writeFile(path, bytes);
+
+  expect(success("probe", path).duration.frames).toBe(String(count));
+  const decode = spawnSync("ffmpeg", ["-nostdin", "-v", "error", "-xerror", "-i", path, "-f", "null", "-"],
+    {env: childEnvironment("media"), encoding: "utf8"});
+  expect(decode.status).toBeGreaterThan(0);
+  expect(decode.stderr).toMatch(/aac/i);
+  const result = command("verify", path, "--expect-frames", String(count), "--json");
+  expect(result.status, "damaged audio must fail verify").toBe(1);
+  expect(JSON.parse(result.stdout)).toMatchObject({decodeStatus: "failed"});
+});
+
+it("refuses to publish a staged proxy with a different start label", async () => {
+  const realRun = mediaTools.runMediaTool;
+  const spy = vi.spyOn(mediaTools, "runMediaTool").mockImplementation((binary, args, options) => {
+    if (binary === "ffmpeg" && args.includes("-timecode")) {
+      args = [...args];
+      args[args.indexOf("-timecode") + 1] = "01:02:03:05";
+    }
+    return realRun(binary, args, options);
+  });
+  try {
+    const entries = await readdir(root);
+    await expect(mediaHelper("proxy", join(root, source), {output: join(root, "wrong-label.mp4"), height: "64"}))
+      .rejects.toThrow(/expected 01:02:03:04, measured 01:02:03:05/);
+    expect(await readdir(root)).toEqual(entries);
+  } finally { spy.mockRestore(); }
+});
+
+it("explicitly disables MOV external tracks before opening each video input", async () => {
+  const spy = vi.spyOn(mediaTools, "runMediaTool");
+  const path = join(root, "plain.mp4");
+  try {
+    await mediaHelper("proxy", path, {output: join(root, "drefs.mp4"), height: "64"});
+    await mediaHelper("frame", path, {output: join(root, "drefs.png"), at: "0f"});
+    for (const [binary, args] of spy.mock.calls) {
+      const inputIndex = args.indexOf("-i");
+      const input = inputIndex < 0 ? args.at(-1)! : args[inputIndex + 1]!;
+      if (input.endsWith(".png")) continue; // Opened explicitly with png_pipe.
+      expect(input).toMatch(/\.mp4$/);
+      const beforeInput = args.slice(0, inputIndex < 0 ? -1 : inputIndex);
+      const flag = beforeInput.indexOf("-enable_drefs");
+      expect(beforeInput.slice(flag, flag + 2), binary + " MOV input options").toEqual(["-enable_drefs", "0"]);
+    }
+  } finally { spy.mockRestore(); }
+});
+
+it("verifies Matroska by its container even with an mp4 extension", () => {
+  const path = join(root, "disguised.mp4");
+  ffmpeg(["-i", join(root, "plain.mp4"), "-c:v", "copy", "-f", "matroska", path]);
+  expect(success("verify", path, "--expect-frames", String(count)).decodeStatus).toBe("passed");
 });
 it("slices real reference audio from its source interval and extracts JPEG", () => {
   ffmpeg(["-i", join(root, "plain.mp4"), "-f", "lavfi", "-i",
@@ -161,16 +223,13 @@ it("slices real reference audio from its source interval and extracts JPEG", () 
 });
 
 it("checks projected and measured sizes through the proxy entry point before publishing", async () => {
-  const {vi} = await import("vitest");
-  const tools = await import("../src/services/media-tools.js");
-  const {mediaHelper} = await import("../src/services/media-helpers.js");
   const fs = await import("node:fs/promises");
-  const realRun = tools.runMediaTool;
+  const realRun = mediaTools.runMediaTool;
   const canonicalInput = await fs.realpath(join(root, "plain.mp4"));
   const output = join(root, "size.mp4");
   let seconds = "230000", oversized = false;
   const events: string[] = [];
-  const spy = vi.spyOn(tools, "runMediaTool").mockImplementation(async (binary, args, options) => {
+  const spy = vi.spyOn(mediaTools, "runMediaTool").mockImplementation(async (binary, args, options) => {
     const result = await realRun(binary, args, options);
     if (binary === "ffprobe" && args.includes("-show_entries") && args.at(-1) === canonicalInput
       && args.some(arg => arg.includes("format=duration"))) {
