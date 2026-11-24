@@ -18,6 +18,10 @@ try {
   }
   assert.equal(run("--version", 0).trim(), version, "bundle version differs from package version");
   assert.match(run("--help", 0), /^Usage: frameofmind/m);
+  const unsupported = spawnSync(process.execPath, ["frameofmind.mjs", "mcp"], { cwd, env: { HOME: cwd, PATH: "" }, encoding: "utf8" });
+  assert.equal(unsupported.status, 1);
+  assert.equal(unsupported.stdout, "");
+  assert.match(unsupported.stderr, /^bun_required: use bun --no-env-file/m);
   const doctor = run("doctor", 1);
   assert.match(doctor, /^ok Node >=22$/m);
   assert.match(doctor, /^-- GEMINI_API_KEY$/m);

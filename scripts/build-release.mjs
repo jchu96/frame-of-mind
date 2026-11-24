@@ -21,7 +21,7 @@ try {
   const metafile = join(stage, "meta.json");
   execFileSync("bun", [
     "--no-env-file", "--no-install", "build", "src/cli.ts", "--target=node", "--format=esm",
-    "--packages=bundle", "--minify-whitespace", "--env=disable",
+    "--packages=bundle", "--external=bun:sqlite", "--minify-whitespace", "--env=disable",
     "--define", `__FRAMEOFMIND_RELEASE_VERSION__=${JSON.stringify(version)}`,
     `--metafile=${metafile}`, `--outfile=${join(stage, "frameofmind.mjs")}`,
   ], { env: buildEnv, stdio: "inherit" });
