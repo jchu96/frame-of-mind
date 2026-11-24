@@ -17,6 +17,7 @@ import { z } from "zod";
 import type {
   AnalysisDetail,
   AnalysisRecipe,
+  ThinkingLevel,
   AnalysisRun,
   AnalysisRunV3,
   AnalysisItem,
@@ -129,6 +130,7 @@ interface AnalyzeOptionsBase {
   recipeRevision: string;
   apiKey: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
   video?: string;
   videoMimeType?: string;
   expectedVideoSha256?: string;
@@ -274,6 +276,7 @@ export interface AnalysisVideoAnalyzer {
   probeClipClock?(file: GeminiFile): Promise<number>;
   readonly relativeEvidenceResponses?: number;
   readonly model: string;
+  readonly thinkingLevel?: ThinkingLevel;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
   resolveRetainedFile?(
     name: string,
@@ -1192,6 +1195,7 @@ export class AnalysisOrchestrator {
             sha256: options.recipeSha256,
           },
           model: analyzer.model,
+          ...(analyzer.thinkingLevel && { thinkingLevel: analyzer.thinkingLevel }),
           recordingSha256,
           analysisSha256,
           recordingMimeType: mimeType,
@@ -1410,7 +1414,7 @@ export function createDefaultAnalysisOrchestrator(): AnalysisOrchestrator {
   return new AnalysisOrchestrator({
     createContextSource: defaultCreateContextSource,
     createAnalyzer: (apiKey, analyzeOptions) =>
-      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model),
+      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model, {}, analyzeOptions.thinkingLevel),
   });
 }
 

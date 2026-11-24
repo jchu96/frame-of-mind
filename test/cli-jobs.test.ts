@@ -3,7 +3,7 @@ import { renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { runJobCommand } from "../src/commands/jobs.js";
 import { validateCliDocument } from "./helpers/cli-schema.js";
 
@@ -23,7 +23,8 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   await rm(root, { recursive: true, force: true });
 });
-function provider(generationRefusal?: Response) {
+function provider(generation: Response | ((body: string) => object) = body =>
+  body.includes("matchNotes") ? {matchNotes: "fixture", moments: []} : {segments: []}) {
   const inventory = new Set<string>();
   const calls: string[] = [];
   let afterFinalize = async () => {};
@@ -45,9 +46,8 @@ function provider(generationRefusal?: Response) {
       return Response.json({});
     }
     expect(inventory.size).toBe(1);
-    if (generationRefusal) return generationRefusal;
-    const analysis = JSON.stringify(init.body).includes("matchNotes");
-    const payload = analysis ? {matchNotes: "fixture", moments: []} : {segments: []};
+    if (generation instanceof Response) return generation;
+    const payload = generation(String(init.body));
     return Response.json({candidates: [{content: {parts: [{text: JSON.stringify(payload)}]}}]});
   });
   return { inventory, calls, onFinalize(fn: () => Promise<void>) { afterFinalize = fn; } };
@@ -81,6 +81,49 @@ async function record(id: string) {
   return JSON.parse(await readFile(join(out, ".frameofmind-jobs", id, "job.json"), "utf8"));
 }
 beforeEach(() => { vi.stubEnv("GEMINI_API_KEY", "stand-in"); });
+
+it("sends base request bytes without a thinking level and medium on every generation when selected", async () => {
+  const bodies: string[] = [];
+  const fake = provider(body => {
+    bodies.push(body);
+    const schema = JSON.parse(body).generationConfig.responseJsonSchema;
+    if (schema.properties.matchNotes) return {matchNotes: "fixture", moments: [
+      {start: "00:00:00", end: "00:00:01", kind: "change", summary: "Fixture change", importance: "low"},
+    ]};
+    return {accepted: true, kind: "change", title: "Fixture", summary: "Fixture change", evidence: {timestamp: "00:00:00"}};
+  });
+  async function run(args: string[]) {
+    const {doc} = await call("analyze", "start", args);
+    expect(doc.error).toBeUndefined();
+    const result = await call("analyze", "result", [doc.jobId, ...folders(), "--json"]);
+    expect(result.doc.error).toBeUndefined();
+    return JSON.parse(await readFile(join(result.doc.runFolder, "manifest.json"), "utf8"));
+  }
+
+  expect(await run(startArgs("analyze"))).not.toHaveProperty("thinkingLevel");
+  const base = bodies.splice(0);
+  // Raw SDK HTTP bodies captured for index and detail at d43dd0c.
+  expect(base.map(body => createHash("sha256").update(body).digest("hex"))).toEqual([
+    "8548557fde88664b225d4576756704ff87181361408721120776f5d2fcaa2890",
+    "b8dfdafdb2dbb2bf880ddffd65125375d9753c769db44039d6c009363a28945c",
+  ]);
+  for (const body of base) expect(JSON.parse(body).generationConfig).not.toHaveProperty("thinkingConfig");
+
+  const args = startArgs("analyze");
+  const priorCalls = fake.calls.length;
+  const invalid = await call("analyze", "start", [...args, "--thinking-level", "xhigh"]);
+  expect([invalid.doc.error.code, invalid.exit, fake.calls.length]).toEqual(["USAGE", 2, priorCalls]);
+  expect(await run([...args, "--thinking-level", "medium"])).toHaveProperty("thinkingLevel", "medium");
+  expect(bodies).toHaveLength(base.length);
+  for (const [i, body] of bodies.entries()) {
+    const expected = JSON.parse(base[i]!);
+    expected.generationConfig.thinkingConfig = {thinkingLevel: "MEDIUM"};
+    expect(JSON.parse(body)).toEqual(expected);
+  }
+  const callsBeforeReplay = fake.calls.length;
+  const replay = await call("analyze", "start", [...args, "--thinking-level", "low"]);
+  expect([replay.doc.error.code, replay.exit, fake.calls.length]).toEqual(["REQUEST_CONFLICT", 30, callsBeforeReplay]);
+});
 
 it("J01 reopens a narrowed grant and refuses links outside the selected root", async () => {
   const fake = provider();

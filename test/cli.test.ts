@@ -1,7 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini-model.js";
 import { buildAnalyzeOptions } from "../src/cli.js";
 
 const baseFlags = {
@@ -17,14 +18,28 @@ const baseFlags = {
   derivedTranscript: true,
 };
 
+it("keeps the example environment and documented defaults on the selected Flash model", async () => {
+  const defaults = [
+    [".env.example", /^GEMINI_MODEL=(.+)$/m],
+    ["README.md", /defaults to `([^`]+)`/],
+    ["docs/RUNBOOK.md", /^\| Default model\s*\| `([^`]+)`/m],
+    ["docs/VIDEO_UNDERSTANDING.md", /default model `([^`]+)` unless overridden/],
+  ] as const;
+  for (const [path, pattern] of defaults) {
+    const content = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
+    expect(content.match(pattern)?.[1], path).toBe(DEFAULT_GEMINI_MODEL);
+  }
+});
+
 describe("analyze CLI option assembly", () => {
   it("propagates explicit video-only, deep, and model options", async () => {
-    const options = await buildAnalyzeOptions(undefined, baseFlags, "synthetic-key");
+    const options = await buildAnalyzeOptions(undefined, { ...baseFlags, thinkingLevel: "medium" }, "synthetic-key");
 
     expect(options).toMatchObject({
       contextMode: "none",
       video: "package.json",
       model: "gemini-pro-latest",
+      thinkingLevel: "medium",
       indexFps: 1,
       maxIncidents: 5,
       recipe: { id: "communication-coaching" },

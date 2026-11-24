@@ -1,4 +1,5 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
+import { THINKING_LEVELS } from "../domain/types.js";
 import { ContractError } from "../domain/contract-error.js";
 import type { Family } from "../adapters/job-record.js";
 import type { JobOperation } from "../services/cli-job.js";
@@ -29,6 +30,9 @@ export function jobCommand(family: Family, op: JobOperation) {
       .requiredOption("--retention <policy>").option("--model <id>");
     if (family === "analyze") cmd.requiredOption("--recipe <id>").option("--snap <method>");
     else cmd.option("--transcript-json", "also write the transcript JSON export");
+    if (family === "analyze" && op === "start") {
+      cmd.addOption(new Option("--thinking-level <level>", "Gemini thinking level (default: provider setting)").choices(THINKING_LEVELS));
+    }
     if (op === "start") cmd.requiredOption("--request-id <uuid>").option("--after-unknown <job-id>");
   }
   return cmd;
