@@ -153,6 +153,20 @@ const complete = (accepted: number, rejected = 0) => ({
   schemaVersion: 1 as const, runId: base.analysis.runId, status: "complete" as const,
   candidates: { indexed: accepted + rejected, selected: accepted + rejected, omittedByLimit: 0, validated: accepted + rejected, accepted, rejected, failed: 0 }, failures: [],
 });
+
+test("default reports match the beta.2 bytes for two accepted records", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "default-reports-"));
+  roots.push(directory);
+  const clock: RunClock = { fileClock: "source", modelClipClock: "unverified" };
+  await writeArtifacts(directory, base.analysis, { ...base.manifest, clock }, complete(2));
+
+  for (const name of ["report.html", "analysis.md"]) {
+    const expected = await readFile(new URL(`./fixtures/default-reports-beta2/${name}`, import.meta.url));
+    const actual = await readFile(join(directory, name));
+    expect(actual, name).toEqual(expected);
+  }
+});
+
 test("W7 onset and exclusive end use containing frames 240 and 239 at 10.010, with identical readings at equivalent zero offsets", async () => {
   const analysis = structuredClone(base.analysis);
   analysis.items[0].candidate.end = analysis.items[1].candidate.start = "00:00:10";
