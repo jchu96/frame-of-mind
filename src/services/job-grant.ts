@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { openJobFile, trustedDirectory } from "../adapters/job-path.js";
 import { z } from "zod";
 import { geminiModelSchema } from "../adapters/gemini-model.js";
-import { ContractError } from "../domain/contract-error.js";
+import { ContractError, MissingJobArgumentError, faultCode } from "../domain/contract-error.js";
 import { MAX_RECORDING_BYTES } from "../lib/files.js";
 
 const rootDocument = z.strictObject({schemaVersion: z.literal(1), read: z.array(z.string()), write: z.array(z.string())});
@@ -34,13 +34,14 @@ export function inside(root: string, path: string) {
   const part = relative(root, path);
   return !isAbsolute(part) && part !== ".." && !part.startsWith(".." + sep);
 }
-async function checkDirectory(path: string) {
+export function checkJobDirectory(path: string, selectedOut: boolean) {
   if (!isAbsolute(path) || path !== resolve(path) || (process.platform === "win32" && !/^[a-z]:\\[^:]*$/i.test(path))) outside();
   try {
     trustedDirectory(path);
-    return;
-  } catch { /* Unmounted and unavailable roots grant no access. */ }
-  outside();
+  } catch (error) {
+    if (selectedOut && faultCode(error) === "NOT_FOUND") throw new MissingJobArgumentError("out");
+    outside();
+  }
 }
 async function fromFile(path: string): Promise<Roots> {
   if (!isAbsolute(path) || resolve(path) !== path) invalidRoots();
@@ -79,7 +80,8 @@ export async function readJobRoots(values: Record<string, unknown>): Promise<Roo
     if (!read.success || !write.success) usage();
     roots = {read: read.data, write: write.data};
   }
-  for (const root of [...roots.read, ...roots.write]) await checkDirectory(root);
+  const out = typeof values.out === "string" ? resolve(values.out) : undefined;
+  for (const root of [...roots.read, ...roots.write]) checkJobDirectory(root, root === out && roots.write.includes(root));
   return {...roots, read: [...new Set(roots.read)].sort(), write: [...new Set(roots.write)].sort()};
 }
 
@@ -97,11 +99,12 @@ export async function readJobGrant(values: Record<string, unknown>): Promise<Job
 
 export async function openJobInput(grant: JobGrant, file: JobFile, out: string) {
   if (!grant.read.includes(file.root) || !grant.write.some(dir => inside(dir, out)) || !isAbsolute(out)) outside();
-  await checkDirectory(out);
+  checkJobDirectory(out, true);
   const components = file.path.split("/");
   if (Buffer.byteLength(file.path) > 1024 || components.some(name =>
     !name || /[. ]$|[\\:\x00-\x1f\x7f]/.test(name) || /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name))) outside();
   const path = join(file.root, ...components);
+  trustedDirectory(dirname(path));
   if (await realpath(path) !== path) outside();
   const before = await lstat(path, {bigint: true});
   if (!before.isFile() || before.nlink !== 1n) outside();

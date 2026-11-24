@@ -23,7 +23,7 @@ afterEach(async () => {
   vi.unstubAllEnvs();
   await rm(root, { recursive: true, force: true });
 });
-function provider() {
+function provider(generationRefusal?: Response) {
   const inventory = new Set<string>();
   const calls: string[] = [];
   let afterFinalize = async () => {};
@@ -45,6 +45,7 @@ function provider() {
       return Response.json({});
     }
     expect(inventory.size).toBe(1);
+    if (generationRefusal) return generationRefusal;
     const analysis = JSON.stringify(init.body).includes("matchNotes");
     const payload = analysis ? {matchNotes: "fixture", moments: []} : {segments: []};
     return Response.json({candidates: [{content: {parts: [{text: JSON.stringify(payload)}]}}]});
@@ -91,6 +92,15 @@ it("J01 reopens a narrowed grant and refuses links outside the selected root", a
   args.splice(1, 4, "--roots-file", grant);
   args.splice(args.indexOf("--request-id"), 2);
   await change(read);
+  const absentOut = [...args];
+  absentOut[absentOut.indexOf("--out") + 1] = join(out, "missing");
+  const missingOut = await call("analyze", "dry-run", absentOut);
+  const missingFile = await call("analyze", "dry-run", [join(read, "missing.mp4"), ...args.slice(1)]);
+  expect([missingOut, missingFile, await readdir(out)]).toMatchObject([
+    {exit: 20, doc: {error: {code: "NOT_FOUND", message: "The --out folder does not exist.", details: {argument: "out"}}}},
+    {exit: 20, doc: {error: {code: "NOT_FOUND", message: "The input file does not exist.", details: {argument: "file"}}}},
+    [],
+  ]);
   expect((await call("analyze", "dry-run", args)).doc).toMatchObject({bytes: 7, seconds: 2, model, retention: "run"});
   await change(other);
   expect((await call("analyze", "dry-run", args)).doc.error?.code, "path outside the current grant").toBe("PATH_OUTSIDE_ROOTS");
@@ -216,4 +226,15 @@ it("J05 a lost reply costs one upload and a replacement requires the unknown job
   fake.onFinalize(async () => {});
   const replacement = await call("transcribe", "start", [...args, "--after-unknown", doc.jobId]);
   expect((await record(replacement.doc.jobId)).state).toBe("complete");
+});
+
+it("records KEY_REFUSED and returns exit 10 when the provider rejects an analyze job's key", async () => {
+  const fake = provider(Response.json({error: {code: 400, details: [
+    {"@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "API_KEY_INVALID"},
+  ]}}, {status: 400}));
+  const {doc} = await call("analyze", "start", startArgs("analyze"));
+  expect(fake.calls).toEqual(["start", "finalize", "generate", "delete"]);
+  const job = await record(doc.jobId);
+  const result = await call("analyze", "result", [doc.jobId, ...folders(), "--json"]);
+  expect([job.state, job.code, result.doc.error.code, result.exit]).toEqual(["failed", "KEY_REFUSED", "KEY_REFUSED", 10]);
 });

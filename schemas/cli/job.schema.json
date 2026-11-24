@@ -56,6 +56,9 @@
       "code": {
         "type": "string"
       },
+      "reason": {
+        "const": "grant_revoked"
+      },
       "runId": {
         "type": "string"
       },

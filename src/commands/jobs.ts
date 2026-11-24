@@ -1,4 +1,5 @@
 import { closeSync, openSync, writeSync } from "node:fs";
+import { failureDocument, faultCode } from "../domain/contract-error.js";
 import { devNull } from "node:os";
 import type { Family } from "../adapters/job-record.js";
 import { runCli, writeDocument, writeFailure } from "../cli-contract.js";
@@ -27,6 +28,7 @@ export async function runJobCommand(family: Family, op: JobOperation, args: stri
         admitted = true;
       }, deps).catch(error => {
         if (!admitted) throw error;
+        process.stderr.write(`error: ${failureDocument(faultCode(error)).error.message}\n`);
       });
       if (result) output.write(result);
     });
