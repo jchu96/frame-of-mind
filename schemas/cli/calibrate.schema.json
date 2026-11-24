@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "model": {"type": "string"},
+    "checkedAt": {"type": "string", "format": "date-time"},
+    "result": {"enum": ["absolute", "relative", "unverified"]},
+    "tokens": {"type": ["integer", "null"]},
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "flashFileSeconds": {"const": 27},
+        "clipStartSeconds": {"const": 20},
+        "reportedSeconds": {"type": ["number", "null"]}
+      },
+      "required": ["flashFileSeconds", "clipStartSeconds", "reportedSeconds"]
+    }
+  },
+  "required": ["schemaVersion", "model", "checkedAt", "result", "tokens", "evidence"]
+}

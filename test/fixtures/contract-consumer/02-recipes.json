@@ -1,0 +1,1 @@
+{"argv":["recipes"],"today":"text on stdout, one recipe per line: <id> <description>","reads":["/recipes/*/id","/recipes/*/description"],"needs":"at least one recipe or a coded error"}

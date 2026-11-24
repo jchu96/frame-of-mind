@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "request": {
+      "type": "object",
+      "properties": {
+        "clock": {"enum": ["source", "reel"]},
+        "edge": {"enum": ["start", "end"]},
+        "at": {"type": "string"}
+      },
+      "required": ["clock", "edge", "at"]
+    },
+    "snapSettings": {
+      "type": "object",
+      "properties": {
+        "method": {"const": "audio-envelope"},
+        "gapMs": {"type": "integer"},
+        "windowMs": {"type": "integer"}
+      },
+      "required": ["method", "gapMs", "windowMs"]
+    },
+    "result": {
+      "oneOf": [{"type": "object", "properties": {"status": {"enum": ["ambiguous", "no-boundary"]}, "alternativesMs": {"type": "array", "items": {"type": "integer"}}}, "required": ["status", "alternativesMs"]}, {"type": "object", "properties": {"status": {"const": "snapped"}, "alternativesMs": {"type": "array", "items": {"type": "integer"}}, "shiftMs": {"type": "integer"}, "gapMs": {"type": "integer"}, "target": {"type": "object", "properties": {"clock": {"enum": ["source", "reel"]}, "seconds": {"type": "string"}, "gridMs": {"const": 10}, "precisionMs": {"enum": [50, 200]}, "origin": {"const": "audio-envelope"}}, "required": ["clock", "seconds", "gridMs", "precisionMs", "origin"]}, "gapLowerBound": {"const": true}}, "required": ["status", "alternativesMs", "shiftMs", "gapMs", "target"]}]
+    }
+  },
+  "required": ["schemaVersion", "request", "snapSettings", "result"]
+}

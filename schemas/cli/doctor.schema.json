@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "ok": {"type": "boolean"},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"enum": ["node", "GEMINI_API_KEY", "GRANOLA_API_KEY", "ffmpeg", "ffprobe"]},
+          "ok": {"type": "boolean"},
+          "required": {"type": "boolean"},
+          "detail": {"type": "string"}
+        },
+        "required": ["name", "ok", "required", "detail"]
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string"},
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string"},
+                "present": {"type": "boolean"},
+                "error": {"type": ["string", "null"]}
+              },
+              "required": ["name", "present", "error"]
+            }
+          }
+        },
+        "required": ["command", "capabilities"]
+      }
+    },
+    "leftovers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {"enum": ["analyze", "transcribe", "calibration", "screenshots", "media-lock"]},
+          "path": {"type": "string"},
+          "sizeBytes": {"type": ["integer", "null"]},
+          "ageMs": {"type": ["integer", "null"]},
+          "state": {"enum": ["live", "abandoned", "unproven", "live or reused PID", "unknown owner"]},
+          "removed": {"type": "boolean"},
+          "reason": {"type": ["string", "null"]}
+        },
+        "required": ["kind", "path", "sizeBytes", "ageMs", "state", "removed", "reason"]
+      }
+    },
+    "key": {"type": "object", "properties": {"present": {"type": "boolean"}}, "required": ["present"]},
+    "artifactRoot": {"type": "string"},
+    "toolVersion": {"type": "string"},
+    "commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+    "cliSha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+  },
+  "required": ["schemaVersion", "ok", "checks", "commands", "leftovers", "key", "artifactRoot", "toolVersion", "commit", "cliSha256"]
+}

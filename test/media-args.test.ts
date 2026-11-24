@@ -130,7 +130,8 @@ it("F06 returns exit 1 one frame off on Matroska with an mp4 extension", () => {
   expect(success("verify", "disguised.mp4", "--expect-duration", "1.200").decodeStatus).toBe("passed");
   const result = command("verify", "disguised.mp4", "--expect-frames", "29", "--json");
   expect(result.status, "one-frame mismatch exit").toBe(1);
-  expect(JSON.parse(result.stdout)).toMatchObject({decodeStatus: "passed", actual: {frames: "30"}, expected: {frames: "29"}});
+  expect(result.stdout).toBe("");
+  expect(JSON.parse(result.stderr)).toMatchObject({code: "VERIFY_MISMATCH", message: "Expected 29 frames, decoded 30."});
 });
 
 it("rejects a corrupt video packet and preserves the old forced output", async () => {
@@ -144,7 +145,8 @@ it("rejects a corrupt video packet and preserves the old forced output", async (
 it("verify rejects a damaged final audio packet at the correct video frame count", () => {
   const result = command("verify", "damaged-audio.mp4", "--expect-frames", String(count), "--json");
   expect(result.status, "damaged audio must fail verify").toBe(1);
-  expect(JSON.parse(result.stdout)).toMatchObject({decodeStatus: "failed"});
+  expect(result.stdout).toBe("");
+  expect(JSON.parse(result.stderr)).toMatchObject({code: "DECODE_FAILED"});
 });
 
 it("W12 bounded snap CLI matches full-file edges at non-grid and near-zero seeks", async () => {

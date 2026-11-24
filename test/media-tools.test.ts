@@ -1,3 +1,7 @@
+import { Command } from "commander";
+import { registerMedia } from "../src/commands/media.js";
+import * as capabilities from "../src/services/media-capabilities.js";
+import { validateCliDocument } from "./helpers/cli-schema.js";
 import { link, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -137,12 +141,12 @@ it("refuses a dangling link, a directory, and a destination with the wrong exten
 // Replay just the two ffprobe reports that inspectVideo consumes. The tool
 // processes receive the production argv and operate on the real staged path.
 async function reports({rate = "25/1", frames = 30, stagedFrames = frames, seconds = "1.2",
-  label = "", stagedLabel = label, bytes = 1} = {}) {
+  label = "", stagedLabel = label, bytes = 1, stagedHeight = 64} = {}) {
   const [num, den] = rate.split("/").map(Number);
   const timing = (count: number) => ({streams: [{r_frame_rate: rate, avg_frame_rate: rate, time_base: "1/" + num,
     nb_read_frames: String(count)}], frames: Array.from({length: count}, (_, i) => ({pts: i * den!, duration: den}))});
-  const metadata = (timecode: string) => ({format: {format_name: "mov", duration: seconds}, streams: [
-    {index: 0, codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p", width: 80, height: 64,
+  const metadata = (timecode: string, height = 64) => ({format: {format_name: "mov", duration: seconds}, streams: [
+    {index: 0, codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p", width: 2 * Math.round(80 * height / 64 / 2), height,
       tags: timecode ? {timecode} : {}}, {index: 1, codec_type: "audio", codec_name: "aac", channels: 1}]});
   const image = {streams: [{codec_name: "mjpeg", width: 80, height: 64, nb_read_frames: "1"}]};
   await writeFile(join(root, "ffprobe"), `#!/bin/sh
@@ -151,7 +155,7 @@ case "$*:$last" in
   *jpeg_pipe*) echo '${JSON.stringify(image)}' ;;
   *-count_frames*:*/output.mp4) echo '${JSON.stringify(timing(stagedFrames))}' ;;
   *-count_frames*) echo '${JSON.stringify(timing(frames))}' ;;
-  *format=duration*:*/output.mp4) echo '${JSON.stringify(metadata(stagedLabel))}' ;;
+  *format=duration*:*/output.mp4) echo '${JSON.stringify(metadata(stagedLabel, stagedHeight))}' ;;
   *format=duration*) echo '${JSON.stringify(metadata(label))}' ;;
   *) exit 1 ;;
 esac`, {mode: 0o700});
@@ -165,6 +169,21 @@ case "$last" in
 esac`, {mode: 0o700});
   vi.stubEnv("PATH", root);
 }
+
+it.each([
+  ["probe", []], ["verify", ["--expect-frames", "30"]], ["frame", ["--at", "2f", "-o", "image.jpg"]],
+  ["proxy", ["--height", "64", "-o", "proxy.mp4"]],
+  ["slice", ["--from", "0f", "--to", "30f", "-o", "slice.mp4"]],
+] as const)("validates %s output against its release schema", async (command, flags) => {
+  await reports({stagedHeight: command === "slice" ? 720 : 64});
+  vi.spyOn(capabilities, "requireMedia").mockResolvedValue();
+  const cli = new Command();
+  registerMedia(cli);
+  const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  const args = flags.map((value, index) => flags[index - 1] === "-o" ? join(root, value) : value);
+  await cli.parseAsync([command, input, ...args, "--json"], { from: "user" });
+  validateCliDocument(command, stdout.mock.calls.map(([chunk]) => chunk).join(""));
+});
 
 it("refuses to publish a staged proxy with a different start label", async () => {
   await reports({label: "01:02:03:04", stagedLabel: "01:02:03:05"});

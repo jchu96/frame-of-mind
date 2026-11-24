@@ -253,6 +253,11 @@ node frameofmind.mjs --version
 
 On Linux, `sha256sum --check SHA256SUMS` also verifies the download. The CLI
 needs Node 22 or newer. Install ffmpeg and ffprobe for media work.
+Programs can run `frameofmind capabilities --json` to discover commands, options and
+schema versions. Use `doctor --json` for readiness, `recipes --json` for recipe IDs,
+and `--version --json` for the tool version. Each release ships the CLI schemas beside
+the bundle. See the [CLI and MCP contract](docs/MCP_TOOLS.md).
+
 Releases from `v0.6.0-beta.2` on include `THIRD-PARTY-NOTICES.txt` beside `frameofmind.mjs`.
 If you redistribute the bundle, ship that release’s notices file with it.
 

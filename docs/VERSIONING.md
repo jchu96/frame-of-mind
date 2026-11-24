@@ -15,11 +15,20 @@ versions for durable schemas and prompts.
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
+## Machine contract compatibility
+
+Within a schema major version, fields may only be added. Renaming a field,
+removing it or changing its meaning requires a new schema major. Announce the
+change one release ahead and offer both shapes in that release. Readers check
+`schemaVersion` before using any fields and accept additional fields in a known
+major. Fixed error codes and exit statuses keep their meanings across releases.
+The [CLI and MCP contract](MCP_TOOLS.md) lists the current interfaces.
+
 ## Before 1.0
 
 - patch: fixes, documentation, tests, compatible provider normalization;
 - minor: new recipe/provider/renderer/command or compatible contract field;
-- major: reserved for the stable 1.0 contract; before then, breaking CLI changes
+- major: reserved for the stable 1.0 contract; before then, breaking text-mode CLI changes
   require a minor bump and prominent migration notes.
 
 ## Release checklist

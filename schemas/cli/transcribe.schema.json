@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "paths": {"type": "array", "items": {"type": "string"}},
+    "segmentCount": {"type": "integer"},
+    "adjustedCues": {"type": "integer"},
+    "blankCues": {"type": "integer"}
+  },
+  "required": ["schemaVersion", "paths", "segmentCount", "adjustedCues", "blankCues"]
+}

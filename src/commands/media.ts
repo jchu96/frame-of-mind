@@ -1,3 +1,4 @@
+import { CliError, writeDocument } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
 import { exactTime, renderExactTimecode } from "exact-time";
 import type { Command } from "commander";
@@ -39,11 +40,15 @@ export function registerMedia(program: Command): void {
         try {
           await requireMedia(name, flags, controller.signal);
           const result = await mediaHelper(name, video, flags, controller.signal);
-          process.stdout.write((flags.json ? JSON.stringify(result) : describe(result)) + "\n");
+          if (flags.json) {
+            if (result.kind === "verify" && result.mismatches.length) {
+              throw new CliError("VERIFY_MISMATCH", `Expected ${result.expected.frames} frames, decoded ${result.actual.frames}.`);
+            }
+            writeDocument(result);
+          } else process.stdout.write(describe(result) + "\n");
           if (result.kind === "verify" && result.mismatches.length) process.exitCode = 1;
         } catch (error) {
-          if (flags.json) process.stdout.write(JSON.stringify({error: error instanceof Error ? error.message : "Media operation failed.",
-            ...(error instanceof DecodeError && {decodeStatus: "failed"})}) + "\n");
+          if (flags.json && error instanceof DecodeError) throw new CliError("DECODE_FAILED", "Full media decode failed.");
           throw error;
         } finally {
           process.off("SIGINT", cancel);

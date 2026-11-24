@@ -251,6 +251,6 @@ jobs:
           if [[ "$version" == *-* ]]; then
             flags+=(--prerelease --latest=false)
           fi
-          gh release create "$GITHUB_REF_NAME" release/{frameofmind.mjs,LICENSE,THIRD-PARTY-NOTICES.txt,release.json,SHA256SUMS} \
+          gh release create "$GITHUB_REF_NAME" release/{frameofmind.mjs,LICENSE,THIRD-PARTY-NOTICES.txt,release.json,SHA256SUMS} release/*.schema.json \
             "${flags[@]}" --verify-tag --title "Frame of Mind $GITHUB_REF_NAME" --generate-notes \
             --notes "Built from commit $commit. In the single file, the error-reporting SDK’s automatic instrumentation of third-party modules is off."

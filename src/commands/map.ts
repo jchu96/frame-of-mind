@@ -1,3 +1,4 @@
+import { writeDocument } from "../cli-contract.js";
 import type { Command } from "commander";
 import { describeMap, mapTimeline, type MapOptions } from "../services/timeline-map.js";
 
@@ -12,6 +13,9 @@ export function registerMap(program: Command) {
     .option("--json", "Print the lookup as JSON")
     .action(async (timeline: string, flags: MapOptions & { json?: boolean }) => {
       const output = await mapTimeline(timeline, flags);
-      process.stdout.write((flags.json ? JSON.stringify(output) : describeMap(output)) + "\n");
+      if (flags.json) {
+        for (const warning of output.mode.notes) process.stderr.write(warning + "\n");
+        writeDocument({ ...output, mode: { ...output.mode, notes: [] } });
+      } else process.stdout.write(describeMap(output) + "\n");
     });
 }

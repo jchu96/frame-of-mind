@@ -1,0 +1,1 @@
+{"argv":["--version"],"today":"one line of text","reads":["/version","/schemaVersions"],"needs":"the same version string the manifests carry as toolVersion"}

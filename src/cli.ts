@@ -27,9 +27,7 @@ if (process.argv[2] === "mcp" && !libraryImport) {
   // failed silently through symlinks and launchers (bugs.md, 2026-11-13 and
   // 2026-11-22), so the only way not to run is an explicit library import.
   if (!libraryImport) {
-    program.parseAsync().catch((error: unknown) => {
-      process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
-      process.exitCode = 1;
-    });
+    const { runCli } = await import("./cli-contract.js");
+    await runCli(program, process.argv.slice(2));
   }
 }

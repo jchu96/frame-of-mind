@@ -46,7 +46,7 @@ beforeAll(async () => {
   // Commit the working build inputs, including edits under test, into a fixture.
   // Both independent checkouts use exactly this commit and the locked install.
   const sources = git(".", "ls-files", "-z", "--", "src").split("\0").filter(Boolean);
-  const inputs = ["scripts/build-release.mjs", "scripts/release-notices", "LICENSE", "package.json", "bun.lock", "tsconfig.json", ".gitignore"];
+  const inputs = ["schemas/cli", "scripts/build-release.mjs", "scripts/release-notices", "LICENSE", "package.json", "bun.lock", "tsconfig.json", ".gitignore"];
   for (const input of [...sources, ...inputs]) {
     await cp(input, join(first, input), { recursive: true });
   }
@@ -80,13 +80,21 @@ it("runs the release smoke from an empty directory and checks the embedded versi
 it("publishes a checksum for every payload exactly once", async () => {
   const cwd = join(first, "release");
   const files = (await readdir(cwd)).sort();
-  expect(files).toEqual(["LICENSE", "SHA256SUMS", noticesFile, "frameofmind.mjs", "release.json"]);
+  expect(files).toEqual(["LICENSE", "SHA256SUMS", noticesFile, "frameofmind.mjs", "release.json",
+    ...await readdir("schemas/cli")].sort());
   const lines = (await readFile(join(cwd, "SHA256SUMS"), "utf8")).trimEnd().split("\n");
-  expect(lines.map(line => line.replace(/^[a-f0-9]{64}  /, "")).sort())
+  expect(lines.map(line => line.replace(/^[a-f0-9]{64}  /, "")).sort(), "checksum names versus release files")
     .toEqual(files.filter(name => name !== "SHA256SUMS"));
   for (const name of files.filter(name => name !== "SHA256SUMS")) {
     const digest = createHash("sha256").update(await readFile(join(cwd, name))).digest("hex");
     expect(lines).toContain(`${digest}  ${name}`);
+  }
+});
+
+it("ships the schema bytes used to validate command output", async () => {
+  for (const name of await readdir("schemas/cli")) {
+    expect(await readFile(join(first, "release", name), "utf8"), name + " differs from the contract")
+      .toBe(await readFile(join("schemas/cli", name), "utf8"));
   }
 });
 

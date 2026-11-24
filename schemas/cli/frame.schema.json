@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"const": "frame"},
+    "at": {"$ref": "#/definitions/measurement"},
+    "width": {"type": "integer"},
+    "height": {"type": "integer"},
+    "decodeStatus": {"const": "passed"}
+  },
+  "required": ["schemaVersion", "kind", "at", "width", "height", "decodeStatus"],
+  "definitions": {
+    "measurement": {
+      "type": "object",
+      "properties": {
+        "clock": {"const": "source"},
+        "frames": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "rate": {
+          "type": "object",
+          "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+          "required": ["num", "den"]
+        },
+        "secondsDerived": {"const": true},
+        "timecode": {"type": "string"},
+        "dropFrame": {"type": "boolean"},
+        "ticks": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "seconds": {"type": "string"},
+        "ticksUnavailable": {"type": "string"},
+        "secondsUnavailable": {"type": "string"}
+      },
+      "required": ["clock", "frames", "rate", "secondsDerived"]
+    }
+  }
+}

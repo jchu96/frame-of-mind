@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"const": "slice"},
+    "duration": {"$ref": "#/definitions/measurement"},
+    "width": {"type": "integer"},
+    "height": {"type": "integer"},
+    "codec": {"type": "string"},
+    "hasAudio": {"type": "boolean"},
+    "audio": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {"codec": {"type": "string"}, "channels": {"type": "integer"}},
+        "required": ["codec", "channels"]
+      }
+    },
+    "decodeStatus": {"const": "passed"},
+    "from": {"$ref": "#/definitions/measurement"},
+    "to": {"$ref": "#/definitions/measurement"},
+    "fileStartLabel": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "object",
+          "properties": {
+            "clock": {"const": "source"},
+            "frames": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+            "rate": {
+              "type": "object",
+              "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+              "required": ["num", "den"]
+            }
+          },
+          "required": ["clock", "frames", "rate"]
+        },
+        "dropFrame": {"type": "boolean"}
+      },
+      "required": ["value", "dropFrame"]
+    }
+  },
+  "required": ["schemaVersion", "kind", "duration", "width", "height", "codec", "hasAudio", "audio", "decodeStatus", "from", "to"],
+  "definitions": {
+    "measurement": {
+      "type": "object",
+      "properties": {
+        "clock": {"const": "source"},
+        "frames": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "rate": {
+          "type": "object",
+          "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+          "required": ["num", "den"]
+        },
+        "secondsDerived": {"const": true},
+        "timecode": {"type": "string"},
+        "dropFrame": {"type": "boolean"},
+        "ticks": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "seconds": {"type": "string"},
+        "ticksUnavailable": {"type": "string"},
+        "secondsUnavailable": {"type": "string"}
+      },
+      "required": ["clock", "frames", "rate", "secondsDerived"]
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "rate": {
+      "type": "object",
+      "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+      "required": ["num", "den"]
+    },
+    "mode": {
+      "type": "object",
+      "properties": {
+        "basis": {"type": "string"},
+        "notes": {"type": "array", "items": {"type": "string"}},
+        "dropFrame": {"type": "boolean"}
+      },
+      "required": ["basis", "notes"]
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "track": {"type": "integer"},
+          "trackName": {"type": "string"},
+          "status": {"enum": ["source", "transition", "gap", "nested", "refused"]},
+          "clip": {"type": "string"},
+          "path": {"type": "string"},
+          "fileValue": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+          "mediaFrame": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+          "sourceTimecode": {"type": "string"},
+          "sourceTimecodeReason": {"type": "string"},
+          "reason": {"type": "string"},
+          "clips": {"type": "array", "items": {"type": "string"}},
+          "sequenceFrame": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+          "sequenceTimecodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {"mode": {"enum": ["drop-frame", "non-drop"]}, "timecode": {"type": "string"}},
+              "required": ["mode", "timecode"]
+            }
+          }
+        },
+        "required": ["track", "trackName", "status"]
+      }
+    },
+    "status": {
+      "enum": ["outside the sequence", "mapped", "no video source", "matches or unresolved items", "no source occurrence"]
+    },
+    "sequenceFrame": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "sequenceTimecodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {"mode": {"enum": ["drop-frame", "non-drop"]}, "timecode": {"type": "string"}},
+        "required": ["mode", "timecode"]
+      }
+    }
+  },
+  "required": ["schemaVersion", "rate", "mode", "rows", "status"]
+}

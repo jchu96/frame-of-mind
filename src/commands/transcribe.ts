@@ -1,3 +1,4 @@
+import { CliError, writeDocument, writeFailure } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
 import type { Command } from "commander";
 import { TranscriptLanguageError } from "../domain/transcript-language.js";
@@ -30,11 +31,20 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
       const controller = new AbortController();
       const cancel = () => controller.abort();
       process.on("SIGINT", cancel);
-      try { await transcribe({ ...flags, input, signal: controller.signal }, dependencies); }
-      catch (error) {
+      const diagnostic = dependencies.stderr ?? (line => { process.stderr.write(line + "\n"); });
+      try {
+        const result = await transcribe({ ...flags, input, signal: controller.signal },
+          flags.json ? { ...dependencies, stdout: diagnostic } : dependencies);
+        if (flags.json) writeDocument({ paths: result.paths, segmentCount: result.segments.length,
+          adjustedCues: result.adjustedCues, blankCues: result.blankCues }, dependencies.stdout);
+      } catch (error) {
         // Provider and filesystem exception bodies may contain private content.
         const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
-        (dependencies.stderr ?? (line => { process.stderr.write(`${line}\n`); }))(`error: ${message}`);
+        if (flags.json) {
+          writeFailure(new CliError(error instanceof TranscribeError ? error.code : error instanceof TranscriptLanguageError ? "USAGE" : "COMMAND_FAILED", message), diagnostic);
+          return;
+        }
+        diagnostic(`error: ${message}`);
         process.exitCode = error instanceof TranscribeCanceledError ? 130 : 1;
       } finally { process.off("SIGINT", cancel); }
     });

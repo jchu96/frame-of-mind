@@ -1,3 +1,4 @@
+import { validateCliDocument } from "./helpers/cli-schema.js";
 import { Command } from "commander";
 import { expect, test, vi } from "vitest";
 import { registerSnap, snapFile } from "../src/commands/snap.js";
@@ -34,11 +35,10 @@ test("snap reports measured precision, no boundary and unavailable decode at the
     await cli.parseAsync(["snap", "generated", "--at", "1.410", "--edge", "end", "--file-clock", "reel"], { from: "user" });
     expect(stdout).toHaveBeenCalledWith(expect.stringMatching(/reel end 1\.410 · snapped.*measured on a 10 ms grid, accurate to about ±50 ms/));
     await cli.parseAsync(["snap", "generated", "--at", "15", "--edge", "end", "--json"], { from: "user" });
-    expect(JSON.parse(String(stdout.mock.lastCall![0]))).toMatchObject({ request: { clock: "source", edge: "end", at: "15" }, result: { status: "no-boundary" } });
+    expect(validateCliDocument("snap", String(stdout.mock.lastCall![0]))).toMatchObject({ request: { clock: "source", edge: "end", at: "15" }, result: { status: "no-boundary" } });
     expect(process.exitCode).toBe(previous);
     decode.mockResolvedValue(undefined);
-    await cli.parseAsync(["snap", "missing", "--at", "0", "--edge", "start", "--json"], { from: "user" });
-    expect(JSON.parse(String(stdout.mock.lastCall![0])).result).toEqual({ status: "unavailable" });
-    expect(process.exitCode).toBe(1);
+    await expect(cli.parseAsync(["snap", "missing", "--at", "0", "--edge", "start", "--json"], { from: "user" }))
+      .rejects.toMatchObject({ code: "DECODE_FAILED" });
   } finally { decode.mockRestore(); stdout.mockRestore(); process.exitCode = previous; }
 });

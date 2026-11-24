@@ -1,7 +1,9 @@
 import "./instrument.js";
 import { inspectScratch } from "./adapters/scratch.js";
 import { mediaCapabilityReport, requireMedia } from "./services/media-capabilities.js";
-import { access } from "node:fs/promises";
+import { capabilities, CliError, writeDocument } from "./cli-contract.js";
+import { createHash } from "node:crypto";
+import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Command } from "commander";
 import { config as loadDotenv } from "dotenv";
@@ -20,7 +22,7 @@ import { clockSummary } from "./services/artifacts.js";
 import { calibrateClipClock } from "./adapters/gemini-calibration.js";
 import { GeminiVideoAnalyzer } from "./adapters/gemini.js";
 import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
-import { IS_RELEASE_BUNDLE, VERSION } from "./version.js";
+import { IS_RELEASE_BUNDLE, RELEASE_COMMIT, VERSION } from "./version.js";
 import { registerKey } from "./commands/key.js";
 import { loadRunNotes } from "./services/run-notes.js";
 import { resolveRetention } from "./domain/retention.js";
@@ -119,17 +121,10 @@ program
   .option("--remove", "remove proven abandoned entries in the scratch listing")
   .option("--json", "print the versioned doctor report")
   .action(async (flags: {scratch?: string | boolean; remove?: boolean; json?: boolean}) => {
-    let rows: Awaited<ReturnType<typeof inspectScratch>> = [];
-    let scanError: "invalid_request" | "scan_failed" | null = null;
-    try {
-      if (flags.remove && !flags.scratch) throw new Error("--remove requires --scratch.");
-      if (flags.scratch || flags.json) rows = await inspectScratch(typeof flags.scratch === "string" ? flags.scratch : undefined, flags.remove);
-    } catch (error) {
-      if (!flags.json) throw error;
-      scanError = flags.remove && !flags.scratch ? "invalid_request" : "scan_failed";
-      process.stderr.write(`doctor: ${error instanceof Error ? error.message : "Scratch scan failed."}\n`);
-      process.exitCode = 1;
-    }
+    if (flags.remove && !flags.scratch) throw new CliError("USAGE", "--remove requires --scratch.");
+    const rows = flags.scratch || flags.json
+      ? await inspectScratch(typeof flags.scratch === "string" ? flags.scratch : undefined, flags.remove)
+      : [];
     if (flags.scratch && !flags.json) {
       for (const row of rows) {
         const action = flags.remove ? (row.removed ? "removed" : "skipped") : "listed";
@@ -144,13 +139,26 @@ program
       granolaKey: Boolean(process.env.GRANOLA_API_KEY),
     };
     const media = await mediaCapabilityReport();
-    if (!flags.scratch && (!prerequisites.node || !prerequisites.geminiKey)) process.exitCode = 1;
     if (flags.json) {
       const leftovers = rows.map(({kind, path, size, ageMs, state, removed, reason}) =>
         ({kind, path, sizeBytes: size, ageMs, state, removed, reason: reason ?? null}));
-      process.stdout.write(JSON.stringify({schemaVersion: 1, prerequisites, ...media, leftovers, scanError}) + "\n");
+      const checks = [
+        { name: "node", required: true, ok: prerequisites.node, detail: process.versions.node },
+        { name: "GEMINI_API_KEY", required: true, ok: prerequisites.geminiKey, detail: prerequisites.geminiKey ? "configured" : "missing" },
+        { name: "GRANOLA_API_KEY", required: false, ok: prerequisites.granolaKey, detail: prerequisites.granolaKey ? "configured" : "missing" },
+        ...Object.entries(media.tools).map(([name, tool]) => ({
+          name, required: false, ok: tool.version !== null, detail: tool.version ?? tool.error!,
+        })),
+      ];
+      writeDocument({
+        ok: checks.every(check => !check.required || check.ok), checks, commands: media.commands, leftovers,
+        key: { present: prerequisites.geminiKey }, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
+        commit: RELEASE_COMMIT,
+        cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
+      });
       return;
     }
+    if (!flags.scratch && (!prerequisites.node || !prerequisites.geminiKey)) process.exitCode = 1;
     const checks = [
       ["Node >=22", prerequisites.node],
       ["GEMINI_API_KEY", prerequisites.geminiKey],
@@ -183,10 +191,23 @@ program
 program
   .command("recipes")
   .description("List built-in analysis recipes.")
-  .action(() => {
+  .option("--json", "print the versioned recipe list")
+  .action((flags: { json?: boolean }) => {
+    if (flags.json) {
+      writeDocument({ recipes: listBuiltInRecipes().map(({ id, description }) => ({ id, description })) });
+      return;
+    }
     for (const recipe of listBuiltInRecipes()) {
       process.stdout.write(`${recipe.id.padEnd(14)} ${recipe.description}\n`);
     }
+  });
+
+program.command("capabilities").description("List commands, options and machine schema versions.")
+  .option("--json", "print the versioned command inventory")
+  .action((flags: { json?: boolean }) => {
+    const inventory = capabilities(program);
+    if (flags.json) writeDocument(inventory);
+    else for (const row of inventory.commands) process.stdout.write([row.name, ...row.options].join(" ") + "\n");
   });
 
 registerSession(program);
@@ -201,12 +222,13 @@ program.command("calibrate")
   .option("--model <id>", "Gemini model ID")
   .option("--json", "Print the measurement and token cost as JSON")
   .action(async (flags: { model?: string; json?: boolean }) => {
-    if (!process.env.GEMINI_API_KEY) throw new Error("Set GEMINI_API_KEY before calibration.");
+    if (!process.env.GEMINI_API_KEY) throw new CliError("KEY_REFUSED", "Set GEMINI_API_KEY before calibration.");
     await requireMedia("calibrate");
     const analyzer = new GeminiVideoAnalyzer(process.env.GEMINI_API_KEY, flags.model ? geminiModelSchema.parse(flags.model) : undefined);
     const result = await calibrateClipClock(analyzer, { force: true });
     const tokens = analyzer.takeUsage()?.totalTokens ?? null;
-    process.stdout.write(flags.json ? `${JSON.stringify({ ...result, tokens })}\n` : `model clip clock: ${result.result}; tokens: ${tokens ?? "unknown"}\n`);
+    if (flags.json) writeDocument({ ...result, tokens });
+    else process.stdout.write(`model clip clock: ${result.result}; tokens: ${tokens ?? "unknown"}\n`);
   });
 
 program

@@ -1,0 +1,10 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "version": {"type": "string"},
+    "schemaVersions": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "integer", "minimum": 1}}
+  },
+  "required": ["schemaVersion", "version", "schemaVersions"]
+}

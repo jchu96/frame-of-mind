@@ -332,30 +332,10 @@ and uncertain process identities. A reused or inaccessible PID can keep an
 entry on the list. Each removal reports its outcome. Scratch inspection
 works without a Gemini key.
 
-For automation, `frameofmind doctor --json` writes exactly one JSON document to stdout,
-with `schemaVersion` first, and lists system-temp scratch. Human diagnostics
-go to stderr. Combine it with `--scratch <directory>` to
-select adjacent scratch, and add `--remove` to request removal. These are
-the version 1 keys. Consumers can ignore additional keys.
-
-| Field | Value |
-| --- | --- |
-| `schemaVersion` | `1` |
-| `prerequisites` | Boolean `node`, `geminiKey` and `granolaKey` checks |
-| `tools` | `ffmpeg` and `ffprobe`, each with a `version` string or null and an `error` string or null |
-| `commands[]` | `command` label and `capabilities` array |
-| `commands[].capabilities[]` | Capability `name`, boolean `present`, and listing `error` or null |
-| `leftovers[]` | `kind`, absolute `path`, `sizeBytes` and `ageMs` (null if unavailable), owner `state`, boolean `removed`, and `reason` or null |
-| `scanError` | Null on completion, `invalid_request` for removal without a scan, or `scan_failed` when the scan root could not be read |
-
-The owner state is `unproven`, `live`, `abandoned`, `live or reused PID`, or
-`unknown owner`. Only `abandoned` is eligible for removal. In a capability
-name, a vertical bar joins alternative supported input formats.
-
-The general check exits 0 when Node and the Gemini key are ready and 1 when
-either is missing. Optional media capabilities are advisory. An explicit
-`--scratch` scan exits 0 on completion, including when it skips individual
-entries. An invalid request or an unreadable scan root exits 1.
+For automation, use `frameofmind doctor --json` and read the top-level `ok`.
+The [command-line contract](MCP_TOOLS.md#doctor-report) lists each field and check.
+The default scan lists system-temp scratch. Use `--scratch <directory>` for adjacent
+scratch and add `--remove` to request removal. Only abandoned entries qualify.
 
 ### 1.7 Install the agent skill
 
@@ -1923,6 +1903,8 @@ Removing the clone does not revoke provider OAuth or Gemini keys.
    ```json
    ["--no-env-file", "/opt/frameofmind/frameofmind.mjs", "mcp", "--database", "/data/review/reviewed.sqlite"]
    ```
+
+The database path must be its own real path. A path through a link (for example, `/tmp` on macOS) is refused with `unsafe_snapshot`.
 
 The server validates the local principal's imported pairs before advertising tools.
 Restart the host process to select a new snapshot. Closing stdin ends the session.

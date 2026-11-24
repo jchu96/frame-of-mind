@@ -3,6 +3,7 @@ import { mkdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import type { File as GeminiFile } from "@google/genai";
 import { GeminiVideoAnalyzer } from "../adapters/gemini.js";
+import { classifyProviderError } from "../adapters/gemini-error-class.js";
 import { GeminiFileError } from "../adapters/gemini-files.js";
 import { DEFAULT_GEMINI_MODEL, geminiModelSchema } from "../adapters/gemini-model.js";
 import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
@@ -14,7 +15,9 @@ import { mergeTranscriptionChunks, offsetTranscriptionSegments } from "./transcr
 import { TRANSCRIPTION_OVERLAP_SECONDS, TRANSCRIPTION_WINDOW_SECONDS } from "./transcription-policy.js";
 import { assertTranscriptTarget, renderSpeakers, renderSrt, renderTranscriptJson, writePrivateAtomic } from "./transcript-render.js";
 
-export class TranscribeError extends Error {}
+export class TranscribeError extends Error {
+  constructor(message: string, readonly code: "KEY_REFUSED" | "PERMISSION_DENIED" | "NOT_FOUND" | "USAGE" | "COMMAND_FAILED" = "COMMAND_FAILED") { super(message); }
+}
 export class TranscribeCanceledError extends TranscribeError {
   constructor() { super("Transcription canceled; no transcript files written."); }
 }
@@ -65,12 +68,12 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage);
   const canceled = () => { if (options.signal?.aborted) throw new TranscribeCanceledError(); };
   const model = options.model ?? (process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
-  if (!geminiModelSchema.safeParse(model).success) throw new TranscribeError("--model must be a Gemini model ID.");
+  if (!geminiModelSchema.safeParse(model).success) throw new TranscribeError("--model must be a Gemini model ID.", "USAGE");
   let retention;
   try { retention = resolveRetention(options, process.env.FRAME_OF_MIND_UPLOAD_RETENTION); }
-  catch { throw new TranscribeError("Upload retention flags must agree and select provider or run."); }
+  catch { throw new TranscribeError("Upload retention flags must agree and select provider or run.", "USAGE"); }
   const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) throw new TranscribeError("Set GEMINI_API_KEY before transcription.");
+  if (!apiKey) throw new TranscribeError("Set GEMINI_API_KEY before transcription.", "KEY_REFUSED");
   canceled();
   const input = resolve(options.input);
   const output = resolve(options.output ?? dirname(input));
@@ -127,7 +130,13 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
               deps.stderr("warning: failed audio upload cleanup is unconfirmed; provider expiry applies.");
             }
             canceled();
-            if (attempt === 2) throw new TranscribeError(`Transcription failed on window ${index + 1} after 2 attempts; no transcript files written.`);
+            if (attempt === 2) {
+              const provider = error instanceof GeminiFileError ? error.provider : classifyProviderError(error);
+              let code: TranscribeError["code"] = "COMMAND_FAILED";
+              if (provider?.class === "refused") code = provider.status === 401 ? "KEY_REFUSED" : "PERMISSION_DENIED";
+              if (provider?.class === "not_found") code = "NOT_FOUND";
+              throw new TranscribeError(`Transcription failed on window ${index + 1} after 2 attempts; no transcript files written.`, code);
+            }
             deps.stderr(`window ${index + 1}: retrying once after 20 s`);
           } finally {
             if (remote && retention === "run") {
