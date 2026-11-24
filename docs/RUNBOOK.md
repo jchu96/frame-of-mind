@@ -162,6 +162,25 @@ The local media helpers require ffprobe for frame timing and ffmpeg for
 encoding and full decode. Check `ffprobe -version` and confirm that
 `ffmpeg -encoders` lists `libx264` and `aac` before preparing an MP4.
 
+The tested FFmpeg builds are **8.0.1 in CI** (Ubuntu 26.04, amd64v3)
+and **9.0.2 in development**. Support below 8.0.1 is unverified.
+The PR and nightly gates cache Ubuntu package archives. On every run the
+installer checks each SHA-256, extracts into a fresh directory, and tests
+both tools and the H.264 and AAC encoders before adding them to `PATH`.
+
+To move the CI pin, edit `scripts/ci-ffmpeg.lock`. On the target Ubuntu
+runner, choose a UTC [Ubuntu snapshot](https://snapshot.ubuntu.com/).
+Update APT's signed indexes with `sudo apt-get update -S "$snapshot"`.
+Resolve the complete dependency set with
+`apt-get -s -S "$snapshot" -o Dir::State::status=/dev/null --no-install-recommends install "ffmpeg=$revision"`.
+For each selected package and revision, use
+`apt-cache -S "$snapshot" show "$package=$version"` and copy the
+`SHA256`, `Version` (including epoch) and `Filename` from its matching
+amd64v3 index record. Architecture-independent packages use the
+`_all.deb` filename. Set the snapshot in the first line. On the first PR
+run, check the cold download duration, both version lines, encoder checks
+and real-media pass counts. Rerun that head to verify the warm install.
+
 For analysis, ffmpeg is optional and powers two steps: moment screenshots and
 the audio derivative used to transcribe a recording that has no supplied
 transcript. Both degrade to a warning when it is missing, so an analysis still

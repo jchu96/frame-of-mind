@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
 
     steps:
@@ -34,8 +34,27 @@ jobs:
       - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # 2026-11-24: apt consumed 14m37s of the 15-minute gate. Replaces the apt-line test.
+      # Review by: 2026-12-23 (protects: tooling)
+      - &ffmpeg-key
+        name: Identify pinned ffmpeg cache
+        id: ffmpeg-key
+        run: python3 scripts/install-ci-ffmpeg.py key >> "$GITHUB_OUTPUT"
+
+      - &ffmpeg-cache
+        name: Cache pinned Ubuntu media packages
+        id: ffmpeg-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/ci-ffmpeg-debs
+          key: ${{ steps.ffmpeg-key.outputs.key }}
+
+      - &ffmpeg-install
+        name: Install verified ffmpeg and ffprobe
+        timeout-minutes: 3
+        env:
+          FFMPEG_CACHE_HIT: ${{ steps.ffmpeg-cache.outputs.cache-hit }}
+        run: python3 scripts/install-ci-ffmpeg.py
 
       - name: Run pull-request gate
         env:
@@ -101,7 +120,7 @@ jobs:
 
   serial-check:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 120
     env:
       FRAME_OF_MIND_STEP_TIMEOUT_SECONDS: '1800'
@@ -121,6 +140,10 @@ jobs:
 
       - name: Install Playwright browsers
         run: bunx playwright install --with-deps chromium
+
+      - *ffmpeg-key
+      - *ffmpeg-cache
+      - *ffmpeg-install
 
       - name: Run default gate
         run: bun run check:pr
