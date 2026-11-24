@@ -19,7 +19,7 @@
   },
   "else": {
     "properties": {
-      "runFolder": {"type": "string"},
+      "runFolder": {"type": "string", "description": "Directory containing manifest.json, whose optional thinkingLevel records the explicit --thinking-level input."},
       "runId": {"type": "string"},
       "outcome": {"type": "string"},
       "acceptedCount": {"type": "integer", "minimum": 0},

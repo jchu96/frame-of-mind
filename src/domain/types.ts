@@ -159,6 +159,9 @@ export interface AnalysisRunV3 extends AnalysisRunBase {
 
 export type VersionedAnalysisRun = AnalysisRun | AnalysisRunV3;
 
+export const THINKING_LEVELS = ["low", "medium", "high"] as const;
+export type ThinkingLevel = typeof THINKING_LEVELS[number];
+
 interface RunManifestBase {
   clock?: RunClock;
   toolVersion: string;
@@ -174,6 +177,7 @@ interface RunManifestBase {
     sha256: string;
   };
   model: string;
+  thinkingLevel?: ThinkingLevel;
   recordingSha256: string;
   analysisSha256: string;
   recordingMimeType: string;

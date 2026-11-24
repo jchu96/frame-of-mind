@@ -10,10 +10,12 @@ import { snapSettings } from "../domain/snap.js";
 import { listBuiltInRecipes, loadRecipe, withAnalysisDepth } from "../recipes/index.js";
 import { checkJobDirectory, inside, openJobInput, readJobGrant, readJobRoots, rootsRevision, type JobGrant } from "./job-grant.js";
 import { digestJobMedia, probeJobMedia } from "./job-media.js";
+import type { ThinkingLevel } from "../domain/types.js";
 import type { TranscribeDependencies } from "./transcribe.js";
 
 export type JobOperation = "start" | "status" | "result" | "cancel" | "dry-run";
 export interface JobOptions extends Record<string, unknown> {
+  thinkingLevel?: ThinkingLevel;
   out: string; recipe?: string; model?: string; snap?: string; transcriptJson?: boolean; requestId?: string; afterUnknown?: string;
 }
 export interface JobDependencies {
@@ -99,6 +101,7 @@ export async function runJob(family: Family, op: JobOperation, arg: string, flag
     const digest = await digestJobMedia(file, bytes);
     if (fstatSync(file, {bigint: true}).ctimeNs !== before.ctimeNs) throw new ContractError("CONFLICT", "Recording changed.");
     const normalized = {family, file: selection, model, recipe: flags.recipe, snap: flags.snap, transcriptJson: !!flags.transcriptJson,
+      ...(flags.thinkingLevel && {thinkingLevel: flags.thinkingLevel}),
       afterUnknown: flags.afterUnknown, rootsFile: flags.rootsFile, out, grant};
     const key = process.env.GEMINI_API_KEY?.trim();
     if (!key) throw new ContractError("KEY_MISSING", "Job start requires a provider credential.");
@@ -213,7 +216,7 @@ async function execute(store: JobStore, record: JobRecord, flags: JobOptions, gr
     await seal(sealed);
     await authorize();
     const {GeminiVideoAnalyzer} = await import("../adapters/gemini.js");
-    const analyzer = new GeminiVideoAnalyzer(key, model, {jobTransport: transport});
+    const analyzer = new GeminiVideoAnalyzer(key, model, {jobTransport: transport}, flags.thinkingLevel);
     store.createResults(record);
     if (record.family === "transcribe") {
       const {transcribe} = await import("./transcribe.js");

@@ -6,7 +6,7 @@ import { faultCode } from "./domain/contract-error.js";
 import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 import {
@@ -28,7 +28,7 @@ import { registerKey } from "./commands/key.js";
 import { loadRunNotes } from "./services/run-notes.js";
 import { resolveRetention } from "./domain/retention.js";
 import { runLabelSchema } from "./domain/schemas.js";
-import type { ContextProvider } from "./domain/types.js";
+import { THINKING_LEVELS, type ThinkingLevel, type ContextProvider } from "./domain/types.js";
 import { parseTranscriptOffset } from "./lib/time.js";
 import { redactUrlForDisplay } from "./lib/http.js";
 import { telemetryCodeFromError } from "./lib/sentry-telemetry.js";
@@ -92,6 +92,7 @@ export interface AnalyzeCliFlags {
   note?: string[];
   depth: string;
   model?: string;
+  thinkingLevel?: ThinkingLevel;
   output: string;
   maxMoments: string;
   screenshots: boolean;
@@ -261,6 +262,7 @@ program
   .option("--label <text>", "Human label for this run (e.g. the source title), shown in the manifest and reports; never sent to the model")
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
+  .addOption(new Option("--thinking-level <level>", "Gemini thinking level (default: provider setting)").choices(THINKING_LEVELS))
   .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
   .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
@@ -512,6 +514,7 @@ export async function buildAnalyzeOptions(
     recipeRevision: recipeResult.revision,
     apiKey,
     ...(model ? { model } : {}),
+    ...(flags.thinkingLevel && { thinkingLevel: flags.thinkingLevel }),
     ...(flags.focus ? { focus: flags.focus } : {}),
     ...(label ? { label } : {}),
     ...(runNotes.length ? { runNotes } : {}),

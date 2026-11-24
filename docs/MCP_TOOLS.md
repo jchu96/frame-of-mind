@@ -86,6 +86,10 @@ and its `schemaVersion`, `analysis.md`, `manifest.json`, `failure-manifest.json`
 default, 3 with explicit speech snapping). Stored `failures[].code` and
 `error.code` retain their spellings. New failure manifests also record the
 public fault in `errorCode`. Readers accept older files without this member.
+On `analyze` and `analyze start`, the optional `--thinking-level` accepts
+`low`, `medium`, or `high`. A successful run records an explicit choice in
+`manifest.json` as `thinkingLevel`. Omitting the flag omits that field.
+Replaying a request ID with a different level returns `REQUEST_CONFLICT`.
 
 Until a full release carries synchronous `analyze --json`, consumers may rely on
 the text line beginning `Analysis: ` and carrying the run directory, the

@@ -2,7 +2,7 @@ import type { JobProviderTransport } from "./job-provider-transport.js";
 import { clockTime, clipToFile, type ClipClock } from "../domain/clock.js";
 import type { RunNote } from "../domain/run-notes.js";
 import { Buffer } from "node:buffer";
-import { MediaResolution } from "@google/genai";
+import { MediaResolution, ThinkingLevel as SdkThinkingLevel } from "@google/genai";
 import { z } from "zod";
 import type {
   DeleteFileParameters,
@@ -18,6 +18,7 @@ import type {
   DerivedTranscriptionSegment,
   IndexedMoment,
   MeetingEvidence,
+  ThinkingLevel,
 } from "../domain/types.js";
 import { analysisDetailSchema, indexedMomentSchema } from "../domain/schemas.js";
 import {
@@ -147,6 +148,12 @@ const transcriptionSchema = z.object({
   segments: z.array(transcriptionSegmentSchema).max(5_000),
 }).strict();
 
+const sdkThinkingLevel = {
+  low: SdkThinkingLevel.LOW,
+  medium: SdkThinkingLevel.MEDIUM,
+  high: SdkThinkingLevel.HIGH,
+} satisfies Record<ThinkingLevel, SdkThinkingLevel>;
+
 export class GeminiVideoAnalyzer {
   readonly model: string;
   relativeEvidenceResponses = 0;
@@ -184,12 +191,17 @@ export class GeminiVideoAnalyzer {
     apiKey: string,
     model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
     dependencies: GeminiAnalyzerDependencies = {},
+    readonly thinkingLevel?: ThinkingLevel,
   ) {
     this.jobTransport = dependencies.jobTransport;
     const ai = new StatusAwareGeminiClient(apiKey, MODEL_REQUEST_TIMEOUT_MS, this.jobTransport);
     this.fileUploader = this.jobTransport?.uploader(apiKey) ?? dependencies.fileUploader ?? createGeminiFileUploader(apiKey);
-    this.generateContent = dependencies.generateContent ??
-      ((parameters) => ai.models.generateContent(parameters));
+    const generateContent = dependencies.generateContent ??
+      ((parameters: GenerateContentParameters) => ai.models.generateContent(parameters));
+    this.generateContent = thinkingLevel === undefined ? generateContent : parameters => generateContent({
+      ...parameters,
+      config: { ...parameters.config, thinkingConfig: { thinkingLevel: sdkThinkingLevel[thinkingLevel] } },
+    });
     this.getFile = dependencies.getFile ??
       ((parameters) => ai.files.get(parameters));
     this.deleteFile = dependencies.deleteFile ??

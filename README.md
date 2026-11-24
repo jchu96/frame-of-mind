@@ -246,8 +246,11 @@ it is sensitive.
 - A local MP4/MOV/M4V/WebM screen recording within the Files API 2 GB limit
 
 The pipeline uses the official `@google/genai` Files API (pinned in `package.json`) and
-defaults to `gemini-3.7-flash`. `gemini-pro-latest` is accepted for in-depth
+defaults to `gemini-3.8-flash`. `gemini-pro-latest` is accepted for in-depth
 runs but is a mutable alias, so it is less reproducible than a pinned model.
+On `analyze` and `analyze start`, use `--thinking-level low|medium|high` to set
+the level for every model request, for example `--model gemini-4-hydrogen --thinking-level medium`.
+Omit the flag to use the model’s own setting.
 
 ## Install
 
@@ -577,7 +580,7 @@ timecode. A timeline shift preserves that precision.
 
 ```bash
 frameofmind analyze --source none --video take.mov --timeline-offset 0 --timecode-rate 25
-frameofmind calibrate --model gemini-3.7-flash --json
+frameofmind calibrate --model gemini-3.8-flash --json
 ```
 
 `--timeline-offset` accepts unsigned non-negative seconds with up to three

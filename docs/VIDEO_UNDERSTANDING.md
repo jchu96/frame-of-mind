@@ -154,7 +154,7 @@ frameofmind analyze "<stable-id>" \
 
 - whole-video index at 0.5 FPS;
 - current two-pass prompt;
-- default model `gemini-3.6-flash` unless overridden.
+- default model `gemini-3.8-flash` unless overridden.
 
 Experimental deep review:
 
