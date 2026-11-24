@@ -42,11 +42,12 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
       } catch (error) {
         // Provider and filesystem exception bodies may contain private content.
         const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
+        // A consumer reads this line; it stays on standard error in both modes.
+        diagnostic(`error: ${message}`);
         if (flags.json) {
           writeFailure(error instanceof TranscriptLanguageError ? new CliError("USAGE", message) : error, dependencies.stdout);
           return;
         }
-        diagnostic(`error: ${message}`);
         process.exitCode = error instanceof TranscribeCanceledError ? 130 : 1;
       } finally { process.off("SIGINT", cancel); }
     });
