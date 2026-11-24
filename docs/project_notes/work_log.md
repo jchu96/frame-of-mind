@@ -4,6 +4,15 @@
 
 - Verified a 24000/1001 proxy retained its start label and removed a location tag. Independent pixel reads identified source frames 2 through 25 in a 24-frame slice and source frame 2 in a still. Forced aliases preserved the original recording's size and SHA-256.
 
+## 2026-11-23 — Speech-edge proposals
+
+- Recovered the seeded 12.340, 15.010 and 47.990 s boundaries on a 10 ms
+  grid, including split PCM samples and raised ambient noise. Selecting
+  the nearest end instead of the earliest moved the 20.120 s cut to the later
+  remark at 21.600 s. The delayed-audio fixture verified file-clock alignment.
+- Verified opt-in sidecar and report rendering, timeline frames 239/240 for
+  exclusive end/onset at 10.010 s, and bounded standalone searches.
+
 ## 2026-11-13
 
 - Preserved conflicting structured provider statuses before SDK message conversion; disagreement now stays other across lookup, generation, polling and direct uploads. SDK refusal fixtures and per-response concurrency tests cover the compatibility seam.

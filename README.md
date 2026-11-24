@@ -457,6 +457,7 @@ frameofmind proxy <video> -o <out.mp4> [--height 720] [--allow-oversize] [--forc
 frameofmind slice <video> --from <time> --to <time> -o <out.mp4> [--force]
 frameofmind frame <video> --at <time> -o <out.png|out.jpg> [--force]
 frameofmind verify <video> (--expect-frames <n> | --expect-duration <time>)
+frameofmind snap <video> --at <seconds|HH:MM:SS[.mmm]> --edge <start|end> [--file-clock <source|reel>] [--json]
 frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|run] [--force] [--json]
 ```
 
@@ -469,6 +470,9 @@ exits 1 on any frame-count mismatch. See the [local media procedure](docs/RUNBOO
 
 | Option | Purpose |
 |---|---|
+| `--snap speech` | propose local audio cuts for each record |
+| `--snap-gap-ms <ms>` | minimum observed pause, 80–2000 ms (default 250) |
+| `--snap-window-ms <ms>` | search radius, 250–3000 ms (default 1500) |
 | `--recipe <id>` | built-in recipe, default `issue-review` |
 | `--recipe-file <path>` | validated custom recipe |
 | `--granola-transport <mcp\|api>` | explicit Granola data/auth path, default `mcp` |
@@ -597,6 +601,33 @@ The same compatibility rule applies to explicit numeric transcript offsets from
 service/API callers. If exact millisecond windowing is unavailable, indexing
 receives the original transcript and the run is labelled `transcript not
 windowed` and `transcript clock unverified`; no offset is rounded.
+
+### Snapping to speech
+
+A model end can land on the next remark. Add `--snap speech` to search the local
+audio for the earliest end followed by a pause. A start uses the latest onset
+after a pause. For example, a model end of 21 s can yield a 20.120 s source
+proposal with a 780 ms pause and another qualifying end at 21.600 s.
+An edge can move outward only within the speech group containing the model
+time. If the only qualifying edges cross other speech, the model time stays
+and the result lists those edges as alternatives.
+
+The model time keeps its one-second precision. The signed shift gives the
+change from that time. The audio target is measured on a 10 ms grid, accurate to about ±50 ms for source audio at 32 kHz or above
+and ±200 ms for lower or unknown rates. With a timeline rate, the reference
+frame contains the proposed onset or the last speech millisecond before an
+exclusive end. The uncertainty can span neighbouring frames.
+
+```bash
+frameofmind analyze --source none --video take.mov --snap speech
+frameofmind snap take.mov --at 21 --edge end --json
+```
+
+The standalone command searches a bounded interval with the same defaults
+and requires only ffmpeg and a local recording. Continuous speech may yield
+`no-boundary`. The editor can audition alternatives at their absolute file
+times. Analysis writes proposals in `times.json` schema 3. Default runs use
+schema 2. Changing the gap or radius alone leaves snapping off.
 
 ## Transcribe a recording
 
