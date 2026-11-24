@@ -5,6 +5,30 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.0-beta.4] - 2026-11-24
+
+Pre-release.
+
+- Machine contract, frozen at version 1. With `--json`, a command prints exactly one JSON document carrying `schemaVersion`; a failure prints one error document with a fixed `code` and exits with the status listed for that code. `docs/MCP_TOOLS.md` is the contract for the command line and the MCP tools. JSON Schema files for each command's output ship with the release and are listed in `SHA256SUMS`.
+
+- Added `--json` to `analyze` and `transcribe`. `analyze --json` reports the absolute run folder, run id, outcome, accepted count and any retained upload. `transcribe --json` still writes `<stem>.transcript.json` and lists every file it wrote. Text output keeps its wording.
+
+- Added `frameofmind capabilities --json`, `recipes --json` and `--version --json`.
+
+- `snap --json` on an input file that does not exist returns `NOT_FOUND` and exits 20.
+
+- `doctor` reports the ffmpeg and ffprobe versions and what each command needs from them, and a media command refuses up front when a capability it needs is missing. `doctor --scratch` lists what a killed run left behind and `--remove` removes only leftovers the tool can prove it created. `doctor --json` prints one report with a top-level `ok` and exits 0 whenever the report was produced.
+
+- Added `frameofmind map`: from the timeline file (`.otio`) exported with a sequence, find the source file, frame and timecode shown at a sequence time, or every sequence time that shows a source frame. See `docs/EDITING_WORKFLOW.md`.
+
+- Added an experimental local MCP server with four read tools, `frameofmind mcp --database <file>`. It runs under Bun only.
+
+- `failure-manifest.json` gains `errorCode`, the contract's code for that failure. Existing codes inside run files are unchanged.
+
+- Fixed: `report.html` from a default run in `0.6.0-beta.3` had one extra whitespace-only line per record compared with `0.6.0-beta.2`. The earlier bytes are restored.
+
+- Uses `exact-time` 0.1.4, which reads timeline-interchange times.
+
 ## [0.6.0-beta.3] - 2026-11-24
 
 Pre-release.
