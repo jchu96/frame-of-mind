@@ -21,9 +21,9 @@ try {
   assert.equal(run(["--version"], 0).trim(), version, "bundle version differs from package version");
   assert.match(run(["--help"], 0), /^Usage: frameofmind/m);
   const unsupported = spawnSync(process.execPath, ["frameofmind.mjs", "mcp"], { cwd, env: { HOME: cwd, PATH: "" }, encoding: "utf8" });
-  assert.equal(unsupported.status, 1);
+  assert.equal(unsupported.status, 20);
   assert.equal(unsupported.stdout, "");
-  assert.match(unsupported.stderr, /^bun_required: use bun --no-env-file/m);
+  assert.match(unsupported.stderr, /^BUN_REQUIRED: use bun --no-env-file/m);
   const report = JSON.parse(run(["doctor", "--json"], 0));
   assert.equal(report.schemaVersion, 1, "UNKNOWN_SCHEMA");
   assert.equal(report.ok, false);

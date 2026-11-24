@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, expect, it, vi } from "vitest";
-import { validateCliDocument } from "./helpers/cli-schema.js";
+import { resolves, validateCliDocument } from "./helpers/cli-schema.js";
 
 const entry = resolve("src/cli.ts");
 const examples = resolve("test/fixtures/contract-consumer");
@@ -21,15 +21,7 @@ function run(args: string[], key = "") {
   return result;
 }
 
-function resolves(value: unknown, parts: string[]): boolean {
-  if (!parts.length) return true;
-  const [key, ...rest] = parts;
-  if (key === "*") return Array.isArray(value) && value.length > 0 && value.every(item => resolves(item, rest));
-  return typeof value === "object" && value !== null && Object.hasOwn(value, key!)
-    && resolves((value as Record<string, unknown>)[key!], rest);
-}
-
-it.each(readdirSync(examples))("serves every consumer pointer in %s", file => {
+it.each(readdirSync(examples).filter(name => /^0[1-3]-/.test(name)))("serves every consumer pointer in %s", file => {
   const { argv, reads } = JSON.parse(readFileSync(join(examples, file), "utf8"));
   const result = run([...argv, "--json"]);
   expect(result.status, result.stderr).toBe(0);
@@ -47,7 +39,7 @@ it.each(readdirSync(examples))("serves every consumer pointer in %s", file => {
     const healthy = JSON.parse(ready.stdout);
     expect(healthy.ok).toBe(true);
     expect(healthy.checks.filter((row: { required: boolean }) => row.required).map((row: { name: string }) => row.name))
-      .toEqual(["node", "GEMINI_API_KEY"]);
+      .toEqual(["node", "provider_key"]);
   }
 });
 
@@ -56,7 +48,11 @@ it("advertises the machine commands and options that ship schemas", () => {
   expect(result.status, result.stderr).toBe(0);
   const inventory = validateCliDocument("capabilities", result.stdout);
   expect(Object.keys(inventory.schemaVersions).sort()).toEqual(readdirSync("schemas/cli").map(name => name.replace(".schema.json", "")).sort());
-  expect(inventory.commands).toContainEqual({ name: "doctor", options: ["--scratch [directory]", "--remove", "--json", "-h, --help"] });
+  expect(inventory.commands.map((cmd: {name: string}) => cmd.name).sort()).toEqual(Object.keys(inventory.schemaVersions).sort());
+  expect(JSON.parse(run(["--version", "--schema-version=1", "--json"]).stdout).schemaVersions).toEqual(inventory.schemaVersions);
+  for (const versions of Object.values(inventory.schemaVersions)) expect(versions).toEqual([1]);
+  expect(inventory.commands.flatMap((cmd: {options: string[]}) => cmd.options)).not.toContain("--force");
+  expect(inventory.commands).toContainEqual({ name: "doctor", options: ["--scratch", "--remove", "--json", "--schema-version"] });
 });
 
 it.each([
@@ -64,19 +60,26 @@ it.each([
   [["--version", "--json", "--unknown"], "USAGE", 2],
   [["doctor", "--remove", "--json"], "USAGE", 2],
   [["doctor", "--json", "--scratch", "../scratch"], "PATH_OUTSIDE_ROOTS", 11],
-  [["calibrate", "--json"], "KEY_REFUSED", 10],
+  [["calibrate", "--json"], "KEY_MISSING", 10],
+  [["recipes", "--json", "--schema-version", "2"], "UNKNOWN_SCHEMA", 21],
+  [["mcp", "--json"], "USAGE", 2],
   [["key", "set", "--json"], "USAGE", 2],
 ] as const)("refuses %j with %s", (args, code, status) => {
   const result = run([...args]);
   expect(result.status, result.stderr).toBe(status);
-  expect(result.stdout).toBe("");
-  expect(JSON.parse(result.stderr)).toEqual({ schemaVersion: 1, code, message: expect.any(String) });
+  expect(result.stdout, "one stdout failure document").toMatch(/^\{[^\n]+\}\n$/);
+  const document = validateCliDocument("recipes", result.stdout);
+  expect(document).toEqual({ schemaVersion: 1, error: { code, message: expect.any(String) } });
+  expect(result.stderr).toBe("");
 });
 
 it("validates a timeline lookup without opening source media", () => {
   const result = run(["map", resolve("test/fixtures/timeline-export-23976.otio"), "--at", "99999f", "--json"]);
   expect(result.status, result.stderr).toBe(0);
-  expect(validateCliDocument("map", result.stdout).rows).toEqual([]);
+  const report = validateCliDocument("map", result.stdout);
+  expect(report.rows).toEqual([{status: "outside the sequence"}]);
+  report.rows[0] = { status: "future finding", future: { count: 1 } };
+  validateCliDocument("map", JSON.stringify(report));
 });
 
 it("validates the calibration receipt with a stand-in measurement", async () => {

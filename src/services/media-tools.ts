@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { createMediaLock, releaseMediaLock } from "../adapters/scratch.js";
 import { link, lstat, open, realpath, rename, rm, stat } from "node:fs/promises";
 import type { BigIntStats } from "node:fs";
@@ -31,8 +32,8 @@ export async function runMediaTool(binary: string, args: string[], options: Tool
       failure ??= error;
       child.kill("SIGKILL");
     };
-    const abort = () => fail(new Error("Media operation canceled."));
-    const timer = setTimeout(() => fail(new Error(`${binary} timed out.`)), timeoutMs);
+    const abort = () => fail(new ContractError("CANCELLED", "Media operation canceled."));
+    const timer = setTimeout(() => fail(new ContractError("DECODE_FAILED", `${binary} timed out.`)), timeoutMs);
     const chunks: Buffer[] = [];
     let size = 0;
     child.stdout.on("data", (chunk: Buffer) => {
@@ -45,15 +46,16 @@ export async function runMediaTool(binary: string, args: string[], options: Tool
     let diagnosticBytes = 0;
     child.stderr.on("data", (chunk: Buffer) => {
       diagnosticBytes += chunk.length;
-      failure ??= new Error(`${binary} reported a media error.`);
+      failure ??= new ContractError("DECODE_FAILED", `${binary} reported a media error.`);
       if (diagnosticBytes > 64 * 1024) fail(failure);
     });
-    child.once("error", error => { failure ??= error; });
+    child.once("error", error => { failure ??= (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? new ContractError("CAPABILITY_MISSING", error.message) : error; });
     child.once("close", (code, reason) => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
       if (failure) reject(failure);
-      else if (code !== 0 || reason) reject(new Error(`${binary} failed (${reason ?? code}).`));
+      else if (code !== 0 || reason) reject(new ContractError("DECODE_FAILED", `${binary} failed (${reason ?? code}).`));
       else done(Buffer.concat(chunks).toString("utf8"));
     });
     signal?.addEventListener("abort", abort, { once: true });
@@ -68,10 +70,10 @@ function unchanged(a: BigIntStats, b: BigIntStats) {
 export async function localRecording(input: string) {
   const path = await realpath(resolve(input));
   const identity = await stat(path, { bigint: true });
-  if (!identity.isFile()) throw new Error("Input must be a local regular file.");
+  if (!identity.isFile()) throw new ContractError("INVALID_INPUT", "Input must be a local regular file.");
   async function check() {
     if (await realpath(resolve(input)) !== path || !unchanged(identity, await stat(path, { bigint: true }))) {
-      throw new Error("Input recording changed during the operation.");
+      throw new ContractError("CONFLICT", "Input recording changed during the operation.");
     }
   }
   return { path, identity, check };
@@ -85,7 +87,7 @@ async function targetState(path: string) {
 
 export async function stageOutput<T>(
   input: string | Recording, destination: string, extensions: string[], force: boolean, signal: AbortSignal | undefined,
-  writeAndVerify: (staged: string) => Promise<T>,
+  writeAndVerify: (staged: string, target: string) => Promise<T>,
 ): Promise<T> {
   signal?.throwIfAborted();
   const recording = typeof input === "string" ? await localRecording(input) : input;
@@ -93,7 +95,7 @@ export async function stageOutput<T>(
   const parentId = await stat(parent, {bigint: true});
   const target = join(parent, basename(destination));
   const ext = extname(target).toLowerCase();
-  if (!extensions.includes(ext)) throw new Error(`Destination requires ${extensions.join(" or ")}.`);
+  if (!extensions.includes(ext)) throw new ContractError("INVALID_INPUT", `Destination requires ${extensions.join(" or ")}.`);
   // mkdir is exclusive across processes. A contender fails without ever owning
   // this directory. File creation cannot clobber an outside writer either.
   const lock = join(parent, "." + basename(target) + ".fom-lock");
@@ -101,24 +103,24 @@ export async function stageOutput<T>(
   try { dir = await createMediaLock(lock); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    throw new Error(`Lock directory "${lock}" already exists. An interrupted run can leave it behind. It is safe to remove only when no other frameofmind command is writing to this destination.`);
+    throw new ContractError("CONFLICT", `Lock directory "${lock}" already exists. An interrupted run can leave it behind. It is safe to remove only when no other frameofmind command is writing to this destination.`);
   }
   try {
     const prior = await targetState(target);
-    if (prior && !prior.isFile()) throw new Error("Destination must be a regular file and cannot be a link.");
-    if (prior && sameFile(prior, recording.identity)) throw new Error("Destination is the input recording.");
-    if (prior && !force) throw new Error("Destination exists. Use --force to replace a distinct regular file.");
+    if (prior && !prior.isFile()) throw new ContractError("PATH_OUTSIDE_ROOTS", "Destination must be a regular file and cannot be a link.");
+    if (prior && sameFile(prior, recording.identity)) throw new ContractError("CONFLICT", "Destination is the input recording.");
+    if (prior && !force) throw new ContractError("CONFLICT", "Destination exists. Use --force to replace a distinct regular file.");
     const staged = join(dir, "output" + ext);
     try {
       await (await open(staged, "wx", 0o600)).close();
       await recording.check();
-      const result = await writeAndVerify(staged);
+      const result = await writeAndVerify(staged, target);
       await recording.check();
       if (await realpath(dirname(resolve(destination))) !== parent || !sameFile(parentId, await stat(parent, {bigint: true}))) {
-        throw new Error("Destination parent changed.");
+        throw new ContractError("CONFLICT", "Destination parent changed.");
       }
       const current = await targetState(target);
-      if (prior ? !current || !unchanged(prior, current) : current) throw new Error("Destination changed before publication.");
+      if (prior ? !current || !unchanged(prior, current) : current) throw new ContractError("CONFLICT", "Destination changed before publication.");
       signal?.throwIfAborted();
       if (prior) await rename(staged, target);
       else await link(staged, target);

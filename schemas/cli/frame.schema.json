@@ -1,15 +1,29 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "properties": {
-    "schemaVersion": {"const": 1},
-    "kind": {"const": "frame"},
-    "at": {"$ref": "#/definitions/measurement"},
-    "width": {"type": "integer"},
-    "height": {"type": "integer"},
-    "decodeStatus": {"const": "passed"}
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message"]
+      }
+    }
   },
-  "required": ["schemaVersion", "kind", "at", "width", "height", "decodeStatus"],
+  "else": {
+    "properties": {
+      "kind": {"type": "string", "examples": ["frame"]},
+      "at": {"$ref": "#/definitions/measurement"},
+      "width": {"type": "integer"},
+      "height": {"type": "integer"},
+      "decodeStatus": {"type": "string", "examples": ["passed"]},
+      "output": {"type": "string"}
+    },
+    "required": ["kind", "at", "width", "height", "decodeStatus", "output"]
+  },
   "definitions": {
     "measurement": {
       "type": "object",

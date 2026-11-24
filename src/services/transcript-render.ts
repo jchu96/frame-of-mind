@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { randomUUID } from "node:crypto";
 import { link, lstat, open, rename, rm } from "node:fs/promises";
 import type { DerivedTranscriptionSegment } from "../domain/types.js";
@@ -59,7 +60,7 @@ export async function assertTranscriptTarget(path: string, force = false): Promi
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
   }
-  if (!force) throw new Error("Transcript target exists; use --force to replace it.");
+  if (!force) throw new ContractError("CONFLICT", "Transcript target exists; use --force to replace it.");
 }
 
 /** Same-directory publication; hard-link publication also refuses concurrent creators. */

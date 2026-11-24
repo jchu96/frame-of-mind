@@ -25,7 +25,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
     .option("--keep-upload", "alias for --retention provider")
     .option("--delete-upload", "alias for --retention run")
     .option("--force", "replace existing transcript targets")
-    .option("--json", "also write the transcript JSON with source-clock seconds")
+    .option("--json", "write the transcript JSON with source-clock seconds and report the absolute paths of files written")
     .action(async (input: string, flags: Omit<TranscribeOptions, "input">) => {
       await requireMedia("transcribe");
       const controller = new AbortController();
@@ -41,7 +41,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
         // Provider and filesystem exception bodies may contain private content.
         const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
         if (flags.json) {
-          writeFailure(new CliError(error instanceof TranscribeError ? error.code : error instanceof TranscriptLanguageError ? "USAGE" : "COMMAND_FAILED", message), diagnostic);
+          writeFailure(error instanceof TranscriptLanguageError ? new CliError("USAGE", message) : error, dependencies.stdout);
           return;
         }
         diagnostic(`error: ${message}`);

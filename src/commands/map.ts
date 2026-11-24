@@ -15,7 +15,7 @@ export function registerMap(program: Command) {
       const output = await mapTimeline(timeline, flags);
       if (flags.json) {
         for (const warning of output.mode.notes) process.stderr.write(warning + "\n");
-        writeDocument({ ...output, mode: { ...output.mode, notes: [] } });
+        writeDocument({ ...output, rows: output.status === "outside the sequence" ? [{status: output.status}] : output.rows, mode: { ...output.mode, notes: [] } });
       } else process.stdout.write(describeMap(output) + "\n");
     });
 }

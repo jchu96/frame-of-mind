@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { deriveExact, isDropRate, parseTimecodeRate, rationalRate, renderExactTimecode, TICKS_PER_SECOND, type ExactTime } from "exact-time";
@@ -9,8 +10,8 @@ export async function boundedJson(path: string, limit: number, kind: string): Pr
   const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
     const stat = await file.stat();
-    if (!stat.isFile()) throw new Error(`${kind} must be a regular file.`);
-    const tooLarge = () => new Error(`${kind} exceeds the ${limit}-byte limit.`);
+    if (!stat.isFile()) throw new ContractError("INVALID_INPUT", `${kind} must be a regular file.`);
+    const tooLarge = () => new ContractError("INVALID_INPUT", `${kind} exceeds the ${limit}-byte limit.`);
     if (stat.size > limit) throw tooLarge();
     const chunks: Buffer[] = [];
     let bytes = 0;
@@ -20,7 +21,7 @@ export async function boundedJson(path: string, limit: number, kind: string): Pr
       chunks.push(chunk);
     }
     try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
-    catch { throw new Error(`Invalid JSON in ${kind}.`); }
+    catch { throw new ContractError("INVALID_INPUT", `Invalid JSON in ${kind}.`); }
   } finally { await file.close(); }
 }
 
@@ -126,7 +127,7 @@ export async function sequenceMode(path: string, origin: ExactTime, flag?: strin
   const notes: string[] = [];
   if (flag !== undefined) {
     const spec = parseTimecodeRate(flag);
-    if (!sameRate(spec.rate, origin.rate)) throw new Error("--timecode-rate differs from the timeline rate.");
+    if (!sameRate(spec.rate, origin.rate)) throw new ContractError("INVALID_RATE", "--timecode-rate differs from the timeline rate.");
     return { dropFrame: spec.dropFrame, basis: "flag", notes };
   }
   try {

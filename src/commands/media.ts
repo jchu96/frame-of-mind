@@ -12,7 +12,7 @@ function frameText(time: {clock: string; frames: string; rate: {num: number; den
 function describe(result: MediaResult) {
   if (result.kind === "verify") {
     return [`Expected ${frameText(result.expected)}`, `Measured ${frameText(result.actual)}`,
-      `Decode ${result.decodeStatus}`, ...result.mismatches].join("\n");
+      `Decode ${result.decodeStatus}`, ...(result.ok ? [] : ["Decoded frame count differs from expectation."])].join("\n");
   }
   if (result.kind === "frame") return `Frame ${frameText(result.at)} at ${result.width}×${result.height}. Decode ${result.decodeStatus}.`;
   const lines = [`Duration ${frameText(result.duration)}`, `Video ${result.width}×${result.height} ${result.codec}`,
@@ -41,12 +41,9 @@ export function registerMedia(program: Command): void {
           await requireMedia(name, flags, controller.signal);
           const result = await mediaHelper(name, video, flags, controller.signal);
           if (flags.json) {
-            if (result.kind === "verify" && result.mismatches.length) {
-              throw new CliError("VERIFY_MISMATCH", `Expected ${result.expected.frames} frames, decoded ${result.actual.frames}.`);
-            }
             writeDocument(result);
           } else process.stdout.write(describe(result) + "\n");
-          if (result.kind === "verify" && result.mismatches.length) process.exitCode = 1;
+          if (!flags.json && result.kind === "verify" && !result.ok) process.exitCode = 1;
         } catch (error) {
           if (flags.json && error instanceof DecodeError) throw new CliError("DECODE_FAILED", "Full media decode failed.");
           throw error;

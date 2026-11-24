@@ -23,40 +23,40 @@ async function checkSidecars(path: string) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
       throw error;
     }
-    throw new ReadError("snapshot_not_closed");
+    throw new ReadError("SNAPSHOT_NOT_CLOSED");
   }
 }
 
 async function readSnapshotImage(path: string) {
-  if (!isAbsolute(path) || resolve(path) !== path) throw new ReadError("bad_arguments");
+  if (!isAbsolute(path) || resolve(path) !== path) throw new ReadError("BAD_ARGUMENTS");
   // UNC, device paths and NTFS streams can extend the grant beyond a local file.
-  if (process.platform === "win32" && !/^[A-Za-z]:\\[^:]+$/.test(path)) throw new ReadError("unsafe_snapshot");
-  if (await realpath(path) !== path) throw new ReadError("unsafe_snapshot");
+  if (process.platform === "win32" && !/^[A-Za-z]:\\[^:]+$/.test(path)) throw new ReadError("UNSAFE_SNAPSHOT");
+  if (await realpath(path) !== path) throw new ReadError("UNSAFE_SNAPSHOT");
   const directory = await lstat(dirname(path), { bigint: true });
   const before = await lstat(path, { bigint: true });
   if (!directory.isDirectory() || !before.isFile() || before.nlink !== 1n
     || (process.getuid && (directory.uid !== BigInt(process.getuid()) || (directory.mode & 0o022n) !== 0n))) {
-    throw new ReadError("unsafe_snapshot");
+    throw new ReadError("UNSAFE_SNAPSHOT");
   }
-  if (before.size > BigInt(maxBytes)) throw new ReadError("snapshot_too_large");
+  if (before.size > BigInt(maxBytes)) throw new ReadError("SNAPSHOT_TOO_LARGE");
   await checkSidecars(path);
   const fd = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
-    if (!sameFile(before, await fd.stat({ bigint: true }))) throw new ReadError("snapshot_changed");
+    if (!sameFile(before, await fd.stat({ bigint: true }))) throw new ReadError("SNAPSHOT_CHANGED");
     const image = Buffer.alloc(Number(before.size));
     let offset = 0;
     while (offset < image.length) {
       const { bytesRead } = await fd.read(image, offset, image.length - offset, offset);
-      if (!bytesRead) throw new ReadError("snapshot_changed");
+      if (!bytesRead) throw new ReadError("SNAPSHOT_CHANGED");
       offset += bytesRead;
     }
     await checkSidecars(path);
     if (!sameFile(before, await fd.stat({ bigint: true })) || !sameFile(before, await lstat(path, { bigint: true }))
       || !sameFile(directory, await lstat(dirname(path), { bigint: true })) || await realpath(path) !== path) {
-      throw new ReadError("snapshot_changed");
+      throw new ReadError("SNAPSHOT_CHANGED");
     }
-    if (image.length < 100 || image.toString("ascii", 0, 16) !== "SQLite format 3\0") throw new ReadError("invalid_projection");
-    if (image[18] !== 1 || image[19] !== 1) throw new ReadError("snapshot_not_closed");
+    if (image.length < 100 || image.toString("ascii", 0, 16) !== "SQLite format 3\0") throw new ReadError("INVALID_PROJECTION");
+    if (image[18] !== 1 || image[19] !== 1) throw new ReadError("SNAPSHOT_NOT_CLOSED");
     return image;
   } finally {
     await fd.close();
@@ -81,7 +81,7 @@ function verifyExtensionsDisabled(db: Database) {
     if (error instanceof Error && /no such function|not authorized/i.test(error.message)) return;
     throw error;
   }
-  throw new ReadError("invalid_projection");
+  throw new ReadError("INVALID_PROJECTION");
 }
 
 function verifyTables(db: Database) {
@@ -89,7 +89,7 @@ function verifyTables(db: Database) {
     const definition = db.query<{ sql: string }, [string]>(
       "SELECT sql FROM main.sqlite_schema WHERE name = ? AND type = 'table'",
     ).get(table);
-    if (!definition || !/^CREATE TABLE\s/i.test(definition.sql)) throw new ReadError("invalid_projection");
+    if (!definition || !/^CREATE TABLE\s/i.test(definition.sql)) throw new ReadError("INVALID_PROJECTION");
     const columns = db.query<{ name: string; type: string; hidden: number; pk: number }, []>(
       `PRAGMA main.table_xinfo(${table})`,
     ).all();
@@ -99,7 +99,7 @@ function verifyTables(db: Database) {
       const key = name === "principal_sub" ? 1 : name === "run_id" ? 2 : name === "item_index" ? 3 : 0;
       return !col || col.type !== type || col.pk !== key;
     })) {
-      throw new ReadError("invalid_projection");
+      throw new ReadError("INVALID_PROJECTION");
     }
   }
 }
@@ -110,7 +110,7 @@ export async function openRunSnapshot(path: string): Promise<RunQuery> {
     image = await readSnapshotImage(path);
   } catch (error) {
     if (error instanceof ReadError) throw error;
-    throw new ReadError("unsafe_snapshot");
+    throw new ReadError("UNSAFE_SNAPSHOT");
   }
   const { Database } = await import("bun:sqlite");
   const db = Database.deserialize(image, true);
@@ -122,7 +122,7 @@ export async function openRunSnapshot(path: string): Promise<RunQuery> {
       "SELECT run_id, schema_version FROM main.analysis_run_registry NOT INDEXED WHERE principal_sub COLLATE BINARY = ?",
     ).all(principal);
     const versions = new Map(registrations.map(row => [row.run_id, row.schema_version]));
-    if (versions.size !== registrations.length) throw new ReadError("invalid_projection");
+    if (versions.size !== registrations.length) throw new ReadError("INVALID_PROJECTION");
     // Enumerate physical identities independently so that an orphan, unsupported version or
     // duplicate cannot disappear behind a JSON predicate before it contributes to a facet.
     const unmatched = new Map(versions);
@@ -131,16 +131,16 @@ export async function openRunSnapshot(path: string): Promise<RunQuery> {
         `SELECT run_id FROM main.${table} NOT INDEXED WHERE principal_sub COLLATE BINARY = ?`,
       ).iterate(principal);
       for (const { run_id } of rows) {
-        if (unmatched.get(run_id) !== version) throw new ReadError("invalid_projection");
+        if (unmatched.get(run_id) !== version) throw new ReadError("INVALID_PROJECTION");
         unmatched.delete(run_id);
       }
     }
-    if (unmatched.size) throw new ReadError("invalid_projection");
+    if (unmatched.size) throw new ReadError("INVALID_PROJECTION");
     const store = sqliteRunLookup(db, LOCAL_SINGLE_USER_PRINCIPAL, versions);
     const runs = [];
     for (const id of versions.keys()) {
       const run = await store.getRun(id);
-      if (!run) throw new ReadError("invalid_projection");
+      if (!run) throw new ReadError("INVALID_PROJECTION");
       utcDateTimeSchema.parse(run.importedAt);
       runs.push(projectRun(run));
     }

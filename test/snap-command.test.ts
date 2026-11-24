@@ -38,7 +38,8 @@ test("snap reports measured precision, no boundary and unavailable decode at the
     expect(validateCliDocument("snap", String(stdout.mock.lastCall![0]))).toMatchObject({ request: { clock: "source", edge: "end", at: "15" }, result: { status: "no-boundary" } });
     expect(process.exitCode).toBe(previous);
     decode.mockResolvedValue(undefined);
-    await expect(cli.parseAsync(["snap", "missing", "--at", "0", "--edge", "start", "--json"], { from: "user" }))
-      .rejects.toMatchObject({ code: "DECODE_FAILED" });
+    await cli.parseAsync(["snap", "empty", "--at", "0", "--edge", "start", "--json"], { from: "user" });
+    expect(validateCliDocument("snap", String(stdout.mock.lastCall![0])).result.status).toBe("unavailable");
+    expect(process.exitCode).toBe(previous);
   } finally { decode.mockRestore(); stdout.mockRestore(); process.exitCode = previous; }
 });

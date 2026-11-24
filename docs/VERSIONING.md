@@ -17,9 +17,10 @@ versions for durable schemas and prompts.
 
 ## Machine contract compatibility
 
-Within a schema major version, fields may only be added. Renaming a field,
-removing it or changing its meaning requires a new schema major. Announce the
-change one release ahead and offer both shapes in that release. Readers check
+Version 1 was frozen on 2026-11-24 and amended before release that day.
+Within a schema major version, fields may only be added. Added fields may be absent. Renaming a field,
+removing it or changing its type or meaning requires a new schema major. Announce the
+change one release ahead and offer both shapes via `--schema-version` in that release. The old major remains the default during the overlap. Readers check
 `schemaVersion` before using any fields and accept additional fields in a known
 major. Fixed error codes and exit statuses keep their meanings across releases.
 The [CLI and MCP contract](MCP_TOOLS.md) lists the current interfaces.

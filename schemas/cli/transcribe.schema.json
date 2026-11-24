@@ -1,12 +1,25 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "properties": {
-    "schemaVersion": {"const": 1},
-    "paths": {"type": "array", "items": {"type": "string"}},
-    "segmentCount": {"type": "integer"},
-    "adjustedCues": {"type": "integer"},
-    "blankCues": {"type": "integer"}
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message"]
+      }
+    }
   },
-  "required": ["schemaVersion", "paths", "segmentCount", "adjustedCues", "blankCues"]
+  "else": {
+    "properties": {
+      "paths": {"type": "array", "items": {"type": "string"}},
+      "segmentCount": {"type": "integer"},
+      "adjustedCues": {"type": "integer"},
+      "blankCues": {"type": "integer"}
+    },
+    "required": ["paths", "segmentCount", "adjustedCues", "blankCues"]
+  }
 }

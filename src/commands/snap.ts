@@ -21,7 +21,7 @@ export async function snapFile(video: string, flags: SnapFlags, decode = decodeS
   const left = Math.max(0, atMs - pad);
   const right = Math.min(Number.MAX_SAFE_INTEGER - 10, atMs + pad);
   const slice = { startMs: left - left % 10, endMs: right + (10 - right % 10) % 10 };
-  const envelope = await decode(video, { slice });
+  const envelope = await decode(video, { slice, ...(flags.json && { reportFailure: true }) });
   const result = selectEdge(envelope && classify(envelope), flags.edge, atMs, clock, settings);
   return { request: { clock, at: flags.at, edge: flags.edge }, snapSettings: settings, result };
 }
@@ -42,9 +42,8 @@ export function registerSnap(program: Command) {
       const alternatives = "alternativesMs" in result && result.alternativesMs.length
         ? ` · alternatives (ms): ${result.alternativesMs.join(", ")}` : "";
       if (flags.json) {
-        if (result.status === "unavailable") throw new CliError("DECODE_FAILED", "Speech envelope unavailable.");
         writeDocument(output);
       } else process.stdout.write(`${request.clock} ${request.edge} ${request.at} · ${result.status}${reading}${alternatives}\n`);
-      if (result.status === "unavailable") process.exitCode = 1;
+      if (!flags.json && result.status === "unavailable") process.exitCode = 1;
     });
 }

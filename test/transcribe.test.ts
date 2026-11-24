@@ -391,10 +391,10 @@ describe("reviewer supplementary probes", () => {
     }
   });
   it("Y02 provider-body sentinel never reaches terminal or exported files", async () => {
-    for (const fail of [false, true]) {
+    for (const fail of [false, "refusal", "offline"]) {
       const f = await fixture(10);
       const providerBody = "PROVIDER-BODY-SENTINEL";
-      const error = new ApiError({ message: providerBody, status: fail ? 403 : 503 });
+      const error = fail === "offline" ? new TypeError(providerBody, {cause: Object.assign(new Error(), {code: "ENOTFOUND"})}) : new ApiError({ message: providerBody, status: fail ? 403 : 503 });
       if (fail) f.analyzer.transcribe.mockRejectedValue(error);
       else f.analyzer.transcribe.mockRejectedValueOnce(error);
       await cli(f, ["--json"]);
@@ -404,8 +404,8 @@ describe("reviewer supplementary probes", () => {
       expect(terminal).not.toContain("test-key");
       expect(f.analyzer.transcribe).toHaveBeenCalledTimes(2);
       if (fail) {
-        expect(process.exitCode).toBe(11);
-        expect(JSON.parse(f.deps.stderr.mock.lastCall![0])).toMatchObject({ code: "PERMISSION_DENIED" });
+        expect(process.exitCode).toBe(fail === "offline" ? 20 : 1);
+        expect(JSON.parse(f.deps.stdout.mock.lastCall![0])).toMatchObject({ error: {code: fail === "offline" ? "PROVIDER_UNREACHABLE" : "PROVIDER_REFUSED"} });
         await expectNoOutputs(f);
       } else {
         for (const suffix of [".srt", "_speakers.txt", ".transcript.json"]) {

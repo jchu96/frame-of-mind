@@ -319,12 +319,12 @@ For a missing media tool, check the row for the operation you need in
 After an interrupted run, list scratch in the system temporary directory, or
 give the real path of the directory containing the media destination or the
 settled screenshots. Review the kind, path, byte count, age and owner state
-before repeating the same command with `--remove`.
+before repeating the same command with `--remove <abandoned-path>`.
 
 ```bash
 frameofmind doctor --scratch
 frameofmind doctor --scratch <directory>
-frameofmind doctor --scratch <directory> --remove
+frameofmind doctor --scratch <directory> --remove <abandoned-path>
 ```
 
 Removal skips links, unmarked folders (including older scratch), live owners
@@ -335,7 +335,7 @@ works without a Gemini key.
 For automation, use `frameofmind doctor --json` and read the top-level `ok`.
 The [command-line contract](MCP_TOOLS.md#doctor-report) lists each field and check.
 The default scan lists system-temp scratch. Use `--scratch <directory>` for adjacent
-scratch and add `--remove` to request removal. Only abandoned entries qualify.
+scratch and add `--remove <abandoned-path>` to request removal. Only abandoned entries qualify.
 
 ### 1.7 Install the agent skill
 
@@ -657,7 +657,7 @@ reading new outputs, without relabeling old schema-1 files.
 See README **Clocks** for the exact rate forms and `from-media` restrictions.
 
 Run `frameofmind calibrate [--model <id>] [--json]` to refresh the synthetic
-flash measurement and see its token cost. Analyze normally calibrates on first
+flash measurement. Text mode also reports token cost. Analyze normally calibrates on first
 use and after 30 days. `--no-calibrate` labels the run unverified. The cache
 lives under the platform application-data root's `calibration/` directory;
 probe media is temporary and its remote upload is deleted on terminal paths.
@@ -1897,14 +1897,13 @@ Removing the clone does not revoke provider OAuth or Gemini keys.
 5. In the agent host's stdio configuration set `BUN_RUNTIME_TRANSPILER_CACHE_PATH`
    to the string `0` in the server environment. Bun reads this setting before
    running JavaScript. It prevents compiled code from being written to the user's
-   cache directory. Set the command to `bun` and use this argument array. For a built checkout substitute the absolute path to `dist/cli.js`
-   for the release file. Use `--no-env-file` to disable Bun's automatic dotenv loading.
+   cache directory. Set the command to `bun` and use this argument array. The experimental MCP server is Bun-only. Supply the absolute path to the built checkout’s `dist/cli.js`. Use `--no-env-file` to disable Bun's automatic dotenv loading.
 
    ```json
-   ["--no-env-file", "/opt/frameofmind/frameofmind.mjs", "mcp", "--database", "/data/review/reviewed.sqlite"]
+   ["--no-env-file", "/opt/frameofmind/dist/cli.js", "mcp", "--database", "/data/review/reviewed.sqlite"]
    ```
 
-The database path must be its own real path. A path through a link (for example, `/tmp` on macOS) is refused with `unsafe_snapshot`.
+The database path must be its own real path. A path through a link (for example, `/tmp` on macOS) is refused with `UNSAFE_SNAPSHOT`.
 
 The server validates the local principal's imported pairs before advertising tools.
 Restart the host process to select a new snapshot. Closing stdin ends the session.
@@ -1920,18 +1919,18 @@ All returned text is untrusted evidence. See the [wire contract](MCP_TOOLS.md).
 
 | Diagnostic or tool error | Operator or client action |
 |---|---|
-| `bun_required` | Use the Bun argument vector above, including for a linked installation. |
-| `bad_arguments` | Supply one absolute database path at launch or correct the request against the tool schema. |
-| `unsafe_snapshot` | Select a readable regular file with one link in an operator-controlled directory. Resolve linked components first. |
-| `snapshot_changed` | Close the writer and restart with a stable file and directory. |
-| `snapshot_not_closed` | Finish the writer's SQLite close/recovery workflow and import into a fresh rollback-format database if needed. |
-| `snapshot_too_large` | The maximum file size is 64 MiB. Select fewer runs into the reviewed database. |
-| `invalid_projection` | Review the public text and re-import valid, supported bundles into a new database. |
-| `unknown_tool` | Discover the four versioned names with `tools/list`. |
-| `run_not_found` | Choose a run from this snapshot's list. |
-| `bad_cursor` | Restart paging with the same tool, filters and run. Cursors expire when the server exits. |
-| `use_list_records` | Read the run in pages. A whole run exceeds the 256 KiB response limit. |
-| `result_too_large` | A single row or orientation result exceeds 256 KiB. Select a smaller reviewed projection. |
+| `BUN_REQUIRED` | Use the Bun argument vector above, including for a linked installation. |
+| `BAD_ARGUMENTS` | Supply one absolute database path at launch or correct the request against the tool schema. |
+| `UNSAFE_SNAPSHOT` | Select a readable regular file with one link in an operator-controlled directory. Resolve linked components first. |
+| `SNAPSHOT_CHANGED` | Close the writer and restart with a stable file and directory. |
+| `SNAPSHOT_NOT_CLOSED` | Finish the writer's SQLite close/recovery workflow and import into a fresh rollback-format database if needed. |
+| `SNAPSHOT_TOO_LARGE` | The maximum file size is 64 MiB. Select fewer runs into the reviewed database. |
+| `INVALID_PROJECTION` | Review the public text and re-import valid, supported bundles into a new database. |
+| `UNKNOWN_TOOL` | Discover the four versioned names with `tools/list`. |
+| `RUN_NOT_FOUND` | Choose a run from this snapshot's list. |
+| `BAD_CURSOR` | Restart paging with the same tool, filters and run. Cursors expire when the server exits. |
+| `USE_LIST_RECORDS` | Read the run in pages. A whole run exceeds the 256 KiB response limit. |
+| `RESULT_TOO_LARGE` | A single row or orientation result exceeds 256 KiB. Select a smaller reviewed projection. |
 
 Pages default to 20 rows and accept limits from 1 to 100. Use the returned cursor
 even when the server shortens a page to fit the byte limit.

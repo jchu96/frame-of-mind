@@ -2,27 +2,33 @@
 
 ## Command-line JSON
 
-Pass `--json` to a command in the table. On success stdout contains one JSON
-object followed by a newline. Its first key is `schemaVersion`, currently the
-integer `1`. Check that version before reading the remaining fields. Reject
-unknown versions with `UNKNOWN_SCHEMA`. Accept additional fields in a known
-version. Standard error carries progress and warnings. On failure stdout is
-empty and the final stderr line is a JSON object with `schemaVersion`, a fixed
-`code` and a human-readable `message`. Branch on the code. Machine mode never
-prompts. Use canonical paths or relative paths without parent traversal.
+Version 1 was frozen on 2026-11-24 and amended the same day before release.
+Use `capabilities --json` for the calls available in this build. Select a major
+with `--schema-version 1`. A machine call writes one UTF-8 JSON object and LF
+to stdout. Read `schemaVersion` by name, ignore additional members at every
+depth, and handle unfamiliar kind, state and status strings. Stderr carries
+human warnings and progress. Machine calls never prompt and reject unknown flags.
+
+Exit 0 means a report was produced, including an unhealthy doctor report,
+verification differences or an unavailable snap finding. Otherwise stdout contains
+`{"schemaVersion":1,"error":{"code":"USAGE","message":"Invalid command arguments."}}`.
+An error may include an object in `error.details`. Use the code and exit category
+for decisions. All reported filesystem paths are absolute. Machine calls create
+fresh outputs. Interactive key and auth operations and the MCP session reject
+one-shot JSON calls.
 
 Each schema linked below also ships as an individual release asset of the
 same name. Verify it against the release's `SHA256SUMS`.
 
 | Command | Machine result | JSON Schema |
 | --- | --- | --- |
-| `--version` | `version` matches manifest `toolVersion`. `schemaVersions` maps machine command names (including `version`) to their output schema major. | [version](../schemas/cli/version.schema.json) |
+| `--version` | `version` matches manifest `toolVersion`. `schemaVersions` maps machine command names (including `version`) to arrays of supported integer majors. | [version](../schemas/cli/version.schema.json) |
 | `capabilities` | `commands[]` gives the command path and registered option spellings. `schemaVersions` lists the commands that support machine output. | [capabilities](../schemas/cli/capabilities.schema.json) |
 | `recipes` | `recipes[]` lists built-in recipe IDs and descriptions. | [recipes](../schemas/cli/recipes.schema.json) |
 | `doctor` | Prerequisite checks, tool capabilities, scratch entries and release identity. | [doctor](../schemas/cli/doctor.schema.json) |
-| `calibrate` | Model, measurement time, clip-clock verdict, flash evidence and token count when available. | [calibrate](../schemas/cli/calibrate.schema.json) |
+| `calibrate` | Model, measurement time, clip-clock verdict, and flash evidence. | [calibrate](../schemas/cli/calibrate.schema.json) |
 | `probe` | Exact duration, stream information and decode status. | [probe](../schemas/cli/probe.schema.json) |
-| `verify` | Expected and measured frame counts, decode status and empty mismatch list on success. | [verify](../schemas/cli/verify.schema.json) |
+| `verify` | Expected and measured frame counts, decode status and mismatched frame ranges. | [verify](../schemas/cli/verify.schema.json) |
 | `frame` | Exact source position, dimensions and decode status. | [frame](../schemas/cli/frame.schema.json) |
 | `proxy` | Output duration, dimensions, codec, audio and decode status. | [proxy](../schemas/cli/proxy.schema.json) |
 | `slice` | Proxy measurements plus inclusive source start and exclusive end. | [slice](../schemas/cli/slice.schema.json) |
@@ -35,42 +41,127 @@ same name. Verify it against the release's `SHA256SUMS`.
 | Field | Value |
 | --- | --- |
 | `ok` | True exactly when all required checks pass. A completed report exits successfully even when a required check fails. |
-| `checks[]` | Fixed `name`, boolean `required` and `ok`, and a human-readable `detail`. Required names are `node` (Node 22+) and `GEMINI_API_KEY`. Advisory names are `GRANOLA_API_KEY`, `ffmpeg` and `ffprobe`. |
+| `checks[]` | Fixed `name`, boolean `required` and `ok`, and optional human-readable `detail`. Required names are `node` (Node 22+) and `provider_key`. Advisory names are `context_key`, `ffmpeg` and `ffprobe`. |
 | `key.present` | Whether the Gemini key is configured. |
 | `artifactRoot` | Absolute default output directory. |
 | `toolVersion` | Version recorded in run manifests. |
 | `commit`, `cliSha256` | Source Git commit and SHA-256 of the running release file. Both are null outside the release bundle. |
-| `commands[]` | `command` label and `capabilities` array. Each capability has a `name`, boolean `present` and listing `error` or null. A vertical bar joins alternative input formats. |
+| `commands[]` | `name` and `capabilities` array. Each capability has a `name`, boolean `present` and listing `error` or null. A vertical bar joins alternative input formats. |
 | `leftovers[]` | System-temp scratch by default, or the directory selected with `--scratch`. Each entry has `kind`, absolute `path`, `sizeBytes` and `ageMs` (nullable), owner `state`, boolean `removed`, and `reason` or null. |
+| `roots` | `{mode,file}`. Modes include none, fixed and file. In file mode the grant is reread on each call and file is absolute. Otherwise file is null. This build reports mode none. |
 
-### Exit status and fixed errors
+Removal requires `--scratch [directory] --remove <path>` and applies to the named abandoned entry.
 
-| Exit | Meaning | Machine codes |
-| ---: | --- | --- |
-| 0 | Success | None |
-| 1 | Operation failed | `COMMAND_FAILED`, `DECODE_FAILED`, `VERIFY_MISMATCH` |
-| 2 | Usage or incompatible input | `USAGE`, `UNKNOWN_SCHEMA`. Exact-time refusals retain `INVALID_INPUT`, `INVALID_RATE`, `INVALID_TIMECODE`, `NOT_ON_FRAME_BOUNDARY`, `UNREPRESENTABLE`. |
-| 10 | Authentication | `KEY_REFUSED` |
-| 11 | Permission or path policy | `PERMISSION_DENIED`, `PATH_OUTSIDE_ROOTS` |
-| 20 | Resource unavailable | `NOT_FOUND`, `UPLOAD_EXPIRED` (reserved for an expired upload) |
-| 30 | Conflict with existing state | `CONFLICT` |
+### Reading results
+
+Positions identify a clock, decimal frame count and positive rational rate.
+Map source rows identify the source clock, path, file value and media frame.
+Outside the sequence a row reports that status. Probe returns a null start label
+when absent. Verify reports missing or extra decoded ordinals in half-open
+`[from,to)` ranges. On a match, `ok` is true and the mismatch list is empty.
+Frame writes to the caller's `--output` path. Slice reports its inclusive and
+exclusive source bounds. Proxy reports measured source and destination frame
+counts and rates, source byte size and Unix mtime in milliseconds.
+`frameAligned` means output frame N corresponds to source frame N. Snap reports
+signed target-minus-request shift in milliseconds or alternatives for an
+ambiguous reading. Calibration returns model, checkedAt, result and evidence.
+Recipe IDs match `^[a-z0-9][a-z0-9-]{1,63}$`.
+
+### Run files and compatibility
+
+The human analyze and transcribe calls and their files are preserved throughout
+major 1. Each run file's own major governs its fields. Preserve `analysis.json`
+and its `schemaVersion`, `analysis.md`, `manifest.json`, `failure-manifest.json`,
+`analysis-outcome.json` and `times.json`. Times uses `schemaVersion` (2 by
+default, 3 with explicit speech snapping). Stored `failures[].code` and
+`error.code` retain their spellings. New failure manifests also record the
+public fault in `errorCode`. Readers accept older files without this member.
+
+Until a full release carries synchronous `analyze --json`, consumers may rely on
+the text line beginning `Analysis: ` and carrying the run directory, the
+accepted-count and outcome line, the retained-upload line, the `frameofmind:`
+error line and the first line of the speakers file. The frozen synchronous
+analyze receipt specifies absolute runFolder, runId, outcome, acceptedCount and
+retainedUpload (name and expiresAt or null). Failure details include runFolder
+when written. Synchronous transcription keeps writing the transcript JSON
+throughout major 1. Its paths list includes that file. The amended receipt
+also specifies model and language for the next implementation.
+
+Job operations, grant-file enforcement, timecode conversion and bundle-folder
+reads are future commands. Discovery advertises each once shipped. A job start
+returns jobId. Status exits 0 for every state, including `outcome_unknown`.
+A failed result returns the job fault and its mapped exit with jobId, absolute
+runFolder and receipt in error.details. An active job returns JOB_PENDING.
+Timecode conversion requires explicit drop-frame selection.
+
+### Faults and process exits
+
+Exit 0 means an answer. For an unfamiliar code use its exit category.
+1 means operation failed, 2 malformed call, 3 uncertain outcome, 4 input
+refused, 10 authentication, 11 access denied, 20 unavailable, 21 unsupported
+schema, 30 conflict and 130 acknowledged cancellation. A bare 403 or 404 cannot
+establish upload ownership or expiry.
+
+| Code | Exit | Condition |
+| --- | ---: | --- |
+| `COMMAND_FAILED` | 1 | Fallback when no listed cause applies. |
+| `DECODE_FAILED` | 1 | A decoder failed and no answer could be produced, including in snap. |
+| `INVALID_PROJECTION` | 1 | Snapshot or reviewed records fail validation. |
+| `PROVIDER_REFUSED` | 1 | Refusal lacks evidence of a bad credential, foreign upload or expiry. |
+| `RATE_LIMITED` | 1 | Provider identifies throttling or quota exhaustion. |
+| `USAGE` | 2 | CLI syntax, flag combination or machine invocation is malformed. |
+| `BAD_ARGUMENTS` | 2 | Launch or tool arguments fail request validation. |
+| `UNKNOWN_TOOL` | 2 | Tool name is unrecognized. |
+| `BAD_CURSOR` | 2 | Cursor is invalid for this query. |
+| `OUTCOME_UNKNOWN` | 3 | A dispatched job's outcome cannot be proved. |
+| `INVALID_INPUT` | 4 | Exact-time rejects a clock, number or units. Job media cannot be verified at admission. |
+| `INVALID_RATE` | 4 | Frame rate is invalid, ambiguous or unsupported. |
+| `INVALID_TIMECODE` | 4 | Label disagrees with the declared mode or is malformed. |
+| `NOT_ON_FRAME_BOUNDARY` | 4 | Requested instant falls between frames. |
+| `UNREPRESENTABLE` | 4 | Requested unit cannot represent the instant exactly. |
+| `SNAPSHOT_TOO_LARGE` | 4 | Selected database exceeds 64 MiB. |
+| `RESULT_TOO_LARGE` | 4 | Requested page exceeds the result limit. |
+| `USE_LIST_RECORDS` | 4 | Run exceeds the single-result limit. Request pages. |
+| `KEY_MISSING` | 10 | Required key was absent. |
+| `KEY_REFUSED` | 10 | Provider identifies the credential as invalid. |
+| `PERMISSION_DENIED` | 11 | OS denies access to an input or destination. |
+| `PATH_OUTSIDE_ROOTS` | 11 | Traversal, link escape or resolved path outside the current read/write grant. |
+| `UNSAFE_SNAPSHOT` | 11 | Database path or identity violates the real-file policy. |
+| `UPLOAD_OTHER_KEY` | 11 | Provider confirms the upload belongs to another credential. |
+| `ROOTS_MISSING` | 11 | Configured grant file is absent. |
+| `ROOTS_UNREADABLE` | 11 | Configured grant file cannot be read. |
+| `ROOTS_INVALID` | 11 | Grant file fails validation or lies inside a folder it grants. |
+| `ROOTS_EMPTY` | 11 | Grant file lists no folders. |
+| `ACTION_DISABLED` | 11 | Operator did not enable this job family at launch. |
+| `MODEL_DENIED` | 11 | Requested model is outside the launch grant. |
+| `CALL_LIMIT` | 11 | Admission would exceed the granted number of jobs. |
+| `MEDIA_LIMIT` | 11 | Admission would exceed granted source seconds. |
+| `PROVIDER_LIMIT` | 11 | Dispatch would exceed the granted provider request budget. |
+| `FILE_LIMIT` | 11 | File exceeds the operator's granted per-file byte limit. |
+| `NOT_FOUND` | 20 | Local input or recipe does not exist. |
+| `CAPABILITY_MISSING` | 20 | Required tool, filter or codec is absent, including for snap. |
+| `UPLOAD_EXPIRED` | 20 | Provider confirms expiry or authoritative expiry has passed. |
+| `RUN_NOT_FOUND` | 20 | Reviewed run ID is absent. |
+| `BUN_REQUIRED` | 20 | Server launched without Bun. |
+| `JOB_NOT_FOUND` | 20 | Supplied job ID is absent. |
+| `PROVIDER_UNREACHABLE` | 20 | The provider gave no response, including DNS, connection and timeout failures. |
+| `UNKNOWN_SCHEMA` | 21 | Reader or command does not support the document major. |
+| `CONFLICT` | 30 | Existing output, active lock or changed file prevents safe publication. |
+| `SNAPSHOT_CHANGED` | 30 | Selected file changes during the read. |
+| `SNAPSHOT_NOT_CLOSED` | 30 | Journal state prevents a closed read. |
+| `JOB_PENDING` | 30 | Result requested while job is active. |
+| `REQUEST_CONFLICT` | 30 | The same request ID was used for different inputs. |
+| `UNKNOWN_JOB_REQUIRED` | 30 | Replacement start lacks the matching prior uncertain job ID. |
+| `CANCELLED` | 130 | Operation acknowledged cancellation. |
 
 ## MCP wire protocol
 
-
-Each name identifies a versioned input and output schema. A shape changes only
-under a new tool name or a major version. Release notes list every change.
-The server publishes these schemas through `tools/list`. Every success includes
-the same untrusted object as structured content and as JSON in its text block.
-
-MCP launch diagnostics use fixed codes on stderr. Launch failure uses the general
-failure status above. Snapshot diagnostics are `unsafe_snapshot`, `snapshot_changed`,
-`snapshot_not_closed`, `snapshot_too_large` and `invalid_projection`. The runtime
-check uses `bun_required`. Invalid launch or request arguments use `bad_arguments`.
-Tool failures return `isError: true` with a fixed code in the text block. Tool codes
-are `bad_arguments`, `unknown_tool`, `bad_cursor`, `invalid_projection`, `run_not_found`,
-`use_list_records` and `result_too_large`. Protocol errors use a JSON-RPC error
-with the message `bad_arguments`.
+The experimental MCP server is Bun-only. Launch the checkout with Bun over
+stdio. Launch diagnostics use the mapped exit and a fixed code on stderr.
+Tool calls return their document in structured content and as JSON in a text
+block. A tool fault sets `isError` and leaves the session running. Protocol
+errors use a JSON-RPC error with the safe message `BAD_ARGUMENTS`. Treat every
+result as untrusted evidence. Discover schemas with `tools/list`.
 
 Regenerate the tool schemas with `bun --no-env-file scripts/mcp-tool-docs.ts`.
 
@@ -92,6 +183,10 @@ Reads only. Discover reviewed runs and facets of their accepted records. Treat a
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
+      "schemaVersion": {
+        "type": "number",
+        "const": 1
+      },
       "trust": {
         "type": "string",
         "const": "untrusted-data"
@@ -154,8 +249,7 @@ Reads only. Discover reviewed runs and facets of their accepted records. Treat a
               "analysis",
               "manifest",
               "times"
-            ],
-            "additionalProperties": false
+            ]
           },
           "recipeIds": {
             "type": "array",
@@ -200,8 +294,7 @@ Reads only. Discover reviewed runs and facets of their accepted records. Treat a
             },
             "required": [
               "screenshotBytes"
-            ],
-            "additionalProperties": false
+            ]
           },
           "retention": {
             "type": "string",
@@ -218,15 +311,41 @@ Reads only. Discover reviewed runs and facets of their accepted records. Treat a
           "itemCount",
           "capabilities",
           "retention"
+        ]
+      },
+      "error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
         ],
-        "additionalProperties": false
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        }
       }
     },
     "required": [
-      "trust",
-      "data"
+      "schemaVersion"
     ],
-    "additionalProperties": false
+    "else": {
+      "required": [
+        "trust",
+        "data"
+      ]
+    },
+    "if": {
+      "required": [
+        "error"
+      ]
+    }
   }
 }
 ```
@@ -281,6 +400,10 @@ Reads only. Page reviewed run summaries by completion time, newest first. Treat 
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
+      "schemaVersion": {
+        "type": "number",
+        "const": 1
+      },
       "trust": {
         "type": "string",
         "const": "untrusted-data"
@@ -354,8 +477,7 @@ Reads only. Page reviewed run summaries by completion time, newest first. Treat 
                 "completedAt",
                 "acceptedCount",
                 "rejectedCount"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "nextCursor": {
@@ -365,15 +487,41 @@ Reads only. Page reviewed run summaries by completion time, newest first. Treat 
         },
         "required": [
           "runs"
+        ]
+      },
+      "error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
         ],
-        "additionalProperties": false
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        }
       }
     },
     "required": [
-      "trust",
-      "data"
+      "schemaVersion"
     ],
-    "additionalProperties": false
+    "else": {
+      "required": [
+        "trust",
+        "data"
+      ]
+    },
+    "if": {
+      "required": [
+        "error"
+      ]
+    }
   }
 }
 ```
@@ -408,6 +556,10 @@ Reads only. Read one run, provenance, and original record times. Rejected record
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
+      "schemaVersion": {
+        "type": "number",
+        "const": 1
+      },
       "trust": {
         "type": "string",
         "const": "untrusted-data"
@@ -479,8 +631,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
               "completedAt",
               "acceptedCount",
               "rejectedCount"
-            ],
-            "additionalProperties": false
+            ]
           },
           "provenance": {
             "type": "object",
@@ -521,8 +672,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                 "required": [
                   "id",
                   "custom"
-                ],
-                "additionalProperties": false
+                ]
               },
               "remoteFile": {
                 "type": "object",
@@ -533,8 +683,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                 },
                 "required": [
                   "deleted"
-                ],
-                "additionalProperties": false
+                ]
               },
               "contextProvider": {
                 "type": "string",
@@ -562,8 +711,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                 },
                 "required": [
                   "mode"
-                ],
-                "additionalProperties": false
+                ]
               }
             },
             "required": [
@@ -572,8 +720,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
               "startedAt",
               "completedAt",
               "recipe"
-            ],
-            "additionalProperties": false
+            ]
           },
           "records": {
             "type": "array",
@@ -624,8 +771,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                 "importance",
                 "start",
                 "end"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "times": {
@@ -700,7 +846,6 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                           },
                           "rate": {
                             "type": "object",
-                            "additionalProperties": false,
                             "required": [
                               "num",
                               "den"
@@ -732,8 +877,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                           "rate",
                           "timecode",
                           "dropFrame"
-                        ],
-                        "additionalProperties": false
+                        ]
                       },
                       {
                         "type": "object",
@@ -785,16 +929,14 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                           "origin",
                           "milliseconds",
                           "rateBasis"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     ]
                   }
                 },
                 "required": [
                   "offset"
-                ],
-                "additionalProperties": false
+                ]
               },
               "entries": {
                 "type": "array",
@@ -836,8 +978,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                         "seconds",
                         "precisionMs",
                         "origin"
-                      ],
-                      "additionalProperties": false
+                      ]
                     },
                     "timeline": {
                       "type": "object",
@@ -869,15 +1010,13 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                         "seconds",
                         "precisionMs",
                         "origin"
-                      ],
-                      "additionalProperties": false
+                      ]
                     }
                   },
                   "required": [
                     "pointer",
                     "time"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               }
             },
@@ -887,8 +1026,7 @@ Reads only. Read one run, provenance, and original record times. Rejected record
               "fileClock",
               "exactTimeCapability",
               "entries"
-            ],
-            "additionalProperties": false
+            ]
           },
           "timesNote": {
             "type": "string",
@@ -901,15 +1039,41 @@ Reads only. Read one run, provenance, and original record times. Rejected record
           "records",
           "times",
           "timesNote"
+        ]
+      },
+      "error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
         ],
-        "additionalProperties": false
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        }
       }
     },
     "required": [
-      "trust",
-      "data"
+      "schemaVersion"
     ],
-    "additionalProperties": false
+    "else": {
+      "required": [
+        "trust",
+        "data"
+      ]
+    },
+    "if": {
+      "required": [
+        "error"
+      ]
+    }
   }
 }
 ```
@@ -967,6 +1131,10 @@ Reads only. Page records in original index order. Set accepted to false for reje
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "properties": {
+      "schemaVersion": {
+        "type": "number",
+        "const": 1
+      },
       "trust": {
         "type": "string",
         "const": "untrusted-data"
@@ -1023,8 +1191,7 @@ Reads only. Page records in original index order. Set accepted to false for reje
                 "importance",
                 "start",
                 "end"
-              ],
-              "additionalProperties": false
+              ]
             }
           },
           "times": {
@@ -1099,7 +1266,6 @@ Reads only. Page records in original index order. Set accepted to false for reje
                           },
                           "rate": {
                             "type": "object",
-                            "additionalProperties": false,
                             "required": [
                               "num",
                               "den"
@@ -1131,8 +1297,7 @@ Reads only. Page records in original index order. Set accepted to false for reje
                           "rate",
                           "timecode",
                           "dropFrame"
-                        ],
-                        "additionalProperties": false
+                        ]
                       },
                       {
                         "type": "object",
@@ -1184,16 +1349,14 @@ Reads only. Page records in original index order. Set accepted to false for reje
                           "origin",
                           "milliseconds",
                           "rateBasis"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     ]
                   }
                 },
                 "required": [
                   "offset"
-                ],
-                "additionalProperties": false
+                ]
               },
               "entries": {
                 "type": "array",
@@ -1235,8 +1398,7 @@ Reads only. Page records in original index order. Set accepted to false for reje
                         "seconds",
                         "precisionMs",
                         "origin"
-                      ],
-                      "additionalProperties": false
+                      ]
                     },
                     "timeline": {
                       "type": "object",
@@ -1268,15 +1430,13 @@ Reads only. Page records in original index order. Set accepted to false for reje
                         "seconds",
                         "precisionMs",
                         "origin"
-                      ],
-                      "additionalProperties": false
+                      ]
                     }
                   },
                   "required": [
                     "pointer",
                     "time"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               }
             },
@@ -1286,8 +1446,7 @@ Reads only. Page records in original index order. Set accepted to false for reje
               "fileClock",
               "exactTimeCapability",
               "entries"
-            ],
-            "additionalProperties": false
+            ]
           },
           "timesNote": {
             "type": "string",
@@ -1302,15 +1461,41 @@ Reads only. Page records in original index order. Set accepted to false for reje
           "records",
           "times",
           "timesNote"
+        ]
+      },
+      "error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
         ],
-        "additionalProperties": false
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        }
       }
     },
     "required": [
-      "trust",
-      "data"
+      "schemaVersion"
     ],
-    "additionalProperties": false
+    "else": {
+      "required": [
+        "trust",
+        "data"
+      ]
+    },
+    "if": {
+      "required": [
+        "error"
+      ]
+    }
   }
 }
 ```

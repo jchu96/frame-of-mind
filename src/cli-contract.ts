@@ -1,73 +1,48 @@
 import { Command, CommanderError } from "commander";
 import { VERSION } from "./version.js";
 
-const CLI_SCHEMA_VERSION = 1;
-const failures = {
-  COMMAND_FAILED: [1, "Command failed."],
-  DECODE_FAILED: [1, "Media decoding failed."],
-  VERIFY_MISMATCH: [1, "Verification failed."],
-  USAGE: [2, "Invalid command arguments. See the command help."],
-  KEY_REFUSED: [10, "An accepted API key is required."],
-  PERMISSION_DENIED: [11, "Access denied."],
-  PATH_OUTSIDE_ROOTS: [11, "Path outside the allowed roots."],
-  NOT_FOUND: [20, "Resource not found."],
-  UPLOAD_EXPIRED: [20, "Upload expired."],
-  CONFLICT: [30, "Resource already exists or changed."],
-  UNKNOWN_SCHEMA: [2, "Unsupported schema version."],
-  INVALID_INPUT: [2, "Invalid time value."],
-  INVALID_RATE: [2, "Invalid frame rate."],
-  INVALID_TIMECODE: [2, "Invalid timecode."],
-  NOT_ON_FRAME_BOUNDARY: [2, "Time is between frames."],
-  UNREPRESENTABLE: [2, "Time cannot be represented at this rate."],
-} as const;
-type Code = keyof typeof failures;
+import { CLI_SCHEMA_VERSION, ContractError, failureDocument, faultCode, faultExits } from "./domain/contract-error.js";
+export { ContractError as CliError } from "./domain/contract-error.js";
 
-export class CliError extends Error {
-  constructor(readonly code: Code, message: string) { super(message); }
-}
+function stdoutLine(line: string) { process.stdout.write(line + "\n"); }
 
-export function writeDocument(fields: object, write = (line: string) => { process.stdout.write(line + "\n"); }) {
+export function writeDocument(fields: object, write = stdoutLine) {
   write(JSON.stringify({ schemaVersion: CLI_SCHEMA_VERSION, ...fields }));
 }
 
-const systemCodes: Readonly<Record<string, Code>> = {
-  ENOENT: "NOT_FOUND", EPERM: "PERMISSION_DENIED", EACCES: "PERMISSION_DENIED", EEXIST: "CONFLICT",
-};
-
-function failureCode(error: unknown): Code {
-  if (error instanceof CommanderError) return "USAGE";
-  const original = (error as { code?: unknown } | null)?.code;
-  if (typeof original === "string") {
-    if (Object.hasOwn(failures, original)) return original as Code;
-    if (Object.hasOwn(systemCodes, original)) return systemCodes[original]!;
-  }
-  return "COMMAND_FAILED";
-}
-
-export function writeFailure(error: unknown, write = (line: string) => { process.stderr.write(line + "\n"); }) {
-  const code = failureCode(error);
-  // Parser, filesystem and provider errors can echo private input.
-  const message = error instanceof CliError ? error.message : failures[code][1];
-  writeDocument({ code, message }, write);
-  process.exitCode = failures[code][0];
+export function writeFailure(error: unknown, write = stdoutLine) {
+  const code = error instanceof CommanderError ? "USAGE" : faultCode(error);
+  write(JSON.stringify(failureDocument(code, error instanceof ContractError ? error.details : undefined)));
+  process.exitCode = faultExits[code];
 }
 
 function commandTree(root: Command): Command[] {
   return [root, ...root.commands.flatMap(commandTree)];
 }
 
-function schemaVersions(root: Command) {
-  const names = root.commands.filter(command => command.options.some(option => option.long === "--json")).map(command => command.name());
-  return Object.fromEntries(["version", ...names].map(name => [name, CLI_SCHEMA_VERSION]));
+export function capabilities(root: Command) {
+  const commands = [{ name: "version", options: ["--json", "--schema-version"] }];
+  for (const command of root.commands.filter(cmd => cmd.options.some(option => option.long === "--json"))) {
+    const options = command.options.filter(option => option.long !== "--force")
+      .flatMap(option => [option.short, option.long].filter((flag): flag is string => Boolean(flag)));
+    commands.push({ name: command.name(), options: [...options, "--schema-version"] });
+  }
+  return { commands, schemaVersions: Object.fromEntries(commands.map(({ name }) => [name, [CLI_SCHEMA_VERSION]])) };
 }
 
-export function capabilities(root: Command) {
-  const commands = commandTree(root).map(command => {
-    const words = [];
-    for (let part: Command | null = command; part?.parent; part = part.parent) words.unshift(part.name());
-    return { name: words.join(" ") || root.name(), options: command.createHelp().visibleOptions(command).map(option => option.flags) };
-  });
-  return { commands, schemaVersions: schemaVersions(root) };
+function selectSchema(args: string[]) {
+  const rest = [];
+  let selected = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (arg === "--") return [...rest, ...args.slice(i)];
+    if (arg !== "--schema-version" && !arg.startsWith("--schema-version=")) { rest.push(arg); continue; }
+    const major = arg === "--schema-version" ? args[++i] : arg.slice("--schema-version=".length);
+    if (selected || !major || !/^[1-9]\d*$/.test(major)) throw new ContractError("USAGE", "Expected one schema major.");
+    if (major !== String(CLI_SCHEMA_VERSION)) throw new ContractError("UNKNOWN_SCHEMA", "Unsupported schema major.");
+    selected = true;
+  }
+  return rest;
 }
 
 export async function runCli(root: Command, args: string[]) {
@@ -79,26 +54,28 @@ export async function runCli(root: Command, args: string[]) {
     if (machine) command.configureOutput({ writeOut() {}, writeErr() {} });
   }
   try {
+    if (machine) args = selectSchema(args);
     if (machine) root.hook("preAction", (_root, command) => {
       const flags = command.opts();
-      if (flags.json !== true) throw new CliError("USAGE", "This invocation does not select machine output.");
+      if (flags.force) throw new ContractError("USAGE", "Machine calls require fresh outputs.");
+      if (flags.json !== true) throw new ContractError("USAGE", "This invocation does not select machine output.");
       const values = [...command.args, ...Object.values(flags)];
       if (values.some(value => typeof value === "string" && value.split(/[\\/]/).includes(".."))) {
-        throw new CliError("PATH_OUTSIDE_ROOTS", "Use a path without parent traversal.");
+        throw new ContractError("PATH_OUTSIDE_ROOTS", "Use a path without parent traversal.");
       }
     });
     if (machine && options.some(arg => ["--version", "-V"].includes(arg))) {
-      if (args.length !== 2) throw new CliError("USAGE", "Use --version --json.");
-      writeDocument({ version: VERSION, schemaVersions: schemaVersions(root) });
+      if (args.length !== 2) throw new ContractError("USAGE", "Use --version --json.");
+      writeDocument({ version: VERSION, schemaVersions: capabilities(root).schemaVersions });
       return;
     }
     if (machine && options.some(arg => arg === "--help" || arg === "-h" || (arg === "help" && args[0] === arg))) {
-      throw new CliError("USAGE", "Use capabilities --json for machine-readable help.");
+      throw new ContractError("USAGE", "Use capabilities --json for machine-readable help.");
     }
     await root.parseAsync(args, { from: "user" });
   } catch (error) {
     if (machine) writeFailure(error);
-    else if (error instanceof CommanderError) process.exitCode = error.code === "commander.unknownOption" ? 2 : error.exitCode;
+    else if (error instanceof CommanderError) process.exitCode = error.exitCode;
     else {
       process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
       process.exitCode = 1;

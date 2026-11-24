@@ -5,7 +5,7 @@ import { stat } from "node:fs/promises";
 import { FileState } from "@google/genai";
 import type { File as GeminiFile } from "@google/genai";
 import { z } from "zod";
-import { classifyProviderError, classifyProviderResponse, providerErrorDescription, type ProviderError } from "./gemini-error-class.js";
+import { providerFault, classifyTransportFailure, classifyProviderResponse, providerErrorDescription, type ProviderError } from "./gemini-error-class.js";
 
 const GEMINI_UPLOAD_ENDPOINT =
   "https://generativelanguage.googleapis.com/upload/v1beta/files";
@@ -57,6 +57,7 @@ export type GeminiUploadCleanup =
 
 export class GeminiFileError extends Error {
   override readonly name = "GeminiFileError";
+  get code() { return this.provider ? providerFault(this.provider) : "COMMAND_FAILED"; }
 
   constructor(
     message: string,
@@ -119,11 +120,11 @@ export function createGeminiFileUploader(
         });
       } catch (error) {
         throw new GeminiFileError(
-          `Gemini resumable upload start failed: ${providerErrorDescription(classifyProviderError(error))}.`,
+          `Gemini resumable upload start failed: ${providerErrorDescription(classifyTransportFailure(error))}.`,
           undefined,
           "not_obtained",
           undefined,
-          classifyProviderError(error),
+          classifyTransportFailure(error),
         );
       }
       await assertSuccessfulResponse(startResponse, "resumable upload start");
@@ -154,11 +155,11 @@ export function createGeminiFileUploader(
         });
       } catch (error) {
         throw new GeminiFileError(
-          `Gemini upload finalize failed: ${providerErrorDescription(classifyProviderError(error))}; remote cleanup cannot be confirmed.`,
+          `Gemini upload finalize failed: ${providerErrorDescription(classifyTransportFailure(error))}; remote cleanup cannot be confirmed.`,
           undefined,
           "unconfirmed",
           undefined,
-          classifyProviderError(error),
+          classifyTransportFailure(error),
         );
       } finally {
         body?.destroy();

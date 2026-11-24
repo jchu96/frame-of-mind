@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, realpath, stat, writeFile } from "node:fs/promises";
 import { childEnvironment } from "../src/lib/child-env.js";
 import { assert, expect, it } from "vitest";
 import { classify, proposeRecords, snapSettings } from "../src/domain/snap.js";
@@ -89,10 +89,16 @@ it("F01 refuses the recording as a forced proxy destination", async () => {
   expect(await readdir(file())).toEqual(entries);
 });
 
-it("F04 preserves independently read timecode and strips the location", () => {
+it("F04 preserves independently read timecode and strips the location", async () => {
   const out = "-prepared's proxy.mp4";
   const result = success("proxy", "./" + source, "-o", out, "--height", "64");
   expect(result.duration).toMatchObject({clock: "source", frames: "30", rate: {num: 24000, den: 1001}});
+  const sourceStat = await stat(file(source));
+  expect(result.source).toMatchObject({path: await realpath(file(source)), sizeBytes: sourceStat.size, frames: "30", rate: {num: 24000, den: 1001}});
+  expect(result.source.mtimeMs).toBeCloseTo(sourceStat.mtimeMs, 2);
+  expect(result.proxy).toEqual({path: await realpath(file(out)), frames: "30", rate: {num: 24000, den: 1001}});
+  expect(result.frameAligned).toBe(true);
+  expect(ids(out)).toEqual(Array.from({length: count}, (_, n) => n));
   expect(JSON.stringify(info(source))).toContain("+12.3456");
   const report = info(out);
   expect(report.streams[0].tags.timecode, "independent proxy start label").toBe("01:02:03:04");
@@ -100,8 +106,9 @@ it("F04 preserves independently read timecode and strips the location", () => {
   expect(report.streams.find((s: {codec_type: string}) => s.codec_type === "audio")).toMatchObject({codec_name: "aac", channels: 1});
 });
 
-it("F05 cuts the requested non-keyframe interval in video and reference audio", () => {
-  success("slice", "sound.mp4", "--from", "15f", "--to", "30f", "-o", "cut.mp4");
+it("F05 cuts the requested non-keyframe interval in video and reference audio", async () => {
+  const receipt = success("slice", "sound.mp4", "--from", "15f", "--to", "30f", "-o", "cut.mp4");
+  expect(receipt.output).toBe(await realpath(file("cut.mp4")));
   const frames = ids("cut.mp4");
   expect(frames).toHaveLength(15);
   expect(frames[0], "first source-frame ID").toBe(15);
@@ -113,8 +120,9 @@ it("F05 cuts the requested non-keyframe interval in video and reference audio", 
   expect(samples.slice(3000, 4000).some(sample => sample > 3000)).toBe(true);
 });
 
-it("grabs the identified full-resolution PNG frame", () => {
-  success("frame", "./" + source, "--at", "00:00:00:02", "-o", "grab.png");
+it("grabs the identified full-resolution PNG frame", async () => {
+  const receipt = success("frame", "./" + source, "--at", "00:00:00:02", "-o", "grab.png");
+  expect(receipt.output).toBe(await realpath(file("grab.png")));
   expect(ids("grab.png")).toEqual([2]);
   expect(info("grab.png").streams[0]).toMatchObject({width, height, codec_name: "png"});
 });
@@ -126,12 +134,11 @@ it("probe counts video without decoding damaged audio or assuming a timecode mod
   expect(result.decodeStatus).toBe("unchecked");
 });
 
-it("F06 returns exit 1 one frame off on Matroska with an mp4 extension", () => {
+it("F06 reports the extra decoded frame on Matroska with an mp4 extension", () => {
   expect(success("verify", "disguised.mp4", "--expect-duration", "1.200").decodeStatus).toBe("passed");
   const result = command("verify", "disguised.mp4", "--expect-frames", "29", "--json");
-  expect(result.status, "one-frame mismatch exit").toBe(1);
-  expect(result.stdout).toBe("");
-  expect(JSON.parse(result.stderr)).toMatchObject({code: "VERIFY_MISMATCH", message: "Expected 29 frames, decoded 30."});
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ok: false, mismatches: [{from: "29", to: "30", kind: "extra"}]});
 });
 
 it("rejects a corrupt video packet and preserves the old forced output", async () => {
@@ -145,8 +152,7 @@ it("rejects a corrupt video packet and preserves the old forced output", async (
 it("verify rejects a damaged final audio packet at the correct video frame count", () => {
   const result = command("verify", "damaged-audio.mp4", "--expect-frames", String(count), "--json");
   expect(result.status, "damaged audio must fail verify").toBe(1);
-  expect(result.stdout).toBe("");
-  expect(JSON.parse(result.stderr)).toMatchObject({code: "DECODE_FAILED"});
+  expect(JSON.parse(result.stdout)).toMatchObject({error: {code: "DECODE_FAILED"}});
 });
 
 it("W12 bounded snap CLI matches full-file edges at non-grid and near-zero seeks", async () => {

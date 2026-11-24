@@ -118,9 +118,9 @@ program
   .command("doctor")
   .description("Check local prerequisites or inspect interrupted runs.")
   .option("--scratch [directory]", "list scratch in system temp or beside files in the given directory")
-  .option("--remove", "remove proven abandoned entries in the scratch listing")
+  .option("--remove <path>", "remove only this named, proven abandoned scratch entry")
   .option("--json", "print the versioned doctor report")
-  .action(async (flags: {scratch?: string | boolean; remove?: boolean; json?: boolean}) => {
+  .action(async (flags: {scratch?: string | boolean; remove?: string; json?: boolean}) => {
     if (flags.remove && !flags.scratch) throw new CliError("USAGE", "--remove requires --scratch.");
     const rows = flags.scratch || flags.json
       ? await inspectScratch(typeof flags.scratch === "string" ? flags.scratch : undefined, flags.remove)
@@ -144,14 +144,15 @@ program
         ({kind, path, sizeBytes: size, ageMs, state, removed, reason: reason ?? null}));
       const checks = [
         { name: "node", required: true, ok: prerequisites.node, detail: process.versions.node },
-        { name: "GEMINI_API_KEY", required: true, ok: prerequisites.geminiKey, detail: prerequisites.geminiKey ? "configured" : "missing" },
-        { name: "GRANOLA_API_KEY", required: false, ok: prerequisites.granolaKey, detail: prerequisites.granolaKey ? "configured" : "missing" },
+        { name: "provider_key", required: true, ok: prerequisites.geminiKey, detail: prerequisites.geminiKey ? "configured" : "missing" },
+        { name: "context_key", required: false, ok: prerequisites.granolaKey, detail: prerequisites.granolaKey ? "configured" : "missing" },
         ...Object.entries(media.tools).map(([name, tool]) => ({
           name, required: false, ok: tool.version !== null, detail: tool.version ?? tool.error!,
         })),
       ];
       writeDocument({
-        ok: checks.every(check => !check.required || check.ok), checks, commands: media.commands, leftovers,
+        ok: checks.every(check => !check.required || check.ok), checks, commands: media.commands.map(({ command: name, capabilities }) => ({ name, capabilities })), leftovers,
+        roots: { mode: "none", file: null },
         key: { present: prerequisites.geminiKey }, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
         commit: RELEASE_COMMIT,
         cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
@@ -194,7 +195,9 @@ program
   .option("--json", "print the versioned recipe list")
   .action((flags: { json?: boolean }) => {
     if (flags.json) {
-      writeDocument({ recipes: listBuiltInRecipes().map(({ id, description }) => ({ id, description })) });
+      const recipes = listBuiltInRecipes().map(({ id, description }) => ({ id, description }));
+      if (!recipes.length) throw new CliError("COMMAND_FAILED", "No built-in recipes available.");
+      writeDocument({ recipes });
       return;
     }
     for (const recipe of listBuiltInRecipes()) {
@@ -220,14 +223,15 @@ registerKey(program);
 program.command("calibrate")
   .description("Measure and cache the model's clip clock using a synthetic flash.")
   .option("--model <id>", "Gemini model ID")
-  .option("--json", "Print the measurement and token cost as JSON")
+  .option("--json", "Print the model clock measurement as JSON")
   .action(async (flags: { model?: string; json?: boolean }) => {
-    if (!process.env.GEMINI_API_KEY) throw new CliError("KEY_REFUSED", "Set GEMINI_API_KEY before calibration.");
+    if (!process.env.GEMINI_API_KEY?.trim()) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before calibration.");
+    if (flags.model !== undefined && !geminiModelSchema.safeParse(flags.model).success) throw new CliError("USAGE", "Invalid Gemini model ID.");
     await requireMedia("calibrate");
-    const analyzer = new GeminiVideoAnalyzer(process.env.GEMINI_API_KEY, flags.model ? geminiModelSchema.parse(flags.model) : undefined);
-    const result = await calibrateClipClock(analyzer, { force: true });
+    const analyzer = new GeminiVideoAnalyzer(process.env.GEMINI_API_KEY, flags.model);
+    const result = await calibrateClipClock(analyzer, { force: true, reportFailure: flags.json });
     const tokens = analyzer.takeUsage()?.totalTokens ?? null;
-    if (flags.json) writeDocument({ ...result, tokens });
+    if (flags.json) writeDocument(result);
     else process.stdout.write(`model clip clock: ${result.result}; tokens: ${tokens ?? "unknown"}\n`);
   });
 
@@ -399,7 +403,7 @@ export async function buildAnalyzeOptions(
   const integer = (text?: string) => text === undefined ? undefined : /^\d+$/.test(text) && text.trim() === text ? Number(text) : NaN;
   const settings = snapSettings(integer(flags.snapGapMs), integer(flags.snapWindowMs));
   const transcriptLanguage = resolveTranscriptLanguage(flags.transcriptLanguage, flags.derivedTranscript);
-  if (!apiKey) throw new Error("Set GEMINI_API_KEY before analysis.");
+  if (!apiKey) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before analysis.");
   const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
   const runNotes = await loadRunNotes(flags.note);
   const labelResult = flags.label === undefined ? undefined : runLabelSchema.safeParse(flags.label.trim());

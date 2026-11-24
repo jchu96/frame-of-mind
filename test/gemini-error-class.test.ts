@@ -111,6 +111,23 @@ describe("structured transport", () => {
       expect(error.message).not.toContain(privateMessage);
     });
 
+  it("maps a transport deadline before any response to resource unavailable", async () => {
+    vi.stubGlobal("fetch", async () => { throw new DOMException("Aborted", "AbortError"); });
+    await expect(new GeminiVideoAnalyzer("synthetic-key").resolveRetainedFile("files/test", "a".repeat(64), 1))
+      .rejects.toMatchObject({code: "PROVIDER_UNREACHABLE"});
+  });
+
+  it.each([
+    [400, "API_KEY_INVALID", "KEY_REFUSED"], [403, "UPLOAD_OTHER_KEY", "UPLOAD_OTHER_KEY"],
+    [404, "UPLOAD_EXPIRED", "UPLOAD_EXPIRED"],
+  ] as const)("classifies explicit %s %s evidence on retained lookup", async (status, reason, code) => {
+    vi.stubGlobal("fetch", async () => Response.json({ error: { code: status, details: [
+      { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason },
+    ] } }, { status }));
+    await expect(new GeminiVideoAnalyzer("synthetic-key").resolveRetainedFile("files/test", "a".repeat(64), 1))
+      .rejects.toMatchObject({code});
+  });
+
   it("HTTP and JSON disagreement is other at retained lookup", async () => {
     for (const [code, status] of [[404, "NOT_FOUND"], [403, "NOT_FOUND"]] as const) {
       vi.stubGlobal("fetch", async () => refusal(403, code, status));

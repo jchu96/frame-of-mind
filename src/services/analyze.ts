@@ -1,3 +1,4 @@
+import { faultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
 import { VERSION } from "../version.js";
 import { modelTime } from "exact-time";
@@ -332,6 +333,7 @@ export type AnalyzeResult = PublishedAnalysisRun & {
 };
 
 export class AnalysisCanceledError extends Error {
+  readonly code = "CANCELLED";
   constructor() {
     super("Analysis was canceled.");
     this.name = "AnalysisCanceledError";
@@ -736,6 +738,7 @@ export class AnalysisOrchestrator {
           },
           model: analyzer.model,
           recordingSha256,
+          errorCode: faultCode(error),
           error: sanitizedFailureError(error),
           remoteFile: {
             ...(uploadCleanup !== "not_obtained" && uploadName
@@ -1336,6 +1339,7 @@ export class AnalysisOrchestrator {
           },
           model: analyzer.model,
           recordingSha256,
+          errorCode: faultCode(error),
           error: sanitizedFailureError(error),
           remoteFile: {
             ...sanitizedRemoteFileMetadata(remote),
@@ -1465,7 +1469,7 @@ function sanitizedFailureError(error: unknown): RunFailureManifest["error"] {
   }
   return {
     code: "unexpected_failure",
-    ...(error instanceof GeminiFileError && error.provider ? { provider: error.provider } : {}),
+    ...(error instanceof GeminiFileError && error.provider ? { provider: { class: error.provider.class, status: error.provider.status } } : {}),
   };
 }
 

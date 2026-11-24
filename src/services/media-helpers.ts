@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { extname } from "node:path";
 import { stat } from "node:fs/promises";
 import { deriveExact, exactTime, fromTicks, offsetTime, parseTimecodeRate, renderExactTimecode,
@@ -27,7 +28,7 @@ function summary(info: VideoInfo, decodeStatus: "passed" | "unchecked") {
   const label = info.fileStartLabel;
   return { duration: display(info.duration, info.dropFrame), width: info.width, height: info.height, codec: info.codec,
     hasAudio: Boolean(info.audio.length), audio: info.audio.map(s => ({codec: s.codec_name, channels: s.channels})),
-    ...(label && {fileStartLabel: {value: tuple(label.value), dropFrame: label.dropFrame}}), decodeStatus };
+    fileStartLabel: label ? {value: tuple(label.value), dropFrame: label.dropFrame} : null, decodeStatus };
 }
 function position(flag: string, text: string, info: VideoInfo) {
   return parseFilePosition("source", flag, text, info.rate, info.dropFrame);
@@ -49,7 +50,7 @@ export function checkProxyBytes(bytes: number, allow: boolean, phase: "estimate"
 // fromTicks certifies each conversion. The final resample is only for AAC.
 function audioRange(from: Position, to: Position) {
   const start = deriveExact(from, false), end = deriveExact(to, false);
-  if (!("ticks" in start) || !("ticks" in end)) throw new Error("Exact audio boundaries require whole ticks.");
+  if (!("ticks" in start) || !("ticks" in end)) throw new ContractError("UNREPRESENTABLE", "Exact audio boundaries require whole ticks.");
   for (const hz of [48_000, 60_000, 96_000, 192_000]) {
     const rate = {num: hz, den: 1};
     try {
@@ -58,13 +59,13 @@ function audioRange(from: Position, to: Position) {
       if ((error as {code?: string}).code !== "NOT_ON_FRAME_BOUNDARY") throw error;
     }
   }
-  throw new Error("Video cut does not meet the supported reference-audio sample grids.");
+  throw new ContractError("UNREPRESENTABLE", "Video cut does not meet the supported reference-audio sample grids.");
 }
 function dimensions(info: VideoInfo, text = "720") {
   const height = Number(text);
-  if (!/^[1-9]\d*$/.test(text) || !Number.isSafeInteger(height) || height % 2) throw new Error("Height must be a positive even integer.");
+  if (!/^[1-9]\d*$/.test(text) || !Number.isSafeInteger(height) || height % 2) throw new ContractError("INVALID_INPUT", "Height must be a positive even integer.");
   const width = 2 * Math.round(info.width * height / info.height / 2);
-  if (!Number.isSafeInteger(width) || width < 2) throw new Error("Invalid scaled width.");
+  if (!Number.isSafeInteger(width) || width < 2) throw new ContractError("INVALID_INPUT", "Invalid scaled width.");
   return {width, height};
 }
 
@@ -137,28 +138,34 @@ export async function mediaHelper(kind: Helper, path: string, flags: MediaOption
     return {kind, ...summary(info, flags.decodeCheck ? "passed" : "unchecked")};
   }
   if (kind === "verify") {
-    if ((flags.expectDuration === undefined) === (flags.expectFrames === undefined)) throw new Error("Choose exactly one of --expect-frames and --expect-duration.");
+    if ((flags.expectDuration === undefined) === (flags.expectFrames === undefined)) throw new ContractError("USAGE", "Choose exactly one of --expect-frames and --expect-duration.");
     const expected = flags.expectFrames !== undefined ? exactTime("source", flags.expectFrames, info.rate)
       : position("--expect-duration", flags.expectDuration!, info);
     await decodeVideo(input, info, signal);
-    const mismatches = expected.frames === info.duration.frames ? [] : ["Decoded frame count differs from expectation."];
-    return {kind, actual: display(info.duration, info.dropFrame), expected: display(expected, info.dropFrame), mismatches, decodeStatus: "passed"};
+    const actual = info.duration.frames;
+    const mismatches = expected.frames === actual ? [] : expected.frames > actual
+      ? [{ from: String(actual), to: String(expected.frames), kind: "missing" }]
+      : [{ from: String(expected.frames), to: String(actual), kind: "extra" }];
+    return {kind, ok: mismatches.length === 0, actual: display(info.duration, info.dropFrame), expected: display(expected, info.dropFrame), mismatches, decodeStatus: "passed"};
   }
-  if (!flags.output) throw new Error("An output path is required.");
-  return stageOutput(input, flags.output, kind === "frame" ? [".jpg", ".jpeg", ".png"] : [".mp4"], !!flags.force, signal, async staged => {
+  if (!flags.output) throw new ContractError("USAGE", "An output path is required.");
+  return stageOutput(input, flags.output, kind === "frame" ? [".jpg", ".jpeg", ".png"] : [".mp4"], !!flags.force, signal, async (staged, output) => {
     if (kind === "frame") {
       const at = position("--at", flags.at!, info);
-      if (at.frames >= info.duration.frames) throw new Error("Frame lies outside the decoded video.");
-      return {kind, ...await grab(input, staged, info, at, signal)};
+      if (at.frames >= info.duration.frames) throw new ContractError("INVALID_INPUT", "Frame lies outside the decoded video.");
+      return {kind, output, ...await grab(input, staged, info, at, signal)};
     }
     const from = kind === "slice" ? position("--from", flags.from!, info) : exactTime("source", "0", info.rate);
     const to = kind === "slice" ? position("--to", flags.to!, info) : info.duration;
-    if (from.frames >= to.frames || to.frames > info.duration.frames) throw new Error("Slice requires a nonempty ordered range within the video.");
+    if (from.frames >= to.frames || to.frames > info.duration.frames) throw new ContractError("INVALID_INPUT", "Slice requires a nonempty ordered range within the video.");
     const size = dimensions(info, flags.height);
     if (kind === "proxy") checkProxyBytes(estimateProxyBytes(size.width, size.height, info.duration.frames, info.approximateSeconds), !!flags.allowOversize, "estimate", tell);
     await decodeVideo(input, info, signal);
     const result = await encode(input, staged, info, from, to, size, signal);
     if (kind === "proxy") checkProxyBytes((await stat(staged)).size, !!flags.allowOversize, "actual", tell);
-    return kind === "slice" ? {kind, ...result, from: display(from, info.dropFrame), to: display(to, info.dropFrame)} : {kind, ...result};
+    return kind === "slice" ? {kind, ...result, output, from: display(from, info.dropFrame), to: display(to, info.dropFrame)} : {kind, ...result,
+      source: { path: input.path, sizeBytes: Number(input.identity.size), mtimeMs: Number(input.identity.mtimeNs) / 1e6,
+        frames: String(info.duration.frames), rate: info.rate },
+      proxy: { path: output, frames: result.duration.frames, rate: result.duration.rate }, frameAligned: true };
   });
 }
