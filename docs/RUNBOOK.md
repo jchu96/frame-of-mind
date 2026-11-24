@@ -672,6 +672,10 @@ not run.
 
 ### 3.7 Observe progress
 
+For automation, run `analyze --json` and read `runFolder` from stdout. Check
+`outcome` even on exit 0. On failure, `error.details.runFolder` locates the
+failure manifest when one was published. Progress goes to stderr.
+
 Normal messages:
 
 ```text
@@ -875,6 +879,8 @@ The speakers header and optional transcript JSON record the canonical tag as
 - Default output: `<stem>.srt` and `<stem>_speakers.txt` beside the input.
   `--json` adds `<stem>.transcript.json`; its segment times are numeric seconds
   and its clock is `source`. Timing is whole-second reference grade.
+  The stdout document lists all three absolute paths, the model, the requested
+  language (null when omitted) and the segment and cue counts.
 - Pass the SRT to `analyze <stable-id> --source file --context-file "<stem>.srt"
   --video "<recording>"` for repeated recipe runs. The SRT reader strips
   markup-like `<…>` spans. **Literal text fidelity lives in `_speakers.txt`:**

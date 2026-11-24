@@ -34,7 +34,8 @@ same name. Verify it against the release's `SHA256SUMS`.
 | `slice` | Proxy measurements plus inclusive source start and exclusive end. | [slice](../schemas/cli/slice.schema.json) |
 | `snap` | Request, measurement settings and speech-edge result. | [snap](../schemas/cli/snap.schema.json) |
 | `map` | Sequence rate, mode, lookup status and matching track rows. | [map](../schemas/cli/map.schema.json) |
-| `transcribe` | Output paths, segment count and adjusted/blank cue counts. Also writes the source-clock transcript file. | [transcribe](../schemas/cli/transcribe.schema.json) |
+| `analyze` | Absolute `runFolder`, `runId`, `outcome`, `acceptedCount`, `retainedUpload` and any display `warnings`. A published failure includes `error.details.runFolder`. | [analyze](../schemas/cli/analyze.schema.json) |
+| `transcribe` | Absolute `paths` for the SRT, speakers and source-clock JSON files, `model`, requested `language` (canonical tag or null), `segmentCount`, `adjustedCues` and `blankCues`. | [transcribe](../schemas/cli/transcribe.schema.json) |
 
 ### Doctor report
 
@@ -80,12 +81,9 @@ public fault in `errorCode`. Readers accept older files without this member.
 Until a full release carries synchronous `analyze --json`, consumers may rely on
 the text line beginning `Analysis: ` and carrying the run directory, the
 accepted-count and outcome line, the retained-upload line, the `frameofmind:`
-error line and the first line of the speakers file. The frozen synchronous
-analyze receipt specifies absolute runFolder, runId, outcome, acceptedCount and
-retainedUpload (name and expiresAt or null). Failure details include runFolder
-when written. Synchronous transcription keeps writing the transcript JSON
-throughout major 1. Its paths list includes that file. The amended receipt
-also specifies model and language for the next implementation.
+error line, the `Warning: ` prefix and the first line of the speakers file.
+A retained upload has a `name` and an `expiresAt` timestamp (null when the
+provider supplies no expiry). Otherwise `retainedUpload` is null.
 
 Job operations, grant-file enforcement, timecode conversion and bundle-folder
 reads are future commands. Discovery advertises each once shipped. A job start

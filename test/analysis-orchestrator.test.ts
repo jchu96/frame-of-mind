@@ -2789,6 +2789,7 @@ describe("consumer run-file contracts", () => {
     const sample = await consumerFixture(name);
     const analyzer = consumerAnalyzer(f);
     const run = new AnalysisOrchestrator({
+      createRunId: () => "consumer-run", now: () => "2026-01-01T00:00:00.000Z",
       createAnalyzer: () => analyzer, createContextSource: () => f.context,
       extractScreenshot: async () => false, probeDurationSeconds: async () => 10, sleep: async () => {},
     });
@@ -2808,30 +2809,67 @@ describe("consumer run-file contracts", () => {
     const {program} = await import("../src/cli.js");
     const invoke = vi.spyOn(service, "analyzeMeeting").mockImplementation((options, execution) => run.analyze(options, execution));
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const { resolves, validateCliDocument } = await import("./helpers/cli-schema.js");
+    const { runCli } = await import("../src/cli-contract.js");
+    const previousExit = process.exitCode;
+    const keepUpload = argv.includes("--keep-upload");
     vi.stubEnv("GEMINI_API_KEY", "synthetic-key");
     try {
-      await program.parseAsync(argv, {from: "user"});
+      await program.parseAsync(argv, { from: "user" });
       const result = await invoke.mock.results[0]!.value;
-      if (name.startsWith("04")) expect(stdout.mock.calls.map(([chunk]) => chunk).join("").split("\n"))
-        .toContain("Analysis: " + result.directory);
-      const {["failure-manifest.json"]: failurePointers, ...successPointers} = sample.reads_file;
-      await readConsumerFiles(result.directory, successPointers);
+      const text = stdout.mock.calls.map(([chunk]) => chunk).join("");
+      expect(text.split("\n")).toContain("Analysis: " + result.directory);
+      const progress = stderr.mock.calls.map(([chunk]) => chunk).join("");
+      const warnings = progress.split("\n").filter(line => line.startsWith("Warning: ")).map(line => line.slice(9));
+      const readBundle = async () => {
+        const files = await readdir(result.directory, { recursive: true, withFileTypes: true });
+        return Promise.all(files.filter(file => file.isFile()).map(async file => {
+          const path = join(file.parentPath, file.name);
+          return [path, await readFile(path)];
+        }));
+      };
+      const bytes = await readBundle();
+      await rm(result.directory, { recursive: true });
+      stdout.mockClear();
+      stderr.mockClear();
+      await program.parseAsync([...argv, "--json"], { from: "user" });
+      const raw = stdout.mock.calls.map(([chunk]) => chunk).join("");
+      expect(raw).toMatch(/^\{[^\n]+\}\n$/);
+      const document = validateCliDocument("analyze", raw);
+      expect(process.exitCode ?? 0).toBe(0);
+      expect(document).toMatchObject({
+        runFolder: result.directory, runId: "consumer-run", outcome: "partial", acceptedCount: 1,
+        retainedUpload: keepUpload ? { name: "files/test", expiresAt: null } : null,
+      });
+      expect(warnings.length).toBeGreaterThan(0);
+      expect(document.warnings).toEqual(warnings);
+      expect(stderr.mock.calls.map(([chunk]) => chunk).join("")).toBe(progress + text);
+      expect(await readBundle()).toEqual(bytes);
+      expect(analyzer.delete).toHaveBeenCalledTimes(keepUpload ? 0 : 2);
+      for (const pointer of sample.reads) expect(resolves(document, pointer.slice(1).split("/")), pointer).toBe(true);
+      const { ["failure-manifest.json"]: failurePointers, ...successPointers } = sample.reads_file;
+      await readConsumerFiles(document.runFolder, successPointers);
       if (failurePointers) {
+        await rm(result.directory, { recursive: true });
         analyzer.resolveRetainedFile.mockRejectedValueOnce(new GeminiFileError("Fixture refusal.", "files/test", "not_obtained",
           undefined, { class: "refused", status: 403 }));
-        await expect(program.parseAsync(argv, {from: "user"})).rejects.toMatchObject({code: "PROVIDER_REFUSED"});
-        const files = await readdir(f.outputRoot, {recursive: true});
-        const failure = files.find(path => path.endsWith("failure-manifest.json"))!;
-        const {dirname} = await import("node:path");
-        await readConsumerFiles(join(f.outputRoot, dirname(failure)), {"failure-manifest.json": failurePointers});
-        const {runFailureManifestSchema} = await import("../src/domain/run-failure.js");
-        const receipt = runFailureManifestSchema.parse(JSON.parse(await readFile(join(f.outputRoot, failure), "utf8")));
-        const {failureDocument} = await import("../src/domain/contract-error.js");
-        const error = await invoke.mock.results[1]!.value.catch((cause: GeminiFileError) => cause);
-        expect(receipt.errorCode).toBe(failureDocument(error.code).error.code);
-        expect(receipt).toMatchObject({errorCode: "PROVIDER_REFUSED", error: {code: "unexpected_failure"}});
+        stdout.mockClear();
+        await runCli(program, [...argv, "--json"]);
+        expect(process.exitCode).toBe(1);
+        const failure = validateCliDocument("analyze", stdout.mock.calls.map(([chunk]) => chunk).join(""));
+        expect(failure.error).toMatchObject({ code: "PROVIDER_REFUSED", details: { runFolder: result.directory } });
+        await readConsumerFiles(failure.error.details.runFolder, { "failure-manifest.json": failurePointers });
+        const { runFailureManifestSchema } = await import("../src/domain/run-failure.js");
+        const receipt = runFailureManifestSchema.parse(JSON.parse(await readFile(
+          join(failure.error.details.runFolder, "failure-manifest.json"), "utf8",
+        )));
+        expect(receipt).toMatchObject({ errorCode: failure.error.code, error: { code: "unexpected_failure" } });
       }
-    } finally { invoke.mockRestore(); stdout.mockRestore(); vi.unstubAllEnvs(); }
+    } finally {
+      invoke.mockRestore(); stdout.mockRestore(); stderr.mockRestore();
+      vi.unstubAllEnvs(); process.exitCode = previousExit;
+    }
   });
 
   it("serves example 06 from a run with optional clock metadata and a failed candidate", async () => {

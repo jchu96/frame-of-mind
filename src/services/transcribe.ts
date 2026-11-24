@@ -166,5 +166,5 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   deps.stdout(`segments: ${segments.length}; speakers: ${new Set(segments.map(s => s.speaker)).size}; adjustedCues: ${srt.adjustedCues}; blankCues: ${srt.blankCues}`);
   const usage = analyzer.usageSnapshot?.();
   if (usage) deps.stdout(`tokens: ${JSON.stringify(usage)}`);
-  return { segments, paths, adjustedCues: srt.adjustedCues, blankCues: srt.blankCues };
+  return { segments, paths, model, language: requestedLanguage ?? null, adjustedCues: srt.adjustedCues, blankCues: srt.blankCues };
 }

@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {
+          "code": {"type": "string"},
+          "message": {"type": "string"},
+          "details": {"type": "object", "properties": {"runFolder": {"type": "string"}}}
+        },
+        "required": ["code", "message"]
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "runFolder": {"type": "string"},
+      "runId": {"type": "string"},
+      "outcome": {"type": "string"},
+      "acceptedCount": {"type": "integer", "minimum": 0},
+      "retainedUpload": {
+        "type": ["object", "null"],
+        "properties": {"name": {"type": "string"}, "expiresAt": {"type": ["string", "null"]}},
+        "required": ["name", "expiresAt"]
+      },
+      "warnings": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": ["runFolder", "runId", "outcome", "acceptedCount", "retainedUpload"]
+  }
+}
