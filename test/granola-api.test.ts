@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GranolaApiClient } from "../src/adapters/granola-api.js";
+import { VERSION } from "../src/version.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -40,6 +41,7 @@ describe("Granola API adapter", () => {
     expect(meeting.transport).toBe("api");
     expect(meeting.transcript).toContain("Speaker A: Start here.");
     const request = fetchMock.mock.calls[0];
+    expect(new Headers(request[1].headers).get("user-agent")).toBe(`frameofmind/${VERSION}`);
     expect(String(request[0])).not.toContain("test-key");
   });
 
