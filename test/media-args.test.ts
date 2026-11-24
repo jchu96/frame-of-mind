@@ -127,6 +127,7 @@ it("probe counts video without decoding damaged audio or assuming a timecode mod
 });
 
 it("F06 returns exit 1 one frame off on Matroska with an mp4 extension", () => {
+  expect(success("verify", "disguised.mp4", "--expect-duration", "1.200").decodeStatus).toBe("passed");
   const result = command("verify", "disguised.mp4", "--expect-frames", "29", "--json");
   expect(result.status, "one-frame mismatch exit").toBe(1);
   expect(JSON.parse(result.stdout)).toMatchObject({decodeStatus: "passed", actual: {frames: "30"}, expected: {frames: "29"}});
