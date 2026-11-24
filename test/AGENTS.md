@@ -9,7 +9,7 @@
 
 ## Tests that start a real tool
 
-- Use ffmpeg, ffprobe, a browser or the built CLI for at most one path per user-facing command and one path per harm named in a class 1 fault list. Use a stand-in process or pure functions for other paths.
+- Use ffmpeg, ffprobe, a browser or the built CLI for at most one path per user-facing command and one path per fault in the written list required by [the contribution guidelines](../CONTRIBUTING.md#pull-request-expectations). Use a stand-in process or pure functions for other paths.
 - Each real-tool test must finish within a quarter of the default test timeout on a 2-core machine. Split a slower test or shrink its fixture. Never raise the timeout, add a retry or skip the test to pass.
 - Generate fixtures once per file and share them. Each test checks one thing.
 - When adding a test, name the test it replaces in the pull request or explain why none can go.
