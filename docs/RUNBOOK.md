@@ -158,7 +158,11 @@ Windows:
 3. open a new terminal;
 4. run `ffmpeg -version`.
 
-ffmpeg is optional, and it powers two separate steps: moment screenshots and
+The local media helpers require ffprobe for frame timing and ffmpeg for
+encoding and full decode. Check `ffprobe -version` and confirm that
+`ffmpeg -encoders` lists `libx264` and `aac` before preparing an MP4.
+
+For analysis, ffmpeg is optional and powers two steps: moment screenshots and
 the audio derivative used to transcribe a recording that has no supplied
 transcript. Both degrade to a warning when it is missing, so an analysis still
 completes. Use `--no-screenshots` and `--no-derived-transcript` to skip them
@@ -724,6 +728,47 @@ The CLI and the authenticated Local Studio composer are both supported
 execution entry points; they share `AnalysisOrchestrator` rather than invoking
 one another.
 
+### 3.10 Prepare and verify local media
+
+All five commands run locally. Start with a regular MP4, QuickTime, Matroska,
+WebM or AVI file whose primary video has measurable constant frame timing.
+
+```bash
+frameofmind probe "take.mov" --decode-check --json
+frameofmind proxy "take.mov" -o "upload.mp4" --height 720
+frameofmind verify "upload.mp4" --expect-frames 300
+frameofmind slice "take.mov" --from 2f --to 26f -o "selection.mp4"
+frameofmind verify "selection.mp4" --expect-duration 24f
+frameofmind frame "take.mov" --at 2f -o "detail.png"
+```
+
+Replace the example count of 300 with the count measured on your recording.
+`probe` reports `unchecked` until you request a full decode. Duration counts
+periods of the primary video. A file start timecode labels its first frame.
+The relative source position there is always `0f`. Proxy preserves a validated
+label, and slice advances it by the inclusive source start. Conflicting or
+unusable tags and wrapped output labels fail verification.
+
+Each command accepts `--json` for one result on stdout. Declare a rate with
+`--timecode-rate` when inspecting a one-frame file. At drop-frame-capable
+rates, elapsed timecode requires a file label or an explicit mode such as
+`29.97df`. Seconds accept up to three decimal places. At 25 fps, `0.041`
+lies between `1f` and `2f` and the command reports both. The exclusive end
+is valid for `--to`. Use `--at` only for a frame inside the file.
+
+Proxy and slice use software H.264 CRF 28, a 720-pixel default height,
+even proportional width, and 64 kb/s mono AAC reference audio. Silent sources
+get a silence track. The proxy estimate assumes 0.08 bits per output pixel
+per frame, adds the audio allowance over the approximate container duration,
+then adds 2% mux overhead. Estimates above 1.8 GB warn on stderr. Predicted
+or actual sizes above 2,000,000,000 bytes fail unless you supply
+`--allow-oversize` for local use. Upload limits still apply.
+
+Choose a distinct destination. `--force` replaces an existing regular output
+only after the staged result passes verification. For dash-prefixed input
+names use a path such as `./-take.mov`. Use the resulting file explicitly
+with `analyze --video`.
+
 ### 3.11 Transcribe
 
 Run `frameofmind transcribe "<recording>" [-o "<directory>"] [--model <id>] [--transcript-language <tag>]`
@@ -1253,6 +1298,12 @@ Do not weaken rejection criteria solely to produce output.
 
 ### 6.20 ffmpeg unavailable
 
+For local `probe`, `verify`, `proxy`, `slice` or `frame` failures, check
+`ffprobe -version`, `ffmpeg -version` and the encoders in §1.3. Run
+`probe --decode-check` on the original. Unreadable packets, missing or
+variable frame timing, timeouts, and decode errors fail the command.
+If an interrupted run leaves a hidden `.<destination-name>.fom-lock` directory beside the output, it is safe to remove that directory once you confirm no other `frameofmind` command is writing to that destination.
+
 ```bash
 frameofmind analyze "<meeting-id>" \
   --source bluedot \
@@ -1401,7 +1452,7 @@ measurement remains unverified. The probe upload is deleted even on failure.
 If a cached absolute measurement disagrees with runtime evidence, the run
 warns and records the relative-looking response count in `manifest.clock`.
 Refresh calibration and inspect the source before relying on those times.
-A missing ffprobe only blocks `--timecode-rate from-media`; declare the exact
+For analysis, a missing ffprobe only blocks `--timecode-rate from-media`; declare the exact
 sequence rate explicitly if known. Never approximate a fractional rate.
 
 `from-media` requires the full video to have constant presentation boundaries

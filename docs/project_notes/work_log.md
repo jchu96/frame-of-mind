@@ -1,5 +1,9 @@
 # Work Log
 
+## 2026-11-23 — Local media helpers
+
+- Verified a 24000/1001 proxy retained its start label and removed a location tag. Independent pixel reads identified source frames 2 through 25 in a 24-frame slice and source frame 2 in a still. Forced aliases preserved the original recording's size and SHA-256.
+
 ## 2026-11-23 — Speech-edge proposals
 
 - Recovered the seeded 12.340, 15.010 and 47.990 s boundaries on a 10 ms

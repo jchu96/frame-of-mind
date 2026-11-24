@@ -94,23 +94,36 @@ export const runClockSchema = z.strictObject({
 });
 export type RunClock = z.infer<typeof runClockSchema>;
 
+function strictEntry(value: string, flag: string) {
+  if (/^(0|[1-9]\d*)f$/.test(value) && value.trim() === value) return { form: "frames", value: value.slice(0, -1) } as const;
+  if (/^(\d{2}|[1-9]\d{2,}):[0-5]\d:[0-5]\d[:;](\d{2}|[1-9]\d{2,})$/.test(value) && value.trim() === value) {
+    return { form: "timecode", value } as const;
+  }
+  try { return { form: "milliseconds", value: String(parseSecondsMs(value)) } as const; }
+  catch { throw new Error(`Accepted ${flag} forms: non-negative seconds (at most three decimals), Nf whole frames, or HH:MM:SS:FF / HH:MM:SS;FF at a declared video rate. Time of day is not a cut point.`); }
+}
+
+function convertEntry<C extends MediaClock>(clock: C, entry: ReturnType<typeof strictEntry>, rate?: FrameRate, dropFrame?: boolean) {
+  if (entry.form === "milliseconds") return rate
+    ? fromBoundaryMilliseconds(clock, entry.value, rate) : fromMilliseconds(clock, entry.value);
+  if (!rate) throw new Error("Frame/timecode offsets require --timecode-rate. Without it, use seconds (at most three decimals); exact outputs are milliseconds, seconds and ticks, with no frames or timecode.");
+  if (entry.form === "frames") return exactTime(clock, entry.value, rate);
+  if (dropFrame === undefined) throw new Error("State --timecode-rate with an explicit df or ndf choice for a timecode label.");
+  return fromTimecode(clock, entry.value, rate, dropFrame);
+}
+
+export function parseFilePosition<C extends FileClock>(clock: C, flag: string, value: string, rate: FrameRate, dropFrame?: boolean): ExactTime<C> {
+  return convertEntry(clock, strictEntry(value, flag), rate, dropFrame);
+}
+
 export function declareClock(offset?: string, rate?: string, mediaRate?: TimecodeSpec): ClockDeclaration | undefined {
   if (rate !== undefined && offset === undefined) throw new Error("--timecode-rate requires --timeline-offset (use 0 for a sequence starting at zero).");
   if (offset === undefined) return undefined;
+  const entry = strictEntry(offset, "--timeline-offset");
   const fromMedia = rate !== undefined && /^from-media(?::(?:df|ndf))?$/.test(rate);
-  const frameInput = /^(0|[1-9]\d*)f$/.test(offset) && offset.trim() === offset;
-  const codeInput = /^(\d{2}|[1-9]\d{2,}):[0-5]\d:[0-5]\d[:;](\d{2}|[1-9]\d{2,})$/.test(offset) && offset.trim() === offset;
-  let ms: number | undefined;
-  if (!frameInput && !codeInput) {
-    try { ms = parseSecondsMs(offset); }
-    catch { throw new Error("Accepted --timeline-offset forms: non-negative seconds (at most three decimals), Nf whole frames, or HH:MM:SS:FF / HH:MM:SS;FF at a declared video rate. Time of day is not a cut point."); }
-  }
-  if (fromMedia && !mediaRate) return undefined; // Validated syntax; resolve only after the exact media probe.
+  if (fromMedia && !mediaRate) return undefined;
   const spec = fromMedia ? mediaRate : rate !== undefined ? parseTimecodeRate(rate) : undefined;
-  if ((frameInput || codeInput) && !spec) throw new Error("Frame/timecode offsets require --timecode-rate. Without it, use seconds (at most three decimals); exact outputs are milliseconds, seconds and ticks, with no frames or timecode.");
-  const time = frameInput ? exactTime("timeline", offset.slice(0, -1), spec!.rate)
-    : codeInput ? fromTimecode("timeline", offset, spec!.rate, spec!.dropFrame)
-    : spec ? fromBoundaryMilliseconds("timeline", String(ms!), spec.rate) : fromMilliseconds("timeline", String(ms!));
+  const time = convertEntry("timeline", entry, spec?.rate, spec?.dropFrame);
   const exactMs = exactMilliseconds(time);
   return clockDeclarationSchema.parse({
     exactOffset: { clock: time.clock, frames: String(time.frames), rate: time.rate, unit: time.unit },

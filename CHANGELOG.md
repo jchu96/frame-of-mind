@@ -11,6 +11,8 @@ Semantic Versioning.
 
 - Concurrent check lanes can now prune the shared build cache while another lane releases a lease or copies a build.
 
+- Added local `probe`, `verify`, `proxy`, `slice` and `frame` commands for measured frame counts, upload preparation, exact cuts and full-resolution frame extraction.
+
 ## [0.6.0-beta.2] - 2026-11-23
 
 Pre-release.
