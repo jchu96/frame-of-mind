@@ -1,23 +1,26 @@
 # Track: Command-Line Tool v0.6.0 - Times an Editor Can Cut On
 
 **ID:** `cli-v06_20261113`
-**Status:** Active - waves 0 and 1 merged; wave 2 groundwork merged
+**Status:** Active. Waves 0 through 2 have merged.
 
 ## Documents
 
 - [Specification](./spec.md)
 - [Implementation Plan](./plan.md)
-- Adversarial plan review: not yet recorded
+- Independent plan review completed on 2026-11-24.
 
 ## Progress
 
-- Waves: 2/5 merged
+- Waves merged: 3 of 5
 - Wave 0 (groundwork) merged in PR #147, merge commit `41766a0`.
 - Wave 1 merged: declared clocks (PR #151, `95ae242`) and transcribe
   (PR #152, `4b95a14`).
-- Current focus: wave 2. Its exact-time groundwork merged (PRs #154, #156,
-  #160); word-accurate times and ffmpeg helpers are not started. The time
-  library moves to its own `exact-time` package first (plan, supporting work).
+- Wave 2 merged in PR #180 (speech-edge proposals, `979016c`), PR #181
+  (local media commands, part 1, `d01caba`) and PR #182 (build-cache prune
+  fix, `a897141`).
+- The release bundle (PR #173, `0f83dcf`) and adoption of the pinned
+  `exact-time` library (PR #174, `c018782`) have merged.
+- Current focus: prune the real-tool tests added in wave 2. See the [remaining work in order](./plan.md#remaining-work).
 - The hosted lane runs nightly, on manual dispatch and before deploy, not in
   the pull-request gate (PR #149). Its known failures are tracked in issues
   #96 and #113.

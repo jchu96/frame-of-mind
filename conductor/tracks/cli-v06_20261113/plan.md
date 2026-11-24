@@ -1,14 +1,13 @@
 # Implementation Plan: Command-Line Tool v0.6.0
 
 **Track ID:** `cli-v06_20261113`
-**Status:** Active - waves 0 and 1 merged (PRs #147, #151, #152); exact-time groundwork for wave 2 merged (PRs #154, #156, #160).
+**Status:** Active. Waves 0 through 2 have merged. The plan was independently reviewed on 2026-11-24.
 
 ## Overview
 
-Each wave merges before the next starts. Lanes inside a wave run in parallel,
-and no code file has two owners in the same wave. `src/services/analyze.ts`
-is the most contended file and has exactly one owner per wave. Lane order and
-scope are in the [specification](./spec.md).
+Lanes that run in parallel never change the same code file. `src/services/analyze.ts`
+is the most contended file and has exactly one owner per wave. The [specification](./spec.md) describes the lanes.
+[Remaining work](#remaining-work) gives their current order.
 
 ## Waves
 
@@ -16,9 +15,26 @@ scope are in the [specification](./spec.md).
 | ---- | ----- | ------ |
 | 0 | Groundwork, serial in one branch: command and transcription seams, upload retention (lane 3 Part A, ADR 0024), small fixes, parallel detail pass | `[x]` PR #147, merge commit `41766a0` |
 | 1 | Declared clocks (with the issue #120 guard), in parallel with transcribe and its formats | `[x]` PR #151, merge commit `95ae242`; PR #152, merge commit `4b95a14` |
-| 2 | Word-accurate times, in parallel with ffmpeg helpers | `[~]` groundwork merged: the exact frame-based time module (PR #154, `1cb263a`; ADR 0027), precision-aware outputs (PR #156, `9ae8d93`), frame entry for decimal seconds and subtitle milliseconds (PR #160, `519f402`); word-accurate times and ffmpeg helpers not started |
-| 3 | Ask again without uploading again (lane 3 Part B) | `[ ]` |
-| 4 | Local MCP server | `[ ]` needs the ADR named in the specification |
+| 2 | Speech-edge proposals and local media commands (part 1) | `[x]` PR #180 (`979016c`) proposes speech edges. PR #181 (`d01caba`) adds `probe`, `verify`, `proxy`, `slice` and `frame`. PR #182 (`a897141`) fixes build-cache pruning. |
+| 3 | Ask again without uploading again (lane 3 Part B) | `[ ]` Whole-file questions first. |
+| 4 | Local MCP server | `[ ]` Needs the ADR named in the specification. The read tools and first two actions precede wave 3. The `ask` action follows it. |
+
+Wave 2 built on the exact frame-based time module (PR #154, `1cb263a`, ADR 0027),
+precision-aware outputs (PR #156, `9ae8d93`) and frame entry for decimal
+seconds and subtitle milliseconds (PR #160, `519f402`).
+
+## Remaining work
+
+1. Prune the real-tool tests added in wave 2.
+2. Have `doctor` report media capabilities for each command and list what a killed run left behind, with an option to remove it.
+3. Teach `exact-time` to read timeline-interchange times, release the library, then pin that release here.
+4. Read the timeline file exported with a sequence to look up the source file and frame at a given sequence time.
+5. Pin and cache ffmpeg in CI.
+6. Ship the local MCP server's four read tools, then its `analyze` and `transcribe` actions, enabled by launch flags.
+7. In wave 3, reuse the upload to ask another question about the whole file. Asking about a time range is a follow-up.
+8. Add the MCP `ask` action after wave 3.
+
+The ffmpeg joiner that builds one reel from several clips is on hold until someone needs it.
 
 ## Wave 0 contents (PR #147, merged)
 
@@ -41,10 +57,10 @@ scope are in the [specification](./spec.md).
 | Local database emulator upgrade to fix the hosted sign-in workflow test (issues #96, #113) | `[!]` tried 2026-11-13 on a local branch and reported still failing at Wrangler 4.148.0; no pull request, so no CI record of that trial |
 | Hosted steps that fail on an unchanged tree leave the default pull-request gate and run nightly and before every deploy instead | `[x]` PR #149; replaces the item above; `docs/HOSTED_GATE_QUARANTINE.md` |
 | Transcription in the original language: every transcription request asks for the languages actually spoken, keeps mid-sentence switches and never translates; transcription has its own system instruction without the analysis guard's full-transcript line (PR #158, `cf07529`); optional `--transcript-language <BCP-47>` hint on `transcribe` and `analyze`, recorded as `requestedLanguage` (PR #159, `12c4456`) | `[x]` live fidelity on real non-English speech is not tested; one owner-run synthetic smoke is proposed in each pull request |
-| Re-pin anything that pins a frame-of-mind commit (for example an agent plugin) to `12c4456` or later, so it gets original-language transcription and the hint; once a release carries the built command-line bundle, pin the release instead | `[ ]` |
+| Update consumers that pin a source commit to use the release bundle | `[ ]` |
 | Full serial `check`, not the pull-request gate: the hosted Better Auth workflow spend-cap assertion (`test:hosted-workflows-http:better-auth`) expected HTTP 429 and got 201 | `[ ]` seen 2026-11-18 in a builder's local run at `a61dd29`; cause unverified; outside that change; the pull-request gate and CI passed |
-| `exact-time`, the frame-exact time library, published as its own public repository (release `v0.1.1`); this repository takes it as a pinned dependency in place of `src/domain/exact-time.ts`, with the existing time tests and case table passing unchanged | `[ ]` after the open dependency updates land (shared lockfile) |
-| On each tagged release, CI attaches the built command-line tool and its SHA-256, so a consumer downloads and verifies one file instead of rebuilding from source | `[ ]` |
+| Adopt the pinned `exact-time` release | `[x]` PR #174, merge commit `c018782` |
+| Publish the standalone CLI bundle with fingerprints on version tags | `[x]` PR #173, merge commit `0f83dcf` |
 | Silent `frameofmind` command fixed; upload retention stated truthfully (PR #161, `b3a2869`) | `[x]` |
 | Teaching-points recipe, contact sheet, run `--label`, settled screenshots for that recipe only, ADR 0029 proposed (PR #162, `06f2e32`) | `[x]` one live run reported by the requester; ADR 0029 is still a proposal |
 | Screenshot seek is forward-only: at very low frame rates a cited time can get the next frame instead of the one on screen, or no screenshot when the last frame has passed | `[ ]` reported 2026-11-23 by the review of PR #162 on synthetic low-frame-rate clips; the seek code is the same on `main` |
@@ -53,7 +69,9 @@ scope are in the [specification](./spec.md).
 
 ## Verification
 
-For every lane: a catalogue of planted violations written before the build,
-each shown failing; the pull-request gate at the pushed head; one independent
-review at the exact head. No lane raises a timeout, adds a retry or skips a
-test to pass.
+Run the applicable automatic checks for every change. Prose alone needs only those
+checks. Code, agent instruction files and data files such as JSON also need one
+independent review at the exact head that will merge. Check any later commit on
+its own. Changes to a merge gate, secret handling or code that deletes or uploads
+a user's recording also need a written list of faults, each shown failing.
+Required CI at the exact head is the receipt. No lane raises a timeout, adds a retry or skips a test to pass.
