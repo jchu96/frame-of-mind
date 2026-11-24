@@ -2,7 +2,11 @@ import * as fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { acquireE2EResourceLease } from "../apps/web/e2e/support/isolation";
+import {
+  acquireE2EResourceLease,
+  type E2EResourceLease,
+  resourceLeaseTokenMatches,
+} from "../apps/web/e2e/support/isolation";
 import { pruneCache } from "../scripts/prune-build-cache";
 
 vi.mock("node:fs/promises", async importOriginal => {
@@ -75,22 +79,62 @@ test("preserves the oldest entry while a peer holds its lease", async () => {
   }
 });
 
-test("rechecks a candidate refreshed by a peer after the listing", async () => {
+function afterMtimeSample(entry: string, run: () => Promise<void>) {
+  vi.mocked(fs.stat).mockImplementation(async path => {
+    const sample = await real.stat(path);
+    if (path === entry) {
+      vi.mocked(fs.stat).mockImplementation(real.stat);
+      await run();
+    }
+    return sample;
+  });
+}
+
+test.each([
+  { scenario: "holds the lease after the listing", refresh: false },
+  { scenario: "refreshes and holds the lease past its wait deadline", refresh: true },
+])("skips eviction when a peer $scenario", async ({ refresh }) => {
   const builds = await entries(6);
   const lock = `${builds[0]}.lock`;
-  // The peer takes its lease after readdir, then finishes its cache hit
-  // when the pruner tries to take the same lease for eviction.
-  vi.mocked(fs.stat).mockImplementationOnce(async path => {
-    const peer = await acquireE2EResourceLease(lock);
-    vi.mocked(fs.mkdir).mockImplementationOnce(async lockPath => {
-      try {
-        return await real.mkdir(lockPath);
-      } finally {
-        await fs.utimes(builds[0], 200, 200);
-        await peer.release();
-      }
-    });
-    return real.stat(path);
+  let peer: E2EResourceLease | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = Promise.withResolvers<never>();
+  afterMtimeSample(builds[0], async () => {
+    peer = await acquireE2EResourceLease(lock);
+    timer = setTimeout(() => deadline.reject(new Error("Pruning waited on the peer lease.")), 2_000);
+    if (refresh) {
+      await fs.utimes(builds[0], 200, 200);
+      // Advance the lease clock after eviction starts its acquisition.
+      const pastDeadline = Date.now() + 31 * 60_000;
+      vi.mocked(fs.mkdir).mockImplementationOnce(path => {
+        vi.spyOn(Date, "now").mockReturnValue(pastDeadline);
+        return real.mkdir(path);
+      });
+    }
+  });
+
+  const pruning = pruneCache(root, builds[5]);
+  try {
+    await Promise.race([pruning, deadline.promise]);
+    expect(peer && await resourceLeaseTokenMatches(lock, peer.token)).toBe(true);
+    expect((await real.stat(builds[0])).mtimeMs).toBe(refresh ? 200_000 : 100_000);
+  } finally {
+    clearTimeout(timer);
+    vi.restoreAllMocks();
+    await peer?.release();
+    await pruning;
+  }
+});
+
+test("rechecks a candidate refreshed by a peer after the listing", async () => {
+  const builds = await entries(6);
+  afterMtimeSample(builds[0], async () => {
+    const peer = await acquireE2EResourceLease(`${builds[0]}.lock`);
+    try {
+      await fs.utimes(builds[0], 200, 200);
+    } finally {
+      await peer.release();
+    }
   });
   await pruneCache(root, builds[5]);
   expect((await fs.stat(builds[0])).mtimeMs).toBe(200_000);

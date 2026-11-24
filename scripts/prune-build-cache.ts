@@ -16,9 +16,10 @@ export async function pruneCache(cacheRoot: string, currentEntry: string): Promi
   entries.sort((left, right) => right.mtimeMs - left.mtimeMs);
   for (const { name, path, mtimeMs } of entries.slice(5)) {
     if (path === currentEntry || names.has(`${name}.lock`)) continue;
-    // A peer can start copying after readdir. Take its entry lease and
+    // A peer can start copying after readdir. Try its entry lease and
     // recheck the timestamp in case the peer refreshed the build since then.
-    const lease = await acquireE2EResourceLease(`${path}.lock`);
+    const lease = await acquireE2EResourceLease(`${path}.lock`, { wait: false });
+    if (!lease) continue;
     try {
       if (await entryMtime(path) === mtimeMs) {
         await rm(path, { recursive: true, force: true });

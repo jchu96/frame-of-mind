@@ -96,9 +96,15 @@ export async function createE2EIsolation(
   };
 }
 
+export function acquireE2EResourceLease(lockPath?: string): Promise<E2EResourceLease>;
+export function acquireE2EResourceLease(
+  lockPath: string,
+  options: { wait: false },
+): Promise<E2EResourceLease | undefined>;
 export async function acquireE2EResourceLease(
   lockPath = RUNTIME_LOCK,
-): Promise<E2EResourceLease> {
+  options?: { wait: false },
+): Promise<E2EResourceLease | undefined> {
   const resolvedLock = resolve(lockPath);
   const token = randomUUID();
   const startedAt = Date.now();
@@ -106,36 +112,10 @@ export async function acquireE2EResourceLease(
   for (;;) {
     try {
       await mkdir(resolvedLock);
-      try {
-        await writeFile(join(resolvedLock, LOCK_OWNER_FILE), JSON.stringify({
-          pid: process.pid,
-          token,
-          acquiredAt: new Date().toISOString(),
-        }));
-      } catch (error) {
-        await rm(resolvedLock, { recursive: true, force: true });
-        throw error;
-      }
-      let released = false;
-      return {
-        token,
-        release: async () => {
-          if (released) return;
-          released = true;
-          const owner = await readLockOwner(resolvedLock);
-          if (owner?.token !== token) return;
-          const releasedPath = `${resolvedLock}.released-${token}`;
-          try {
-            await rename(resolvedLock, releasedPath);
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-            throw error;
-          }
-          await rm(releasedPath, { recursive: true, force: true });
-        },
-      };
+      break;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (options?.wait === false) return undefined;
     }
 
     if (await reapStaleLock(resolvedLock)) continue;
@@ -144,6 +124,35 @@ export async function acquireE2EResourceLease(
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, LOCK_POLL_MS));
   }
+
+  try {
+    await writeFile(join(resolvedLock, LOCK_OWNER_FILE), JSON.stringify({
+      pid: process.pid,
+      token,
+      acquiredAt: new Date().toISOString(),
+    }));
+  } catch (error) {
+    await rm(resolvedLock, { recursive: true, force: true });
+    throw error;
+  }
+  let released = false;
+  return {
+    token,
+    release: async () => {
+      if (released) return;
+      released = true;
+      const owner = await readLockOwner(resolvedLock);
+      if (owner?.token !== token) return;
+      const releasedPath = `${resolvedLock}.released-${token}`;
+      try {
+        await rename(resolvedLock, releasedPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+        throw error;
+      }
+      await rm(releasedPath, { recursive: true, force: true });
+    },
+  };
 }
 
 async function hasInheritedRuntimeLease(): Promise<boolean> {
