@@ -15,6 +15,8 @@ Pre-release.
 
 - Added `frameofmind capabilities --json`, `recipes --json` and `--version --json`.
 
+- `snap --json` on an input file that does not exist returns `NOT_FOUND` and exits 20.
+
 - `doctor` reports the ffmpeg and ffprobe versions and what each command needs from them, and a media command refuses up front when a capability it needs is missing. `doctor --scratch` lists what a killed run left behind and `--remove` removes only leftovers the tool can prove it created. `doctor --json` prints one report with a top-level `ok` and exits 0 whenever the report was produced.
 
 - Added `frameofmind map`: from the timeline file (`.otio`) exported with a sequence, find the source file, frame and timecode shown at a sequence time, or every sequence time that shows a source frame. See `docs/EDITING_WORKFLOW.md`.
