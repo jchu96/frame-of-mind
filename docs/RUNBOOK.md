@@ -558,7 +558,7 @@ timecode (`01:00:00:00`, or `00:01:00;02` with `29.97df`). Seconds between frame
 boundaries are refused with the two neighboring frames: choose the intended
 frame explicitly, rather than rounding. Use `--file-clock reel` for a reel.
 
-Read `times.json` schema 2: `entries[].time` and `entries[].timeline` are model
+For default runs read `times.json` schema 2: `entries[].time` and `entries[].timeline` are model
 observations with decimal-string seconds, `precisionMs: 1000`, origin and clock.
 They have no frames, ticks or timecode, including when a rate is declared.
 Markdown, HTML and progress lines retain `≈1 s; model`. The exact declared
@@ -795,6 +795,36 @@ These files hold full speech content outside any run bundle. Keep them private,
 never attach them to issues or commit them, use OS disk encryption, and delete
 only the exact exports you intend to remove. There is no automatic local export
 expiry. See [ADR 0025](adr/0025-standalone-transcript-files.md).
+
+### 3.12 Snap record edges to speech
+
+```bash
+frameofmind analyze --source none --video take.mov --snap speech --snap-gap-ms 250 --snap-window-ms 1500
+frameofmind snap take.mov --at 00:00:21.000 --edge end --file-clock source --json
+```
+
+Choose a minimum pause of 80–2000 ms and a search radius of 250–3000 ms.
+Both flags take whole integers. The defaults above look for at least 80 ms
+of speech. Analysis meters the local recording once. The standalone command
+seeks around the requested file time and uses the same selection rule.
+`gapLowerBound: true` means the reported pause extends to the observation limit.
+
+Read the counts over both edges of every validated record, including rejections.
+The no-boundary fraction shows how often the search found no permitted edge
+beside a qualifying pause (0/0 for an empty run). The median signed shift uses
+the nearest-rank 50th percentile over successful snaps. Negative shifts move
+the proposed cut earlier.
+
+For `ambiguous`, listen to the original range and the listed file-clock
+alternatives. These include the refused cut that would invert a record or
+worsen overlap. For `no-boundary`, listen around the whole-second model edge.
+Listed alternatives would extend the cut across another speech group.
+A successful proposal is measured on a 10 ms grid, accurate to about ±50 ms
+when the first audio stream is at least 32 kHz, or ±200 ms at lower or
+unknown rates. Its uncertainty can span frames adjacent to the reference frame.
+An `unavailable` warning means the local decode or its timing could not be
+verified. Check ffmpeg and the first audio stream. A standalone unavailable
+result sets a nonzero exit status. The reports keep the model range for review.
 
 ## 4. Review procedure
 

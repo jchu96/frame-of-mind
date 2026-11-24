@@ -1,5 +1,7 @@
 import { VERSION } from "../version.js";
-import { declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
+import { modelTime } from "exact-time";
+import { classify, proposeRecords, snapSettings, summarizeSnaps, type SnapRun, type SnapSettings } from "../domain/snap.js";
+import { parseSecondsMs, declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
 import { probeFrameRate } from "./media-probe.js";
 import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
 import { mkdtemp, rename, rm, rmdir, stat } from "node:fs/promises";
@@ -68,6 +70,7 @@ import {
   offsetTranscriptionSegments,
 } from "./transcript.js";
 import {
+  decodeSpeechEnvelope,
   extractAudioTrack,
   planTranscriptionWindows,
   probeDurationSeconds,
@@ -114,6 +117,7 @@ const TRANSCRIPTION_WINDOW_ATTEMPTS = 2;
 const TRANSCRIPTION_WINDOW_RETRY_MS = 20_000;
 
 interface AnalyzeOptionsBase {
+  snapSettings?: SnapSettings;
   timelineOffset?: string;
   timecodeRate?: string;
   fileClock?: "source" | "reel";
@@ -315,6 +319,7 @@ export interface AnalysisOrchestratorDependencies {
   sleep?: (milliseconds: number) => Promise<void>;
   extractScreenshot?: typeof extractScreenshot;
   buildContactSheet?: typeof buildContactSheet;
+  decodeSpeechEnvelope?: typeof decodeSpeechEnvelope;
   extractAudioTrack?: typeof extractAudioTrack;
   probeDurationSeconds?: typeof probeDurationSeconds;
   calibrateClipClock?: typeof calibrateClipClock;
@@ -322,6 +327,7 @@ export interface AnalysisOrchestratorDependencies {
 }
 
 export type AnalyzeResult = PublishedAnalysisRun & {
+  snapSummary?: ReturnType<typeof summarizeSnaps>;
   projectionWarning?: string;
 };
 
@@ -340,6 +346,7 @@ export class AnalysisOrchestrator {
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly screenshot: typeof extractScreenshot;
   private readonly contactSheet: typeof buildContactSheet;
+  private readonly decodeSpeech: typeof decodeSpeechEnvelope;
   private readonly extractAudio: typeof extractAudioTrack;
   private readonly probeDuration: typeof probeDurationSeconds;
   private readonly calibrate: typeof calibrateClipClock;
@@ -353,6 +360,7 @@ export class AnalysisOrchestrator {
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.screenshot = dependencies.extractScreenshot ?? extractScreenshot;
     this.contactSheet = dependencies.buildContactSheet ?? buildContactSheet;
+    this.decodeSpeech = dependencies.decodeSpeechEnvelope ?? decodeSpeechEnvelope;
     this.extractAudio = dependencies.extractAudioTrack ?? extractAudioTrack;
     this.probeDuration = dependencies.probeDurationSeconds ?? probeDurationSeconds;
     this.calibrate = dependencies.calibrateClipClock ?? calibrateClipClock;
@@ -360,6 +368,7 @@ export class AnalysisOrchestrator {
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
+    const settings = options.snapSettings && snapSettings(options.snapSettings.gapMs, options.snapSettings.windowMs);
     const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
     const timeline: ClockDeclaration | undefined = declareClock(options.timelineOffset, options.timecodeRate);
     const clock: RunClock = runClockSchema.parse({ fileClock: options.fileClock ?? "source", ...(timeline ? { timeline } : {}), modelClipClock: "unverified" });
@@ -1092,6 +1101,16 @@ export class AnalysisOrchestrator {
           message: "Validating and rendering the analysis bundle.",
         });
         assertNotCanceled(execution.signal);
+        let proposals: SnapRun | undefined;
+        if (settings) {
+          const envelope = await this.decodeSpeech(localVideo, { signal: execution.signal }).catch(() => undefined);
+          assertNotCanceled(execution.signal);
+          if (!envelope) await reportWarning(progress, { kind: "warning", stage: "rendering", message: "Speech snapping unavailable: audio decode or timestamp verification failed." });
+          const ms = (timestamp: string) => parseSecondsMs(modelTime(clock.fileClock, timestamp).seconds);
+          proposals = proposeRecords(items.map(({ candidate }) => ({ start: ms(candidate.start), end: ms(candidate.end) })),
+            envelope && classify(envelope), clock.fileClock, settings);
+        }
+        assertNotCanceled(execution.signal);
         failurePhase = "cleanup";
         await report(progress, {
           kind: "stage",
@@ -1242,6 +1261,7 @@ export class AnalysisOrchestrator {
             validated.analysis,
             validated.manifest,
             outcome,
+            proposals,
           );
           assertNotCanceled(execution.signal);
           await rename(stagingDirectory!, outputDirectory);
@@ -1292,6 +1312,7 @@ export class AnalysisOrchestrator {
         }
         return {
           ...published,
+          ...(proposals ? { snapSummary: summarizeSnaps(proposals) } : {}),
           ...(projectionWarning ? { projectionWarning } : {}),
         };
       } catch (error) {

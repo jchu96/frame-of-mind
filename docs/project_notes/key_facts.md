@@ -1,5 +1,17 @@
 # Key Facts
 
+- 2026-11-23 — Against generated PCM burst times, 48 kHz ADTS AAC ends ran
+  up to 30 ms late (including encoder priming). A 48 kHz AAC pulse started
+  29 ms early in both M4A and MP4 with video. An 8 kHz AAC noise burst in
+  M4A started 170 ms early. These errors on a 10 ms grid motivated the
+  ±50 ms and ±200 ms accuracy estimates.
+
+- 2026-11-23 — A generated 7200 s mono 8 kHz FLAC of silence decoded in
+  1.152 s on the builder, or 1.385 s including classification. W9 timed the
+  local process after generation and summed append-only Float32 block capacities
+  at EOF. The 720,000 windows used 2,880,000 peak meter bytes. Decoder,
+  runtime and threshold workspace are outside that allocation.
+
 - 2026-09-08: Release PR [#132](https://github.com/jchu96/frame-of-mind/pull/132)
   shipped [v0.5.0](https://github.com/jchu96/frame-of-mind/releases/tag/v0.5.0)
   on merge commit `f9609ab`; the

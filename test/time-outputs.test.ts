@@ -137,3 +137,105 @@ test("high-rate exact offsets preserve all available forms and refuse only deriv
   // A derived reading value is never accepted as the exact frame boundary.
   expect(() => declareClock("0.042", "24000/1001")).toThrow("between frames 1f and 2f");
 });
+
+const settings = { method: "audio-envelope" as const, gapMs: 250, windowMs: 1500 };
+const noBoundary = { status: "no-boundary" as const, alternativesMs: [] };
+function measurement(seconds: string, shiftMs: number, clock: "source" | "reel" = "source") {
+  return { status: "snapped" as const, target: { seconds, clock, gridMs: 10 as const, precisionMs: 50 as const, origin: "audio-envelope" as const }, shiftMs, gapMs: 780, alternativesMs: [] };
+}
+function oneRecord(start: string, end: string) {
+  const analysis = structuredClone(base.analysis);
+  analysis.items = [analysis.items[0]];
+  Object.assign(analysis.items[0].candidate, { start, end });
+  return analysis;
+}
+const complete = (accepted: number, rejected = 0) => ({
+  schemaVersion: 1 as const, runId: base.analysis.runId, status: "complete" as const,
+  candidates: { indexed: accepted + rejected, selected: accepted + rejected, omittedByLimit: 0, validated: accepted + rejected, accepted, rejected, failed: 0 }, failures: [],
+});
+test("W7 onset and exclusive end use containing frames 240 and 239 at 10.010, with identical readings at equivalent zero offsets", async () => {
+  const analysis = structuredClone(base.analysis);
+  analysis.items[0].candidate.end = analysis.items[1].candidate.start = "00:00:10";
+  analysis.items[0].candidate.start = "00:00:01";
+  analysis.items[0].result.evidence.timestamp = "00:00:05";
+  const cut = measurement("10.010", 10);
+  const proposals = { settings, records: [{ start: noBoundary, end: cut }, { start: cut, end: noBoundary }] };
+  let previous: unknown;
+  for (const rate of [undefined, "24000/1001"]) {
+    const clock = runClock("0", rate);
+    const dir = await mkdtemp(join(tmpdir(), "snap-frames-")); roots.push(dir);
+    await writeArtifacts(dir, analysis, { ...base.manifest, clock }, complete(2), proposals);
+    const sidecar = JSON.parse(await readFile(join(dir, "times.json"), "utf8"));
+    const [end, start] = [sidecar.entries[1], sidecar.entries[3]];
+    const readings = [end, start].map(({ time, timeline, snap }) => [time, timeline, snap.target, snap.timeline, snap.shiftMs]);
+    if (!rate) {
+      previous = readings;
+      expect(start.snap).not.toHaveProperty("frameReference");
+      expect(end.snap).not.toHaveProperty("frameReference");
+    } else {
+      expect(readings).toEqual(previous);
+      expect(start.snap.frameReference).toMatchObject({ frames: "240", basis: "onset", timecode: "00:00:10:00" });
+      expect(end.snap.frameReference).toMatchObject({ frames: "239", basis: "last-speech-ms", timecode: "00:00:09:23" });
+    }
+    expect(sidecar.entries[0].snap).toEqual(noBoundary);
+    expect(sidecar.entries[0].time).toMatchObject({ seconds: "1.000", precisionMs: 1000, origin: "model" });
+    for (const file of ["analysis.md", "report.html"]) {
+      const report = await readFile(join(dir, file), "utf8");
+      expect(report).toContain("10.010 s source (measured on a 10 ms grid, accurate to about ±50 ms)");
+      if (rate) expect(report).toContain("containing frame of the proposal: timeline 239 at 24000/1001, 00:00:09:23 NDF (last-speech-ms), proposal uncertainty can span neighbouring frames");
+      else expect(report).not.toContain("containing frame");
+    }
+  }
+});
+test("W7 fractional frame translation, DF rollover and legacy whole-ms offset use their declared units", () => {
+  for (const [clock, model, target, shift, frames, timecode] of [
+    [runClock("1f", "24000/1001"), "00:00:00", "0.250", 250, "6", "00:00:00:06"],
+    [runClock("0", "29.97df"), "00:01:00", "60.060", 60, "1800", "00:01:00;02"],
+    [base.manifest.clock, "00:00:00", "0.250", 250, "314", "00:00:12:14"],
+  ] as const) {
+    const sidecar = buildTimes(oneRecord(model, "00:02:00"), clock, { settings, records: [{ start: measurement(target, shift), end: noBoundary }] });
+    if (sidecar.schemaVersion !== 3) throw new Error("Expected v3");
+    const entry = sidecar.entries[0]!;
+    if (!("snap" in entry) || entry.snap.status !== "snapped") throw new Error("Expected measured onset");
+    expect(entry.snap.frameReference).toMatchObject({ frames, timecode });
+    expect(entry.snap.timeline).toMatchObject({ origin: "audio-envelope", gridMs: 10, precisionMs: 50 });
+    if (frames === "6") {
+      expect(entry.snap.timeline!.seconds).toBe("0.292");
+      expect(entry.timeline!.seconds).toBe("0.042");
+      const zero = buildTimes(oneRecord(model, "00:02:00"), runClock("0f", "24000/1001"), { settings, records: [{ start: measurement(target, shift), end: noBoundary }] });
+      expect(zero.entries[0]).toMatchObject({ snap: { frameReference: { frames: "5" } } });
+    }
+    if (frames === "314") expect(sidecar.timeline!.offset).toHaveProperty("milliseconds", "12345");
+  }
+});
+test("W10 locked-base v2 bytes and strict v3 candidate, evidence, clock and fallback contracts", async () => {
+  const { createHash } = await import("node:crypto");
+  const { timesV2Schema } = await import("../src/domain/times.js");
+  const control = buildTimes(base.analysis, base.manifest.clock);
+  expect(createHash("sha256").update(JSON.stringify(control, null, 2) + "\n").digest("hex")).toBe("50cbab0b87590d2cf344b100c25609987babac1651f9894d6998bfa3305e7677");
+  expect(timesSchema.parse(control)).toEqual(control);
+  const clock = { fileClock: "reel" as const, modelClipClock: "unverified" as const };
+  const records = [
+    { start: measurement("10.250", 250, "reel"), end: { status: "no-boundary" as const, alternativesMs: [20930] } },
+    { start: { status: "ambiguous" as const, alternativesMs: [20010] }, end: { status: "unavailable" as const } },
+  ];
+  const sidecar = buildTimes(base.analysis, clock, { settings, records });
+  expect(timesSchema.parse(sidecar)).toEqual(sidecar);
+  expect(timesV2Schema.safeParse(sidecar).success).toBe(false);
+  expect(sidecar).not.toHaveProperty("timeline");
+  expect(sidecar.entries[0]).toEqual({ pointer: "/items/0/candidate/start", time: { clock: "reel", seconds: "10.000", precisionMs: 1000, origin: "model" }, snap: records[0]!.start });
+  const invalid = (entry: unknown) => expect(timesSchema.safeParse({ ...sidecar, entries: [entry] }).success).toBe(false);
+  const e = sidecar.entries[0]!;
+  invalid({ ...e, time: { ...e.time, origin: "audio-envelope" } });
+  invalid({ ...e, snap: { ...records[0]!.start, target: { ...measurement("10.250", 250).target, clock: "reel", frames: "250" } } });
+  invalid({ ...e, pointer: "/items/0/result/evidence/timestamp" });
+  invalid({ ...e, snap: undefined });
+  invalid({ ...e, snap: { status: "unavailable", shiftMs: 0 } });
+  invalid({ ...e, snap: { status: "no-boundary", alternativesMs: [20930, 20000] } });
+  const measured = records[0]!.start;
+  if (measured.status !== "snapped") throw new Error("Expected a measured fixture");
+  for (const overrides of [{ gridMs: undefined }, { gridMs: 20 }, { precisionMs: 10 }]) {
+    invalid({ ...e, snap: { ...measured, target: { ...measured.target, ...overrides } } });
+  }
+  expect(timesSchema.safeParse({ ...sidecar, schemaVersion: 4 }).success).toBe(false);
+});
