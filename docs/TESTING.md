@@ -27,6 +27,7 @@ The gate follows the nwave mission: minimize tests while maximizing decision
 value and reducing feedback time. The fast answer must still preserve the
 authority-boundary checks relevant to the change; a shorter tier is not
 permission to remove coverage from the complete gate.
+When a test needs to start an external process, follow the [rule for tests that start a real tool](../test/AGENTS.md#tests-that-start-a-real-tool).
 
 `bun run check:pr` always runs fast and local, for every changed path and even
 when the comparison base is unavailable. `--base` still passes the commit
