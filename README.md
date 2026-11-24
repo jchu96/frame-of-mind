@@ -941,10 +941,11 @@ to browser code.
 Review the text of every record you intend to share, including rejected records.
 From a checkout, import each cleared bundle into a dedicated database in a private directory.
 Close the writer, then configure the host to launch the release with Bun over stdio.
+Set `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` in the host environment to disable Bun’s disk cache.
 
 ```bash
 NUXT_SQLITE_PATH=/data/review/reviewed.sqlite bun run web:import -- /data/bundles/selected-run
-bun --no-env-file /opt/frameofmind/frameofmind.mjs mcp --database /data/review/reviewed.sqlite
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-env-file /opt/frameofmind/frameofmind.mjs mcp --database /data/review/reviewed.sqlite
 ```
 
 The four read tools return untrusted data. Records default to accepted and retain their

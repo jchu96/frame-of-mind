@@ -1803,8 +1803,10 @@ Removing the clone does not revoke provider OAuth or Gemini keys.
 4. Finish the imports and close all writers. Supply a self-contained rollback-format
    SQLite file. Leave SQLite recovery and checkpointing to the writer. Keep the
    directory under the operator's control throughout startup.
-5. In the agent host's stdio configuration set the command to `bun` and use this
-   argument array. For a built checkout substitute the absolute path to `dist/cli.js`
+5. In the agent host's stdio configuration set `BUN_RUNTIME_TRANSPILER_CACHE_PATH`
+   to the string `0` in the server environment. Bun reads this setting before
+   running JavaScript. It prevents compiled code from being written to the user's
+   cache directory. Set the command to `bun` and use this argument array. For a built checkout substitute the absolute path to `dist/cli.js`
    for the release file. Use `--no-env-file` to disable Bun's automatic dotenv loading.
 
    ```json

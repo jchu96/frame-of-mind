@@ -10,7 +10,7 @@ export let printAnalysisSummary: typeof Cli.printAnalysisSummary;
 const libraryImport = (globalThis as Record<symbol, unknown>)[CLI_LIBRARY_IMPORT] === true;
 if (process.argv[2] === "mcp" && !libraryImport) {
   if (!process.versions.bun) {
-    process.stderr.write("bun_required: use bun --no-env-file <entry> mcp --database <absolute-file>\n");
+    process.stderr.write("bun_required: use bun --no-env-file <entry> mcp --database <absolute-file> with BUN_RUNTIME_TRANSPILER_CACHE_PATH=0\n");
     process.exitCode = 1;
   } else {
     try {

@@ -119,6 +119,8 @@ it("negotiates the documented schemas and reads only reviewed fields, original i
   trap.listen(0, "127.0.0.1");
   await once(trap, "listening");
   const { port } = trap.address() as { port: number };
+  const home = join(root, "empty-home");
+  await mkdir(home);
   const preload = join(root, "verify-startup.cjs");
   await writeFile(join(root, ".env"), "MCP_DOTENV_CANARY=loaded\n");
   await writeFile(preload, `
@@ -130,7 +132,8 @@ it("negotiates the documented schemas and reads only reviewed fields, original i
     process.on("beforeExit", () => { if (dotenvRead || process.env.MCP_DOTENV_CANARY) process.exitCode = 3; });
   `);
   const child = spawn("bun", ["--no-env-file", "--preload", preload, entry, "mcp", "--database", database], {
-    cwd: root, env: { HOME: root, PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, SENTRY_DSN: `http://fixture@127.0.0.1:${port}/1`, FRAME_OF_MIND_TRACING: "1" },
+    cwd: root, env: { HOME: home, USERPROFILE: home, LOCALAPPDATA: home, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+      PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, SENTRY_DSN: `http://fixture@127.0.0.1:${port}/1`, FRAME_OF_MIND_TRACING: "1" },
   });
   const closed = once(child, "close");
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
@@ -209,6 +212,7 @@ it("negotiates the documented schemas and reads only reviewed fields, original i
     expect(await closed).toEqual([0, null]);
     expect(stderr).toBe("");
     expect(connections).toBe(0);
+    expect(await readdir(home)).toEqual([]);
     expect(await fingerprint(database)).toEqual(before);
   } finally {
     if (child.exitCode === null) child.kill();

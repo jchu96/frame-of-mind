@@ -11,7 +11,8 @@ one reviewed database file. A tool argument can only narrow the returned data.
 
 Review the public values, including rejected records, and import the cleared
 bundles into a dedicated database. Close the writer and launch Bun with dotenv
-loading disabled and the canonical absolute database path on argv. The stdio
+loading disabled and the canonical absolute database path on argv. The host sets
+`BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` so the runtime creates no on-disk code cache. The stdio
 server reads a bounded image, validates it through a read-only in-memory SQLite
 connection, then closes that connection. The four versioned tools operate on the
 validated local principal's projection. The operator grants the scope at launch.

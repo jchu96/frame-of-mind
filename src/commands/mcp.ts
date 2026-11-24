@@ -42,7 +42,7 @@ export function describeReadTools(): Tool[] {
 export async function runMcp(args: string[]) {
   try {
     if (args.length === 1 && ["--help", "-h"].includes(args[0]!)) {
-      process.stdout.write("Usage: bun --no-env-file <entry> mcp --database <absolute-file>\n");
+      process.stdout.write("Usage: bun --no-env-file <entry> mcp --database <absolute-file>\nHost environment: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0\n");
       return;
     }
     if (args.length !== 2 || args[0] !== "--database") throw new ReadError("bad_arguments");
