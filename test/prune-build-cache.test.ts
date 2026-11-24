@@ -11,7 +11,12 @@ import { pruneCache } from "../scripts/prune-build-cache";
 
 vi.mock("node:fs/promises", async importOriginal => {
   const actual = await importOriginal<typeof fs>();
-  return { ...actual, stat: vi.fn(actual.stat), mkdir: vi.fn(actual.mkdir) };
+  return {
+    ...actual,
+    stat: vi.fn(actual.stat),
+    mkdir: vi.fn(actual.mkdir),
+    writeFile: vi.fn(actual.writeFile),
+  };
 });
 const real = await vi.importActual<typeof fs>("node:fs/promises");
 let root: string;
@@ -35,6 +40,22 @@ async function entries(count: number) {
     return path;
   }));
 }
+
+test("retries a waiting lease when the first owner-file write reports EEXIST", async () => {
+  const lock = join(root, "entry.lock");
+  const ownerFile = join(lock, "owner.json");
+  const writes = vi.mocked(fs.writeFile);
+  writes.mockRejectedValueOnce(Object.assign(new Error("owner file exists"), { code: "EEXIST" }));
+
+  const lease = await acquireE2EResourceLease(lock);
+  try {
+    expect(writes.mock.calls.map(([path]) => path)).toEqual([ownerFile, ownerFile]);
+    expect(await resourceLeaseTokenMatches(lock, lease.token)).toBe(true);
+  } finally {
+    await lease.release();
+  }
+  expect(await fs.readdir(root)).toEqual([]);
+});
 
 test("skips a listed entry removed while a peer releases its lease", async () => {
   const [entry] = await entries(1);
