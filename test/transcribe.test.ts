@@ -299,6 +299,14 @@ describe("output", () => {
 });
 
 describe("validation", () => {
+  it("a failed --json call prints the error line on stderr and the error document on stdout", async () => {
+    const f = await fixture();
+    await cli(f, ["--transcript-language", "en_US", "--json"]);
+    expect(f.deps.stderr).toHaveBeenCalledWith(expect.stringMatching(/^error: .*--transcript-language/));
+    const document = JSON.parse(f.deps.stdout.mock.calls.flat().join(""));
+    expect(document.error.code).toBe("USAGE");
+    process.exitCode = 0;
+  });
   it("refuses an invalid language hint before extraction, upload or generation", async () => {
     const f = await fixture();
     await cli(f, ["--transcript-language", "en_US"]);
