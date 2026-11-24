@@ -96,9 +96,15 @@ export async function createE2EIsolation(
   };
 }
 
+export function acquireE2EResourceLease(lockPath?: string): Promise<E2EResourceLease>;
+export function acquireE2EResourceLease(
+  lockPath: string,
+  options: { wait: false },
+): Promise<E2EResourceLease | undefined>;
 export async function acquireE2EResourceLease(
   lockPath = RUNTIME_LOCK,
-): Promise<E2EResourceLease> {
+  options?: { wait: false },
+): Promise<E2EResourceLease | undefined> {
   const resolvedLock = resolve(lockPath);
   const token = randomUUID();
   const startedAt = Date.now();
@@ -136,6 +142,7 @@ export async function acquireE2EResourceLease(
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (options?.wait === false) return undefined;
     }
 
     if (await reapStaleLock(resolvedLock)) continue;
