@@ -1,4 +1,5 @@
-import { link, lstat, mkdir, mkdtemp, open, realpath, rename, rm, rmdir, stat } from "node:fs/promises";
+import { createMediaLock, releaseMediaLock } from "../adapters/scratch.js";
+import { link, lstat, open, realpath, rename, rm, stat } from "node:fs/promises";
 import type { BigIntStats } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { childEnvironment, spawn } from "../lib/child-env.js";
@@ -96,7 +97,8 @@ export async function stageOutput<T>(
   // mkdir is exclusive across processes. A contender fails without ever owning
   // this directory. File creation cannot clobber an outside writer either.
   const lock = join(parent, "." + basename(target) + ".fom-lock");
-  try { await mkdir(lock, { mode: 0o700 }); }
+  let dir: string;
+  try { dir = await createMediaLock(lock); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     throw new Error(`Lock directory "${lock}" already exists. An interrupted run can leave it behind. It is safe to remove only when no other frameofmind command is writing to this destination.`);
@@ -106,7 +108,6 @@ export async function stageOutput<T>(
     if (prior && !prior.isFile()) throw new Error("Destination must be a regular file and cannot be a link.");
     if (prior && sameFile(prior, recording.identity)) throw new Error("Destination is the input recording.");
     if (prior && !force) throw new Error("Destination exists. Use --force to replace a distinct regular file.");
-    const dir = await mkdtemp(join(lock, "stage-"));
     const staged = join(dir, "output" + ext);
     try {
       await (await open(staged, "wx", 0o600)).close();
@@ -124,7 +125,6 @@ export async function stageOutput<T>(
       return result;
     } finally {
       await rm(staged, { force: true });
-      await rmdir(dir);
     }
-  } finally { await rmdir(lock); }
+  } finally { await releaseMediaLock(lock, dir); }
 }

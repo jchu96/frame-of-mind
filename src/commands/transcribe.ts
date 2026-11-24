@@ -1,3 +1,4 @@
+import { requireMedia } from "../services/media-capabilities.js";
 import type { Command } from "commander";
 import { TranscriptLanguageError } from "../domain/transcript-language.js";
 import { transcribe, TranscribeCanceledError, TranscribeError, type TranscribeDependencies, type TranscribeOptions } from "../services/transcribe.js";
@@ -25,6 +26,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
     .option("--force", "replace existing transcript targets")
     .option("--json", "also write the transcript JSON with source-clock seconds")
     .action(async (input: string, flags: Omit<TranscribeOptions, "input">) => {
+      await requireMedia("transcribe");
       const controller = new AbortController();
       const cancel = () => controller.abort();
       process.on("SIGINT", cancel);

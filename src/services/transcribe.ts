@@ -1,5 +1,5 @@
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { createScratch } from "../adapters/scratch.js";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import type { File as GeminiFile } from "@google/genai";
 import { GeminiVideoAnalyzer } from "../adapters/gemini.js";
@@ -100,7 +100,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const windows = planTranscriptionWindows(duration, TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS);
   const analyzer = deps.createAnalyzer(apiKey, model);
   deps.stdout(`model: ${model}; duration: ${Math.round(duration)} s; windows: ${windows.length}; retention: ${retention}; upload limit: 2 GB`);
-  const temp = await mkdtemp(join(tmpdir(), "fom-transcribe-"));
+  const temp = await createScratch("transcribe");
   const chunks: Array<{ segments: DerivedTranscriptionSegment[]; nominalStartSeconds: number }> = [];
   try {
     for (const [index, window] of windows.entries()) {

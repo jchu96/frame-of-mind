@@ -3,6 +3,8 @@ import { expect, test, vi } from "vitest";
 import { registerSnap, snapFile } from "../src/commands/snap.js";
 import * as audio from "../src/services/audio.js";
 
+vi.mock("../src/services/media-capabilities.js", () => ({ requireMedia: async () => {} }));
+
 test("W12 invalid seconds, elapsed fields, timecodes, clocks and edges fail before decode", async () => {
   const decode = vi.fn();
   for (const at of ["-1", "1:60:00", "00:01:61", "00:01:02:12", "00:01:00;02", "1e9", "2.1234", "02:01", " 0", "1\n", "9007199254740.992", "999999999999999:00:00"]) {

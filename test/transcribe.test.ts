@@ -20,6 +20,8 @@ import { GeminiVideoAnalyzer } from "../src/adapters/gemini.js";
 import { GeminiHostedAnalysisProvider, resolveHostedTranscript } from "../apps/workflows/src/provider.js";
 import { expectOriginalLanguage, requestText } from "./helpers/transcription-request.js";
 
+vi.mock("../src/services/media-capabilities.js", () => ({ requireMedia: async () => {} }));
+
 const directories: string[] = [];
 const segment = (text = "ZEBRA-SENTINEL-LINE"): DerivedTranscriptionSegment => ({ start: "00:00:20", end: "00:00:24", speaker: "Speaker 1", text });
 beforeEach(() => {

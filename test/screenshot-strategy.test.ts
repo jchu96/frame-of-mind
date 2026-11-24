@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -102,6 +102,7 @@ describe("published screenshot across a low-contrast cut", () => {
     const result = await orchestrator.analyze(options, {
       progress: { report: (event) => { extra.events?.push(event); } },
     });
+    expect(await readdir(result.directory, {recursive: true})).not.toEqual(expect.arrayContaining([expect.stringContaining(".frameofmind-owner.json")]));
     expect(result.analysis.items[0]?.screenshot).toBe("moment-01.png");
     return readFile(join(result.directory, "moment-01.png"));
   }
