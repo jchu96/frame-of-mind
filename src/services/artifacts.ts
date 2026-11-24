@@ -199,11 +199,11 @@ async function renderHtmlArtifact(
       ? `<dl>${result.details.map((detail) =>
           `<dt>${html(detail.label)}</dt><dd>${html(detail.value)}</dd>`).join("")}</dl>`
       : "";
+    const cutParagraphs = recordCuts(cuts, originalIndex).map(line => `<p>${html(line)}</p>`).join("");
     return `<article>
       <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock))}</div>
       <h2>${index + 1}. ${html(result.title)}</h2>
-      <p>${html(result.summary)}</p>
-      ${recordCuts(cuts, originalIndex).map(line => `<p>${html(line)}</p>`).join("")}
+      <p>${html(result.summary)}</p>${cutParagraphs ? `\n      ${cutParagraphs}` : ""}
       ${details}
       <dl>
         <dt>Surface</dt><dd>${html(result.where?.surface || item.candidate.surface || "Unknown")}</dd>
