@@ -94,18 +94,24 @@ describe("media CLI with real ffmpeg and ffprobe", () => {
     expect(frames.at(-1)).toBe(25);
     expect(info("cut.mp4").streams[0].tags.timecode).toBe("01:02:03:06");
   });
-  it("grabs the identified full-resolution frame and verifies a one-frame slice", () => {
+  it("grabs the identified full-resolution PNG frame", () => {
     success("frame", "./" + source, "--at", "2f", "-o", "grab.png");
     expect(ids("grab.png")).toEqual([2]);
     expect(info("grab.png").streams[0]).toMatchObject({width, height});
+  });
+  it("slices and verifies the final frame of an untagged recording", () => {
     success("slice", "plain.mp4", "--from", "29f", "--to", "30f", "-o", "one.mp4");
     expect(ids("one.mp4")).toEqual([29]);
     expect(info("one.mp4").streams[0].tags.timecode).toBeUndefined();
     expect(success("verify", "one.mp4", "--timecode-rate", "25", "--expect-frames", "1").decodeStatus).toBe("passed");
   });
-  it("F06 verifies matching duration and returns exit 1 one frame off", () => {
+  it("reports the probe decode status as unchecked", () => {
     expect(success("probe", "plain.mp4").decodeStatus).toBe("unchecked");
+  });
+  it("verifies a matching duration", () => {
     expect(success("verify", "plain.mp4", "--expect-duration", "1.200").actual.frames).toBe("30");
+  });
+  it("F06 returns exit 1 one frame off", () => {
     const result = command("verify", "plain.mp4", "--expect-frames", "29", "--json");
     expect(result.status, "one-frame mismatch exit").toBe(1);
     expect(JSON.parse(result.stdout)).toMatchObject({actual: {frames: "30"}, expected: {frames: "29"}});
@@ -209,17 +215,23 @@ it("verifies Matroska by its container even with an mp4 extension", () => {
   ffmpeg(["-i", join(root, "plain.mp4"), "-c:v", "copy", "-f", "matroska", path]);
   expect(success("verify", path, "--expect-frames", String(count)).decodeStatus).toBe("passed");
 });
-it("slices real reference audio from its source interval and extracts JPEG", () => {
-  ffmpeg(["-i", join(root, "plain.mp4"), "-f", "lavfi", "-i",
-    "aevalsrc=if(lt(t\\,0.4)\\,0\\,0.5*sin(2*PI*440*t)):s=48000:d=1.2",
-    "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", join(root, "sound.mp4")]);
-  success("slice", "sound.mp4", "--from", "15f", "--to", "20f", "-o", "sound-cut.mp4");
-  const pcm = ffmpeg(["-i", join(root, "sound-cut.mp4"), "-map", "0:a:0", "-f", "s16le", "-"]);
-  const samples = new Int16Array(pcm.buffer, pcm.byteOffset, Math.floor(pcm.length / 2));
-  expect(samples.length).toBeGreaterThanOrEqual(9600);
-  expect(samples.slice(3000, 4000).some(sample => sample > 3000)).toBe(true);
-  success("frame", "sound.mp4", "--at", "00:00:00:02", "-o", "image.jpg");
-  expect(ids("image.jpg")).toEqual([2]);
+describe("recording with reference audio", () => {
+  beforeAll(() => {
+    ffmpeg(["-i", join(root, "plain.mp4"), "-f", "lavfi", "-i",
+      "aevalsrc=if(lt(t\\,0.4)\\,0\\,0.5*sin(2*PI*440*t)):s=48000:d=1.2",
+      "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", join(root, "sound.mp4")]);
+  });
+  it("slices real reference audio from its source interval", () => {
+    success("slice", "sound.mp4", "--from", "15f", "--to", "20f", "-o", "sound-cut.mp4");
+    const pcm = ffmpeg(["-i", join(root, "sound-cut.mp4"), "-map", "0:a:0", "-f", "s16le", "-"]);
+    const samples = new Int16Array(pcm.buffer, pcm.byteOffset, Math.floor(pcm.length / 2));
+    expect(samples.length).toBeGreaterThanOrEqual(9600);
+    expect(samples.slice(3000, 4000).some(sample => sample > 3000)).toBe(true);
+  });
+  it("extracts the identified JPEG frame at an elapsed timecode", () => {
+    success("frame", "sound.mp4", "--at", "00:00:00:02", "-o", "image.jpg");
+    expect(ids("image.jpg")).toEqual([2]);
+  });
 });
 
 it("checks projected and measured sizes through the proxy entry point before publishing", async () => {
@@ -272,15 +284,24 @@ it("checks projected and measured sizes through the proxy entry point before pub
   } finally { spy.mockRestore(); }
 });
 
-it("requires an independent rate for one frame and an explicit mode for DF-capable elapsed labels", () => {
+it("requires an independent matching rate for a one-frame recording", () => {
   ffmpeg(["-i", join(root, "plain.mp4"), "-frames:v", "1", join(root, "single.mp4")]);
   expect(command("probe", "single.mp4").stderr).toContain("One-frame timing");
   expect(command("probe", "single.mp4", "--timecode-rate", "24").status).toBe(1);
-  fixture("df-rate.mp4", "30000/1001");
-  const duration = success("probe", "df-rate.mp4").duration;
-  expect(duration.frames).toBe("30");
-  expect(duration.timecode).toBeUndefined();
-  expect(command("frame", "df-rate.mp4", "--at", "00:00:00:01", "-o", "df.png").status).toBe(1);
-  expect(success("frame", "df-rate.mp4", "--timecode-rate", "29.97df", "--at", "00:00:00;01", "-o", "df.png").at.frames).toBe("1");
-  expect(command("probe", "df-rate.mp4", "--timecode-rate", "25").status).toBe(1);
+});
+
+describe("recording at a drop-frame-capable rate", () => {
+  beforeAll(() => fixture("df-rate.mp4", "30000/1001"));
+  it("probes the frame count without assuming a timecode mode", () => {
+    const duration = success("probe", "df-rate.mp4").duration;
+    expect(duration.frames).toBe("30");
+    expect(duration.timecode).toBeUndefined();
+  });
+  it("requires an explicit mode for an elapsed timecode", () => {
+    expect(command("frame", "df-rate.mp4", "--at", "00:00:00:01", "-o", "df.png").status).toBe(1);
+    expect(success("frame", "df-rate.mp4", "--timecode-rate", "29.97df", "--at", "00:00:00;01", "-o", "df.png").at.frames).toBe("1");
+  });
+  it("refuses a mismatched probe rate", () => {
+    expect(command("probe", "df-rate.mp4", "--timecode-rate", "25").status).toBe(1);
+  });
 });
