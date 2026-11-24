@@ -7,7 +7,7 @@ versions for durable schemas and prompts.
 
 | Surface | Current | Change rule |
 |---|---:|---|
-| CLI/package | `0.6.0-beta.2` | Semantic Versioning |
+| CLI/package | `0.6.0-beta.3` | Semantic Versioning |
 | `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
 | `times.json` sidecar | `2` (default), `3` (speech snapping) | increment for breaking shape/meaning |
