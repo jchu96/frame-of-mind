@@ -16,3 +16,7 @@ function storedField<T>(validator: { parse(value: unknown): T }) {
 export const mediaClockSchema = storedField(exactTime.mediaClockSchema);
 export const rateSchema = storedField(exactTime.rateSchema);
 export const timecodeSpecSchema = storedField(exactTime.timecodeSpecSchema);
+
+export function sameRate(a: exactTime.FrameRate, b: exactTime.FrameRate) {
+  return a.num === b.num && a.den === b.den;
+}

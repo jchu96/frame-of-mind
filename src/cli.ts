@@ -43,6 +43,7 @@ import {
 
 import { defaultOutputRoot } from "./lib/paths.js";
 import { registerSession } from "./commands/session.js";
+import { registerMap } from "./commands/map.js";
 import { registerSnap } from "./commands/snap.js";
 import { snapSettings } from "./domain/snap.js";
 import { registerMedia } from "./commands/media.js";
@@ -149,6 +150,7 @@ program
 registerSession(program);
 registerMedia(program);
 registerSnap(program);
+registerMap(program);
 registerTranscribe(program);
 registerKey(program);
 
