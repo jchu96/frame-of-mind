@@ -1,3 +1,4 @@
+import { VERSION } from "../version.js";
 import { z } from "zod";
 import type { MeetingContextSource, MeetingEvidence } from "../domain/types.js";
 import { extractGranolaTranscript } from "./granola-mcp.js";
@@ -52,7 +53,7 @@ export class GranolaApiClient implements MeetingContextSource {
       headers: {
         authorization: `Bearer ${this.apiKey}`,
         accept: "application/json",
-        "user-agent": "frameofmind/0.3.0",
+        "user-agent": `frameofmind/${VERSION}`,
       },
       redirect: "error",
       signal: AbortSignal.timeout(30_000),

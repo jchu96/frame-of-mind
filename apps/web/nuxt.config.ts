@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { VERSION } from "../../src/version";
 import { DEFAULT_GEMINI_MODEL } from "../../src/adapters/gemini-model";
 import {
   HOSTED_MAX_INTERROGATION_CALLS_DEFAULT,
@@ -759,7 +760,7 @@ export default defineNuxtConfig({
     hostedMediaRetentionDays: HOSTED_MEDIA_RETENTION_DAYS_DEFAULT,
     public: {
       appName: "Frame of Mind",
-      appVersion: "0.3.0",
+      appVersion: VERSION,
       ...(sentryNuxtEnabled
         ? { sentryDsn: process.env.SENTRY_DSN?.trim() ?? "" }
         : {}),
