@@ -16,8 +16,8 @@ function isSafeEvidenceUrl(value: string): boolean {
   }
 }
 
-const contextProviderSchema = z.enum(["bluedot", "granola", "file"]);
-const importanceSchema = z.enum(["high", "medium", "low"]);
+export const contextProviderSchema = z.enum(["bluedot", "granola", "file"]);
+export const importanceSchema = z.enum(["high", "medium", "low"]);
 export const runIdSchema = z.string()
   .min(1)
   .max(240)
@@ -147,7 +147,7 @@ export const versionedAnalysisRunSchema = z.union([
   analysisRunV3Schema,
 ]);
 
-const utcDateTimeSchema = z.string().datetime({ offset: false });
+export const utcDateTimeSchema = z.string().datetime({ offset: false });
 
 const derivedTranscriptProvenanceSchema = z.object({
   requestedLanguage: z.string().refine(tag => canonicalLanguageTag(tag) !== undefined).optional(),

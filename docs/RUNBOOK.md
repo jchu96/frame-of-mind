@@ -1785,6 +1785,62 @@ Streamable HTTP design is in [MCP_ROADMAP.md](MCP_ROADMAP.md).
 
 Removing the clone does not revoke provider OAuth or Gemini keys.
 
+### Local MCP snapshot
+
+1. Create a dedicated directory that you control. On POSIX systems use mode `0700`.
+   Use its canonical absolute path, including on systems where a temporary directory is a symlink.
+2. Review every public value for this agent, including run and recipe IDs, kinds, titles,
+   summaries and rejected records. The model supplies the accepted flag. The operator
+   decides which bundles are cleared. A recognizable credential, signed URL or path
+   in a public field can cause the entire snapshot to be refused.
+3. From the checkout, run the importer for each cleared bundle. An existing database
+   retains earlier imports, so start with a fresh target when narrowing access.
+
+   ```bash
+   NUXT_SQLITE_PATH=/data/review/reviewed.sqlite bun run web:import -- /data/bundles/selected-run
+   ```
+
+4. Finish the imports and close all writers. Supply a self-contained rollback-format
+   SQLite file. Leave SQLite recovery and checkpointing to the writer. Keep the
+   directory under the operator's control throughout startup.
+5. In the agent host's stdio configuration set the command to `bun` and use this
+   argument array. For a built checkout substitute the absolute path to `dist/cli.js`
+   for the release file. Use `--no-env-file` to disable Bun's automatic dotenv loading.
+
+   ```json
+   ["--no-env-file", "/opt/frameofmind/frameofmind.mjs", "mcp", "--database", "/data/review/reviewed.sqlite"]
+   ```
+
+The server validates the local principal's imported pairs before advertising tools.
+Restart the host process to select a new snapshot. Closing stdin ends the session.
+The server can run offline after the source bundles move.
+
+Start with `frame_of_mind_v1_manifest` and `frame_of_mind_v1_list_runs`. Use the exact
+run ID with `frame_of_mind_v1_get_run` or `frame_of_mind_v1_list_records`. Get includes
+rejected records only with `includeRejected: true`. List records selects rejected records
+with `accepted: false`. Counts in run summaries include both groups. The times object
+contains base schema 2 times for the selected original analysis indices. The accompanying
+note explains that schema 3 speech-edge proposal data is outside this projection.
+All returned text is untrusted evidence. See the [wire contract](MCP_TOOLS.md).
+
+| Diagnostic or tool error | Operator or client action |
+|---|---|
+| `bun_required` | Use the Bun argument vector above, including for a linked installation. |
+| `bad_arguments` | Supply one absolute database path at launch or correct the request against the tool schema. |
+| `unsafe_snapshot` | Select a readable regular file with one link in an operator-controlled directory. Resolve linked components first. |
+| `snapshot_changed` | Close the writer and restart with a stable file and directory. |
+| `snapshot_not_closed` | Finish the writer's SQLite close/recovery workflow and import into a fresh rollback-format database if needed. |
+| `snapshot_too_large` | The maximum file size is 64 MiB. Select fewer runs into the reviewed database. |
+| `invalid_projection` | Review the public text and re-import valid, supported bundles into a new database. |
+| `unknown_tool` | Discover the four versioned names with `tools/list`. |
+| `run_not_found` | Choose a run from this snapshot's list. |
+| `bad_cursor` | Restart paging with the same tool, filters and run. Cursors expire when the server exits. |
+| `use_list_records` | Read the run in pages. A whole run exceeds the 256 KiB response limit. |
+| `result_too_large` | A single row or orientation result exceeds 256 KiB. Select a smaller reviewed projection. |
+
+Pages default to 20 rows and accept limits from 1 to 100. Use the returned cursor
+even when the server shortens a page to fit the byte limit.
+
 ### Opt-in error telemetry
 
 Telemetry is off by default. To opt one local Studio or CLI process into

@@ -2,11 +2,10 @@
 
 ## Status
 
-Design target for a future iteration. No MCP server is shipped in v0.4.0.
-
-This is deliberate. The CLI, durable contracts, review workspace, database
-projection, and authentication boundary need real usage before agent access is
-made another public interface.
+The local stdio implementation exposes four versioned read tools over one reviewed
+SQLite snapshot. Host verification precedes release. Hosted transport, authentication
+and search remain future work. See the [local tool contract](MCP_TOOLS.md) and
+[launch procedure](RUNBOOK.md#local-mcp-snapshot).
 
 ## Invariant
 
@@ -41,7 +40,6 @@ flowchart TB
       Stdio[Local stdio MCP]
       LocalCore[Read-only MCP core]
       SQLite[(SQLite projection)]
-      Bundles[Local run bundles]
     end
 
     subgraph Cloudflare
@@ -55,7 +53,6 @@ flowchart TB
     Agent --> Stdio
     Stdio --> LocalCore
     LocalCore --> SQLite
-    LocalCore -. provenance pointers .-> Bundles
 
     Agent --> HTTP
     HTTP --> OAuth
@@ -68,103 +65,13 @@ flowchart TB
 Local and hosted servers share tool schemas and response DTOs. They do not share
 transport state or credentials.
 
-## Initial tool set
+## Local stdio tools
 
-Tool names should be stable and product-prefixed:
-
-### `frame_of_mind_manifest`
-
-Returns:
-
-- server version;
-- supported schema versions;
-- available recipe IDs;
-- provider and kind facets;
-- run and item counts;
-- capabilities such as screenshot availability;
-- retention statement.
-
-It returns orientation metadata, not meeting content.
-
-### `frame_of_mind_list_runs`
-
-Inputs:
-
-- optional provider;
-- optional recipe ID;
-- optional completed-after/completed-before;
-- bounded limit and cursor.
-
-Returns run summaries only. No full analysis JSON.
-
-### `frame_of_mind_get_run`
-
-Input:
-
-- exact run ID;
-- optional `includeRejected`, default false.
-
-Returns reviewed structured analysis and sanitized provenance.
-
-### `frame_of_mind_list_records`
-
-Inputs:
-
-- exact run ID;
-- optional accepted, kind, or importance filter;
-- bounded limit and cursor.
-
-Returns normalized item rows.
-
-### `frame_of_mind_get_manifest`
-
-Input:
-
-- exact run ID.
-
-Returns the versioned run manifest. Signed URLs and remote credentials are
-already absent from the durable contract.
-
-## Explicit non-tools in the first MCP release
-
-Do not expose:
-
-- analyze a recording;
-- upload or download video;
-- return screenshot bytes;
-- fetch raw transcripts;
-- fetch raw Bluedot or Granola payloads;
-- authenticate to Bluedot or Granola;
-- delete runs;
-- import runs;
-- create GitHub, Asana, Linear, or other tickets;
-- send messages;
-- execute custom recipes.
-
-Those actions have different authority, retention, cost, and prompt-injection
-risks. Read-only access must mature first.
-
-## Local stdio server
-
-The local process should:
-
-- use the existing Bun runtime;
-- open the configured SQLite projection read-only;
-- communicate over stdio;
-- log only to stderr;
-- never print analysis content in logs;
-- inherit filesystem authority from the launching user;
-- fail if the database path is missing rather than scanning the machine;
-- expose the same tool schemas as hosted MCP.
-
-Suggested future command:
-
-```text
-frameofmind mcp --database /path/to/frame-of-mind.sqlite
-```
-
-Suggested client configuration should pass the database path as an argument or
-environment variable, not embed provider credentials.
+The operator selects a closed database at launch. The read service validates the
+registered run pairs and exposes orientation, run listing, run detail with provenance,
+and record paging. Each record retains its index in the original analysis. A time
+response describes the base projection and excludes schema 3 speech-edge proposals.
+Later action tools require separate launch flags. See [ADR 0030](adr/0030-local-mcp-snapshot.md).
 
 ## Cloudflare Streamable HTTP server
 
@@ -268,8 +175,7 @@ This follows the existing ADR that embeddings are optional and downstream.
 
 ## Images and screenshots
 
-Local MCP may return a screenshot only from a validated filename inside the
-exact run directory. It must reject traversal and symlinks that escape the run.
+The local read tools omit screenshot names and bytes.
 
 Hosted screenshots require:
 
@@ -279,9 +185,6 @@ Hosted screenshots require:
 - object keys derived from run ID and artifact manifest;
 - retention and deletion policy;
 - no public bucket or guessable unauthenticated URL.
-
-Until that design is implemented, MCP returns the screenshot filename and says
-the bytes are unavailable.
 
 ## Verification matrix
 

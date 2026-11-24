@@ -1,3 +1,4 @@
+import { sqliteRunLookup } from "../../../../src/adapters/sqlite-run-lookup.js";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
@@ -25,9 +26,7 @@ import {
 import {
   decodeRunCursor,
   encodeRunCursor,
-  storedRunFrom,
   rowToSummary,
-  type RunRow,
   type RunSummaryRow,
   type RunPrincipal,
   type RunStore,
@@ -127,38 +126,7 @@ export function createLocalRunStoreFromDatabase(
       };
     },
 
-    async getRun(runId) {
-      const meetingRow = database.query<RunRow, [string, string]>(
-        `SELECT 2 AS schema_version, 'meeting' AS context_mode, *
-         FROM analysis_runs WHERE principal_sub = ? AND run_id = ?
-           AND json_valid(analysis_json) AND json_valid(manifest_json)
-           AND json_extract(analysis_json, '$.schemaVersion') = 2
-           AND json_extract(manifest_json, '$.schemaVersion') = 2`,
-      ).get(principal.principal, runId);
-      const videoRow = database.query<RunRow, [string, string]>(
-        `SELECT 3 AS schema_version, 'none' AS context_mode,
-           run_id, NULL AS meeting_id, NULL AS meeting_title,
-           NULL AS provider, NULL AS transport, recipe_id, recipe_label,
-           model, started_at, completed_at, match_notes, accepted_count,
-           rejected_count, analysis_json, manifest_json, outcome_json,
-           imported_at, imported_by
-         FROM video_analysis_runs WHERE principal_sub = ? AND run_id = ?
-           AND json_valid(analysis_json) AND json_valid(manifest_json)
-           AND json_extract(analysis_json, '$.schemaVersion') = 3
-           AND json_extract(manifest_json, '$.schemaVersion') = 3`,
-      ).get(principal.principal, runId);
-      if (meetingRow && videoRow) {
-        throw new Error("Run ID exists in multiple projection schema tables.");
-      }
-      const row = meetingRow ?? videoRow;
-      if (!row) return null;
-      const input = await validateVersionedRunImport({
-        analysis: JSON.parse(row.analysis_json),
-        manifest: JSON.parse(row.manifest_json),
-        ...(row.outcome_json ? { outcome: JSON.parse(row.outcome_json) } : {}),
-      });
-      return storedRunFrom(row, input);
-    },
+    ...sqliteRunLookup(database, principal),
 
     async importRun(input, actor) {
       const validated = await validateVersionedRunImport(input);

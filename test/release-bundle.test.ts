@@ -215,7 +215,7 @@ it("lists exactly the packages with bytes in the bundle and reproduces their not
   // Read an independent build's output contributions and installed manifests.
   const metaPath = join(scratch, "reference-meta.json");
   await exec("bun", ["--no-env-file", "--no-install", "build", "src/cli.ts", "--target=node",
-    "--format=esm", "--packages=bundle", "--minify-whitespace", "--env=disable",
+    "--format=esm", "--packages=bundle", "--external=bun:sqlite", "--minify-whitespace", "--env=disable",
     "--define", `__FRAMEOFMIND_RELEASE_VERSION__=${JSON.stringify(version)}`,
     `--outfile=${join(scratch, "reference.mjs")}`, `--metafile=${metaPath}`]);
   const meta = JSON.parse(await readFile(metaPath, "utf8"));

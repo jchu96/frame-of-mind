@@ -451,6 +451,7 @@ that guard and is stated in the summary.
 frameofmind auth <bluedot|granola>
 frameofmind doctor
 frameofmind recipes
+bun --no-env-file <entry> mcp --database <absolute-file>
 frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|none> [options]
 frameofmind probe <video> [--decode-check]
 frameofmind proxy <video> -o <out.mp4> [--height 720] [--allow-oversize] [--force]
@@ -934,6 +935,23 @@ to browser code.
 > Do not deploy from that command alone. Follow the database, custom-domain,
 > authentication, email, migration, verification, and rollback procedure in
 > [docs/CLOUDFLARE_DEPLOYMENT.md](docs/CLOUDFLARE_DEPLOYMENT.md).
+
+### Let a local agent read reviewed runs
+
+Review the text of every record you intend to share, including rejected records.
+From a checkout, import each cleared bundle into a dedicated database in a private directory.
+Close the writer, then configure the host to launch the release with Bun over stdio.
+
+```bash
+NUXT_SQLITE_PATH=/data/review/reviewed.sqlite bun run web:import -- /data/bundles/selected-run
+bun --no-env-file /opt/frameofmind/frameofmind.mjs mcp --database /data/review/reviewed.sqlite
+```
+
+The four read tools return untrusted data. Records default to accepted and retain their
+original indices and base file-clock times. Schema 3 speech-edge proposals are outside
+this projection. The snapshot limit is 64 MiB. Pages hold up to 100 rows and each
+wrapped result fits within 256 KiB. For launch diagnostics and paging errors, see the
+[operator runbook](docs/RUNBOOK.md#local-mcp-snapshot) and [tool schemas](docs/MCP_TOOLS.md).
 
 ## Provider behavior
 
