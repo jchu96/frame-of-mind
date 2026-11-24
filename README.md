@@ -478,7 +478,7 @@ frameofmind auth <bluedot|granola>
 frameofmind doctor
 frameofmind recipes
 bun --no-env-file <entry> mcp --database <absolute-file>
-frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|none> [options]
+frameofmind analyze <meeting-id-or-stable-id> --source <bluedot|granola|file|none> [--json] [options]
 frameofmind probe <video> [--decode-check]
 frameofmind proxy <video> -o <out.mp4> [--height 720] [--allow-oversize] [--force]
 frameofmind slice <video> --from <time> --to <time> -o <out.mp4> [--force]
@@ -488,6 +488,10 @@ frameofmind map <timeline.otio> (--at <time> | --source <path> --frame <n>) [--t
 frameofmind snap <video> --at <seconds|HH:MM:SS[.mmm]> --edge <start|end> [--file-clock <source|reel>] [--json]
 frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|run] [--force] [--json]
 ```
+
+Use `analyze --json` to read the absolute run folder, outcome and accepted count
+from stdout. A partial analysis exits 0. Progress and warnings go to stderr.
+[Command-line JSON contract](docs/MCP_TOOLS.md#command-line-json)
 
 The five local media commands accept `--json` and `--timecode-rate <spec>`.
 They measure constant-rate video from file frame zero. Use whole frames such as
@@ -698,6 +702,7 @@ whole-second timing in the recording's **source** clock. The speakers file
 states the origin, model, clock and timing grade. Use it as `--context-file`
 when literal markup-like text matters: the SRT reader strips `<…>` spans.
 `--json` adds `interview.transcript.json`, with numeric seconds and provenance.
+Its stdout document lists all three file paths, the model and the requested language.
 
 Audio uploads follow `--retention provider|run`, then
 `FRAME_OF_MIND_UPLOAD_RETENTION`, then `provider`. Every kept upload is reported

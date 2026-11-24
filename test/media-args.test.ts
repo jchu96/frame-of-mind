@@ -155,6 +155,19 @@ it("verify rejects a damaged final audio packet at the correct video frame count
   expect(JSON.parse(result.stdout)).toMatchObject({error: {code: "DECODE_FAILED"}});
 });
 
+it("snap --json distinguishes a missing file from an undecodable file", async () => {
+  const input = file("snap-input.mp4");
+  const snap = () => command("snap", input, "--at", "0", "--edge", "start", "--json");
+  const missing = snap();
+  expect(JSON.parse(missing.stdout).error.code).toBe("NOT_FOUND");
+  expect(missing.status).toBe(20);
+
+  await writeFile(input, "invalid media");
+  const undecodable = snap();
+  expect(JSON.parse(undecodable.stdout).error.code).toBe("DECODE_FAILED");
+  expect(undecodable.status).toBe(1);
+});
+
 it("W12 bounded snap CLI matches full-file edges at non-grid and near-zero seeks", async () => {
   const recording = file("groups.flac");
   const edges = classify((await decodeSpeechEnvelope(recording))!);

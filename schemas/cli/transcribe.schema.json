@@ -16,10 +16,12 @@
   "else": {
     "properties": {
       "paths": {"type": "array", "items": {"type": "string"}},
+      "model": {"type": "string"},
+      "language": {"type": ["string", "null"]},
       "segmentCount": {"type": "integer"},
       "adjustedCues": {"type": "integer"},
       "blankCues": {"type": "integer"}
     },
-    "required": ["paths", "segmentCount", "adjustedCues", "blankCues"]
+    "required": ["paths", "model", "language", "segmentCount", "adjustedCues", "blankCues"]
   }
 }

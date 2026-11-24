@@ -158,6 +158,7 @@ export interface SpeechDecodeOptions {
 export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeOptions = {}): Promise<Envelope | undefined> {
   const { signal, slice } = options;
   if (signal?.aborted) return undefined;
+  if (options.reportFailure) await access(resolve(video));
   const deadline = Date.now() + (options.timeoutMs ?? AUDIO_EXTRACTION_TIMEOUT_MS);
   const envelope = await new Promise<Envelope | undefined>((resolveResult, reject) => {
     const child = spawn("ffmpeg", [

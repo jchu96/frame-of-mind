@@ -238,6 +238,8 @@ export interface AnalysisProjectionPublisher {
 }
 
 export interface AnalyzeExecutionOptions {
+  /** Called after the failure manifest has been atomically published. */
+  onFailurePublished?: (directory: string) => void;
   signal?: AbortSignal;
   progress?: AnalysisProgressReporter;
   projection?: AnalysisProjectionPublisher;
@@ -753,6 +755,7 @@ export class AnalysisOrchestrator {
           await writeFailureManifest(stagingDirectory, failure);
           await rename(stagingDirectory, outputDirectory);
           stagingDirectory = undefined;
+          execution.onFailurePublished?.(outputDirectory);
         } catch {
           await reportWarning(progress, {
             kind: "warning",
@@ -1357,6 +1360,7 @@ export class AnalysisOrchestrator {
             await writeFailureManifest(stagingDirectory, failure);
             await rename(stagingDirectory, outputDirectory);
             stagingDirectory = undefined;
+            execution.onFailurePublished?.(outputDirectory);
           } catch {
             await reportWarning(progress, {
               kind: "warning",

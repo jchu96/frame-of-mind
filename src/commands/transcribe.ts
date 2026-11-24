@@ -35,8 +35,10 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
       try {
         const result = await transcribe({ ...flags, input, signal: controller.signal },
           flags.json ? { ...dependencies, stdout: diagnostic } : dependencies);
-        if (flags.json) writeDocument({ paths: result.paths, segmentCount: result.segments.length,
-          adjustedCues: result.adjustedCues, blankCues: result.blankCues }, dependencies.stdout);
+        if (flags.json) {
+          const { paths, model, language, adjustedCues, blankCues } = result;
+          writeDocument({ paths, model, language, segmentCount: result.segments.length, adjustedCues, blankCues }, dependencies.stdout);
+        }
       } catch (error) {
         // Provider and filesystem exception bodies may contain private content.
         const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
