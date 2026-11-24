@@ -283,9 +283,16 @@ describe("output", () => {
   });
   it("reports blankCues and adjustedCues and writes JSON only when requested", async () => {
     const f = await fixture(10); f.analyzer.transcribe.mockResolvedValue([segment("a"), segment("   "), { ...segment("b"), end: "00:00:19" }]);
-    await cli(f, ["--json"]);
-    expect(validateCliDocument("transcribe", f.deps.stdout.mock.calls.flat().join("\n"))).toMatchObject({ adjustedCues: 1, blankCues: 1 });
+    await cli(f, ["--json", "--transcript-language", "fr-ca"]);
+    expect(f.deps.stdout).toHaveBeenCalledTimes(1);
+    const report = validateCliDocument("transcribe", f.deps.stdout.mock.calls[0]![0]);
+    expect(report).toMatchObject({
+      adjustedCues: 1, blankCues: 1, segmentCount: 3, model: "gemini-test", language: "fr-CA",
+    });
+    expect(report.paths.toSorted()).toEqual(["synthetic.srt", "synthetic.transcript.json", "synthetic_speakers.txt"]
+      .map(name => join(f.root, name)));
     expect(JSON.parse(await readFile(join(f.root, "synthetic.transcript.json"), "utf8"))).toMatchObject({ clock: "source", adjustedCues: 1, blankCues: 1, segments: [{ start: 20 }, { start: 20 }, { start: 20 }] });
+    expect(await readdir(f.root)).toEqual(["synthetic.mp4", "synthetic.srt", "synthetic.transcript.json", "synthetic_speakers.txt"]);
     const plain = await fixture(10); await cli(plain);
     expect(await readdir(plain.root)).toEqual(["synthetic.mp4", "synthetic.srt", "synthetic_speakers.txt"]);
   });

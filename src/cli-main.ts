@@ -2,6 +2,7 @@ import "./instrument.js";
 import { inspectScratch } from "./adapters/scratch.js";
 import { mediaCapabilityReport, requireMedia } from "./services/media-capabilities.js";
 import { capabilities, CliError, writeDocument } from "./cli-contract.js";
+import { faultCode } from "./domain/contract-error.js";
 import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -70,6 +71,7 @@ const geminiModelSchema = z.string()
   .regex(/^gemini-[a-z0-9][a-z0-9.-]*$/, "expected a Gemini model ID");
 
 export interface AnalyzeCliFlags {
+  json?: boolean;
   snap?: string;
   snapGapMs?: string;
   snapWindowMs?: string;
@@ -269,6 +271,7 @@ program
   .option("--retention <mode>", "Upload retention: provider (default) or run; overrides FRAME_OF_MIND_UPLOAD_RETENTION")
   .option("--keep-upload", "Alias for --retention provider")
   .option("--delete-upload", "Alias for --retention run")
+  .option("--json", "print the analysis outcome and absolute run directory as JSON")
   .option("--remote-file <name>", "Reuse a retained Gemini upload (files/...) of this exact recording; skips re-upload and never deletes it")
   .action(
     async (
@@ -277,6 +280,8 @@ program
     ) => {
       const startedAt = Date.now();
       let stage = "cli";
+      const warnings: string[] = [];
+      let failureFolder: string | undefined;
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
         analyzeOptions = await buildAnalyzeOptions(meetingId, flags, process.env.GEMINI_API_KEY);
@@ -289,9 +294,11 @@ program
         try {
           const execution = {
             signal: cancellation.signal,
+            onFailurePublished(directory: string) { failureFolder = directory; },
             progress: {
               report(event: AnalysisProgressEvent) {
                 stage = event.stage;
+                if (flags.json && event.kind === "warning") warnings.push(event.message);
                 CLI_ANALYSIS_PROGRESS.report(event);
               },
             },
@@ -343,7 +350,20 @@ program
         } finally {
           process.off("SIGINT" as never, cancel);
         }
-        printAnalysisSummary(result);
+        printAnalysisSummary(result, flags.json ? process.stderr : process.stdout);
+        if (flags.json) {
+          const remote = result.manifest.remoteFile;
+          writeDocument({
+            runFolder: resolve(result.directory),
+            runId: result.manifest.runId,
+            outcome: result.outcome.status,
+            acceptedCount: result.outcome.candidates.accepted,
+            retainedUpload: remote?.name && !remote.deleted
+              ? { name: remote.name, expiresAt: remote.expirationTime ?? null }
+              : null,
+            ...(warnings.length ? { warnings } : {}),
+          });
+        }
       } catch (error) {
         await captureCliException(
           telemetryCodeFromError(error, "analysis_failed"),
@@ -361,32 +381,41 @@ program
             version: VERSION,
           },
         );
+        if (flags.json && failureFolder) {
+          throw new CliError(faultCode(error), "Analysis failed.", {
+            ...(error instanceof CliError && error.details), runFolder: resolve(failureFolder),
+          });
+        }
+        if (flags.json && !analyzeOptions && error instanceof Error && !("code" in error)) {
+          // Uncoded option validation failures predate the machine contract.
+          throw new CliError("USAGE", error.message);
+        }
         throw error;
       }
     },
   );
 
-export function printAnalysisSummary(result: AnalyzeResult): void {
+export function printAnalysisSummary(result: AnalyzeResult, stream: NodeJS.WritableStream = process.stdout): void {
   const { selected, indexed, omittedByLimit, outOfRange } = result.outcome.candidates;
-  process.stdout.write(
+  stream.write(
     `Interrogated ${selected} of ${indexed} indexed candidates` +
     (outOfRange ? `; ${outOfRange} out of range` : "") +
     (omittedByLimit ? ` (${omittedByLimit} lower-importance dropped; --max-moments all to analyse every one).\n` : ".\n"),
   );
-  process.stdout.write(`${clockSummary(result.manifest.clock)}\n`);
+  stream.write(`${clockSummary(result.manifest.clock)}\n`);
   const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
-  process.stdout.write(
+  stream.write(
     `Analysis: ${result.directory}${result.manifest.label ? ` (${result.manifest.label})` : ""}\n${accepted} accepted record(s). ` +
       `${result.outcome.candidates.validated}/${result.outcome.candidates.selected} selected candidate response(s) validated (${result.outcome.candidates.accepted} accepted, ${result.outcome.candidates.rejected} rejected, ${result.outcome.candidates.failed} failed); ${result.outcome.candidates.omittedByLimit} indexed candidate(s) omitted by limit; outcome=${result.outcome.status}.\n`,
   );
   if (result.snapSummary) {
     const { counts, total, medianShiftMs } = result.snapSummary;
-    process.stdout.write(`Speech edges: ${counts.snapped} snapped, ${counts["no-boundary"]}/${total} no-boundary, ${counts.ambiguous} ambiguous, ${counts.unavailable} unavailable` +
+    stream.write(`Speech edges: ${counts.snapped} snapped, ${counts["no-boundary"]}/${total} no-boundary, ${counts.ambiguous} ambiguous, ${counts.unavailable} unavailable` +
       (medianShiftMs === undefined ? ".\n" : `, median signed shift ${medianShiftMs} ms (nearest rank).\n`));
   }
   const remoteFile = result.manifest.remoteFile;
   if (remoteFile && !remoteFile.deleted && remoteFile.name) {
-    process.stdout.write(
+    stream.write(
       `Retained Gemini upload: ${remoteFile.name}` +
         ` (${remoteFile.expirationTime ? `provider expiration ${remoteFile.expirationTime}` : "expiration not reported"}; per-file limit 2 GB). ` +
         `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
@@ -507,6 +536,7 @@ export async function buildAnalyzeOptions(
         ...common,
         meetingId: meetingId!,
         contextProvider: contextProvider!,
+        ...(flags.json && { interactiveProviderAuth: false }),
         granolaTransport,
         ...(flags.contextFile ? { contextFile: flags.contextFile } : {}),
         ...(flags.video ? { video: flags.video } : {}),
