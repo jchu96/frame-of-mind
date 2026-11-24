@@ -40,9 +40,9 @@ it("F02 preserves original bytes after cancellation following an encoded frame",
   expect(await readdir(root)).toEqual(["original.mp4"]);
 });
 it("F03 rejects error stderr even with a plausible staged file and a zero exit", async () => {
-  await expect(stageOutput(input, join(root, "image.gif"), [".gif"], false, undefined, async staged => {
+  await expect(stageOutput(input, join(root, "image.ppm"), [".ppm"], false, undefined, async staged => {
     await runMediaTool(process.execPath, ["-e",
-      "require('node:fs').writeFileSync(process.argv[1], Buffer.from('R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==', 'base64')); process.stderr.write('decode error')", staged]);
+      "require('node:fs').writeFileSync(process.argv[1], 'P3\\n1 1\\n255\\n0 0 0\\n'); process.stderr.write('decode error')", staged]);
   }), "error-level stderr must fail publication").rejects.toThrow("reported a media error");
   expect(await readdir(root)).toEqual(["original.mp4"]);
 });

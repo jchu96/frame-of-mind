@@ -1,19 +1,17 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import { childEnvironment } from "../src/lib/child-env.js";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { assert, expect, it } from "vitest";
 import { classify, proposeRecords, snapSettings } from "../src/domain/snap.js";
 import { decodeSpeechEnvelope } from "../src/services/audio.js";
+import { mediaFixtures } from "./helpers/media-fixtures.js";
 
-let root: string;
 const source = "-editor's recording.mp4";
 const width = 80, height = 64, count = 30;
 function command(...args: string[]) {
-  return spawnSync("bun", ["--no-env-file", join(root, "frameofmind.mjs"), ...args],
-    {cwd: root, env: childEnvironment("media"), encoding: "utf8"});
+  return spawnSync("bun", ["--no-env-file", file("frameofmind.mjs"), ...args],
+    {cwd: file(), env: childEnvironment("media"), encoding: "utf8"});
 }
 function success(...args: string[]) {
   const result = command(...args, "--json");
@@ -34,10 +32,10 @@ function fixture(name: string, rate: string, label?: string, audio: string[] = [
   }
   ffmpeg(["-f", "rawvideo", "-pixel_format", "gray", "-video_size", "80x64",
     "-framerate", rate, "-i", "pipe:0", ...audio, "-c:v", "libx264", "-g", "90", "-pix_fmt", "yuv420p",
-    "-metadata", "location=+12.3456+045.6789/", ...(label ? ["-timecode", label] : []), join(root, name)], pixels);
+    "-metadata", "location=+12.3456+045.6789/", ...(label ? ["-timecode", label] : []), file(name)], pixels);
 }
 function ids(name: string) {
-  const bytes = ffmpeg(["-i", join(root, name), "-map", "0:v:0", "-vf", "scale=80:64",
+  const bytes = ffmpeg(["-i", file(name), "-map", "0:v:0", "-vf", "scale=80:64",
     "-f", "rawvideo", "-pix_fmt", "gray", "-"]);
   const result: number[] = [];
   for (let offset = 0; offset < bytes.length; offset += width * height) {
@@ -48,7 +46,7 @@ function ids(name: string) {
   return result;
 }
 function info(name: string) {
-  return probeJson(["-show_format", "-show_streams", "-of", "json", join(root, name)]);
+  return probeJson(["-show_format", "-show_streams", "-of", "json", file(name)]);
 }
 async function fingerprint(path: string) {
   const data = await readFile(path);
@@ -63,37 +61,32 @@ async function damagePacket(sourcePath: string, output: string, stream: string, 
   await writeFile(output, bytes);
 }
 
-beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "fom-helpers-"));
+const file = mediaFixtures(async () => {
   execFileSync("bun", ["--no-env-file", "build", "src/cli.ts", "--target=node", "--format=esm",
-    "--env=disable", "--outfile", join(root, "frameofmind.mjs")], {env: childEnvironment("media")});
+    "--env=disable", "--outfile", file("frameofmind.mjs")], {env: childEnvironment("media")});
   ffmpeg(["-f", "lavfi", "-i",
-    "aevalsrc=if(between(t\\,1\\,1.5)+between(t\\,39\\,40.12)+between(t\\,40.9\\,41.6)\\,0.5\\,0):d=70:s=48000", "-c:a", "flac", join(root, "groups.flac")]);
+    "aevalsrc=if(between(t\\,1\\,1.5)+between(t\\,39\\,40.12)+between(t\\,40.9\\,41.6)\\,0.5\\,0):d=70:s=48000", "-c:a", "flac", file("groups.flac")]);
   fixture(source, "24000/1001", "01:02:03:04");
   const audio = ["-f", "lavfi", "-i", "aevalsrc=if(lt(t\\,0.4)\\,0\\,0.5*sin(2*PI*440*t)):s=48000:d=1.2", "-c:a", "aac"];
   fixture("sound.mp4", "25", "01:02:03:04", audio);
   fixture("df.mp4", "30000/1001", undefined, audio);
-  ffmpeg(["-i", join(root, "sound.mp4"), "-map", "0:v:0", "-c:v", "copy", "-f", "matroska", join(root, "disguised.mp4")]);
-  await damagePacket(join(root, "sound.mp4"), join(root, "damaged.mp4"), "v:0", 0);
-  await damagePacket(join(root, "df.mp4"), join(root, "damaged-audio.mp4"), "a:0", -1);
-  const decode = spawnSync("ffmpeg", ["-nostdin", "-v", "error", "-xerror", "-i", join(root, "damaged-audio.mp4"), "-f", "null", "-"],
+  ffmpeg(["-i", file("sound.mp4"), "-map", "0:v:0", "-c:v", "copy", "-f", "matroska", file("disguised.mp4")]);
+  await damagePacket(file("sound.mp4"), file("damaged.mp4"), "v:0", 0);
+  await damagePacket(file("df.mp4"), file("damaged-audio.mp4"), "a:0", -1);
+  const decode = spawnSync("ffmpeg", ["-nostdin", "-v", "error", "-xerror", "-i", file("damaged-audio.mp4"), "-f", "null", "-"],
     {env: childEnvironment("media"), encoding: "utf8"});
   expect(decode.status).toBeGreaterThan(0);
   expect(decode.stderr).toMatch(/aac/i);
 });
-afterAll(async () => {
-  if (root) await rm(root, {recursive: true, force: true});
-});
-
 it("F01 refuses the recording as a forced proxy destination", async () => {
-  const input = join(root, source);
+  const input = file(source);
   const before = await fingerprint(input);
-  const entries = await readdir(root);
+  const entries = await readdir(file());
   const result = command("proxy", "--force", "-o", input, "--", source);
   expect(await fingerprint(input), "recording bytes and SHA-256 after forced destination").toEqual(before);
   expect(result.status, result.stderr).toBe(1);
   expect(result.stderr).toMatch(/input recording/i);
-  expect(await readdir(root)).toEqual(entries);
+  expect(await readdir(file())).toEqual(entries);
 });
 
 it("F04 preserves independently read timecode and strips the location", () => {
@@ -114,7 +107,7 @@ it("F05 cuts the requested non-keyframe interval in video and reference audio", 
   expect(frames[0], "first source-frame ID").toBe(15);
   expect(frames.at(-1)).toBe(29);
   expect(info("cut.mp4").streams[0].tags.timecode).toBe("01:02:03:19");
-  const pcm = ffmpeg(["-i", join(root, "cut.mp4"), "-map", "0:a:0", "-f", "s16le", "-"]);
+  const pcm = ffmpeg(["-i", file("cut.mp4"), "-map", "0:a:0", "-f", "s16le", "-"]);
   const samples = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.length / 2);
   expect(samples.length).toBeGreaterThanOrEqual(28800);
   expect(samples.slice(3000, 4000).some(sample => sample > 3000)).toBe(true);
@@ -140,11 +133,11 @@ it("F06 returns exit 1 one frame off on Matroska with an mp4 extension", () => {
 });
 
 it("rejects a corrupt video packet and preserves the old forced output", async () => {
-  await writeFile(join(root, "old.mp4"), "keep");
-  const entries = await readdir(root);
+  await writeFile(file("old.mp4"), "keep");
+  const entries = await readdir(file());
   expect(command("proxy", "damaged.mp4", "--force", "-o", "old.mp4").status).toBe(1);
-  expect(await readFile(join(root, "old.mp4"), "utf8")).toBe("keep");
-  expect(await readdir(root)).toEqual(entries);
+  expect(await readFile(file("old.mp4"), "utf8")).toBe("keep");
+  expect(await readdir(file())).toEqual(entries);
 });
 
 it("verify rejects a damaged final audio packet at the correct video frame count", () => {
@@ -154,17 +147,15 @@ it("verify rejects a damaged final audio packet at the correct video frame count
 });
 
 it("W12 bounded snap CLI matches full-file edges at non-grid and near-zero seeks", async () => {
-  const file = join(root, "groups.flac");
-  const edges = classify((await decodeSpeechEnvelope(file))!);
+  const recording = file("groups.flac");
+  const edges = classify((await decodeSpeechEnvelope(recording))!);
   for (const [at, ms, end] of [["00:00:41.007", 41007, 40120], ["1.410", 1410, 1500]] as const) {
-    const result = success("snap", file, "--at", at, "--edge", "end", "--file-clock", "reel");
+    const result = success("snap", recording, "--at", at, "--edge", "end", "--file-clock", "reel");
     const full = proposeRecords([{ start: 0, end: ms }], edges, "reel", snapSettings()).records[0]!.end;
     expect(result.request).toEqual({ at, clock: "reel", edge: "end" });
-    expect(result.result).toMatchObject({ status: "snapped", target: { clock: "reel", gridMs: 10, precisionMs: 50 } });
-    if (result.result.status === "snapped" && full.status === "snapped") {
-      expect(Math.abs(ms + result.result.shiftMs - end)).toBeLessThanOrEqual(20);
-      expect(result.result.target).toEqual(full.target);
-      expect(result.result.alternativesMs).toEqual(full.alternativesMs);
-    } else throw new Error("Expected a measured offset in both entry points.");
+    assert(full.status === "snapped");
+    expect(result.result).toMatchObject({status: "snapped", target: full.target, alternativesMs: full.alternativesMs});
+    expect(result.result.target).toMatchObject({clock: "reel", gridMs: 10, precisionMs: 50});
+    expect(Math.abs(ms + result.result.shiftMs - end)).toBeLessThanOrEqual(20);
   }
 });

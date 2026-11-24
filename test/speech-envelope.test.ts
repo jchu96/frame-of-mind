@@ -4,21 +4,18 @@ import { watch } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { afterEach, onTestFinished, describe, expect, test, vi } from "vitest";
 import { classify, selectEdge, snapSettings, SpeechMeter } from "../src/domain/snap.js";
 import { snapFile } from "../src/commands/snap.js";
 import { decodeSpeechEnvelope } from "../src/services/audio.js";
+import { mediaFixtures } from "./helpers/media-fixtures.js";
 
-const roots: string[] = [];
 async function root() {
   const dir = await mkdtemp(join(tmpdir(), "speech-meter-"));
-  roots.push(dir);
+  onTestFinished(() => rm(dir, {recursive: true, force: true}));
   return dir;
 }
-afterEach(async () => {
-  vi.unstubAllEnvs();
-  await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })));
-});
+afterEach(() => vi.unstubAllEnvs());
 
 type Burst = [number, number];
 
@@ -58,9 +55,7 @@ const formats = [
 ];
 
 describe("decoded speech on the file grid", () => {
-  let dir: string;
-  beforeAll(async () => {
-    dir = await mkdtemp(join(tmpdir(), "speech-fixtures-"));
+  const file = mediaFixtures(dir => {
     const pcm = join(dir, "truth.wav");
     const bursts: Burst[] = [[14, 20.120], [20.900, 21.600], [39.230, 40.120], [40.900, 41.600]];
     writeBursts(pcm, bursts);
@@ -76,12 +71,10 @@ describe("decoded speech on the file grid", () => {
       "-itsoffset", "1.253", "-f", "lavfi", "-i", "aevalsrc=if(lt(t\\,1)+between(t\\,3\\,4)\\,0.5\\,0):s=8000:d=6",
       "-c:v", "ffv1", "-c:a", "pcm_s16le", path]);
   });
-  afterAll(async () => { if (dir) await rm(dir, { recursive: true, force: true }); });
 
   test("W9 a delayed audio stream measures bursts on the file grid without inventing leading silence", async () => {
-    const path = join(dir, "delayed.mkv");
-    const meter = await decodeSpeechEnvelope(path);
-    expect(meter?.startMs).toBe(1260);
+    const meter = await decodeSpeechEnvelope(file("delayed.mkv"));
+    expect(meter).toMatchObject({startMs: 1260, sourceSampleRateHz: 8000});
     const edges = classify(meter!);
     expect(selectEdge(edges, "start", 1250, "source", snapSettings(250, 500)).status).toBe("no-boundary");
     for (const [edge, truth] of [["end", 2253], ["start", 4253], ["end", 5253]] as const) {
@@ -92,7 +85,9 @@ describe("decoded speech on the file grid", () => {
   });
 
   test.each(formats)("$rate Hz $format edges fall within $tolerance ms of the generated burst times", async row => {
-    const edges = classify((await decodeSpeechEnvelope(join(dir, row.file)))!);
+    const meter = await decodeSpeechEnvelope(file(row.file));
+    expect(meter?.sourceSampleRateHz).toBe(row.rate);
+    const edges = classify(meter!);
     for (const [edge, request, truth] of [
       ["start", 14000, 14000], ["end", 21000, 20120], ["start", 21000, 20900], ["end", 22000, 21600],
       ["start", 39000, 39230], ["end", 41000, 40120], ["start", 41000, 40900], ["end", 42000, 41600],
