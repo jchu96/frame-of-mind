@@ -2,7 +2,7 @@ import { Command, CommanderError } from "commander";
 import { jobInventory } from "./commands/job-commands.js";
 import { VERSION } from "./version.js";
 
-import { CLI_SCHEMA_VERSION, ContractError, failureDocument, faultCode, faultExits } from "./domain/contract-error.js";
+import { CLI_SCHEMA_VERSION, ContractError, MissingJobArgumentError, failureDocument, faultCode, faultExits } from "./domain/contract-error.js";
 export { ContractError as CliError } from "./domain/contract-error.js";
 
 function stdoutLine(line: string) { process.stdout.write(line + "\n"); }
@@ -13,7 +13,9 @@ export function writeDocument(fields: object, write = stdoutLine) {
 
 export function writeFailure(error: unknown, write = stdoutLine) {
   const code = error instanceof CommanderError ? "USAGE" : faultCode(error);
-  write(JSON.stringify(failureDocument(code, error instanceof ContractError ? error.details : undefined)));
+  const document = failureDocument(code, error instanceof ContractError ? error.details : undefined);
+  if (error instanceof MissingJobArgumentError) document.error.message = error.message;
+  write(JSON.stringify(document));
   process.exitCode = faultExits[code];
 }
 

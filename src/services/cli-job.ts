@@ -1,13 +1,14 @@
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { providerFailureCode } from "../adapters/gemini-error-class.js";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { closeSync, constants, existsSync, fstatSync, readdirSync, renameSync, writeFileSync, watch } from "node:fs";
 import { inJobDirectory, openJobFile, trustedDirectory } from "../adapters/job-path.js";
 import { z } from "zod";
 import { active, JobStore, type Family, type JobRecord } from "../adapters/job-record.js";
 import type { JobDispatch } from "../adapters/job-provider-transport.js";
-import { ContractError, faultCode } from "../domain/contract-error.js";
+import { ContractError, MissingJobArgumentError, faultCode } from "../domain/contract-error.js";
 import { snapSettings } from "../domain/snap.js";
 import { listBuiltInRecipes, loadRecipe, withAnalysisDepth } from "../recipes/index.js";
-import { inside, openJobInput, readJobGrant, readJobRoots, rootsRevision, type JobGrant } from "./job-grant.js";
+import { checkJobDirectory, inside, openJobInput, readJobGrant, readJobRoots, rootsRevision, type JobGrant } from "./job-grant.js";
 import { digestJobMedia, probeJobMedia } from "./job-media.js";
 import type { TranscribeDependencies } from "./transcribe.js";
 
@@ -27,7 +28,7 @@ function document(record: JobRecord) {
 }
 function checkOut(roots: {write: string[]}, out: string) {
   if (!roots.write.some(root => inside(root, out))) throw new ContractError("PATH_OUTSIDE_ROOTS", "Output outside the grant.");
-  trustedDirectory(out);
+  checkJobDirectory(out, true);
 }
 function markCancel(directory: string) {
   const marker = join(directory, "cancel.request");
@@ -82,8 +83,11 @@ export async function runJob(family: Family, op: JobOperation, arg: string, flag
   const selection = resolve(arg);
   const mediaRoot = grant.read.find(root => inside(root, selection));
   if (!mediaRoot) throw new ContractError("PATH_OUTSIDE_ROOTS", "Recording outside the grant.");
-  trustedDirectory(dirname(selection));
-  const file = await openJobInput(grant, {root: mediaRoot, path: relative(mediaRoot, selection).split(sep).join("/")}, out);
+  const file = await openJobInput(grant, {root: mediaRoot, path: relative(mediaRoot, selection).split(sep).join("/")}, out)
+    .catch(error => {
+      if (faultCode(error) === "NOT_FOUND" && !(error instanceof MissingJobArgumentError)) throw new MissingJobArgumentError("file");
+      throw error;
+    });
   try {
     const before = fstatSync(file, {bigint: true});
     const bytes = Number(before.size);
@@ -238,14 +242,16 @@ async function execute(store: JobStore, record: JobRecord, flags: JobOptions, gr
       record.runId = result.manifest.runId;
       receipt.outputs = readdirSync(result.directory);
       record.state = result.outcome.status;
-      if (record.state === "failed") record.code = "COMMAND_FAILED";
     }
     if (signal.signal.aborted) throw new ContractError("CANCELLED", "Job cancelled.");
   } catch (error) {
-    const code = record.uncertain || record.inFlight ? "OUTCOME_UNKNOWN" : faultCode(error);
+    const code = record.uncertain || record.inFlight ? "OUTCOME_UNKNOWN" : providerFailureCode(error);
     record.code = code;
     record.state = code === "OUTCOME_UNKNOWN" ? "outcome_unknown" : code === "CANCELLED" ? "cancelled" : "failed";
   } finally {
+    // A returned failed outcome can contain only candidate validation failures.
+    // A thrown provider refusal already carries its classified code.
+    if (record.state === "failed") record.code ??= "COMMAND_FAILED";
     try {
       await authorize();
       if (stagedFolder) {

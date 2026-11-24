@@ -37,11 +37,11 @@ same name. Verify it against the release's `SHA256SUMS`.
 | `analyze` | Absolute `runFolder`, `runId`, `outcome`, `acceptedCount`, `retainedUpload` and any display `warnings`. A published failure includes `error.details.runFolder`. | [analyze](../schemas/cli/analyze.schema.json) |
 | `transcribe` | Absolute `paths` for the SRT, speakers and source-clock JSON files, `model`, requested `language` (canonical tag or null), `segmentCount`, `adjustedCues` and `blankCues`. | [transcribe](../schemas/cli/transcribe.schema.json) |
 | `analyze start` | Admission receipt with a durable job ID. | [job](../schemas/cli/job.schema.json) |
-| `analyze status` | Job state, stage, percent and terminal receipt. | [job](../schemas/cli/job.schema.json) |
+| `analyze status` | Job state, stage, percent, optional `reason` and terminal receipt. | [job](../schemas/cli/job.schema.json) |
 | `analyze result` | Terminal receipt and absolute run folder, or a typed failure. | [job-result](../schemas/cli/job-result.schema.json) |
 | `analyze cancel` | Current job and cancellation request. | [job](../schemas/cli/job.schema.json) |
 | `transcribe start` | Admission receipt with a durable job ID. | [job](../schemas/cli/job.schema.json) |
-| `transcribe status` | Job state, stage, percent and terminal receipt. | [job](../schemas/cli/job.schema.json) |
+| `transcribe status` | Job state, stage, percent, optional `reason` and terminal receipt. | [job](../schemas/cli/job.schema.json) |
 | `transcribe result` | Terminal receipt and absolute run folder, or a typed failure. | [job-result](../schemas/cli/job-result.schema.json) |
 | `transcribe cancel` | Current job and cancellation request. | [job](../schemas/cli/job.schema.json) |
 | `analyze dry-run` | Absolute recording path, bytes, seconds, model and retention. | [dry run](../schemas/cli/analyze-dry-run.schema.json) |

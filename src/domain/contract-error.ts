@@ -60,6 +60,12 @@ export class ContractError extends Error {
   }
 }
 
+export class MissingJobArgumentError extends ContractError {
+  constructor(argument: "out" | "file") {
+    super("NOT_FOUND", argument === "out" ? "The --out folder does not exist." : "The input file does not exist.", {argument});
+  }
+}
+
 const filesystemCodes: Record<string, FaultCode> = {
   ENOENT: "NOT_FOUND", ENOTDIR: "NOT_FOUND", EPERM: "PERMISSION_DENIED", EACCES: "PERMISSION_DENIED",
   EEXIST: "CONFLICT", ELOOP: "PATH_OUTSIDE_ROOTS",
