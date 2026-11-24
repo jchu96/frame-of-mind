@@ -5,6 +5,22 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-24
+
+### Added
+
+- `--thinking-level <low|medium|high>` on `analyze` and `analyze start`. When given, every model request of that run carries the level and the run manifest records it as `thinkingLevel`. When omitted, nothing is sent and requests are unchanged. Example: `--model gemini-4-hydrogen --thinking-level medium`.
+- Experimental: job commands for `analyze` and `transcribe` (`start`, `status`, `result`, `cancel`, and `analyze dry-run`), all with `--json`. They may change or be removed in a later release.
+  - Every start names its own grant: the read and write folders (`--roots-file`, or `--media-root` and `--output-root`), `--max-media-seconds`, `--max-provider-requests`, `--max-file-bytes`, `--allowed-models` and `--retention`. All are required and none is read from the environment.
+  - `start` prints the job document at admission and keeps running as the worker; `status`, `result` and `cancel` work from another process and answer from the job record on disk.
+  - A lost provider reply is recorded as `outcome_unknown` and the same input starts again only when the caller names that job with `--after-unknown`. A request ID belongs to its `--out` folder.
+  - A failed job reports the provider's specific code where one applies. A missing `--out` folder or input file answers `NOT_FOUND` and names the argument in `details.argument`; the `--out` folder must already exist.
+  - Job analysis runs without screenshots, clip-clock calibration or the derived transcript.
+
+### Changed
+
+- The default model id is now `gemini-3.8-flash` (was `gemini-3.7-flash`). The provider has deprecated `gemini-3.7-flash` and already routes requests for it to `gemini-3.8-flash`, so the model that answers a default run does not change. Runs that pass `--model` or set `GEMINI_MODEL` are unaffected. New manifests record `gemini-3.8-flash`.
+
 ## [0.6.0] - 2026-11-24
 
 First full release of the 0.6 line. The code is the same as `0.6.0-beta.4`; the four pre-release sections below list every change since `0.5.0`. In short:

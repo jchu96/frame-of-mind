@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository        | `jchu96/frame-of-mind`                      |
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
-| Current version   | `0.6.0`                                     |
+| Current version   | `0.6.1`                                     |
 | Default model     | `gemini-3.8-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
@@ -256,7 +256,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.6.0
+0.6.1
 ```
 
 ### 1.5 Configure Gemini
@@ -851,6 +851,8 @@ names use a path such as `./-take.mov`. Use the resulting file explicitly
 with `analyze --video`.
 
 ### Running a CLI job
+
+The job commands are experimental and may change or be removed in a later release.
 
 Run jobs with Bun 1.4.4 or a Node runtime with built-in SQLite support for
 cross-process locking. When launching the source CLI with Bun, use

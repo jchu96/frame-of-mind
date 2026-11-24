@@ -46,6 +46,8 @@ verify the frame count locally. [Premiere Pro walkthrough](docs/EDITING_WORKFLOW
 
 ## Start a CLI job
 
+> Experimental. The job commands may change or be removed in a later release.
+
 A consumer can start analysis or transcription, read its job ID at admission,
 and check or cancel it from another process. Use `analyze dry-run` to check a
 recording's size, duration, model and retention locally. The start command
@@ -94,7 +96,7 @@ maintainer's reference instance runs at
 [fom.flickerventures.com](https://fom.flickerventures.com).
 
 > [!IMPORTANT]
-> Early public release (`v0.6.0`). Review generated work before using or
+> Early public release (`v0.6.1`). Review generated work before using or
 > publishing it. Generated output always requires human review.
 
 ## Status as of 2026-08-24

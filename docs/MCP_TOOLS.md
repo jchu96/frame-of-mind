@@ -100,6 +100,8 @@ provider supplies no expiry). Otherwise `retainedUpload` is null.
 
 ### CLI jobs
 
+Experimental. The job commands (`start`, `status`, `result`, `cancel` and `analyze dry-run`) may change or be removed in a later release.
+
 Start accepts a positional recording, an existing `--out` directory and a
 caller-generated UUID in `--request-id`. Supply `--json`, the folders
 (`--roots-file` or repeatable `--media-root` and `--output-root`),
