@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { randomUUID } from "node:crypto";
 import { constants, lstatSync, readdirSync, realpathSync, rmdirSync, unlinkSync, type BigIntStats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rm, rmdir, writeFile } from "node:fs/promises";
@@ -211,18 +212,19 @@ async function inspect(path: string, kind: Kind, remove: boolean): Promise<Row> 
 
 // With an explicit directory inspect only adjacent scratch. Resolve the OS
 // temp alias (e.g. /var on macOS), but refuse symlinked operator scan roots.
-export async function inspectScratch(directory?: string, remove = false): Promise<Row[]> {
+export async function inspectScratch(directory?: string, remove?: string): Promise<Row[]> {
   const selected = resolve(directory ?? tmpdir());
   const root = await realpath(selected);
   const systemAlias = directory === undefined && process.platform === "darwin" &&
     /^\/(?:var|tmp)(?:\/|$)/.test(selected) && root === "/private" + selected;
   if (root !== selected && !systemAlias) {
-    throw new Error("Choose the real directory path for the scratch scan.");
+    throw new ContractError("PATH_OUTSIDE_ROOTS", "Choose the real directory path for the scratch scan.");
   }
   const rows: Row[] = [];
   for (const name of (await readdir(root)).sort()) {
     const kind = match(name, directory !== undefined);
-    if (kind) rows.push(await inspect(join(root, name), kind, remove));
+    const path = join(root, name);
+    if (kind) rows.push(await inspect(path, kind, remove !== undefined && resolve(remove) === path));
   }
   return rows;
 }

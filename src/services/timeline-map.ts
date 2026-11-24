@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exactTime, offsetTime, type ExactTime, type FrameRate } from "exact-time";
@@ -13,7 +14,7 @@ export interface MapOptions { at?: string; source?: string; frame?: string; trac
 type Location = { track: number; trackName: string };
 type SequencePosition = { sequenceFrame: string; sequenceTimecodes: ReturnType<typeof timecodeLabel>[] };
 type Result =
-  | { status: "source"; clip: string; path: string; fileValue: string; mediaFrame: string; sourceTimecode?: string; sourceTimecodeReason?: string }
+  | { status: "source"; clock: "source"; clip: string; path: string; fileValue: string; mediaFrame: string; sourceTimecode?: string; sourceTimecodeReason?: string }
   | { status: "transition"; clips: string[] }
   | { status: "gap" }
   | { status: "nested" | "refused"; clip: string; reason: string };
@@ -22,11 +23,11 @@ type Row = Location & Partial<SequencePosition> & Result;
 function localPath(target: string, base: string) {
   if (/^file:/i.test(target)) {
     const url = new URL(target);
-    if (url.hostname && url.hostname !== "localhost") throw new Error("network media references are unsupported");
+    if (url.hostname && url.hostname !== "localhost") throw new ContractError("INVALID_INPUT", "network media references are unsupported");
     target = fileURLToPath(url);
   }
-  if (/^[a-z][a-z\d+.-]*:/i.test(target) && !/^[a-z]:[\\/]/i.test(target)) throw new Error("media reference is not a local path");
-  if (/^(?:\\\\|\/\/)/.test(target)) throw new Error("network media references are unsupported");
+  if (/^[a-z][a-z\d+.-]*:/i.test(target) && !/^[a-z]:[\\/]/i.test(target)) throw new ContractError("INVALID_INPUT", "media reference is not a local path");
+  if (/^(?:\\\\|\/\/)/.test(target)) throw new ContractError("INVALID_INPUT", "network media references are unsupported");
   return resolve(base, target);
 }
 
@@ -67,15 +68,15 @@ async function segmentResult(segment: Segment, time: Position, base: string, tag
   const reading = source.label?.value.frames === item.available.start.frames
     ? { sourceTimecode: timecodeLabel(file, source.label.dropFrame).timecode.replaceAll(":", source.label.dropFrame ? ";" : ":") }
     : { sourceTimecodeReason: source.reason ?? "file timecode tag disagrees with available_range start" };
-  return { status: "source", clip: item.name, path, fileValue: String(file.frames),
+  return { status: "source", clock: "source", clip: item.name, path, fileValue: String(file.frames),
     mediaFrame: String(difference(file, item.available.start).frames), ...reading };
 }
 
 function selectedTracks(timeline: Timeline, selector?: string) {
   if (selector === undefined) return timeline.tracks;
-  if (!/^[1-9]\d*$/.test(selector)) throw new Error("--track requires a positive video track number.");
+  if (!/^[1-9]\d*$/.test(selector)) throw new ContractError("INVALID_INPUT", "--track requires a positive video track number.");
   const selected = timeline.tracks.filter(t => String(t.number) === selector);
-  if (!selected.length) throw new Error(`Video track ${selector} has no included items.`);
+  if (!selected.length) throw new ContractError("INVALID_INPUT", `Video track ${selector} has no included items.`);
   return selected;
 }
 
@@ -120,7 +121,7 @@ async function reverse(track: VideoTrack, path: string, frame: string, base: str
 export async function mapTimeline(path: string, options: MapOptions) {
   const forward = options.at !== undefined;
   if (forward ? options.source !== undefined || options.frame !== undefined : !options.source || !options.frame) {
-    throw new Error("Use --at <time> or --source <path> with --frame <file value>.");
+    throw new ContractError("USAGE", "Use --at <time> or --source <path> with --frame <file value>.");
   }
   const timeline = readTimeline(await boundedJson(path, 16_777_216, "timeline export"));
   const tracks = selectedTracks(timeline, options.track);

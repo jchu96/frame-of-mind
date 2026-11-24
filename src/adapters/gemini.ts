@@ -315,6 +315,10 @@ export class GeminiVideoAnalyzer {
         provider,
       );
     }
+    if (file.expirationTime && Date.parse(file.expirationTime) <= Date.now()) {
+      throw new GeminiFileError("The retained Gemini file has expired.", name, "not_obtained", undefined,
+        { class: "not_found", fault: "UPLOAD_EXPIRED" });
+    }
     const resolvedName = safeRemoteFileName(file.name);
     if (!resolvedName || resolvedName !== name) {
       throw new GeminiFileError(

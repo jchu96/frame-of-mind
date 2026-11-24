@@ -2753,3 +2753,106 @@ describe("speech proposals at publication", () => {
     expect(output).toEqual([]);
   });
 });
+
+describe("consumer run-file contracts", () => {
+  async function consumerFixture(name: string) {
+    return JSON.parse(await readFile(new URL(`./fixtures/contract-consumer/${name}.json`, import.meta.url), "utf8"));
+  }
+
+  async function readConsumerFiles(directory: string, fields: Record<string, string[]>) {
+    const { resolves } = await import("./helpers/cli-schema.js");
+    for (const [filename, pointers] of Object.entries(fields)) {
+      const text = await readFile(join(directory, filename), "utf8");
+      expect(text.length, filename).toBeGreaterThan(0);
+      for (const pointer of pointers.filter(p => p.startsWith("/"))) {
+        const path = pointer.split(" (or ")[0]!.slice(1).split("/");
+        expect(resolves(JSON.parse(text), path), filename + pointer).toBe(true);
+      }
+    }
+  }
+
+  function consumerAnalyzer(f: Fixture) {
+    const index = indexResult();
+    return {
+      ...f.analyzer,
+      index: async () => ({ ...index, moments: [...index.moments, { ...index.moments[0]!, start: "00:00:06", end: "00:00:08" }] }),
+      interrogate: async (_file: GeminiFile, candidate: IndexedMoment) => {
+        if (candidate.start === "00:00:06") throw new CandidateAnalysisError({code: "generation_failed", attempts: 1});
+        return {...detailResult(), details: [{label: "Start", value: "00:02"}, {label: "End", value: "00:04"}]};
+      },
+      resolveRetainedFile: vi.fn(async () => ({ name: "files/test", uri: "https://example.invalid/synthetic" })),
+    };
+  }
+
+  it.each(["04-analyze-no-context", "05-analyze-with-context-kept-upload"])("replays %s against published artifacts", async name => {
+    const f = await createFixture();
+    const sample = await consumerFixture(name);
+    const analyzer = consumerAnalyzer(f);
+    const run = new AnalysisOrchestrator({
+      createAnalyzer: () => analyzer, createContextSource: () => f.context,
+      extractScreenshot: async () => false, probeDurationSeconds: async () => 10, sleep: async () => {},
+    });
+    const recipePath = f.options.video! + ".recipe.json";
+    await writeFile(recipePath, JSON.stringify(f.options.recipe));
+    await writeFile(f.options.contextFile!, "1\n00:00:01,000 --> 00:00:05,000\nSynthetic context.\n");
+    const bindings: Record<string,string> = {
+      "/placeholder/media/clip.mp4": f.options.video!, "/placeholder/media/context.srt": f.options.contextFile!,
+      "/placeholder/rules/recipe.md": recipePath, "<label>": f.meeting.id, "<recipe id>": "requirements",
+      "<depth>": "standard", "<n>": "2", "<seconds>": "00:00", "<code>": "en", "<text>": "synthetic",
+      "<model id>": analyzer.model, "<provider file name>": "files/test",
+    };
+    const argv = sample.argv.map((arg: string) => arg.replace(/<[^>]+>|\/placeholder\/[^=]+/g, key => bindings[key]!));
+    // Isolate the artifact root, retaining every consumer-supplied option.
+    argv.push("--output", f.outputRoot);
+    const service = await import("../src/services/analyze.js");
+    const {program} = await import("../src/cli.js");
+    const invoke = vi.spyOn(service, "analyzeMeeting").mockImplementation((options, execution) => run.analyze(options, execution));
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.stubEnv("GEMINI_API_KEY", "synthetic-key");
+    try {
+      await program.parseAsync(argv, {from: "user"});
+      const result = await invoke.mock.results[0]!.value;
+      if (name.startsWith("04")) expect(stdout.mock.calls.map(([chunk]) => chunk).join("").split("\n"))
+        .toContain("Analysis: " + result.directory);
+      const {["failure-manifest.json"]: failurePointers, ...successPointers} = sample.reads_file;
+      await readConsumerFiles(result.directory, successPointers);
+      if (failurePointers) {
+        analyzer.resolveRetainedFile.mockRejectedValueOnce(new GeminiFileError("Fixture refusal.", "files/test", "not_obtained",
+          undefined, { class: "refused", status: 403 }));
+        await expect(program.parseAsync(argv, {from: "user"})).rejects.toMatchObject({code: "PROVIDER_REFUSED"});
+        const files = await readdir(f.outputRoot, {recursive: true});
+        const failure = files.find(path => path.endsWith("failure-manifest.json"))!;
+        const {dirname} = await import("node:path");
+        await readConsumerFiles(join(f.outputRoot, dirname(failure)), {"failure-manifest.json": failurePointers});
+        const {runFailureManifestSchema} = await import("../src/domain/run-failure.js");
+        const receipt = runFailureManifestSchema.parse(JSON.parse(await readFile(join(f.outputRoot, failure), "utf8")));
+        const {failureDocument} = await import("../src/domain/contract-error.js");
+        const error = await invoke.mock.results[1]!.value.catch((cause: GeminiFileError) => cause);
+        expect(receipt.errorCode).toBe(failureDocument(error.code).error.code);
+        expect(receipt).toMatchObject({errorCode: "PROVIDER_REFUSED", error: {code: "unexpected_failure"}});
+      }
+    } finally { invoke.mockRestore(); stdout.mockRestore(); vi.unstubAllEnvs(); }
+  });
+
+  it("serves example 06 from a run with optional clock metadata and a failed candidate", async () => {
+    const f = await createFixture();
+    f.meeting.transcript = undefined;
+    const run = new AnalysisOrchestrator({
+      createAnalyzer: () => ({...consumerAnalyzer(f), probeClipClock: async () => 27,
+        transcribe: async () => [{start: "00:00:01", end: "00:00:05", speaker: "Speaker 1", text: "Synthetic context."}]}),
+      createContextSource: () => f.context, probeDurationSeconds: async () => 10,
+      extractAudioTrack: async (_input, path) => { await writeFile(path, "synthetic audio"); return true; },
+      calibrateClipClock: async () => ({ model: "gemini-test", checkedAt: "2026-01-01T00:00:00Z", result: "absolute",
+        evidence: {flashFileSeconds: 27, clipStartSeconds: 20, reportedSeconds: 27} }),
+    });
+    const result = await run.analyze({...f.options, maxIncidents: 2, transcriptLanguage: "en", timelineOffset: "0"});
+    const fields = (await consumerFixture("06-run-files-read-by-skills")).reads_file;
+    await readConsumerFiles(result.directory, {
+      "analysis.json": ["/schemaVersion", ...fields["analysis.json"].by_code],
+      "manifest.json": fields["manifest.json or failure-manifest.json"],
+      "analysis-outcome.json": fields["analysis-outcome.json"],
+      "times.json": ["/schemaVersion"], "analysis.md": [],
+    });
+    expect(result.outcome.failures[0]?.code).toBe("generation_failed");
+  });
+});

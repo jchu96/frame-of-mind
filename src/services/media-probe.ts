@@ -1,3 +1,4 @@
+import { ContractError, faultCode } from "../domain/contract-error.js";
 import { resolve } from "node:path";
 import { sameRate } from "../domain/media-clock.js";
 import { z } from "zod";
@@ -10,7 +11,11 @@ export async function probeFrameRate(
   read = () => readTiming(resolve(path), "v:0"),
 ): Promise<TimecodeSpec> {
   let raw: unknown;
-  try { raw = JSON.parse(await read()); } catch { throw new Error("--timecode-rate from-media requires ffprobe and a complete readable video timing scan within 60 s / 32 MiB; declare an exact rate instead."); }
+  try { raw = JSON.parse(await read()); }
+  catch (error) {
+    const code = faultCode(error);
+    throw new ContractError(code === "COMMAND_FAILED" ? "INVALID_RATE" : code, "--timecode-rate from-media requires ffprobe and a complete readable video timing scan within 60 s / 32 MiB; declare an exact rate instead.");
+  }
   const { rate } = measureTiming(raw);
   const suffix = choice.slice("from-media".length);
   return { ...parseTimecodeRate(`${rate.num}/${rate.den}${suffix}`), rateOrigin: "media" };
@@ -25,24 +30,24 @@ function measureTiming(raw: unknown, independentRate?: FrameRate, requireCount =
   const data = raw as { streams?: Array<{ r_frame_rate?: unknown; avg_frame_rate?: unknown; time_base?: unknown; nb_frames?: unknown; nb_read_frames?: unknown }>; frames?: Array<{ pts?: unknown; duration?: unknown; pkt_duration?: unknown }> } | null;
   const stream = data?.streams?.[0];
   const parse = (value: unknown) => {
-    if (typeof value !== "string" || !/^[1-9]\d*\/[1-9]\d*$/.test(value)) throw new Error("Media frame rate is missing or invalid; declare an exact rate.");
+    if (typeof value !== "string" || !/^[1-9]\d*\/[1-9]\d*$/.test(value)) throw new ContractError("INVALID_RATE", "Media frame rate is missing or invalid; declare an exact rate.");
     const [num, den] = value.split("/").map(Number);
     return rationalRate(num!, den!);
   };
   const rate = parse(stream?.r_frame_rate); const average = parse(stream?.avg_frame_rate);
-  if (rate.num !== average.num || rate.den !== average.den) throw new Error("Variable frame rate is not supported by --timecode-rate from-media.");
+  if (rate.num !== average.num || rate.den !== average.den) throw new ContractError("INVALID_RATE", "Variable frame rate is not supported by --timecode-rate from-media.");
   // Summary rates can agree even when one frame is delayed. Verify every
   // presentation boundary and duration in integer stream ticks, from file zero.
   // Quantized/absent timestamps cannot establish exact CFR and are refused.
   const timeBase = parse(stream?.time_base);
   const frames = data?.frames;
-  if (!Array.isArray(frames) || !frames.length) throw new Error(timingError);
+  if (!Array.isArray(frames) || !frames.length) throw new ContractError("INVALID_RATE", timingError);
   if (frames.length === 1 && (!independentRate || !sameRate(rate, independentRate))) {
-    throw new Error("One-frame timing requires an independently specified matching rate.");
+    throw new ContractError("INVALID_RATE", "One-frame timing requires an independently specified matching rate.");
   }
-  if (requireCount && stream?.nb_read_frames !== String(frames.length)) throw new Error(timingError);
+  if (requireCount && stream?.nb_read_frames !== String(frames.length)) throw new ContractError("INVALID_RATE", timingError);
   if (stream?.nb_frames !== undefined && stream.nb_frames !== "N/A"
-    && String(frames.length) !== stream.nb_frames) throw new Error(timingError);
+    && String(frames.length) !== stream.nb_frames) throw new ContractError("INVALID_RATE", timingError);
   const tick = BigInt(timeBase.num) * BigInt(rate.num);
   const period = BigInt(timeBase.den) * BigInt(rate.den);
   for (const [index, frame] of frames.entries()) {
@@ -51,7 +56,7 @@ function measureTiming(raw: unknown, independentRate?: FrameRate, requireCount =
     if (typeof pts !== "number" || !Number.isSafeInteger(pts)
       || typeof duration !== "number" || !Number.isSafeInteger(duration)
       || BigInt(pts) * tick !== BigInt(index) * period
-      || BigInt(duration) * tick !== period) throw new Error(timingError);
+      || BigInt(duration) * tick !== period) throw new ContractError("INVALID_RATE", timingError);
   }
   return { rate, count: String(frames.length) };
 }
@@ -72,7 +77,7 @@ const streamsSchema = z.object({
 type StartLabel = { value: ExactTime<"source">; dropFrame: boolean };
 export function readStartLabel(values: string[], rate: FrameRate, statedMode?: boolean): StartLabel | undefined {
   const unique = [...new Set(values)];
-  if (unique.length > 1) throw new Error("Conflicting file start timecode labels.");
+  if (unique.length > 1) throw new ContractError("INVALID_TIMECODE", "Conflicting file start timecode labels.");
   const label = unique[0];
   if (label === undefined) return undefined;
   const dropFrame = statedMode ?? label.includes(";");
@@ -105,11 +110,11 @@ async function videoHeader(input: Recording, signal?: AbortSignal) {
   const {streams, format} = streamsSchema.parse(JSON.parse(json));
   const videos = streams.filter(s => s.codec_type === "video" && !s.disposition?.attached_pic);
   const video = videos[0];
-  if (!video?.width || !video.height || !video.codec_name) throw new Error("Missing primary video dimensions or codec.");
+  if (!video?.width || !video.height || !video.codec_name) throw new ContractError("DECODE_FAILED", "Missing primary video dimensions or codec.");
   const audio = streams.filter(s => s.codec_type === "audio");
-  if (audio.some(s => !s.channels || !s.codec_name)) throw new Error("Missing audio codec or channel count.");
+  if (audio.some(s => !s.channels || !s.codec_name)) throw new ContractError("DECODE_FAILED", "Missing audio codec or channel count.");
   const tracks = streams.filter(s => s.codec_tag_string === "tmcd");
-  if (tracks.length && videos.length !== 1) throw new Error("Ambiguous association between video and timecode tracks.");
+  if (tracks.length && videos.length !== 1) throw new ContractError("INVALID_RATE", "Ambiguous association between video and timecode tracks.");
   const labels = [format, video, ...tracks].flatMap(s => tagValues(s.tags));
   await input.check();
   return { format, video: { ...video, width: video.width, height: video.height, codec_name: video.codec_name }, audio, labels };
@@ -119,7 +124,7 @@ export async function probeStartLabel(input: Recording, rate: FrameRate) {
   const { labels, video } = await videoHeader(input);
   if (!labels.length) return undefined;
   if (!video.r_frame_rate || !sameRate(parseTimecodeRate(video.r_frame_rate + ":ndf").rate, rate)) {
-    throw new Error("Video rate differs from the media reference rate.");
+    throw new ContractError("INVALID_RATE", "Video rate differs from the media reference rate.");
   }
   return readStartLabel(labels, rate);
 }
@@ -127,10 +132,10 @@ export async function probeStartLabel(input: Recording, rate: FrameRate) {
 export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal): Promise<VideoInfo> {
   const { format, video, audio, labels } = await videoHeader(input, signal);
   const {rate, count} = measureTiming(JSON.parse(await readTiming(input.path, String(video.index), signal)), declaration?.rate, true);
-  if (declaration?.rate && !sameRate(rate, declaration.rate)) throw new Error("Declared rate differs from measured video rate.");
+  if (declaration?.rate && !sameRate(rate, declaration.rate)) throw new ContractError("INVALID_RATE", "Declared rate differs from measured video rate.");
   const fileStartLabel = readStartLabel(labels, rate, declaration?.dropFrame);
   const dropFrame = declaration?.dropFrame ?? fileStartLabel?.dropFrame ?? (isDropRate(rate) ? undefined : false);
-  if (dropFrame && !isDropRate(rate)) throw new Error("Drop-frame mode requires 30000/1001 or 60000/1001.");
+  if (dropFrame && !isDropRate(rate)) throw new ContractError("INVALID_RATE", "Drop-frame mode requires 30000/1001 or 60000/1001.");
   await input.check();
   return { formatName: format.format_name, duration: exactTime("source", count, rate), rate, dropFrame, fileStartLabel,
     width: video.width, height: video.height, codec: video.codec_name, pixelFormat: video.pix_fmt,
@@ -144,6 +149,7 @@ export async function decodeVideo(input: Recording, info: VideoInfo, signal?: Ab
     await runMediaTool("ffmpeg", [...localVideoInput(info.formatName), "-i", input.path, "-map", `0:${info.videoIndex}`,
       ...info.audio.flatMap(s => ["-map", `0:${s.index}`]), "-f", "null", "-"], {signal});
   } catch (cause) {
+    if (faultCode(cause) !== "COMMAND_FAILED" && faultCode(cause) !== "DECODE_FAILED") throw cause;
     throw new DecodeError(cause instanceof Error ? cause.message : "Full media decode failed.", {cause});
   }
   await input.check();

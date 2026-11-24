@@ -26,7 +26,7 @@ it("D01 keeps a same-named user folder without a marker", async () => {
   await mkdir(folder);
   const file = join(folder, "frame-001.png");
   await writeFile(file, "mine");
-  const rows = await inspectScratch(scan, true);
+  const rows = await inspectScratch(scan, folder);
   expect(await readFile(file, "utf8")).toBe("mine");
   expect(rows).toContainEqual(expect.objectContaining({path: folder, state: "unproven", removed: false}));
 });
@@ -42,7 +42,7 @@ it("D02 keeps a marked folder while its creator is live", async () => {
     if (!folder) throw new Error("Creator did not mark scratch");
     const file = join(folder, "frame-001.png");
     await writeFile(file, "working");
-    const rows = await inspectScratch(scan, true);
+    const rows = await inspectScratch(scan, folder);
     expect(await readFile(file, "utf8")).toBe("working");
     expect(rows).toContainEqual(expect.objectContaining({path: folder, state: expect.stringMatching(/^live/), removed: false}));
   } finally {
@@ -60,7 +60,7 @@ it("D03 keeps the external target of a matching link with a copied marker", asyn
   const file = join(outside, "frame-001.png");
   await writeFile(file, "outside");
   await symlink(outside, join(scan, basename(outside)), "junction");
-  await inspectScratch(scan, true);
+  await inspectScratch(scan, join(scan, basename(outside)));
   expect(await readFile(file, "utf8")).toBe("outside");
 });
 
@@ -86,7 +86,8 @@ it("lists the three temp kinds by default and the two adjacent kinds only in the
       expect(row.ageMs).toBeGreaterThanOrEqual(0);
       expect(await readFile(join(row.path, markerName), "utf8")).toBeTruthy();
     }
-    const removed = [...await inspectScratch(undefined, true), ...await inspectScratch(scan, true)];
-    expect(removed.filter(row => row.removed).map(row => row.path).sort()).toEqual([...temp, ...local].map(row => row.path).sort());
+    const removed = await inspectScratch(scan, lock);
+    expect(removed.filter(row => row.removed).map(row => row.path)).toEqual([lock]);
+    expect(await readFile(join(shots!, markerName), "utf8")).toBeTruthy();
   } finally { vi.unstubAllEnvs(); }
 });

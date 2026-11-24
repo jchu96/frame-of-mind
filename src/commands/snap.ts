@@ -1,3 +1,4 @@
+import { CliError, writeDocument } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
 import type { Command } from "commander";
 import { parseSecondsMs } from "../domain/clock.js";
@@ -9,8 +10,8 @@ interface SnapFlags { at: string; edge: string; fileClock?: string; json?: boole
 
 export async function snapFile(video: string, flags: SnapFlags, decode = decodeSpeechEnvelope) {
   const clock = flags.fileClock ?? "source";
-  if (clock !== "source" && clock !== "reel") throw new Error("--file-clock must be source or reel.");
-  if (flags.edge !== "start" && flags.edge !== "end") throw new Error("--edge must be start or end.");
+  if (clock !== "source" && clock !== "reel") throw new CliError("USAGE", "--file-clock must be source or reel.");
+  if (flags.edge !== "start" && flags.edge !== "end") throw new CliError("USAGE", "--edge must be start or end.");
   const elapsed = /^(\d+):([0-5]\d):([0-5]\d)(\.\d{1,3})?$/.exec(flags.at);
   const atMs = parseSecondsMs(elapsed && flags.at.trim() === flags.at
     ? String(timestampToSeconds(`${elapsed[1]!.padStart(2, "0")}:${elapsed[2]}:${elapsed[3]}`)) + (elapsed[4] ?? "")
@@ -20,7 +21,7 @@ export async function snapFile(video: string, flags: SnapFlags, decode = decodeS
   const left = Math.max(0, atMs - pad);
   const right = Math.min(Number.MAX_SAFE_INTEGER - 10, atMs + pad);
   const slice = { startMs: left - left % 10, endMs: right + (10 - right % 10) % 10 };
-  const envelope = await decode(video, { slice });
+  const envelope = await decode(video, { slice, ...(flags.json && { reportFailure: true }) });
   const result = selectEdge(envelope && classify(envelope), flags.edge, atMs, clock, settings);
   return { request: { clock, at: flags.at, edge: flags.edge }, snapSettings: settings, result };
 }
@@ -40,8 +41,9 @@ export function registerSnap(program: Command) {
         : " · no measured precision";
       const alternatives = "alternativesMs" in result && result.alternativesMs.length
         ? ` · alternatives (ms): ${result.alternativesMs.join(", ")}` : "";
-      process.stdout.write(flags.json ? `${JSON.stringify(output)}\n`
-        : `${request.clock} ${request.edge} ${request.at} · ${result.status}${reading}${alternatives}\n`);
-      if (result.status === "unavailable") process.exitCode = 1;
+      if (flags.json) {
+        writeDocument(output);
+      } else process.stdout.write(`${request.clock} ${request.edge} ${request.at} · ${result.status}${reading}${alternatives}\n`);
+      if (!flags.json && result.status === "unavailable") process.exitCode = 1;
     });
 }

@@ -295,6 +295,7 @@ const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
 const DEFAULT_BUILT_IN_RECIPE_REVISION = "builtin-2026-07-27.1";
 
 export class UnknownBuiltInRecipeError extends Error {
+  readonly code = "NOT_FOUND";
   constructor(readonly recipeId: string, availableIds: readonly string[]) {
     super(`Unknown recipe '${recipeId}'. Available recipes: ${availableIds.join(", ")}.`);
     this.name = "UnknownBuiltInRecipeError";

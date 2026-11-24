@@ -253,6 +253,11 @@ node frameofmind.mjs --version
 
 On Linux, `sha256sum --check SHA256SUMS` also verifies the download. The CLI
 needs Node 22 or newer. Install ffmpeg and ffprobe for media work.
+Programs can run `frameofmind capabilities --json` to discover commands, options and
+schema versions. Use `doctor --json` for readiness, `recipes --json` for recipe IDs,
+and `--version --json` for the tool version. Each release ships the CLI schemas beside
+the bundle. See the [CLI and MCP contract](docs/MCP_TOOLS.md).
+
 Releases from `v0.6.0-beta.2` on include `THIRD-PARTY-NOTICES.txt` beside `frameofmind.mjs`.
 If you redistribute the bundle, ship that release’s notices file with it.
 
@@ -489,7 +494,7 @@ They measure constant-rate video from file frame zero. Use whole frames such as
 `2f`, elapsed timecode, or decimal seconds that fall exactly on a frame.
 Slice includes its first frame and excludes its end. Proxy and slice produce
 H.264 video with mono AAC reference audio. Verify fully decodes the file and
-exits 1 on any frame-count mismatch. See the [local media procedure](docs/RUNBOOK.md#310-prepare-and-verify-local-media).
+exits 1 on a frame-count mismatch in text mode. With `--json` it reports `ok: false` and the mismatched range at exit 0. See the [local media procedure](docs/RUNBOOK.md#310-prepare-and-verify-local-media).
 
 Use `map` with the timeline exported alongside an edited sequence. A lookup
 such as `frameofmind map edit.otio --at 100f` reports the source file, the
@@ -512,7 +517,7 @@ tracks have separate rows, topmost first. [Timeline lookup procedure](docs/RUNBO
 | `--file-clock source\|reel` | input media clock; defaults to source |
 | `--timecode-rate <rate>` | video rate for exact offsets; see Clocks for accepted forms |
 | `--no-calibrate` | skip the synthetic probe and label the clip clock unverified |
-| `calibrate [--model <id>] [--json]` | refresh the model clock measurement and report token cost |
+| `calibrate [--model <id>] [--json]` | refresh the model clock measurement (text mode also reports token cost) |
 | `--transcript-offset <time>` | full transcript time at video `00:00` |
 | `--focus <text>` | prioritize a repository/workflow/concern |
 | `--label <text>` | human label for the run (for example the source title), up to 200 characters on one line; recorded as `label` in `manifest.json`; the heading of `analysis.md` and `report.html` for a video-only run, a "Label" line under the meeting title otherwise; printed after the run path; never sent to the model |
@@ -968,12 +973,12 @@ to browser code.
 
 Review the text of every record you intend to share, including rejected records.
 From a checkout, import each cleared bundle into a dedicated database in a private directory.
-Close the writer, then configure the host to launch the release with Bun over stdio.
+The experimental MCP server is Bun-only. Close the writer, then launch the checkout with Bun over stdio.
 Set `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` in the host environment to disable Bun’s disk cache.
 
 ```bash
 NUXT_SQLITE_PATH=/data/review/reviewed.sqlite bun run web:import -- /data/bundles/selected-run
-BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-env-file /opt/frameofmind/frameofmind.mjs mcp --database /data/review/reviewed.sqlite
+BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun --no-env-file /opt/frameofmind/dist/cli.js mcp --database /data/review/reviewed.sqlite
 ```
 
 The four read tools return untrusted data. Records default to accepted and retain their

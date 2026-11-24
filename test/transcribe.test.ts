@@ -1,3 +1,4 @@
+import { validateCliDocument } from "./helpers/cli-schema.js";
 import { createHash } from "node:crypto";
 import { calibrateClipClock } from "../src/adapters/gemini-calibration.js";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
@@ -283,7 +284,7 @@ describe("output", () => {
   it("reports blankCues and adjustedCues and writes JSON only when requested", async () => {
     const f = await fixture(10); f.analyzer.transcribe.mockResolvedValue([segment("a"), segment("   "), { ...segment("b"), end: "00:00:19" }]);
     await cli(f, ["--json"]);
-    expect(f.deps.stdout.mock.calls.flat().join("\n")).toContain("adjustedCues: 1; blankCues: 1");
+    expect(validateCliDocument("transcribe", f.deps.stdout.mock.calls.flat().join("\n"))).toMatchObject({ adjustedCues: 1, blankCues: 1 });
     expect(JSON.parse(await readFile(join(f.root, "synthetic.transcript.json"), "utf8"))).toMatchObject({ clock: "source", adjustedCues: 1, blankCues: 1, segments: [{ start: 20 }, { start: 20 }, { start: 20 }] });
     const plain = await fixture(10); await cli(plain);
     expect(await readdir(plain.root)).toEqual(["synthetic.mp4", "synthetic.srt", "synthetic_speakers.txt"]);
@@ -390,10 +391,10 @@ describe("reviewer supplementary probes", () => {
     }
   });
   it("Y02 provider-body sentinel never reaches terminal or exported files", async () => {
-    for (const fail of [false, true]) {
+    for (const fail of [false, "refusal", "offline"]) {
       const f = await fixture(10);
       const providerBody = "PROVIDER-BODY-SENTINEL";
-      const error = new ApiError({ message: providerBody, status: fail ? 403 : 503 });
+      const error = fail === "offline" ? new TypeError(providerBody, {cause: Object.assign(new Error(), {code: "ENOTFOUND"})}) : new ApiError({ message: providerBody, status: fail ? 403 : 503 });
       if (fail) f.analyzer.transcribe.mockRejectedValue(error);
       else f.analyzer.transcribe.mockRejectedValueOnce(error);
       await cli(f, ["--json"]);
@@ -403,7 +404,8 @@ describe("reviewer supplementary probes", () => {
       expect(terminal).not.toContain("test-key");
       expect(f.analyzer.transcribe).toHaveBeenCalledTimes(2);
       if (fail) {
-        expect(process.exitCode).toBe(1);
+        expect(process.exitCode).toBe(fail === "offline" ? 20 : 1);
+        expect(JSON.parse(f.deps.stdout.mock.lastCall![0])).toMatchObject({ error: {code: fail === "offline" ? "PROVIDER_UNREACHABLE" : "PROVIDER_REFUSED"} });
         await expectNoOutputs(f);
       } else {
         for (const suffix of [".srt", "_speakers.txt", ".transcript.json"]) {

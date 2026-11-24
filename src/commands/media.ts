@@ -1,3 +1,4 @@
+import { CliError, writeDocument } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
 import { exactTime, renderExactTimecode } from "exact-time";
 import type { Command } from "commander";
@@ -11,7 +12,7 @@ function frameText(time: {clock: string; frames: string; rate: {num: number; den
 function describe(result: MediaResult) {
   if (result.kind === "verify") {
     return [`Expected ${frameText(result.expected)}`, `Measured ${frameText(result.actual)}`,
-      `Decode ${result.decodeStatus}`, ...result.mismatches].join("\n");
+      `Decode ${result.decodeStatus}`, ...(result.ok ? [] : ["Decoded frame count differs from expectation."])].join("\n");
   }
   if (result.kind === "frame") return `Frame ${frameText(result.at)} at ${result.width}×${result.height}. Decode ${result.decodeStatus}.`;
   const lines = [`Duration ${frameText(result.duration)}`, `Video ${result.width}×${result.height} ${result.codec}`,
@@ -39,11 +40,12 @@ export function registerMedia(program: Command): void {
         try {
           await requireMedia(name, flags, controller.signal);
           const result = await mediaHelper(name, video, flags, controller.signal);
-          process.stdout.write((flags.json ? JSON.stringify(result) : describe(result)) + "\n");
-          if (result.kind === "verify" && result.mismatches.length) process.exitCode = 1;
+          if (flags.json) {
+            writeDocument(result);
+          } else process.stdout.write(describe(result) + "\n");
+          if (!flags.json && result.kind === "verify" && !result.ok) process.exitCode = 1;
         } catch (error) {
-          if (flags.json) process.stdout.write(JSON.stringify({error: error instanceof Error ? error.message : "Media operation failed.",
-            ...(error instanceof DecodeError && {decodeStatus: "failed"})}) + "\n");
+          if (flags.json && error instanceof DecodeError) throw new CliError("DECODE_FAILED", "Full media decode failed.");
           throw error;
         } finally {
           process.off("SIGINT", cancel);

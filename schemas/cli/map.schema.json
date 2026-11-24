@@ -1,0 +1,86 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message"]
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "rate": {
+        "type": "object",
+        "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+        "required": ["num", "den"]
+      },
+      "mode": {
+        "type": "object",
+        "properties": {
+          "basis": {"type": "string"},
+          "notes": {"type": "array", "items": {"type": "string"}},
+          "dropFrame": {"type": "boolean"}
+        },
+        "required": ["basis", "notes"]
+      },
+      "rows": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "track": {"type": "integer"},
+            "trackName": {"type": "string"},
+            "status": {"type": "string", "examples": ["source", "transition", "gap", "nested", "refused"]},
+            "clip": {"type": "string"},
+            "path": {"type": "string"},
+            "fileValue": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+            "mediaFrame": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+            "sourceTimecode": {"type": "string"},
+            "sourceTimecodeReason": {"type": "string"},
+            "reason": {"type": "string"},
+            "clips": {"type": "array", "items": {"type": "string"}},
+            "sequenceFrame": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+            "sequenceTimecodes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {"mode": {"enum": ["drop-frame", "non-drop"]}, "timecode": {"type": "string"}},
+                "required": ["mode", "timecode"]
+              }
+            },
+            "clock": {"const": "source"}
+          },
+          "required": ["status"],
+          "if": {"properties": {"status": {"const": "source"}}},
+          "then": {"required": ["track", "trackName", "path", "fileValue", "mediaFrame", "clock"]}
+        }
+      },
+      "status": {
+        "type": "string",
+        "examples": [
+          "outside the sequence",
+          "mapped",
+          "no video source",
+          "matches or unresolved items",
+          "no source occurrence"
+        ]
+      },
+      "sequenceFrame": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+      "sequenceTimecodes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {"mode": {"enum": ["drop-frame", "non-drop"]}, "timecode": {"type": "string"}},
+          "required": ["mode", "timecode"]
+        }
+      }
+    },
+    "required": ["rate", "mode", "rows", "status"]
+  }
+}

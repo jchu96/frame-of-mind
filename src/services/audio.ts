@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { resolve } from "node:path";
 import { decimalMs, SpeechMeter, type Envelope } from "../domain/snap.js";
 import { childEnvironment, spawn } from "../lib/child-env.js";
@@ -147,6 +148,7 @@ export function planTranscriptionWindows(
 }
 
 export interface SpeechDecodeOptions {
+  reportFailure?: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
   slice?: { startMs: number; endMs: number };
@@ -157,7 +159,7 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
   const { signal, slice } = options;
   if (signal?.aborted) return undefined;
   const deadline = Date.now() + (options.timeoutMs ?? AUDIO_EXTRACTION_TIMEOUT_MS);
-  const envelope = await new Promise<Envelope | undefined>(resolveResult => {
+  const envelope = await new Promise<Envelope | undefined>((resolveResult, reject) => {
     const child = spawn("ffmpeg", [
       "-nostdin", "-v", "error", "-copyts", "-start_at_zero",
       ...(slice ? ["-ss", decimalMs(slice.startMs), "-t", decimalMs(slice.endMs - slice.startMs)] : []),
@@ -217,12 +219,21 @@ export async function decodeSpeechEnvelope(video: string, options: SpeechDecodeO
     child.stderr.once("end", () => child.stdout.resume());
     child.stdout.once("error", stop);
     child.stderr.once("error", stop);
-    child.once("error", stop);
+    let missing = false;
+    child.once("error", (error: NodeJS.ErrnoException) => {
+      missing = error.code === "ENOENT";
+      stop();
+    });
     child.once("close", code => {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", stop);
       if (code || code === null || failed || pending || !child.stdout.readableEnded || !child.stderr.readableEnded ||
-          !sampleClock || (meter && meter.bytes !== observedBytes)) return resolveResult(undefined);
+          !sampleClock || (meter && meter.bytes !== observedBytes)) {
+        if (options.reportFailure) reject(new ContractError(signal?.aborted ? "CANCELLED" : missing ? "CAPABILITY_MISSING" : "DECODE_FAILED",
+          "Speech envelope decoding failed."));
+        else resolveResult(undefined);
+        return;
+      }
       resolveResult(meter ? meter.finish() : slice ? { startMs: slice.startMs, blocks: [], length: 0 } : undefined);
     });
   });

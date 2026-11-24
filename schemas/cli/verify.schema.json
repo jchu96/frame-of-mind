@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message"]
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "kind": {"type": "string", "examples": ["verify"]},
+      "actual": {"$ref": "#/definitions/measurement"},
+      "expected": {"$ref": "#/definitions/measurement"},
+      "mismatches": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "from": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+            "to": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+            "kind": {"type": "string", "examples": ["missing", "extra"]}
+          },
+          "required": ["from", "to", "kind"]
+        }
+      },
+      "decodeStatus": {"type": "string", "examples": ["passed"]},
+      "ok": {"type": "boolean"}
+    },
+    "required": ["kind", "actual", "expected", "mismatches", "decodeStatus", "ok"]
+  },
+  "definitions": {
+    "measurement": {
+      "type": "object",
+      "properties": {
+        "clock": {"const": "source"},
+        "frames": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "rate": {
+          "type": "object",
+          "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+          "required": ["num", "den"]
+        },
+        "secondsDerived": {"const": true},
+        "timecode": {"type": "string"},
+        "dropFrame": {"type": "boolean"},
+        "ticks": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "seconds": {"type": "string"},
+        "ticksUnavailable": {"type": "string"},
+        "secondsUnavailable": {"type": "string"}
+      },
+      "required": ["clock", "frames", "rate", "secondsDerived"]
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import { ContractError } from "./contract-error.js";
 import { z } from "zod";
 import {
   exactTime, exactMilliseconds, fromBoundaryMilliseconds, fromTimecode, fromMilliseconds,
@@ -18,18 +19,18 @@ export type ClipClock = "absolute" | "relative" | "unverified";
 
 export function clockTime<C extends string>(clock: C, ms: number, precisionMs = 1000): ClockTime<C> {
   if (!Number.isSafeInteger(ms) || !Number.isSafeInteger(precisionMs) || precisionMs < 0) {
-    throw new Error("Clock values must be safe integer milliseconds.");
+    throw new ContractError("INVALID_INPUT", "Clock values must be safe integer milliseconds.");
   }
   return { clock, ms, precisionMs } as ClockTime<C>;
 }
 
 export function parseSecondsMs(value: string): number {
   if (!/^\d+(?:\.\d{1,3})?$/.test(value) || value.trim() !== value) {
-    throw new Error("Seconds must be non-negative, unsigned decimal seconds with at most three decimals.");
+    throw new ContractError("INVALID_INPUT", "Seconds must be non-negative, unsigned decimal seconds with at most three decimals.");
   }
   const unpadded = value.replace(/^0+(?=\d)/, "");
   const ms = snapDecimalSeconds("timeline", unpadded, { num: 1000, den: 1 }, "instant").frames;
-  if (ms > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error("Seconds exceed the safe millisecond range.");
+  if (ms > BigInt(Number.MAX_SAFE_INTEGER)) throw new ContractError("INVALID_INPUT", "Seconds exceed the safe millisecond range.");
   return Number(ms);
 }
 
@@ -37,7 +38,7 @@ export function sourceToTimeline(time: SourceTime, offsetMs: number): ClockTime<
   return fileToTimeline(time, offsetMs);
 }
 export function fileToTimeline(time: ClockTime<FileClock>, offsetMs: number): ClockTime<"timeline"> {
-  if (!Number.isSafeInteger(offsetMs) || offsetMs < 0) throw new Error("Invalid timeline offset.");
+  if (!Number.isSafeInteger(offsetMs) || offsetMs < 0) throw new ContractError("INVALID_INPUT", "Invalid timeline offset.");
   return clockTime("timeline", time.ms + offsetMs, time.precisionMs);
 }
 export function timelineToSource(time: ClockTime<"timeline">, offsetMs: number): SourceTime {
@@ -100,15 +101,15 @@ function strictEntry(value: string, flag: string) {
     return { form: "timecode", value } as const;
   }
   try { return { form: "milliseconds", value: String(parseSecondsMs(value)) } as const; }
-  catch { throw new Error(`Accepted ${flag} forms: non-negative seconds (at most three decimals), Nf whole frames, or HH:MM:SS:FF / HH:MM:SS;FF at a declared video rate. Time of day is not a cut point.`); }
+  catch { throw new ContractError("INVALID_INPUT", `Accepted ${flag} forms: non-negative seconds (at most three decimals), Nf whole frames, or HH:MM:SS:FF / HH:MM:SS;FF at a declared video rate. Time of day is not a cut point.`); }
 }
 
 function convertEntry<C extends MediaClock>(clock: C, entry: ReturnType<typeof strictEntry>, rate?: FrameRate, dropFrame?: boolean) {
   if (entry.form === "milliseconds") return rate
     ? fromBoundaryMilliseconds(clock, entry.value, rate) : fromMilliseconds(clock, entry.value);
-  if (!rate) throw new Error("Frame/timecode offsets require --timecode-rate. Without it, use seconds (at most three decimals); exact outputs are milliseconds, seconds and ticks, with no frames or timecode.");
+  if (!rate) throw new ContractError("USAGE", "Frame/timecode offsets require --timecode-rate. Without it, use seconds (at most three decimals); exact outputs are milliseconds, seconds and ticks, with no frames or timecode.");
   if (entry.form === "frames") return exactTime(clock, entry.value, rate);
-  if (dropFrame === undefined) throw new Error("State --timecode-rate with an explicit df or ndf choice for a timecode label.");
+  if (dropFrame === undefined) throw new ContractError("USAGE", "State --timecode-rate with an explicit df or ndf choice for a timecode label.");
   return fromTimecode(clock, entry.value, rate, dropFrame);
 }
 
@@ -122,7 +123,7 @@ export function parseTimelinePosition(value: string, origin: ExactTime<"timeline
 }
 
 export function declareClock(offset?: string, rate?: string, mediaRate?: TimecodeSpec): ClockDeclaration | undefined {
-  if (rate !== undefined && offset === undefined) throw new Error("--timecode-rate requires --timeline-offset (use 0 for a sequence starting at zero).");
+  if (rate !== undefined && offset === undefined) throw new ContractError("USAGE", "--timecode-rate requires --timeline-offset (use 0 for a sequence starting at zero).");
   if (offset === undefined) return undefined;
   const entry = strictEntry(offset, "--timeline-offset");
   const fromMedia = rate !== undefined && /^from-media(?::(?:df|ndf))?$/.test(rate);
@@ -139,6 +140,6 @@ export function declareClock(offset?: string, rate?: string, mediaRate?: Timecod
 
 /** Compatibility rendering: the frame containing the whole-millisecond instant. */
 export function renderTimecode(ms: number, rate: FrameRate, dropFrame: boolean): string {
-  if (!Number.isSafeInteger(ms) || ms < 0) throw new Error("Timecode requires non-negative integer milliseconds.");
+  if (!Number.isSafeInteger(ms) || ms < 0) throw new ContractError("INVALID_INPUT", "Timecode requires non-negative integer milliseconds.");
   return renderExactTimecode(fromMilliseconds("source", String(ms), rate), dropFrame);
 }

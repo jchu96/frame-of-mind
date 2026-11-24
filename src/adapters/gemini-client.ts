@@ -1,6 +1,7 @@
+import { ContractError } from "../domain/contract-error.js";
 import { GoogleGenAI } from "@google/genai";
 import {
-  hasConflictingProviderStatus,
+  classifyTransportFailure, evidencedFault, ProviderEvidenceError, hasConflictingProviderStatus,
   ProviderStatusConflictError,
 } from "./gemini-error-class.js";
 
@@ -22,7 +23,18 @@ export class StatusAwareGeminiClient extends GoogleGenAI {
     }
     const apiCall = transport.apiCall.bind(this.apiClient);
     transport.apiCall = async (...args) => {
-      const response = await apiCall(...args);
+      let response: Response;
+      try { response = await apiCall(...args); }
+      catch (error) {
+        // The SDK's per-attempt deadline aborts fetch without a TimeoutError.
+        // A caller's explicit cancellation uses the same exception name.
+        const callerSignal = args[4] as AbortSignal | undefined;
+        const deadlineExpired = error instanceof Error && error.name === "AbortError" && !callerSignal?.aborted;
+        if (deadlineExpired || classifyTransportFailure(error).fault === "PROVIDER_UNREACHABLE") {
+          throw new ContractError("PROVIDER_UNREACHABLE", "Gemini gave no response.");
+        }
+        throw error;
+      }
       if (!response.ok && response.headers.get("content-type")?.includes("application/json")) {
         const readJson = response.json.bind(response);
         response.json = async () => {
@@ -30,6 +42,8 @@ export class StatusAwareGeminiClient extends GoogleGenAI {
           if (hasConflictingProviderStatus(response.status, body)) {
             throw new ProviderStatusConflictError(response.status);
           }
+          const code = evidencedFault(body);
+          if (code) throw new ProviderEvidenceError(response.status, code);
           return body;
         };
       }

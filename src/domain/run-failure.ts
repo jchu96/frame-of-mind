@@ -60,6 +60,7 @@ export const runFailureManifestSchema = z.strictObject({
   }),
   model: z.string().min(1).max(240),
   recordingSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  errorCode: z.string().min(1).optional(),
   error: failureErrorSchema,
   remoteFile: z.strictObject({
     name: z.string().regex(/^files\/[A-Za-z0-9_-]+$/).max(1_000).optional(),

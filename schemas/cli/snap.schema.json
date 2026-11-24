@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message"]
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "request": {
+        "type": "object",
+        "properties": {
+          "clock": {"enum": ["source", "reel"]},
+          "edge": {"enum": ["start", "end"]},
+          "at": {"type": "string"}
+        },
+        "required": ["clock", "edge", "at"]
+      },
+      "snapSettings": {
+        "type": "object",
+        "properties": {
+          "method": {"const": "audio-envelope"},
+          "gapMs": {"type": "integer"},
+          "windowMs": {"type": "integer"}
+        },
+        "required": ["method", "gapMs", "windowMs"]
+      },
+      "result": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": {"type": "string", "examples": ["snapped", "ambiguous", "no-boundary", "unavailable"]},
+          "alternativesMs": {"type": "array", "items": {"type": "integer"}},
+          "shiftMs": {"type": "integer"},
+          "gapMs": {"type": "integer"},
+          "target": {
+            "type": "object",
+            "properties": {
+              "clock": {"enum": ["source", "reel"]},
+              "seconds": {"type": "string"},
+              "gridMs": {"const": 10},
+              "precisionMs": {"enum": [50, 200]},
+              "origin": {"const": "audio-envelope"}
+            },
+            "required": ["clock", "seconds", "gridMs", "precisionMs", "origin"]
+          },
+          "gapLowerBound": {"const": true}
+        },
+        "if": {"properties": {"status": {"const": "snapped"}}},
+        "then": {"required": ["status", "alternativesMs", "shiftMs", "gapMs", "target"]},
+        "else": {
+          "if": {"properties": {"status": {"enum": ["ambiguous", "no-boundary"]}}},
+          "then": {"required": ["alternativesMs"]}
+        }
+      }
+    },
+    "required": ["request", "snapSettings", "result"]
+  }
+}

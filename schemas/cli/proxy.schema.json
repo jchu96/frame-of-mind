@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message"]
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "kind": {"type": "string", "examples": ["proxy"]},
+      "duration": {"$ref": "#/definitions/measurement"},
+      "width": {"type": "integer"},
+      "height": {"type": "integer"},
+      "codec": {"type": "string"},
+      "hasAudio": {"type": "boolean"},
+      "audio": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {"codec": {"type": "string"}, "channels": {"type": "integer"}},
+          "required": ["codec", "channels"]
+        }
+      },
+      "decodeStatus": {"type": "string", "examples": ["passed"]},
+      "fileStartLabel": {
+        "type": ["object", "null"],
+        "properties": {
+          "value": {
+            "type": "object",
+            "properties": {
+              "clock": {"const": "source"},
+              "frames": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+              "rate": {
+                "type": "object",
+                "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+                "required": ["num", "den"]
+              }
+            },
+            "required": ["clock", "frames", "rate"]
+          },
+          "dropFrame": {"type": "boolean"}
+        },
+        "required": ["value", "dropFrame"]
+      },
+      "proxy": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "frames": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+          "rate": {
+            "type": "object",
+            "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+            "required": ["num", "den"]
+          }
+        },
+        "required": ["path", "frames", "rate"]
+      },
+      "source": {
+        "type": "object",
+        "properties": {
+          "path": {"type": "string"},
+          "frames": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+          "rate": {
+            "type": "object",
+            "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+            "required": ["num", "den"]
+          },
+          "sizeBytes": {"type": "integer", "minimum": 0},
+          "mtimeMs": {"type": "number"}
+        },
+        "required": ["path", "frames", "rate", "sizeBytes", "mtimeMs"]
+      },
+      "frameAligned": {"type": "boolean"}
+    },
+    "required": [
+      "kind",
+      "duration",
+      "width",
+      "height",
+      "codec",
+      "hasAudio",
+      "audio",
+      "decodeStatus",
+      "fileStartLabel",
+      "source",
+      "proxy",
+      "frameAligned"
+    ]
+  },
+  "definitions": {
+    "measurement": {
+      "type": "object",
+      "properties": {
+        "clock": {"const": "source"},
+        "frames": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "rate": {
+          "type": "object",
+          "properties": {"num": {"type": "integer", "minimum": 1}, "den": {"type": "integer", "minimum": 1}},
+          "required": ["num", "den"]
+        },
+        "secondsDerived": {"const": true},
+        "timecode": {"type": "string"},
+        "dropFrame": {"type": "boolean"},
+        "ticks": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "seconds": {"type": "string"},
+        "ticksUnavailable": {"type": "string"},
+        "secondsUnavailable": {"type": "string"}
+      },
+      "required": ["clock", "frames", "rate", "secondsDerived"]
+    }
+  }
+}

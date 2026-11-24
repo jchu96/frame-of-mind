@@ -151,9 +151,14 @@ it("negotiates the documented schemas and reads only reviewed fields, original i
   }
   async function call(name: string, args = {}, error?: string) {
     const result = await request("tools/call", { name: prefix + name, arguments: args });
-    if (error) { expect(result).toEqual({ isError: true, content: [{ type: "text", text: error }] }); return; }
+    if (error) {
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({ schemaVersion: 1, error: {code: error, message: expect.any(String)} });
+      expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
+      return;
+    }
     expect(result.content).toEqual([{ type: "text", text: JSON.stringify(result.structuredContent) }]);
-    expect(result.structuredContent).toEqual({ trust: "untrusted-data", data: expect.any(Object) });
+    expect(result.structuredContent).toEqual({ schemaVersion: 1, trust: "untrusted-data", data: expect.any(Object) });
     return result.structuredContent.data;
   }
   try {
@@ -163,14 +168,14 @@ it("negotiates the documented schemas and reads only reviewed fields, original i
     const { tools } = await request("tools/list", {});
     expect(tools.map((t: { name: string }) => t.name).sort()).toEqual(names.map(n => prefix + n).sort());
     const document = await readFile("docs/MCP_TOOLS.md", "utf8");
-    const documented = Object.fromEntries([...document.matchAll(/^## (\w+)\n[\s\S]*?^`{3}json\n([\s\S]*?)\n`{3}/gm)]
+    const documented = Object.fromEntries([...document.matchAll(/^## (frame_of_mind_\w+)\n[\s\S]*?^`{3}json\n([\s\S]*?)\n`{3}/gm)]
       .map(([, name, schemas]) => [name, JSON.parse(schemas!)]));
     expect(Object.fromEntries(tools.map(({ name, inputSchema, outputSchema }: Tool) => [name, { inputSchema, outputSchema }]))).toEqual(documented);
     for (const tool of tools) {
       expect(tool.description.startsWith("Reads only.")).toBe(true);
       expect(tool.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
       expect(tool.inputSchema.additionalProperties).toBe(false);
-      expect(tool.outputSchema.additionalProperties).toBe(false);
+      expect(tool.outputSchema.additionalProperties).not.toBe(false);
     }
     expect(await call("manifest")).toEqual({ serverVersion: VERSION, schemaVersions: { analysis: [2, 3], manifest: [2, 3], times: [2] },
       recipeIds: ["decisions", "issue-review"], providers: ["file"], kinds: ["decision", "issue"], runCount: 2, itemCount: 3,
@@ -179,7 +184,7 @@ it("negotiates the documented schemas and reads only reviewed fields, original i
     expect(first.runs).toEqual([summaryOf(video)]);
     expect(await call("list_runs", { cursor: first.nextCursor })).toEqual({ runs: [summaryOf(meeting)] });
     expect(await call("list_runs", { provider: "file", completedAfter: meeting.manifest.completedAt })).toEqual({ runs: [] });
-    await call("list_runs", { recipeId: "decisions", cursor: first.nextCursor }, "bad_cursor");
+    await call("list_runs", { recipeId: "decisions", cursor: first.nextCursor }, "BAD_CURSOR");
     for (const pair of [meeting, video]) {
       const { manifest } = pair, { runId } = manifest;
       const indices = pair === meeting ? [1, 2] : [0];
@@ -203,10 +208,10 @@ it("negotiates the documented schemas and reads only reviewed fields, original i
     const projected = await call("list_records", { runId: video.manifest.runId });
     expect(projected.times.entries).toEqual(sidecar.entries.map(({ pointer, time, timeline }) => ({ pointer, time, timeline })));
     expect(projected.timesNote).toMatch(/proposal data is outside/);
-    await call("get_run", { runId: "../fixture" }, "bad_arguments");
-    await call("get_run", { runId, extra: privateText[1] }, "bad_arguments");
-    await call("other", {}, "unknown_tool");
-    await call("get_run", { runId: foreign.analysis.runId }, "run_not_found");
+    await call("get_run", { runId: "../fixture" }, "BAD_ARGUMENTS");
+    await call("get_run", { runId, extra: privateText[1] }, "BAD_ARGUMENTS");
+    await call("other", {}, "UNKNOWN_TOOL");
+    await call("get_run", { runId: foreign.analysis.runId }, "RUN_NOT_FOUND");
     child.stdin.end();
     expect((await lines.next()).done).toBe(true);
     expect(await closed).toEqual([0, null]);
@@ -234,8 +239,9 @@ it("refuses unsafe, changing, journal-dependent, oversized and inconsistent snap
   await writeFile(preload, `const fs = require("node:fs/promises"); const open = fs.open;
     fs.open = async (...args) => { const fd = await open(...args); if (args[0] === process.env.FIXTURE_CHANGING_FILE) {
       await fs.utimes(args[0], new Date(1000), new Date(1000)); } return fd; };`);
-  const cases: [string, string][] = [[join(folder, "missing"), "unsafe_snapshot"], [folder, "unsafe_snapshot"],
-    [link, "unsafe_snapshot"], [invalid, "invalid_projection"], [large, "snapshot_too_large"], [changed, "snapshot_changed"]];
+  const exits = { UNSAFE_SNAPSHOT: 11, SNAPSHOT_TOO_LARGE: 4, INVALID_PROJECTION: 1, SNAPSHOT_CHANGED: 30, SNAPSHOT_NOT_CLOSED: 30 };
+  const cases: [string, keyof typeof exits][] = [[join(folder, "missing"), "UNSAFE_SNAPSHOT"], [folder, "UNSAFE_SNAPSHOT"],
+    [link, "UNSAFE_SNAPSHOT"], [invalid, "INVALID_PROJECTION"], [large, "SNAPSHOT_TOO_LARGE"], [changed, "SNAPSHOT_CHANGED"]];
   const fixtures: Fixture[] = [];
   for (const [name, sql] of [
     ["digest", "UPDATE analysis_runs SET manifest_json=json_set(manifest_json,'$.analysisSha256',lower(hex(zeroblob(32))))"],
@@ -245,14 +251,14 @@ it("refuses unsafe, changing, journal-dependent, oversized and inconsistent snap
   ]) {
     const path = join(folder, name!);
     fixtures.push({ path, local: [meeting], sql });
-    cases.push([path, "invalid_projection"]);
+    cases.push([path, "INVALID_PROJECTION"]);
   }
   for (const [index, marker] of privateText.slice(1, 4).entries()) {
     const path = join(folder, "public-" + index), pair = structuredClone(meeting);
     pair.analysis.items[0]!.result.kind = marker!;
     pair.manifest.analysisSha256 = await analysisDigest(pair.analysis);
     fixtures.push({ path, local: [pair] });
-    cases.push([path, "invalid_projection"]);
+    cases.push([path, "INVALID_PROJECTION"]);
   }
   writeDatabases(fixtures);
   await writeFile(database + "-journal", "");
@@ -260,22 +266,22 @@ it("refuses unsafe, changing, journal-dependent, oversized and inconsistent snap
   const bytes = await readFile(database);
   bytes[18] = bytes[19] = 2;
   await writeFile(wal, bytes);
-  cases.push([database, "snapshot_not_closed"], [wal, "snapshot_not_closed"]);
+  cases.push([database, "SNAPSHOT_NOT_CLOSED"], [wal, "SNAPSHOT_NOT_CLOSED"]);
   const before = await fingerprint(database);
   // Exercise the same startup function for every bad grant in one Bun process.
   const exercise = `
     import { runMcp } from "./src/commands/mcp.ts";
-    for (const path of JSON.parse(process.argv[1])) {
+    for (const [path, expectedExit] of JSON.parse(process.argv[1])) {
       process.exitCode = 0;
       await runMcp(["--database", path]);
-      if (process.exitCode !== 1) throw new Error("advertised a refused snapshot");
+      if (process.exitCode !== expectedExit) throw new Error("advertised a refused snapshot");
     }`;
-  const result = spawnSync("bun", ["--no-env-file", "--preload", preload, "-e", exercise, JSON.stringify(cases.map(([path]) => path))],
+  const result = spawnSync("bun", ["--no-env-file", "--preload", preload, "-e", exercise, JSON.stringify(cases.map(([path, code]) => [path, exits[code]]))],
     { input: '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}\n', encoding: "utf8", env: { ...buildEnv, FIXTURE_CHANGING_FILE: changed } });
   expect(result.stdout).toBe("");
-  expect(result.stderr.trim().split("\n")).toEqual(cases.map(([, code]) => code === "snapshot_too_large"
-    ? "snapshot_too_large: 64 MiB maximum; select fewer runs into the reviewed database" : code));
-  expect(result.status).toBe(1);
+  expect(result.stderr.trim().split("\n")).toEqual(cases.map(([, code]) => code === "SNAPSHOT_TOO_LARGE"
+    ? "SNAPSHOT_TOO_LARGE: 64 MiB maximum; select fewer runs into the reviewed database" : code));
+  expect(result.status).toBe(30);
   expect(await fingerprint(database)).toEqual(before);
   await rm(database + "-journal");
 });
@@ -284,7 +290,7 @@ it("recovers a large get with byte-bounded pages and rejects a cursor from anoth
   const run = projectedMeeting();
   run.records = Array.from({ length: 48 }, (_, itemIndex) => ({ ...run.records[1]!, itemIndex, title: String(itemIndex), summary: "界".repeat(10_000) }));
   const query = new RunQuery([run]), args = { runId: run.summary.runId };
-  expect(() => query.call(prefix + "get_run", args)).toThrow("use_list_records");
+  expect(() => query.call(prefix + "get_run", args)).toThrow("USE_LIST_RECORDS");
   const indices = [];
   let cursor: string | undefined;
   do {
@@ -293,7 +299,7 @@ it("recovers a large get with byte-bounded pages and rejects a cursor from anoth
     const data = page.data as { records: { itemIndex: number }[]; nextCursor?: string };
     indices.push(...data.records.map(r => r.itemIndex));
     cursor = data.nextCursor;
-    if (cursor) expect(() => new RunQuery([run]).call(prefix + "list_records", { ...args, cursor })).toThrow("bad_cursor");
+    if (cursor) expect(() => new RunQuery([run]).call(prefix + "list_records", { ...args, cursor })).toThrow("BAD_CURSOR");
   } while (cursor);
   expect(indices).toEqual(run.records.map(r => r.itemIndex));
 });

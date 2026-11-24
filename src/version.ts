@@ -6,3 +6,6 @@ export const IS_RELEASE_BUNDLE = typeof __FRAMEOFMIND_RELEASE_VERSION__ !== "und
 export const VERSION: string = IS_RELEASE_BUNDLE
   ? __FRAMEOFMIND_RELEASE_VERSION__
   : metadata.version;
+
+declare const __FRAMEOFMIND_RELEASE_COMMIT__: string;
+export const RELEASE_COMMIT = typeof __FRAMEOFMIND_RELEASE_COMMIT__ === "string" ? __FRAMEOFMIND_RELEASE_COMMIT__ : null;

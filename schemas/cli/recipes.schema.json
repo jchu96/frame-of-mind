@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message"]
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "recipes": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$"},
+            "description": {"type": "string"}
+          },
+          "required": ["id", "description"]
+        },
+        "minItems": 1
+      }
+    },
+    "required": ["recipes"]
+  }
+}

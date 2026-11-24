@@ -48,7 +48,7 @@ it("lists and reclaims a SIGKILLed proxy encode and preserves every sibling byte
       expect(stdout.mock.calls.flat().join("")).toMatch(/listed media-lock .*\d+ bytes, age \d+ ms, proven, abandoned/);
       expect(stdout.mock.calls.flat().join("")).toContain(JSON.stringify(lock));
       expect((await stat(lock)).isDirectory()).toBe(true);
-      await program.parseAsync(["doctor", "--scratch", root, "--remove"], {from: "user"});
+      await program.parseAsync(["doctor", "--scratch", root, "--remove", lock], {from: "user"});
       expect(stdout.mock.calls.flat().join("")).toContain("removed media-lock");
     } finally { stdout.mockRestore(); }
     expect((await readdir(root)).sort()).toEqual(files);

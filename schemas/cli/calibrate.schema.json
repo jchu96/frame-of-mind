@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "properties": {"schemaVersion": {"const": 1}},
+  "if": {"required": ["error"]},
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "required": ["code", "message"]
+      }
+    }
+  },
+  "else": {
+    "properties": {
+      "model": {"type": "string"},
+      "checkedAt": {"type": "string", "format": "date-time"},
+      "result": {"enum": ["absolute", "relative", "unverified"]},
+      "evidence": {
+        "type": "object",
+        "properties": {
+          "flashFileSeconds": {"const": 27},
+          "clipStartSeconds": {"const": 20},
+          "reportedSeconds": {"type": ["number", "null"]}
+        },
+        "required": ["flashFileSeconds", "clipStartSeconds", "reportedSeconds"]
+      }
+    },
+    "required": ["model", "checkedAt", "result", "evidence"]
+  }
+}

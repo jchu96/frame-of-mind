@@ -1,8 +1,10 @@
+import { faultCode, type FaultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import type { File as GeminiFile } from "@google/genai";
 import { GeminiVideoAnalyzer } from "../adapters/gemini.js";
+import { providerFailureCode } from "../adapters/gemini-error-class.js";
 import { GeminiFileError } from "../adapters/gemini-files.js";
 import { DEFAULT_GEMINI_MODEL, geminiModelSchema } from "../adapters/gemini-model.js";
 import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
@@ -14,9 +16,11 @@ import { mergeTranscriptionChunks, offsetTranscriptionSegments } from "./transcr
 import { TRANSCRIPTION_OVERLAP_SECONDS, TRANSCRIPTION_WINDOW_SECONDS } from "./transcription-policy.js";
 import { assertTranscriptTarget, renderSpeakers, renderSrt, renderTranscriptJson, writePrivateAtomic } from "./transcript-render.js";
 
-export class TranscribeError extends Error {}
+export class TranscribeError extends Error {
+  constructor(message: string, readonly code: FaultCode = "COMMAND_FAILED") { super(message); }
+}
 export class TranscribeCanceledError extends TranscribeError {
-  constructor() { super("Transcription canceled; no transcript files written."); }
+  constructor() { super("Transcription canceled; no transcript files written.", "CANCELLED"); }
 }
 export interface TranscribeOptions extends RetentionFlags {
   input: string;
@@ -65,12 +69,12 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage);
   const canceled = () => { if (options.signal?.aborted) throw new TranscribeCanceledError(); };
   const model = options.model ?? (process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
-  if (!geminiModelSchema.safeParse(model).success) throw new TranscribeError("--model must be a Gemini model ID.");
+  if (!geminiModelSchema.safeParse(model).success) throw new TranscribeError("--model must be a Gemini model ID.", "USAGE");
   let retention;
   try { retention = resolveRetention(options, process.env.FRAME_OF_MIND_UPLOAD_RETENTION); }
-  catch { throw new TranscribeError("Upload retention flags must agree and select provider or run."); }
+  catch { throw new TranscribeError("Upload retention flags must agree and select provider or run.", "USAGE"); }
   const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY?.trim();
-  if (!apiKey) throw new TranscribeError("Set GEMINI_API_KEY before transcription.");
+  if (!apiKey) throw new TranscribeError("Set GEMINI_API_KEY before transcription.", "KEY_MISSING");
   canceled();
   const input = resolve(options.input);
   const output = resolve(options.output ?? dirname(input));
@@ -79,7 +83,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
     ...(options.json ? [join(output, `${stem}.transcript.json`)] : [])];
   try {
     const original = await stat(input);
-    if (!original.isFile()) throw new Error("not a file");
+    if (!original.isFile()) throw new TranscribeError("Check the input file; expected a regular file.", "INVALID_INPUT");
     for (const path of paths) {
       await assertTranscriptTarget(path, options.force);
       const target = await stat(path).catch((error: NodeJS.ErrnoException) => {
@@ -87,16 +91,16 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
         throw error;
       });
       if (path === input || (target && target.dev === original.dev && target.ino === original.ino)) {
-        throw new TranscribeError("A transcript target would replace the input recording; choose another output directory.");
+        throw new TranscribeError("A transcript target would replace the input recording; choose another output directory.", "CONFLICT");
       }
     }
   } catch (error) {
     if (error instanceof TranscribeError) throw error;
-    throw new TranscribeError("Check the input file and output targets; existing targets require --force. See docs/RUNBOOK.md §3.11.");
+    throw new TranscribeError("Check the input file and output targets; existing targets require --force. See docs/RUNBOOK.md §3.11.", faultCode(error));
   }
   const duration = await deps.probeDurationSeconds(input);
   canceled();
-  if (duration === undefined) throw new TranscribeError("Cannot read recording duration. Check ffprobe and the input file; see docs/RUNBOOK.md §6.20.");
+  if (duration === undefined) throw new TranscribeError("Cannot read recording duration. Check ffprobe and the input file; see docs/RUNBOOK.md §6.20.", "DECODE_FAILED");
   const windows = planTranscriptionWindows(duration, TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS);
   const analyzer = deps.createAnalyzer(apiKey, model);
   deps.stdout(`model: ${model}; duration: ${Math.round(duration)} s; windows: ${windows.length}; retention: ${retention}; upload limit: 2 GB`);
@@ -110,7 +114,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
         if (!(await deps.extractAudioTrack(input, audioPath, {
           ...(window.startSeconds ? { startSeconds: window.startSeconds } : {}),
           durationSeconds: window.durationSeconds,
-        }))) throw new TranscribeError("No audio track could be extracted. Check ffmpeg and the recording's audio; see docs/RUNBOOK.md §6.20.");
+        }))) throw new TranscribeError("No audio track could be extracted. Check ffmpeg and the recording's audio; see docs/RUNBOOK.md §6.20.", "DECODE_FAILED");
         canceled();
         for (let attempt = 1; attempt <= 2; attempt += 1) {
           canceled();
@@ -127,7 +131,10 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
               deps.stderr("warning: failed audio upload cleanup is unconfirmed; provider expiry applies.");
             }
             canceled();
-            if (attempt === 2) throw new TranscribeError(`Transcription failed on window ${index + 1} after 2 attempts; no transcript files written.`);
+            if (attempt === 2) {
+              const code = providerFailureCode(error);
+              throw new TranscribeError(`Transcription failed on window ${index + 1} after 2 attempts; no transcript files written.`, code);
+            }
             deps.stderr(`window ${index + 1}: retrying once after 20 s`);
           } finally {
             if (remote && retention === "run") {

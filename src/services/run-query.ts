@@ -1,3 +1,4 @@
+import { CLI_SCHEMA_VERSION } from "../domain/contract-error.js";
 import { createHmac, randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { StoredRun } from "../domain/run-store.js";
@@ -6,8 +7,8 @@ import { timesV2Schema } from "../domain/times.js";
 import { VERSION } from "../version.js";
 import { buildTimes } from "./artifacts.js";
 
-type ErrorCode = "bad_arguments" | "bad_cursor" | "unknown_tool" | "run_not_found" | "result_too_large"
-  | "use_list_records" | "invalid_projection" | "unsafe_snapshot" | "snapshot_changed" | "snapshot_too_large" | "snapshot_not_closed";
+type ErrorCode = "BAD_ARGUMENTS" | "BAD_CURSOR" | "UNKNOWN_TOOL" | "RUN_NOT_FOUND" | "RESULT_TOO_LARGE"
+  | "USE_LIST_RECORDS" | "INVALID_PROJECTION" | "UNSAFE_SNAPSHOT" | "SNAPSHOT_CHANGED" | "SNAPSHOT_TOO_LARGE" | "SNAPSHOT_NOT_CLOSED";
 export class ReadError extends Error {
   constructor(readonly code: ErrorCode) { super(code); }
 }
@@ -52,8 +53,8 @@ const nextCursor = z.string().max(1024).optional();
 function parse<T>(schema: z.ZodType<T>, args: unknown): T {
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
-    if (parsed.error.issues.some(issue => issue.path[0] === "cursor")) throw new ReadError("bad_cursor");
-    throw new ReadError("bad_arguments");
+    if (parsed.error.issues.some(issue => issue.path[0] === "cursor")) throw new ReadError("BAD_CURSOR");
+    throw new ReadError("BAD_ARGUMENTS");
   }
   return parsed.data;
 }
@@ -71,13 +72,13 @@ const localPath = /\bfile:\/\/|\b[a-z]:[\\/]|\\\\[^\s]|(?:^|[\s("'=:\[\x60])(?:~
 function checkPublicText(text: string) {
   const urls = /https?:\/\/[^\s<>"']+/gi;
   if (credentialPatterns.some(pattern => pattern.test(text)) || localPath.test(text.replace(urls, " "))) {
-    throw new ReadError("invalid_projection");
+    throw new ReadError("INVALID_PROJECTION");
   }
   for (const [raw] of text.matchAll(urls)) {
     const url = new URL(raw);
     if (url.username || url.password || [...url.searchParams.keys()].some(key =>
       /signature|credential|token|^sig$|^key$|^api[_-]?key$|^key-pair-id$|^googleaccessid$/i.test(key))) {
-      throw new ReadError("invalid_projection");
+      throw new ReadError("INVALID_PROJECTION");
     }
   }
 }
@@ -91,7 +92,7 @@ function compare(a: string, b: string) { return a < b ? -1 : a > b ? 1 : 0; }
 
 export function projectRun(stored: Pick<StoredRun, "analysis" | "manifest" | "contextMode" | "importedAt">) {
   const { manifest, analysis } = stored;
-  if (!runId.safeParse(manifest.runId).success) throw new ReadError("invalid_projection");
+  if (!runId.safeParse(manifest.runId).success) throw new ReadError("INVALID_PROJECTION");
   checkPublicText(manifest.runId);
   checkPublicText(manifest.recipe.id);
   const records = analysis.items.map(({ result, candidate }, itemIndex) => {
@@ -104,7 +105,7 @@ export function projectRun(stored: Pick<StoredRun, "analysis" | "manifest" | "co
   const { runId: id, startedAt, completedAt, schemaVersion } = manifest;
   const common = { runId: id, startedAt, completedAt, schemaVersion };
   const times = buildTimes(analysis, manifest.clock);
-  if (times.schemaVersion !== 2) throw new ReadError("invalid_projection");
+  if (times.schemaVersion !== 2) throw new ReadError("INVALID_PROJECTION");
   return {
     summary: { ...common, contextMode: stored.contextMode, ...(manifest.schemaVersion === 2 && { provider: manifest.contextProvider }),
       recipeId: manifest.recipe.id, acceptedCount, rejectedCount: records.length - acceptedCount },
@@ -122,7 +123,7 @@ function recordData(run: ProjectedRun, records: PublicRecord[]) {
   const entries = run.times.entries.filter(e => indices.has(Number(e.pointer.split("/")[2])));
   return { records, times: { ...run.times, entries }, timesNote };
 }
-function wrap(data: object) { return { trust: "untrusted-data" as const, data }; }
+function wrap(data: object) { return { schemaVersion: CLI_SCHEMA_VERSION, trust: "untrusted-data" as const, data }; }
 function fits(data: object) { return Buffer.byteLength(JSON.stringify(wrap(data))) <= bytesLimit; }
 
 export class RunQuery {
@@ -134,9 +135,9 @@ export class RunQuery {
   }
 
   call(tool: string, args: unknown) {
-    if (!Object.hasOwn(readTools, tool)) throw new ReadError("unknown_tool");
+    if (!Object.hasOwn(readTools, tool)) throw new ReadError("UNKNOWN_TOOL");
     const data = readTools[tool as keyof typeof readTools].invoke(this, args);
-    if (!fits(data)) throw new ReadError("result_too_large");
+    if (!fits(data)) throw new ReadError("RESULT_TOO_LARGE");
     return wrap(data);
   }
 
@@ -144,14 +145,14 @@ export class RunQuery {
     const run = this.find(runId);
     const selected = run.records.filter(r => includeRejected || r.accepted);
     const data = { run: run.summary, provenance: run.provenance, ...recordData(run, selected) };
-    if (!fits(data)) throw new ReadError("use_list_records");
+    if (!fits(data)) throw new ReadError("USE_LIST_RECORDS");
     return data;
   }
 
   listRuns({ limit, cursor, ...filters }: z.infer<typeof runList>) {
     const after = filters.completedAfter && instant(filters.completedAfter);
     const before = filters.completedBefore && instant(filters.completedBefore);
-    if (after && before && after >= before) throw new ReadError("bad_arguments");
+    if (after && before && after >= before) throw new ReadError("BAD_ARGUMENTS");
     const rows = this.runs.filter(r => (!after || r.completed > after) && (!before || r.completed < before)
       && (!filters.provider || r.summary.provider === filters.provider) && (!filters.recipeId || r.summary.recipeId === filters.recipeId));
     return this.page(rows, limit, cursor, ["runs", filters], r => [r.completed, r.imported, r.summary.runId],
@@ -167,7 +168,7 @@ export class RunQuery {
 
   private find(id: string) {
     const run = this.byId.get(id);
-    if (!run) throw new ReadError("run_not_found");
+    if (!run) throw new ReadError("RUN_NOT_FOUND");
     return run;
   }
 
@@ -194,9 +195,9 @@ export class RunQuery {
       .update(JSON.stringify([scope, end, sortKey(rows[end - 1]!)])).digest("base64url");
     let start = 0;
     if (cursor !== undefined) {
-      if (cursor.length > 1024 || !/^[1-9]\d{0,9}\.[\w-]{43}$/.test(cursor)) throw new ReadError("bad_cursor");
+      if (cursor.length > 1024 || !/^[1-9]\d{0,9}\.[\w-]{43}$/.test(cursor)) throw new ReadError("BAD_CURSOR");
       start = Number(cursor.split(".")[0]);
-      if (start >= rows.length || token(start) !== cursor) throw new ReadError("bad_cursor");
+      if (start >= rows.length || token(start) !== cursor) throw new ReadError("BAD_CURSOR");
     }
     if (start === rows.length) return project([]);
     // Find the largest whole-row page that fits, counting its continuation in the byte budget.
@@ -208,7 +209,7 @@ export class RunQuery {
       const data = { ...project(rows.slice(start, end)), ...(end < rows.length && { nextCursor: token(end) }) };
       if (fits(data)) { best = data; low = end + 1; } else high = end - 1;
     }
-    if (!best) throw new ReadError("result_too_large");
+    if (!best) throw new ReadError("RESULT_TOO_LARGE");
     return best;
   }
 }

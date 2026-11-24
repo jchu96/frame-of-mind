@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { extname } from "node:path";
 import { runMediaTool } from "./media-tools.js";
 
@@ -36,7 +37,7 @@ async function readListing(binary: Binary, listing: Listing, signal?: AbortSigna
     output = await runMediaTool(binary, ["-" + listing], {signal, timeoutMs: 5000, maxOutput: 1024 * 1024});
   } catch (error) {
     signal?.throwIfAborted();
-    return {error: (error as NodeJS.ErrnoException).code === "ENOENT" ? "not installed" : `cannot read -${listing}`};
+    return {error: ["ENOENT", "CAPABILITY_MISSING"].includes((error as NodeJS.ErrnoException).code ?? "") ? "not installed" : `cannot read -${listing}`};
   }
   if (listing === "version") {
     const version = output.split(/\r?\n/, 1)[0];
@@ -95,5 +96,5 @@ export async function requireMedia(command: keyof typeof commands | "frame", fla
     : command === "probe" && flags.decodeCheck ? "probe --decode-check" : command;
   const results = await Promise.all(commands[variant].map(inventory(signal).check));
   const absent = results.filter(row => !row.present).map(row => row.error ? `${row.name} (${row.error})` : row.name);
-  if (absent.length) throw new Error(`${command} requires missing media capabilities: ${absent.join(", ")}.`);
+  if (absent.length) throw new ContractError("CAPABILITY_MISSING", `${command} requires missing media capabilities: ${absent.join(", ")}.`);
 }

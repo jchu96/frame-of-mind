@@ -1,3 +1,5 @@
+import { ContractError } from "../domain/contract-error.js";
+import { providerFailureCode } from "./gemini-error-class.js";
 import { createScratch } from "./scratch.js";
 import { childEnvironment, execFile } from "../lib/child-env.js";
 import { promisify } from "node:util";
@@ -35,7 +37,7 @@ export async function synthesizeFlash(path: string): Promise<boolean> {
   } catch { return false; }
 }
 export async function calibrateClipClock(analyzer: CalibrationAnalyzer, options: {
-  cacheRoot?: string; now?: () => number; force?: boolean; synthesize?: typeof synthesizeFlash;
+  reportFailure?: boolean; cacheRoot?: string; now?: () => number; force?: boolean; synthesize?: typeof synthesizeFlash;
 } = {}): Promise<Calibration> {
   const now = (options.now ?? Date.now)();
   const root = options.cacheRoot ?? join(defaultAppDataRoot(), "calibration");
@@ -58,7 +60,9 @@ export async function calibrateClipClock(analyzer: CalibrationAnalyzer, options:
         remote = await analyzer.upload(video, "video/mp4");
         const answer = await analyzer.probeClipClock(remote);
         if (Number.isFinite(answer)) reportedSeconds = answer;
-      } catch { /* Failed measurements never establish a clock. */ }
+      } catch (error) {
+        if (options.reportFailure) throw new ContractError(providerFailureCode(error), "Calibration request failed.");
+      }
     }
   } finally {
     try { if (remote) await analyzer.delete(remote); }
