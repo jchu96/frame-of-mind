@@ -5,6 +5,18 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-24
+
+First full release of the 0.6 line. The code is the same as `0.6.0-beta.4`; the four pre-release sections below list every change since `0.5.0`. In short:
+
+- A machine contract for the command line, frozen at version 1: `--json` output as one versioned JSON document, one error document, fixed error codes and exit statuses, and JSON Schema files shipped with the release (`docs/MCP_TOOLS.md`).
+- Times an editor can cut on: declared clocks and timecode, speech-edge proposals (`snap`, `analyze --snap speech`), and `map`, which traces a time in an exported sequence back to its source file and frame through the timeline export (`docs/EDITING_WORKFLOW.md`).
+- Local media commands: `probe`, `verify`, `proxy`, `slice` and `frame`.
+- `transcribe`, with subtitle and transcript exports.
+- `doctor` reports what each command needs from ffmpeg and lists and removes what a killed run left behind.
+- The standalone CLI is published with checksums and third-party notices on each release.
+- An experimental local MCP server with four read tools; it runs under Bun only.
+
 ## [0.6.0-beta.4] - 2026-11-24
 
 Pre-release.
