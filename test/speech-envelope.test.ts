@@ -1,40 +1,21 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { getEventListeners } from "node:events";
+import { watch } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test, vi } from "vitest";
-import { classify, selectEdge, snapSettings } from "../src/domain/snap.js";
+import { afterEach, onTestFinished, describe, expect, test, vi } from "vitest";
+import { classify, selectEdge, snapSettings, SpeechMeter } from "../src/domain/snap.js";
 import { snapFile } from "../src/commands/snap.js";
 import { decodeSpeechEnvelope } from "../src/services/audio.js";
+import { mediaFixtures } from "./helpers/media-fixtures.js";
 
-const hasDecoder = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
-const roots: string[] = [];
 async function root() {
   const dir = await mkdtemp(join(tmpdir(), "speech-meter-"));
-  roots.push(dir);
+  onTestFinished(() => rm(dir, {recursive: true, force: true}));
   return dir;
 }
-afterEach(async () => {
-  vi.unstubAllEnvs();
-  await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true })));
-});
-
-test.skipIf(!hasDecoder)("W9 a delayed audio stream measures bursts on the file grid without inventing leading silence", async () => {
-  const path = join(await root(), "delayed.mkv");
-  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=size=16x16:rate=1:duration=8",
-    "-itsoffset", "1.253", "-f", "lavfi", "-i", "aevalsrc=if(lt(t\\,1)+between(t\\,3\\,4)\\,0.5\\,0):s=8000:d=6",
-    "-c:v", "ffv1", "-c:a", "pcm_s16le", path]);
-  const meter = await decodeSpeechEnvelope(path);
-  expect(meter?.startMs).toBe(1260);
-  const edges = classify(meter!);
-  expect(selectEdge(edges, "start", 1250, "source", snapSettings(250, 500)).status).toBe("no-boundary");
-  for (const [edge, truth] of [["end", 2253], ["start", 4253], ["end", 5253]] as const) {
-    const result = selectEdge(edges, edge, truth, "source", snapSettings(250, 500));
-    expect(result.status).toBe("snapped");
-    if (result.status === "snapped") expect(Math.abs(result.shiftMs)).toBeLessThanOrEqual(20);
-  }
-});
+afterEach(() => vi.unstubAllEnvs());
 
 type Burst = [number, number];
 
@@ -56,51 +37,77 @@ const crossingCases: { name: string; edge: string; at: string; bursts: Burst[]; 
     bursts: [[14.300, 14.800], [15.300, 15.500]], expected: "15.290", alternative: 14290 },
 ];
 for (const row of crossingCases) test(row.name, async () => {
-  const file = join(await root(), "bursts.wav");
-  writeBursts(file, row.bursts);
-  const { result, request } = await snapFile(file, row);
+  // The decoded bursts include a 10 ms shoulder on either side.
+  const blocks = Array.from({length: 3}, (_, block) => Float32Array.from({length: 1000}, (_, i) => {
+    const ms = (block * 1000 + i) * 10;
+    return row.bursts.some(([a, b]) => ms >= Math.round(a * 1000) - 10 && ms < Math.round(b * 1000) + 10) ? -9 : -96;
+  }));
+  const { result, request } = await snapFile("generated", row, async () => ({blocks, startMs: 0, length: 3000}));
   expect(result.status === "snapped" ? result.target.seconds : request.at).toBe(row.expected);
   expect(result).toMatchObject({ status: row.expected === row.at ? "no-boundary" : "snapped", alternativesMs: [row.alternative] });
 });
 
-test.each([
+const formats = [
   { format: "PCM", file: "truth.wav", rate: 48000, precision: 50, tolerance: 20 },
   { format: "AAC in M4A", file: "audio.m4a", rate: 48000, precision: 50, tolerance: 50 },
   { format: "AAC with video in MP4", file: "video.mp4", rate: 48000, precision: 50, tolerance: 50 },
   { format: "AAC in M4A", file: "narrowband.m4a", rate: 8000, precision: 200, tolerance: 200 },
-])("$rate Hz $format edges fall within $tolerance ms of the generated burst times", async row => {
-  const dir = await root();
-  const pcm = join(dir, "truth.wav");
-  writeBursts(pcm, [[14, 20.120], [20.900, 21.600], [39.230, 40.120], [40.900, 41.600]],
-    row.rate === 8000 ? "sgn(random(0)-0.5)" : undefined);
-  const file = join(dir, row.file);
-  if (file !== pcm) {
-    const video = row.file.endsWith(".mp4") ? ["-f", "lavfi", "-i", "color=s=16x16:r=1:d=45", "-c:v", "libx264"] : [];
-    execFileSync("ffmpeg", ["-v", "error", "-i", pcm, ...video, "-c:a", "aac", "-ar", String(row.rate), "-b:a", "128k", file]);
-  }
-  const edges = classify((await decodeSpeechEnvelope(file))!);
-  for (const [edge, request, truth] of [
-    ["start", 14000, 14000], ["end", 21000, 20120], ["start", 21000, 20900], ["end", 22000, 21600],
-    ["start", 39000, 39230], ["end", 41000, 40120], ["start", 41000, 40900], ["end", 42000, 41600],
-  ] as const) {
-    const result = selectEdge(edges, edge, request, "source", snapSettings());
-    expect(result).toMatchObject({ status: "snapped", target: { gridMs: 10, precisionMs: row.precision } });
-    if (result.status === "snapped") expect(Math.abs(request + result.shiftMs - truth)).toBeLessThanOrEqual(row.tolerance);
-  }
+];
+
+describe("decoded speech on the file grid", () => {
+  const file = mediaFixtures(dir => {
+    const pcm = join(dir, "truth.wav");
+    const bursts: Burst[] = [[14, 20.120], [20.900, 21.600], [39.230, 40.120], [40.900, 41.600]];
+    writeBursts(pcm, bursts);
+    const noise = join(dir, "noise.wav");
+    writeBursts(noise, bursts, "sgn(random(0)-0.5)");
+    for (const row of formats.slice(1)) {
+      const video = row.file.endsWith(".mp4") ? ["-f", "lavfi", "-i", "color=s=16x16:r=1:d=45", "-c:v", "libx264"] : [];
+      execFileSync("ffmpeg", ["-v", "error", "-i", row.rate === 8000 ? noise : pcm, ...video,
+        "-c:a", "aac", "-ar", String(row.rate), "-b:a", "128k", join(dir, row.file)]);
+    }
+    const path = join(dir, "delayed.mkv");
+    execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=size=16x16:rate=1:duration=8",
+      "-itsoffset", "1.253", "-f", "lavfi", "-i", "aevalsrc=if(lt(t\\,1)+between(t\\,3\\,4)\\,0.5\\,0):s=8000:d=6",
+      "-c:v", "ffv1", "-c:a", "pcm_s16le", path]);
+  });
+
+  test("W9 a delayed audio stream measures bursts on the file grid without inventing leading silence", async () => {
+    const meter = await decodeSpeechEnvelope(file("delayed.mkv"));
+    expect(meter).toMatchObject({startMs: 1260, sourceSampleRateHz: 8000});
+    const edges = classify(meter!);
+    expect(selectEdge(edges, "start", 1250, "source", snapSettings(250, 500)).status).toBe("no-boundary");
+    for (const [edge, truth] of [["end", 2253], ["start", 4253], ["end", 5253]] as const) {
+      const result = selectEdge(edges, edge, truth, "source", snapSettings(250, 500));
+      expect(result.status).toBe("snapped");
+      if (result.status === "snapped") expect(Math.abs(result.shiftMs)).toBeLessThanOrEqual(20);
+    }
+  });
+
+  test.each(formats)("$rate Hz $format edges fall within $tolerance ms of the generated burst times", async row => {
+    const meter = await decodeSpeechEnvelope(file(row.file));
+    expect(meter?.sourceSampleRateHz).toBe(row.rate);
+    const edges = classify(meter!);
+    for (const [edge, request, truth] of [
+      ["start", 14000, 14000], ["end", 21000, 20120], ["start", 21000, 20900], ["end", 22000, 21600],
+      ["start", 39000, 39230], ["end", 41000, 40120], ["start", 41000, 40900], ["end", 42000, 41600],
+    ] as const) {
+      const result = selectEdge(edges, edge, request, "source", snapSettings());
+      expect(result).toMatchObject({ status: "snapped", target: { gridMs: 10, precisionMs: row.precision } });
+      if (result.status === "snapped") expect(Math.abs(request + result.shiftMs - truth)).toBeLessThanOrEqual(row.tolerance);
+    }
+  });
 });
 
-test.runIf(hasDecoder && process.env.FOM_SPEECH_COST === "1")("W9 two-hour generated audio decode cost", async () => {
-  const path = join(await root(), "two-hours.flac");
-  execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "anullsrc=r=8000:cl=mono", "-t", "7200", "-c:a", "flac", path]);
-  const start = performance.now();
-  const meter = await decodeSpeechEnvelope(path);
-  const decodeMs = performance.now() - start;
-  expect(meter?.length).toBe(720000);
-  const bytes = meter!.blocks.reduce((sum, block) => sum + block.byteLength, 0);
-  expect(bytes).toBe(2880000);
-  expect(classify(meter!)).toEqual({ start: [], end: [], precisionMs: 200 });
-  console.log(`W9 duration=7200s decode_wall=${(decodeMs / 1000).toFixed(3)}s decode_and_classify_wall=${((performance.now() - start) / 1000).toFixed(3)}s peak_meter=${bytes} bytes (sum of append-only Float32 block capacities)`);
-}, 600000);
+test("two hours of silence use one float per complete window", () => {
+  const meter = new SpeechMeter(0);
+  const second = Buffer.alloc(8000 * 2);
+  for (let i = 0; i < 7200; i++) meter.write(second);
+  const envelope = meter.finish()!;
+  expect(envelope.length).toBe(720000);
+  expect(envelope.blocks.reduce((sum, block) => sum + block.byteLength, 0)).toBe(2880000);
+  expect(classify(envelope)).toEqual({ start: [], end: [], precisionMs: 200 });
+});
 
 const packet = "process.stderr.write('#tb 0: 1/8000\\n0, 0, 0, 83, 166, 0x00000000\\n');";
 test("W11 failed, discontinuous and malformed streams discard PCM and preserve the input", async () => {
@@ -134,16 +141,19 @@ test("W11 abort before launch and after first PCM never returns a partial envelo
   const marker = join(dir, "streaming");
   await writeFile(input, "generated");
   await writeFile(join(dir, "ffmpeg"), `#!${process.execPath}\n${packet}
-process.stdout.write(Buffer.alloc(166), () => require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ready'));
+const fs = require('node:fs'), marker = ${JSON.stringify(marker)};
+process.stdout.write(Buffer.alloc(166), () => { fs.writeFileSync(marker + '.tmp', 'ready'); fs.renameSync(marker + '.tmp', marker); });
 setInterval(() => {}, 1000);`, { mode: 0o700 });
   vi.stubEnv("PATH", dir);
   expect(await decodeSpeechEnvelope(input, { signal: AbortSignal.abort() })).toBeUndefined();
   await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" });
   const controller = new AbortController();
-  const decoding = decodeSpeechEnvelope(input, { signal: controller.signal });
-  try { await vi.waitFor(async () => expect(await readFile(marker, "utf8")).toBe("ready")); }
-  finally { controller.abort(); }
-  expect(await decoding).toBeUndefined();
+  const ready = watch(dir, (_, name) => { if (name === "streaming") controller.abort(); });
+  try {
+    expect(await decodeSpeechEnvelope(input, {signal: controller.signal})).toBeUndefined();
+    expect(await readFile(marker, "utf8")).toBe("ready");
+    expect(controller.signal.aborted).toBe(true);
+  } finally { ready.close(); controller.abort(); }
   expect(getEventListeners(controller.signal, "abort")).toHaveLength(0);
   expect(await readFile(input, "utf8")).toBe("generated");
 });
