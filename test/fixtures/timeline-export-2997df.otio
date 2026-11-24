@@ -1,0 +1,1183 @@
+{
+    "OTIO_SCHEMA": "Timeline.1",
+    "metadata": {
+        "PremierePro_OTIO": {
+            "MetadataVersion": "1.0"
+        }
+    },
+    "name": "OTIO SAMPLE 2997DF",
+    "global_start_time": {
+        "OTIO_SCHEMA": "RationalTime.1",
+        "rate": 29.97002997002997,
+        "value": 0.0
+    },
+    "tracks": {
+        "OTIO_SCHEMA": "Stack.1",
+        "metadata": {
+            "PremierePro_OTIO": {
+                "AudioFrameRate": 44100.0,
+                "PixelAspectRatio": {
+                    "denominator": 1.0,
+                    "numerator": 1.0
+                },
+                "VideoFrameRate": 29.97002997002997,
+                "VideoResolution": {
+                    "height": 720,
+                    "width": 1280
+                }
+            }
+        },
+        "name": "OTIO SAMPLE 2997DF",
+        "source_range": null,
+        "effects": [],
+        "markers": [],
+        "enabled": true,
+        "children": [
+            {
+                "OTIO_SCHEMA": "Track.1",
+                "metadata": {},
+                "name": "Video 1",
+                "source_range": null,
+                "effects": [],
+                "markers": [],
+                "enabled": true,
+                "children": [
+                    {
+                        "OTIO_SCHEMA": "Clip.2",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "LinkID": "1",
+                                "OriginalChannelGroupIndex": 0,
+                                "SourceClipIndex": 0
+                            }
+                        },
+                        "name": "count-c-2997df.mov",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 90.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 107952.0
+                            }
+                        },
+                        "effects": [
+                            {
+                                "OTIO_SCHEMA": "Effect.1",
+                                "metadata": {
+                                    "PremierePro_OTIO": {
+                                        "IsIntrinsic": true,
+                                        "MatchName": "AE.ADBE Opacity",
+                                        "Parameters": [
+                                            {
+                                                "DisplayName": "Opacity",
+                                                "ID": 1,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 100.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Blend Mode",
+                                                "ID": 2,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 18
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Blend Mode",
+                                                "ID": 3,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "name": "",
+                                "effect_name": "Opacity",
+                                "enabled": true
+                            },
+                            {
+                                "OTIO_SCHEMA": "Effect.1",
+                                "metadata": {
+                                    "PremierePro_OTIO": {
+                                        "IsIntrinsic": true,
+                                        "MatchName": "AE.ADBE Motion",
+                                        "Parameters": [
+                                            {
+                                                "DisplayName": "Position",
+                                                "ID": 1,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": {
+                                                        "X": 0.5,
+                                                        "Y": 0.5
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Scale",
+                                                "ID": 2,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 100.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Scale Width",
+                                                "ID": 3,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 100.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": " ",
+                                                "ID": 4,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": true
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Rotation",
+                                                "ID": 5,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Anchor Point",
+                                                "ID": 6,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": {
+                                                        "X": 0.5,
+                                                        "Y": 0.5
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Anti-flicker Filter",
+                                                "ID": 7,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Crop Left",
+                                                "ID": 8,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Crop Top",
+                                                "ID": 9,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Crop Right",
+                                                "ID": 10,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Crop Bottom",
+                                                "ID": 11,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "name": "",
+                                "effect_name": "Motion",
+                                "enabled": true
+                            }
+                        ],
+                        "markers": [],
+                        "enabled": true,
+                        "media_references": {
+                            "DEFAULT_MEDIA": {
+                                "OTIO_SCHEMA": "ExternalReference.1",
+                                "metadata": {},
+                                "name": "",
+                                "available_range": {
+                                    "OTIO_SCHEMA": "TimeRange.1",
+                                    "duration": {
+                                        "OTIO_SCHEMA": "RationalTime.1",
+                                        "rate": 29.97002997002997,
+                                        "value": 599.0
+                                    },
+                                    "start_time": {
+                                        "OTIO_SCHEMA": "RationalTime.1",
+                                        "rate": 29.97002997002997,
+                                        "value": 107892.0
+                                    }
+                                },
+                                "available_image_bounds": null,
+                                "target_url": "file:///placeholder/project/media/count-c-2997df.mov"
+                            }
+                        },
+                        "active_media_reference_key": "DEFAULT_MEDIA"
+                    },
+                    {
+                        "OTIO_SCHEMA": "Clip.2",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "LinkID": "2",
+                                "OriginalChannelGroupIndex": 0,
+                                "SourceClipIndex": 0
+                            }
+                        },
+                        "name": "count-c-2997df.mov",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 60.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 108192.0
+                            }
+                        },
+                        "effects": [
+                            {
+                                "OTIO_SCHEMA": "Effect.1",
+                                "metadata": {
+                                    "PremierePro_OTIO": {
+                                        "IsIntrinsic": true,
+                                        "MatchName": "AE.ADBE Opacity",
+                                        "Parameters": [
+                                            {
+                                                "DisplayName": "Opacity",
+                                                "ID": 1,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 100.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Blend Mode",
+                                                "ID": 2,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 18
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Blend Mode",
+                                                "ID": 3,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "name": "",
+                                "effect_name": "Opacity",
+                                "enabled": true
+                            },
+                            {
+                                "OTIO_SCHEMA": "Effect.1",
+                                "metadata": {
+                                    "PremierePro_OTIO": {
+                                        "IsIntrinsic": true,
+                                        "MatchName": "AE.ADBE Motion",
+                                        "Parameters": [
+                                            {
+                                                "DisplayName": "Position",
+                                                "ID": 1,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": {
+                                                        "X": 0.5,
+                                                        "Y": 0.5
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Scale",
+                                                "ID": 2,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 100.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Scale Width",
+                                                "ID": 3,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 100.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": " ",
+                                                "ID": 4,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": true
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Rotation",
+                                                "ID": 5,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Anchor Point",
+                                                "ID": 6,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": {
+                                                        "X": 0.5,
+                                                        "Y": 0.5
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Anti-flicker Filter",
+                                                "ID": 7,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Crop Left",
+                                                "ID": 8,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Crop Top",
+                                                "ID": 9,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Crop Right",
+                                                "ID": 10,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Crop Bottom",
+                                                "ID": 11,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.0
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "name": "",
+                                "effect_name": "Motion",
+                                "enabled": true
+                            }
+                        ],
+                        "markers": [],
+                        "enabled": true,
+                        "media_references": {
+                            "DEFAULT_MEDIA": {
+                                "OTIO_SCHEMA": "ExternalReference.1",
+                                "metadata": {},
+                                "name": "",
+                                "available_range": {
+                                    "OTIO_SCHEMA": "TimeRange.1",
+                                    "duration": {
+                                        "OTIO_SCHEMA": "RationalTime.1",
+                                        "rate": 29.97002997002997,
+                                        "value": 599.0
+                                    },
+                                    "start_time": {
+                                        "OTIO_SCHEMA": "RationalTime.1",
+                                        "rate": 29.97002997002997,
+                                        "value": 107892.0
+                                    }
+                                },
+                                "available_image_bounds": null,
+                                "target_url": "file:///placeholder/project/media/count-c-2997df.mov"
+                            }
+                        },
+                        "active_media_reference_key": "DEFAULT_MEDIA"
+                    }
+                ],
+                "kind": "Video"
+            },
+            {
+                "OTIO_SCHEMA": "Track.1",
+                "metadata": {},
+                "name": "Video 2",
+                "source_range": null,
+                "effects": [],
+                "markers": [],
+                "enabled": true,
+                "children": [
+                    {
+                        "OTIO_SCHEMA": "Gap.1",
+                        "metadata": {},
+                        "name": "",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 150.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 0.0
+                            }
+                        },
+                        "effects": [],
+                        "markers": [],
+                        "enabled": true
+                    }
+                ],
+                "kind": "Video"
+            },
+            {
+                "OTIO_SCHEMA": "Track.1",
+                "metadata": {},
+                "name": "Video 3",
+                "source_range": null,
+                "effects": [],
+                "markers": [],
+                "enabled": true,
+                "children": [
+                    {
+                        "OTIO_SCHEMA": "Gap.1",
+                        "metadata": {},
+                        "name": "",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 150.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 0.0
+                            }
+                        },
+                        "effects": [],
+                        "markers": [],
+                        "enabled": true
+                    }
+                ],
+                "kind": "Video"
+            },
+            {
+                "OTIO_SCHEMA": "Track.1",
+                "metadata": {
+                    "PremierePro_OTIO": {
+                        "AudioChannels": {
+                            "ChannelType": "Stereo",
+                            "NumberOfChannels": 2
+                        }
+                    }
+                },
+                "name": "Audio 1",
+                "source_range": null,
+                "effects": [
+                    {
+                        "OTIO_SCHEMA": "Effect.1",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "IsIntrinsic": false,
+                                "MatchName": "AudioFader",
+                                "Parameters": [
+                                    {
+                                        "DisplayName": "Volume",
+                                        "ID": 0,
+                                        "Keyframes": []
+                                    },
+                                    {
+                                        "DisplayName": "Mute",
+                                        "ID": 1,
+                                        "Keyframes": []
+                                    }
+                                ]
+                            }
+                        },
+                        "name": "",
+                        "effect_name": "Track",
+                        "enabled": true
+                    },
+                    {
+                        "OTIO_SCHEMA": "Effect.1",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "IsIntrinsic": false,
+                                "MatchName": "PanProcessor",
+                                "Parameters": [
+                                    {
+                                        "DisplayName": "Balance",
+                                        "ID": 0,
+                                        "Keyframes": []
+                                    }
+                                ]
+                            }
+                        },
+                        "name": "Panner",
+                        "effect_name": "Panner",
+                        "enabled": true
+                    }
+                ],
+                "markers": [],
+                "enabled": true,
+                "children": [
+                    {
+                        "OTIO_SCHEMA": "Clip.2",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "AudioChannels": {
+                                    "ChannelType": "Mono",
+                                    "SecondaryAssignments": [
+                                        {
+                                            "SecondaryChannelIndex": 0
+                                        }
+                                    ]
+                                },
+                                "LinkID": "1",
+                                "OriginalChannelGroupIndex": 0,
+                                "SourceClipIndex": 0
+                            }
+                        },
+                        "name": "count-c-2997df.mov",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 90.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 107952.0
+                            }
+                        },
+                        "effects": [
+                            {
+                                "OTIO_SCHEMA": "Effect.1",
+                                "metadata": {
+                                    "PremierePro_OTIO": {
+                                        "IsIntrinsic": true,
+                                        "MatchName": "Internal Volume Mono",
+                                        "Parameters": [
+                                            {
+                                                "DisplayName": "Mute",
+                                                "ID": 0,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": false
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Level",
+                                                "ID": 1,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.17782793939113617
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "name": "",
+                                "effect_name": "Volume",
+                                "enabled": true
+                            },
+                            {
+                                "OTIO_SCHEMA": "Effect.1",
+                                "metadata": {
+                                    "PremierePro_OTIO": {
+                                        "IsIntrinsic": false,
+                                        "MatchName": "PanProcessor",
+                                        "Parameters": [
+                                            {
+                                                "DisplayName": "Pan",
+                                                "ID": 0,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.5
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "name": "Panner",
+                                "effect_name": "Panner",
+                                "enabled": true
+                            }
+                        ],
+                        "markers": [],
+                        "enabled": true,
+                        "media_references": {
+                            "DEFAULT_MEDIA": {
+                                "OTIO_SCHEMA": "ExternalReference.1",
+                                "metadata": {},
+                                "name": "",
+                                "available_range": {
+                                    "OTIO_SCHEMA": "TimeRange.1",
+                                    "duration": {
+                                        "OTIO_SCHEMA": "RationalTime.1",
+                                        "rate": 29.97002997002997,
+                                        "value": 599.0
+                                    },
+                                    "start_time": {
+                                        "OTIO_SCHEMA": "RationalTime.1",
+                                        "rate": 29.97002997002997,
+                                        "value": 107892.0
+                                    }
+                                },
+                                "available_image_bounds": null,
+                                "target_url": "file:///placeholder/project/media/count-c-2997df.mov"
+                            }
+                        },
+                        "active_media_reference_key": "DEFAULT_MEDIA"
+                    },
+                    {
+                        "OTIO_SCHEMA": "Clip.2",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "AudioChannels": {
+                                    "ChannelType": "Mono",
+                                    "SecondaryAssignments": [
+                                        {
+                                            "SecondaryChannelIndex": 0
+                                        }
+                                    ]
+                                },
+                                "LinkID": "2",
+                                "OriginalChannelGroupIndex": 0,
+                                "SourceClipIndex": 0
+                            }
+                        },
+                        "name": "count-c-2997df.mov",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 60.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 108192.0
+                            }
+                        },
+                        "effects": [
+                            {
+                                "OTIO_SCHEMA": "Effect.1",
+                                "metadata": {
+                                    "PremierePro_OTIO": {
+                                        "IsIntrinsic": true,
+                                        "MatchName": "Internal Volume Mono",
+                                        "Parameters": [
+                                            {
+                                                "DisplayName": "Mute",
+                                                "ID": 0,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": false
+                                                }
+                                            },
+                                            {
+                                                "DisplayName": "Level",
+                                                "ID": 1,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.17782793939113617
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "name": "",
+                                "effect_name": "Volume",
+                                "enabled": true
+                            },
+                            {
+                                "OTIO_SCHEMA": "Effect.1",
+                                "metadata": {
+                                    "PremierePro_OTIO": {
+                                        "IsIntrinsic": false,
+                                        "MatchName": "PanProcessor",
+                                        "Parameters": [
+                                            {
+                                                "DisplayName": "Pan",
+                                                "ID": 0,
+                                                "StartValue": {
+                                                    "Position": {
+                                                        "OTIO_SCHEMA": "RationalTime.1",
+                                                        "rate": 29.97002997002997,
+                                                        "value": -10789210.789210789
+                                                    },
+                                                    "Value": 0.5
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "name": "Panner",
+                                "effect_name": "Panner",
+                                "enabled": true
+                            }
+                        ],
+                        "markers": [],
+                        "enabled": true,
+                        "media_references": {
+                            "DEFAULT_MEDIA": {
+                                "OTIO_SCHEMA": "ExternalReference.1",
+                                "metadata": {},
+                                "name": "",
+                                "available_range": {
+                                    "OTIO_SCHEMA": "TimeRange.1",
+                                    "duration": {
+                                        "OTIO_SCHEMA": "RationalTime.1",
+                                        "rate": 29.97002997002997,
+                                        "value": 599.0
+                                    },
+                                    "start_time": {
+                                        "OTIO_SCHEMA": "RationalTime.1",
+                                        "rate": 29.97002997002997,
+                                        "value": 107892.0
+                                    }
+                                },
+                                "available_image_bounds": null,
+                                "target_url": "file:///placeholder/project/media/count-c-2997df.mov"
+                            }
+                        },
+                        "active_media_reference_key": "DEFAULT_MEDIA"
+                    }
+                ],
+                "kind": "Audio"
+            },
+            {
+                "OTIO_SCHEMA": "Track.1",
+                "metadata": {
+                    "PremierePro_OTIO": {
+                        "AudioChannels": {
+                            "ChannelType": "Stereo",
+                            "NumberOfChannels": 2
+                        }
+                    }
+                },
+                "name": "Audio 2",
+                "source_range": null,
+                "effects": [
+                    {
+                        "OTIO_SCHEMA": "Effect.1",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "IsIntrinsic": false,
+                                "MatchName": "AudioFader",
+                                "Parameters": [
+                                    {
+                                        "DisplayName": "Volume",
+                                        "ID": 0,
+                                        "Keyframes": []
+                                    },
+                                    {
+                                        "DisplayName": "Mute",
+                                        "ID": 1,
+                                        "Keyframes": []
+                                    }
+                                ]
+                            }
+                        },
+                        "name": "",
+                        "effect_name": "Track",
+                        "enabled": true
+                    },
+                    {
+                        "OTIO_SCHEMA": "Effect.1",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "IsIntrinsic": false,
+                                "MatchName": "PanProcessor",
+                                "Parameters": [
+                                    {
+                                        "DisplayName": "Balance",
+                                        "ID": 0,
+                                        "Keyframes": []
+                                    }
+                                ]
+                            }
+                        },
+                        "name": "Panner",
+                        "effect_name": "Panner",
+                        "enabled": true
+                    }
+                ],
+                "markers": [],
+                "enabled": true,
+                "children": [
+                    {
+                        "OTIO_SCHEMA": "Gap.1",
+                        "metadata": {},
+                        "name": "",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 150.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 0.0
+                            }
+                        },
+                        "effects": [],
+                        "markers": [],
+                        "enabled": true
+                    }
+                ],
+                "kind": "Audio"
+            },
+            {
+                "OTIO_SCHEMA": "Track.1",
+                "metadata": {
+                    "PremierePro_OTIO": {
+                        "AudioChannels": {
+                            "ChannelType": "Stereo",
+                            "NumberOfChannels": 2
+                        }
+                    }
+                },
+                "name": "Audio 3",
+                "source_range": null,
+                "effects": [
+                    {
+                        "OTIO_SCHEMA": "Effect.1",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "IsIntrinsic": false,
+                                "MatchName": "AudioFader",
+                                "Parameters": [
+                                    {
+                                        "DisplayName": "Volume",
+                                        "ID": 0,
+                                        "Keyframes": []
+                                    },
+                                    {
+                                        "DisplayName": "Mute",
+                                        "ID": 1,
+                                        "Keyframes": []
+                                    }
+                                ]
+                            }
+                        },
+                        "name": "",
+                        "effect_name": "Track",
+                        "enabled": true
+                    },
+                    {
+                        "OTIO_SCHEMA": "Effect.1",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "IsIntrinsic": false,
+                                "MatchName": "PanProcessor",
+                                "Parameters": [
+                                    {
+                                        "DisplayName": "Balance",
+                                        "ID": 0,
+                                        "Keyframes": []
+                                    }
+                                ]
+                            }
+                        },
+                        "name": "Panner",
+                        "effect_name": "Panner",
+                        "enabled": true
+                    }
+                ],
+                "markers": [],
+                "enabled": true,
+                "children": [
+                    {
+                        "OTIO_SCHEMA": "Gap.1",
+                        "metadata": {},
+                        "name": "",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 150.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 0.0
+                            }
+                        },
+                        "effects": [],
+                        "markers": [],
+                        "enabled": true
+                    }
+                ],
+                "kind": "Audio"
+            },
+            {
+                "OTIO_SCHEMA": "Track.1",
+                "metadata": {
+                    "PremierePro_OTIO": {
+                        "AudioChannels": {
+                            "ChannelType": "Stereo",
+                            "NumberOfChannels": 2
+                        }
+                    }
+                },
+                "name": "Audio 4",
+                "source_range": null,
+                "effects": [
+                    {
+                        "OTIO_SCHEMA": "Effect.1",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "IsIntrinsic": false,
+                                "MatchName": "AudioFader",
+                                "Parameters": [
+                                    {
+                                        "DisplayName": "Volume",
+                                        "ID": 0,
+                                        "Keyframes": []
+                                    },
+                                    {
+                                        "DisplayName": "Mute",
+                                        "ID": 1,
+                                        "Keyframes": []
+                                    }
+                                ]
+                            }
+                        },
+                        "name": "",
+                        "effect_name": "Track",
+                        "enabled": true
+                    },
+                    {
+                        "OTIO_SCHEMA": "Effect.1",
+                        "metadata": {
+                            "PremierePro_OTIO": {
+                                "IsIntrinsic": false,
+                                "MatchName": "PanProcessor",
+                                "Parameters": [
+                                    {
+                                        "DisplayName": "Balance",
+                                        "ID": 0,
+                                        "Keyframes": []
+                                    }
+                                ]
+                            }
+                        },
+                        "name": "Panner",
+                        "effect_name": "Panner",
+                        "enabled": true
+                    }
+                ],
+                "markers": [],
+                "enabled": true,
+                "children": [
+                    {
+                        "OTIO_SCHEMA": "Gap.1",
+                        "metadata": {},
+                        "name": "",
+                        "source_range": {
+                            "OTIO_SCHEMA": "TimeRange.1",
+                            "duration": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 150.0
+                            },
+                            "start_time": {
+                                "OTIO_SCHEMA": "RationalTime.1",
+                                "rate": 29.97002997002997,
+                                "value": 0.0
+                            }
+                        },
+                        "effects": [],
+                        "markers": [],
+                        "enabled": true
+                    }
+                ],
+                "kind": "Audio"
+            }
+        ]
+    }
+}

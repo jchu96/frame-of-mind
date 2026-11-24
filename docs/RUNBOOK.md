@@ -181,11 +181,11 @@ amd64v3 index record. Architecture-independent packages use the
 run, check the cold download duration, both version lines, encoder checks
 and real-media pass counts. Rerun that head to verify the warm install.
 
-For analysis, ffmpeg is optional and powers two steps: moment screenshots and
-the audio derivative used to transcribe a recording that has no supplied
-transcript. Both degrade to a warning when it is missing, so an analysis still
-completes. Use `--no-screenshots` and `--no-derived-transcript` to skip them
-deliberately rather than relying on the failure path.
+Analysis can use ffmpeg for clip-clock calibration, transcript audio,
+speech snapping, moment screenshots and the contact sheet. A failed
+screenshot can leave a moment without an image. If sheet generation fails,
+the individual screenshots remain available. Use `--no-screenshots` and
+`--no-derived-transcript` to skip screenshots and transcript extraction.
 
 A moment screenshot is the frame at the cited time, with one exception: for
 the `teaching-points` recipe, ffmpeg samples five frames a second within one
@@ -196,6 +196,32 @@ shots of similar brightness, and so can show the neighbouring shot. When it
 does not move, the screenshot is the exact cited frame. No model call is
 involved. Every other recipe, custom recipes included, always uses the frame
 at the cited time.
+
+#### FFmpeg requirements by command
+
+The media rows in `doctor` check that the executable names are accessible
+on the search path. A distributor can ship the same version with different
+codecs. Use the row for the operation you need.
+
+| Command or analysis step | ffprobe needs | ffmpeg needs |
+| --- | --- | --- |
+| `probe` | Stream inventory, timecode tags when present, decoded frame counts, per-frame timestamps and durations for the primary video. | None for a plain probe. |
+| `probe --decode-check`, `verify` | Same frame scan as `probe`. | Decode the primary video and every audio stream to the `null` muxer (`wrapped_avframe` for video, `pcm_s16le` for audio). |
+| `proxy`, `slice` | Probe the source and staged MP4 and check the output count, rate, streams and any start label. | Full decode on both files. Encode faststart MP4 with `libx264` (yuv420p) and mono AAC. Video uses `trim`, `setpts`, `fps` and `scale`. Audio uses `lavfi`/`anullsrc` and `atrim`. Mixing the first audio stream also uses `aresample`, `aformat`, `asetpts` and `amix`. |
+| `frame` | Probe the source, then check that the staged image has one frame of the expected codec and dimensions. | `trim` and `setpts`, PNG or MJPEG encoding to `image2`, and decode through `png_pipe` or `jpeg_pipe` to `null`. |
+| `map` | Optional for source timecode. Read the local source's video rate and start tags from the container, video stream or timecode track. | None. Timeline frame lookup and reading the export's embedded timecode mode use neither tool. |
+| `transcribe`, `analyze` with a derived transcript | Read a positive recording duration. Standalone transcription requires it. Analysis can fall back to one extraction window. | Decode the first audio stream and encode mono AAC in ADTS. Analysis can proceed without a derived transcript. |
+| `snap`, `analyze --snap speech` | Read the first audio stream's sample rate for the reported precision. | Resample to 8 kHz mono `pcm_s16le`. The `tee` muxer writes `s16le` samples and `framecrc` packet timing to separate pipes. A bounded search also uses `atrim`. |
+| `analyze` with a rate from media | Read per-frame timing and the nominal and average video rates to establish a constant frame period. | None for this scan. |
+| `analyze` moment screenshots | None for image extraction. | Decode the video, encode PNG with `image2`. The settled-frame search also uses `fps`, `split`, `scale`, `format` and grayscale `rawvideo`. |
+| `analyze` contact sheet | None. | Read PNGs, `scale` and `pad` the tiles, pipe RGB24 `rawvideo` and encode the assembled canvas as PNG. |
+| `calibrate`, `analyze` on a calibration cache miss | None for calibration. | `lavfi` with `color` and timed `drawbox`, plus `libx264` for a synthetic MP4. |
+| Provider smoke and hosted direct-upload fixture generation | None for generating the fixtures. | `lavfi` with `testsrc2` and `sine`, `libx264` and AAC in MP4. The hosted fixture uses faststart. Provider smoke also runs calibration. |
+
+The five local media helpers read self-contained MOV/MP4, Matroska/WebM or
+AVI files through the local file protocol. They require a decoder for the
+actual source codec and check for constant frame timing from frame zero.
+MOV external data references are disabled. [Local media procedure](#310-prepare-and-verify-local-media)
 
 ### 1.4 Clone and install
 
@@ -269,19 +295,67 @@ provider payload, remote file name, signed URL, or key.
 frameofmind doctor
 ```
 
-Expected:
+Doctor prints the ffmpeg and ffprobe versions, the media capabilities each
+command uses, and any missing encoders, filters or formats. These checks read
+the installed tools’ listings. For example, a missing `libx264` disables
+`proxy`, `slice` and standalone calibration. Optional analysis features are
+listed separately. Doctor also checks the Node version and Gemini key.
 
 ```text
 ok Node >=22
 ok GEMINI_API_KEY
-ok ffmpeg (optional: screenshots, derived transcript)
+-- GRANOLA_API_KEY (optional)
+ok ffmpeg (optional: screenshots, derived transcript, speech snapping)
+ok ffprobe (optional: duration probe, media helpers)
 Bluedot MCP: https://app.bluedothq.com/api/v1/mcp
 Granola MCP: https://mcp.granola.ai/mcp
+Telemetry: off
 Artifact root: <platform-specific path>
 ```
 
-`--` next to ffmpeg is acceptable if neither screenshots nor derived
-transcripts are required.
+For a missing media tool, check the row for the operation you need in
+[FFmpeg requirements by command](#ffmpeg-requirements-by-command).
+
+After an interrupted run, list scratch in the system temporary directory, or
+give the real path of the directory containing the media destination or the
+settled screenshots. Review the kind, path, byte count, age and owner state
+before repeating the same command with `--remove`.
+
+```bash
+frameofmind doctor --scratch
+frameofmind doctor --scratch <directory>
+frameofmind doctor --scratch <directory> --remove
+```
+
+Removal skips links, unmarked folders (including older scratch), live owners
+and uncertain process identities. A reused or inaccessible PID can keep an
+entry on the list. Each removal reports its outcome. Scratch inspection
+works without a Gemini key.
+
+For automation, `frameofmind doctor --json` writes exactly one JSON document to stdout,
+with `schemaVersion` first, and lists system-temp scratch. Human diagnostics
+go to stderr. Combine it with `--scratch <directory>` to
+select adjacent scratch, and add `--remove` to request removal. These are
+the version 1 keys. Consumers can ignore additional keys.
+
+| Field | Value |
+| --- | --- |
+| `schemaVersion` | `1` |
+| `prerequisites` | Boolean `node`, `geminiKey` and `granolaKey` checks |
+| `tools` | `ffmpeg` and `ffprobe`, each with a `version` string or null and an `error` string or null |
+| `commands[]` | `command` label and `capabilities` array |
+| `commands[].capabilities[]` | Capability `name`, boolean `present`, and listing `error` or null |
+| `leftovers[]` | `kind`, absolute `path`, `sizeBytes` and `ageMs` (null if unavailable), owner `state`, boolean `removed`, and `reason` or null |
+| `scanError` | Null on completion, `invalid_request` for removal without a scan, or `scan_failed` when the scan root could not be read |
+
+The owner state is `unproven`, `live`, `abandoned`, `live or reused PID`, or
+`unknown owner`. Only `abandoned` is eligible for removal. In a capability
+name, a vertical bar joins alternative supported input formats.
+
+The general check exits 0 when Node and the Gemini key are ready and 1 when
+either is missing. Optional media capabilities are advisory. An explicit
+`--scratch` scan exits 0 on completion, including when it skips individual
+entries. An invalid request or an unreadable scan root exits 1.
 
 ### 1.7 Install the agent skill
 
@@ -889,6 +963,43 @@ unknown rates. Its uncertainty can span frames adjacent to the reference frame.
 An `unavailable` warning means the local decode or its timing could not be
 verified. Check ffmpeg and the first audio stream. A standalone unavailable
 result sets a nonzero exit status. The reports keep the model range for review.
+
+### 3.13 Map an exported sequence to source frames
+
+Export the timeline and the small video from the same edit. Read the local
+timeline (up to 16 MiB) with one of these commands.
+
+```bash
+frameofmind map edit.otio --at 100f
+frameofmind map edit.otio --at '01:00:02;00' --timecode-rate 29.97df --track 1
+frameofmind map edit.otio --at 0f --video export.mp4 --json
+frameofmind map edit.otio --source media/take.mov --frame 86500
+```
+
+Frame counts and decimal seconds begin at sequence frame zero. Seconds accept
+up to three decimals and must fall on a frame boundary. Timecode input uses
+the sequence display clock, including its global start. Video track 1 is the
+bottom video track. Each row identifies its track. Gaps have no source,
+transitions name both neighboring clips, and speed changes and nested
+sequences identify the unresolved clip or sequence. Reverse lookup takes
+the frame value written in the timeline, including the source start timecode.
+A media frame counts from zero at the media reference's available start.
+
+Source paths in the timeline resolve relative to its directory. Give
+`--source` relative to the working directory or use the full path in the
+forward result. When ffprobe reads an agreeing start tag from local media,
+the command also prints source timecode. Otherwise the row explains why
+only frames are available.
+
+For sequence timecode, an explicit rate and mode take precedence. Otherwise
+the command checks `edit.otio.sequence.json` beside `edit.otio`. Its
+ticks per frame must identify a supported editing rate, its zero point must
+match the timeline start, and its `dropFrame` must be true or false. The
+next source is the exported video's embedded `xmpDM:startTimecode` element
+when `--video` is supplied. The reader recognizes the measured 29.97 drop
+and non-drop formats. If the mode remains unknown at a drop-capable rate,
+the output includes both marked labels. Use a frame count for the lookup
+in that case. Results go to standard output.
 
 ## 4. Review procedure
 

@@ -68,6 +68,21 @@
       "dropFrame": false
     }
   ],
+  "otioCases": [
+    {"id":"explicit rational sharing a named rate double","op":"fromOtioTime","clock":"reel","input":{"OTIO_SCHEMA":"RationalTime.1","value":0,"rate":23.976023976023978},"rate":{"num":6748650790265479,"den":281474976710656},"expected":{"clock":"reel","frames":"0","rate":{"num":6748650790265479,"den":281474976710656},"unit":"video-frame"}},
+    {"id":"largest safe whole rate","op":"fromOtioTime","clock":"reel","input":{"OTIO_SCHEMA":"RationalTime.1","value":0,"rate":9007199254740991},"expected":{"clock":"reel","frames":"0","rate":{"num":9007199254740991,"den":1},"unit":"video-frame"}},
+    {"id":"whole rate 12","op":"fromOtioTime","clock":"source","input":{"OTIO_SCHEMA":"RationalTime.1","value":96,"rate":12.0},"expected":{"clock":"source","frames":"96","rate":{"num":12,"den":1},"unit":"video-frame"}},
+    {"id":"whole rate 120","op":"fromOtioTime","clock":"source","input":{"OTIO_SCHEMA":"RationalTime.1","value":96,"rate":120},"expected":{"clock":"source","frames":"96","rate":{"num":120,"den":1},"unit":"video-frame"}},
+    {"id":"explicit fractional rate","op":"fromOtioTime","clock":"source","input":{"OTIO_SCHEMA":"RationalTime.1","value":96,"rate":14.985014985014985},"rate":{"num":15000,"den":1001},"expected":{"clock":"source","frames":"96","rate":{"num":15000,"den":1001},"unit":"video-frame"}},
+    {"id":"range at a reducible explicit rate","op":"fromOtioRange","clock":"source","input":{"OTIO_SCHEMA":"TimeRange.1","start_time":{"OTIO_SCHEMA":"RationalTime.1","value":86472,"rate":14.985014985014985},"duration":{"OTIO_SCHEMA":"RationalTime.1","value":96,"rate":14.985014985014985}},"rate":{"num":30000,"den":2002},"expected":{"start":{"clock":"source","frames":"86472","rate":{"num":15000,"den":1001},"unit":"video-frame"},"duration":{"clock":"source","frames":"96","rate":{"num":15000,"den":1001},"unit":"video-frame"}}},
+    {"id":"timeline export frame 86472","op":"fromOtioTime","clock":"source","input":{"OTIO_SCHEMA":"RationalTime.1","value":86472.0,"rate":23.976023976023978},"expected":{"clock":"source","frames":"86472","rate":{"num":24000,"den":1001},"unit":"video-frame"}},
+    {"id":"timeline export frame 107952","op":"fromOtioTime","clock":"timeline","input":{"OTIO_SCHEMA":"RationalTime.1","value":107952,"rate":29.97002997002997},"expected":{"clock":"timeline","frames":"107952","rate":{"num":30000,"den":1001},"unit":"video-frame"}},
+    {"id":"zero whole frames","op":"fromOtioTime","clock":"reel","input":{"OTIO_SCHEMA":"RationalTime.1","value":0.0,"rate":24},"expected":{"clock":"reel","frames":"0","rate":{"num":24,"den":1},"unit":"video-frame"}},
+    {"id":"timeline export range","op":"fromOtioRange","clock":"source","input":{"OTIO_SCHEMA":"TimeRange.1","start_time":{"OTIO_SCHEMA":"RationalTime.1","value":86472,"rate":23.976023976023978},"duration":{"OTIO_SCHEMA":"RationalTime.1","value":96,"rate":23.976023976023978}},"expected":{"start":{"clock":"source","frames":"86472","rate":{"num":24000,"den":1001},"unit":"video-frame"},"duration":{"clock":"source","frames":"96","rate":{"num":24000,"den":1001},"unit":"video-frame"}}},
+    {"id":"negative whole frame","op":"fromOtioTime","clock":"source","input":{"OTIO_SCHEMA":"RationalTime.1","value":-1,"rate":24},"refused":"INVALID_INPUT"},
+    {"id":"largest safe whole frame","op":"fromOtioTime","clock":"timeline","input":{"OTIO_SCHEMA":"RationalTime.1","value":9007199254740991,"rate":25},"expected":{"clock":"timeline","frames":"9007199254740991","rate":{"num":25,"den":1},"unit":"video-frame"}},
+    {"id":"first unsafe whole frame","op":"fromOtioTime","clock":"timeline","input":{"OTIO_SCHEMA":"RationalTime.1","value":9007199254740992,"rate":25},"refused":"UNREPRESENTABLE"}
+  ],
   "tickCases": [
     {"id":"grid product beyond safe integers","op":"ticksAtGrid","frames":"9007199254740993","grid":"7","expected":"63050394783186951"},
     {"id":"zero frames on a positive grid","op":"ticksAtGrid","frames":"0","grid":"10594584000","expected":"0"},

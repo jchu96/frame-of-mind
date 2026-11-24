@@ -23,6 +23,27 @@ exact moment.
 
 </div>
 
+## Working with an editing application
+
+Export a small video of the whole sequence and an OpenTimelineIO timeline
+from the same edit. Frame of Mind uploads the video to Gemini to find moments
+with timestamps. It can then use local audio to snap a proposed start or end
+to speech and use the timeline to find the original file and frame.
+
+For example, to find decisions in a 23.976 fps edit, run the first command.
+If the start you want has reference frame 100 in `times.json`, run the second.
+
+```bash
+frameofmind analyze --source none --video edit.mp4 --recipe decisions --timeline-offset 0 --timecode-rate 23.976 --snap speech
+frameofmind map edit.otio --at 100f
+```
+
+In the sample edit, frame 100 lands on video track 1 in
+`count-b-23976-tc1h.mov`, at frame 100 from the start of that file.
+You can also probe a file, make a proxy, slice a selection, grab a still and
+verify the frame count locally. [Premiere Pro walkthrough](docs/EDITING_WORKFLOW.md) ·
+[FFmpeg requirements by command](docs/RUNBOOK.md#ffmpeg-requirements-by-command)
+
 ## Ask it for what you actually need
 
 > "Turn this user call into bug reports — with the error text on screen and
@@ -458,6 +479,7 @@ frameofmind proxy <video> -o <out.mp4> [--height 720] [--allow-oversize] [--forc
 frameofmind slice <video> --from <time> --to <time> -o <out.mp4> [--force]
 frameofmind frame <video> --at <time> -o <out.png|out.jpg> [--force]
 frameofmind verify <video> (--expect-frames <n> | --expect-duration <time>)
+frameofmind map <timeline.otio> (--at <time> | --source <path> --frame <n>) [--track <n>] [--timecode-rate <rate>] [--video <export>] [--json]
 frameofmind snap <video> --at <seconds|HH:MM:SS[.mmm]> --edge <start|end> [--file-clock <source|reel>] [--json]
 frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|run] [--force] [--json]
 ```
@@ -468,6 +490,12 @@ They measure constant-rate video from file frame zero. Use whole frames such as
 Slice includes its first frame and excludes its end. Proxy and slice produce
 H.264 video with mono AAC reference audio. Verify fully decodes the file and
 exits 1 on any frame-count mismatch. See the [local media procedure](docs/RUNBOOK.md#310-prepare-and-verify-local-media).
+
+Use `map` with the timeline exported alongside an edited sequence. A lookup
+such as `frameofmind map edit.otio --at 100f` reports the source file, the
+frame value stored in the edit, and the frame counted from the start of the
+media. Reverse lookup finds each use of that file value. Overlapping video
+tracks have separate rows, topmost first. [Timeline lookup procedure](docs/RUNBOOK.md#313-map-an-exported-sequence-to-source-frames)
 
 | Option | Purpose |
 |---|---|

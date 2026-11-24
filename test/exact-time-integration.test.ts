@@ -53,7 +53,7 @@ test("stored clock names follow the release validator", () => {
 
 test("the dependency is pinned to the reviewed release tarball", () => {
   const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  expect(manifest.dependencies["exact-time"]).toBe("https://github.com/jchu96/exact-time/releases/download/v0.1.3/exact-time-0.1.3.tgz");
+  expect(manifest.dependencies["exact-time"]).toBe("https://github.com/jchu96/exact-time/releases/download/v0.1.4/exact-time-0.1.4.tgz");
 });
 
 test("the published case table matches the installed release byte for byte", () => {

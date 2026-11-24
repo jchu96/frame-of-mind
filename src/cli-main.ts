@@ -1,4 +1,6 @@
 import "./instrument.js";
+import { inspectScratch } from "./adapters/scratch.js";
+import { mediaCapabilityReport, requireMedia } from "./services/media-capabilities.js";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Command } from "commander";
@@ -42,6 +44,7 @@ import {
 
 import { defaultOutputRoot } from "./lib/paths.js";
 import { registerSession } from "./commands/session.js";
+import { registerMap } from "./commands/map.js";
 import { registerSnap } from "./commands/snap.js";
 import { snapSettings } from "./domain/snap.js";
 import { registerMedia } from "./commands/media.js";
@@ -111,14 +114,49 @@ program
 
 program
   .command("doctor")
-  .description("Check local prerequisites without sending meeting data.")
-  .action(async () => {
+  .description("Check local prerequisites or inspect interrupted runs.")
+  .option("--scratch [directory]", "list scratch in system temp or beside files in the given directory")
+  .option("--remove", "remove proven abandoned entries in the scratch listing")
+  .option("--json", "print the versioned doctor report")
+  .action(async (flags: {scratch?: string | boolean; remove?: boolean; json?: boolean}) => {
+    let rows: Awaited<ReturnType<typeof inspectScratch>> = [];
+    let scanError: "invalid_request" | "scan_failed" | null = null;
+    try {
+      if (flags.remove && !flags.scratch) throw new Error("--remove requires --scratch.");
+      if (flags.scratch || flags.json) rows = await inspectScratch(typeof flags.scratch === "string" ? flags.scratch : undefined, flags.remove);
+    } catch (error) {
+      if (!flags.json) throw error;
+      scanError = flags.remove && !flags.scratch ? "invalid_request" : "scan_failed";
+      process.stderr.write(`doctor: ${error instanceof Error ? error.message : "Scratch scan failed."}\n`);
+      process.exitCode = 1;
+    }
+    if (flags.scratch && !flags.json) {
+      for (const row of rows) {
+        const action = flags.remove ? (row.removed ? "removed" : "skipped") : "listed";
+        process.stdout.write(`${action} ${row.kind} ${JSON.stringify(row.path)} ${row.size ?? "?"} bytes, age ${row.ageMs ?? "?"} ms, ${row.state === "unproven" ? "" : "proven, "}${row.state}${row.reason ? ", " + row.reason : ""}\n`);
+      }
+      if (!rows.length) process.stdout.write("No matching scratch entries.\n");
+      return;
+    }
+    const prerequisites = {
+      node: Number(process.versions.node.split(".")[0]) >= 22,
+      geminiKey: Boolean(process.env.GEMINI_API_KEY),
+      granolaKey: Boolean(process.env.GRANOLA_API_KEY),
+    };
+    const media = await mediaCapabilityReport();
+    if (!flags.scratch && (!prerequisites.node || !prerequisites.geminiKey)) process.exitCode = 1;
+    if (flags.json) {
+      const leftovers = rows.map(({kind, path, size, ageMs, state, removed, reason}) =>
+        ({kind, path, sizeBytes: size, ageMs, state, removed, reason: reason ?? null}));
+      process.stdout.write(JSON.stringify({schemaVersion: 1, prerequisites, ...media, leftovers, scanError}) + "\n");
+      return;
+    }
     const checks = [
-      ["Node >=22", Number(process.versions.node.split(".")[0]) >= 22],
-      ["GEMINI_API_KEY", Boolean(process.env.GEMINI_API_KEY)],
-      ["GRANOLA_API_KEY (optional)", Boolean(process.env.GRANOLA_API_KEY)],
-      ["ffmpeg (optional: screenshots, derived transcript, speech snapping)", await executableExists("ffmpeg")],
-      ["ffprobe (optional: duration probe, media helpers)", await executableExists("ffprobe")],
+      ["Node >=22", prerequisites.node],
+      ["GEMINI_API_KEY", prerequisites.geminiKey],
+      ["GRANOLA_API_KEY (optional)", prerequisites.granolaKey],
+      ["ffmpeg (optional: screenshots, derived transcript, speech snapping)", media.tools.ffmpeg.version],
+      ["ffprobe (optional: duration probe, media helpers)", media.tools.ffprobe.version],
     ] as const;
     for (const [name, ready] of checks) process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
     process.stdout.write(
@@ -134,7 +172,12 @@ program
       process.stdout.write("Automatic instrumentation of third-party modules is unavailable in the single-file build.\n");
     }
     process.stdout.write(`Artifact root: ${defaultOutputRoot()}\n`);
-    if (!checks[0][1] || !checks[1][1]) process.exitCode = 1;
+    for (const [name, tool] of Object.entries(media.tools)) process.stdout.write((tool.version ?? `${name} ${tool.error}`) + "\n");
+    for (const {command, capabilities} of media.commands) {
+      const absent = capabilities.filter(row => !row.present).map(row => row.name);
+      const result = absent.length ? "Missing " + absent.join(", ") : "Ready";
+      process.stdout.write(`${command} needs ${capabilities.map(row => row.name).join(", ")}. ${result}.\n`);
+    }
   });
 
 program
@@ -149,6 +192,7 @@ program
 registerSession(program);
 registerMedia(program);
 registerSnap(program);
+registerMap(program);
 registerTranscribe(program);
 registerKey(program);
 
@@ -158,6 +202,7 @@ program.command("calibrate")
   .option("--json", "Print the measurement and token cost as JSON")
   .action(async (flags: { model?: string; json?: boolean }) => {
     if (!process.env.GEMINI_API_KEY) throw new Error("Set GEMINI_API_KEY before calibration.");
+    await requireMedia("calibrate");
     const analyzer = new GeminiVideoAnalyzer(process.env.GEMINI_API_KEY, flags.model ? geminiModelSchema.parse(flags.model) : undefined);
     const result = await calibrateClipClock(analyzer, { force: true });
     const tokens = analyzer.takeUsage()?.totalTokens ?? null;
@@ -463,26 +508,6 @@ const CLI_ANALYSIS_PROGRESS = {
 } satisfies { report(event: AnalysisProgressEvent): void };
 
 program.showSuggestionAfterError();
-async function executableExists(command: string): Promise<boolean> {
-  const isWindows = process.platform === "win32";
-  const candidates = isWindows
-    ? [`${command}.exe`, `${command}.cmd`, `${command}.bat`, command]
-    : [command];
-  const paths = (process.env.PATH || "").split(isWindows ? ";" : ":");
-  for (const path of paths) {
-    if (!path) continue;
-    for (const candidate of candidates) {
-      try {
-        await access(resolve(path, candidate));
-        return true;
-      } catch {
-        // Try the next candidate or PATH entry.
-      }
-    }
-  }
-  return false;
-}
-
 function parseProvider(value: string, allowFile: boolean): ContextProvider {
   const providers = allowFile ? ["bluedot", "granola", "file"] : ["bluedot", "granola"];
   if (!providers.includes(value)) {
