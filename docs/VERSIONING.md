@@ -10,7 +10,7 @@ versions for durable schemas and prompts.
 | CLI/package | `0.6.0-beta.2` | Semantic Versioning |
 | `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
-| `times.json` sidecar | `2` | increment for breaking shape/meaning |
+| `times.json` sidecar | `2` (default), `3` (speech snapping) | increment for breaking shape/meaning |
 | exact-time test table | `2` | increment for changed conversion semantics |
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
@@ -143,7 +143,7 @@ not change.
 
 ### Time sidecar migration: schema 1 → 2
 
-New runs write only schema 2. A schema-1 reader sees `schemaVersion: 2` and must
+Default runs write schema 2. A schema-1 reader sees `schemaVersion: 2` and must
 reject it as unsupported rather than guessing. The prior numeric `source` or
 `reel`, numeric `timeline`, top-level `precisionMs` and optional model `timecode`
 fields are gone. Each pointer now has a `time` object and optional `timeline`
@@ -163,6 +163,29 @@ frames and the website re-import path. Older strict readers reject a new
 manifest carrying `exactOffset`; update the reader before importing such a
 bundle. This is forward acceptance of historical bundles, not a promise that
 older strict validators ignore new fields. `analysis.json` does not change.
+
+### Time sidecar migration: schema 2 → 3 with speech snapping
+
+Dispatch on `schemaVersion`. A default analysis writes the existing schema-2
+bytes. An analysis requested with `--snap speech` writes only schema 3, even
+with zero records or unavailable audio. Strict schema-2 readers reject schema
+3. Update a consumer before enabling snapping for its runs. Historical sidecars
+keep their original versions.
+
+In schema 3, read `snapSettings` once. Candidate start and end pointers each
+require `snap`. Evidence pointers carry only their original readings.
+`snapped` supplies a measured target, signed shift, observed pause and alternatives.
+`no-boundary` keeps the model time. Its `alternativesMs` lists the sorted
+file-clock edges refused because reaching them would cross other speech.
+This supersedes the specification's requirement that the list always be empty.
+`ambiguous` lists competing edges and `unavailable` carries only its status.
+Preserve the model entry on every path.
+
+Both file and timeline measurements carry `gridMs: 10`. Their `precisionMs`
+is 50 for source audio at 32 kHz or higher, and 200 for lower or unknown
+rates. The optional frame reference identifies the frame containing the
+proposal. Its uncertainty can span neighbouring frames. The run import
+still uses analysis and manifest.
 
 ## Prompt revision
 

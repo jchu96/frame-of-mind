@@ -2669,3 +2669,87 @@ describe("downloaded from-media clock preflight", () => {
     }
   });
 });
+
+describe("speech proposals at publication", () => {
+  async function setup() {
+    const f = await createFixture();
+    const { moments } = indexResult();
+    f.analyzer.index.mockResolvedValue({ ...indexResult(), moments: [
+      ...moments, { ...moments[0]!, start: "00:00:10", end: "00:00:14" }, { ...moments[0]!, start: "00:00:20", end: "00:00:25" },
+    ] });
+    const starts = [100, 1000, 2030];
+    const levels = new Float32Array(3000).fill(-96);
+    for (const start of starts) levels.fill(-10, start, start + 200);
+    const decodeSpeechEnvelope = vi.fn(async () => ({
+      startMs: 0, length: 3000,
+      blocks: [levels.subarray(0, 1000), levels.subarray(1000, 2000), levels.subarray(2000)],
+    }));
+    const orchestrator = new AnalysisOrchestrator({ createContextSource: () => f.context,
+      createAnalyzer: () => f.analyzer, createRunId: () => "speech-run", now: () => "2026-11-23T00:00:00.000Z",
+      probeDurationSeconds: async () => 30, decodeSpeechEnvelope });
+    const settings = { method: "audio-envelope" as const, gapMs: 250, windowMs: 1500 };
+    const options = { ...f.options, maxIncidents: 3, calibrate: false };
+    const events: AnalysisProgressEvent[] = [];
+    const execute = (suffix: string, enabled: boolean, signal?: AbortSignal) => {
+      for (const [i, timestamp] of ["00:00:03", "00:00:12", "00:00:22"].entries()) {
+        const detail = detailResult();
+        f.analyzer.interrogate.mockResolvedValueOnce({ ...detail, accepted: i !== 1, evidence: { ...detail.evidence, timestamp } });
+      }
+      return orchestrator.analyze({ ...options, outputRoot: join(f.outputRoot, suffix), ...(enabled ? { snapSettings: settings } : {}) },
+        { signal, progress: { report: e => { events.push(e); } } });
+    };
+    return { execute, f, events, decodeSpeechEnvelope };
+  }
+  it("W8 same run off/on uses zero/one decode, preserves bytes and joins interspersed accepted items by original index", async () => {
+    const { execute, decodeSpeechEnvelope } = await setup();
+    const control = await execute("off", false);
+    expect(decodeSpeechEnvelope).not.toHaveBeenCalled();
+    expect(control.snapSummary).toBeUndefined();
+    const run = await execute("on", true);
+    expect(decodeSpeechEnvelope).toHaveBeenCalledTimes(1);
+    for (const file of ["analysis.json", "manifest.json", "analysis-outcome.json"]) {
+      expect(await readFile(join(run.directory, file))).toEqual(await readFile(join(control.directory, file)));
+    }
+    expect(run.manifest.analysisSha256).toBe(control.manifest.analysisSha256);
+    const read = (name: string) => readFile(join(run.directory, name), "utf8");
+    const controlBytes = await readFile(join(control.directory, "times.json"));
+    const { createHash } = await import("node:crypto");
+    expect(createHash("sha256").update(controlBytes).digest("hex")).toBe("4d6e141656227b484b7d5baaf9b6f6f45f6d708d644f2ccd354dbc101da51037");
+    expect(JSON.parse(controlBytes.toString()).schemaVersion).toBe(2);
+    const sidecar = JSON.parse(await read("times.json"));
+    expect(sidecar.schemaVersion).toBe(3);
+    expect(sidecar.entries.filter((e: { snap?: unknown }) => e.snap)).toHaveLength(6);
+    expect(sidecar.entries.filter((e: { pointer: string }) => e.pointer.endsWith("/timestamp")).every((e: object) => !("snap" in e))).toBe(true);
+    expect(run.snapSummary).toEqual({ counts: { snapped: 3, "no-boundary": 3, unavailable: 0, ambiguous: 0 }, total: 6, medianShiftMs: 0 });
+    for (const file of ["analysis.md", "report.html"]) {
+      const report = await read(file);
+      expect(report).toContain("20.300 s source (measured on a 10 ms grid, accurate to about ±200 ms)");
+      expect(report).not.toContain("10.000 s source (measured on a 10 ms grid, accurate to about ±200 ms)");
+      const evidence = file === "analysis.md" ? /^- Time:.*$/gm : /<div class="eyebrow">requirement[^<]+/g;
+      expect(report.match(evidence)).toEqual((await readFile(join(control.directory, file), "utf8")).match(evidence));
+    }
+  });
+  it("W8 decoder failure warns once, returns all unavailable and permits empty schema 3 runs", async () => {
+    const { execute, events, f, decodeSpeechEnvelope } = await setup();
+    decodeSpeechEnvelope.mockRejectedValue(new Error("synthetic decode failure"));
+    const run = await execute("unavailable", true);
+    expect(events.filter(e => e.kind === "warning" && e.message.includes("Speech snapping unavailable"))).toHaveLength(1);
+    expect(run.snapSummary).toEqual({ counts: { snapped: 0, ambiguous: 0, "no-boundary": 0, unavailable: 6 }, total: 6 });
+    const sidecar = JSON.parse(await readFile(join(run.directory, "times.json"), "utf8"));
+    expect(sidecar.entries.filter((e: { snap?: unknown }) => e.snap).map((e: { snap: unknown }) => e.snap)).toEqual(Array(6).fill({ status: "unavailable" }));
+    f.analyzer.index.mockResolvedValue({ ...indexResult(), moments: [] });
+    const empty = await execute("empty", true);
+    expect(empty.snapSummary?.total).toBe(0);
+    expect(JSON.parse(await readFile(join(empty.directory, "times.json"), "utf8"))).toMatchObject({ schemaVersion: 3, entries: [] });
+  });
+  it("W11 cancellation during the snap decode never publishes success", async () => {
+    const { execute, f, decodeSpeechEnvelope } = await setup();
+    const controller = new AbortController();
+    decodeSpeechEnvelope.mockImplementation(async () => { controller.abort(); throw new Error("canceled"); });
+    await expect(execute("cancel", true, controller.signal)).rejects.toBeInstanceOf(AnalysisCanceledError);
+    await expect(stat(join(f.outputRoot, "cancel", "speech-run", "analysis.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(f.options.video!, "utf8")).toBe("synthetic-video");
+    const output = await readdir(join(f.outputRoot, "cancel")).catch(() => []);
+    expect(output).toEqual([]);
+  });
+});

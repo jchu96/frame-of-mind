@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { childEnvironment } from "../src/lib/child-env.js";
-import { extractAudioTrack, probeDurationSeconds } from "../src/services/audio.js";
+import { decodeSpeechEnvelope, extractAudioTrack, probeDurationSeconds } from "../src/services/audio.js";
 import { extractScreenshot } from "../src/services/screenshots.js";
 import { probeFrameRate } from "../src/services/media-probe.js";
 import { synthesizeFlash } from "../src/adapters/gemini-calibration.js";
@@ -23,6 +23,7 @@ const fs = require('node:fs');
 fs.writeFileSync(${JSON.stringify(join(root, "env.json"))}, JSON.stringify(process.env));
 const args = process.argv.slice(2);
 if (process.argv[1].endsWith('ffprobe')) console.log(args.includes('format=duration') ? '2' : JSON.stringify({ streams: [{r_frame_rate:'1/1',avg_frame_rate:'1/1',time_base:'1/1'}], frames: [{pts:0,duration:1},{pts:1,duration:1}] }));
+else if (args.includes('tee')) { process.stderr.write('#tb 0: 1/8000\\n0, 0, 0, 80, 160, 0x00000000\\n'); process.stdout.write(Buffer.alloc(160)); }
 else if (process.argv[1].endsWith('ffmpeg')) fs.writeFileSync(args.at(-1), 'synthetic-output');
 `;
   for (const name of ["ffmpeg", "ffprobe", "open", "xdg-open"]) await writeFile(join(root, name), script, { mode: 0o700 });
@@ -59,6 +60,10 @@ describe("helper", () => {
 describe("media", () => {
   it("audio extraction's ffmpeg sees no marker variable", async () => {
     expect(await extractAudioTrack("synthetic.mp4", join(root, "audio.aac"))).toBe(true); await noMarkers();
+  });
+  it("W11 speech decoder ffmpeg sees no marker variable", async () => {
+    expect((await decodeSpeechEnvelope("synthetic.mp4"))?.length).toBe(1);
+    await noMarkers();
   });
   it("the duration ffprobe sees no marker variable", async () => {
     expect(await probeDurationSeconds("synthetic.mp4")).toBe(2); await noMarkers();

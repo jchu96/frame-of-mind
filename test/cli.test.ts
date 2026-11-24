@@ -158,3 +158,17 @@ describe("clock flags", () => {
     expect(await buildAnalyzeOptions(undefined, { ...baseFlags, timelineOffset: "86400f", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false }, "synthetic-key")).toMatchObject({ timelineOffset: "86400f", timecodeRate: "24000/1001", fileClock: "reel", calibrate: false });
   });
 });
+
+describe("speech snapping options", () => {
+  it("W12 validates both tuning flags even when off and accepts inclusive bounds", async () => {
+    const build = (flags: Record<string, string>) => buildAnalyzeOptions(undefined, { ...baseFlags, ...flags }, "synthetic");
+    expect(await build({ snapGapMs: "80", snapWindowMs: "250" })).not.toHaveProperty("snapSettings");
+    expect((await build({ snap: "speech" })).snapSettings).toEqual({ method: "audio-envelope", gapMs: 250, windowMs: 1500 });
+    for (const [gapMs, windowMs] of [[80, 250], [2000, 3000]]) {
+      expect((await build({ snap: "speech", snapGapMs: String(gapMs), snapWindowMs: String(windowMs) })).snapSettings).toMatchObject({ gapMs, windowMs });
+    }
+    for (const v of ["79", "2001", "1.5", "100e1", ""]) await expect(build({ snapGapMs: v })).rejects.toThrow("--snap-gap-ms");
+    for (const v of ["249", "3001", "250.0", "-300"]) await expect(build({ snapWindowMs: v })).rejects.toThrow("--snap-window-ms");
+    await expect(build({ snap: "word" })).rejects.toThrow("--snap");
+  });
+});

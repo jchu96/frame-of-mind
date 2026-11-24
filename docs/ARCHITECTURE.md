@@ -347,6 +347,18 @@ All recipes share one policy:
   candidates intentionally omitted by the configured limit;
 - human review remains required.
 
+Speech snapping runs at rendering, after ordered detail results. The audio
+service decodes mono 8 kHz PCM and verifies packet presentation times on the
+file clock. Complete 80-sample windows place edges on a 10 ms grid. The service
+reads the source sample rate of the same first audio stream with ffprobe.
+Accuracy is about ±50 ms at 32 kHz or higher and ±200 ms at lower or unknown
+rates. A centered 30 s noise-floor estimate identifies speech groups lasting
+at least 80 ms. The selector retains each group's extent before applying the
+pause threshold, so an outward proposal can only reach the edge of its own group.
+Word identity, speaker identity and editorial intent require other evidence.
+The selector checks model ranges together and rolls back
+conflicting proposals before the staged artifacts are published.
+
 The current neutral `details[]` contract is intentionally not presented as a
 complete epistemic model. ADR 0014 proposes a versioned evidence/claim spine
 with discriminated findings, procedure, technical-explanation, coaching, and
@@ -566,7 +578,7 @@ a shared schema-version registry prevents one run ID from occupying both. A
 copied, swapped, hand-edited, partially corrupted, or unsupported pair
 therefore fails closed.
 
-`times.json` is a schema-2 rendering sidecar (`kind: frame-of-mind.times`)
+Default runs write a schema-2 `times.json` rendering sidecar (`kind: frame-of-mind.times`)
 with exactly one pointer per structured analysis timestamp. Its `time` and
 optional `timeline` objects carry approximate decimal-string seconds, named
 clock, `precisionMs` and model origin. They never carry frames, ticks or
@@ -580,6 +592,12 @@ Reading seconds are explicitly derived; exact reconstruction uses frames/rate.
 For frames containing no whole millisecond, omit seconds with a reason while
 retaining exact frames, ticks and timecode, without rejecting the rate.
 The pure OTIO exporter is a boundary, never the arithmetic authority.
+
+With `--snap speech`, schema 3 adds run-level `snapSettings` and a result at
+each candidate edge, including rejected items. Evidence pointers retain their
+model reading. A successful proposal stores an approximate audio target and can
+carry a separate containing-frame reference on a declared timeline. JSON,
+Markdown and HTML use the same validated sidecar and join by original item index.
 
 The sidecar does not replace `analysis.json`. Both manifest versions accept
 optional `clock.timeline.exactOffset`; `timelineOffsetMs` appears only when
