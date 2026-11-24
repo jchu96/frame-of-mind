@@ -47,7 +47,9 @@ it("advertises the machine commands and options that ship schemas", () => {
   const result = run(["capabilities", "--json"]);
   expect(result.status, result.stderr).toBe(0);
   const inventory = validateCliDocument("capabilities", result.stdout);
-  expect(Object.keys(inventory.schemaVersions).sort()).toEqual(readdirSync("schemas/cli").map(name => name.replace(".schema.json", "")).sort());
+  const schemas = new Set(Object.keys(inventory.schemaVersions).map(name =>
+    name.endsWith(" dry-run") ? "analyze-dry-run" : name.endsWith(" result") ? "job-result" : name.includes(" ") ? "job" : name));
+  expect([...schemas].sort()).toEqual(readdirSync("schemas/cli").map(name => name.replace(".schema.json", "")).sort());
   expect(inventory.commands.map((cmd: {name: string}) => cmd.name).sort()).toEqual(Object.keys(inventory.schemaVersions).sort());
   expect(JSON.parse(run(["--version", "--schema-version=1", "--json"]).stdout).schemaVersions).toEqual(inventory.schemaVersions);
   for (const versions of Object.values(inventory.schemaVersions)) expect(versions).toEqual([1]);

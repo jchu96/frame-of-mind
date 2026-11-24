@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "schemaVersion"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    }
+  },
+  "if": {
+    "required": [
+      "error"
+    ]
+  },
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      }
+    }
+  },
+  "else": {
+    "type": "object",
+    "properties": {
+      "file": {
+        "type": "string"
+      },
+      "bytes": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "seconds": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      },
+      "model": {
+        "type": "string"
+      },
+      "retention": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "file",
+      "bytes",
+      "seconds",
+      "model",
+      "retention"
+    ]
+  }
+}

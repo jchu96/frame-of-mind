@@ -238,6 +238,8 @@ export interface AnalysisProjectionPublisher {
 }
 
 export interface AnalyzeExecutionOptions {
+  /** The job caller supplies a fresh private directory inside its output grant. */
+  jobScratchRoot?: string;
   /** Called after the failure manifest has been atomically published. */
   onFailurePublished?: (directory: string) => void;
   signal?: AbortSignal;
@@ -386,7 +388,7 @@ export class AnalysisOrchestrator {
     const hasContext = hasMeetingContext(options);
     const context = hasContext ? this.createContextSource(options) : undefined;
     const progress = execution.progress ?? NOOP_PROGRESS_REPORTER;
-    const temp = await createScratch("analyze");
+    const temp = await createScratch("analyze", execution.jobScratchRoot);
     let meeting: MeetingEvidence | undefined;
     let localVideo = options.video ? resolve(options.video) : "";
     let downloadedMimeType: string | undefined;
@@ -1109,7 +1111,7 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
         let proposals: SnapRun | undefined;
         if (settings) {
-          const envelope = await this.decodeSpeech(localVideo, { signal: execution.signal }).catch(() => undefined);
+          const envelope = await this.decodeSpeech(localVideo, { signal: execution.signal, ...(execution.jobScratchRoot && {confinedInput: true}) }).catch(() => undefined);
           assertNotCanceled(execution.signal);
           if (!envelope) await reportWarning(progress, { kind: "warning", stage: "rendering", message: "Speech snapping unavailable: audio decode or timestamp verification failed." });
           const ms = (timestamp: string) => parseSecondsMs(modelTime(clock.fileClock, timestamp).seconds);
@@ -1124,8 +1126,8 @@ export class AnalysisOrchestrator {
           message: retainRemote ? "Finalizing the analysis bundle." : "Deleting the temporary Gemini upload.",
         });
         if (!retainRemote) {
-          remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep);
-          cleanupFinalized = remoteDeleted;
+          remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep, execution.jobScratchRoot ? 1 : 3);
+          cleanupFinalized = remoteDeleted || Boolean(execution.jobScratchRoot);
         }
         failurePhase = "render";
         const analysisSha256 = await analysisDigest(analysis);
@@ -1322,9 +1324,9 @@ export class AnalysisOrchestrator {
           ...(projectionWarning ? { projectionWarning } : {}),
         };
       } catch (error) {
-        if (error instanceof AnalysisCanceledError) throw error;
+        if (error instanceof AnalysisCanceledError || (execution.jobScratchRoot && execution.signal?.aborted)) throw error;
         if (!retainRemote && !cleanupFinalized) {
-          remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep);
+          remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep, execution.jobScratchRoot ? 1 : 3);
           cleanupFinalized = true;
         }
         const failure = runFailureManifestSchema.parse({
@@ -1378,7 +1380,7 @@ export class AnalysisOrchestrator {
         throw error;
       } finally {
         if (!retainRemote && !cleanupFinalized) {
-          const deleted = await deleteWithRetry(analyzer, remote, this.sleep);
+          const deleted = await deleteWithRetry(analyzer, remote, this.sleep, execution.jobScratchRoot ? 1 : 3);
           if (!deleted) {
             await reportWarning(progress, {
               kind: "warning",
@@ -1392,7 +1394,7 @@ export class AnalysisOrchestrator {
       await context?.close().catch(() => undefined);
       if (stagingDirectory) await rm(stagingDirectory, { recursive: true, force: true });
       if (runContainerDirectory) await rmdir(runContainerDirectory).catch(() => undefined);
-      await rm(temp, { recursive: true, force: true });
+      if (!execution.jobScratchRoot) await rm(temp, { recursive: true, force: true });
     }
   }
 }
@@ -1430,13 +1432,14 @@ async function deleteWithRetry(
   analyzer: AnalysisVideoAnalyzer,
   remote: GeminiFile,
   sleep: (milliseconds: number) => Promise<void>,
+  attempts = 3,
 ): Promise<boolean> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
       await analyzer.delete(remote);
       return true;
     } catch {
-      if (attempt < 2) await sleep(500 * (attempt + 1));
+      if (attempt + 1 < attempts) await sleep(500 * (attempt + 1));
     }
   }
   return false;

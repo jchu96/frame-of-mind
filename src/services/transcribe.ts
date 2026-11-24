@@ -57,7 +57,7 @@ function uploadLabel(remote: GeminiFile): string {
 }
 
 /** Adopted standalone transcription workflow. It never creates an analysis run bundle. */
-export async function transcribe(options: TranscribeOptions, injected: Partial<TranscribeDependencies> = {}) {
+export async function transcribe(options: TranscribeOptions, injected: Partial<TranscribeDependencies> = {}, job?: { scratchRoot: string; authorize: () => Promise<void> }) {
   const deps: TranscribeDependencies = {
     createAnalyzer: (key, model) => new GeminiVideoAnalyzer(key, model),
     extractAudioTrack, probeDurationSeconds,
@@ -104,24 +104,28 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const windows = planTranscriptionWindows(duration, TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS);
   const analyzer = deps.createAnalyzer(apiKey, model);
   deps.stdout(`model: ${model}; duration: ${Math.round(duration)} s; windows: ${windows.length}; retention: ${retention}; upload limit: 2 GB`);
-  const temp = await createScratch("transcribe");
+  const temp = await createScratch("transcribe", job?.scratchRoot);
   const chunks: Array<{ segments: DerivedTranscriptionSegment[]; nominalStartSeconds: number }> = [];
   try {
     for (const [index, window] of windows.entries()) {
+      await job?.authorize();
       canceled();
       const audioPath = join(temp, `audio-${index + 1}.aac`);
       try {
         if (!(await deps.extractAudioTrack(input, audioPath, {
+          ...(job ? {confinedInput: true, signal: options.signal} : {}),
           ...(window.startSeconds ? { startSeconds: window.startSeconds } : {}),
           durationSeconds: window.durationSeconds,
         }))) throw new TranscribeError("No audio track could be extracted. Check ffmpeg and the recording's audio; see docs/RUNBOOK.md §6.20.", "DECODE_FAILED");
         canceled();
-        for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const attempts = job ? 1 : 2;
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
           canceled();
           let remote: GeminiFile | undefined;
           try {
             remote = await analyzer.upload(audioPath, "audio/aac");
             if (retention === "provider") deps.stderr(`kept audio upload: ${uploadLabel(remote)}`);
+            if (job) canceled();
             const segments = await analyzer.transcribe(remote, requestedLanguage);
             chunks.push({ segments: offsetTranscriptionSegments(segments, window.startSeconds), nominalStartSeconds: window.nominalStartSeconds });
             deps.stdout(`window ${index + 1}/${windows.length}: ${segments.length} segment(s)`);
@@ -131,9 +135,9 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
               deps.stderr("warning: failed audio upload cleanup is unconfirmed; provider expiry applies.");
             }
             canceled();
-            if (attempt === 2) {
+            if (attempt === attempts) {
               const code = providerFailureCode(error);
-              throw new TranscribeError(`Transcription failed on window ${index + 1} after 2 attempts; no transcript files written.`, code);
+              throw new TranscribeError(`Transcription failed on window ${index + 1} after ${attempts} attempt${attempts === 1 ? "" : "s"}; no transcript files written.`, code);
             }
             deps.stderr(`window ${index + 1}: retrying once after 20 s`);
           } finally {
@@ -147,7 +151,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
       } finally { await rm(audioPath, { force: true }); }
       canceled();
     }
-  } finally { await rm(temp, { recursive: true, force: true }); }
+  } finally { if (!job) await rm(temp, { recursive: true, force: true }); }
   canceled();
   const segments = mergeTranscriptionChunks(chunks);
   const provenance = {
@@ -160,6 +164,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   await mkdir(output, { recursive: true, mode: 0o700 });
   // Each file is published atomically only after all windows and rendering succeed.
   for (const [index, path] of paths.entries()) {
+    await job?.authorize();
     await writePrivateAtomic(path, texts[index]!, { force: options.force });
     deps.stdout(`wrote: ${path}; clock: source`);
   }

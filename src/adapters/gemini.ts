@@ -1,3 +1,4 @@
+import type { JobProviderTransport } from "./job-provider-transport.js";
 import { clockTime, clipToFile, type ClipClock } from "../domain/clock.js";
 import type { RunNote } from "../domain/run-notes.js";
 import { Buffer } from "node:buffer";
@@ -149,6 +150,7 @@ const transcriptionSchema = z.object({
 export class GeminiVideoAnalyzer {
   readonly model: string;
   relativeEvidenceResponses = 0;
+  private readonly jobTransport?: JobProviderTransport;
   private readonly fileUploader: GeminiFileUploader;
   private readonly generateContent: (
     parameters: GenerateContentParameters,
@@ -183,9 +185,9 @@ export class GeminiVideoAnalyzer {
     model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
     dependencies: GeminiAnalyzerDependencies = {},
   ) {
-    const ai = new StatusAwareGeminiClient(apiKey, MODEL_REQUEST_TIMEOUT_MS);
-    this.fileUploader = dependencies.fileUploader ??
-      createGeminiFileUploader(apiKey);
+    this.jobTransport = dependencies.jobTransport;
+    const ai = new StatusAwareGeminiClient(apiKey, MODEL_REQUEST_TIMEOUT_MS, this.jobTransport);
+    this.fileUploader = this.jobTransport?.uploader(apiKey) ?? dependencies.fileUploader ?? createGeminiFileUploader(apiKey);
     this.generateContent = dependencies.generateContent ??
       ((parameters) => ai.models.generateContent(parameters));
     this.getFile = dependencies.getFile ??
@@ -212,7 +214,9 @@ export class GeminiVideoAnalyzer {
       const uploadUri = requireString(file.uri, "Gemini file URI");
       const uploadMimeType = file.mimeType;
       const processingDeadline = this.now() + FILE_PROCESSING_LIMIT_MS;
+      let polls = 0;
       while (String(file.state) === "PROCESSING") {
+        if (this.jobTransport && ++polls > 359) throw new Error("Gemini processing poll limit reached.");
         const remaining = processingDeadline - this.now();
         if (remaining <= 0) {
           throw new Error("Gemini file processing exceeded the 30 minute limit.");
@@ -245,6 +249,7 @@ export class GeminiVideoAnalyzer {
       if (String(file.state) !== "ACTIVE") {
         throw new Error(`Gemini could not process the recording (state: ${String(file.state)}).`);
       }
+      this.jobTransport?.acquired();
       return file;
     } catch (error) {
       const provider = error instanceof GeminiFileError ? error.provider : classifyProviderError(error);
@@ -700,7 +705,7 @@ export class GeminiVideoAnalyzer {
         return response;
       } catch (error) {
         if (
-          attempt < GEMINI_GENERATION_TRANSPORT_RETRIES
+          !this.jobTransport && attempt < GEMINI_GENERATION_TRANSPORT_RETRIES
           && isRetryableTransportError(error)
         ) {
           await this.sleep(generationRetryDelayMs(attempt));
@@ -712,7 +717,7 @@ export class GeminiVideoAnalyzer {
         }
         // A detail-generation failure is candidate-scoped: the orchestrator
         // isolates it and continues, instead of aborting the whole run.
-        if (phase === "detail") {
+        if (phase === "detail" && !this.jobTransport) {
           throw new CandidateAnalysisError({ code: "generation_failed", attempts: 1 });
         }
         throw new GeminiFileError(
@@ -767,7 +772,7 @@ export class GeminiVideoAnalyzer {
     try {
       return parseGeminiJson(response.text, schema, label);
     } catch (error) {
-      if (!(error instanceof GeminiResponseValidationError)) throw error;
+      if (this.jobTransport || !(error instanceof GeminiResponseValidationError)) throw error;
       let repaired: Pick<GenerateContentResponse, "text" | "usageMetadata">;
       try {
         repaired = await this.generate(
@@ -792,7 +797,8 @@ export class GeminiVideoAnalyzer {
   }
 
   private async deleteByNameWithRetry(name: string): Promise<boolean> {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    const attempts = this.jobTransport ? 1 : 3;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
         await this.deleteFile({
           name,
@@ -800,7 +806,7 @@ export class GeminiVideoAnalyzer {
         });
         return true;
       } catch {
-        if (attempt < 2) {
+        if (attempt + 1 < attempts) {
           await this.sleep(250 * (attempt + 1));
         }
       }
@@ -940,6 +946,7 @@ function escapePromptData(value: string): string {
 }
 
 export interface GeminiAnalyzerDependencies {
+  jobTransport?: JobProviderTransport;
   fileUploader?: GeminiFileUploader;
   generateContent?: (
     parameters: GenerateContentParameters,

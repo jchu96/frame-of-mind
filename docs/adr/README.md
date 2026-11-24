@@ -47,6 +47,7 @@ decision may be made in place.
 | [0028](0028-time-to-frame.md) | Choose the frame when a time enters the exact-time module | Accepted | 2026-11-22 |
 | [0029](0029-recipe-opt-out-of-screen-review-fields.md) | Let a recipe opt out of screen-review fields | Proposed | 2026-11-22 |
 | [0030](0030-local-mcp-snapshot.md) | Grant local MCP access to one reviewed snapshot at launch | Accepted | 2026-11-24 |
+| [0031](0031-cli-job-upload-retention.md) | Grant upload retention on each CLI job start | Accepted | 2026-11-24 |
 
 ## Adding An ADR
 

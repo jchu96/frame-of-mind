@@ -1,3 +1,4 @@
+import type { JobProviderTransport } from "./job-provider-transport.js";
 import { ContractError } from "../domain/contract-error.js";
 import { GoogleGenAI } from "@google/genai";
 import {
@@ -13,8 +14,8 @@ import {
  * Replace this shim with HttpOptions.fetch when adopting an SDK that supports it.
  */
 export class StatusAwareGeminiClient extends GoogleGenAI {
-  constructor(apiKey: string, timeout: number) {
-    super({ apiKey, httpOptions: { timeout } });
+  constructor(apiKey: string, timeout: number, job?: JobProviderTransport) {
+    super({ apiKey, ...(job && {vertexai: false}), httpOptions: { timeout } });
     const transport = this.apiClient as unknown as {
       apiCall: (...args: unknown[]) => Promise<Response>;
     };
@@ -24,7 +25,15 @@ export class StatusAwareGeminiClient extends GoogleGenAI {
     const apiCall = transport.apiCall.bind(this.apiClient);
     transport.apiCall = async (...args) => {
       let response: Response;
-      try { response = await apiCall(...args); }
+      try {
+        if (job) {
+          const [url, init, , deadline, signal] = args as [string, RequestInit, unknown, number, AbortSignal?];
+          const timeoutSignal = AbortSignal.timeout(deadline || timeout);
+          response = await job.fetch(url, { ...init, signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal });
+        } else {
+          response = await apiCall(...args);
+        }
+      }
       catch (error) {
         // The SDK's per-attempt deadline aborts fetch without a TimeoutError.
         // A caller's explicit cancellation uses the same exception name.

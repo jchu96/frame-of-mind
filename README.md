@@ -44,6 +44,17 @@ You can also probe a file, make a proxy, slice a selection, grab a still and
 verify the frame count locally. [Premiere Pro walkthrough](docs/EDITING_WORKFLOW.md) ·
 [FFmpeg requirements by command](docs/RUNBOOK.md#ffmpeg-requirements-by-command)
 
+## Start a CLI job
+
+A consumer can start analysis or transcription, read its job ID at admission,
+and check or cancel it from another process. Use `analyze dry-run` to check a
+recording's size, duration, model and retention locally. The start command
+requires explicit folder, spend and retention grants. Reuse the same output
+folder and request ID when an admission reply is lost.
+
+[Job commands and receipts](docs/MCP_TOOLS.md#cli-jobs) ·
+[Operating example](docs/RUNBOOK.md#running-a-cli-job)
+
 ## Ask it for what you actually need
 
 > "Turn this user call into bug reports — with the error text on screen and

@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "schemaVersion"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    }
+  },
+  "if": {
+    "required": [
+      "error"
+    ]
+  },
+  "then": {
+    "properties": {
+      "error": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      }
+    }
+  },
+  "else": {
+    "type": "object",
+    "properties": {
+      "jobId": {
+        "type": "string"
+      },
+      "state": {
+        "type": "string"
+      },
+      "stage": {
+        "type": "string"
+      },
+      "percent": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 100
+      },
+      "code": {
+        "type": "string"
+      },
+      "runId": {
+        "type": "string"
+      },
+      "receipt": {
+        "$ref": "#/definitions/receipt"
+      },
+      "cancel": {
+        "type": "object",
+        "properties": {
+          "requested": {
+            "type": "boolean"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "requested",
+          "steps"
+        ]
+      }
+    },
+    "required": [
+      "jobId",
+      "state",
+      "stage",
+      "percent"
+    ]
+  },
+  "definitions": {
+    "receipt": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mediaSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "providerRequests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uploads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "disposition": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "disposition",
+              "expiresAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "calls",
+        "mediaSeconds",
+        "providerRequests",
+        "outputs",
+        "uploads"
+      ]
+    }
+  }
+}
