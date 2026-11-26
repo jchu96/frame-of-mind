@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { program } from "../src/cli.js";
+import * as mediaCapabilities from "../src/services/media-capabilities.js";
+import * as mediaTools from "../src/services/media-tools.js";
 
 it("reports both tool builds and refuses a missing H.264 encoder before opening the source", async () => {
   const root = await mkdtemp(join(tmpdir(), "doctor-tools-"));
@@ -31,6 +33,8 @@ case "$flag" in
 esac
 `;
     for (const name of ["ffmpeg", "ffprobe"]) await writeFile(join(root, name), standIn, {mode: 0o700});
+    const {mediaCapabilityReport} = mediaCapabilities;
+    vi.spyOn(mediaCapabilities, "mediaCapabilityReport").mockImplementation(() => mediaCapabilityReport(30_000));
     const doctor = () => program.parseAsync(["doctor"], {from: "user"});
     process.exitCode = 0;
     await doctor();
@@ -42,8 +46,10 @@ esac
       expect(row).toMatch(/Missing encoder:libx264\./);
     }
     expect(report()).toMatch(/probe needs .*Ready\./);
+    const proxyListings = vi.spyOn(mediaTools, "runMediaTool");
     await expect(program.parseAsync(["proxy", join(root, "absent.mp4"), "-o", join(root, "out.mp4")], {from: "user"}))
       .rejects.toThrow(/proxy.*missing.*encoder:libx264/);
+    expect(new Set(proxyListings.mock.calls.map(([, , options]) => options?.timeoutMs))).toEqual(new Set([5000]));
     const calls = new Set((await readFile(log, "utf8")).trim().split("\n"));
     expect(calls).toEqual(new Set(["ffmpeg", "ffprobe"].flatMap(tool =>
       ["-version", "-encoders", "-filters", "-formats"].map(flag => tool + " " + flag))));
@@ -53,7 +59,7 @@ esac
     expect(report()).toContain("ffmpeg not installed");
     expect(process.exitCode).toBe(0);
   } finally {
-    stdout.mockRestore();
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     process.exitCode = previous;
     await rm(root, {recursive: true, force: true});
