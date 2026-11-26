@@ -42,7 +42,7 @@ it("human analyze and transcribe preserve the base bytes, output streams, exits,
     vi.stubEnv("FRAME_OF_MIND_UPLOAD_RETENTION", undefined);
     vi.stubEnv("SENTRY_DSN", "");
     vi.stubEnv("GEMINI_MODEL", model);
-    const {program} = await import("../src/cli.js");
+    const {program} = await import("../src/cli-main.js");
     const shared = {createAnalyzer: () => analyzer, now, probeDurationSeconds: async () => 1, sleep: async () => {}};
     const service = new analyze.AnalysisOrchestrator({...shared, createContextSource() {throw new Error("Unexpected context.");}, createRunId: () => "fixture-run"});
     vi.spyOn(analyze, "analyzeMeeting").mockImplementation((options, execution) => service.analyze(options, execution));

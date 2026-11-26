@@ -19,6 +19,7 @@ export interface JobOptions extends Record<string, unknown> {
   out: string; recipe?: string; model?: string; snap?: string; transcriptJson?: boolean; requestId?: string; afterUnknown?: string;
 }
 export interface JobDependencies {
+  readKey?: () => string | undefined;
   probe?: typeof probeJobMedia;
   extractAudioTrack?: TranscribeDependencies["extractAudioTrack"];
   sleep?: TranscribeDependencies["sleep"];
@@ -103,8 +104,8 @@ export async function runJob(family: Family, op: JobOperation, arg: string, flag
     const normalized = {family, file: selection, model, recipe: flags.recipe, snap: flags.snap, transcriptJson: !!flags.transcriptJson,
       ...(flags.thinkingLevel && {thinkingLevel: flags.thinkingLevel}),
       afterUnknown: flags.afterUnknown, rootsFile: flags.rootsFile, out, grant};
-    const key = process.env.GEMINI_API_KEY?.trim();
-    if (!key) throw new ContractError("KEY_MISSING", "Job start requires a provider credential.");
+    const key = deps.readKey ? deps.readKey() : process.env.GEMINI_API_KEY;
+    if (!key || /\s/.test(key)) throw new ContractError("KEY_MISSING", "Job start requires a provider credential.");
     const current = await readJobRoots(flags);
     checkOut(current, out);
     if (!current.read.includes(mediaRoot)) throw new ContractError("PATH_OUTSIDE_ROOTS", "The media grant changed.");

@@ -1,8 +1,10 @@
+import { applicationSetting } from "./application-settings.js";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 export function defaultOutputRoot(): string {
-  if (process.env.FRAME_OF_MIND_OUTPUT) return resolve(process.env.FRAME_OF_MIND_OUTPUT);
+  const output = applicationSetting("FRAME_OF_MIND_OUTPUT");
+  if (output) return resolve(output);
   if (process.platform === "darwin") {
     return join(homedir(), "Library", "Application Support", "frame-of-mind", "runs");
   }

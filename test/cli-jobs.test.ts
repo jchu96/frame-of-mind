@@ -59,7 +59,7 @@ function startArgs(family: string, retention = "run", limit = 8) {
     ...(family === "analyze" ? ["--recipe", "requirements"] : []), "--json"];
 }
 async function call(family: "analyze" | "transcribe", op: Parameters<typeof runJobCommand>[1], args: string[],
-  admitted?: (job: any) => void) {
+  admitted?: (job: any) => void, readKey?: () => string | undefined) {
   let result: any;
   const diagnostics = vi.spyOn(process.stdout, "write").mockImplementation(chunk => {
     result = JSON.parse(String(chunk));
@@ -68,7 +68,7 @@ async function call(family: "analyze" | "transcribe", op: Parameters<typeof runJ
   const capture = (document: object) => { result = {schemaVersion: 1, ...document}; };
   process.exitCode = 0;
   try {
-    await runJobCommand(family, op, args, {probe: async () => 2, sleep: async () => {}, extractAudioTrack: async (_input, output) => {
+    await runJobCommand(family, op, args, {readKey, probe: async () => 2, sleep: async () => {}, extractAudioTrack: async (_input, output) => {
       expect(output.startsWith(out + "/")).toBe(true);
       await writeFile(output, "aac"); return true;
     }}, {write: capture, admit: async doc => { capture(doc); admitted?.(doc); }});
@@ -81,6 +81,24 @@ async function record(id: string) {
   return JSON.parse(await readFile(join(out, ".frameofmind-jobs", id, "job.json"), "utf8"));
 }
 beforeEach(() => { vi.stubEnv("GEMINI_API_KEY", "stand-in"); });
+
+it("job options cannot supply credentials and inspection needs none", async () => {
+  vi.stubEnv("GEMINI_API_KEY", undefined);
+  const args = startArgs("analyze");
+  for (const option of ["--api-key", "--key-command", "--settings-file"]) {
+    const result = await call("analyze", "start", [...args, option, "synthetic-private"]);
+    expect(result.doc).toEqual({schemaVersion: 1, error: {code: "USAGE", message: "Invalid command arguments."}});
+  }
+  expect((await call("analyze", "start", args)).doc.error.code).toBe("KEY_MISSING");
+  expect(await readdir(out)).toEqual([]);
+  args.splice(args.indexOf("--request-id"), 2);
+  const refuseRead = vi.fn(() => { throw new Error("unexpected credential acquisition"); });
+  expect((await call("analyze", "dry-run", args, undefined, refuseRead)).doc.seconds).toBe(2);
+  for (const op of ["status", "result", "cancel"] as const) {
+    expect((await call("analyze", op, [randomUUID(), ...folders(), "--json"], undefined, refuseRead)).doc.error.code).toBe("JOB_NOT_FOUND");
+  }
+  expect(refuseRead).not.toHaveBeenCalled();
+});
 
 it("sends base request bytes without a thinking level and medium on every generation when selected", async () => {
   const bodies: string[] = [];

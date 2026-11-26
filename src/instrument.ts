@@ -1,4 +1,4 @@
-import { config as loadDotenv } from "dotenv";
+import { applicationSetting } from "./lib/application-settings.js";
 import * as Sentry from "@sentry/bun";
 import { IS_RELEASE_BUNDLE } from "./version.js";
 import { scrubSentryEvent } from "./lib/sentry-telemetry.js";
@@ -7,9 +7,8 @@ import {
   type ScrubbableTransactionEvent,
 } from "./lib/telemetry-trace.js";
 
-loadDotenv({ quiet: true });
 
-const dsn = process.env.SENTRY_DSN?.trim() ?? "";
+const dsn = applicationSetting("SENTRY_DSN")?.trim() ?? "";
 
 export const CLI_TELEMETRY_ENABLED = dsn.length > 0;
 
@@ -17,11 +16,11 @@ export const CLI_TELEMETRY_ENABLED = dsn.length > 0;
 // keeps the ADR 0017 codes-only posture; spans flow only when the operator
 // also sets FRAME_OF_MIND_TRACING=1.
 export const CLI_TRACING_ENABLED = CLI_TELEMETRY_ENABLED
-  && process.env.FRAME_OF_MIND_TRACING === "1";
+  && applicationSetting("FRAME_OF_MIND_TRACING") === "1";
 
 function tracesSampleRate(): number {
   if (!CLI_TRACING_ENABLED) return 0;
-  const raw = Number(process.env.FRAME_OF_MIND_TRACES_SAMPLE_RATE ?? "1");
+  const raw = Number(applicationSetting("FRAME_OF_MIND_TRACES_SAMPLE_RATE") ?? "1");
   return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 1;
 }
 

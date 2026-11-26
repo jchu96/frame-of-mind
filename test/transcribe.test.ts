@@ -10,7 +10,7 @@ import { ApiError, type GenerateContentParameters } from "@google/genai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerTranscribe } from "../src/commands/transcribe.js";
 import { DEFAULT_GEMINI_MODEL, geminiModelSchema } from "../src/adapters/gemini-model.js";
-import { buildAnalyzeOptions } from "../src/cli.js";
+import { buildAnalyzeOptions } from "../src/cli-main.js";
 import { transcribe, type TranscribeOptions } from "../src/services/transcribe.js";
 import { AnalysisOrchestrator } from "../src/services/analyze.js";
 import { planTranscriptionWindows, type decodeSpeechEnvelope } from "../src/services/audio.js";
@@ -304,7 +304,7 @@ describe("original-language transcription", () => {
   });
 
   it("analyze never asks again about a quiet stretch, and shares its measure with snap", async () => {
-    const { program } = await import("../src/cli.js");
+    const { program } = await import("../src/cli-main.js");
     const service = await import("../src/services/analyze.js");
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     vi.spyOn(process.stderr, "write").mockImplementation(() => true);
@@ -366,7 +366,7 @@ describe("original-language transcription", () => {
   });
 
   it("attributes measured requests and detail repair to their passes in the analyze CLI receipt", async () => {
-    const { program } = await import("../src/cli.js");
+    const { program } = await import("../src/cli-main.js");
     const service = await import("../src/services/analyze.js");
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

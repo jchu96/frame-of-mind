@@ -68,7 +68,7 @@ describe("published screenshot across a low-contrast cut", { timeout: 30_000 }, 
     screenshot = extractScreenshot,
     extra: { sheet?: typeof buildContactSheet; moments?: number; events?: AnalysisProgressEvent[] } = {},
   ) {
-    const { buildAnalyzeOptions } = await import("../src/cli.js");
+    const { buildAnalyzeOptions } = await import("../src/cli-main.js");
     const output = await mkdtemp(join(root, "runs-"));
     const options: AnalyzeOptions = await buildAnalyzeOptions(undefined, {
       source: "none", granolaTransport: "mcp", depth: "standard", video, output, maxMoments: "all",

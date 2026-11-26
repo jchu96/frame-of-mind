@@ -1,3 +1,4 @@
+import { cliSettings } from "../cli-settings.js";
 import { CliError, writeDocument, writeFailure } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
 import type { Command } from "commander";
@@ -34,7 +35,9 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
       process.on("SIGINT", cancel);
       const diagnostic = dependencies.stderr ?? (line => { process.stderr.write(line + "\n"); });
       try {
-        const result = await transcribe({ ...flags, input, signal: controller.signal },
+        const config = cliSettings();
+        const result = await transcribe({ ...flags, input, signal: controller.signal,
+          apiKey: config.providerKey() ?? "", model: flags.model ?? (config.setting("GEMINI_MODEL") || undefined) },
           flags.json ? { ...dependencies, stdout: diagnostic } : dependencies);
         if (flags.json) {
           const { paths, model, language, adjustedCues, blankCues, retention, tokens, outcome, rechecks, belowCutoff, quietLines } = result;

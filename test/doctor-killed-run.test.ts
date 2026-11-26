@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { program } from "../src/cli.js";
+import { program } from "../src/cli-main.js";
 import { childEnvironment } from "../src/lib/child-env.js";
 
 let root: string;

@@ -9,7 +9,7 @@ vi.mock("../src/telemetry.js", () => ({
 }));
 afterEach(() => vi.unstubAllEnvs());
 it("the telemetry version is the package version marked as a source build", async () => {
-  const { program } = await import("../src/cli.js");
+  const { program } = await import("../src/cli-main.js");
   vi.stubEnv("GEMINI_API_KEY", "synthetic-key");
   await expect(program.parseAsync(["node", "cli", "analyze", "--source", "none", "--video", "package.json", "--max-moments", "invalid"]))
     .rejects.toThrow("positive integer");

@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
-import { program } from "../src/cli.js";
+import { program } from "../src/cli-main.js";
 import * as mediaCapabilities from "../src/services/media-capabilities.js";
 import * as mediaTools from "../src/services/media-tools.js";
 

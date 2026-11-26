@@ -85,7 +85,7 @@ it("validates a timeline lookup without opening source media", () => {
 });
 
 it("validates the calibration receipt with a stand-in measurement", async () => {
-  const { program } = await import("../src/cli.js");
+  const { program } = await import("../src/cli-main.js");
   const calibration = await import("../src/adapters/gemini-calibration.js");
   const media = await import("../src/services/media-capabilities.js");
   vi.stubEnv("GEMINI_API_KEY", "fixture");

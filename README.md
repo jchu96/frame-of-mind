@@ -311,6 +311,17 @@ A build made this way prints its version with `+source`, for example `0.6.5+sour
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
 
+For ordinary CLI commands, the first selected source supplies the provider key.
+
+| Order | Source | Selection |
+| --- | --- | --- |
+| 1 | Launch environment | Use the inherited `GEMINI_API_KEY` assignment. |
+| 2 | The working folder’s `.env` | Read the literal assignment if the environment omitted it. |
+
+An empty or invalid assignment stops the lookup. Run `frameofmind doctor` to see the source without displaying the key. A clean job start accepts only an inherited key.
+
+The installed Node command and release bundle accept preloads and loaders, including those in `NODE_OPTIONS`. Node’s `--env-file` and `--env-file-if-exists`, like bare Bun, can load a file before the CLI starts. Ordinary commands still work, doctor reports the key source as unknown, and job starts require a clean launch. For jobs, omit Node’s env-file options or use `bun --no-env-file`.
+
 Contributors run the fast/local pull-request gate for every change:
 
 ```bash
@@ -1020,6 +1031,7 @@ to browser code.
 Review the text of every record you intend to share, including rejected records.
 From a checkout, import each cleared bundle into a dedicated database in a private directory.
 The experimental MCP server is Bun-only. Close the writer, then launch the checkout with Bun over stdio.
+Pass `--no-env-file` so the working folder cannot add values to the MCP launch environment.
 Set `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` in the host environment to disable Bun’s disk cache.
 
 ```bash

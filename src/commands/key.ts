@@ -42,7 +42,7 @@ export async function setKey(
     await chmod(temporary, 0o600);
     await rename(temporary, destination);
   } finally { await rm(temporary, { force: true }); }
-  output.write(`saved to ${destination} (0600)\n`);
+  output.write(`saved to ${destination} (0600)\nAnyone who can read that folder has the key.\n`);
 }
 
 async function readHiddenKey(input: NodeJS.ReadStream, output: NodeJS.WriteStream): Promise<string> {
