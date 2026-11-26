@@ -31,10 +31,10 @@ type Binary = "ffmpeg" | "ffprobe";
 type Listing = "version" | "encoders" | "filters" | "formats";
 const listings = { version: "version", encoder: "encoders", filter: "filters", muxer: "formats", demuxer: "formats" } as const;
 
-async function readListing(binary: Binary, listing: Listing, signal?: AbortSignal) {
+async function readListing(binary: Binary, listing: Listing, signal?: AbortSignal, timeoutMs = 5000) {
   let output: string;
   try {
-    output = await runMediaTool(binary, ["-" + listing], {signal, timeoutMs: 5000, maxOutput: 1024 * 1024});
+    output = await runMediaTool(binary, ["-" + listing], {signal, timeoutMs, maxOutput: 1024 * 1024});
   } catch (error) {
     signal?.throwIfAborted();
     return {error: ["ENOENT", "CAPABILITY_MISSING"].includes((error as NodeJS.ErrnoException).code ?? "") ? "not installed" : `cannot read -${listing}`};
@@ -60,11 +60,11 @@ async function readListing(binary: Binary, listing: Listing, signal?: AbortSigna
   return {capabilities};
 }
 
-function inventory(signal?: AbortSignal) {
+function inventory(signal?: AbortSignal, listingTimeoutMs?: number) {
   const cache = new Map<string, ReturnType<typeof readListing>>();
   function get(binary: Binary, listing: Listing) {
     const key = binary + "/" + listing;
-    if (!cache.has(key)) cache.set(key, readListing(binary, listing, signal));
+    if (!cache.has(key)) cache.set(key, readListing(binary, listing, signal, listingTimeoutMs));
     return cache.get(key)!;
   }
   async function check(name: string) {
@@ -79,8 +79,8 @@ function inventory(signal?: AbortSignal) {
   return {get, check};
 }
 
-export async function mediaCapabilityReport() {
-  const {get, check} = inventory();
+export async function mediaCapabilityReport(listingTimeoutMs?: number) {
+  const {get, check} = inventory(undefined, listingTimeoutMs);
   async function tool(binary: Binary) {
     const [info] = await Promise.all((["version", "encoders", "filters", "formats"] as const).map(listing => get(binary, listing)));
     return {version: info!.version ?? null, error: info!.error ?? null};
