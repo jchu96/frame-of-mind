@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { join } from "node:path";
 import { createCliSettings } from "../src/cli-settings.js";
-import { classifyLaunch } from "../src/cli-launch.js";
+import { classifyLaunch, inheritedValue } from "../src/cli-launch.js";
 
 const cwd = process.cwd();
 const launch = (environment: NodeJS.ProcessEnv = {}, mode: "clean" | "bare" = "clean") =>
@@ -15,6 +15,13 @@ it("classifies runtime options without using credential bytes or application arg
   expect(classifyLaunch(false, ["--enable-source-maps"], "")).toBe("clean");
   expect(classifyLaunch(true, ["--no-env-file", "--preload", "fixture"], "")).toBe("clean");
   expect(classifyLaunch(true, [], "--no-env-file")).toBe("bare");
+});
+
+it("reads inherited names with Windows casing while preserving snapshot spelling", () => {
+  const environment = Object.freeze({Gemini_Api_Key: "fixture"});
+  expect(inheritedValue(environment, "GEMINI_API_KEY", "win32")).toBe("fixture");
+  expect(inheritedValue(environment, "GEMINI_API_KEY", "linux")).toBeUndefined();
+  expect(Object.keys(environment)).toEqual(["Gemini_Api_Key"]);
 });
 
 it("never inspects a lower credential after a higher assignment", () => {

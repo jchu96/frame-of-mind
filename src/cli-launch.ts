@@ -32,11 +32,17 @@ export function classifyLaunch(isBun: boolean, flags: string[], nodeOptions = ""
   }) ? "refused" : "clean";
 }
 
+export function inheritedValue(environment: Readonly<NodeJS.ProcessEnv>, name: string, platform = process.platform) {
+  if (platform !== "win32" || Object.hasOwn(environment, name)) return environment[name];
+  const original = Object.keys(environment).find(key => key.toUpperCase() === name);
+  return original === undefined ? undefined : environment[original];
+}
+
 export function captureLaunch(): CliLaunch {
   const mode = classifyLaunch(!!process.versions.bun, process.execArgv, process.env.NODE_OPTIONS);
   const environment: NodeJS.ProcessEnv = Object.create(null);
   for (const [name, value] of Object.entries(process.env)) {
-    if (value !== undefined) environment[process.platform === "win32" ? name.toUpperCase() : name] = value;
+    if (value !== undefined) environment[name] = value;
   }
   return Object.freeze({mode, environment: Object.freeze(environment), cwd: realpathSync(".")});
 }

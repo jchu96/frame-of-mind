@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { captureLaunch, refuseLaunch } from "./cli-launch.js";
+import { captureLaunch, inheritedValue, refuseLaunch } from "./cli-launch.js";
 import { jobInvocation } from "./job-invocation.js";
 import { useChildEnvironment } from "./lib/child-env.js";
 import type * as Cli from "./cli-main.js";
@@ -19,7 +19,7 @@ if (launch.mode === "refused" || (launch.mode === "bare" && job && job.op === "s
   refuseLaunch(args);
 } else if (job) {
   const { runJobCommand } = await import("./commands/jobs.js");
-  await runJobCommand(job.family, job.op, process.argv.slice(4), {readKey: () => launch.environment.GEMINI_API_KEY});
+  await runJobCommand(job.family, job.op, process.argv.slice(4), {readKey: () => inheritedValue(launch.environment, "GEMINI_API_KEY")});
 } else if (process.argv[2] === "mcp" && !libraryImport) {
   const args = process.argv.slice(3);
   if (args.slice(0, args.includes("--") ? args.indexOf("--") : args.length).includes("--json")) {

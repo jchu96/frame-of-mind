@@ -1,7 +1,7 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "dotenv";
-import type { CliLaunch } from "./cli-launch.js";
+import { inheritedValue, type CliLaunch } from "./cli-launch.js";
 import { useApplicationSettings, type ApplicationSetting } from "./lib/application-settings.js";
 
 interface KeyReport {
@@ -31,7 +31,7 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile) {
     return settings;
   }
   function select(): {report: KeyReport; value?: string} {
-    let value = launch.environment.GEMINI_API_KEY;
+    let value = inheritedValue(launch.environment, "GEMINI_API_KEY");
     const bare = launch.mode === "bare";
     let source: KeyReport["source"] = bare ? "unknown" : "environment";
     if (!bare && value === undefined) {
@@ -50,7 +50,7 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile) {
   let selected: ReturnType<typeof select> | undefined;
   const selectedKey = () => selected ??= select();
   return {
-    setting(name: ApplicationSetting) { return launch.environment[name] ?? file()?.[name]; },
+    setting(name: ApplicationSetting) { return inheritedValue(launch.environment, name) ?? file()?.[name]; },
     keyReport() { return selectedKey().report; },
     providerKey() { return selectedKey().value; },
   };
