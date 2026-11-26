@@ -27,9 +27,9 @@ describe("linked", { timeout: 30_000 }, () => {
   }, 60_000);
   afterAll(async () => { if (root) await rm(root, { recursive: true, force: true }); });
 
-  it("--version through a symlink prints the package version", () => {
-    expect(execFileSync("node", [link, "--version"], { encoding: "utf8" }).trim()).toBe(expected);
-    expect(execFileSync("bun", ["src/cli.ts", "--version"], { encoding: "utf8" }).trim()).toBe(expected);
+  it("--version through a symlink prints the package version marked as a source build", () => {
+    expect(execFileSync("node", [link, "--version"], { encoding: "utf8" }).trim()).toBe(`${expected}+source`);
+    expect(execFileSync("bun", ["src/cli.ts", "--version"], { encoding: "utf8" }).trim()).toBe(`${expected}+source`);
   });
 
   it.each([

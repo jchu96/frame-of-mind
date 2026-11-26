@@ -306,6 +306,11 @@ frameofmind key set
 frameofmind doctor
 ```
 
+A build made this way prints its version with `+source`, for example `0.6.4+source`, in `--version`,
+`doctor`, the `version` document and each run manifest. The linked command runs the files in `dist/`,
+which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
+running the old code under the new number. A release file prints the plain version.
+
 Contributors run the fast/local pull-request gate for every change:
 
 ```bash

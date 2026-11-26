@@ -15,6 +15,11 @@ versions for durable schemas and prompts.
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
+A build that is not a release bundle prints its version with `+source` (for example `0.6.4+source`)
+in `--version`, `doctor`, the `version` document, run manifests and the local MCP server. A release
+bundle prints the plain version. Hosted Studio reports the plain version: its deploy is its release.
+A reader that parses the version must accept the `+source` build mark.
+
 ## Machine contract compatibility
 
 Version 1 was frozen on 2026-11-24 and amended before release that day.

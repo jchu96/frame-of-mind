@@ -1,4 +1,4 @@
-import { VERSION } from "../../../src/version.js";
+import { PACKAGE_VERSION as VERSION } from "../../../src/version.js";
 import { promptPrefix } from "../../../src/adapters/gemini.js";
 import {
   analysisDigest,
