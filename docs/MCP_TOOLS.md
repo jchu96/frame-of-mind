@@ -181,6 +181,7 @@ establish upload ownership or expiry.
 | `INVALID_TIMECODE` | 4 | Label disagrees with the declared mode or is malformed. |
 | `NOT_ON_FRAME_BOUNDARY` | 4 | Requested instant falls between frames. |
 | `UNREPRESENTABLE` | 4 | Requested unit cannot represent the instant exactly. |
+| `RECORDING_TOO_LONG` | 4 | The probed recording duration exceeds the analysis limit. `error.details` gives the numeric `durationSeconds` and `limitSeconds`. |
 | `SNAPSHOT_TOO_LARGE` | 4 | Selected database exceeds 64 MiB. |
 | `RESULT_TOO_LARGE` | 4 | Requested page exceeds the result limit. |
 | `USE_LIST_RECORDS` | 4 | Run exceeds the single-result limit. Request pages. |

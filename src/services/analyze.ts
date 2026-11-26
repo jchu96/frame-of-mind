@@ -1,4 +1,4 @@
-import { faultCode } from "../domain/contract-error.js";
+import { ContractError, faultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
 import { VERSION } from "../version.js";
 import { modelTime } from "exact-time";
@@ -101,7 +101,7 @@ import {
 // per remaining candidate.
 const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
 
-const DEFAULT_MAX_VIDEO_SECONDS = 7200;
+const DEFAULT_MAX_VIDEO_SECONDS = 7260;
 
 function resolveMaxVideoSeconds(): number {
   const value = process.env.FRAME_OF_MIND_MAX_VIDEO_SECONDS;
@@ -476,10 +476,10 @@ export class AnalysisOrchestrator {
       const duration = await this.probeDuration(localVideo, { signal: execution.signal });
       assertNotCanceled(execution.signal);
       if (duration !== undefined && duration > maxVideoSeconds) {
-        throw new Error(
-          `Recording is ${(duration / 3600).toFixed(1)} h; the selected model's video window is ` +
-            `${(maxVideoSeconds / 3600).toFixed(1)} h at this media resolution. ` +
-            "Split the recording or lower media resolution.",
+        throw new ContractError(
+          "RECORDING_TOO_LONG",
+          `Recording is ${duration} seconds long and the limit is ${maxVideoSeconds} seconds. Split the recording into shorter parts.`,
+          { durationSeconds: duration, limitSeconds: maxVideoSeconds },
         );
       }
       if (options.timecodeRate?.startsWith("from-media") && !clock.timeline) {
