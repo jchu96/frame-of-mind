@@ -154,6 +154,7 @@ export const utcDateTimeSchema = z.string().datetime({ offset: false });
 
 const transcriptSpanSchema = z.object({ start: z.number().nonnegative(), end: z.number().nonnegative() }).strict();
 const derivedTranscriptProvenanceSchema = z.object({
+  // 0.6.4 wrote these optional fields. They are read only when importing legacy manifests.
   rechecks: z.array(transcriptSpanSchema.extend({
     measuredSeconds: z.number().nonnegative(),
     status: z.enum(["linesAdded", "noNewLines", "failed", "skipped"]),

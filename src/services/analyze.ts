@@ -80,7 +80,7 @@ import {
   planTranscriptionWindows,
   probeDurationSeconds,
 } from "./audio.js";
-import { measureTrack, recheckTranscript } from "./transcript-coverage.js";
+import { markQuietLines, measureTrack } from "./transcript-coverage.js";
 import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
 import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
@@ -532,7 +532,7 @@ export class AnalysisOrchestrator {
         );
       }
 
-      // Rechecks and optional snap proposals use the same whole-track classification.
+      // Quiet-line marks and optional snap proposals use the same whole-track classification.
       let trackMeasurement: ReturnType<typeof measureTrack> | undefined;
       const soundBoundaries = () => trackMeasurement ??= measureTrack(localVideo, this.decodeSpeech, {
         signal: execution.signal, ...(execution.jobScratchRoot && { confinedInput: true }),
@@ -679,30 +679,16 @@ export class AnalysisOrchestrator {
           const warnings: string[] = [];
           const segments = mergeTranscriptionChunks(transcribed, message => warnings.push(message));
           const warn = (message: string) => reportWarning(progress, { kind: "warning", stage: "fetching_context", message });
-          const cleanupUnconfirmed = () => reportWarning(progress, { kind: "warning", stage: "cleaning_up",
-            message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window." });
-          const checked = duration === undefined ? undefined : await recheckTranscript(
-            segments, duration, windows.length, await soundBoundaries(), {
-              // The derived transcript never asks again: a re-ask can add speech the recording does not hold.
-              recheck: false,
-              input: localVideo, signal: execution.signal, scratchParent: execution.jobScratchRoot,
-              confinedInput: Boolean(execution.jobScratchRoot), checkCanceled: () => assertNotCanceled(execution.signal),
-              extract: this.extractAudio, upload: path => analyzer.upload(path, "audio/aac"),
-              transcribe: (remote, seconds) => analyzer.transcribe!(remote, requestedLanguage, seconds),
-              release: async remote => { if (!await deleteWithRetry(analyzer, remote, this.sleep)) await cleanupUnconfirmed(); },
-              cleanupUnconfirmed,
-              notify: (kind, message) => kind === "note"
-                ? report(progress, { kind: "stage", stage: "fetching_context", message: `note: ${message}` })
-                : warn(message),
-            });
-          const formatted = formatDerivedTranscript(checked?.segments ?? segments);
-          if (formatted || checked?.fields.rechecks) {
-            derivedTranscript = formatted || undefined;
+          const boundaries = duration === undefined ? undefined : await soundBoundaries();
+          assertNotCanceled(execution.signal);
+          const marked = await markQuietLines(segments, boundaries, warn);
+          const formatted = formatDerivedTranscript(marked.segments);
+          if (formatted) {
+            derivedTranscript = formatted;
             derivedTranscriptProvenance = {
               origin: "gemini-audio",
               model: analyzer.model,
               sha256: sha256Text(formatted),
-              ...(checked?.fields.rechecks && { rechecks: checked.fields.rechecks, belowCutoff: checked.fields.belowCutoff }),
               ...(requestedLanguage && { requestedLanguage }),
             };
           }

@@ -123,7 +123,6 @@ export interface AnalysisItem {
 }
 
 export interface DerivedTranscriptionSegment {
-  recovered?: true;
   /** No sound was measured anywhere in this line's own span. */
   quiet?: true;
   start: string;
@@ -132,21 +131,7 @@ export interface DerivedTranscriptionSegment {
   text: string;
 }
 
-export interface TranscriptSpan { start: number; end: number }
-export interface TranscriptRecheck extends TranscriptSpan {
-  measuredSeconds: number;
-  status: "linesAdded" | "noNewLines" | "failed" | "skipped";
-  addedLines: number;
-  addedSpans?: TranscriptSpan[];
-}
-export interface TranscriptRecheckFields {
-  rechecks?: TranscriptRecheck[];
-  belowCutoff?: { stretches: number; seconds: number };
-  /** Lines whose own span holds no measured sound. Present whenever the measure ran. */
-  quietLines?: number;
-}
-
-export interface DerivedTranscriptProvenance extends TranscriptRecheckFields {
+export interface DerivedTranscriptProvenance {
   requestedLanguage?: string;
   origin: "gemini-audio";
   model: string;

@@ -25,7 +25,6 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
     .option("--retention <policy>", "audio upload retention: provider (default) or run")
     .option("--keep-upload", "alias for --retention provider")
     .option("--delete-upload", "alias for --retention run")
-    .option("--recheck", "experimental: ask the model again about quiet stretches; can add lines that are not in the recording")
     .option("--force", "replace existing transcript targets")
     .option("--json", "write the transcript JSON with source-clock seconds and report the absolute paths of files written")
     .action(async (input: string, flags: Omit<TranscribeOptions, "input">) => {
@@ -40,10 +39,10 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
           apiKey: config.providerKey() ?? "", model: flags.model ?? (config.setting("GEMINI_MODEL") || undefined) },
           flags.json ? { ...dependencies, stdout: diagnostic } : dependencies);
         if (flags.json) {
-          const { paths, model, language, adjustedCues, blankCues, retention, tokens, outcome, rechecks, belowCutoff, quietLines } = result;
+          const { paths, model, language, adjustedCues, blankCues, retention, tokens, quietLines } = result;
           writeDocument({
             paths, model, language, segmentCount: result.segments.length, adjustedCues, blankCues,
-            outcome, rechecks, belowCutoff, quietLines, retention, ...(tokens && { tokens }),
+            quietLines, retention, ...(tokens && { tokens }),
           }, dependencies.stdout);
         }
       } catch (error) {

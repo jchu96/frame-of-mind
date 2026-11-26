@@ -5,6 +5,11 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+Removed the transcript recheck and `transcribe --recheck`. On a real recording, none of
+the guards evaluated removed every invented line while keeping a confirmed real line.
+New output omits `outcome`, `rechecks`, `belowCutoff`, and the per-line `recovered` mark.
+A machine call passing `--recheck` now returns `USAGE` (exit 2).
+
 ## [0.6.5] - 2026-11-26
 
 **If you ran `transcribe` or `analyze` on 0.6.4: its transcript recheck could add lines that are not in the recording.** On a real two-hour recording it merged invented speech into near-silent stretches and reported `complete`. In a transcript made with 0.6.4, check every line marked `recovered: true` in the transcript JSON against the recording, or make the transcript again with this release. This release turns the recheck off.
