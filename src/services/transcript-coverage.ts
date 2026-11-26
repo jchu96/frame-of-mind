@@ -95,6 +95,13 @@ interface RecheckIO {
   transcribe: (remote: RemoteFile, duration: number) => Promise<Line[]>;
   release: (remote: RemoteFile) => Promise<void>;
   cleanupUnconfirmed: () => void | Promise<void>;
+  /**
+   * Ask the model again about quiet-looking stretches. Off unless the caller
+   * opts in: on a real two-hour recording the re-asks added invented speech
+   * to near-silent stretches, and a line the recording does not hold is a
+   * worse fault than a missed one.
+   */
+  recheck: boolean;
   notify: (kind: "note" | "recovery" | "quiet" | "warning", message: string) => void | Promise<void>;
 }
 
@@ -140,12 +147,21 @@ function markQuietLines(lines: Line[], runs: Boundaries["start"]): Line[] {
 
 interface Coverage {
   segments: Line[];
-  fields: TranscriptRecheckFields & { outcome: "unchecked" | "complete" };
+  fields: TranscriptRecheckFields & { outcome?: "unchecked" | "complete" };
   unchecked: string[];
 }
 
 export async function recheckTranscript(held: Line[], duration: number, windows: number, boundaries: Boundaries | undefined, io: RecheckIO): Promise<Coverage> {
   io.checkCanceled();
+  if (!io.recheck) {
+    // No request is made and no recheck field or note is written. The quiet
+    // mark needs only the local measure, so it stays.
+    if (!boundaries) return { segments: held, fields: {}, unchecked: [] };
+    const segments = markQuietLines(held, boundaries.start);
+    const quietLines = segments.filter(line => line.quiet).length;
+    if (quietLines) await io.notify("quiet", `${quietLines} line(s) sit where no sound was measured.`);
+    return { segments, fields: { quietLines }, unchecked: [] };
+  }
   if (!boundaries) {
     const reason = `0 to ${duration} s was not checked again (sound measurement unavailable).`;
     await io.notify("warning", reason);

@@ -931,16 +931,20 @@ The speakers header and optional transcript JSON record the canonical tag as
   skipped and the remainder renumbered. `blankCues` and `adjustedCues` appear
   in the JSON and terminal summary. A nonpositive cue duration gets a one-second
   SRT end adjustment; JSON preserves original segment seconds.
-- The tool measures the whole first audio track once. It rechecks line-free stretches of at least
-  20 s with at least 5 s of measured sound, starting with the most measured sound. The note
-  before upload gives the request count and total audio duration. Each piece is at most 600 s.
-  The budget allows `max(3, first-pass windows)` requests and one quarter of the recording duration.
-- The two JSON documents report `rechecks` and `belowCutoff` (count and total duration below
-  threshold). Valid replies, including empty ones, give `complete` when every piece was checked.
-  Failures and budget skips give `unchecked`, retain earlier lines and name affected intervals on
-  stderr and in the speakers header. Measurement failure omits both fields. Exit stays 0.
-  Derived analysis records the same rows and counts in the manifest. A window dropping more than
-  600 characters in its lead-in still warns.
+- The recheck is experimental and off by default: on a real two-hour recording it added invented
+  speech to near-silent stretches. `transcribe --recheck` turns it on; `analyze` never uses it.
+  Check every line marked `recovered: true` against the recording before relying on it.
+- With `--recheck` the tool rechecks line-free stretches of at least 20 s with at least 5 s of
+  measured sound, starting with the most measured sound. The note before upload gives the request
+  count and total audio duration. Each piece is at most 600 s. The budget allows
+  `max(3, first-pass windows)` requests and one quarter of the recording duration.
+- With `--recheck` the two JSON documents report `rechecks` and `belowCutoff` (count and total
+  duration below threshold). Valid replies, including empty ones, give `complete` when every piece
+  was checked. Failures and budget skips give `unchecked`, retain earlier lines and name affected
+  intervals on stderr and in the speakers header. Measurement failure omits both fields. Exit stays 0.
+  Without the flag none of this is written.
+- The tool measures the whole first audio track once, with or without the flag. A window dropping
+  more than 600 characters in its lead-in warns.
 - A line whose own span holds no measured sound is marked `quiet: true` in the transcript JSON and
   counted in `quietLines`. When the count is above zero, `transcribe` prints
   `note: <n> line(s) sit where no sound was measured.` and derived analysis records the same
