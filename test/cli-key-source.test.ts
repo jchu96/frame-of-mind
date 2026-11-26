@@ -96,21 +96,25 @@ it("classifies launches before job dispatch with a real folder assignment", () =
   expect(existsSync(join(folder, "out", ".frameofmind-jobs"))).toBe(false);
 });
 
-it.each([
+describe.each([
   {label: "--require", flags: ["--require", "node:path"]},
   {label: "NODE_OPTIONS require", flags: [], nodeOptions: "--require node:path"},
   {label: "--import", flags: ["--import", "node:path"]},
   {label: "-r", flags: ["-r", "node:path"]},
   {label: "loader", flags: ["--experimental-loader", "data:text/javascript,export{}"]},
-])("Node $label matches plain Node for version, doctor and job start", ({label, flags, nodeOptions}) => {
-  writeFileSync(file, "GEMINI_API_KEY=synthetic-folder\n");
-  const env = {NODE_OPTIONS: nodeOptions, NODE_NO_WARNINGS: "1"};
-  for (const args of [["--version"], ["doctor", "--json"], start]) {
+])("Node $label", ({label, flags, nodeOptions}) => {
+  it.each([
+    {command: "--version", args: ["--version"]},
+    {command: "doctor", args: ["doctor", "--json"]},
+    {command: "job start", args: start},
+  ])("$command matches plain Node", ({command, args}) => {
+    writeFileSync(file, "GEMINI_API_KEY=synthetic-folder\n");
+    const env = {NODE_OPTIONS: nodeOptions, NODE_NO_WARNINGS: "1"};
     const plain = run("node", args);
     const observed = run("node", args, env, flags);
-    expect(observed.code, label + " " + args[0] + " exit").toBe(plain.code);
+    expect(observed.code, label + " " + command + " exit").toBe(plain.code);
     expect(observed).toEqual(plain);
-  }
+  });
 });
 
 it.each(["--env-file", "--env-file-if-exists"])("Node %s reports unknown and refuses only job start", flag => {
