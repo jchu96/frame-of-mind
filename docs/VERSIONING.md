@@ -7,7 +7,7 @@ versions for durable schemas and prompts.
 
 | Surface | Current | Change rule |
 |---|---:|---|
-| CLI/package | `0.6.4` | Semantic Versioning |
+| CLI/package | `0.6.5` | Semantic Versioning |
 | `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
 | `times.json` sidecar | `2` (default), `3` (speech snapping) | increment for breaking shape/meaning |
@@ -15,7 +15,7 @@ versions for durable schemas and prompts.
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
-A build that is not a release bundle prints its version with `+source` (for example `0.6.4+source`)
+A build that is not a release bundle prints its version with `+source` (for example `0.6.5+source`)
 in `--version`, `doctor`, the `version` document, run manifests and the local MCP server. A release
 bundle prints the plain version. Hosted Studio reports the plain version: its deploy is its release.
 A reader that parses the version must accept the `+source` build mark.
@@ -83,6 +83,7 @@ The [CLI and MCP contract](MCP_TOOLS.md) lists the current interfaces.
 - `v0.6.2` tags its release pull request's merge commit. It is a fix release for transcript times.
 - `v0.6.3` tags its release pull request's merge commit. It carries optional output fields and one new error code in a patch release by the owner's choice.
 - `v0.6.4` tags its release pull request's merge commit. It carries the transcript recheck and its optional output fields in a patch release by the owner's choice.
+- `v0.6.5` tags its release pull request's merge commit. It turns the transcript recheck of `v0.6.4` off by default, because that recheck could add lines that are not in the recording.
 - `v0.3.0` has no tag or GitHub release.
 
 ## Model and dependency updates
