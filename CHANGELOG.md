@@ -5,6 +5,27 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-26
+
+A transcription reply can stop early and leave speech out of a transcript that otherwise looks whole. From this release the tool asks again about quiet-looking stretches before the transcript is written. Everything added is optional on contract version 1.
+
+### Added
+
+- Transcript recheck, in `transcribe` and in the transcript `analyze` derives. After the first pass the tool measures sound over the whole first audio track, locally. Each stretch of 20 seconds or more with no transcript line and at least 10 seconds of measured sound is sent to the model again on its own, once. Lines returned inside the stretch are merged; lines already held are never changed, dropped or duplicated. Measured sound only picks the stretches to ask about. It is never reported as missing speech: keys and murmurs measure as sound too.
+- Budget for the recheck: one request per first-pass window (at least 3) and at most a quarter of the recording's length in audio, most measured sound first. A stretch longer than a window is asked in pieces of at most 600 seconds. Each re-ask is one more upload and one more model request; its tokens are counted under `transcript`.
+- New optional output, in the `transcribe --json` success document, the transcript JSON, and `derivedTranscript` in the `analyze` manifest:
+  - `rechecks`: one row per stretch asked about, with `start`, `end`, `measuredSeconds`, `status`, `addedLines` and, when lines were added, `addedSpans`. `status` is `linesAdded`, `noNewLines`, `failed` or `skipped`.
+  - `belowCutoff`: `{stretches, seconds}`, the line-free stretches of 20 seconds or more that measured under the cutoff and were not asked about.
+  - `outcome` (the `transcribe` success document and the transcript JSON; not the `analyze` manifest): `complete` when there was nothing to ask about or every stretch got a valid reply; `unchecked` when the sound measure could not run, or a re-ask failed or was skipped for budget. `complete` does not mean the recording holds no other words.
+  - `recovered: true` on each merged line in the transcript JSON. Its speaker label comes from a separate request and may not match its neighbours.
+- New lines on standard error: `note: asking again for <n> stretch(es), <s> s of audio.` before the re-asks; `note: recovered <n> line(s) at <start> to <end> s.` for each recovery; one summary note counting stretches asked about with nothing found; and `warning: <start> to <end> s was not checked again (<reason>); it holds <n> s of measured sound.` for each failed or skipped stretch. When the outcome is `unchecked` the speakers file's header gains one line naming those stretches. The SRT changes only by the recovered cues.
+- A warning when a transcription window drops more than 600 characters of text as lead-in.
+
+### Changed
+
+- A re-ask whose reply carries a time past its clip is discarded and that stretch is marked `failed`. The transcript already held is still written and the exit status is 0.
+- `analyze` reports recoveries and unchecked stretches as run warnings. Its analysis status does not change. Sources of unknown duration and hosted transcription are not rechecked.
+
 ## [0.6.3] - 2026-11-26
 
 Everything added here is optional on contract version 1: a caller that ignores the new fields sees no change.
