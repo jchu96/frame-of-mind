@@ -1,3 +1,4 @@
+import { addTokenCounts, measuredTotal, type TokenCounts, type TokenUsage } from "../domain/token-usage.js";
 import type { JobProviderTransport } from "./job-provider-transport.js";
 import { clockTime, clipToFile, type ClipClock } from "../domain/clock.js";
 import type { RunNote } from "../domain/run-notes.js";
@@ -161,6 +162,7 @@ export class GeminiVideoAnalyzer {
   private readonly fileUploader: GeminiFileUploader;
   private readonly generateContent: (
     parameters: GenerateContentParameters,
+    pass?: keyof TokenUsage,
   ) => Promise<Pick<GenerateContentResponse, "text" | "usageMetadata">>;
   private readonly getFile: (
     parameters: GetFileParameters,
@@ -173,6 +175,7 @@ export class GeminiVideoAnalyzer {
     input: GeminiGenerationTransportRetry,
   ) => Promise<void>;
   private readonly now: () => number;
+  private readonly usageByPass: TokenUsage = {};
   private pendingUsage: GeminiTokenUsage = {
     promptTokens: 0,
     outputTokens: 0,
@@ -198,10 +201,14 @@ export class GeminiVideoAnalyzer {
     this.fileUploader = this.jobTransport?.uploader(apiKey) ?? dependencies.fileUploader ?? createGeminiFileUploader(apiKey);
     const generateContent = dependencies.generateContent ??
       ((parameters: GenerateContentParameters) => ai.models.generateContent(parameters));
-    this.generateContent = thinkingLevel === undefined ? generateContent : parameters => generateContent({
-      ...parameters,
-      config: { ...parameters.config, thinkingConfig: { thinkingLevel: sdkThinkingLevel[thinkingLevel] } },
-    });
+    this.generateContent = async (parameters, pass = "other") => {
+      const response = await generateContent(thinkingLevel === undefined ? parameters : {
+        ...parameters,
+        config: { ...parameters.config, thinkingConfig: { thinkingLevel: sdkThinkingLevel[thinkingLevel] } },
+      });
+      this.recordUsage(response.usageMetadata, pass);
+      return response;
+    };
     this.getFile = dependencies.getFile ??
       ((parameters) => ai.files.get(parameters));
     this.deleteFile = dependencies.deleteFile ??
@@ -627,8 +634,7 @@ export class GeminiVideoAnalyzer {
         { text: "At what timestamp in seconds does the white flash start? Return only the structured answer." },
       ] }],
       config: { httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS }, mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW, responseMimeType: "application/json", responseJsonSchema: toGeminiProviderSchema(schema) },
-    });
-    this.recordUsage(response.usageMetadata);
+    }, "calibration");
     return parseGeminiJson(response.text, schema, "Calibration response").seconds;
   }
 
@@ -697,6 +703,10 @@ export class GeminiVideoAnalyzer {
     return this.lifetimeUsageAvailable ? { ...this.lifetimeUsage } : undefined;
   }
 
+  measuredUsageByPass(): TokenUsage | undefined {
+    return measuredTotal(this.usageByPass) ? structuredClone(this.usageByPass) : undefined;
+  }
+
   takeUsage(): GeminiTokenUsage | undefined {
     const usage = this.pendingUsageCalls > 0 && this.pendingUsageAvailable
       ? { ...this.pendingUsage }
@@ -713,8 +723,7 @@ export class GeminiVideoAnalyzer {
   ): Promise<Pick<GenerateContentResponse, "text" | "usageMetadata">> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        const response = await this.generateContent(parameters);
-        this.recordUsage(response.usageMetadata);
+        const response = await this.generateContent(parameters, phase === "transcribe" ? "transcript" : phase);
         return response;
       } catch (error) {
         if (
@@ -746,6 +755,7 @@ export class GeminiVideoAnalyzer {
 
   private recordUsage(
     metadata: GenerateContentResponseUsageMetadata | undefined,
+    pass: keyof TokenUsage,
   ): void {
     this.pendingUsageCalls += 1;
     const totalTokens = metadata?.totalTokenCount;
@@ -761,12 +771,15 @@ export class GeminiVideoAnalyzer {
       this.lifetimeUsageAvailable = false;
       return;
     }
-    this.pendingUsage.promptTokens += promptTokens as number;
-    this.pendingUsage.outputTokens += (totalTokens as number) - (promptTokens as number);
-    this.pendingUsage.totalTokens += totalTokens as number;
-    this.lifetimeUsage.promptTokens += promptTokens as number;
-    this.lifetimeUsage.outputTokens += (totalTokens as number) - (promptTokens as number);
-    this.lifetimeUsage.totalTokens += totalTokens as number;
+    const counts = {
+      promptTokens: promptTokens as number,
+      outputTokens: (totalTokens as number) - (promptTokens as number),
+      totalTokens: totalTokens as number,
+    };
+    const previous = this.usageByPass[pass];
+    this.usageByPass[pass] = previous ? addTokenCounts(previous, counts) : counts;
+    this.pendingUsage = addTokenCounts(this.pendingUsage, counts);
+    this.lifetimeUsage = addTokenCounts(this.lifetimeUsage, counts);
     if (!Object.values(this.pendingUsage).every(Number.isSafeInteger)) {
       this.pendingUsageAvailable = false;
     }
@@ -978,11 +991,7 @@ export interface GeminiGenerationTransportRetry {
   retry: number;
 }
 
-export interface GeminiTokenUsage {
-  promptTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-}
+export type GeminiTokenUsage = TokenCounts;
 
 function requireString(value: string | undefined, label: string): string {
   if (!value) throw new Error(`${label} is missing.`);

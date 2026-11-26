@@ -931,6 +931,8 @@ The speakers header and optional transcript JSON record the canonical tag as
   skipped and the remainder renumbered. `blankCues` and `adjustedCues` appear
   in the JSON and terminal summary. A nonpositive cue duration gets a one-second
   SRT end adjustment; JSON preserves original segment seconds.
+- Before uploading, `analyze` and `transcribe` write `retention: provider` or `retention: run` to stderr. Read `retention` and any measured `tokens` (`promptTokens`, `outputTokens`, `totalTokens`) from their JSON success documents.
+  For the analyze breakdown, read `tokenUsage` in the manifest. The transcript JSON’s `windowStarts` gives the owned source seconds, for example `[0, 600, 1200]` for a 1,500-second recording.
 - `--retention provider|run` overrides `FRAME_OF_MIND_UPLOAD_RETENTION`; default
   is `provider`. `--keep-upload` / `--delete-upload` alias those choices.
   Conflicting settings fail before upload. Each kept audio upload is reported

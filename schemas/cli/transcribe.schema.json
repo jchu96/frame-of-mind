@@ -15,6 +15,16 @@
   },
   "else": {
     "properties": {
+      "retention": {"enum": ["provider", "run"]},
+      "tokens": {
+        "type": "object",
+        "properties": {
+          "promptTokens": {"type": "integer", "minimum": 0},
+          "outputTokens": {"type": "integer", "minimum": 0},
+          "totalTokens": {"type": "integer", "minimum": 1}
+        },
+        "required": ["promptTokens", "outputTokens", "totalTokens"]
+      },
       "paths": {"type": "array", "items": {"type": "string"}},
       "model": {"type": "string"},
       "language": {"type": ["string", "null"]},

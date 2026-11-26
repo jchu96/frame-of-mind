@@ -91,6 +91,10 @@ On `analyze` and `analyze start`, the optional `--thinking-level` accepts
 `manifest.json` as `thinkingLevel`. Omitting the flag omits that field.
 Replaying a request ID with a different level returns `REQUEST_CONFLICT`.
 
+Both commands print `retention: provider` or `retention: run` on stderr before any upload. Their JSON success documents include `retention` and optional `tokens` with `promptTokens`, `outputTokens` and `totalTokens`.
+The analyze manifest’s optional `tokenUsage` groups measured counts under `transcript`, `index`, `detail` (including repairs), `calibration` and `other`. A pass appears only when it reports usage.
+The transcript JSON’s `windowStarts` lists the first source second owned by each window, excluding overlap.
+
 Until a full release carries synchronous `analyze --json`, consumers may rely on
 the text line beginning `Analysis: ` and carrying the run directory, the
 accepted-count and outcome line, the retained-upload line, the `frameofmind:`

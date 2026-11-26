@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { selectCandidates } from "../domain/candidate-selection.js";
 import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
 import type { RunNote } from "../domain/run-notes.js";
+import type { TokenUsage } from "../domain/token-usage.js";
 import type { UploadRetention } from "../domain/retention.js";
 import type { File as GeminiFile } from "@google/genai";
 import { z } from "zod";
@@ -240,6 +241,8 @@ export interface AnalysisProjectionPublisher {
 }
 
 export interface AnalyzeExecutionOptions {
+  /** Include the per-pass usage receipt in CLI manifests. */
+  includeTokenUsage?: boolean;
   /** The job caller supplies a fresh private directory inside its output grant. */
   jobScratchRoot?: string;
   /** Called after the failure manifest has been atomically published. */
@@ -304,6 +307,7 @@ export interface AnalysisVideoAnalyzer {
   ): Promise<AnalysisDetail>;
   transcribe?(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
+  measuredUsageByPass?(): TokenUsage | undefined;
   /**
    * Non-destructive cumulative token counts since construction. Distinct
    * from the spend path's draining `takeUsage`; used only to attribute
@@ -1182,7 +1186,9 @@ export class AnalysisOrchestrator {
           });
         }
         assertNotCanceled(execution.signal);
+        const tokenUsage = execution.includeTokenUsage ? analyzer.measuredUsageByPass?.() : undefined;
         const manifestBase = {
+          ...(tokenUsage && { tokenUsage }),
           clock,
           toolVersion: VERSION,
           runId,

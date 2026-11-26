@@ -62,6 +62,9 @@ it("human analyze and transcribe preserve the base bytes, output streams, exits,
       const path = join(file.parentPath, file.name);
       if (path !== video) files[relative(root, path).split(sep).join("/")] = createHash("sha256").update(await readFile(path)).digest("hex");
     }
+    // The two new stderr receipts are additive to the original stream oracle.
+    expect(streams[1]!.filter(line => line.startsWith("retention:"))).toEqual(["retention: provider\n", "retention: run\n"]);
+    streams[1] = streams[1]!.filter(line => !line.startsWith("retention:"));
     // File bytes are hashed verbatim. Only the platform-specific temporary
     // directory in displayed paths is substituted for the base oracle.
     const evidence = {files: Object.fromEntries(Object.entries(files).sort()), wire, exits,

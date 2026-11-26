@@ -720,6 +720,10 @@ when literal markup-like text matters: the SRT reader strips `<…>` spans.
 `--json` adds `interview.transcript.json`, with numeric seconds and provenance.
 Its stdout document lists all three file paths, the model and the requested language.
 
+Before uploading, `analyze` and `transcribe` print `retention: provider` or `retention: run` on stderr.
+Their JSON success documents include `retention` and, when measured, `tokens` with `promptTokens`, `outputTokens` and `totalTokens`.
+The analyze manifest groups measured counts by pass in `tokenUsage`. The transcript JSON lists each window’s owned start second in `windowStarts`.
+
 Audio uploads follow `--retention provider|run`, then
 `FRAME_OF_MIND_UPLOAD_RETENTION`, then `provider`. Every kept upload is reported
 immediately with its expiry (or unknown); `--keep-upload` and `--delete-upload`
