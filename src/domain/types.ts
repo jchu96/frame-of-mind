@@ -117,6 +117,8 @@ export interface AnalysisItem {
 
 export interface DerivedTranscriptionSegment {
   recovered?: true;
+  /** No sound was measured anywhere in this line's own span. */
+  quiet?: true;
   start: string;
   end: string;
   speaker: string;
@@ -133,6 +135,8 @@ export interface TranscriptRecheck extends TranscriptSpan {
 export interface TranscriptRecheckFields {
   rechecks?: TranscriptRecheck[];
   belowCutoff?: { stretches: number; seconds: number };
+  /** Lines whose own span holds no measured sound. Present whenever the measure ran. */
+  quietLines?: number;
 }
 
 export interface DerivedTranscriptProvenance extends TranscriptRecheckFields {

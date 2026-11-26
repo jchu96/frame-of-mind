@@ -941,6 +941,11 @@ The speakers header and optional transcript JSON record the canonical tag as
   stderr and in the speakers header. Measurement failure omits both fields. Exit stays 0.
   Derived analysis records the same rows and counts in the manifest. A window dropping more than
   600 characters in its lead-in still warns.
+- A line whose own span holds no measured sound is marked `quiet: true` in the transcript JSON and
+  counted in `quietLines`. When the count is above zero, `transcribe` prints
+  `note: <n> line(s) sit where no sound was measured.` and derived analysis records the same
+  sentence as a run warning. Treat a marked line as worth a look, not as proven wrong: the mark
+  only catches a line written into true silence.
 - Before uploading, `analyze` and `transcribe` write `retention: provider` or `retention: run` to stderr. Read `retention` and any measured `tokens` (`promptTokens`, `outputTokens`, `totalTokens`) from their JSON success documents.
   For the analyze breakdown, read `tokenUsage` in the manifest. The transcript JSON’s `windowStarts` gives the owned source seconds, for example `[0, 600, 1200]` for a 1,500-second recording.
 - `--retention provider|run` overrides `FRAME_OF_MIND_UPLOAD_RETENTION`; default

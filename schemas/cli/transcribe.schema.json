@@ -39,6 +39,7 @@
           "stretches": {"type": "integer", "minimum": 0}, "seconds": {"type": "number", "minimum": 0}
         }, "required": ["stretches", "seconds"]
       },
+      "quietLines": {"type": "integer", "minimum": 0},
       "retention": {"enum": ["provider", "run"]},
       "tokens": {
         "type": "object",

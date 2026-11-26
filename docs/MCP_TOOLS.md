@@ -101,6 +101,8 @@ The transcribe receipt and transcript JSON carry optional `outcome` (`complete` 
 when positive, `addedSpans`. Added JSON segments carry `recovered: true`. Warnings name unchecked
 pieces. A failed local measure omits both measurements. For derived analysis, read the rows and
 counts under `derivedTranscript` in the manifest; analysis keeps its own outcome.
+When the local measure ran, both documents also carry optional `quietLines`, the number of lines
+whose own span holds no measured sound; those segments carry `quiet: true` in the transcript JSON.
 
 Until a full release carries synchronous `analyze --json`, consumers may rely on
 the text line beginning `Analysis: ` and carrying the run directory, the

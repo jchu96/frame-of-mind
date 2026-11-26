@@ -262,10 +262,12 @@ describe("original-language transcription", () => {
     if (expectedTag) expect(exported.requestedLanguage).toBe(expectedTag);
     else expect(exported).not.toHaveProperty("requestedLanguage");
     expect(JSON.parse(json!).segments).toEqual([
-      { ...syntheticArabic, start: 595, end: 597 },
-      { ...syntheticChinese, start: 598, end: 600 },
-      { ...syntheticMixed, start: 601, end: 603 },
+      { ...syntheticArabic, start: 595, end: 597, quiet: true },
+      { ...syntheticChinese, start: 598, end: 600, quiet: true },
+      { ...syntheticMixed, start: 601, end: 603, quiet: true },
     ]);
+    // This fixture's sound track is silent, so every line is marked.
+    expect(exported.quietLines).toBe(3);
   });
 
   it.each([undefined, "fr-ca"])("captures analyze-derived windows, calibration, index and detail for hint %s", async transcriptLanguage => {
@@ -327,6 +329,8 @@ describe("original-language transcription", () => {
     expect(report.warnings).toContain("recovered 1 line(s) at 105 to 109 s.");
     expect(report.warnings).toContain("recovered 1 line(s) at 705 to 709 s.");
     expect(report.warnings).toContain("800 to 840 s was not checked again (reply time outside clip); it holds 10 s of measured sound.");
+    expect(report.warnings).toContainEqual(expect.stringMatching(/^\d+ line\(s\) sit where no sound was measured\.$/));
+    expect(report.warnings).toContainEqual(expect.stringMatching(/^\d+ line\(s\) sit where no sound was measured\.$/));
     const manifest = JSON.parse(await readFile(join(report.runFolder, "manifest.json"), "utf8"));
     expect(manifest.derivedTranscript.rechecks.map((row: { status: string }) => row.status)).toEqual(["linesAdded", "failed"]);
     expect(manifest.derivedTranscript.belowCutoff).toEqual({ stretches: 0, seconds: 0 });
@@ -492,6 +496,8 @@ describe("transcript coverage", () => {
     const originalSrt = await read(".srt");
     f.deps.stderr.mockClear();
     f.deps.decodeSpeechEnvelope.mockClear().mockResolvedValue(soundTrack(400, [100, 12]));
+    // The sound track differs between the two runs, so the quiet mark may too.
+    const unmarked = ({ quiet: _quiet, ...row }: { quiet?: true }) => row;
     const line = cue(0, 4, "new"), repeated = cue(5, 9, "new");
     f.analyzer.transcribe.mockResolvedValueOnce(held).mockResolvedValueOnce([
       repeated, cue(0, 0, " b "), cue(0, 0, "POINT"), line, line, cue(35, 40, " RIGHT "), cue(39, 41, "crosses"), cue(40, 40, "outside"),
@@ -500,7 +506,8 @@ describe("transcript coverage", () => {
     const report = validateCliDocument("transcribe", f.deps.stdout.mock.lastCall![0]);
     const exported = JSON.parse(await read(".transcript.json"));
     expect(exported.segments.filter((row: { recovered?: true }) => row.recovered).map((row: { start: number }) => row.start)).toEqual([100, 105]);
-    expect(exported.segments.filter((row: { recovered?: true }) => !row.recovered)).toEqual(original);
+    expect(exported.segments.filter((row: { recovered?: true }) => !row.recovered)
+      .map(unmarked)).toEqual(original.map(unmarked));
     const rechecks = [{
       start: 100, end: 140, measuredSeconds: 12, status: "linesAdded", addedLines: 2,
       addedSpans: [{ start: 100, end: 104 }, { start: 105, end: 109 }],
@@ -508,6 +515,7 @@ describe("transcript coverage", () => {
     for (const document of [exported, report]) expect(document).toMatchObject({ outcome: "complete", rechecks, belowCutoff: { stretches: 0, seconds: 0 } });
     expect(f.deps.stderr.mock.calls.flat().filter(line => /^(note|warning):/.test(line))).toEqual([
       "note: asking again for 1 stretch(es), 40 s of audio.", "note: recovered 2 line(s) at 100 to 109 s.",
+      expect.stringMatching(/^note: \d+ line\(s\) sit where no sound was measured\.$/),
     ]);
     expect(f.analyzer.transcribe.mock.lastCall).toEqual([expect.anything(), "fr", 40]);
     expect(f.deps.extractAudioTrack.mock.lastCall![2]).toMatchObject({ startSeconds: 100, durationSeconds: 40 });
@@ -539,6 +547,43 @@ describe("transcript coverage", () => {
     expect(process.exitCode ?? 0).toBe(0);
   });
 
+  it("marks a line only when its own span holds no measured sound at all", async () => {
+    const f = await fixture(100);
+    // Sound from 10 to 11 s, 20 to 21 s and 22 to 23 s; silence elsewhere.
+    f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(100, [10, 1], [20, 2]));
+    f.analyzer.transcribe.mockResolvedValueOnce([
+      cue(10, 11, "one second of sound"), cue(19, 21, "partly in sound"), cue(40, 44, "written into silence"),
+      cue(50, 50, "point cue in silence"), cue(60, 61, "   "),
+    ]);
+    await cli(f, ["--json"]);
+    const report = validateCliDocument("transcribe", f.deps.stdout.mock.lastCall![0]);
+    const exported = JSON.parse(await readFile(join(f.root, "synthetic.transcript.json"), "utf8"));
+    expect(exported.segments.map((row: { start: number; quiet?: true }) => [row.start, row.quiet ?? false]))
+      .toEqual([[10, false], [19, false], [40, true], [50, true], [60, false]]);
+    expect(report.quietLines).toBe(2);
+    expect(exported.quietLines).toBe(2);
+    expect(report.outcome).toBe("complete");
+    expect(f.deps.stderr.mock.calls.flat().filter(line => /sit where/.test(line)))
+      .toEqual(["note: 2 line(s) sit where no sound was measured."]);
+    const [srt, speakers] = await Promise.all(["synthetic.srt", "synthetic_speakers.txt"].map(name => readFile(join(f.root, name), "utf8")));
+    expect(srt + speakers).not.toMatch(/quiet/);
+
+    const sounded = await fixture(100);
+    sounded.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(100, [10, 1]));
+    sounded.analyzer.transcribe.mockResolvedValueOnce([cue(10, 11, "in sound")]);
+    await cli(sounded, ["--json"]);
+    expect(validateCliDocument("transcribe", sounded.deps.stdout.mock.lastCall![0]).quietLines).toBe(0);
+    expect(sounded.deps.stderr.mock.calls.flat().filter(line => /sit where/.test(line))).toEqual([]);
+
+    const unmeasured = await fixture(100);
+    unmeasured.deps.decodeSpeechEnvelope.mockRejectedValue(new Error("decoder body"));
+    unmeasured.analyzer.transcribe.mockResolvedValueOnce([cue(40, 44, "written into silence")]);
+    await cli(unmeasured, ["--json"]);
+    const unchecked = validateCliDocument("transcribe", unmeasured.deps.stdout.mock.lastCall![0]);
+    expect(unchecked).not.toHaveProperty("quietLines");
+    expect(JSON.parse(await readFile(join(unmeasured.root, "synthetic.transcript.json"), "utf8")).segments[0]).not.toHaveProperty("quiet");
+  });
+
   it("reports eligibility at both thresholds and distinguishes an unavailable measurement", async () => {
     for (const [length, measured, below, asked] of [
       [19, 10, 0, false], [20, 4, 1, false], [20, 5, 0, true], [20, undefined, 0, false],
@@ -567,9 +612,10 @@ describe("transcript coverage", () => {
         for (const doc of [report, exported]) {
           expect(doc).toMatchObject({ outcome: "complete", belowCutoff: { stretches: below, seconds: below * length }, rechecks });
         }
-        expect(notices).toEqual(asked ? [
+        // The tail line sits after the measured sound, so it is counted as quiet.
+        expect(notices).toEqual([...(asked ? [
           "note: asking again for 1 stretch(es), 20 s of audio.", "note: 1 stretch(es) asked again with nothing found.",
-        ] : []);
+        ] : []), "note: 1 line(s) sit where no sound was measured."]);
         expect(speakers.match(/^#/gm)).toHaveLength(1);
       }
     }

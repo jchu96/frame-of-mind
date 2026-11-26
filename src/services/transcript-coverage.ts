@@ -95,7 +95,7 @@ interface RecheckIO {
   transcribe: (remote: RemoteFile, duration: number) => Promise<Line[]>;
   release: (remote: RemoteFile) => Promise<void>;
   cleanupUnconfirmed: () => void | Promise<void>;
-  notify: (kind: "note" | "recovery" | "warning", message: string) => void | Promise<void>;
+  notify: (kind: "note" | "recovery" | "quiet" | "warning", message: string) => void | Promise<void>;
 }
 
 async function recheckTranscriptPiece(piece: TranscriptSpan, io: RecheckIO): Promise<{ lines: Line[] } | { reason: string }> {
@@ -123,6 +123,19 @@ async function recheckTranscriptPiece(piece: TranscriptSpan, io: RecheckIO): Pro
     try { if (remote) await io.release(remote); }
     finally { if (scratch) await rm(scratch, { recursive: true, force: true }); }
   }
+}
+
+// A line is marked only when its own span holds no measured sound at all. In a
+// transcript checked word for word, 0 of 603 real lines had none, 21 had under
+// 0.5 s and 127 under 1 s, so any looser rule would mark real speech. The mark
+// catches a line written into true silence; it proves nothing in a noisy room.
+function markQuietLines(lines: Line[], runs: Boundaries["start"]): Line[] {
+  return lines.map(line => {
+    if (!line.text.trim()) return line;
+    const start = timestampToSeconds(line.start), end = timestampToSeconds(line.end);
+    // A line whose end is not after its start is shown for one second.
+    return measuredSeconds(runs, { start, end: end > start ? end : start + 1 }) === 0 ? { ...line, quiet: true as const } : line;
+  });
 }
 
 interface Coverage {
@@ -172,6 +185,9 @@ export async function recheckTranscript(held: Line[], duration: number, windows:
   }
   const empty = rechecks.filter(row => row.status === "noNewLines").length;
   if (empty) await io.notify("note", `${empty} stretch(es) asked again with nothing found.`);
-  const segments = [...held, ...additions].sort((a, b) => timestampToSeconds(a.start) - timestampToSeconds(b.start));
-  return { segments, fields: { outcome: unchecked.length ? "unchecked" : "complete", rechecks: rechecks.sort((a, b) => a.start - b.start), belowCutoff }, unchecked };
+  const merged = [...held, ...additions].sort((a, b) => timestampToSeconds(a.start) - timestampToSeconds(b.start));
+  const segments = markQuietLines(merged, boundaries.start);
+  const quietLines = segments.filter(line => line.quiet).length;
+  if (quietLines) await io.notify("quiet", `${quietLines} line(s) sit where no sound was measured.`);
+  return { segments, fields: { outcome: unchecked.length ? "unchecked" : "complete", rechecks: rechecks.sort((a, b) => a.start - b.start), belowCutoff, quietLines }, unchecked };
 }
