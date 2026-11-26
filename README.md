@@ -721,7 +721,7 @@ when literal markup-like text matters: the SRT reader strips `<…>` spans.
 Its stdout document lists all three file paths, the model and the requested language.
 
 After the first pass, the tool measures the first audio track locally and asks again about line-free
-stretches of at least 20 s with at least 10 s of measured sound. A note gives the request count and
+stretches of at least 20 s with at least 5 s of measured sound. A note gives the request count and
 audio length before upload. Transcript JSON marks added lines with `recovered: true`; speaker labels
 can differ across requests. Both JSON documents list `rechecks` and `belowCutoff`. The outcome is
 `complete` when all selected stretches received valid replies, or `unchecked` when measurement,

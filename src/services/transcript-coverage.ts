@@ -11,9 +11,13 @@ import { addedSpans, recoverLines } from "./transcript-recovery.js";
 import { offsetTranscriptionSegments, TranscriptWindowTimeError } from "./transcript.js";
 import { TRANSCRIPTION_WINDOW_SECONDS } from "./transcription-policy.js";
 
-// In 7200 s, 50 stretches held 2673 s of audio. Cutoffs of 5, 10 and 15 s
-// selected 11/1046 s, 4/619 s and 1/218 s. Four fit 12 requests and 1800 s.
-const MIN_MEASURED_SECONDS = 10;
+// In one 7200 s recording, 50 line-free stretches held 2673 s of audio. Cutoffs
+// of 5, 10 and 15 s selected 11/1046 s, 4/619 s and 1/218 s. A cutoff of 10 was
+// tried first and missed the one real early stop on record: a 53 s tail holding
+// two whole sentences measured between 5 and 10 s and was never asked about.
+// At 5, that recording costs 11 re-asks over 1046 s, inside its budget of 12
+// requests and 1800 s.
+const MIN_MEASURED_SECONDS = 5;
 const MIN_REQUEST_BUDGET = 3;
 const AUDIO_BUDGET_FRACTION = 0.25;
 
