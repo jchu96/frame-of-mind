@@ -30,6 +30,7 @@ it("release versions match the newest changelog section", () => {
   expect(expected![1], "RUNBOOK installation expected version").toBe(version);
 });
 
-it("the CLI --version equals package.json after a version bump fixture", () => {
-  expect(execFileSync("node", [join(root!, "dist", "cli.js"), "--version"], { encoding: "utf8" }).trim()).toBe("9.8.7");
+it("a built checkout prints package.json's version marked as a source build", () => {
+  // dist/cli.js is the checkout's own build, not a release bundle.
+  expect(execFileSync("node", [join(root!, "dist", "cli.js"), "--version"], { encoding: "utf8" }).trim()).toBe("9.8.7+source");
 });

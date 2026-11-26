@@ -8,12 +8,12 @@ vi.mock("../src/telemetry.js", () => ({
   isCliTelemetryEnabled: () => false,
 }));
 afterEach(() => vi.unstubAllEnvs());
-it("the telemetry version equals the package version", async () => {
+it("the telemetry version is the package version marked as a source build", async () => {
   const { program } = await import("../src/cli.js");
   vi.stubEnv("GEMINI_API_KEY", "synthetic-key");
   await expect(program.parseAsync(["node", "cli", "analyze", "--source", "none", "--video", "package.json", "--max-moments", "invalid"]))
     .rejects.toThrow("positive integer");
   expect(capture).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-    version: JSON.parse(readFileSync("package.json", "utf8")).version,
+    version: `${JSON.parse(readFileSync("package.json", "utf8")).version}+source`,
   }));
 });
