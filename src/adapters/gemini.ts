@@ -632,7 +632,7 @@ export class GeminiVideoAnalyzer {
     return parseGeminiJson(response.text, schema, "Calibration response").seconds;
   }
 
-  async transcribe(file: GeminiFile, requestedLanguage?: string): Promise<DerivedTranscriptionSegment[]> {
+  async transcribe(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number): Promise<DerivedTranscriptionSegment[]> {
     const result = await this.generateStructured({
       model: this.model,
       contents: [{
@@ -656,6 +656,7 @@ export class GeminiVideoAnalyzer {
                 ...(requestedLanguage ? [`The likely spoken language is ${requestedLanguage}, though other languages may also be present.`] : []),
                 "Split the speech into segments of at most a few sentences each.",
                 "All start and end timestamps must be canonical HH:MM:SS values with end strictly after start, measured from the beginning of this audio.",
+                ...(durationSeconds === undefined ? [] : [`This audio is ${durationSeconds} seconds long. No timestamp may exceed that length.`]),
                 "Use the format labels Speaker 1, Speaker 2 and so on for distinct voices. Keep each voice's label stable. Never guess personal names, even when a name is spoken.",
                 "Use the format markers [inaudible] for unclear speech and [crosstalk] for overlapping speech. Do not summarize, correct, or embellish.",
                 "Keep output concise: at most 5,000 segments; speaker at most 240 characters; text at most 4,000 per segment. Do not add keys outside the response schema.",

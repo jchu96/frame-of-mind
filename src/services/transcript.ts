@@ -4,15 +4,22 @@ import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
 
 const LINE_TIME = /^\[(\d{2,}:[0-5]\d:[0-5]\d)\]\s/;
 
-/**
- * Shifts a chunk's segments from chunk-relative time onto recording time.
- * Segments that would land before the recording start are impossible and are
- * treated as a model error rather than silently clamped.
- */
+export class TranscriptWindowTimeError extends Error {}
+
+/** Validates window-relative endpoints before shifting segments onto recording time. */
 export function offsetTranscriptionSegments(
   segments: DerivedTranscriptionSegment[],
   offsetSeconds: number,
+  durationSeconds?: number,
 ): DerivedTranscriptionSegment[] {
+  if (durationSeconds !== undefined) {
+    const latest = durationSeconds + 2;
+    for (const { start, end } of segments) {
+      if (timestampToSeconds(start) > latest || timestampToSeconds(end) > latest) {
+        throw new TranscriptWindowTimeError("A transcript time fell outside its audio window.");
+      }
+    }
+  }
   if (!offsetSeconds) return segments;
   return segments.map((segment) => ({
     ...segment,
