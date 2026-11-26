@@ -5,6 +5,23 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-26
+
+Everything added here is optional on contract version 1: a caller that ignores the new fields sees no change.
+
+### Added
+
+- `analyze` and `transcribe` print `retention: provider` or `retention: run` on standard error before any upload, and their `--json` success documents carry `retention`. The default retention does not change; pass `--retention run` to delete uploads when the run ends.
+- The transcript JSON written by `transcribe --json` carries `windowStarts`: the first second of the recording each transcription window owns, for example `[0, 600, 1200]` for a 1,500-second recording. The SRT and speakers files are unchanged.
+- Token counts. The `analyze` run manifest carries optional `tokenUsage`, with measured counts under `transcript`, `index`, `detail` (including repairs), `calibration` and `other`, each as `promptTokens`, `outputTokens` and `totalTokens`. The `analyze --json` and `transcribe --json` success documents carry `tokens` with the totals. A pass that did not run or reported no usage is absent, never zero. There is no money figure: multiply by your provider's prices. Command line only; manifests written by hosted Studio do not carry `tokenUsage`.
+- Error code `RECORDING_TOO_LONG`, exit 4, when a recording is longer than the analysis limit. `error.details` gives `durationSeconds` and `limitSeconds`. A `--json` caller previously received `COMMAND_FAILED` for this.
+
+### Changed
+
+- The default analysis limit is 7260 seconds: two hours with one minute of grace (was 7200). A two-hour recording that measures a fraction of a second over is now accepted. A limit set with `FRAME_OF_MIND_MAX_VIDEO_SECONDS` is still applied exactly.
+- The message a person sees for a recording over the limit now gives the length and the limit in seconds and says to split the recording.
+- The built-in `issue-review` recipe tells the model to report what is visible when a window disappears, and to give a cause such as closing or crashing only if the recording shows it. The recipe id is unchanged; its revision is `builtin-2026-11-26.1`.
+
 ## [0.6.2] - 2026-11-26
 
 ### Fixed
