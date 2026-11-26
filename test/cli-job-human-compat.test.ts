@@ -54,7 +54,9 @@ it("human analyze and transcribe preserve the base bytes, output streams, exits,
       "--model", model, "--no-calibrate", "--no-derived-transcript", "--no-screenshots"]);
     exits.push(process.exitCode);
     const transcription = new Command();
-    registerTranscribe(transcription, {...shared, extractAudioTrack: async (_input, path) => { await writeFile(path, "aac"); return true; }});
+    registerTranscribe(transcription, {...shared,
+      decodeSpeechEnvelope: async () => ({ startMs: 0, length: 100, blocks: [new Float32Array(100).fill(-96)] }),
+      extractAudioTrack: async (_input, path) => { await writeFile(path, "aac"); return true; }});
     await runCli(transcription, ["transcribe", video, "--retention", "run"]);
     exits.push(process.exitCode);
     const files: Record<string, string> = {};

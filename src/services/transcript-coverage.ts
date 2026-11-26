@@ -1,10 +1,30 @@
-import { classify } from "../domain/snap.js";
-import type { DerivedTranscriptionSegment, TranscriptGap } from "../domain/types.js";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+import type { File as RemoteFile } from "@google/genai";
+import { GeminiFileError } from "../adapters/gemini-files.js";
+import { createScratch } from "../adapters/scratch.js";
+import { classify, type Boundaries } from "../domain/snap.js";
+import type { DerivedTranscriptionSegment as Line, TranscriptRecheck, TranscriptRecheckFields, TranscriptSpan } from "../domain/types.js";
 import { timestampToSeconds } from "../lib/time.js";
-import type { decodeSpeechEnvelope, SpeechDecodeOptions } from "./audio.js";
+import type { decodeSpeechEnvelope, extractAudioTrack, SpeechDecodeOptions } from "./audio.js";
+import { addedSpans, recoverLines } from "./transcript-recovery.js";
+import { offsetTranscriptionSegments, TranscriptWindowTimeError } from "./transcript.js";
+import { TRANSCRIPTION_WINDOW_SECONDS } from "./transcription-policy.js";
 
-/** Merged lines are in start order. Overlapping cues cover their union. */
-function* lineFreeStretches(segments: readonly DerivedTranscriptionSegment[], duration: number) {
+// In 7200 s, 50 stretches held 2673 s of audio. Cutoffs of 5, 10 and 15 s
+// selected 11/1046 s, 4/619 s and 1/218 s. Four fit 12 requests and 1800 s.
+const MIN_MEASURED_SECONDS = 10;
+const MIN_REQUEST_BUDGET = 3;
+const AUDIO_BUDGET_FRACTION = 0.25;
+
+export async function measureTrack(input: string, decode: typeof decodeSpeechEnvelope, options: Pick<SpeechDecodeOptions, "signal" | "confinedInput">) {
+  try {
+    const envelope = await decode(input, options);
+    return envelope?.length ? classify(envelope) : undefined;
+  } catch { return undefined; }
+}
+
+function* lineFreeStretches(segments: readonly Line[], duration: number) {
   let coveredUntil = 0;
   for (const segment of segments) {
     if (!segment.text.trim()) continue;
@@ -15,31 +35,139 @@ function* lineFreeStretches(segments: readonly DerivedTranscriptionSegment[], du
   if (duration - coveredUntil >= 20) yield { start: coveredUntil, end: duration };
 }
 
-type TranscriptCoverage =
-  | { outcome: "complete" | "partial"; gaps: TranscriptGap[] }
-  | { outcome: "unchecked"; gaps?: undefined };
-
-export async function checkTranscriptCoverage(
-  segments: readonly DerivedTranscriptionSegment[], duration: number | undefined,
-  input: string, decode: typeof decodeSpeechEnvelope, options: Pick<SpeechDecodeOptions, "signal" | "confinedInput">,
-): Promise<TranscriptCoverage> {
-  if (duration === undefined) return { outcome: "unchecked" };
-  const gaps: TranscriptGap[] = [];
-  for (const { start, end } of lineFreeStretches(segments, duration)) {
-    const slice = { startMs: start * 1000, endMs: Math.floor(end * 1000) };
-    const envelope = await decode(input, { ...options, slice }).catch(() => undefined);
-    if (!envelope) return { outcome: "unchecked" };
-    let speechMs = 0;
-    for (const { ms, oppositeMs } of classify(envelope).start) {
-      speechMs += Math.max(0, Math.min(oppositeMs, slice.endMs) - Math.max(ms, slice.startMs));
-    }
-    if (speechMs >= 5000) gaps.push({ start, end: Math.round(end), speechSeconds: Math.round(speechMs / 1000) });
+/** Find the first intersecting run; budget order can differ from clock order. */
+function measuredSeconds(runs: Boundaries["start"], {start, end}: TranscriptSpan) {
+  let lo = 0, hi = runs.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (runs[mid]!.oppositeMs <= start * 1000) lo = mid + 1;
+    else hi = mid;
   }
-  return { outcome: gaps.length ? "partial" : "complete", gaps };
+  let ms = 0;
+  for (let i = lo; i < runs.length && runs[i]!.ms < end * 1000; i++) {
+    ms += Math.min(end * 1000, runs[i]!.oppositeMs) - Math.max(start * 1000, runs[i]!.ms);
+  }
+  return ms / 1000;
 }
 
-export function coverageWarnings(coverage: TranscriptCoverage): string[] {
-  if (coverage.outcome === "unchecked") return ["transcript was not checked for missing speech."];
-  return coverage.gaps.map(({ start, end, speechSeconds }) =>
-    `no transcript for ${start} to ${end} s; ${speechSeconds} s of speech measured there.`);
+function planRechecks(held: Line[], duration: number, windows: number, runs: Boundaries["start"]) {
+  const belowCutoff = { stretches: 0, seconds: 0 };
+  const candidates = [];
+  for (const span of lineFreeStretches(held, duration)) {
+    const measured = measuredSeconds(runs, span);
+    if (measured >= MIN_MEASURED_SECONDS) candidates.push({ ...span, measuredSeconds: measured });
+    else {
+      belowCutoff.stretches++;
+      belowCutoff.seconds += span.end - span.start;
+    }
+  }
+  candidates.sort((a, b) => b.measuredSeconds - a.measuredSeconds || a.start - b.start);
+  const maxRequests = Math.max(MIN_REQUEST_BUDGET, windows);
+  const maxAudio = duration * AUDIO_BUDGET_FRACTION;
+  let requests = 0, seconds = 0;
+  const plan = candidates.map(candidate => {
+    const pieces = [];
+    for (let start = candidate.start; start < candidate.end; start += TRANSCRIPTION_WINDOW_SECONDS) {
+      const end = Math.min(candidate.end, start + TRANSCRIPTION_WINDOW_SECONDS);
+      const length = end - start;
+      const ask = requests < maxRequests && seconds + length <= maxAudio;
+      if (ask) { requests++; seconds += length; }
+      pieces.push({ start, end, ask });
+    }
+    return { candidate, pieces };
+  });
+  return { plan, requests, seconds, belowCutoff };
+}
+
+interface RecheckIO {
+  input: string;
+  scratchParent?: string;
+  signal?: AbortSignal;
+  confinedInput?: boolean;
+  checkCanceled: () => void;
+  authorize?: () => Promise<void>;
+  extract: typeof extractAudioTrack;
+  upload: (audioPath: string) => Promise<RemoteFile>;
+  transcribe: (remote: RemoteFile, duration: number) => Promise<Line[]>;
+  release: (remote: RemoteFile) => Promise<void>;
+  cleanupUnconfirmed: () => void | Promise<void>;
+  notify: (kind: "note" | "recovery" | "warning", message: string) => void | Promise<void>;
+}
+
+async function recheckTranscriptPiece(piece: TranscriptSpan, io: RecheckIO): Promise<{ lines: Line[] } | { reason: string }> {
+  await io.authorize?.();
+  io.checkCanceled();
+  let scratch: string | undefined;
+  let remote: RemoteFile | undefined;
+  const duration = piece.end - piece.start;
+  try {
+    scratch = await createScratch("transcribe", io.scratchParent);
+    const path = join(scratch, "audio-1.aac");
+    if (!await io.extract(io.input, path, {
+      startSeconds: piece.start, durationSeconds: duration, signal: io.signal, confinedInput: io.confinedInput,
+    })) return { reason: "audio extraction failed" };
+    io.checkCanceled();
+    remote = await io.upload(path);
+    io.checkCanceled();
+    const reply = await io.transcribe(remote, duration);
+    return { lines: offsetTranscriptionSegments(reply, piece.start, duration) };
+  } catch (error) {
+    io.checkCanceled();
+    if (error instanceof GeminiFileError && error.uploadCleanup === "unconfirmed") await io.cleanupUnconfirmed();
+    return { reason: error instanceof TranscriptWindowTimeError ? "reply time outside clip" : "request failed" };
+  } finally {
+    try { if (remote) await io.release(remote); }
+    finally { if (scratch) await rm(scratch, { recursive: true, force: true }); }
+  }
+}
+
+interface Coverage {
+  segments: Line[];
+  fields: TranscriptRecheckFields & { outcome: "unchecked" | "complete" };
+  unchecked: string[];
+}
+
+export async function recheckTranscript(held: Line[], duration: number, windows: number, boundaries: Boundaries | undefined, io: RecheckIO): Promise<Coverage> {
+  io.checkCanceled();
+  if (!boundaries) {
+    const reason = `0 to ${duration} s was not checked again (sound measurement unavailable).`;
+    await io.notify("warning", reason);
+    return { segments: held, fields: { outcome: "unchecked" }, unchecked: [reason] };
+  }
+
+  const { plan, requests, seconds, belowCutoff } = planRechecks(held, duration, windows, boundaries.start);
+  if (requests) await io.notify("note", `asking again for ${requests} stretch(es), ${seconds} s of audio.`);
+
+  const rechecks: TranscriptRecheck[] = [];
+  const unchecked: string[] = [];
+  const additions: Line[] = [];
+  for (const { candidate, pieces } of plan) {
+    const recovered: Line[] = [];
+    let failed = false, skipped = false;
+    for (const piece of pieces) {
+      const result = piece.ask ? await recheckTranscriptPiece(piece, io) : { reason: "budget limit" };
+      io.checkCanceled();
+      if ("reason" in result) {
+        if (piece.ask) failed = true;
+        else skipped = true;
+        const interval = `${piece.start} to ${piece.end} s`;
+        unchecked.push(interval);
+        await io.notify("warning", `${interval} was not checked again (${result.reason}); it holds ${measuredSeconds(boundaries.start, piece)} s of measured sound.`);
+      } else {
+        const lines = recoverLines(result.lines, piece, held, recovered);
+        recovered.push(...lines);
+        if (lines.length) {
+          const spans = addedSpans(lines);
+          await io.notify("recovery", `recovered ${lines.length} line(s) at ${spans[0]!.start} to ${spans.at(-1)!.end} s.`);
+        }
+      }
+    }
+    for (const line of recovered) additions.push(line);
+    const status = failed ? "failed" : skipped ? "skipped" : recovered.length ? "linesAdded" : "noNewLines";
+    rechecks.push({ ...candidate, status, addedLines: recovered.length, ...(recovered.length > 0 && { addedSpans: addedSpans(recovered) }) });
+  }
+  const empty = rechecks.filter(row => row.status === "noNewLines").length;
+  if (empty) await io.notify("note", `${empty} stretch(es) asked again with nothing found.`);
+  const segments = [...held, ...additions].sort((a, b) => timestampToSeconds(a.start) - timestampToSeconds(b.start));
+  return { segments, fields: { outcome: unchecked.length ? "unchecked" : "complete", rechecks: rechecks.sort((a, b) => a.start - b.start), belowCutoff }, unchecked };
 }

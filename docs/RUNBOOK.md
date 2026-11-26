@@ -931,12 +931,16 @@ The speakers header and optional transcript JSON record the canonical tag as
   skipped and the remainder renumbered. `blankCues` and `adjustedCues` appear
   in the JSON and terminal summary. A nonpositive cue duration gets a one-second
   SRT end adjustment; JSON preserves original segment seconds.
-- For each line-free stretch of at least 20 s with at least 5 s of measured speech,
-  `transcribe` warns on stderr and lists the stretch in the speakers header. The success document
-  reports `outcome` as `partial` or `complete`. It and the transcript JSON list `gaps` in source seconds.
-  A failed check warns once, reports `unchecked` and omits `gaps`. Files are written and exit is 0.
-  When deriving a transcript, `analyze` emits run warnings and stores measured gaps in `derivedTranscript.gaps`.
-  A separate warning counts dropped lines when a window loses over 600 characters in its lead-in.
+- The tool measures the whole first audio track once. It rechecks line-free stretches of at least
+  20 s with at least 10 s of measured sound, starting with the most measured sound. The note
+  before upload gives the request count and total audio duration. Each piece is at most 600 s.
+  The budget allows `max(3, first-pass windows)` requests and one quarter of the recording duration.
+- The two JSON documents report `rechecks` and `belowCutoff` (count and total duration below
+  threshold). Valid replies, including empty ones, give `complete` when every piece was checked.
+  Failures and budget skips give `unchecked`, retain earlier lines and name affected intervals on
+  stderr and in the speakers header. Measurement failure omits both fields. Exit stays 0.
+  Derived analysis records the same rows and counts in the manifest. A window dropping more than
+  600 characters in its lead-in still warns.
 - Before uploading, `analyze` and `transcribe` write `retention: provider` or `retention: run` to stderr. Read `retention` and any measured `tokens` (`promptTokens`, `outputTokens`, `totalTokens`) from their JSON success documents.
   For the analyze breakdown, read `tokenUsage` in the manifest. The transcript JSON’s `windowStarts` gives the owned source seconds, for example `[0, 600, 1200]` for a 1,500-second recording.
 - `--retention provider|run` overrides `FRAME_OF_MIND_UPLOAD_RETENTION`; default

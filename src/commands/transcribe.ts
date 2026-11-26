@@ -36,10 +36,10 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
         const result = await transcribe({ ...flags, input, signal: controller.signal },
           flags.json ? { ...dependencies, stdout: diagnostic } : dependencies);
         if (flags.json) {
-          const { paths, model, language, adjustedCues, blankCues, retention, tokens, outcome, gaps } = result;
+          const { paths, model, language, adjustedCues, blankCues, retention, tokens, outcome, rechecks, belowCutoff } = result;
           writeDocument({
             paths, model, language, segmentCount: result.segments.length, adjustedCues, blankCues,
-            outcome, ...(gaps && { gaps }), retention, ...(tokens && { tokens }),
+            outcome, rechecks, belowCutoff, retention, ...(tokens && { tokens }),
           }, dependencies.stdout);
         }
       } catch (error) {

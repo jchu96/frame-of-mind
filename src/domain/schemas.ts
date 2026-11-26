@@ -151,12 +151,15 @@ export const versionedAnalysisRunSchema = z.union([
 
 export const utcDateTimeSchema = z.string().datetime({ offset: false });
 
+const transcriptSpanSchema = z.object({ start: z.number().nonnegative(), end: z.number().nonnegative() }).strict();
 const derivedTranscriptProvenanceSchema = z.object({
-  gaps: z.array(z.object({
-    start: z.number().int().nonnegative(),
-    end: z.number().int().positive(),
-    speechSeconds: z.number().int().min(5),
-  }).strict()).optional(),
+  rechecks: z.array(transcriptSpanSchema.extend({
+    measuredSeconds: z.number().nonnegative(),
+    status: z.enum(["linesAdded", "noNewLines", "failed", "skipped"]),
+    addedLines: z.number().int().nonnegative(),
+    addedSpans: z.array(transcriptSpanSchema).optional(),
+  })).optional(),
+  belowCutoff: z.object({ stretches: z.number().int().nonnegative(), seconds: z.number().nonnegative() }).strict().optional(),
   requestedLanguage: z.string().refine(tag => canonicalLanguageTag(tag) !== undefined).optional(),
   origin: z.literal("gemini-audio"),
   model: z.string().min(1).max(240),

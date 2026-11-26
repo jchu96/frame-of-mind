@@ -15,18 +15,29 @@
   },
   "else": {
     "properties": {
-      "outcome": {"enum": ["complete", "partial", "unchecked"]},
-      "gaps": {
-        "type": "array",
-        "items": {
+      "outcome": {"enum": ["complete", "unchecked"]},
+      "rechecks": {
+        "type": "array", "items": {
           "type": "object",
           "properties": {
-            "start": {"type": "integer", "minimum": 0},
-            "end": {"type": "integer", "minimum": 1},
-            "speechSeconds": {"type": "integer", "minimum": 5}
+            "start": {"type": "number", "minimum": 0},
+            "end": {"type": "number", "minimum": 0},
+            "measuredSeconds": {"type": "number", "minimum": 0},
+            "status": {"enum": ["linesAdded", "noNewLines", "failed", "skipped"]},
+            "addedLines": {"type": "integer", "minimum": 0},
+            "addedSpans": {"type": "array", "items": {
+              "type": "object", "properties": {
+                "start": {"type": "integer", "minimum": 0}, "end": {"type": "integer", "minimum": 0}
+              }, "required": ["start", "end"]
+            }}
           },
-          "required": ["start", "end", "speechSeconds"]
+          "required": ["start", "end", "measuredSeconds", "status", "addedLines"]
         }
+      },
+      "belowCutoff": {
+        "type": "object", "properties": {
+          "stretches": {"type": "integer", "minimum": 0}, "seconds": {"type": "number", "minimum": 0}
+        }, "required": ["stretches", "seconds"]
       },
       "retention": {"enum": ["provider", "run"]},
       "tokens": {
