@@ -17,6 +17,7 @@ import type {
   AnalysisDetail,
   AnalysisRecipe,
   DerivedTranscriptionSegment,
+  DetailStill,
   IndexedMoment,
   MeetingEvidence,
   ThinkingLevel,
@@ -523,6 +524,7 @@ export class GeminiVideoAnalyzer {
     transcriptDerived?: boolean,
     runNotes?: readonly RunNote[],
     modelClipClock: ClipClock = "absolute",
+    stills?: readonly DetailStill[],
   ): Promise<AnalysisDetail> {
     const window = clipWindow(candidate.start, candidate.end);
     const detailResponseSchema = z.preprocess(
@@ -568,6 +570,10 @@ export class GeminiVideoAnalyzer {
               fps: 1,
             },
           },
+          ...(stills ?? []).flatMap(({ seconds, base64 }) => [
+            { text: `Still at ${secondsToTimestamp(modelClipClock === "relative" ? seconds - window.start : seconds)}` },
+            { inlineData: { mimeType: "image/png", data: base64 } },
+          ]),
           {
             text: [
               promptSection(
@@ -598,8 +604,16 @@ export class GeminiVideoAnalyzer {
                 : [promptSection("evidence-example", genericEvidenceExample)]),
               promptSection("task", [
                 "Inspect the clip closely and produce one structured analysis record.",
-                "Only include appUrl when a browser address bar is visible and fully readable in this clip. Never infer, repair, or invent a URL.",
-                "Use details as neutral label/value pairs appropriate to the recipe. Copy relevant visible text and quotes verbatim. Record only steps actually observed.",
+                `Only include appUrl when a browser address bar is visible and fully readable in ${stills ? "the cited still" : "this clip"}. Never infer, repair, or invent a URL.`,
+                ...(stills ? [
+                  "Use neutral label/value details appropriate to the recipe. Record only observed steps. Use the clip for context and audio.",
+                  "Quote screen words only when you can read them in one attached, labelled still that shows the event. Preserve case, digits and punctuation.",
+                  "Use that one still for every screen quotation in the record, in any field: titles, prose, details and visible URLs. Cite its label in evidence.timestamp.",
+                  "If no still is attached, the words are unclear or absent, or the event needs another time, omit unsupported screen words everywhere",
+                  "and say “Screen text was not read.” Cite the actual event time if known. Never copy screen words from the clip, transcript, speech or examples.",
+                  "This rule governs every recipe and field. Keep spoken quotations attributable to the speaker.",
+                  "When screen words were present but unreadable, say so in the record.",
+                ] : ["Use details as neutral label/value pairs appropriate to the recipe. Copy relevant visible text and quotes verbatim. Record only steps actually observed."]),
                 modelClipClock === "relative"
                   ? `If evidence.timestamp is present, use canonical HH:MM:SS relative to this clip's start; the indexed candidate spans ${timestampToSeconds(candidate.start) - window.start} through ${timestampToSeconds(candidate.end) - window.start} seconds in this clip.`
                   : `If evidence.timestamp is present, use canonical HH:MM:SS within the indexed candidate range ${candidate.start} through ${candidate.end}.`,
@@ -621,6 +635,7 @@ export class GeminiVideoAnalyzer {
     }, "detail",
       detailResponseSchema,
       "Gemini analysis response",
+      stills !== undefined,
     );
   }
 
@@ -793,6 +808,7 @@ export class GeminiVideoAnalyzer {
     phase: "index" | "detail" | "transcribe",
     schema: z.ZodType<T>,
     label: string,
+    usesDetailStills = false,
   ): Promise<T> {
     const response = await this.generate(parameters, phase);
     try {
@@ -802,7 +818,7 @@ export class GeminiVideoAnalyzer {
       let repaired: Pick<GenerateContentResponse, "text" | "usageMetadata">;
       try {
         repaired = await this.generate(
-          withValidationRepairInstruction(parameters, error),
+          withValidationRepairInstruction(parameters, error, usesDetailStills),
           phase,
         );
       } catch (generationError) {
@@ -844,6 +860,7 @@ export class GeminiVideoAnalyzer {
 function withValidationRepairInstruction(
   parameters: GenerateContentParameters,
   error: GeminiResponseValidationError,
+  usesDetailStills: boolean,
 ): GenerateContentParameters {
   const systemInstruction = parameters.config?.systemInstruction;
   if (typeof systemInstruction !== "string") {
@@ -866,6 +883,7 @@ function withValidationRepairInstruction(
         "Regenerate the complete JSON object from the recording. Preserve evidence fidelity. " +
           "If an optional value cannot satisfy its schema exactly, omit that optional property. " +
           "Do not invent, repair, truncate, or coerce evidence to make it pass.",
+        ...(usesDetailStills ? ["Read screen words only from one attached, labelled still. If none supports the words, omit them and say “Screen text was not read.”"] : []),
       ].join("\n\n"),
     },
   };

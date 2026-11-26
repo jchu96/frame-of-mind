@@ -7,7 +7,7 @@ import { proposeRecords, snapSettings, summarizeSnaps, type SnapRun, type SnapSe
 import { parseSecondsMs, declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
 import { probeFrameRate } from "./media-probe.js";
 import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
-import { rename, rm, rmdir, stat } from "node:fs/promises";
+import { copyFile, readFile, rename, rm, rmdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { selectCandidates } from "../domain/candidate-selection.js";
 import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
@@ -19,6 +19,7 @@ import { z } from "zod";
 import type {
   AnalysisDetail,
   AnalysisRecipe,
+  DetailStill,
   ThinkingLevel,
   AnalysisRun,
   AnalysisRunV3,
@@ -84,7 +85,8 @@ import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./t
 import { extractScreenshot } from "./screenshots.js";
 import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
 import { renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
-import { timestampToSeconds } from "../lib/time.js";
+import { extractDetailStills, unavailableStillWarning } from "./detail-stills.js";
+import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
 import { mapWithConcurrency } from "../lib/concurrency.js";
 import {
   analysisOutcomeSchema,
@@ -306,6 +308,7 @@ export interface AnalysisVideoAnalyzer {
     transcriptDerived?: boolean,
     runNotes?: readonly RunNote[],
     modelClipClock?: ClipClock,
+    stills?: readonly DetailStill[],
   ): Promise<AnalysisDetail>;
   transcribe?(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
@@ -910,7 +913,7 @@ export class AnalysisOrchestrator {
         // screenshots, failure accounting, the circuit breaker, and progress
         // counts match a sequential run.
         type DetailAttempt =
-          | { kind: "validated"; result: AnalysisDetail }
+          | { kind: "validated"; result: AnalysisDetail; stillTimes?: string[]; citedStill?: string }
           | { kind: "failed"; error: CandidateAnalysisError };
         // Admission counts completions rather than ordered commits: a slow
         // early request must not let faster failing workers refill forever.
@@ -925,7 +928,16 @@ export class AnalysisOrchestrator {
           indexNumber: number,
         ): Promise<DetailAttempt> => {
           assertNotCanceled(execution.signal);
+          // CLI jobs account against a separate upload grant and omit inline images.
+          const frames = execution.jobScratchRoot ? undefined : await extractDetailStills(
+            localVideo, candidate, duration, temp, indexNumber, this.screenshot, () => assertNotCanceled(execution.signal),
+          );
+          let citedStill: string | undefined;
           try {
+            const stills = frames && await Promise.all(frames.map(async ({ seconds, path }) => ({
+              seconds, base64: await readFile(path, "base64"),
+            })));
+            assertNotCanceled(execution.signal);
             const result = await tracer.span({
               op: "gen_ai.chat",
               name: "gemini interrogate",
@@ -953,9 +965,9 @@ export class AnalysisOrchestrator {
                   options.recipe,
                   options.focus,
                   transcriptIsDerived,
-                  ...((clock.modelClipClock === "relative"
-                    ? [options.runNotes, clock.modelClipClock]
-                    : options.runNotes?.length ? [options.runNotes] : []) as [RunNote[]?, ClipClock?]),
+                  options.runNotes,
+                  clock.modelClipClock,
+                  stills,
                 );
                 span.setAttributes({ "frame_of_mind.candidate_accepted": detail.accepted });
                 return detail;
@@ -973,12 +985,20 @@ export class AnalysisOrchestrator {
                 }
               }
             });
-            return { kind: "validated", result };
+            if (options.screenshots && result.accepted && result.evidence?.timestamp) {
+              const seconds = timestampToSeconds(result.evidence.timestamp);
+              citedStill = frames?.find(frame => frame.seconds === seconds)?.path;
+            }
+            return { kind: "validated", result, citedStill, stillTimes: frames?.map(frame => secondsToTimestamp(frame.seconds)) };
           } catch (error) {
             if (error instanceof CandidateAnalysisError) {
               return { kind: "failed", error };
             }
             throw error;
+          } finally {
+            for (const frame of frames ?? []) {
+              if (frame.path !== citedStill) await rm(frame.path);
+            }
           }
         };
         const screenshotDirectory = stagingDirectory;
@@ -989,7 +1009,11 @@ export class AnalysisOrchestrator {
           const candidate = candidates[indexNumber]!;
           try {
             if (attempt.kind === "failed") throw attempt.error;
-            const result = attempt.result;
+            let result = attempt.result;
+            if (attempt.stillTimes?.length === 0) {
+              const notes = (result.confidenceNotes ?? "").slice(0, 10_000 - unavailableStillWarning.length - 1);
+              result = { ...result, confidenceNotes: notes ? `${notes}\n${unavailableStillWarning}` : unavailableStillWarning };
+            }
             assertNotCanceled(execution.signal);
             assertEvidenceWithinCandidate(
               result.evidence?.timestamp,
@@ -997,18 +1021,20 @@ export class AnalysisOrchestrator {
               candidate.end,
             );
             const item: AnalysisItem = { candidate, result };
+            if (attempt.stillTimes) item.stillTimes = attempt.stillTimes;
             if (options.screenshots && result.accepted) {
               const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
               const screenshotPath = join(screenshotDirectory, screenshotName);
-              // Only a built-in recipe that declares the settled strategy
-              // (teaching-points) searches near the cited time; every other
-              // recipe, custom ones included, takes the direct seek.
-              const screenshotTime = result.evidence?.timestamp || candidate.start;
-              const captured = options.recipe.screenshotStrategy === "settled"
-                ? await this.screenshot(localVideo, screenshotTime, screenshotPath, { start: candidate.start, end: candidate.end })
-                : await this.screenshot(localVideo, screenshotTime, screenshotPath);
-              if (captured) {
+              if (attempt.citedStill) {
+                await copyFile(attempt.citedStill, screenshotPath);
+                await rm(attempt.citedStill);
                 item.screenshot = screenshotName;
+              } else {
+                const screenshotTime = result.evidence?.timestamp || candidate.start;
+                const captured = options.recipe.screenshotStrategy === "settled"
+                  ? await this.screenshot(localVideo, screenshotTime, screenshotPath, { start: candidate.start, end: candidate.end })
+                  : await this.screenshot(localVideo, screenshotTime, screenshotPath);
+                if (captured) item.screenshot = screenshotName;
               }
               assertNotCanceled(execution.signal);
             }

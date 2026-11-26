@@ -20,6 +20,8 @@ import {
 import { CandidateAnalysisError } from "../src/domain/analysis-outcome.js";
 import { GeminiFileError } from "../src/adapters/gemini-files.js";
 
+vi.mock("../src/services/screenshots.js", () => ({ extractScreenshot: async () => false }));
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -239,6 +241,9 @@ describe("AnalysisOrchestrator", () => {
       fixture.options.recipe,
       undefined,
       false,
+      undefined,
+      "unverified",
+      [],
     );
     expect(result.analysis).toMatchObject({
       schemaVersion: 3,
@@ -316,6 +321,9 @@ describe("AnalysisOrchestrator", () => {
       fixture.options.recipe,
       undefined,
       true,
+      undefined,
+      "unverified",
+      [],
     );
     expect(result.manifest.schemaVersion).toBe(3);
     expect(result.manifest.derivedTranscript).toMatchObject({
@@ -667,6 +675,9 @@ describe("AnalysisOrchestrator", () => {
       fixture.options.recipe,
       undefined,
       true,
+      undefined,
+      "unverified",
+      [],
     );
     expect(result.manifest.schemaVersion).toBe(2);
     if (result.manifest.schemaVersion !== 2) throw new Error("expected v2 manifest");
@@ -716,6 +727,9 @@ describe("AnalysisOrchestrator", () => {
       fixture.options.recipe,
       undefined,
       false,
+      undefined,
+      "unverified",
+      [],
     );
   });
 
@@ -1733,6 +1747,7 @@ describe("AnalysisOrchestrator", () => {
         now: () => "2026-07-27T12:00:00.000Z",
         sleep: async () => undefined,
         extractScreenshot: vi.fn(async (_video: string, timestamp: string, destination: string) => {
+          if (!destination.includes("moment-")) return false;
           screenshots.push(`${timestamp}->${destination.split("/").pop()}`);
           await writeFile(destination, "png");
           return true;
@@ -1842,8 +1857,8 @@ describe("AnalysisOrchestrator", () => {
     }));
     const controller = new AbortController();
     fixture.analyzer.interrogate = vi.fn(async (_file, candidate: IndexedMoment) => {
-      if (candidate.start === "00:00:02") controller.abort();
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      if (fixture.analyzer.interrogate.mock.calls.length === 2) controller.abort();
+      if (!controller.signal.aborted) await new Promise(resolve => controller.signal.addEventListener("abort", resolve, { once: true }));
       return { ...detailResult(), evidence: { timestamp: candidate.start } };
     });
 

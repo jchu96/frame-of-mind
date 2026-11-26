@@ -186,12 +186,20 @@ run, check the cold download duration, both version lines, encoder checks
 and real-media pass counts. Rerun that head to verify the warm install.
 
 Analysis can use ffmpeg for clip-clock calibration, transcript audio,
-speech snapping, moment screenshots and the contact sheet. A failed
+speech snapping, detail stills, moment screenshots and the contact sheet. A failed
 screenshot can leave a moment without an image. If sheet generation fails,
 the individual screenshots remain available. Use `--no-screenshots` and
-`--no-derived-transcript` to skip screenshots and transcript extraction.
+`--no-derived-transcript` to skip saving screenshots and extracting transcripts.
 
-A moment screenshot is the frame at the cited time, with one exception: for
+In ordinary CLI and local Studio runs, each detail request can carry native PNGs
+even when screenshot output is off. A moment under 10 seconds gets its midpoint.
+Longer moments also get frames two seconds inside either end. The midpoint has
+first claim on the 15 MB base64 budget. Each item's `stillTimes` lists the
+recording times actually sent. With none available, the record carries a warning.
+A citation matching a carried still saves that exact picture for every recipe.
+A screen quotation citing another time goes undetected.
+
+For other citations the screenshot uses the previous extraction strategy. For
 the `teaching-points` recipe, ffmpeg samples five frames a second within one
 second of the cited time, inside the candidate's range, and prefers a settled
 frame when the cited one is caught mid-transition (a caption fading, a panel

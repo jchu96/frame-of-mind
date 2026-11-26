@@ -228,6 +228,15 @@ The durable source of truth is local:
 └── contact-sheet.png
 ```
 
+Local `analyze` and Studio detail requests carry up to three native-size stills.
+The model is asked to quote screen text only from one labelled still. Each item's
+`stillTimes` lists the recording times actually sent, even with `--no-screenshots`.
+When a citation matches a still, the saved screenshot uses its exact bytes.
+The stills of one request total at most 15 MB once encoded: the midpoint still is taken first, then the
+others that fit. A still that does not fit is not sent and is never scaled down; when none fits, the
+moment is kept and its confidence notes say the full-size frame was unavailable.
+A screen quotation citing another time goes undetected.
+
 `contact-sheet.png` tiles the moment screenshots in one image, up to the first
 100, each labelled with its record number (as numbered in `analysis.md` and
 `report.html`) and cited time. The run warns when screenshots are left off it
@@ -562,7 +571,7 @@ tracks have separate rows, topmost first. [Timeline lookup procedure](docs/RUNBO
 | `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |
 | `--note <name=path>` | per-run UTF-8 text/Markdown reference, repeatable up to 8 |
 | `--concurrency <n>` | parallel pass-2 detail requests (1-8), default `FRAME_OF_MIND_DETAIL_CONCURRENCY` or `1`; results stay in candidate order |
-| `--no-screenshots` | run without ffmpeg screenshots |
+| `--no-screenshots` | omit saved screenshots and the contact sheet |
 | `--no-derived-transcript` | skip transcribing the recording's own audio |
 | `--retention <provider\|run>` | keep recording upload to provider expiry (default), or delete on command completion |
 | `--keep-upload` / `--delete-upload` | aliases for `--retention provider` / `--retention run` |

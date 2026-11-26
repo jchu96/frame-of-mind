@@ -134,7 +134,7 @@ async function sizeOf(path: string, device: bigint, allowStage: boolean): Promis
 }
 
 const payloadNames = {
-  analyze: /^(?:recording\.(?:webm|mp4|m4v|mov|mp3)|derived-audio-\d+\.aac)$/i,
+  analyze: /^(?:recording\.(?:webm|mp4|m4v|mov|mp3)|derived-audio-\d+\.aac|still-\d+-\d+\.png)$/i,
   transcribe: /^audio-\d+\.aac$/, screenshots: /^frame-\d{3}\.png$/, calibration: /^flash\.mp4$/,
 };
 
