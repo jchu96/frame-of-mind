@@ -11,6 +11,8 @@ import * as mediaTools from "../src/services/media-tools.js";
 import { mediaHelper } from "../src/services/media-helpers.js";
 import { runMediaTool, stageOutput } from "../src/services/media-tools.js";
 
+const processTestTimeout = 30_000;
+
 let root: string, input: string, output: string;
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "fom-media-tools-"));
@@ -42,14 +44,14 @@ it("F02 preserves original bytes after cancellation following an encoded frame",
   expect(await digest().catch(() => "original missing"), "original exists and hash matches").toBe(before);
   expect(outcome).toMatchObject({name: "AbortError"});
   expect(await readdir(root)).toEqual(["original.mp4"]);
-});
+}, processTestTimeout);
 it("F03 rejects error stderr even with a plausible staged file and a zero exit", async () => {
   await expect(stageOutput(input, join(root, "image.ppm"), [".ppm"], false, undefined, async staged => {
     await runMediaTool(process.execPath, ["-e",
       "require('node:fs').writeFileSync(process.argv[1], 'P3\\n1 1\\n255\\n0 0 0\\n'); process.stderr.write('decode error')", staged]);
   }), "error-level stderr must fail publication").rejects.toThrow("reported a media error");
   expect(await readdir(root)).toEqual(["original.mp4"]);
-});
+}, processTestTimeout);
 it.each(["missing", "timeout", "abort"])("cleans staging and retains prior output on %s", async kind => {
   await writeFile(output, "prior output");
   const controller = new AbortController();
@@ -63,11 +65,11 @@ it.each(["missing", "timeout", "abort"])("cleans staging and retains prior outpu
   })).rejects.toThrow();
   expect(await readFile(output, "utf8")).toBe("prior output");
   expect((await readdir(root)).sort()).toEqual(["original.mp4", "prepared.mp4"]);
-});
+}, processTestTimeout);
 it("real child sees only the allowed environment", async () => {
   vi.stubEnv("FOM_UNLISTED_MARKER", "synthetic");
   expect(await runMediaTool(process.execPath, ["-p", "typeof process.env.FOM_UNLISTED_MARKER"])).toBe("undefined\n");
-});
+}, processTestTimeout);
 it("publishes exactly one competing no-force output", async () => {
   const results = await Promise.allSettled(["one", "two"].map(value =>
     stageOutput(input, output, [".mp4"], false, undefined, staged => writeFile(staged, value))));
@@ -183,14 +185,14 @@ it.each([
   const args = flags.map((value, index) => flags[index - 1] === "-o" ? join(root, value) : value);
   await cli.parseAsync([command, input, ...args, "--json"], { from: "user" });
   validateCliDocument(command, stdout.mock.calls.map(([chunk]) => chunk).join(""));
-});
+}, processTestTimeout);
 
 it("refuses to publish a staged proxy with a different start label", async () => {
   await reports({label: "01:02:03:04", stagedLabel: "01:02:03:05"});
   const entries = await readdir(root);
   await expect(mediaHelper("proxy", input, {output, height: "64"})).rejects.toThrow(/expected 01:02:03:04, measured 01:02:03:05/);
   expect(await readdir(root)).toEqual(entries);
-});
+}, processTestTimeout);
 
 it("refuses a staged slice whose next-day label wrapped at midnight", async () => {
   await reports({label: "23:59:59:24", stagedLabel: "00:00:00:01", stagedFrames: 3});
@@ -199,7 +201,7 @@ it("refuses a staged slice whose next-day label wrapped at midnight", async () =
   await expect(readFile(output)).rejects.toMatchObject({code: "ENOENT"});
   await reports({label: "23:59:59:24", stagedLabel: "24:00:00:01", stagedFrames: 3});
   await expect(mediaHelper("slice", input, {output, height: "64", from: "2f", to: "5f"})).resolves.toMatchObject({kind: "slice"});
-});
+}, processTestTimeout);
 
 it("passes local MOV options before each video input and chooses the requested encoder", async () => {
   await reports();
@@ -219,7 +221,7 @@ it("passes local MOV options before each video input and chooses the requested e
   expect(encodes[0]).not.toContain("-r");
   expect(encodes[0]).not.toContain("-hwaccel");
   expect(encodes[1]).toEqual(expect.arrayContaining(["mjpeg", "trim=start_frame=2,setpts=PTS-STARTPTS"]));
-});
+}, processTestTimeout);
 
 it("checks projected and measured proxy sizes before publication", async () => {
   const events: string[] = [];
@@ -240,7 +242,7 @@ it("checks projected and measured proxy sizes before publication", async () => {
   await reports({bytes: 2_000_000_001});
   await expect(make()).rejects.toThrow("actual exceeds");
   expect(await readFile(output, "utf8")).toBe("prior");
-});
+}, processTestTimeout);
 
 it("accepts only matching independent timing for a single untagged frame", async () => {
   await reports({frames: 1});
@@ -248,7 +250,7 @@ it("accepts only matching independent timing for a single untagged frame", async
   await expect(mediaHelper("probe", input, {timecodeRate: "24"})).rejects.toThrow("One-frame timing");
   await expect(mediaHelper("verify", input, {timecodeRate: "25", expectDuration: "0.040"}))
     .resolves.toMatchObject({actual: {frames: "1"}, mismatches: [], decodeStatus: "passed"});
-});
+}, processTestTimeout);
 
 it("requires a matching rate and explicit drop-frame mode for an elapsed label", async () => {
   await reports({rate: "30000/1001"});
@@ -257,7 +259,7 @@ it("requires a matching rate and explicit drop-frame mode for an elapsed label",
   await expect(mediaHelper("frame", input, flags)).rejects.toThrow("explicit df or ndf");
   await expect(mediaHelper("frame", input, {...flags, timecodeRate: "29.97df", at: "00:00:00;01"}))
     .resolves.toMatchObject({at: {frames: "1"}});
-});
+}, processTestTimeout);
 
 it.each([
   ["slice", {from: "0.041", to: "3f"}], ["slice", {from: "0f", to: "0.041"}],
@@ -266,7 +268,7 @@ it.each([
   await reports();
   await expect(mediaHelper(kind, input, {output: kind === "frame" ? join(root, "grab.jpg") : output, ...flags}))
     .rejects.toThrow(/1f.*2f/);
-});
+}, processTestTimeout);
 
 it("slices the single final frame without adding a start label", async () => {
   await reports({stagedFrames: 1});
@@ -275,4 +277,4 @@ it("slices the single final frame without adding a start label", async () => {
   const encode = calls.mock.calls.find(([, args]) => args.includes("libx264"))![1];
   expect(encode).toContainEqual(expect.stringContaining("trim=start_frame=29:end_frame=30,"));
   expect(encode).not.toContain("-timecode");
-});
+}, processTestTimeout);

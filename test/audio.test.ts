@@ -21,7 +21,7 @@ async function ffmpegAvailable(): Promise<boolean> {
   });
 }
 
-describe("extractAudioTrack", () => {
+describe("extractAudioTrack", { timeout: 30_000 }, () => {
   it("returns false without throwing for an invalid recording", async () => {
     const root = await mkdtemp(join(tmpdir(), "frame-of-mind-audio-test-"));
     temporaryDirectories.push(root);

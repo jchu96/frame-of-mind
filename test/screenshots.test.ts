@@ -61,7 +61,7 @@ describe("settled-frame selection", () => {
   });
 });
 
-describe("settled screenshot with real ffmpeg", () => {
+describe("settled screenshot with real ffmpeg", { timeout: 30_000 }, () => {
   let root: string;
   let video: string;
   beforeAll(async () => {

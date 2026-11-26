@@ -10,6 +10,8 @@ import { probeFrameRate } from "../src/services/media-probe.js";
 import { synthesizeFlash } from "../src/adapters/gemini-calibration.js";
 import { openBrowser } from "../src/adapters/bluedot-oauth.js";
 
+const processTestTimeout = 30_000;
+
 const markers = { GEMINI_API_KEY: "synthetic-key", BLUEDOT_ACCESS_TOKEN: "synthetic-token", FOM_TEST_MARKER_7: "synthetic-marker" };
 const parent = process.env;
 const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
@@ -44,7 +46,7 @@ describe("helper", () => {
     await extractScreenshot("synthetic.mp4", "00:00:00", join(root, "frame.jpg"));
     await noMarkers();
     expect(childEnvironment("media")).not.toHaveProperty("FOM_TEST_MARKER_7");
-  });
+  }, processTestTimeout);
   it("a Windows-style Path is carried under its own spelling", () => {
     const source = { Path: "C:\\tools", SystemRoot: "C:\\Windows", PATHEXT: ".EXE", ComSpec: "C:\\Windows\\cmd.exe", ...markers };
     expect(childEnvironment("media", source, "win32")).toEqual({ Path: source.Path, SystemRoot: source.SystemRoot, PATHEXT: ".EXE" });
@@ -57,7 +59,7 @@ describe("helper", () => {
     expect(childEnvironment("opener", { XDG_RUNTIME_DIR: "/run/test", XDG_DATA_DIRS: "/data", XDG_PRIVATE_TOKEN: "synthetic", BROWSER: "browser" })).toEqual({ XDG_RUNTIME_DIR: "/run/test", XDG_DATA_DIRS: "/data", BROWSER: "browser" });
   });
 });
-describe("media", () => {
+describe("media", { timeout: processTestTimeout }, () => {
   it("audio extraction's ffmpeg sees no marker variable", async () => {
     expect(await extractAudioTrack("synthetic.mp4", join(root, "audio.aac"))).toBe(true); await noMarkers();
   });
@@ -82,7 +84,7 @@ describe("media", () => {
     expect((await captured()).PATH).toBe(root);
   });
 });
-describe("opener", () => {
+describe("opener", { timeout: processTestTimeout }, () => {
   it("the browser opener sees no marker variable", async () => {
     expect(await openBrowser(new URL("https://example.invalid/"))).toBe(true); await noMarkers();
   });

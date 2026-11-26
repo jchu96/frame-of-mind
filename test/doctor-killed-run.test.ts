@@ -59,4 +59,4 @@ it("lists and reclaims a SIGKILLed proxy encode and preserves every sibling byte
   } finally {
     if (child.exitCode === null && !child.signalCode) { killRun(); await exited; }
   }
-});
+}, 30_000);

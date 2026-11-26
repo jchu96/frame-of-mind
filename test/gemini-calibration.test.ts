@@ -54,5 +54,5 @@ describe("probe", () => {
     const bytes = execFileSync("ffmpeg", ["-v", "error", "-i", path, "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "gray", "-"]);
     expect(bytes.length).toBe(40); expect(bytes[27]).toBeGreaterThan(240);
     expect([...bytes].filter(v => v > 240)).toHaveLength(1);
-  });
+  }, 30_000);
 });

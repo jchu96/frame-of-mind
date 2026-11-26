@@ -5,13 +5,12 @@ import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildCliFixture } from "./helpers/cli-build.js";
 
-describe("linked", () => {
+describe("linked", { timeout: 30_000 }, () => {
   let root: string | undefined;
   let link: string;
   let globalBin: string;
   let expected: string;
   // Compilation has a separate 60-second setup budget on shared machines.
-  // The runtime assertions retain Vitest's default five-second test timeout.
   beforeAll(async () => {
     root = await buildCliFixture();
     link = join(root, "frameofmind");

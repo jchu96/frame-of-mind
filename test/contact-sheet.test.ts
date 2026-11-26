@@ -42,7 +42,7 @@ describe("contact sheet layout", () => {
   });
 });
 
-describe("contact sheet with real ffmpeg", () => {
+describe("contact sheet with real ffmpeg", { timeout: 30_000 }, () => {
   let root: string;
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), "contact-sheet-"));

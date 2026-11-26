@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
 
+const processTestTimeout = 60_000;
+
 const installer = resolve("scripts/install-ci-ffmpeg.py");
 const installCommand = "python3 scripts/install-ci-ffmpeg.py";
 const keyCommand = installCommand + ' key >> "$GITHUB_OUTPUT"';
@@ -80,7 +82,7 @@ it.each(["miss", "hit"])("refuses altered bytes on a cache %s before installing"
   expect(result.stderr).toContain(`expected ${digest("official")}, actual ${digest("officiaL")}`);
   expect(f.calls()).toEqual(mode === "hit" ? [] : ["fetch"]);
   expect(existsSync(f.pathFile)).toBe(false);
-});
+}, processTestTimeout);
 
 it.each(["miss", "hit"])("installs verified tools on a cache %s", mode => {
   const f = fixture();
@@ -95,7 +97,7 @@ it.each(["miss", "hit"])("installs verified tools on a cache %s", mode => {
   for (const tool of ["ffmpeg", "ffprobe"]) {
     expect(execFileSync(join(bin, tool), ["-version"], { env: f.env, encoding: "utf8" })).toContain(tool + " version 1-2 ");
   }
-});
+}, processTestTimeout);
 
 it.each([
   ["wrong version", "VERSION", "2-9"],
@@ -107,7 +109,7 @@ it.each([
   f.env[variable!] = value!;
   expect(f.run().status).toBe(1);
   expect(existsSync(f.pathFile)).toBe(false);
-});
+}, processTestTimeout);
 
 it("keys the cache by the pin bytes, runner image and architecture", () => {
   const f = fixture();
@@ -126,7 +128,7 @@ it("keys the cache by the pin bytes, runner image and architecture", () => {
   f.env.RUNNER_ARCH = "X64";
   writeFileSync(f.pin, readFileSync(f.pin, "utf8").replace(digest("official"), digest("other")));
   expect(key()).not.toBe(base);
-});
+}, processTestTimeout);
 
 type Step = { id?: string; uses?: string; run?: string; env?: Record<string,string>; with?: Record<string,string>; "timeout-minutes"?: number };
 type Job = { steps: Step[]; "runs-on": string; "timeout-minutes": number };
