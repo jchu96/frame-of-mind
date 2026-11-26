@@ -54,10 +54,13 @@ it("advertises the machine commands and options that ship schemas", () => {
   expect(JSON.parse(run(["--version", "--schema-version=1", "--json"]).stdout).schemaVersions).toEqual(inventory.schemaVersions);
   for (const versions of Object.values(inventory.schemaVersions)) expect(versions).toEqual([1]);
   expect(inventory.commands.flatMap((cmd: {options: string[]}) => cmd.options)).not.toContain("--force");
+  const transcribe = inventory.commands.find((cmd: { name: string }) => cmd.name === "transcribe");
+  expect(transcribe.options).not.toContain("--recheck");
   expect(inventory.commands).toContainEqual({ name: "doctor", options: ["--scratch", "--remove", "--json", "--schema-version"] });
 });
 
 it.each([
+  [["transcribe", "fixture.mp4", "--recheck", "--json"], "USAGE", 2],
   [["recipes", "--json", "--unknown"], "USAGE", 2],
   [["--version", "--json", "--unknown"], "USAGE", 2],
   [["doctor", "--remove", "--json"], "USAGE", 2],

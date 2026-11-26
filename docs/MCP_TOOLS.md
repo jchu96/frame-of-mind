@@ -95,16 +95,9 @@ Both commands print `retention: provider` or `retention: run` on stderr before a
 The analyze manifest’s optional `tokenUsage` groups measured counts under `transcript`, `index`, `detail` (including repairs), `calibration` and `other`. A pass appears only when it reports usage.
 The transcript JSON’s `windowStarts` lists the first source second owned by each window, excluding overlap.
 
-Only when `transcribe` is run with the experimental `--recheck` flag (off by default; it can add
-lines that are not in the recording), the transcribe receipt and transcript JSON carry optional
-`outcome` (`complete` or `unchecked`), `rechecks` and `belowCutoff: {stretches, seconds}`. Each row
-gives source seconds `start`, `end`, `measuredSeconds`, `status` (`linesAdded`, `noNewLines`,
-`failed`, `skipped`), `addedLines` and, when positive, `addedSpans`. Added JSON segments carry
-`recovered: true`. Warnings name unchecked pieces. A failed local measure omits both measurements.
-Without the flag none of these fields is written. `analyze` never asks again; its manifest's
-`derivedTranscript` carries no recheck rows.
-When the local measure ran, both documents also carry optional `quietLines`, the number of lines
-whose own span holds no measured sound; those segments carry `quiet: true` in the transcript JSON.
+When the local sound measure runs, the transcribe receipt and transcript JSON carry
+`quietLines`, the number of lines whose own span holds no measured sound. Those
+segments carry `quiet: true` in the transcript JSON.
 
 Until a full release carries synchronous `analyze --json`, consumers may rely on
 the text line beginning `Analysis: ` and carrying the run directory, the

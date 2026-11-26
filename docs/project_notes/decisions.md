@@ -4,6 +4,14 @@ Canonical, status-bearing architecture decisions live in
 [`docs/adr/`](../adr/README.md). This file keeps concise chronological context
 for agent recall and must not become a duplicate ADR authority.
 
+## 2026-11-26 — Remove the transcript recheck
+
+The second request added invented speech on a real recording. Keep only the local sound
+measure and quiet-line mark. A rule requiring a recovered line to last at least 5 s with
+measured sound over at least 60% of its span would have excluded all 21 confirmed inventions.
+We rejected it because it was fitted after seeing the labels, rested on one confirmed real
+line and one synthetic clip, and would discard every short aside.
+
 ## 2026-11-23 — Preserve the model time beside a measured speech cut
 
 Store pause-supported targets measured on a 10 ms grid in opt-in times schema 3. Schema 2 has

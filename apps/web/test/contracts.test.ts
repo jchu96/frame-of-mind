@@ -23,6 +23,21 @@ describe("run import contract", () => {
     expect(runImportSchema.safeParse(input).success).toBe(false);
   });
 
+  test("imports 0.6.4 bundles with transcript recheck provenance", async () => {
+    for (const input of [runFixture(), await videoRunFixture()]) {
+      const manifest = input.manifest;
+      manifest.toolVersion = "0.6.4";
+      if (manifest.schemaVersion === 2) manifest.transcriptAlignment.method = "explicit";
+      manifest.derivedTranscript = {
+        origin: "gemini-audio", model: manifest.model,
+        sha256: manifest.schemaVersion === 2 ? manifest.transcriptSha256 : "b".repeat(64),
+        rechecks: [{ start: 10, end: 50, measuredSeconds: 12, status: "noNewLines", addedLines: 0 }],
+        belowCutoff: { stretches: 1, seconds: 25 },
+      };
+      await expect(validateVersionedRunImport(input)).resolves.toEqual(input);
+    }
+  });
+
   test("binds analysis to the manifest run ID and digest", async () => {
     const mismatched = runFixture();
     mismatched.analysis.runId = "different-run";

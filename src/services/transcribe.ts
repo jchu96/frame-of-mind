@@ -12,7 +12,7 @@ import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
 import { resolveRetention, type RetentionFlags } from "../domain/retention.js";
 import type { DerivedTranscriptionSegment } from "../domain/types.js";
 import { sha256File } from "../lib/files.js";
-import { measureTrack, recheckTranscript } from "./transcript-coverage.js";
+import { markQuietLines, measureTrack } from "./transcript-coverage.js";
 import { decodeSpeechEnvelope, extractAudioTrack, planTranscriptionWindows, probeDurationSeconds } from "./audio.js";
 import { mergeTranscriptionChunks, offsetTranscriptionSegments, TranscriptWindowTimeError } from "./transcript.js";
 import { TRANSCRIPTION_OVERLAP_SECONDS, TRANSCRIPTION_WINDOW_SECONDS } from "./transcription-policy.js";
@@ -30,8 +30,6 @@ export interface TranscribeOptions extends RetentionFlags {
   output?: string;
   model?: string;
   json?: boolean;
-  /** Experimental: ask again about quiet-looking stretches. Can add lines that are not in the recording. */
-  recheck?: boolean;
   force?: boolean;
   apiKey?: string;
   signal?: AbortSignal;
@@ -168,35 +166,18 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const held = mergeTranscriptionChunks(chunks, warn);
   const mediaOptions = { signal: options.signal, confinedInput: Boolean(job) };
   const boundaries = await measureTrack(input, deps.decodeSpeechEnvelope, mediaOptions);
-  const { segments, fields, unchecked } = await recheckTranscript(held, duration, windows.length, boundaries, {
-    ...mediaOptions, input, scratchParent: job?.scratchRoot, checkCanceled: canceled, authorize: job?.authorize,
-    recheck: Boolean(options.recheck),
-    extract: deps.extractAudioTrack,
-    upload: async path => {
-      const remote = await analyzer.upload(path, "audio/aac");
-      if (retention === "provider") deps.stderr(`kept audio upload: ${uploadLabel(remote)}`);
-      return remote;
-    },
-    transcribe: (remote, seconds) => analyzer.transcribe(remote, requestedLanguage, seconds),
-    release: async remote => {
-      if (retention === "run") {
-        try { await analyzer.delete(remote); }
-        catch { warn(`audio upload deletion unconfirmed: ${uploadLabel(remote)}`); }
-      }
-    },
-    cleanupUnconfirmed: () => warn("failed audio upload cleanup is unconfirmed; provider expiry applies."),
-    notify: (kind, message) => deps.stderr(`${kind === "warning" ? "warning" : "note"}: ${message}`),
-  });
+  canceled();
+  const { segments, quietLines } = await markQuietLines(held, boundaries, message => deps.stderr(`note: ${message}`));
   canceled();
   const provenance = {
     model, clock: "source" as const, recordingSha256: await sha256File(input), createdAt: deps.now(),
     ...(requestedLanguage && { requestedLanguage }),
   };
   const srt = renderSrt(segments);
-  const texts = [srt.text, renderSpeakers(segments, provenance, unchecked)];
+  const texts = [srt.text, renderSpeakers(segments, provenance)];
   if (options.json) {
     const windowStarts = windows.map(window => window.nominalStartSeconds);
-    texts.push(renderTranscriptJson(segments, provenance, windowStarts, fields));
+    texts.push(renderTranscriptJson(segments, provenance, windowStarts, quietLines));
   }
   canceled();
   await mkdir(output, { recursive: true, mode: 0o700 });
@@ -210,7 +191,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const usage = analyzer.usageSnapshot?.();
   if (usage) deps.stdout(`tokens: ${JSON.stringify(usage)}`);
   return {
-    ...fields, segments, paths, model, language: requestedLanguage ?? null,
+    ...(quietLines !== undefined && { quietLines }), segments, paths, model, language: requestedLanguage ?? null,
     adjustedCues: srt.adjustedCues, blankCues: srt.blankCues,
     retention, ...(usage && { tokens: usage }),
   };

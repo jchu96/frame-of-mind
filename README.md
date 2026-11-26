@@ -745,21 +745,13 @@ when literal markup-like text matters: the SRT reader strips `<…>` spans.
 `--json` adds `interview.transcript.json`, with numeric seconds and provenance.
 Its stdout document lists all three file paths, the model and the requested language.
 
-`transcribe --recheck` is experimental and off by default. With it, after the first pass the tool asks
-the model again about line-free stretches of at least 20 s with at least 5 s of measured sound, and
-merges the lines it gets. **It can add lines that are not in the recording:** asked about a near-silent
-stretch on its own, the model has returned invented speech. Do not use its output as subtitles
-without checking every line marked `recovered: true`. `analyze` never asks again.
+A window’s reply can stop early. Lines can be missing from a transcript even when
+`transcribe` exits 0.
 
-With `--recheck`, a note gives the request count and audio length before upload; both JSON documents
-list `rechecks` and `belowCutoff`; the outcome is `complete` when all selected stretches received
-valid replies, or `unchecked` when measurement, a request or the budget prevented a check; warnings
-and the speakers header name unchecked time. Without the flag none of these appear.
-
-A transcript line whose own span holds no measured sound at all is marked `quiet: true` in the
-transcript JSON, and both JSON documents carry `quietLines`, the number marked. A note on stderr
-gives the count when it is above zero. The mark proves nothing: it catches a line written into true
-silence, and a line invented in a room with any noise is not marked. The outcome does not change.
+When the local sound measure runs, the transcript JSON marks each line whose entire span
+has no measured sound with `quiet: true`. Both JSON documents give the count in
+`quietLines`, including zero. A positive count also appears on stderr. The mark can
+flag a line written into silence. Background noise can leave invented speech unmarked.
 
 Before uploading, `analyze` and `transcribe` print `retention: provider` or `retention: run` on stderr.
 Their JSON success documents include `retention` and, when measured, `tokens` with `promptTokens`, `outputTokens` and `totalTokens`.
