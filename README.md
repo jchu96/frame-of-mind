@@ -232,6 +232,9 @@ Local `analyze` and Studio detail requests carry up to three native-size stills.
 The model is asked to quote screen text only from one labelled still. Each item's
 `stillTimes` lists the recording times actually sent, even with `--no-screenshots`.
 When a citation matches a still, the saved screenshot uses its exact bytes.
+The stills of one request total at most 15 MB once encoded: the midpoint still is taken first, then the
+others that fit. A still that does not fit is not sent and is never scaled down; when none fits, the
+moment is kept and its confidence notes say the full-size frame was unavailable.
 A screen quotation citing another time goes undetected.
 
 `contact-sheet.png` tiles the moment screenshots in one image, up to the first
