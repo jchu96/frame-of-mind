@@ -7,7 +7,7 @@ versions for durable schemas and prompts.
 
 | Surface | Current | Change rule |
 |---|---:|---|
-| CLI/package | `0.6.2` | Semantic Versioning |
+| CLI/package | `0.6.3` | Semantic Versioning |
 | `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
 | `times.json` sidecar | `2` (default), `3` (speech snapping) | increment for breaking shape/meaning |
@@ -76,6 +76,7 @@ The [CLI and MCP contract](MCP_TOOLS.md) lists the current interfaces.
 - `v0.6.0` tags its release pull request's merge commit; pre-releases `v0.6.0-beta.1` to `v0.6.0-beta.4` came before it.
 - `v0.6.1` tags its release pull request's merge commit. It carries new commands (the experimental job commands and `--thinking-level`) in a patch release by the owner's choice.
 - `v0.6.2` tags its release pull request's merge commit. It is a fix release for transcript times.
+- `v0.6.3` tags its release pull request's merge commit. It carries optional output fields and one new error code in a patch release by the owner's choice.
 - `v0.3.0` has no tag or GitHub release.
 
 ## Model and dependency updates
