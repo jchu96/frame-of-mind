@@ -932,7 +932,7 @@ The speakers header and optional transcript JSON record the canonical tag as
   in the JSON and terminal summary. A nonpositive cue duration gets a one-second
   SRT end adjustment; JSON preserves original segment seconds.
 - The tool measures the whole first audio track once. It rechecks line-free stretches of at least
-  20 s with at least 10 s of measured sound, starting with the most measured sound. The note
+  20 s with at least 5 s of measured sound, starting with the most measured sound. The note
   before upload gives the request count and total audio duration. Each piece is at most 600 s.
   The budget allows `max(3, first-pass windows)` requests and one quarter of the recording duration.
 - The two JSON documents report `rechecks` and `belowCutoff` (count and total duration below

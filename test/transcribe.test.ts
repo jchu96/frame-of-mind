@@ -541,7 +541,7 @@ describe("transcript coverage", () => {
 
   it("reports eligibility at both thresholds and distinguishes an unavailable measurement", async () => {
     for (const [length, measured, below, asked] of [
-      [19, 10, 0, false], [20, 9, 1, false], [20, 10, 0, true], [20, undefined, 0, false],
+      [19, 10, 0, false], [20, 4, 1, false], [20, 5, 0, true], [20, undefined, 0, false],
     ] as const) {
       const f = await fixture(100);
       f.analyzer.transcribe.mockResolvedValueOnce([cue(length, 100, "tail")]).mockResolvedValueOnce([]);
