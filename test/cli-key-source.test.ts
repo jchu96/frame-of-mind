@@ -42,6 +42,7 @@ beforeAll(async () => {
   const split = join(build, "dist/job-invocation.js");
   const counter = [
     'if (process.env.FIXTURE_COUNT_DISPATCH) process.stderr.write("dispatch\\n");',
+    'if (process.env.FIXTURE_CLEAR_FLAGS) process.execArgv.length = 0;',
     'if (process.env.FIXTURE_CLEAR_LIVE_KEY) delete process.env.GEMINI_API_KEY;',
   ].join("\n");
   const original = readFileSync(split, "utf8");
@@ -90,13 +91,46 @@ it("classifies launches before job dispatch with a real folder assignment", () =
     expect(JSON.parse(result.out).error.code).toBe(bare ? "USAGE" : "KEY_MISSING");
     expect(result.err).toBe("");
   }
-  for (const options of [["--env-file=.env"], ["--require", "node:path"], ["--import", "node:path"]]) {
-    const result = run("node", ["--version"], {}, options);
-    expect(result).toEqual({code: 2, err: "Credential source unknown. Start with a clean launcher.\n", out: ""});
-  }
   const counters = {FIXTURE_COUNT_DISPATCH: "1"};
-  expect(run("node", start, counters, ["--require", "node:path"]).err, "dispatch before refusal").toBe("");
   expect(run("bare", start, counters, ["--preload", join(root, "offline.mjs")], entry).err, "bare job import").toBe("dispatch\n");
+  expect(existsSync(join(folder, "out", ".frameofmind-jobs"))).toBe(false);
+});
+
+it.each([
+  {label: "--require", flags: ["--require", "node:path"]},
+  {label: "NODE_OPTIONS require", flags: [], nodeOptions: "--require node:path"},
+  {label: "--import", flags: ["--import", "node:path"]},
+  {label: "-r", flags: ["-r", "node:path"]},
+  {label: "loader", flags: ["--experimental-loader", "data:text/javascript,export{}"]},
+])("Node $label matches plain Node for version, doctor and job start", ({label, flags, nodeOptions}) => {
+  writeFileSync(file, "GEMINI_API_KEY=synthetic-folder\n");
+  const env = {NODE_OPTIONS: nodeOptions, NODE_NO_WARNINGS: "1"};
+  for (const args of [["--version"], ["doctor", "--json"], start]) {
+    const plain = run("node", args);
+    const observed = run("node", args, env, flags);
+    expect(observed.code, label + " " + args[0] + " exit").toBe(plain.code);
+    expect(observed).toEqual(plain);
+  }
+});
+
+it.each(["--env-file", "--env-file-if-exists"])("Node %s reports unknown and refuses only job start", flag => {
+  writeFileSync(file, "GEMINI_API_KEY=synthetic-folder\n");
+  const options = [flag, ".env", "--import", join(root, "offline.mjs")];
+  const doctor = run("node", ["doctor", "--json"], {}, options);
+  expect(doctor.code, "env-file doctor exit").toBe(0);
+  const key = JSON.parse(doctor.out).key;
+  expect(key.source, "env-file key source").toBe("unknown");
+  expect(key.present).toBe(true);
+  expect(run("node", ["doctor"], {}, options).out.split("\n")).toContain("ok GEMINI_API_KEY (unknown: started with --env-file)");
+  expect(run("node", ["--version"], {}, options)).toEqual(run("node", ["--version"]));
+  const counters = {FIXTURE_COUNT_DISPATCH: "1", FIXTURE_CLEAR_FLAGS: "1"};
+  const job = run("node", start, counters, options);
+  expect(job.code, "bare Node job exit").toBe(2);
+  expect(JSON.parse(job.out).error.code).toBe("USAGE");
+  expect(job.err, "bare Node job import").toBe("dispatch\n");
+  expect(run("node", start.filter(arg => arg !== "--json"), {}, options)).toEqual({
+    code: 2, out: "", err: "Credential source unknown. Start with a clean launcher.\n",
+  });
   expect(existsSync(join(folder, "out", ".frameofmind-jobs"))).toBe(false);
 });
 

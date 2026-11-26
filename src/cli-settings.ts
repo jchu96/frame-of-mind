@@ -67,7 +67,9 @@ export function cliSettings() {
 }
 
 export function keyLabel(key: KeyReport) {
-  if (key.source === "unknown") return "unknown: started under Bun without --no-env-file";
+  if (key.source === "unknown") {
+    return process.versions.bun ? "unknown: started under Bun without --no-env-file" : "unknown: started with --env-file";
+  }
   const label = key.source === "dotenv" ? JSON.stringify(key.path)
     : key.source === "environment" ? "process environment" : "none";
   return key.state ? label + ", unavailable" : label;

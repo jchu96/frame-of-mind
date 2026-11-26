@@ -11,9 +11,14 @@ authorize a job or select a program to retrieve a key.
 ## Decision
 
 Capture the runtime, startup options, physical working directory and environment
-before dispatch. Under Node, refuse runtime env-file, import, require and loader
-options, including options passed through `NODE_OPTIONS`. A clean job start
-receives the inherited key only. Ordinary commands consult the launch environment
+before dispatch. Node preloads (`--require`, `-r`, `--import`) and loaders are
+operator input, whether passed on the command line or via `NODE_OPTIONS`. A
+working folder cannot set these launch options. Accept them as clean. Node’s
+`--env-file` and `--env-file-if-exists` can merge file values before capture.
+Both launch classes are accepted. With either env-file option, as with bare
+Bun, ordinary commands run with unknown key provenance and a job start
+returns `USAGE`. A clean job start receives the
+inherited key only. Ordinary commands consult the launch environment
 and then the literal folder file. A selected invalid source stops the lookup.
 Read application settings separately and keep the allowlists for child processes.
 

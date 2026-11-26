@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { captureLaunch, inheritedValue, refuseLaunch } from "./cli-launch.js";
+import { captureLaunch, inheritedValue, refuseBareJobStart } from "./cli-launch.js";
 import { jobInvocation } from "./job-invocation.js";
 import { useChildEnvironment } from "./lib/child-env.js";
 import type * as Cli from "./cli-main.js";
@@ -14,9 +14,9 @@ export let printAnalysisSummary: typeof Cli.printAnalysisSummary;
 const libraryImport = (globalThis as Record<symbol, unknown>)[CLI_LIBRARY_IMPORT] === true;
 const args = process.argv.slice(2);
 if (!libraryImport && launch.mode === "clean") useChildEnvironment(launch.environment);
-const job = launch.mode !== "refused" && !libraryImport && jobInvocation(args);
-if (launch.mode === "refused" || (launch.mode === "bare" && job && job.op === "start")) {
-  refuseLaunch(args);
+const job = !libraryImport && jobInvocation(args);
+if (launch.mode === "bare" && job && job.op === "start") {
+  refuseBareJobStart(args);
 } else if (job) {
   const { runJobCommand } = await import("./commands/jobs.js");
   await runJobCommand(job.family, job.op, process.argv.slice(4), {readKey: () => inheritedValue(launch.environment, "GEMINI_API_KEY")});

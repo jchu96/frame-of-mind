@@ -320,7 +320,7 @@ For ordinary CLI commands, the first selected source supplies the provider key.
 
 An empty or invalid assignment stops the lookup. Run `frameofmind doctor` to see the source without displaying the key. A clean job start accepts only an inherited key.
 
-The installed Node command and release bundle refuse Node’s runtime env-file, import, require and loader options, including options in `NODE_OPTIONS`. Bare Bun can load a folder’s file before the CLI starts. Ordinary commands still work, doctor reports the source as unknown, and job starts are refused. Use `bun --no-env-file` for a clean Bun launch.
+The installed Node command and release bundle accept preloads and loaders, including those in `NODE_OPTIONS`. Node’s `--env-file` and `--env-file-if-exists`, like bare Bun, can load a file before the CLI starts. Ordinary commands still work, doctor reports the key source as unknown, and job starts require a clean launch. For jobs, omit Node’s env-file options or use `bun --no-env-file`.
 
 Contributors run the fast/local pull-request gate for every change:
 

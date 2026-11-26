@@ -41,6 +41,11 @@ the folder file can supply `PATH` or desktop and locale settings that were
 unset. Media tools and openers receive those allowed settings. Use a clean
 launch when the origin of helper settings matters.
 
+Node preloads and loaders, including those set in `NODE_OPTIONS`, are clean
+launches. Node’s `--env-file` and `--env-file-if-exists` put the CLI in the same
+mode as bare Bun. Ordinary commands run, doctor reports unknown key provenance,
+and a job start requires restarting without the Node env-file option.
+
 Use `bun run web` for the
 Nuxt workspace. Some media and browser tests also require `ffmpeg`; provider
 smoke tests require explicit local credentials and are not part of CI.

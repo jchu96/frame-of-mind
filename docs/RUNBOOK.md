@@ -276,10 +276,11 @@ takes precedence over the literal assignment in the working folder’s `.env`.
 An empty or invalid assignment stops selection. Run `frameofmind doctor` to identify
 the selected source. Job start accepts only an inherited key on a clean launch.
 
-Node refuses runtime env-file, import, require and loader options, including those
-in `NODE_OPTIONS`. Bare Bun can merge folder settings before entry, so doctor reports
-unknown and job start is refused. Ordinary commands still work. Launch Bun with
-`--no-env-file` to preserve the distinction.
+Node preloads and loaders, including those in `NODE_OPTIONS`, work normally.
+Node’s `--env-file` and `--env-file-if-exists`, like bare Bun, allow a file to
+supply environment values before entry. Ordinary commands still run and doctor
+reports the key source as unknown. To start a job, omit Node’s env-file options
+or launch Bun with `--no-env-file`.
 
 Rules:
 

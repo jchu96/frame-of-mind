@@ -38,7 +38,12 @@ try {
   const selected = JSON.parse(run(["doctor", "--json"], 0)).key;
   assert.deepEqual(selected, {present: true, source: "dotenv", path: join(cwd, ".env")});
   assert.ok(run(["doctor"], 0).includes("ok GEMINI_API_KEY (" + JSON.stringify(selected.path) + ")\n"));
-  const refused = JSON.parse(run(["doctor", "--json"], 2, ["--env-file=.env"]));
+  const preloaded = JSON.parse(run(["doctor", "--json"], 0, ["--require", "node:path"]));
+  assert.deepEqual(preloaded.key, selected);
+  const bare = ["--env-file=.env"];
+  assert.deepEqual(JSON.parse(run(["doctor", "--json"], 0, bare)).key, {present: true, source: "unknown"});
+  assert.match(run(["doctor"], 0, bare), /^ok GEMINI_API_KEY \(unknown: started with --env-file\)$/m);
+  const refused = JSON.parse(run(["analyze", "start", "clip.mp4", "--json"], 2, bare));
   assert.deepEqual(refused, {schemaVersion: 1, error: {code: "USAGE", message: "Invalid command arguments."}});
   console.log(`RELEASE_SMOKE version=${version} status=PASS`);
 } finally {

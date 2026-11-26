@@ -137,11 +137,11 @@ the literal assignment in the working folder’s `.env`. An empty or invalid sel
 value ends the lookup. The CLI reads the file as application settings without expansion.
 Use `frameofmind doctor` to see the source or the absolute file path.
 
-Node refuses runtime env-file, import, require and loader options, including those
-in `NODE_OPTIONS`. With bare Bun, doctor reports unknown because the runtime may
-already have loaded the folder file. Ordinary commands can use the key there.
-Job start requires a clean launch and an inherited key. Use `bun --no-env-file`
-or the installed Node command.
+Node accepts operator-supplied preloads and loaders, including those in
+`NODE_OPTIONS`. With Node’s `--env-file` or `--env-file-if-exists`, or with bare
+Bun, ordinary commands can use the key and doctor reports its source as unknown.
+Job start requires an inherited key and a clean launch. Omit Node’s env-file
+options or use `bun --no-env-file`.
 
 To create a folder settings file:
 

@@ -8,13 +8,14 @@ const launch = (environment: NodeJS.ProcessEnv = {}, mode: "clean" | "bare" = "c
   ({environment: Object.freeze(environment), cwd, mode});
 
 it("classifies runtime options without using credential bytes or application arguments", () => {
-  for (const flag of ["--env-file=.env", "--env-file-if-exists=.env", "--require", "-r", "-rfixture", "--import", "--loader", "--experimental_loader"]) {
-    expect(classifyLaunch(false, [flag], ""), flag).toBe("refused");
-    expect(classifyLaunch(false, [], '"' + flag + '"'), flag).toBe("refused");
+  for (const flag of ["--env-file", "--env-file=.env", "--env-file-if-exists", "--env-file-if-exists=.env"]) {
+    expect(classifyLaunch(false, [flag]), flag).toBe("bare");
   }
-  expect(classifyLaunch(false, ["--enable-source-maps"], "")).toBe("clean");
-  expect(classifyLaunch(true, ["--no-env-file", "--preload", "fixture"], "")).toBe("clean");
-  expect(classifyLaunch(true, [], "--no-env-file")).toBe("bare");
+  for (const flag of ["--require", "-r", "-rfixture", "--import", "--loader", "--experimental_loader", "--enable-source-maps"]) {
+    expect(classifyLaunch(false, [flag]), flag).toBe("clean");
+  }
+  expect(classifyLaunch(true, ["--no-env-file", "--preload", "fixture"])).toBe("clean");
+  expect(classifyLaunch(true, [])).toBe("bare");
 });
 
 it("reads inherited names with Windows casing while preserving snapshot spelling", () => {
