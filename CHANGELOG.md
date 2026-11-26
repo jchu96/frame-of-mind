@@ -5,6 +5,20 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-11-26
+
+**If you ran `transcribe` or `analyze` on 0.6.4: its transcript recheck could add lines that are not in the recording.** On a real two-hour recording it merged invented speech into near-silent stretches and reported `complete`. In a transcript made with 0.6.4, check every line marked `recovered: true` in the transcript JSON against the recording, or make the transcript again with this release. This release turns the recheck off.
+
+### Changed
+
+- The transcript recheck is off by default. `transcribe` asks the model again about quiet stretches only with the new flag `--recheck`, which is experimental and can add lines that are not in the recording. `analyze` never asks again for the transcript it derives.
+- Without `--recheck`, no second request is made and `outcome`, `rechecks`, `belowCutoff`, `recovered` and the recheck notes and warnings are not written. Transcript output is as in 0.6.3, plus the quiet-line mark below. With `--recheck`, behaviour and fields are as in 0.6.4.
+- A build that is not a release bundle prints its version with `+source`, for example `0.6.5+source`, in `--version`, `doctor`, the `version` document, run manifests (`toolVersion`), the local MCP server and local Studio. A release file prints the plain version, as before, and so does hosted Studio. A linked checkout runs the files in `dist/`: rebuild after every pull, or it keeps running the old code under the new number.
+
+### Added
+
+- Quiet-line mark. A transcript line whose own span holds no measured sound at all carries `quiet: true` in the transcript JSON. The `transcribe --json` success document and the transcript JSON carry `quietLines`, the number marked, whenever the local sound measure ran. When the number is above zero, `transcribe` prints `note: <n> line(s) sit where no sound was measured.` and `analyze` records the same sentence as a run warning. No request is added. The mark proves nothing: it catches a line written into true silence, and a line invented in a room with any noise is not marked. Optional on contract version 1.
+
 ## [0.6.4] - 2026-11-26
 
 A transcription reply can stop early and leave speech out of a transcript that otherwise looks whole. From this release the tool asks again about quiet-looking stretches before the transcript is written. Everything added is optional on contract version 1.
