@@ -2,7 +2,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildCliFixture } from "./helpers/cli-build.js";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "cli-source-")));
@@ -141,18 +141,25 @@ it.each([["--help"], ["--version"], ["doctor", "--json"], ["key", "set"], ["anal
     expect(result.err, "consumer credential read during inspection").not.toContain("key read\n");
   });
 
-it.each(["node", "clean"] as const)("folder data cannot select executables on clean launches (%s)", runtime => {
-  const marker = join(folder, "tool-started");
-  for (const name of ["ffmpeg", "ffprobe", "reader"]) {
-    writeFileSync(join(folder, name), '#!/bin/sh\n: > tool-started\n', {mode: 0o700});
-  }
-  writeFileSync(file, ['GEMINI_API_KEY=folder-fixture', 'PATH=' + folder,
-    'FRAME_OF_MIND_KEY_COMMAND=["' + join(folder, "reader") + '"]'].join("\n"));
-  for (const args of [["--help"], ["doctor", "--json"], ["analyze", "--source", "none", "--video", "absent.mp4"], ["transcribe", "absent.mp4"]]) {
+const ordinaryCommands = [
+  ["--help"], ["doctor", "--json"], ["analyze", "--source", "none", "--video", "absent.mp4"], ["transcribe", "absent.mp4"],
+];
+describe.each(["node", "clean"] as const)("folder data cannot select executables on clean launches (%s)", runtime => {
+  it.each(ordinaryCommands.map(args => ({args, command: args[0]})))("$command", ({args}) => {
+    const marker = join(folder, "tool-started");
+    for (const name of ["ffmpeg", "ffprobe", "reader"]) {
+      writeFileSync(join(folder, name), '#!/bin/sh\n: > tool-started\n', {mode: 0o700});
+    }
+    writeFileSync(file, ['GEMINI_API_KEY=folder-fixture', 'PATH=' + folder,
+      'FRAME_OF_MIND_KEY_COMMAND=["' + join(folder, "reader") + '"]'].join("\n"));
     const result = run(runtime, args, {PATH: undefined});
     expect(existsSync(marker), runtime + " " + args[0] + " ran a folder executable").toBe(false);
     if (args[0] === "doctor") expect(JSON.parse(result.out).key.source).toBe("dotenv");
-  }
+  });
+});
+
+it("bare Bun reports a folder assignment as unknown", () => {
+  writeFileSync(file, "GEMINI_API_KEY=folder-fixture\n");
   expect(JSON.parse(run("bare", ["doctor", "--json"]).out).key).toEqual({present: true, source: "unknown"});
 });
 
