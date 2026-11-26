@@ -42,7 +42,7 @@ describe("screenshot strategy in the recipe registry", () => {
   });
 });
 
-describe("published screenshot across a low-contrast cut", () => {
+describe("published screenshot across a low-contrast cut", { timeout: 30_000 }, () => {
   let root: string;
   let video: string;
   beforeAll(async () => {

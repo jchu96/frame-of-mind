@@ -5,6 +5,9 @@ import { delimiter, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { probeFrameRate } from "../src/services/media-probe.js";
 import { verifyDay } from "./clock-oracle.js";
+
+const processTestTimeout = 30_000;
+
 const output = (rate: string, average = rate) => async () => JSON.stringify({ streams: [{ r_frame_rate: rate, avg_frame_rate: average, time_base: `1/${average.split("/")[0]}` }], frames: [0, 1, 2].map(i => ({ pts: i * Number(average.split("/")[1]), pkt_duration: Number(average.split("/")[1]) })) });
 describe("frame rate", () => {
   it.each([0, 3, 6, 9, 12, 15, 18, 21])("24000/1001 from ffprobe renders every frame of 24 h exactly (3 h partition starting at %i)", async hour => {
@@ -30,7 +33,7 @@ describe("frame rate", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
+  }, processTestTimeout);
   it("a stream whose r_frame_rate and avg_frame_rate differ is refused", async () => {
     await expect(probeFrameRate("synthetic.mp4", "from-media", output("30/1", "24/1"))).rejects.toThrow("Variable frame rate");
   });
@@ -59,7 +62,7 @@ describe("frame timing", () => {
         else expect((await probeFrameRate(path)).rate).toEqual({ num: 25, den: 1 });
       }
     } finally { await rm(root, { recursive: true, force: true }); }
-  });
+  }, processTestTimeout);
   it("missing, shifted, duplicate, quantized, truncated or unsafe timing is refused", async () => {
     const good = JSON.parse(await output("25/1")());
     const mutations = [

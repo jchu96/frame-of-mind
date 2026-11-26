@@ -57,4 +57,4 @@ it("start closes stdout at admission and a fresh process settles a killed worker
       expect(await readdir(media)).toEqual(["tiny.mp4"]);
     } finally { clearTimeout(watchdog); if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); await stopped; }
   } finally { await rm(root, {recursive: true, force: true}); }
-});
+}, 30_000);

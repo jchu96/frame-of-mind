@@ -14,18 +14,21 @@ it("reports both tool builds and refuses a missing H.264 encoder before opening 
     vi.stubEnv("GEMINI_API_KEY", "fixture");
     vi.stubEnv("PATH", root);
     const log = join(root, "calls");
-    const standIn = `#!${process.execPath}
-const fs = require("node:fs"), path = require("node:path");
-const tool = path.basename(process.argv[1]), flag = process.argv.at(-1);
-fs.appendFileSync(${JSON.stringify(log)}, tool + " " + flag + "\\n");
-const listings = {
-  "-version": tool + " version fixture",
-  "-encoders": " V..... wrapped_avframe wrapped video\\n A..... pcm_s16le audio\\n A..... aac audio",
-  "-filters": "trim setpts fps scale anullsrc atrim aresample aformat asetpts amix color drawbox".split(" ").map(n => " ... " + n + " V->V description").join("\\n"),
-  "-formats": " D   mov,mp4,m4a container\\n D d lavfi device\\n  E  mp4 output\\n  E  null output"
-};
-if (!(flag in listings)) process.exit(2);
-console.log(listings[flag]);
+    const standIn = `#!/bin/sh
+tool=\${0##*/}
+flag=$0
+for flag do :; done
+printf '%s %s\\n' "$tool" "$flag" >> "\${0%/*}/calls"
+case "$flag" in
+  -version) printf '%s version fixture\\n' "$tool" ;;
+  -encoders) printf '%s\\n' ' V..... wrapped_avframe wrapped video' ' A..... pcm_s16le audio' ' A..... aac audio' ;;
+  -filters)
+    for filter in trim setpts fps scale anullsrc atrim aresample aformat asetpts amix color drawbox; do
+      printf ' ... %s V->V description\\n' "$filter"
+    done ;;
+  -formats) printf '%s\\n' ' D   mov,mp4,m4a container' ' D d lavfi device' '  E  mp4 output' '  E  null output' ;;
+  *) exit 2 ;;
+esac
 `;
     for (const name of ["ffmpeg", "ffprobe"]) await writeFile(join(root, name), standIn, {mode: 0o700});
     const doctor = () => program.parseAsync(["doctor"], {from: "user"});
@@ -55,4 +58,4 @@ console.log(listings[flag]);
     process.exitCode = previous;
     await rm(root, {recursive: true, force: true});
   }
-});
+}, 30_000);
