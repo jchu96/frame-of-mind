@@ -36,7 +36,12 @@ Migrate those hooks or unset the repository setting explicitly before retrying.
 
 Run the CLI in development mode with `bun run dev`. Both `dev` and `start` pass
 `--no-env-file` so Bun leaves the folder’s dotenv assignments for the CLI to read
-as application settings. Use `bun run web` for the
+as application settings. Under bare Bun 1.4.4, an inherited `PATH` wins, but
+the folder file can supply `PATH` or desktop and locale settings that were
+unset. Media tools and openers receive those allowed settings. Use a clean
+launch when the origin of helper settings matters.
+
+Use `bun run web` for the
 Nuxt workspace. Some media and browser tests also require `ffmpeg`; provider
 smoke tests require explicit local credentials and are not part of CI.
 

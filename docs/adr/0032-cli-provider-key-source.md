@@ -39,6 +39,15 @@ Bare Bun therefore reports unknown for ordinary commands and refuses job start.
 It cannot authorize a key command. Comparing the key with the file would give
 the same answer for a legitimate equal-valued export and a folder assignment.
 
+The clean-input guarantee for helper processes applies to clean launches. A
+Bun 1.4.4 probe used different, empty operator and folder directories as search
+paths. Bare Bun preserved an inherited `PATH`, including an explicitly empty
+one. When the launcher omitted `PATH`, Bun took the folder assignment and
+both media and browser helpers received it. Bun also filled an unset locale
+variable from the folder. With `--no-env-file`, the folder supplied neither.
+Bare Bun keeps its existing helper environment allowlists and custom media paths.
+The provider key variable is excluded from helpers in every launch class.
+
 Under Bun, a folder that supplies a preload runs its own code before the tool.
 It can change the startup options or set variables before the CLI sees them.
 In a folder you do not trust, run the installed Node command or the release file,

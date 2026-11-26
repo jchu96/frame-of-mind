@@ -13,7 +13,7 @@ export let printAnalysisSummary: typeof Cli.printAnalysisSummary;
 
 const libraryImport = (globalThis as Record<symbol, unknown>)[CLI_LIBRARY_IMPORT] === true;
 const args = process.argv.slice(2);
-if (!libraryImport) useChildEnvironment(launch.environment);
+if (!libraryImport && launch.mode === "clean") useChildEnvironment(launch.environment);
 const job = launch.mode !== "refused" && !libraryImport && jobInvocation(args);
 if (launch.mode === "refused" || (launch.mode === "bare" && job && job.op === "start")) {
   refuseLaunch(args);
