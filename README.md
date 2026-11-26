@@ -727,6 +727,11 @@ can differ across requests. Both JSON documents list `rechecks` and `belowCutoff
 `complete` when all selected stretches received valid replies, or `unchecked` when measurement,
 a request or the budget prevented a check. Warnings and the speakers header name unchecked time.
 
+A transcript line whose own span holds no measured sound at all is marked `quiet: true` in the
+transcript JSON, and both JSON documents carry `quietLines`, the number marked. A note on stderr
+gives the count when it is above zero. The mark proves nothing: it catches a line written into true
+silence, and a line invented in a room with any noise is not marked. The outcome does not change.
+
 Before uploading, `analyze` and `transcribe` print `retention: provider` or `retention: run` on stderr.
 Their JSON success documents include `retention` and, when measured, `tokens` with `promptTokens`, `outputTokens` and `totalTokens`.
 The analyze manifest groups measured counts by pass in `tokenUsage`. The transcript JSON lists each window’s owned start second in `windowStarts`.

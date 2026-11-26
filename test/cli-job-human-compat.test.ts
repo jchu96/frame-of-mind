@@ -67,6 +67,10 @@ it("human analyze and transcribe preserve the base bytes, output streams, exits,
     // The two new stderr receipts are additive to the original stream oracle.
     expect(streams[1]!.filter(line => line.startsWith("retention:"))).toEqual(["retention: provider\n", "retention: run\n"]);
     streams[1] = streams[1]!.filter(line => !line.startsWith("retention:"));
+    // The fixture's sound track is silent, so its transcript line is noted as quiet.
+    const quiet = (line: string) => / line\(s\) sit where no sound was measured\.\n$/.test(line);
+    expect(streams[1]!.filter(quiet)).toEqual(["note: 1 line(s) sit where no sound was measured.\n"]);
+    streams[1] = streams[1]!.filter(line => !quiet(line));
     // File bytes are hashed verbatim. Only the platform-specific temporary
     // directory in displayed paths is substituted for the base oracle.
     const evidence = {files: Object.fromEntries(Object.entries(files).sort()), wire, exits,
