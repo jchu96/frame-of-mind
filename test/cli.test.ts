@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_GEMINI_MODEL } from "../src/adapters/gemini-model.js";
-import { buildAnalyzeOptions } from "../src/cli.js";
+import { buildAnalyzeOptions } from "../src/cli-main.js";
 
 const baseFlags = {
   source: "none",
@@ -122,7 +122,7 @@ describe("retention validation", () => {
 
 describe("summary", () => {
   it("the first summary line names interrogated, indexed and dropped counts", async () => {
-    const { printAnalysisSummary } = await import("../src/cli.js");
+    const { printAnalysisSummary } = await import("../src/cli-main.js");
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
       printAnalysisSummary({

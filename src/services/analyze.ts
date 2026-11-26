@@ -1,3 +1,4 @@
+import { applicationSetting } from "../lib/application-settings.js";
 import { ContractError, faultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
 import { VERSION } from "../version.js";
@@ -107,7 +108,7 @@ const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
 const DEFAULT_MAX_VIDEO_SECONDS = 7260;
 
 function resolveMaxVideoSeconds(): number {
-  const value = process.env.FRAME_OF_MIND_MAX_VIDEO_SECONDS;
+  const value = applicationSetting("FRAME_OF_MIND_MAX_VIDEO_SECONDS");
   if (value === undefined) return DEFAULT_MAX_VIDEO_SECONDS;
   const seconds = Number(value);
   if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(seconds)) {
@@ -1203,7 +1204,7 @@ export class AnalysisOrchestrator {
             // choice; only env-absent default-model runs report default-flash.
             reason: options.model
               ? "operator-selected" as const
-              : process.env.GEMINI_MODEL || analyzer.model !== DEFAULT_GEMINI_MODEL
+              : applicationSetting("GEMINI_MODEL") || analyzer.model !== DEFAULT_GEMINI_MODEL
                 ? "environment-or-dependency-override" as const
                 : "default-flash" as const,
           },
@@ -1476,19 +1477,19 @@ export function createDefaultAnalysisOrchestrator(): AnalysisOrchestrator {
   return new AnalysisOrchestrator({
     createContextSource: defaultCreateContextSource,
     createAnalyzer: (apiKey, analyzeOptions) =>
-      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model, {}, analyzeOptions.thinkingLevel),
+      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL), {}, analyzeOptions.thinkingLevel),
   });
 }
 
 function defaultCreateContextSource(options: ContextEnrichedAnalyzeOptions): MeetingContextSource {
   const interactive = options.interactiveProviderAuth ?? true;
   if (options.contextProvider === "bluedot") {
-    return new BluedotClient(undefined, interactive, interactive);
+    return new BluedotClient(applicationSetting("BLUEDOT_MCP_URL"), interactive, interactive);
   }
   if (options.contextProvider === "granola") {
     return options.granolaTransport === "api"
-      ? new GranolaApiClient(options.granolaApiKey)
-      : new GranolaClient(undefined, interactive, interactive);
+      ? new GranolaApiClient(options.granolaApiKey ?? applicationSetting("GRANOLA_API_KEY"))
+      : new GranolaClient(applicationSetting("GRANOLA_MCP_URL"), interactive, interactive);
   }
   if (!options.contextFile) throw new Error("--context-file is required when --source file is selected.");
   return new FileContextSource(options.contextFile);

@@ -279,7 +279,16 @@ frameofmind key set
 
 The prompt hides the key and atomically updates `GEMINI_API_KEY` in `./.env`
 with mode 0600. Use `--env-file <path>` to select another dotenv file.
-Non-TTY input is refused. Existing environment-based key resolution still works.
+Non-TTY input is refused. For ordinary commands, the inherited `GEMINI_API_KEY`
+takes precedence over the literal assignment in the working folder’s `.env`.
+An empty or invalid assignment stops selection. Run `frameofmind doctor` to identify
+the selected source. Job start accepts only an inherited key on a clean launch.
+
+Node preloads and loaders, including those in `NODE_OPTIONS`, work normally.
+Node’s `--env-file` and `--env-file-if-exists`, like bare Bun, allow a file to
+supply environment values before entry. Ordinary commands still run and doctor
+reports the key source as unknown. To start a job, omit Node’s env-file options
+or launch Bun with `--no-env-file`.
 
 Rules:
 
@@ -315,7 +324,8 @@ listed separately. Doctor also checks the Node version and Gemini key.
 
 ```text
 ok Node >=22
-ok GEMINI_API_KEY
+ok GEMINI_API_KEY (process environment)
+Lower-priority sources were skipped.
 -- GRANOLA_API_KEY (optional)
 ok ffmpeg (optional: screenshots, derived transcript, speech snapping)
 ok ffprobe (optional: duration probe, media helpers)
@@ -1973,7 +1983,7 @@ Removing the clone does not revoke provider OAuth or Gemini keys.
 5. In the agent host's stdio configuration set `BUN_RUNTIME_TRANSPILER_CACHE_PATH`
    to the string `0` in the server environment. Bun reads this setting before
    running JavaScript. It prevents compiled code from being written to the user's
-   cache directory. Set the command to `bun` and use this argument array. The experimental MCP server is Bun-only. Supply the absolute path to the built checkout’s `dist/cli.js`. Use `--no-env-file` to disable Bun's automatic dotenv loading.
+   cache directory. Set the command to `bun` and use this argument array. The experimental MCP server is Bun-only. Supply the absolute path to the built checkout’s `dist/cli.js`. Use `--no-env-file` so the folder’s dotenv data cannot enter the MCP server’s launch environment.
 
    ```json
    ["--no-env-file", "/opt/frameofmind/dist/cli.js", "mcp", "--database", "/data/review/reviewed.sqlite"]

@@ -75,7 +75,7 @@ it("runs the release smoke from an empty directory and checks the embedded versi
   ]);
   expect(result.stdout).toContain(`RELEASE_SMOKE version=${version} status=PASS`);
   await expect(build(second, "invalid-tag")).rejects.toThrow("tag must equal");
-});
+}, 20_000);
 
 it("publishes a checksum for every payload exactly once", async () => {
   const cwd = join(first, "release");

@@ -1,4 +1,6 @@
+import { applicationSetting } from "./lib/application-settings.js";
 import "./instrument.js";
+import { cliSettings, keyLabel, keyNextStep } from "./cli-settings.js";
 import { inspectScratch } from "./adapters/scratch.js";
 import { mediaCapabilityReport, requireMedia } from "./services/media-capabilities.js";
 import { capabilities, CliError, writeDocument } from "./cli-contract.js";
@@ -7,7 +9,6 @@ import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
-import { config as loadDotenv } from "dotenv";
 import { z } from "zod";
 import {
   analyzeMeeting,
@@ -55,7 +56,6 @@ import { registerMedia } from "./commands/media.js";
 import { resolveTranscriptLanguage } from "./domain/transcript-language.js";
 import { registerTranscribe, transcriptionHelp } from "./commands/transcribe.js";
 
-loadDotenv({ quiet: true });
 
 export const program = new Command()
   .name("frameofmind")
@@ -112,7 +112,7 @@ program
   .argument("<provider>", "bluedot or granola")
   .action(async (provider: string) => {
     const source = parseProvider(provider, false);
-    const client = source === "bluedot" ? new BluedotClient() : new GranolaClient();
+    const client = source === "bluedot" ? new BluedotClient(applicationSetting("BLUEDOT_MCP_URL")) : new GranolaClient(applicationSetting("GRANOLA_MCP_URL"));
     await client.connect();
     await client.close();
     process.stdout.write(`${capitalize(source)} MCP authorization is ready.\n`);
@@ -137,10 +137,11 @@ program
       if (!rows.length) process.stdout.write("No matching scratch entries.\n");
       return;
     }
+    const key = cliSettings().keyReport();
     const prerequisites = {
       node: Number(process.versions.node.split(".")[0]) >= 22,
-      geminiKey: Boolean(process.env.GEMINI_API_KEY),
-      granolaKey: Boolean(process.env.GRANOLA_API_KEY),
+      geminiKey: key.present,
+      granolaKey: Boolean(applicationSetting("GRANOLA_API_KEY")),
     };
     const media = await mediaCapabilityReport();
     if (flags.json) {
@@ -157,7 +158,7 @@ program
       writeDocument({
         ok: checks.every(check => !check.required || check.ok), checks, commands: media.commands.map(({ command: name, capabilities }) => ({ name, capabilities })), leftovers,
         roots: { mode: "none", file: null },
-        key: { present: prerequisites.geminiKey }, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
+        key, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
         commit: RELEASE_COMMIT,
         cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
       });
@@ -166,17 +167,22 @@ program
     if (!flags.scratch && (!prerequisites.node || !prerequisites.geminiKey)) process.exitCode = 1;
     const checks = [
       ["Node >=22", prerequisites.node],
-      ["GEMINI_API_KEY", prerequisites.geminiKey],
+      [`GEMINI_API_KEY (${keyLabel(key)})`, prerequisites.geminiKey],
       ["GRANOLA_API_KEY (optional)", prerequisites.granolaKey],
       ["ffmpeg (optional: screenshots, derived transcript, speech snapping)", media.tools.ffmpeg.version],
       ["ffprobe (optional: duration probe, media helpers)", media.tools.ffprobe.version],
     ] as const;
-    for (const [name, ready] of checks) process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
+    for (const [name, ready] of checks) {
+      process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
+      if (name.startsWith("GEMINI_API_KEY ") && key.lowerSourcesSkipped) {
+        process.stdout.write("Lower-priority sources were skipped.\n");
+      }
+    }
     process.stdout.write(
-      `Bluedot MCP: ${redactUrlForDisplay(process.env.BLUEDOT_MCP_URL || DEFAULT_BLUEDOT_MCP_URL)}\n`,
+      `Bluedot MCP: ${redactUrlForDisplay(applicationSetting("BLUEDOT_MCP_URL") || DEFAULT_BLUEDOT_MCP_URL)}\n`,
     );
     process.stdout.write(
-      `Granola MCP: ${redactUrlForDisplay(process.env.GRANOLA_MCP_URL || DEFAULT_GRANOLA_MCP_URL)}\n`,
+      `Granola MCP: ${redactUrlForDisplay(applicationSetting("GRANOLA_MCP_URL") || DEFAULT_GRANOLA_MCP_URL)}\n`,
     );
     process.stdout.write(
       `Telemetry: ${isCliTelemetryEnabled() ? "on (Sentry)" : "off"}\n`,
@@ -191,6 +197,8 @@ program
       const result = absent.length ? "Missing " + absent.join(", ") : "Ready";
       process.stdout.write(`${command} needs ${capabilities.map(row => row.name).join(", ")}. ${result}.\n`);
     }
+    const next = keyNextStep(key);
+    if (next) process.stdout.write(next + "\n");
   });
 
 program
@@ -229,10 +237,11 @@ program.command("calibrate")
   .option("--model <id>", "Gemini model ID")
   .option("--json", "Print the model clock measurement as JSON")
   .action(async (flags: { model?: string; json?: boolean }) => {
-    if (!process.env.GEMINI_API_KEY?.trim()) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before calibration.");
+    const apiKey = cliSettings().providerKey();
+    if (!apiKey) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before calibration.");
     if (flags.model !== undefined && !geminiModelSchema.safeParse(flags.model).success) throw new CliError("USAGE", "Invalid Gemini model ID.");
     await requireMedia("calibrate");
-    const analyzer = new GeminiVideoAnalyzer(process.env.GEMINI_API_KEY, flags.model);
+    const analyzer = new GeminiVideoAnalyzer(apiKey, flags.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL));
     const result = await calibrateClipClock(analyzer, { force: true, reportFailure: flags.json });
     const tokens = analyzer.takeUsage()?.totalTokens ?? null;
     if (flags.json) writeDocument(result);
@@ -287,7 +296,7 @@ program
       let failureFolder: string | undefined;
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
-        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, process.env.GEMINI_API_KEY);
+        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, cliSettings().providerKey());
         process.stderr.write(`retention: ${analyzeOptions.retention}\n`);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
@@ -315,7 +324,7 @@ program
             // custom recipe IDs to the closed "custom" bucket (ADR 0022 —
             // operator-authored strings never leave the process).
             const resolvedModel = analyzeOptions.model
-              ?? process.env.GEMINI_MODEL
+              ?? applicationSetting("GEMINI_MODEL")
               ?? DEFAULT_GEMINI_MODEL;
             const builtInRecipe = listBuiltInRecipes()
               .some((recipe) => recipe.id === analyzeOptions!.recipe.id);
@@ -441,7 +450,7 @@ export async function buildAnalyzeOptions(
   const settings = snapSettings(integer(flags.snapGapMs), integer(flags.snapWindowMs));
   const transcriptLanguage = resolveTranscriptLanguage(flags.transcriptLanguage, flags.derivedTranscript);
   if (!apiKey) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before analysis.");
-  const retention = resolveRetention(flags, process.env.FRAME_OF_MIND_UPLOAD_RETENTION);
+  const retention = resolveRetention(flags, applicationSetting("FRAME_OF_MIND_UPLOAD_RETENTION"));
   const runNotes = await loadRunNotes(flags.note);
   const labelResult = flags.label === undefined ? undefined : runLabelSchema.safeParse(flags.label.trim());
   if (labelResult && !labelResult.success) {
@@ -495,7 +504,7 @@ export async function buildAnalyzeOptions(
   }
   const detailConcurrency = parseDetailConcurrency(
     flags.concurrency,
-    process.env.FRAME_OF_MIND_DETAIL_CONCURRENCY,
+    applicationSetting("FRAME_OF_MIND_DETAIL_CONCURRENCY"),
   );
   if (flags.remoteFile) {
     if (!flags.video) {

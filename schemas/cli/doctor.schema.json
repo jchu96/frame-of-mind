@@ -73,7 +73,16 @@
           "required": ["kind", "path", "sizeBytes", "ageMs", "state", "removed", "reason"]
         }
       },
-      "key": {"type": "object", "properties": {"present": {"type": "boolean"}}, "required": ["present"]},
+      "key": {
+        "type": "object", "required": ["present"],
+        "properties": {
+          "present": {"type": "boolean"},
+          "source": {"enum": ["environment", "dotenv", "none", "unknown"]},
+          "path": {"type": "string"},
+          "state": {"const": "unavailable"},
+          "lowerSourcesSkipped": {"const": true}
+        }
+      },
       "artifactRoot": {"type": "string"},
       "toolVersion": {"type": "string"},
       "commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},

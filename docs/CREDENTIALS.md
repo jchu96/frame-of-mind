@@ -132,7 +132,18 @@ Retrying does not fix depleted billing. Correct the project/quota state first.
 
 ### Private local `.env`
 
-Frame of Mind quietly loads `.env` from the current working directory:
+For ordinary CLI commands, an inherited `GEMINI_API_KEY` takes precedence over
+the literal assignment in the working folder’s `.env`. An empty or invalid selected
+value ends the lookup. The CLI reads the file as application settings without expansion.
+Use `frameofmind doctor` to see the source or the absolute file path.
+
+Node accepts operator-supplied preloads and loaders, including those in
+`NODE_OPTIONS`. With Node’s `--env-file` or `--env-file-if-exists`, or with bare
+Bun, ordinary commands can use the key and doctor reports its source as unknown.
+Job start requires an inherited key and a clean launch. Omit Node’s env-file
+options or use `bun --no-env-file`.
+
+To create a folder settings file:
 
 ```bash
 cp .env.example .env
@@ -248,7 +259,8 @@ Expected:
 
 ```text
 ok Node >=22
-ok GEMINI_API_KEY
+ok GEMINI_API_KEY (process environment)
+Lower-priority sources were skipped.
 ```
 
 `doctor` checks presence, not value, billing, restrictions, or quota. A bounded

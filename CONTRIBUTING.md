@@ -34,7 +34,19 @@ bun run hooks:install
 The hook installer refuses to replace a different existing `core.hooksPath`.
 Migrate those hooks or unset the repository setting explicitly before retrying.
 
-Run the CLI in development mode with `bun run dev`. Use `bun run web` for the
+Run the CLI in development mode with `bun run dev`. Both `dev` and `start` pass
+`--no-env-file` so Bun leaves the folder’s dotenv assignments for the CLI to read
+as application settings. Under bare Bun 1.4.4, an inherited `PATH` wins, but
+the folder file can supply `PATH` or desktop and locale settings that were
+unset. Media tools and openers receive those allowed settings. Use a clean
+launch when the origin of helper settings matters.
+
+Node preloads and loaders, including those set in `NODE_OPTIONS`, are clean
+launches. Node’s `--env-file` and `--env-file-if-exists` put the CLI in the same
+mode as bare Bun. Ordinary commands run, doctor reports unknown key provenance,
+and a job start requires restarting without the Node env-file option.
+
+Use `bun run web` for the
 Nuxt workspace. Some media and browser tests also require `ffmpeg`; provider
 smoke tests require explicit local credentials and are not part of CI.
 

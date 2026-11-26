@@ -2029,7 +2029,7 @@ describe("retention", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   it("with no flag or env the upload is not deleted and remoteFile.deleted is false", async () => {
-    const { buildAnalyzeOptions, printAnalysisSummary } = await import("../src/cli.js");
+    const { buildAnalyzeOptions, printAnalysisSummary } = await import("../src/cli-main.js");
     vi.stubEnv("FRAME_OF_MIND_UPLOAD_RETENTION", undefined);
     const fixture = await createFixture();
     const options = await buildAnalyzeOptions(undefined, {
@@ -2094,7 +2094,7 @@ describe("best-N selection", () => {
     }
   });
   it("--label is recorded in the manifest, headed in both reports, printed, and never sent to the model", async () => {
-    const { buildAnalyzeOptions, printAnalysisSummary } = await import("../src/cli.js");
+    const { buildAnalyzeOptions, printAnalysisSummary } = await import("../src/cli-main.js");
     const { runManifestV3Schema } = await import("../src/domain/schemas.js");
     const fixture = await createFixture();
     const flags = { source: "none", granolaTransport: "mcp", recipe: "teaching-points", depth: "standard", video: fixture.options.video, output: fixture.outputRoot, maxMoments: "all", screenshots: false, derivedTranscript: false };
@@ -2126,7 +2126,7 @@ describe("best-N selection", () => {
   });
 
   it("--max-moments all interrogates every indexed moment without a truncation warning", async () => {
-    const { buildAnalyzeOptions } = await import("../src/cli.js"); const fixture = await createFixture();
+    const { buildAnalyzeOptions } = await import("../src/cli-main.js"); const fixture = await createFixture();
     const options = await buildAnalyzeOptions(undefined, { source: "none", granolaTransport: "mcp", recipe: "requirements", depth: "standard", video: fixture.options.video, output: fixture.outputRoot, maxMoments: "all", screenshots: false, derivedTranscript: false }, "synthetic-key");
     const moments = Array.from({ length: 57 }, (_, i) => ({ ...indexResult().moments[0]!, start: `00:00:${String(i).padStart(2, "0")}`, end: `00:00:${String(i+1).padStart(2, "0")}` }));
     fixture.analyzer.index.mockResolvedValue({ ...indexResult(), moments });
@@ -2439,7 +2439,7 @@ describe("clip guard", () => {
   it("a clean clip run with out-of-range candidates reports complete with outOfRange 36", async () => {
     const f = await clipFixture(); const result = await f.orchestrator.analyze(f.options);
     expect(result.outcome.status).toBe("complete"); expect(result.outcome.failures).toEqual([]); expect(result.outcome.candidates.outOfRange).toBe(36);
-    const { printAnalysisSummary } = await import("../src/cli.js"); const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const { printAnalysisSummary } = await import("../src/cli-main.js"); const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try { printAnalysisSummary(result); expect(String(output.mock.calls[0]![0])).toContain("36 out of range"); } finally { output.mockRestore(); }
   });
   it("an unknown duration drops no candidate and says the guard did not run", async () => {
@@ -2827,7 +2827,7 @@ describe("consumer run-file contracts", () => {
     // Isolate the artifact root, retaining every consumer-supplied option.
     argv.push("--output", f.outputRoot);
     const service = await import("../src/services/analyze.js");
-    const {program} = await import("../src/cli.js");
+    const {program} = await import("../src/cli-main.js");
     const invoke = vi.spyOn(service, "analyzeMeeting").mockImplementation((options, execution) => run.analyze(options, execution));
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);

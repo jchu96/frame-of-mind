@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, realpath, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 const { version } = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
-const cwd = await mkdtemp(join(tmpdir(), "frameofmind-consumer-"));
+const cwd = await realpath(await mkdtemp(join(tmpdir(), "frameofmind-consumer-")));
 try {
   const bundle = process.argv[2] ?? "release/frameofmind.mjs";
   await copyFile(bundle, join(cwd, "frameofmind.mjs"));
-  function run(args, expectedStatus) {
-    const result = spawnSync(process.execPath, ["frameofmind.mjs", ...args], {
+  function run(args, expectedStatus, options = []) {
+    const result = spawnSync(process.execPath, [...options, "frameofmind.mjs", ...args], {
       cwd, env: { HOME: cwd, PATH: "", SystemRoot: process.env.SystemRoot }, encoding: "utf8",
     });
     if (result.error) throw result.error;
@@ -32,8 +32,19 @@ try {
   assert.equal(report.cliSha256, createHash("sha256").update(await readFile(bundle)).digest("hex"));
   const doctor = run(["doctor"], 1);
   assert.match(doctor, /^ok Node >=22$/m);
-  assert.match(doctor, /^-- GEMINI_API_KEY$/m);
+  assert.match(doctor, /^-- GEMINI_API_KEY \(none\)$/m);
   assert.match(doctor, /^Telemetry: off$/m);
+  await writeFile(join(cwd, ".env"), "GEMINI_API_KEY=synthetic-release-fixture\n");
+  const selected = JSON.parse(run(["doctor", "--json"], 0)).key;
+  assert.deepEqual(selected, {present: true, source: "dotenv", path: join(cwd, ".env")});
+  assert.ok(run(["doctor"], 0).includes("ok GEMINI_API_KEY (" + JSON.stringify(selected.path) + ")\n"));
+  const preloaded = JSON.parse(run(["doctor", "--json"], 0, ["--require", "node:path"]));
+  assert.deepEqual(preloaded.key, selected);
+  const bare = ["--env-file=.env"];
+  assert.deepEqual(JSON.parse(run(["doctor", "--json"], 0, bare)).key, {present: true, source: "unknown"});
+  assert.match(run(["doctor"], 0, bare), /^ok GEMINI_API_KEY \(unknown: started with --env-file\)$/m);
+  const refused = JSON.parse(run(["analyze", "start", "clip.mp4", "--json"], 2, bare));
+  assert.deepEqual(refused, {schemaVersion: 1, error: {code: "USAGE", message: "Invalid command arguments."}});
   console.log(`RELEASE_SMOKE version=${version} status=PASS`);
 } finally {
   await rm(cwd, { recursive: true, force: true });
