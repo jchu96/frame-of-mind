@@ -37,13 +37,21 @@ export function offsetTranscriptionSegments(
  */
 export function mergeTranscriptionChunks(
   chunks: Array<{ segments: DerivedTranscriptionSegment[]; nominalStartSeconds: number }>,
+  warn?: (message: string) => void,
 ): DerivedTranscriptionSegment[] {
   const merged: DerivedTranscriptionSegment[] = [];
-  for (const chunk of chunks) {
+  for (const [index, chunk] of chunks.entries()) {
+    let dropped = 0;
+    let characters = 0;
     for (const segment of chunk.segments) {
-      if (timestampToSeconds(segment.start) < chunk.nominalStartSeconds) continue;
+      if (timestampToSeconds(segment.start) < chunk.nominalStartSeconds) {
+        dropped++;
+        characters += Array.from(segment.text).length;
+        continue;
+      }
       merged.push(segment);
     }
+    if (characters > 600) warn?.(`window ${index + 1} dropped ${dropped} transcript lines in its lead-in.`);
   }
   return merged.sort(
     (left, right) => timestampToSeconds(left.start) - timestampToSeconds(right.start),

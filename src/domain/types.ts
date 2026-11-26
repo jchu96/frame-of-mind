@@ -116,13 +116,26 @@ export interface AnalysisItem {
 }
 
 export interface DerivedTranscriptionSegment {
+  recovered?: true;
   start: string;
   end: string;
   speaker: string;
   text: string;
 }
 
-export interface DerivedTranscriptProvenance {
+export interface TranscriptSpan { start: number; end: number }
+export interface TranscriptRecheck extends TranscriptSpan {
+  measuredSeconds: number;
+  status: "linesAdded" | "noNewLines" | "failed" | "skipped";
+  addedLines: number;
+  addedSpans?: TranscriptSpan[];
+}
+export interface TranscriptRecheckFields {
+  rechecks?: TranscriptRecheck[];
+  belowCutoff?: { stretches: number; seconds: number };
+}
+
+export interface DerivedTranscriptProvenance extends TranscriptRecheckFields {
   requestedLanguage?: string;
   origin: "gemini-audio";
   model: string;

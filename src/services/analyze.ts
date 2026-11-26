@@ -2,7 +2,7 @@ import { ContractError, faultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
 import { VERSION } from "../version.js";
 import { modelTime } from "exact-time";
-import { classify, proposeRecords, snapSettings, summarizeSnaps, type SnapRun, type SnapSettings } from "../domain/snap.js";
+import { proposeRecords, snapSettings, summarizeSnaps, type SnapRun, type SnapSettings } from "../domain/snap.js";
 import { parseSecondsMs, declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
 import { probeFrameRate } from "./media-probe.js";
 import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
@@ -78,6 +78,7 @@ import {
   planTranscriptionWindows,
   probeDurationSeconds,
 } from "./audio.js";
+import { measureTrack, recheckTranscript } from "./transcript-coverage.js";
 import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
 import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
@@ -527,6 +528,11 @@ export class AnalysisOrchestrator {
         );
       }
 
+      // Rechecks and optional snap proposals use the same whole-track classification.
+      let trackMeasurement: ReturnType<typeof measureTrack> | undefined;
+      const soundBoundaries = () => trackMeasurement ??= measureTrack(localVideo, this.decodeSpeech, {
+        signal: execution.signal, ...(execution.jobScratchRoot && { confinedInput: true }),
+      });
       let derivedTranscript: string | undefined;
       let derivedTranscriptProvenance: DerivedTranscriptProvenance | undefined;
       if (
@@ -666,15 +672,36 @@ export class AnalysisOrchestrator {
         // so a failed window discards the whole derived transcript rather than
         // publishing a partial one.
         if (!transcriptionFailed) {
-          const formatted = formatDerivedTranscript(mergeTranscriptionChunks(transcribed));
-          if (formatted) {
-            derivedTranscript = formatted;
+          const warnings: string[] = [];
+          const segments = mergeTranscriptionChunks(transcribed, message => warnings.push(message));
+          const warn = (message: string) => reportWarning(progress, { kind: "warning", stage: "fetching_context", message });
+          const cleanupUnconfirmed = () => reportWarning(progress, { kind: "warning", stage: "cleaning_up",
+            message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window." });
+          const checked = duration === undefined ? undefined : await recheckTranscript(
+            segments, duration, windows.length, await soundBoundaries(), {
+              input: localVideo, signal: execution.signal, scratchParent: execution.jobScratchRoot,
+              confinedInput: Boolean(execution.jobScratchRoot), checkCanceled: () => assertNotCanceled(execution.signal),
+              extract: this.extractAudio, upload: path => analyzer.upload(path, "audio/aac"),
+              transcribe: (remote, seconds) => analyzer.transcribe!(remote, requestedLanguage, seconds),
+              release: async remote => { if (!await deleteWithRetry(analyzer, remote, this.sleep)) await cleanupUnconfirmed(); },
+              cleanupUnconfirmed,
+              notify: (kind, message) => kind === "note"
+                ? report(progress, { kind: "stage", stage: "fetching_context", message: `note: ${message}` })
+                : warn(message),
+            });
+          const formatted = formatDerivedTranscript(checked?.segments ?? segments);
+          if (formatted || checked?.fields.rechecks) {
+            derivedTranscript = formatted || undefined;
             derivedTranscriptProvenance = {
               origin: "gemini-audio",
               model: analyzer.model,
               sha256: sha256Text(formatted),
+              ...(checked?.fields.rechecks && { rechecks: checked.fields.rechecks, belowCutoff: checked.fields.belowCutoff }),
               ...(requestedLanguage && { requestedLanguage }),
             };
+          }
+          for (const message of warnings) {
+            await reportWarning(progress, { kind: "warning", stage: "fetching_context", message });
           }
         }
         assertNotCanceled(execution.signal);
@@ -1119,12 +1146,12 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
         let proposals: SnapRun | undefined;
         if (settings) {
-          const envelope = await this.decodeSpeech(localVideo, { signal: execution.signal, ...(execution.jobScratchRoot && {confinedInput: true}) }).catch(() => undefined);
+          const boundaries = await soundBoundaries();
           assertNotCanceled(execution.signal);
-          if (!envelope) await reportWarning(progress, { kind: "warning", stage: "rendering", message: "Speech snapping unavailable: audio decode or timestamp verification failed." });
+          if (!boundaries) await reportWarning(progress, { kind: "warning", stage: "rendering", message: "Speech snapping unavailable: audio decode or timestamp verification failed." });
           const ms = (timestamp: string) => parseSecondsMs(modelTime(clock.fileClock, timestamp).seconds);
           proposals = proposeRecords(items.map(({ candidate }) => ({ start: ms(candidate.start), end: ms(candidate.end) })),
-            envelope && classify(envelope), clock.fileClock, settings);
+            boundaries, clock.fileClock, settings);
         }
         assertNotCanceled(execution.signal);
         failurePhase = "cleanup";
