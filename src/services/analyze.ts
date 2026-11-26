@@ -302,7 +302,7 @@ export interface AnalysisVideoAnalyzer {
     runNotes?: readonly RunNote[],
     modelClipClock?: ClipClock,
   ): Promise<AnalysisDetail>;
-  transcribe?(file: GeminiFile, requestedLanguage?: string): Promise<DerivedTranscriptionSegment[]>;
+  transcribe?(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
   /**
    * Non-destructive cumulative token counts since construction. Distinct
@@ -563,11 +563,12 @@ export class AnalysisOrchestrator {
               message: `Transcribing audio window ${windowNumber + 1}/${windows.length}…`,
             });
           }
+          const audioDuration = duration === undefined ? undefined : window.durationSeconds;
           const audioPath = join(temp, `derived-audio-${windowNumber + 1}.aac`);
           if (!(await this.extractAudio(localVideo, audioPath, {
             signal: execution.signal,
             ...(window.startSeconds ? { startSeconds: window.startSeconds } : {}),
-            ...(duration === undefined ? {} : { durationSeconds: window.durationSeconds }),
+            ...(audioDuration === undefined ? {} : { durationSeconds: audioDuration }),
           }))) {
             await reportWarning(progress, {
               kind: "warning",
@@ -605,7 +606,7 @@ export class AnalysisOrchestrator {
                   try {
                     audioRemote = await analyzer.upload(audioPath, "audio/aac");
                     assertNotCanceled(execution.signal);
-                    return await analyzer.transcribe!(audioRemote, requestedLanguage);
+                    return await analyzer.transcribe!(audioRemote, requestedLanguage, audioDuration);
                   } finally {
                     span.setAttributes(
                       usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
@@ -613,7 +614,7 @@ export class AnalysisOrchestrator {
                   }
                 });
                 transcribed.push({
-                  segments: offsetTranscriptionSegments(segments, window.startSeconds),
+                  segments: offsetTranscriptionSegments(segments, window.startSeconds, audioDuration),
                   nominalStartSeconds: window.nominalStartSeconds,
                 });
                 break;

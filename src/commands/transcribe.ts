@@ -44,6 +44,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
         const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
         // A consumer reads this line; it stays on standard error in both modes.
         diagnostic(`error: ${message}`);
+        if (error instanceof TranscribeError && error.diagnostic) diagnostic(error.diagnostic);
         if (flags.json) {
           writeFailure(error instanceof TranscriptLanguageError ? new CliError("USAGE", message) : error, dependencies.stdout);
           return;

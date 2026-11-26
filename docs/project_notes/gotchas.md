@@ -1,5 +1,6 @@
 # Gotchas
 
+- 2026-11-26: When analyze cannot read the source duration, or hosted Studio transcribes whole media of unknown length, the transcription prompt omits the duration ceiling and window timestamps go unchecked.
 - Every synthetic Wrangler process must use `createE2EIsolation` for its
   Worker name, D1 name/ID, persistence root, ports, and cleanup. A unique temp
   directory alone does not prevent Wrangler's local service registry from

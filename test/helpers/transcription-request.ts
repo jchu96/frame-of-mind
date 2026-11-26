@@ -43,10 +43,15 @@ export function expectOriginalLanguage(
   request: GenerateContentParameters,
   attempt: "initial" | "regenerated" = "initial",
   requestedLanguage?: string,
+  durationSeconds?: number,
 ): void {
-  const expectedText = requestedLanguage
+  const languageText = requestedLanguage
     ? transcriptionText.replace("Do not translate.", `Do not translate.\nThe likely spoken language is ${requestedLanguage}, though other languages may also be present.`)
     : transcriptionText;
+  const expectedText = durationSeconds === undefined ? languageText : languageText.replace(
+    "measured from the beginning of this audio.",
+    `measured from the beginning of this audio.\nThis audio is ${durationSeconds} seconds long. No timestamp may exceed that length.`,
+  );
   expect(request.contents).toEqual([{
     role: "user",
     parts: [{ fileData: expect.any(Object) }, { text: expectedText }],

@@ -155,6 +155,18 @@ describe("planTranscriptionWindows", () => {
     ]);
   });
 
+  it("joins a tail shorter than 30 s to the previous window and keeps a 30 s tail", () => {
+    const windows = planTranscriptionWindows(7200.6, 600, 15);
+    expect(windows).toHaveLength(12);
+    const last = windows.at(-1)!;
+    expect(last.startSeconds).toBe(6585);
+    expect(last.startSeconds + last.durationSeconds).toBe(7200.6);
+
+    const boundary = planTranscriptionWindows(7230, 600, 15);
+    expect(boundary).toHaveLength(13);
+    expect(boundary.at(-1)).toEqual({ startSeconds: 7185, durationSeconds: 45, nominalStartSeconds: 7200 });
+  });
+
   it("covers the recording exactly with no gaps between nominal windows", () => {
     const windows = planTranscriptionWindows(2996, 600, 15);
     expect(windows[0]?.nominalStartSeconds).toBe(0);

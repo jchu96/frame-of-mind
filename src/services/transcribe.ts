@@ -12,12 +12,12 @@ import { resolveRetention, type RetentionFlags } from "../domain/retention.js";
 import type { DerivedTranscriptionSegment } from "../domain/types.js";
 import { sha256File } from "../lib/files.js";
 import { extractAudioTrack, planTranscriptionWindows, probeDurationSeconds } from "./audio.js";
-import { mergeTranscriptionChunks, offsetTranscriptionSegments } from "./transcript.js";
+import { mergeTranscriptionChunks, offsetTranscriptionSegments, TranscriptWindowTimeError } from "./transcript.js";
 import { TRANSCRIPTION_OVERLAP_SECONDS, TRANSCRIPTION_WINDOW_SECONDS } from "./transcription-policy.js";
 import { assertTranscriptTarget, renderSpeakers, renderSrt, renderTranscriptJson, writePrivateAtomic } from "./transcript-render.js";
 
 export class TranscribeError extends Error {
-  constructor(message: string, readonly code: FaultCode = "COMMAND_FAILED") { super(message); }
+  constructor(message: string, readonly code: FaultCode = "COMMAND_FAILED", readonly diagnostic?: string) { super(message); }
 }
 export class TranscribeCanceledError extends TranscribeError {
   constructor() { super("Transcription canceled; no transcript files written.", "CANCELLED"); }
@@ -35,7 +35,7 @@ export interface TranscribeOptions extends RetentionFlags {
 export interface TranscriptionAnalyzer {
   readonly model: string;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
-  transcribe(file: GeminiFile, requestedLanguage?: string): Promise<DerivedTranscriptionSegment[]>;
+  transcribe(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
   usageSnapshot?(): { promptTokens: number; outputTokens: number; totalTokens: number } | undefined;
 }
@@ -126,8 +126,11 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
             remote = await analyzer.upload(audioPath, "audio/aac");
             if (retention === "provider") deps.stderr(`kept audio upload: ${uploadLabel(remote)}`);
             if (job) canceled();
-            const segments = await analyzer.transcribe(remote, requestedLanguage);
-            chunks.push({ segments: offsetTranscriptionSegments(segments, window.startSeconds), nominalStartSeconds: window.nominalStartSeconds });
+            const segments = await analyzer.transcribe(remote, requestedLanguage, window.durationSeconds);
+            chunks.push({
+              segments: offsetTranscriptionSegments(segments, window.startSeconds, window.durationSeconds),
+              nominalStartSeconds: window.nominalStartSeconds,
+            });
             deps.stdout(`window ${index + 1}/${windows.length}: ${segments.length} segment(s)`);
             break;
           } catch (error) {
@@ -137,7 +140,9 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
             canceled();
             if (attempt === attempts) {
               const code = providerFailureCode(error);
-              throw new TranscribeError(`Transcription failed on window ${index + 1} after ${attempts} attempt${attempts === 1 ? "" : "s"}; no transcript files written.`, code);
+              const diagnostic = error instanceof TranscriptWindowTimeError
+                ? `A transcript time fell outside audio window ${index + 1}.` : undefined;
+              throw new TranscribeError(`Transcription failed on window ${index + 1} after ${attempts} attempt${attempts === 1 ? "" : "s"}; no transcript files written.`, code, diagnostic);
             }
             deps.stderr(`window ${index + 1}: retrying once after 20 s`);
           } finally {

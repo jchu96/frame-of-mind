@@ -79,13 +79,17 @@ describe("AnalysisOrchestrator", () => {
 
     it("keeps unknown duration to one transcription window and uploads the video", async () => {
       const fixture = await durationFixture(undefined);
+      fixture.analyzer.transcribe.mockResolvedValue([
+        { start: "00:10:05", end: "00:10:07", speaker: "Speaker 1", text: "Later speech." },
+      ]);
       const signal = new AbortController().signal;
-      await fixture.orchestrator.analyze(fixture.options, { signal });
+      const result = await fixture.orchestrator.analyze(fixture.options, { signal });
       expect(fixture.probeDurationSeconds).toHaveBeenCalledExactlyOnceWith(fixture.options.video, { signal });
       expect(fixture.extractAudioTrack).toHaveBeenCalledExactlyOnceWith(
         fixture.options.video, expect.stringContaining("derived-audio-1.aac"), { signal },
       );
-      expect(fixture.analyzer.transcribe).toHaveBeenCalledTimes(1);
+      expect(fixture.analyzer.transcribe).toHaveBeenCalledExactlyOnceWith(expect.any(Object), undefined, undefined);
+      expect(result.manifest.derivedTranscript).toBeDefined();
       expect(fixture.analyzer.upload).toHaveBeenCalledTimes(2);
       expect(fixture.analyzer.upload).toHaveBeenLastCalledWith(fixture.options.video, "video/mp4");
     });
@@ -474,8 +478,11 @@ describe("AnalysisOrchestrator", () => {
     const analyzer = {
       ...fixture.analyzer,
       transcribe: vi.fn(async () => {
-        // Window 1 succeeds; window 2 fails on both of its attempts.
-        if (analyzer.transcribe.mock.calls.length > 1) throw new Error("provider body");
+        // Window 2 fails first at the provider, then returns a start beyond its 315 s of audio.
+        if (analyzer.transcribe.mock.calls.length === 2) throw new Error("provider body");
+        if (analyzer.transcribe.mock.calls.length === 3) {
+          return [{ start: "00:05:18", end: "00:05:17", speaker: "Speaker 1", text: "Second window." }];
+        }
         return [{ start: "00:00:02", end: "00:00:05", speaker: "Speaker 1", text: "First window." }];
       }),
     };

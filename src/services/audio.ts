@@ -164,6 +164,12 @@ export function planTranscriptionWindows(
       nominalStartSeconds: nominal,
     });
   }
+  const last = windows.at(-1)!;
+  if (durationSeconds - last.nominalStartSeconds < 30) {
+    windows.pop();
+    const previous = windows.at(-1)!;
+    previous.durationSeconds = durationSeconds - previous.startSeconds;
+  }
   return windows;
 }
 

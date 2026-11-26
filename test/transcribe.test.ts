@@ -41,7 +41,7 @@ async function fixture(duration = 1500) {
   const analyzer = {
     model: "gemini-test",
     upload: vi.fn(async (_path: string, _mime: string) => ({ name: `files/synthetic-${++uploadNumber}`, expirationTime: "2026-11-15T00:00:00.000Z" })),
-    transcribe: vi.fn(async () => [segment()]),
+    transcribe: vi.fn(async () => [{ ...segment(), start: "00:00:02", end: "00:00:04" }]),
     delete: vi.fn(async () => {}),
     usageSnapshot: () => ({ promptTokens: 12, outputTokens: 3, totalTokens: 15 }),
   };
@@ -118,6 +118,22 @@ describe("windows", () => {
     const f = await fixture(); failAfterFirst(f); await cli(f);
     expect(f.analyzer.transcribe).toHaveBeenCalledTimes(3);
     expect(process.exitCode).toBe(1);
+    await expectNoOutputs(f);
+  });
+  it("retries a 615 s window with minutes in the hours field, then writes no transcript", async () => {
+    const f = await fixture(1200);
+    f.analyzer.transcribe.mockResolvedValueOnce([{ ...segment(), end: "00:10:02" }])
+      .mockResolvedValueOnce([segment(), { ...segment(), start: "09:50:17", end: "09:51:23" }])
+      .mockResolvedValueOnce([segment(), { ...segment(), end: "09:51:23" }]);
+    await cli(f, ["--json"]);
+    expect(JSON.parse(f.deps.stdout.mock.lastCall![0])).toMatchObject({ error: { code: "COMMAND_FAILED" } });
+    expect(process.exitCode).toBe(1);
+    expect(f.analyzer.transcribe).toHaveBeenCalledTimes(3);
+    expect(f.deps.sleep).toHaveBeenCalledExactlyOnceWith(20_000);
+    expect(f.deps.stderr.mock.calls.flat().slice(-2)).toEqual([
+      "error: Transcription failed on window 2 after 2 attempts; no transcript files written.",
+      "A transcript time fell outside audio window 2.",
+    ]);
     await expectNoOutputs(f);
   });
   it("a transient failure on the first attempt is retried once and succeeds", async () => {
@@ -200,13 +216,15 @@ describe("original-language transcription", () => {
     await program.parseAsync(["transcribe", f.input, "--json", ...(transcriptLanguage ? ["--transcript-language", transcriptLanguage] : [])], { from: "user" });
     const expectedTag = transcriptLanguage ? "fr-CA" : undefined;
     expect(requests).toHaveLength(2);
-    for (const request of requests) {
+    for (const [index, request] of requests.entries()) {
       if (!expectedTag) {
-        // Complete serialized SDK request captured from the lane A merge (cf07529).
-        expect(createHash("sha256").update(JSON.stringify(request)).digest("hex"))
-          .toBe("0b00c4803ddfef3a3a9b46bc225f4dc884a6d6b32a4900668951c043e9e24ea1");
+        // Pin both complete requests, including the different audio durations.
+        expect(createHash("sha256").update(JSON.stringify(request)).digest("hex")).toBe([
+          "c29479ae1faf471700673d2b602acb284e2af76210103969afcaac3f1b6b9dc2",
+          "bcb36722010ced8ef6439794b256fcc0952fbf137074c68c8d233e16f35f35ea",
+        ][index]);
       }
-      expectOriginalLanguage(request, "initial", expectedTag);
+      expectOriginalLanguage(request, "initial", expectedTag, [600, 315][index]);
     }
     const [srt, speakers, json] = await Promise.all(["synthetic.srt", "synthetic_speakers.txt", "synthetic.transcript.json"]
       .map(name => readFile(join(f.root, name), "utf8")));
@@ -247,8 +265,8 @@ describe("original-language transcription", () => {
     });
     expect(requests).toHaveLength(5);
     const expectedTag = transcriptLanguage ? "fr-CA" : undefined;
-    expectOriginalLanguage(requests[1]!, "initial", expectedTag);
-    expectOriginalLanguage(requests[2]!, "initial", expectedTag);
+    expectOriginalLanguage(requests[1]!, "initial", expectedTag, 600);
+    expectOriginalLanguage(requests[2]!, "initial", expectedTag, 315);
     for (const request of [requests[0], requests[3], requests[4]]) {
       expect(JSON.stringify(request)).not.toContain("fr-CA");
     }
@@ -282,7 +300,9 @@ describe("output", () => {
     }
   });
   it("reports blankCues and adjustedCues and writes JSON only when requested", async () => {
-    const f = await fixture(10); f.analyzer.transcribe.mockResolvedValue([segment("a"), segment("   "), { ...segment("b"), end: "00:00:19" }]);
+    const f = await fixture(10);
+    const cue = { ...segment("a"), start: "00:00:04", end: "00:00:06" };
+    f.analyzer.transcribe.mockResolvedValue([cue, { ...cue, text: "   " }, { ...cue, text: "b", end: "00:00:03" }]);
     await cli(f, ["--json", "--transcript-language", "fr-ca"]);
     expect(f.deps.stdout).toHaveBeenCalledTimes(1);
     const report = validateCliDocument("transcribe", f.deps.stdout.mock.calls[0]![0]);
@@ -291,7 +311,7 @@ describe("output", () => {
     });
     expect(report.paths.toSorted()).toEqual(["synthetic.srt", "synthetic.transcript.json", "synthetic_speakers.txt"]
       .map(name => join(f.root, name)));
-    expect(JSON.parse(await readFile(join(f.root, "synthetic.transcript.json"), "utf8"))).toMatchObject({ clock: "source", adjustedCues: 1, blankCues: 1, segments: [{ start: 20 }, { start: 20 }, { start: 20 }] });
+    expect(JSON.parse(await readFile(join(f.root, "synthetic.transcript.json"), "utf8"))).toMatchObject({ clock: "source", adjustedCues: 1, blankCues: 1, segments: [{ start: 4 }, { start: 4 }, { start: 4 }] });
     expect(await readdir(f.root)).toEqual(["synthetic.mp4", "synthetic.srt", "synthetic.transcript.json", "synthetic_speakers.txt"]);
     const plain = await fixture(10); await cli(plain);
     expect(await readdir(plain.root)).toEqual(["synthetic.mp4", "synthetic.srt", "synthetic_speakers.txt"]);
