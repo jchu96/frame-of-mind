@@ -82,7 +82,7 @@ describe("published screenshot across a low-contrast cut", { timeout: 30_000 }, 
         isRelevantCall: true,
         matchNotes: "Synthetic.",
         transcriptAlignment: { offsetSeconds: 0, confidence: "high" as const, rationale: "Synthetic." },
-        moments: Array.from({ length: extra.moments ?? 1 }, () => ({ start: "00:00:00", end: "00:00:04", summary: "A grey picture.", kind: "decision", importance: "high" as const })),
+        moments: Array.from({ length: extra.moments ?? 1 }, () => ({ start: "00:00:00", end: "00:00:03", summary: "A grey picture.", kind: "decision", importance: "high" as const })),
       })),
       interrogate: vi.fn(async () => ({
         accepted: true, kind: "decision", title: "Grey", summary: "A grey picture.",
@@ -132,8 +132,8 @@ describe("published screenshot across a low-contrast cut", { timeout: 30_000 }, 
       return extractScreenshot(...args);
     };
     expect((await run({ recipe: "teaching-points", recipeFile }, spy)).equals(await directSeek())).toBe(true);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toHaveLength(3);
+    expect(calls.map(call => call[1])).toEqual(["00:00:01", "00:00:02"]);
+    expect(calls.every(call => call.length === 3)).toBe(true);
   });
 
   describe("contact sheet warnings", () => {

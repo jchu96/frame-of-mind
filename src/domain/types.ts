@@ -109,7 +109,14 @@ export interface AnalysisDetail {
   confidenceNotes?: string;
 }
 
+/** Native PNG carried by one local detail request, labelled in whole-file seconds. */
+export interface DetailStill {
+  seconds: number;
+  base64: string;
+}
+
 export interface AnalysisItem {
+  stillTimes?: string[];
   candidate: IndexedMoment;
   result: AnalysisDetail;
   screenshot?: string;

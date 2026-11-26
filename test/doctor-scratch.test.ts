@@ -86,6 +86,9 @@ it("lists the three temp kinds by default and the two adjacent kinds only in the
       expect(row.ageMs).toBeGreaterThanOrEqual(0);
       expect(await readFile(join(row.path, markerName), "utf8")).toBeTruthy();
     }
+    await writeFile(join(analyze!, "still-0-24.png"), "private frame");
+    const cleaned = await inspectScratch(undefined, analyze);
+    expect(cleaned.filter(row => row.removed).map(row => row.path)).toEqual([analyze]);
     const removed = await inspectScratch(scan, lock);
     expect(removed.filter(row => row.removed).map(row => row.path)).toEqual([lock]);
     expect(await readFile(join(shots!, markerName), "utf8")).toBeTruthy();

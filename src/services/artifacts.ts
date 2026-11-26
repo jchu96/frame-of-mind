@@ -131,6 +131,7 @@ export function renderAnalysis(
       "",
       `- Kind: ${escapeInline(result.kind)}`,
       `- Time: ${escapeInline(renderClockTime(result.evidence?.timestamp || item.candidate.start, clock))}`,
+      ...(item.stillTimes ? [`- ${escapeInline(stillTimesLine(item.stillTimes, clock))}`] : []),
       ...recordCuts(cuts, originalIndex).map(line => `- ${line}`),
       `- Importance: ${escapeInline(result.importance || item.candidate.importance)}`,
       `- Surface: ${escapeInline(result.where?.surface || item.candidate.surface || "Unknown")}`,
@@ -173,6 +174,7 @@ export function renderAnalysis(
     }
     if (result.confidenceNotes) lines.push(`_Confidence: ${escapeInline(result.confidenceNotes)}_`, "");
   }
+  for (const line of rejectedStillLines(analysis, clock)) lines.push(escapeInline(line), "");
   if (!accepted.length) lines.push("No candidate survived the recipe interrogation pass.", "");
   return `${lines.filter((line, index) => line || lines[index - 1]).join("\n").trim()}\n`;
 }
@@ -202,7 +204,7 @@ async function renderHtmlArtifact(
     const cutParagraphs = recordCuts(cuts, originalIndex).map(line => `<p>${html(line)}</p>`).join("");
     return `<article>
       <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock))}</div>
-      <h2>${index + 1}. ${html(result.title)}</h2>
+      <h2>${index + 1}. ${html(result.title)}</h2>${item.stillTimes ? `\n      <p>${html(stillTimesLine(item.stillTimes, manifest.clock))}</p>` : ""}
       <p>${html(result.summary)}</p>${cutParagraphs ? `\n      ${cutParagraphs}` : ""}
       ${details}
       <dl>
@@ -274,7 +276,7 @@ async function renderHtmlArtifact(
     <p class="muted">${alignment}</p>
   </section>
   ${cards.join("\n") || "<article><h2>No accepted records</h2><p>No candidate survived the recipe interrogation pass.</p></article>"}
-  <footer class="muted"><p>Portable review rendering. The versioned source of truth is <code>analysis.json</code>; run provenance is in <code>manifest.json</code>.</p></footer>
+  ${rejectedStillLines(analysis, manifest.clock).map(line => `<p>${html(line)}</p>`).join("\n")}<footer class="muted"><p>Portable review rendering. The versioned source of truth is <code>analysis.json</code>; run provenance is in <code>manifest.json</code>.</p></footer>
 </main></body></html>
 `;
 }
@@ -335,6 +337,16 @@ function renderDeclaredOffset(declaration: NonNullable<RunClock["timeline"]>): s
 export function renderClockTime(timestamp: string, clock?: RunClock): string {
   const time = modelTime(clock?.fileClock ?? "source", timestamp);
   return [renderApproximate(time), ...(clock?.timeline ? [renderApproximate(offsetApproximate(time, declaredOffset(clock.timeline)))] : [])].join(" · ");
+}
+
+function stillTimesLine(times: readonly string[], clock?: RunClock): string {
+  return `Stills (${clock?.fileClock ?? "source"}): ${times.join(", ") || "none"}`;
+}
+
+function rejectedStillLines(analysis: VersionedAnalysisRun, clock?: RunClock): string[] {
+  return analysis.items.flatMap((item, i) => !item.result.accepted && item.stillTimes
+    ? [`Rejected candidate ${i + 1} · ${stillTimesLine(item.stillTimes, clock)}`]
+    : []);
 }
 
 function recordCuts(cuts: ReadonlyMap<string, string> | undefined, index: number): string[] {
