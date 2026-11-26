@@ -1146,6 +1146,11 @@ disabled. Provider OAuth is noninteractive inside a job: expired authorization
 fails the attempt and must be reconnected explicitly rather than opening a
 callback flow from the background worker.
 
+The CLI captures runtime options, environment and working directory before dispatch.
+Ordinary commands parse the folder’s dotenv settings separately. Jobs receive only
+their inherited provider credential. The launch classes and Bun preload limit are
+recorded in [ADR 0032](adr/0032-cli-provider-key-source.md).
+
 The CLI analysis command is a thin adapter over `AnalysisOrchestrator`. The
 orchestrator accepts explicit context/analyzer factories, an optional
 `AbortSignal`, a typed progress reporter, and an optional completed-run

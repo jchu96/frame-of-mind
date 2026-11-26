@@ -1,3 +1,4 @@
+import { applicationSetting } from "../lib/application-settings.js";
 import { faultCode, type FaultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
 import { mkdir, rm, stat } from "node:fs/promises";
@@ -75,7 +76,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const model = options.model ?? (process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
   if (!geminiModelSchema.safeParse(model).success) throw new TranscribeError("--model must be a Gemini model ID.", "USAGE");
   let retention;
-  try { retention = resolveRetention(options, process.env.FRAME_OF_MIND_UPLOAD_RETENTION); }
+  try { retention = resolveRetention(options, applicationSetting("FRAME_OF_MIND_UPLOAD_RETENTION")); }
   catch { throw new TranscribeError("Upload retention flags must agree and select provider or run.", "USAGE"); }
   deps.stderr(`retention: ${retention}`);
   const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY?.trim();

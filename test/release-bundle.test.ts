@@ -177,6 +177,13 @@ it("sends the CLI transaction and scrubbed error without registering a bundle lo
       };
       mod.syncBuiltinESMExports();
     `);
+    const observer = join(scratch, "telemetry-entry.mjs");
+    await writeFile(observer, [
+      'import "./observe-loader.cjs";',
+      'import { pathToFileURL } from "node:url";',
+      'process.argv.splice(1, 1);',
+      'await import(pathToFileURL(process.argv[1]));',
+    ].join("\n"));
     await writeFile(join(consumer, "sample.unsupported"), "");
     const expected = [
       ["transaction", "analyze run", "gen_ai.invoke_agent", []],
@@ -184,7 +191,7 @@ it("sends the CLI transaction and scrubbed error without registering a bundle lo
     ];
     for (const [index, entry] of [join(reference, "dist/cli.js"), join(consumer, "frameofmind.mjs")].entries()) {
       observations.length = 0;
-      const result = await exec(process.execPath, ["--require", preload, entry,
+      const result = await exec(process.execPath, [observer, entry,
         "analyze", "--source", "none", "--video", "sample.unsupported", "--output", consumer], {
         cwd: consumer, env: {
           HOME: consumer, PATH: "", GEMINI_API_KEY: "synthetic-fixture",

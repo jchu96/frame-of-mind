@@ -34,7 +34,9 @@ bun run hooks:install
 The hook installer refuses to replace a different existing `core.hooksPath`.
 Migrate those hooks or unset the repository setting explicitly before retrying.
 
-Run the CLI in development mode with `bun run dev`. Use `bun run web` for the
+Run the CLI in development mode with `bun run dev`. Both `dev` and `start` pass
+`--no-env-file` so Bun leaves the folder’s dotenv assignments for the CLI to read
+as application settings. Use `bun run web` for the
 Nuxt workspace. Some media and browser tests also require `ffmpeg`; provider
 smoke tests require explicit local credentials and are not part of CI.
 

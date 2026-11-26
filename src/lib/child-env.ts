@@ -1,3 +1,6 @@
+import { isAbsolute, delimiter } from "node:path";
+import { devNull } from "node:os";
+
 // Shared import point only; callers must still pass childEnvironment() as env.
 export { spawn, execFile } from "node:child_process";
 
@@ -15,10 +18,15 @@ const desktopVariables = new Set([
   "DESKTOP_SESSION", "BROWSER",
 ]);
 
+let launchEnvironment: Readonly<NodeJS.ProcessEnv> | undefined;
+export function useChildEnvironment(environment: Readonly<NodeJS.ProcessEnv>) {
+  launchEnvironment = environment;
+}
+
 /** Construct a fresh environment; never subtract known secrets from the parent. */
 export function childEnvironment(
   kind: "media" | "opener",
-  source: NodeJS.ProcessEnv = process.env,
+  source: NodeJS.ProcessEnv = launchEnvironment ?? process.env,
   platform: NodeJS.Platform = process.platform,
 ): NodeJS.ProcessEnv {
   const result: NodeJS.ProcessEnv = {};
@@ -27,7 +35,10 @@ export function childEnvironment(
     if (value !== undefined && (mediaVariables.has(key)
       || (platform === "win32" && ["SYSTEMROOT", "WINDIR", "PATHEXT", "USERPROFILE"].includes(key))
       || (kind === "opener" && (desktopVariables.has(key) || (platform === "win32" && key === "COMSPEC"))))) {
-      result[name] = value;
+      // Empty/relative search entries let the working folder choose a tool.
+      result[name] = key === "PATH" && source === launchEnvironment
+        ? value.split(delimiter).filter(isAbsolute).join(delimiter) || devNull
+        : value;
     }
   }
   return result;

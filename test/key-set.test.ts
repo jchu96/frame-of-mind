@@ -33,7 +33,7 @@ describe("hidden", () => {
   it("no byte of the sentinel key reaches stdout or stderr", async () => {
     const f = await fixture(); const run = f.run(); f.input.send("AIza-TEST-SENTINEL\r"); await run;
     expect(f.captured()).not.toContain("AIza-TEST-SENTINEL");
-    expect(f.captured()).toBe(`Gemini API key: \nsaved to ${f.path} (0600)\n`);
+    expect(f.captured()).toBe(`Gemini API key: \nsaved to ${f.path} (0600)\nAnyone who can read that folder has the key.\n`);
     expect(await readFile(f.path, "utf8")).toContain("AIza-TEST-SENTINEL");
     expect((await stat(f.path)).mode & 0o777).toBe(0o600);
     expect(f.input.isRaw).toBe(false);

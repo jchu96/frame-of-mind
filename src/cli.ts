@@ -1,18 +1,25 @@
 #!/usr/bin/env node
-import { jobInvocation } from "./commands/job-commands.js";
+import { captureLaunch, refuseLaunch } from "./cli-launch.js";
+import { jobInvocation } from "./job-invocation.js";
+import { useChildEnvironment } from "./lib/child-env.js";
 import type * as Cli from "./cli-main.js";
 
 export type { AnalyzeCliFlags } from "./cli-main.js";
+const launch = captureLaunch();
 export const CLI_LIBRARY_IMPORT = Symbol.for("frameofmind.cli.libraryImport");
 export let program: typeof Cli.program;
 export let buildAnalyzeOptions: typeof Cli.buildAnalyzeOptions;
 export let printAnalysisSummary: typeof Cli.printAnalysisSummary;
 
 const libraryImport = (globalThis as Record<symbol, unknown>)[CLI_LIBRARY_IMPORT] === true;
-const job = !libraryImport && jobInvocation(process.argv.slice(2));
-if (job) {
+const args = process.argv.slice(2);
+if (!libraryImport) useChildEnvironment(launch.environment);
+const job = launch.mode !== "refused" && !libraryImport && jobInvocation(args);
+if (launch.mode === "refused" || (launch.mode === "bare" && job && job.op === "start")) {
+  refuseLaunch(args);
+} else if (job) {
   const { runJobCommand } = await import("./commands/jobs.js");
-  await runJobCommand(job.family, job.op, process.argv.slice(4));
+  await runJobCommand(job.family, job.op, process.argv.slice(4), {readKey: () => launch.environment.GEMINI_API_KEY});
 } else if (process.argv[2] === "mcp" && !libraryImport) {
   const args = process.argv.slice(3);
   if (args.slice(0, args.includes("--") ? args.indexOf("--") : args.length).includes("--json")) {
@@ -31,6 +38,10 @@ if (job) {
     }
   }
 } else {
+  if (!libraryImport) {
+    const { configureOrdinaryCli } = await import("./cli-settings.js");
+    configureOrdinaryCli(launch);
+  }
   ({ program, buildAnalyzeOptions, printAnalysisSummary } = await import("./cli-main.js"));
   // Loading this module runs the command. Guessing the entry point from argv[1]
   // failed silently through symlinks and launchers (bugs.md, 2026-11-13 and

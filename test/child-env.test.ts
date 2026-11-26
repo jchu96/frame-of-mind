@@ -1,8 +1,10 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import ts from "typescript";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runMediaTool } from "../src/services/media-tools.js";
 import { childEnvironment } from "../src/lib/child-env.js";
 import { decodeSpeechEnvelope, extractAudioTrack, probeDurationSeconds } from "../src/services/audio.js";
 import { extractScreenshot } from "../src/services/screenshots.js";
@@ -24,7 +26,12 @@ beforeEach(async () => {
 const fs = require('node:fs');
 fs.writeFileSync(${JSON.stringify(join(root, "env.json"))}, JSON.stringify(process.env));
 const args = process.argv.slice(2);
-if (process.argv[1].endsWith('ffprobe')) console.log(args.includes('format=duration') ? '2' : JSON.stringify({ streams: [{r_frame_rate:'1/1',avg_frame_rate:'1/1',time_base:'1/1'}], frames: [{pts:0,duration:1},{pts:1,duration:1}] }));
+if ([...args, ...Object.values(process.env)].includes("synthetic-key")) {
+  fs.writeFileSync(${JSON.stringify(join(root, "leak"))}, "child received credential");
+  process.exit(23);
+}
+if (args.includes('--wait')) setInterval(() => {}, 1000);
+else if (process.argv[1].endsWith('ffprobe')) console.log(args.includes('format=duration') ? '2' : JSON.stringify({ streams: [{r_frame_rate:'1/1',avg_frame_rate:'1/1',time_base:'1/1'}], frames: [{pts:0,duration:1},{pts:1,duration:1}] }));
 else if (args.includes('tee')) { process.stderr.write('#tb 0: 1/8000\\n0, 0, 0, 80, 160, 0x00000000\\n'); process.stdout.write(Buffer.alloc(160)); }
 else if (process.argv[1].endsWith('ffmpeg')) fs.writeFileSync(args.at(-1), 'synthetic-output');
 `;
@@ -37,6 +44,7 @@ afterEach(async () => {
 });
 async function captured() { return JSON.parse(await readFile(join(root, "env.json"), "utf8")); }
 async function noMarkers() {
+  expect(await readdir(root), "child received credential").not.toContain("leak");
   const env = await captured();
   for (const name of Object.keys(markers)) expect(env, name).not.toHaveProperty(name);
 }
@@ -60,6 +68,16 @@ describe("helper", () => {
   });
 });
 describe("media", { timeout: processTestTimeout }, () => {
+  it("a cancelled probe and the following probe receive no credential", async () => {
+    const controller = new AbortController();
+    const pending = runMediaTool("ffprobe", ["--wait"], {signal: controller.signal});
+    await vi.waitFor(() => expect(existsSync(join(root, "env.json"))).toBe(true));
+    controller.abort();
+    await expect(pending).rejects.toThrow();
+    await noMarkers();
+    await probeDurationSeconds("fixture.mp4");
+    await noMarkers();
+  });
   it("audio extraction's ffmpeg sees no marker variable", async () => {
     expect(await extractAudioTrack("synthetic.mp4", join(root, "audio.aac"))).toBe(true); await noMarkers();
   });
