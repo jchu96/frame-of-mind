@@ -725,12 +725,16 @@ when literal markup-like text matters: the SRT reader strips `<…>` spans.
 `--json` adds `interview.transcript.json`, with numeric seconds and provenance.
 Its stdout document lists all three file paths, the model and the requested language.
 
-After the first pass, the tool measures the first audio track locally and asks again about line-free
-stretches of at least 20 s with at least 5 s of measured sound. A note gives the request count and
-audio length before upload. Transcript JSON marks added lines with `recovered: true`; speaker labels
-can differ across requests. Both JSON documents list `rechecks` and `belowCutoff`. The outcome is
-`complete` when all selected stretches received valid replies, or `unchecked` when measurement,
-a request or the budget prevented a check. Warnings and the speakers header name unchecked time.
+`transcribe --recheck` is experimental and off by default. With it, after the first pass the tool asks
+the model again about line-free stretches of at least 20 s with at least 5 s of measured sound, and
+merges the lines it gets. **It can add lines that are not in the recording:** asked about a near-silent
+stretch on its own, the model has returned invented speech. Do not use its output as subtitles
+without checking every line marked `recovered: true`. `analyze` never asks again.
+
+With `--recheck`, a note gives the request count and audio length before upload; both JSON documents
+list `rechecks` and `belowCutoff`; the outcome is `complete` when all selected stretches received
+valid replies, or `unchecked` when measurement, a request or the budget prevented a check; warnings
+and the speakers header name unchecked time. Without the flag none of these appear.
 
 A transcript line whose own span holds no measured sound at all is marked `quiet: true` in the
 transcript JSON, and both JSON documents carry `quietLines`, the number marked. A note on stderr

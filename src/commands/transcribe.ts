@@ -24,6 +24,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
     .option("--retention <policy>", "audio upload retention: provider (default) or run")
     .option("--keep-upload", "alias for --retention provider")
     .option("--delete-upload", "alias for --retention run")
+    .option("--recheck", "experimental: ask the model again about quiet stretches; can add lines that are not in the recording")
     .option("--force", "replace existing transcript targets")
     .option("--json", "write the transcript JSON with source-clock seconds and report the absolute paths of files written")
     .action(async (input: string, flags: Omit<TranscribeOptions, "input">) => {

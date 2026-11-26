@@ -29,6 +29,8 @@ export interface TranscribeOptions extends RetentionFlags {
   output?: string;
   model?: string;
   json?: boolean;
+  /** Experimental: ask again about quiet-looking stretches. Can add lines that are not in the recording. */
+  recheck?: boolean;
   force?: boolean;
   apiKey?: string;
   signal?: AbortSignal;
@@ -167,6 +169,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const boundaries = await measureTrack(input, deps.decodeSpeechEnvelope, mediaOptions);
   const { segments, fields, unchecked } = await recheckTranscript(held, duration, windows.length, boundaries, {
     ...mediaOptions, input, scratchParent: job?.scratchRoot, checkCanceled: canceled, authorize: job?.authorize,
+    recheck: Boolean(options.recheck),
     extract: deps.extractAudioTrack,
     upload: async path => {
       const remote = await analyzer.upload(path, "audio/aac");

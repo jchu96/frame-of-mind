@@ -48,7 +48,7 @@ export function renderTranscriptJson(
   segments: DerivedTranscriptionSegment[],
   provenance: TranscriptProvenance,
   windowStarts?: readonly number[],
-  fields?: TranscriptRecheckFields & { outcome: "complete" | "unchecked" },
+  fields?: TranscriptRecheckFields & { outcome?: "complete" | "unchecked" },
 ): string {
   const { adjustedCues, blankCues } = renderSrt(segments);
   return `${JSON.stringify({

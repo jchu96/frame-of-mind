@@ -303,7 +303,7 @@ describe("original-language transcription", () => {
     expect(requestText(requests[4]!).match(/<nearby-transcript>\n([\s\S]*?)\n<\/nearby-transcript>/)?.[1]).toBe(escaped);
   });
 
-  it("analyze keeps held and recovered lines after a bad reply and shares its measure with snap", async () => {
+  it("analyze never asks again about a quiet stretch, and shares its measure with snap", async () => {
     const { program } = await import("../src/cli.js");
     const service = await import("../src/services/analyze.js");
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -315,9 +315,8 @@ describe("original-language transcription", () => {
       if (index === 1) return { segments: [cue(165, 215, "second"), cue(255, 615, "third")] };
       return { segments: [cue(15, window.durationSeconds, "held")] };
     });
-    const { analyzer, requests } = capture(...firstPass,
-      { segments: [cue(5, 9, "addition")] }, { segments: [cue(5, 9, "another")] },
-      { segments: [cue(5, 43, "invalid")] }, { matchNotes: "Synthetic", moments: [] });
+    // The stretches 100 to 750 s and 800 to 840 s hold measured sound and no line.
+    const { analyzer, requests } = capture(...firstPass, { matchNotes: "Synthetic", moments: [] });
     f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(3000, [100, 12], [700, 11], [800, 10]));
     const run = new AnalysisOrchestrator({ ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
     vi.spyOn(service, "analyzeMeeting").mockImplementation((options, execution) => run.analyze(options, execution));
@@ -326,34 +325,30 @@ describe("original-language transcription", () => {
     const report = validateCliDocument("analyze", stdout.mock.calls.map(([chunk]) => chunk).join(""));
     expect(report.outcome).toBe("complete");
     expect(process.exitCode ?? 0).toBe(0);
-    expect(report.warnings).toContain("recovered 1 line(s) at 105 to 109 s.");
-    expect(report.warnings).toContain("recovered 1 line(s) at 705 to 709 s.");
-    expect(report.warnings).toContain("800 to 840 s was not checked again (reply time outside clip); it holds 10 s of measured sound.");
-    expect(report.warnings).toContainEqual(expect.stringMatching(/^\d+ line\(s\) sit where no sound was measured\.$/));
+    for (const warning of report.warnings) expect(warning).not.toMatch(/recovered|asking again|not checked again|asked again/);
     expect(report.warnings).toContainEqual(expect.stringMatching(/^\d+ line\(s\) sit where no sound was measured\.$/));
     const manifest = JSON.parse(await readFile(join(report.runFolder, "manifest.json"), "utf8"));
-    expect(manifest.derivedTranscript.rechecks.map((row: { status: string }) => row.status)).toEqual(["linesAdded", "failed"]);
-    expect(manifest.derivedTranscript.belowCutoff).toEqual({ stretches: 0, seconds: 0 });
-    expect(manifest.tokenUsage.transcript).toEqual({ promptTokens: 360, outputTokens: 36, totalTokens: 396 });
-    const merged = formatDerivedTranscript([
-      cue(0, 100, "first"), cue(105, 109, "addition"), cue(705, 709, "another"),
-      cue(750, 800, "second"), cue(840, 1200, "third"), cue(1200, 1800, "held"),
+    expect(manifest.derivedTranscript).not.toHaveProperty("rechecks");
+    expect(manifest.derivedTranscript).not.toHaveProperty("belowCutoff");
+    const firstPassOnly = formatDerivedTranscript([
+      cue(0, 100, "first"), cue(750, 800, "second"), cue(840, 1200, "third"), cue(1200, 1800, "held"),
       cue(1800, 2400, "held"), cue(2400, 3000, "held"),
     ]);
-    expect(requestText(requests.at(-1)!)).toContain(merged);
-    expect(manifest.derivedTranscript.sha256).toBe(createHash("sha256").update(merged).digest("hex"));
+    expect(requestText(requests.at(-1)!)).toContain(firstPassOnly);
+    expect(manifest.derivedTranscript.sha256).toBe(createHash("sha256").update(firstPassOnly).digest("hex"));
+    // One request per first-pass window and the index pass: nothing was asked again.
+    expect(requests).toHaveLength(windows.length + 1);
+    expect(analyzer.delete).toHaveBeenCalledTimes(windows.length);
     expect(f.deps.decodeSpeechEnvelope).toHaveBeenCalledTimes(1);
     expect(f.deps.decodeSpeechEnvelope.mock.calls[0]![1]).not.toHaveProperty("slice");
-    expect(analyzer.delete).toHaveBeenCalledTimes(8); // five first-pass uploads and three rechecks
   });
 
-  it("keeps manifest rows for an empty first pass and omits rechecks for unknown duration", async () => {
+  it("writes no recheck rows in the manifest, for a known or an unknown duration", async () => {
     for (const duration of [100, undefined]) {
       const f = await fixture(100);
       f.deps.probeDurationSeconds.mockResolvedValue(duration);
       f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(100, [10, 12]));
-      const held = duration === undefined ? [cue(0, 2, "held")] : [];
-      const { analyzer, requests } = capture({ segments: held }, { matchNotes: "Synthetic", moments: [] });
+      const { analyzer, requests } = capture({ segments: [cue(0, 2, "held")] }, { matchNotes: "Synthetic", moments: [] });
       const run = new AnalysisOrchestrator({ ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
       const options = await buildAnalyzeOptions(undefined, {
         source: "none", granolaTransport: "mcp", video: f.input, output: f.root, recipe: "requirements", depth: "standard",
@@ -361,16 +356,12 @@ describe("original-language transcription", () => {
       }, "test-key");
       const result = await run.analyze(options);
       const derived = result.manifest.derivedTranscript;
+      // A 98 s line-free tail with 12 s of measured sound is not asked about.
       expect(requests).toHaveLength(2);
       expect(derived).toBeDefined();
-      if (duration === undefined) {
-        expect(f.deps.decodeSpeechEnvelope).not.toHaveBeenCalled();
-        expect(derived).not.toHaveProperty("rechecks");
-        expect(derived).not.toHaveProperty("belowCutoff");
-      } else {
-        expect(derived?.rechecks).toEqual([{ start: 0, end: 100, measuredSeconds: 12, addedLines: 0, status: "skipped" }]);
-        expect(derived?.belowCutoff).toEqual({ stretches: 0, seconds: 0 });
-      }
+      expect(derived).not.toHaveProperty("rechecks");
+      expect(derived).not.toHaveProperty("belowCutoff");
+      if (duration === undefined) expect(f.deps.decodeSpeechEnvelope).not.toHaveBeenCalled();
     }
   });
 
@@ -490,7 +481,7 @@ describe("transcript coverage", () => {
     const f = await fixture(400);
     const held = [cue(0, 98, "A"), cue(98, 100, "B"), cue(100, 99, "point"), cue(140, 142, "right"), cue(142, 400, "last")];
     f.analyzer.transcribe.mockResolvedValue(held);
-    await cli(f, ["--json"]);
+    await cli(f, ["--json", "--recheck"]);
     const read = (suffix: string) => readFile(join(f.root, "synthetic" + suffix), "utf8");
     const original = JSON.parse(await read(".transcript.json")).segments;
     const originalSrt = await read(".srt");
@@ -502,7 +493,7 @@ describe("transcript coverage", () => {
     f.analyzer.transcribe.mockResolvedValueOnce(held).mockResolvedValueOnce([
       repeated, cue(0, 0, " b "), cue(0, 0, "POINT"), line, line, cue(35, 40, " RIGHT "), cue(39, 41, "crosses"), cue(40, 40, "outside"),
     ]);
-    await cli(f, ["--json", "--force", "--transcript-language", "fr"]);
+    await cli(f, ["--json", "--recheck", "--force", "--transcript-language", "fr"]);
     const report = validateCliDocument("transcribe", f.deps.stdout.mock.lastCall![0]);
     const exported = JSON.parse(await read(".transcript.json"));
     expect(exported.segments.filter((row: { recovered?: true }) => row.recovered).map((row: { start: number }) => row.start)).toEqual([100, 105]);
@@ -534,7 +525,7 @@ describe("transcript coverage", () => {
     f.analyzer.transcribe.mockResolvedValueOnce(held).mockResolvedValueOnce([cue(5, 9, "added")])
       .mockResolvedValueOnce([cue(0, 5, "discard whole reply"), cue(9, 43, "invalid")]);
     f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(400, [100, 12], [200, 10]));
-    await cli(f, ["--json", "--retention", "run"]);
+    await cli(f, ["--json", "--recheck", "--retention", "run"]);
     const exported = JSON.parse(await readFile(join(f.root, "synthetic.transcript.json"), "utf8"));
     const report = validateCliDocument("transcribe", f.deps.stdout.mock.lastCall![0]);
     expect(exported.segments.map((row: { text: string }) => row.text)).toEqual(["first", "added", "second", "last"]);
@@ -545,6 +536,41 @@ describe("transcript coverage", () => {
     expect(f.analyzer.delete).toHaveBeenCalledTimes(3);
     for (const [, path] of f.deps.extractAudioTrack.mock.calls) await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" });
     expect(process.exitCode ?? 0).toBe(0);
+  });
+
+  it("does not ask again unless --recheck is given, and says what the flag can do", async () => {
+    const held = [cue(0, 100, "first"), cue(140, 200, "second"), cue(240, 400, "last")];
+    const run = async (flags: string[]) => {
+      const f = await fixture(400);
+      // 100 to 140 s holds no line and 12 s of measured sound: a candidate when the recheck is on.
+      f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(400, [0, 50], [100, 12], [140, 30], [240, 80]));
+      f.analyzer.transcribe.mockResolvedValueOnce(held).mockResolvedValueOnce([cue(5, 9, "added by the second ask")]);
+      await cli(f, ["--json", ...flags]);
+      const read = (suffix: string) => readFile(join(f.root, `synthetic${suffix}`), "utf8");
+      return { f, report: validateCliDocument("transcribe", f.deps.stdout.mock.lastCall![0]),
+        exported: JSON.parse(await read(".transcript.json")), srt: await read(".srt"), speakers: await read("_speakers.txt") };
+    };
+    const off = await run([]);
+    expect(off.f.analyzer.transcribe).toHaveBeenCalledTimes(1);
+    expect(off.f.analyzer.upload).toHaveBeenCalledTimes(1);
+    for (const doc of [off.report, off.exported]) {
+      for (const field of ["outcome", "rechecks", "belowCutoff"]) expect(doc).not.toHaveProperty(field);
+    }
+    expect(off.exported.segments.map((row: { text: string }) => row.text)).toEqual(["first", "second", "last"]);
+    expect(off.exported.segments.some((row: { recovered?: true }) => row.recovered)).toBe(false);
+    expect(off.f.deps.stderr.mock.calls.flat().filter(line => /asking again|recovered|checked again|asked again/.test(line))).toEqual([]);
+    expect(off.srt).toBe(renderSrt(held).text);
+    expect(off.speakers.match(/^#/gm)).toHaveLength(1);
+
+    const on = await run(["--recheck"]);
+    expect(on.f.analyzer.transcribe).toHaveBeenCalledTimes(2);
+    expect(on.report).toMatchObject({ outcome: "complete", rechecks: [{ start: 100, end: 140, status: "linesAdded", addedLines: 1 }] });
+    expect(on.exported.segments.map((row: { text: string }) => row.text)).toContain("added by the second ask");
+
+    const program = new Command().exitOverride();
+    registerTranscribe(program, off.f.deps);
+    const help = program.commands.find(command => command.name() === "transcribe")!.helpInformation();
+    expect(help.replace(/\s+/g, " ")).toMatch(/--recheck experimental: .*can add lines that are not in the recording/);
   });
 
   it("marks a line only when its own span holds no measured sound at all", async () => {
@@ -562,7 +588,8 @@ describe("transcript coverage", () => {
       .toEqual([[10, false], [19, false], [40, true], [50, true], [60, false]]);
     expect(report.quietLines).toBe(2);
     expect(exported.quietLines).toBe(2);
-    expect(report.outcome).toBe("complete");
+    // Without --recheck no recheck field is written.
+    for (const doc of [report, exported]) for (const field of ["outcome", "rechecks", "belowCutoff"]) expect(doc).not.toHaveProperty(field);
     expect(f.deps.stderr.mock.calls.flat().filter(line => /sit where/.test(line)))
       .toEqual(["note: 2 line(s) sit where no sound was measured."]);
     const [srt, speakers] = await Promise.all(["synthetic.srt", "synthetic_speakers.txt"].map(name => readFile(join(f.root, name), "utf8")));
@@ -592,7 +619,7 @@ describe("transcript coverage", () => {
       f.analyzer.transcribe.mockResolvedValueOnce([cue(length, 100, "tail")]).mockResolvedValueOnce([]);
       if (measured === undefined) f.deps.decodeSpeechEnvelope.mockRejectedValue(new Error("decoder body"));
       else f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(100, [0, measured]));
-      await cli(f, ["--json"]);
+      await cli(f, ["--json", "--recheck"]);
       const report = validateCliDocument("transcribe", f.deps.stdout.mock.lastCall![0]);
       const exported = JSON.parse(await readFile(join(f.root, "synthetic.transcript.json"), "utf8"));
       const speakers = await readFile(join(f.root, "synthetic_speakers.txt"), "utf8");
@@ -634,7 +661,7 @@ describe("transcript coverage", () => {
       f.analyzer.transcribe.mockResolvedValueOnce([cue(5, 9, "first addition"), cue(9, 11, "continued"), cue(599, 600, "edge")])
         .mockResolvedValueOnce(failSecond ? [cue(0, 603, "bad")] : [cue(0, 2, " EDGE "), cue(5, 9, "second addition")]);
       f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(4800, [100, 12], [700, 10], [1300, 5]));
-      await cli(f, ["--json"]);
+      await cli(f, ["--json", "--recheck"]);
       const report = validateCliDocument("transcribe", f.deps.stdout.mock.lastCall![0]);
       expect(report.outcome).toBe("unchecked");
       expect(report.rechecks).toEqual([{
@@ -667,7 +694,7 @@ describe("transcript coverage", () => {
       const held = [cue(20, 30, "a"), cue(50, 60, "b"), cue(140, 150, "c"), cue(180, duration, "d")];
       f.analyzer.transcribe.mockResolvedValueOnce(held).mockResolvedValue([]);
       f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(duration, [0, 10], [30, 10], [60, 11], [150, 12]));
-      await cli(f, ["--json"]);
+      await cli(f, ["--json", "--recheck"]);
       const report = validateCliDocument("transcribe", f.deps.stdout.mock.lastCall![0]);
       const attempted = f.deps.extractAudioTrack.mock.calls.slice(1).map(([, , options]) => options?.startSeconds);
       expect(attempted).toEqual(starts);
@@ -682,7 +709,7 @@ describe("transcript coverage", () => {
         ...segment("x".repeat(characters)), start: "00:00:01", end: "00:00:20",
       }));
       f.analyzer.transcribe.mockResolvedValueOnce([segment()]).mockResolvedValueOnce([...dropped, segment()]);
-      await cli(f, ["--json"]);
+      await cli(f, ["--json", "--recheck"]);
       expect(f.deps.stderr.mock.calls.flat().filter(line => line.includes("lead-in"))).toEqual(
         characters === 15 ? [] : ["warning: window 2 dropped 40 transcript lines in its lead-in."]);
     }

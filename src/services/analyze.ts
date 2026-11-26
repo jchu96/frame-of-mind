@@ -679,6 +679,8 @@ export class AnalysisOrchestrator {
             message: "Derived-audio upload cleanup is unconfirmed; the temporary file expires with the provider retention window." });
           const checked = duration === undefined ? undefined : await recheckTranscript(
             segments, duration, windows.length, await soundBoundaries(), {
+              // The derived transcript never asks again: a re-ask can add speech the recording does not hold.
+              recheck: false,
               input: localVideo, signal: execution.signal, scratchParent: execution.jobScratchRoot,
               confinedInput: Boolean(execution.jobScratchRoot), checkCanceled: () => assertNotCanceled(execution.signal),
               extract: this.extractAudio, upload: path => analyzer.upload(path, "audio/aac"),
