@@ -122,7 +122,14 @@ export interface DerivedTranscriptionSegment {
   text: string;
 }
 
+export interface TranscriptGap {
+  start: number;
+  end: number;
+  speechSeconds: number;
+}
+
 export interface DerivedTranscriptProvenance {
+  gaps?: TranscriptGap[];
   requestedLanguage?: string;
   origin: "gemini-audio";
   model: string;

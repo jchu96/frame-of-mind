@@ -1,7 +1,7 @@
 import { ContractError } from "../domain/contract-error.js";
 import { randomUUID } from "node:crypto";
 import { link, lstat, open, rename, rm } from "node:fs/promises";
-import type { DerivedTranscriptionSegment } from "../domain/types.js";
+import type { DerivedTranscriptionSegment, TranscriptGap } from "../domain/types.js";
 import type { MediaClock } from "exact-time";
 import { timestampToSeconds } from "../lib/time.js";
 import { formatDerivedTranscript } from "./transcript.js";
@@ -38,21 +38,25 @@ export function renderSrt(segments: readonly DerivedTranscriptionSegment[]): {
   return { text: cues.length ? `${cues.join("\n")}\n` : "", adjustedCues, blankCues };
 }
 
-export function renderSpeakers(segments: DerivedTranscriptionSegment[], provenance: TranscriptProvenance): string {
+export function renderSpeakers(segments: DerivedTranscriptionSegment[], provenance: TranscriptProvenance, gaps?: readonly TranscriptGap[]): string {
+  const incomplete = gaps?.length
+    ? `# Transcript incomplete: no transcript for ${gaps.map(gap => `${gap.start} to ${gap.end} s`).join(", ")}.\n` : "";
   const hint = provenance.requestedLanguage ? `; requestedLanguage: ${provenance.requestedLanguage}` : "";
-  return `# frame-of-mind transcript; origin: gemini-audio; model: ${provenance.model}; clock: ${provenance.clock}; timing: reference-grade (whole-second)${hint}\n${formatDerivedTranscript(segments)}\n`;
+  return `# frame-of-mind transcript; origin: gemini-audio; model: ${provenance.model}; clock: ${provenance.clock}; timing: reference-grade (whole-second)${hint}\n${incomplete}${formatDerivedTranscript(segments)}\n`;
 }
 
 export function renderTranscriptJson(
   segments: DerivedTranscriptionSegment[],
   provenance: TranscriptProvenance,
   windowStarts?: readonly number[],
+  gaps?: readonly TranscriptGap[],
 ): string {
   const { adjustedCues, blankCues } = renderSrt(segments);
   return `${JSON.stringify({
     schemaVersion: 1, kind: "frame-of-mind.transcript", ...provenance,
     origin: "gemini-audio", timing: "reference-grade", adjustedCues, blankCues,
     ...(windowStarts && { windowStarts }),
+    ...(gaps && { gaps }),
     segments: segments.map(segment => ({
       ...segment, start: timestampToSeconds(segment.start), end: timestampToSeconds(segment.end),
     })),

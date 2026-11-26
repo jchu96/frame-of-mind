@@ -95,6 +95,10 @@ Both commands print `retention: provider` or `retention: run` on stderr before a
 The analyze manifest’s optional `tokenUsage` groups measured counts under `transcript`, `index`, `detail` (including repairs), `calibration` and `other`. A pass appears only when it reports usage.
 The transcript JSON’s `windowStarts` lists the first source second owned by each window, excluding overlap.
 
+`transcribe --json` adds optional `outcome` and `gaps`. A gap has integer source seconds `start`, `end` and `speechSeconds`.
+Each gap emits a stderr warning. Read `partial` for measured gaps, `complete` for an empty list and `unchecked` for a failed check with `gaps` omitted.
+The transcript JSON carries the same list. Derived analysis records it under `derivedTranscript.gaps` and emits one run warning per gap without changing the analysis outcome.
+
 Until a full release carries synchronous `analyze --json`, consumers may rely on
 the text line beginning `Analysis: ` and carrying the run directory, the
 accepted-count and outcome line, the retained-upload line, the `frameofmind:`

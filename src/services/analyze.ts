@@ -78,6 +78,7 @@ import {
   planTranscriptionWindows,
   probeDurationSeconds,
 } from "./audio.js";
+import { checkTranscriptCoverage, coverageWarnings } from "./transcript-coverage.js";
 import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
 import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
@@ -666,15 +667,26 @@ export class AnalysisOrchestrator {
         // so a failed window discards the whole derived transcript rather than
         // publishing a partial one.
         if (!transcriptionFailed) {
-          const formatted = formatDerivedTranscript(mergeTranscriptionChunks(transcribed));
+          const warnings: string[] = [];
+          const segments = mergeTranscriptionChunks(transcribed, message => warnings.push(message));
+          const formatted = formatDerivedTranscript(segments);
           if (formatted) {
+            const coverage = await checkTranscriptCoverage(segments, duration, localVideo, this.decodeSpeech, {
+              signal: execution.signal, confinedInput: Boolean(execution.jobScratchRoot),
+            });
+            assertNotCanceled(execution.signal);
+            warnings.push(...coverageWarnings(coverage));
             derivedTranscript = formatted;
             derivedTranscriptProvenance = {
               origin: "gemini-audio",
               model: analyzer.model,
               sha256: sha256Text(formatted),
+              ...(coverage.gaps && { gaps: coverage.gaps }),
               ...(requestedLanguage && { requestedLanguage }),
             };
+          }
+          for (const message of warnings) {
+            await reportWarning(progress, { kind: "warning", stage: "fetching_context", message });
           }
         }
         assertNotCanceled(execution.signal);

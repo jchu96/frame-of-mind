@@ -152,6 +152,11 @@ export const versionedAnalysisRunSchema = z.union([
 export const utcDateTimeSchema = z.string().datetime({ offset: false });
 
 const derivedTranscriptProvenanceSchema = z.object({
+  gaps: z.array(z.object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().positive(),
+    speechSeconds: z.number().int().min(5),
+  }).strict()).optional(),
   requestedLanguage: z.string().refine(tag => canonicalLanguageTag(tag) !== undefined).optional(),
   origin: z.literal("gemini-audio"),
   model: z.string().min(1).max(240),
