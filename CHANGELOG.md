@@ -5,6 +5,19 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-26
+
+### Fixed
+
+- A transcript time outside the audio it was heard in is never written. On a long recording, one window's reply could carry times far past the end of the file (minutes and seconds written in the hours and minutes fields), and they were written as given. Now each window's reply is checked before its times are placed on the recording: every start and end must be at or below the length of that window's audio plus 2 seconds. A reply that fails the check is a failed attempt for that window. `transcribe` asks again once, then fails and writes no files; `analyze` continues without a derived transcript and says so. A bad reply is never clamped, trimmed or reinterpreted.
+- When `transcribe` fails for this reason, the existing line `Transcription failed on window N after M attempt(s); no transcript files written.` is unchanged, and a second line on standard error says `A transcript time fell outside audio window N.` Error codes and exit statuses are unchanged.
+- A last transcription window shorter than 30 seconds is no longer sent on its own; the window before it runs to the end of the recording. A recording of 7200.6 seconds is now 12 windows, not 13.
+
+### Changed
+
+- Each transcription request now states the length of the audio sent and that no time may pass it.
+- Not covered: where the length of the audio is unknown (`analyze` on a source whose duration cannot be read), there is no check.
+
 ## [0.6.1] - 2026-11-24
 
 ### Added

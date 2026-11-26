@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository        | `jchu96/frame-of-mind`                      |
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
-| Current version   | `0.6.1`                                     |
+| Current version   | `0.6.2`                                     |
 | Default model     | `gemini-3.8-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
@@ -256,7 +256,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.6.1
+0.6.2
 ```
 
 ### 1.5 Configure Gemini
