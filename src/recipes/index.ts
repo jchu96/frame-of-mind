@@ -155,7 +155,7 @@ const issueReviewCharter: RecipeCharter = {
   rejection:
     "Reject ordinary discussion, speculation about unobserved behavior, and expectations nobody established.",
   boundaries:
-    "Never present an inference as an observed fact. Never invent reproduction steps, URLs, or off-screen state. Record only steps actually observed.",
+    "Never present an inference as an observed fact. Never invent reproduction steps, URLs, or off-screen state. Record only steps actually observed. When a window disappears, report what is visible and give a cause such as closing or crashing only if the recording shows it.",
 };
 
 // Instructional and explainer videos: the free-prose custom recipe this
@@ -229,7 +229,7 @@ const recipes: Record<BuiltInRecipeId, AnalysisRecipe> = {
     label: "Issue review",
     description: "Find visible bugs, wrong values, errors, mis-renders, and concrete workflow friction.",
     charter: issueReviewCharter,
-    revision: "builtin-2026-08-11.1",
+    revision: "builtin-2026-11-26.1",
   }),
   decisions: {
     id: "decisions",

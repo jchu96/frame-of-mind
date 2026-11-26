@@ -176,6 +176,7 @@ describe("analysis recipes", () => {
     expect(interrogation).toContain("Reject strictly");
     for (const instruction of [index, interrogation]) {
       expect(instruction).toContain("Boundaries: Never present an inference as an observed fact.");
+      expect(instruction).toContain("give a cause such as closing or crashing only if the recording shows it");
       expect(instruction).toContain("Actual, Expected, Impact, Affected surface");
     }
   });
@@ -226,7 +227,7 @@ describe("analysis recipes", () => {
   });
 
   it("scopes the revision bump to the migrated recipe only", async () => {
-    expect(builtInRecipeRevision("issue-review")).toBe("builtin-2026-08-11.1");
+    expect(builtInRecipeRevision("issue-review")).toBe("builtin-2026-11-26.1");
     expect(builtInRecipeRevision("teaching-points")).toBe("builtin-2026-11-22.1");
     expect((await loadRecipe("teaching-points")).revision).toBe("builtin-2026-11-22.1");
     expect((await loadRecipe("issue-review")).revision).toBe(builtInRecipeRevision("issue-review"));

@@ -61,11 +61,10 @@ describe("AnalysisOrchestrator", () => {
       return { ...fixture, analyzer, createAnalyzer, probeDurationSeconds, extractAudioTrack, orchestrator };
     }
 
-    it("refuses 9000 seconds with hours and remedies before transcription, upload, or run creation", async () => {
+    it("refuses 9000 seconds with the limit and remedy before transcription, upload, or run creation", async () => {
       const fixture = await durationFixture(9000);
       await expect(fixture.orchestrator.analyze(fixture.options)).rejects.toThrow(
-        "Recording is 2.5 h; the selected model's video window is 2.0 h at this media resolution. " +
-          "Split the recording or lower media resolution.",
+        "Recording is 9000 seconds long and the limit is 7260 seconds. Split the recording into shorter parts.",
       );
       expect(fixture.probeDurationSeconds).toHaveBeenCalledTimes(1);
       expect(fixture.createAnalyzer).not.toHaveBeenCalled();
@@ -94,18 +93,18 @@ describe("AnalysisOrchestrator", () => {
       expect(fixture.analyzer.upload).toHaveBeenLastCalledWith(fixture.options.video, "video/mp4");
     });
 
-    it("allows exactly 7200 seconds and reuses the probe for transcription windows", async () => {
-      const fixture = await durationFixture(7200);
+    it("allows 7200.6 seconds and reuses the probe for transcription windows", async () => {
+      const fixture = await durationFixture(7200.6);
       await fixture.orchestrator.analyze(fixture.options);
       expect(fixture.probeDurationSeconds).toHaveBeenCalledTimes(1);
       expect(fixture.analyzer.transcribe).toHaveBeenCalledTimes(12);
       expect(fixture.analyzer.upload).toHaveBeenLastCalledWith(fixture.options.video, "video/mp4");
     });
 
-    it("refuses 7201 seconds even when derived transcription is disabled", async () => {
-      const fixture = await durationFixture(7201);
+    it("refuses 7260.5 seconds even when derived transcription is disabled", async () => {
+      const fixture = await durationFixture(7260.5);
       await expect(fixture.orchestrator.analyze({ ...fixture.options, derivedTranscript: false }))
-        .rejects.toThrow("video window is 2.0 h");
+        .rejects.toMatchObject({ code: "RECORDING_TOO_LONG", details: { durationSeconds: 7260.5, limitSeconds: 7260 } });
       expect(fixture.createAnalyzer).not.toHaveBeenCalled();
       expect(fixture.analyzer.upload).not.toHaveBeenCalled();
     });
@@ -119,7 +118,7 @@ describe("AnalysisOrchestrator", () => {
       expect(fixture.analyzer.upload).toHaveBeenLastCalledWith(fixture.options.video, "video/mp4");
       // Resolve the environment afresh on each run, even with the same instance.
       vi.stubEnv("FRAME_OF_MIND_MAX_VIDEO_SECONDS", "7200");
-      await expect(fixture.orchestrator.analyze(fixture.options)).rejects.toThrow("video window is 2.0 h");
+      await expect(fixture.orchestrator.analyze(fixture.options)).rejects.toMatchObject({ code: "RECORDING_TOO_LONG", details: { durationSeconds: 9000, limitSeconds: 7200 } });
       expect(fixture.createAnalyzer).toHaveBeenCalledTimes(1);
     });
 

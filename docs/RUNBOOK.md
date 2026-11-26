@@ -415,7 +415,7 @@ JSON file should expose recognizable transcript/title/date keys.
 
 ## 3. Standard analysis procedure
 
-Local CLI/Studio analysis refuses known recording durations above `FRAME_OF_MIND_MAX_VIDEO_SECONDS` (default `7200`, positive integer seconds) before transcription, upload, or run creation; unknown durations proceed with the existing fallback.
+Local CLI/Studio analysis refuses known recording durations above `FRAME_OF_MIND_MAX_VIDEO_SECONDS` before transcription, upload, or run creation. The default is `7260` seconds (two hours with one minute of grace). An explicit positive integer limit applies exactly. Unknown durations proceed with the existing fallback.
 
 `FRAME_OF_MIND_DETAIL_CONCURRENCY` (integer `1`-`8`, default `1`) sets how many pass-2 Gemini detail requests the CLI overlaps when `--concurrency` is absent; the flag wins. Results, screenshots, and outcome accounting stay in candidate order. Raise it only within the key's rate limits: each extra slot multiplies request bursts, and per-span token attributes are omitted above `1` because overlapping calls cannot be attributed.
 
