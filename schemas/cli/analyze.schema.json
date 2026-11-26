@@ -19,6 +19,16 @@
   },
   "else": {
     "properties": {
+      "retention": {"enum": ["provider", "run"]},
+      "tokens": {
+        "type": "object",
+        "properties": {
+          "promptTokens": {"type": "integer", "minimum": 0},
+          "outputTokens": {"type": "integer", "minimum": 0},
+          "totalTokens": {"type": "integer", "minimum": 1}
+        },
+        "required": ["promptTokens", "outputTokens", "totalTokens"]
+      },
       "runFolder": {"type": "string", "description": "Directory containing manifest.json, whose optional thinkingLevel records the explicit --thinking-level input."},
       "runId": {"type": "string"},
       "outcome": {"type": "string"},

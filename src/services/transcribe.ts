@@ -73,6 +73,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   let retention;
   try { retention = resolveRetention(options, process.env.FRAME_OF_MIND_UPLOAD_RETENTION); }
   catch { throw new TranscribeError("Upload retention flags must agree and select provider or run.", "USAGE"); }
+  deps.stderr(`retention: ${retention}`);
   const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new TranscribeError("Set GEMINI_API_KEY before transcription.", "KEY_MISSING");
   canceled();
@@ -164,7 +165,11 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
     ...(requestedLanguage && { requestedLanguage }),
   };
   const srt = renderSrt(segments);
-  const texts = [srt.text, renderSpeakers(segments, provenance), ...(options.json ? [renderTranscriptJson(segments, provenance)] : [])];
+  const texts = [srt.text, renderSpeakers(segments, provenance)];
+  if (options.json) {
+    const windowStarts = windows.map(window => window.nominalStartSeconds);
+    texts.push(renderTranscriptJson(segments, provenance, windowStarts));
+  }
   canceled();
   await mkdir(output, { recursive: true, mode: 0o700 });
   // Each file is published atomically only after all windows and rendering succeed.
@@ -176,5 +181,9 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   deps.stdout(`segments: ${segments.length}; speakers: ${new Set(segments.map(s => s.speaker)).size}; adjustedCues: ${srt.adjustedCues}; blankCues: ${srt.blankCues}`);
   const usage = analyzer.usageSnapshot?.();
   if (usage) deps.stdout(`tokens: ${JSON.stringify(usage)}`);
-  return { segments, paths, model, language: requestedLanguage ?? null, adjustedCues: srt.adjustedCues, blankCues: srt.blankCues };
+  return {
+    segments, paths, model, language: requestedLanguage ?? null,
+    adjustedCues: srt.adjustedCues, blankCues: srt.blankCues,
+    retention, ...(usage && { tokens: usage }),
+  };
 }

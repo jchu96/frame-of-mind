@@ -1,3 +1,4 @@
+import type { TokenUsage } from "./token-usage.js";
 import type { RunClock } from "./clock.js";
 export type JsonObject = Record<string, unknown>;
 
@@ -164,6 +165,7 @@ export type ThinkingLevel = typeof THINKING_LEVELS[number];
 
 interface RunManifestBase {
   clock?: RunClock;
+  tokenUsage?: TokenUsage;
   toolVersion: string;
   promptRevision: string;
   runId: string;

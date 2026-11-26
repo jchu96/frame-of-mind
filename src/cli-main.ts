@@ -26,6 +26,7 @@ import { DEFAULT_GEMINI_MODEL } from "./adapters/gemini-model.js";
 import { IS_RELEASE_BUNDLE, RELEASE_COMMIT, VERSION } from "./version.js";
 import { registerKey } from "./commands/key.js";
 import { loadRunNotes } from "./services/run-notes.js";
+import { measuredTotal } from "./domain/token-usage.js";
 import { resolveRetention } from "./domain/retention.js";
 import { runLabelSchema } from "./domain/schemas.js";
 import { THINKING_LEVELS, type ThinkingLevel, type ContextProvider } from "./domain/types.js";
@@ -287,6 +288,7 @@ program
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
         analyzeOptions = await buildAnalyzeOptions(meetingId, flags, process.env.GEMINI_API_KEY);
+        process.stderr.write(`retention: ${analyzeOptions.retention}\n`);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
         // @types/bun 1.4.0 drops Node's signal overloads from process.on/off;
@@ -295,6 +297,7 @@ program
         let result;
         try {
           const execution = {
+            includeTokenUsage: true,
             signal: cancellation.signal,
             onFailurePublished(directory: string) { failureFolder = directory; },
             progress: {
@@ -355,8 +358,11 @@ program
         printAnalysisSummary(result, flags.json ? process.stderr : process.stdout);
         if (flags.json) {
           const remote = result.manifest.remoteFile;
+          const tokens = measuredTotal(result.manifest.tokenUsage);
           writeDocument({
             runFolder: resolve(result.directory),
+            retention: analyzeOptions.retention,
+            ...(tokens && { tokens }),
             runId: result.manifest.runId,
             outcome: result.outcome.status,
             acceptedCount: result.outcome.candidates.accepted,

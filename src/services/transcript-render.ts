@@ -43,11 +43,16 @@ export function renderSpeakers(segments: DerivedTranscriptionSegment[], provenan
   return `# frame-of-mind transcript; origin: gemini-audio; model: ${provenance.model}; clock: ${provenance.clock}; timing: reference-grade (whole-second)${hint}\n${formatDerivedTranscript(segments)}\n`;
 }
 
-export function renderTranscriptJson(segments: DerivedTranscriptionSegment[], provenance: TranscriptProvenance): string {
+export function renderTranscriptJson(
+  segments: DerivedTranscriptionSegment[],
+  provenance: TranscriptProvenance,
+  windowStarts?: readonly number[],
+): string {
   const { adjustedCues, blankCues } = renderSrt(segments);
   return `${JSON.stringify({
     schemaVersion: 1, kind: "frame-of-mind.transcript", ...provenance,
     origin: "gemini-audio", timing: "reference-grade", adjustedCues, blankCues,
+    ...(windowStarts && { windowStarts }),
     segments: segments.map(segment => ({
       ...segment, start: timestampToSeconds(segment.start), end: timestampToSeconds(segment.end),
     })),

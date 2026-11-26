@@ -1,3 +1,4 @@
+import { FileContextSource } from "../src/adapters/file-context.js";
 import { validateCliDocument } from "./helpers/cli-schema.js";
 import { createHash } from "node:crypto";
 import { calibrateClipClock } from "../src/adapters/gemini-calibration.js";
@@ -198,7 +199,11 @@ describe("original-language transcription", () => {
     const analyzer = new GeminiVideoAnalyzer("test-key", "gemini-test", {
       generateContent: async request => {
         requests.push(request);
-        return { text: JSON.stringify(responses[requests.length - 1]) };
+        const call = requests.length;
+        return {
+          text: JSON.stringify(responses[call - 1]),
+          usageMetadata: { promptTokenCount: 10 * call, totalTokenCount: 11 * call },
+        };
       },
     });
     vi.spyOn(analyzer, "upload").mockImplementation(async (_path, mimeType) => ({
@@ -264,6 +269,7 @@ describe("original-language transcription", () => {
       screenshots: false, keepUpload: false, transcriptLanguage,
     });
     expect(requests).toHaveLength(5);
+    expect(analyzer.measuredUsageByPass()?.calibration).toEqual({ promptTokens: 10, outputTokens: 1, totalTokens: 11 });
     const expectedTag = transcriptLanguage ? "fr-CA" : undefined;
     expectOriginalLanguage(requests[1]!, "initial", expectedTag, 600);
     expectOriginalLanguage(requests[2]!, "initial", expectedTag, 315);
@@ -276,6 +282,56 @@ describe("original-language transcription", () => {
     const escaped = lines.replace("<", "&lt;");
     expect(requestText(requests[3]!).match(/<transcript>\n([\s\S]*?)\n<\/transcript>/)?.[1]).toBe(escaped);
     expect(requestText(requests[4]!).match(/<nearby-transcript>\n([\s\S]*?)\n<\/nearby-transcript>/)?.[1]).toBe(escaped);
+  });
+
+  it("attributes measured requests and detail repair to their passes in the analyze CLI receipt", async () => {
+    const { program } = await import("../src/cli.js");
+    const service = await import("../src/services/analyze.js");
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const candidate = { start: "00:00:02", end: "00:00:04", kind: "test", summary: "Synthetic", importance: "low" };
+    const detail = { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic" };
+    for (const retention of ["provider", "run"]) {
+      const f = await fixture(10);
+      const { analyzer } = capture(
+        { segments: [{ ...segment(), start: candidate.start, end: candidate.end }] },
+        { matchNotes: "Synthetic", moments: [candidate, { ...candidate, start: "00:00:06", end: "00:00:08" }] },
+        {}, detail, detail,
+      );
+      const run = new AnalysisOrchestrator({ ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
+      vi.spyOn(service, "analyzeMeeting").mockImplementation((options, execution) => run.analyze(options, execution));
+      stdout.mockClear();
+      stderr.mockClear();
+      await program.parseAsync(["analyze", "--json", "--source", "none", "--video", f.input, "--output", f.root,
+        "--no-calibrate", "--no-screenshots", "--concurrency", "2", ...(retention === "run" ? ["--retention", "run"] : [])], { from: "user" });
+      const report = validateCliDocument("analyze", stdout.mock.calls.map(([chunk]) => chunk).join(""));
+      const manifest = JSON.parse(await readFile(join(report.runFolder, "manifest.json"), "utf8"));
+      expect(manifest.tokenUsage).toEqual({
+        transcript: { promptTokens: 10, outputTokens: 1, totalTokens: 11 },
+        index: { promptTokens: 20, outputTokens: 2, totalTokens: 22 },
+        detail: { promptTokens: 120, outputTokens: 12, totalTokens: 132 },
+      });
+      expect(report.tokens).toEqual({ promptTokens: 150, outputTokens: 15, totalTokens: 165 });
+      expect(report.tokens).toEqual(analyzer.usageSnapshot());
+      expect(report.retention).toBe(retention);
+      const line = `retention: ${retention}\n`;
+      expect(stderr.mock.calls.filter(([chunk]) => chunk === line)).toHaveLength(1);
+      const index = stderr.mock.calls.findIndex(([chunk]) => chunk === line);
+      expect(stderr.mock.invocationCallOrder[index]).toBeLessThan(vi.mocked(analyzer.upload).mock.invocationCallOrder[0]!);
+    }
+  });
+
+  it("omits a pass that returned no usage and preserves the measurements from other passes", async () => {
+    const analyzer = new GeminiVideoAnalyzer("test-key", "gemini-test", {
+      generateContent: vi.fn()
+        .mockResolvedValueOnce({ text: '{"seconds":27}' })
+        .mockResolvedValueOnce({ text: '{"segments":[]}', usageMetadata: { promptTokenCount: 8, totalTokenCount: 11 } }),
+    });
+    const file = { uri: "https://example.invalid/files/synthetic", mimeType: "video/mp4" };
+    await analyzer.probeClipClock(file);
+    expect(analyzer.measuredUsageByPass()).toBeUndefined();
+    await analyzer.transcribe({ ...file, mimeType: "audio/aac" });
+    expect(analyzer.measuredUsageByPass()).toEqual({ transcript: { promptTokens: 8, outputTokens: 3, totalTokens: 11 } });
   });
 
   it("captures the hosted provider request and preserves the derived transcript", async () => {
@@ -299,6 +355,27 @@ describe("output", () => {
       expect([...f.deps.stdout.mock.calls, ...f.deps.stderr.mock.calls].flat().join("\n")).not.toContain("ZEBRA-SENTINEL-LINE");
     }
   });
+  it("reports retention before upload, measured totals and owned window starts", async () => {
+    for (const [duration, retention, starts] of [[1500, "provider", [0, 600, 1200]], [10, "run", [0]]] as const) {
+      const f = await fixture(duration);
+      await cli(f, ["--json", ...(retention === "run" ? ["--retention", "run"] : [])]);
+      const report = validateCliDocument("transcribe", f.deps.stdout.mock.calls[0]![0]);
+      expect(report).toMatchObject({ retention, tokens: { promptTokens: 12, outputTokens: 3, totalTokens: 15 } });
+      const line = `retention: ${retention}`;
+      expect(f.deps.stderr.mock.calls.filter(([chunk]) => chunk === line)).toHaveLength(1);
+      const index = f.deps.stderr.mock.calls.findIndex(([chunk]) => chunk === line);
+      expect(f.deps.stderr.mock.invocationCallOrder[index]).toBeLessThan(f.analyzer.upload.mock.invocationCallOrder[0]!);
+      const path = join(f.root, "synthetic.transcript.json");
+      const { windowStarts, ...legacy } = JSON.parse(await readFile(path, "utf8"));
+      expect(windowStarts).toEqual(starts);
+      const reader = new FileContextSource(path);
+      const current = await reader.meeting("synthetic");
+      expect(current.transcript).toContain("[00:00:02] Speaker 1:");
+      await writeFile(path, JSON.stringify(legacy));
+      expect((await reader.meeting("synthetic")).transcript).toBe(current.transcript);
+    }
+  });
+
   it("reports blankCues and adjustedCues and writes JSON only when requested", async () => {
     const f = await fixture(10);
     const cue = { ...segment("a"), start: "00:00:04", end: "00:00:06" };
