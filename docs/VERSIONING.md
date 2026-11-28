@@ -7,7 +7,7 @@ versions for durable schemas and prompts.
 
 | Surface | Current | Change rule |
 |---|---:|---|
-| CLI/package | `0.6.8` | Semantic Versioning |
+| CLI/package | `0.6.9` | Semantic Versioning |
 | `analysis.json` schema | CLI and local Studio: `4` (meeting), `5` (video-only). Hosted Studio: `2`, `3` | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
 | `times.json` sidecar | `2` (default), `3` (speech snapping) | increment for breaking shape/meaning |
@@ -15,7 +15,7 @@ versions for durable schemas and prompts.
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
-A build that is not a release bundle prints its version with `+source` (for example `0.6.8+source`)
+A build that is not a release bundle prints its version with `+source` (for example `0.6.9+source`)
 in `--version`, `doctor`, the `version` document, run manifests and the local MCP server. A release
 bundle prints the plain version. Hosted Studio reports the plain version: its deploy is its release.
 A reader that parses the version must accept the `+source` build mark.
@@ -87,6 +87,7 @@ The [CLI and MCP contract](MCP_TOOLS.md) lists the current interfaces.
 - `v0.6.6` tags its release pull request's merge commit. It sends full-size stills with each detail request and keeps a screen quotation only when it cites one, removes the transcript recheck, and makes `doctor` name where the provider key came from.
 - `v0.6.7` tags its release pull request's merge commit. It lets an operator name a command that supplies the provider key, uses a key that is present on every launch, and lets the local media checks wait longer for a longer recording.
 - `v0.6.8` tags its release pull request's merge commit. `analyze` and `transcribe` take a time range and answer in exact positions on the recording's own clock; the command line and local Studio write analysis versions 4 and 5 and outcome version 2 while hosted Studio keeps 2 and 3; the speech snap marks word edges at a lower level than the one that finds speech and says when the sound is noisy.
+- `v0.6.9` tags its release pull request's merge commit. It restores `analyze` on a sound-only recording, gives every usage refusal a fixed reason word and exit code 2, and adds the candidates contract with the built-in engine working through it (a new candidates document, version 1); no existing schema version changes.
 - `v0.3.0` has no tag or GitHub release.
 
 ## Model and dependency updates

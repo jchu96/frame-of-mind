@@ -5,15 +5,36 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-- A bound in frames or timecode on a sound-only recording answers the reason released in 0.6.8, `Audio bounds use seconds or Nsamp.`, again. `no-video-stream` is used only where no reason existed before.
+## [0.6.9] - 2026-11-28
 
-- Fixed a v0.6.8 regression that refused sound-only recordings in `analyze`. Voice recordings use native sample positions and produce no stills. A failure before media upload starts reports `phase: "prepare"` and `sent: false`.
+`analyze` takes a sound-only recording again, which 0.6.8 refused. Every refused command line now says why with a fixed word and exits 2. A finder outside the tool can hand `analyze` a list of candidate moments through one door, and the examining model is told what was claimed, as quoted data.
 
-- Analyze accepts a verified candidates file, previews proposer and grader roles, and writes each candidate’s provenance and resolved start and exclusive end. Measured cuts and speech snaps identify the tool. Claims keep the finder’s radius. The grader receives the claim and optional surface as fenced data on both routes. Items and failure rows retain the full proposal. The effect of showing the claim was measured on one set of screen recordings. [Engine contract](docs/ENGINE_CONTRACT.md)
-- CLI usage refusals carry a reason in `error.details.reason` with `--json`. Refusals that exited 1 in plain mode now exit 2. A range scan that cannot verify the cut returns the fixed reason `Range requires a locally verifiable cut.` and reports measured timing in `error.details.frameTiming`.
+**What exists of the engines work.** This release has the neutral candidates contract and the built-in engine working through it: `--candidates`, `--proposer` and `--grader` (the built-in engine only), the plan in the reply, and the exact answer with who proposed and who examined each item. There is no second engine, no library and no search in this release.
 
-- Set `FRAME_OF_MIND_KEY_COMMAND='[]'` to skip the account’s key command for one launch. `doctor` explains the opt-out and includes `key.commandDisabledByEnvironment` in JSON.
-- `probe --json`, analysis manifests and transcription receipts report the picture rates measured from packet timestamps, their shares and any odd gaps. A probe that refuses the frame grid includes the report in `error.details.frameTiming`.
+### Fixed
+
+- A regression in 0.6.8: `analyze` refused a sound-only recording with "Analysis requires a video stream." It analyses one again, as 0.6.7 did. Positions are whole sample counts at the track's own rate. There is no picture, so the run takes no stills, writes no still times and no screen quotations, and says so on its first lines. A command that truly needs a picture (`frame`, `probe`, `verify`, `proxy`, `slice`) refuses with the reason `no-video-stream`. A bound in frames or timecode on a sound-only recording keeps the reason it had in 0.6.8, `Audio bounds use seconds or Nsamp.`
+
+### Added
+
+- The candidates door. `analyze --candidates <file>` takes a verified list of candidate moments made on the same recording by any finder; the built-in engine's own first pass goes through the same validator. `--proposer` and `--grader` name the roles, the reply and manifest carry `enginePlan`, and `doctor --json` and `analyze --dry-run` preview the route with no provider call. Every item and failure row carries `candidateId`, `proposedBy`, `gradedBy` and the full `proposal`; every item carries `resolvedEdges`, the one start and one end the tool stands behind, each marked `measured` or `claim` with its precision and who said it. [Engine contract](docs/ENGINE_CONTRACT.md)
+- The claim rule. The examining model is told what the finder claimed: one sentence in its request quotes the row's `reason` (or its `label` when the reason is empty) and its optional `surface`, as fenced data that is evidence to check and never an instruction. The claim appears in no other request; a row's `definition` and `searchPhrase` are never sent. A row whose `reason` is over 10,000 characters, `surface` over 500 or `label` over 120 refuses the whole document; nothing is cut. Measured on one set of screen recordings, an examiner that is not told the claim stops rejecting candidates.
+- `probe --json`, analysis manifests and transcription receipts carry `frameTiming`: the picture rates measured from packet timestamps, their shares, and any odd gaps. A probe that refuses the frame grid includes the report in `error.details.frameTiming`. An absent `sourceTiming` in a manifest means the recording has one proven frame rate.
+- `FRAME_OF_MIND_KEY_COMMAND='[]'` switches the account's key command off for one launch, on every kind of launch. `doctor` says so in words, and `doctor --json` carries `key.commandDisabledByEnvironment`.
+- A failure before any upload request carrying media has started says so: `error.details` carries `phase: "prepare"` and `sent: false`, on every command that can send, and no run folder is published. Once a transfer may have started the upload failure receipt is unchanged and carries no `sent` field. A run that names an already-uploaded file with `--remote-file` keeps its published failure receipt from the lookup of that file onward.
+
+### Changed
+
+- Every usage refusal carries a fixed word in `error.details.reason` with `--json`, including the argument parser's own refusals. **Usage refusals that exited 1 without `--json` now exit 2**, the same code as with `--json`. The time-range reasons released in 0.6.8 keep their wording. README and the runbook list the words; the four that belong to the candidates door are on the engine contract page.
+- The range-scan refusal is split. Its reason is the fixed phrase `Range requires a locally verifiable cut.` alone; the measured timing that 0.6.8 put in front of it is now in `error.details.frameTiming`.
+- With the built-in engine in both roles, the second pass's request is the one 0.6.8 sends, with one difference: a newline or control character inside the quoted claim is now written escaped where 0.6.8 sent it raw. Quoted data must not be able to break out of its quotation, and one treatment keeps a file's rows and the built-in engine's rows identical.
+- The second pass's progress line no longer ends with the span as JSON.
+
+### Known limits
+
+- An examiner rejects a claim that is partly right as a whole: a moment that is there but several seconds from the claimed time is rejected, not moved.
+- The effect of telling the examiner the claim was measured on one set of screen recordings; it is a direction, not a rate.
+- On a sound-only recording the first pass's request still uses the words "video" and "visual". The answer is unaffected.
 
 ## [0.6.8] - 2026-11-28
 
