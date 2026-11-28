@@ -10,11 +10,14 @@ if (!runDirectory) {
   process.exitCode = 2;
 } else {
   const directory = resolve(runDirectory);
-  const [analysis, manifest] = await Promise.all([
+  const [analysis, manifest, outcome] = await Promise.all([
     readFile(resolve(directory, "analysis.json"), "utf8").then(JSON.parse),
     readFile(resolve(directory, "manifest.json"), "utf8").then(JSON.parse),
+    readFile(resolve(directory, "analysis-outcome.json"), "utf8").then(JSON.parse).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    }),
   ]);
-  const input = await validateVersionedRunImport({ analysis, manifest });
+  const input = await validateVersionedRunImport({ analysis, manifest, outcome });
   const databasePath = resolve(process.env.NUXT_SQLITE_PATH || ".data/frame-of-mind.sqlite");
   const store = createLocalRunStore(databasePath, LOCAL_SINGLE_USER_PRINCIPAL);
   const result = await store.importRun(input, "local-cli");

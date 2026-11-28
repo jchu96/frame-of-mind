@@ -89,3 +89,7 @@ first-class evidence.
 
 Rejected as the default because the privacy and cost decision would occur only
 after the complete media had already crossed the remote boundary.
+
+## Amendment for caller-selected ranges
+
+The caller can pass `--from` and `--to` directly on the original recording. The tool makes and removes the private verified derivative, uploads the selection and reports source-clock positions. Transcript offsets describe transcript time minus original recording time. Each call still handles one caller-selected interval.

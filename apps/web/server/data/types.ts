@@ -1,6 +1,12 @@
 export * from "../../../../src/domain/run-store.js";
 import type { RunSummaryRow } from "../../../../src/domain/run-store.js";
 
+export class HostedRunVersionError extends Error {
+  constructor(version: number) {
+    super(`Hosted Studio accepts analysis versions 2 and 3. Open this version ${version} bundle in local Studio.`);
+  }
+}
+
 export class RunProjectionVersionConflictError extends Error {
   readonly code = "run_projection_version_conflict";
 

@@ -1,3 +1,5 @@
+import type { Bound, ExactSpan } from "./source-bound.js";
+import type { RangeFields } from "./range-fields.js";
 import type { TokenUsage } from "./token-usage.js";
 import type { RunClock } from "./clock.js";
 export type JsonObject = Record<string, unknown>;
@@ -11,6 +13,7 @@ export interface MeetingEvidence {
   sourceUrl?: string;
   summary?: string;
   transcript: string;
+  transcriptCues?: {startMs:number;endMs?:number;text:string;exactSpan?:ExactSpan}[];
   raw: unknown;
 }
 
@@ -75,6 +78,7 @@ export interface MediaSource {
 }
 
 export interface IndexedMoment {
+  exactSpan?: ExactSpan;
   start: string;
   end: string;
   speaker?: string;
@@ -99,6 +103,7 @@ export interface AnalysisDetail {
     surface?: string;
   };
   evidence?: {
+    exactTime?: Bound;
     timestamp?: string;
     verbatimUiText?: string;
     reporterQuote?: string;
@@ -116,6 +121,8 @@ export interface DetailStill {
 }
 
 export interface AnalysisItem {
+  exactStillTimes?: Bound[];
+  screenshotExactTime?: Bound;
   stillTimes?: string[];
   /** Set when a screen quote cited a time that is no attached still and was removed. */
   screenTextNotFromStill?: true;
@@ -125,6 +132,9 @@ export interface AnalysisItem {
 }
 
 export interface DerivedTranscriptionSegment {
+  exactSpan?: import("./source-bound.js").ExactSpan;
+  interruptedStart?: boolean;
+  interruptedEnd?: boolean;
   /** No sound was measured anywhere in this line's own span. */
   quiet?: true;
   start: string;
@@ -169,12 +179,14 @@ export interface AnalysisRunV3 extends AnalysisRunBase {
   };
 }
 
-export type VersionedAnalysisRun = AnalysisRun | AnalysisRunV3;
+export interface AnalysisRunV4 extends Omit<AnalysisRun, "schemaVersion"> { schemaVersion: 4 }
+export interface AnalysisRunV5 extends Omit<AnalysisRunV3, "schemaVersion"> { schemaVersion: 5 }
+export type VersionedAnalysisRun = AnalysisRun | AnalysisRunV3 | AnalysisRunV4 | AnalysisRunV5;
 
 export const THINKING_LEVELS = ["low", "medium", "high"] as const;
 export type ThinkingLevel = typeof THINKING_LEVELS[number];
 
-interface RunManifestBase {
+interface RunManifestBase extends RangeFields {
   clock?: RunClock;
   tokenUsage?: TokenUsage;
   toolVersion: string;

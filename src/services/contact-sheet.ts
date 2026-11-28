@@ -1,3 +1,4 @@
+import { boundIndex, humanTime, type Bound } from "../domain/source-bound.js";
 import { childEnvironment, spawn } from "../lib/child-env.js";
 import { access, chmod, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,6 +6,7 @@ import { join } from "node:path";
 /** One tile: a moment screenshot in the bundle and its label. */
 export interface ContactSheetEntry {
   /** Record number as numbered in analysis.md and report.html. */
+  actual?: Bound; cited?: Bound;
   record: number;
   /** Cited time, canonical HH:MM:SS. */
   time: string;
@@ -42,6 +44,8 @@ const GLYPHS: Record<string, readonly string[]> = {
   "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
   ":": ["00000", "01100", "01100", "00000", "01100", "01100", "00000"],
   "#": ["01010", "01010", "11111", "01010", "11111", "01010", "01010"],
+  "F": ["11111","10000","10000","11110","10000","10000","10000"],
+  "T": ["11111","00100","00100","00100","00100","00100","00100"],
   " ": ["00000", "00000", "00000", "00000", "00000", "00000", "00000"],
 };
 
@@ -62,7 +66,7 @@ export function contactSheetLayout(count: number): { columns: number; rows: numb
 }
 
 /** Draws `text` into an RGB24 canvas; unknown characters are skipped. */
-export function drawLabel(canvas: Buffer, canvasWidth: number, x: number, y: number, text: string): void {
+export function drawLabel(canvas: Buffer, canvasWidth: number, x: number, y: number, text: string, scale = SCALE): void {
   // Whole pixels only: a fractional row would shift the label sideways by a
   // fraction of the canvas width.
   const top = Math.floor(y);
@@ -73,11 +77,11 @@ export function drawLabel(canvas: Buffer, canvasWidth: number, x: number, y: num
     for (const [row, bits] of glyph.entries()) {
       for (const [column, bit] of [...bits].entries()) {
         if (bit !== "1") continue;
-        for (let dy = 0; dy < SCALE; dy += 1) {
-          for (let dx = 0; dx < SCALE; dx += 1) {
-            const pixelX = cursor + column * SCALE + dx;
+        for (let dy = 0; dy < scale; dy += 1) {
+          for (let dx = 0; dx < scale; dx += 1) {
+            const pixelX = cursor + column * scale + dx;
             if (pixelX >= canvasWidth) continue;
-            const offset = ((top + row * SCALE + dy) * canvasWidth + pixelX) * 3;
+            const offset = ((top + row * scale + dy) * canvasWidth + pixelX) * 3;
             if (offset < 0 || offset + 2 >= canvas.length) continue;
             canvas[offset] = INK[0];
             canvas[offset + 1] = INK[1];
@@ -86,7 +90,7 @@ export function drawLabel(canvas: Buffer, canvasWidth: number, x: number, y: num
         }
       }
     }
-    cursor += 6 * SCALE;
+    cursor += 6 * scale;
   }
 }
 
@@ -117,7 +121,7 @@ export async function buildContactSheet(
   directory: string,
   entries: readonly ContactSheetEntry[],
 ): Promise<string | undefined> {
-  const tiles = entries.filter((entry) => /^moment-\d+\.png$/.test(entry.screenshot)).slice(0, CONTACT_SHEET_MAX_TILES);
+  const tiles = entries.filter((entry) => /^moment-\d+(?:-(?:video-frame|tick)-\d+)?\.png$/.test(entry.screenshot)).slice(0, CONTACT_SHEET_MAX_TILES);
   if (!tiles.length) return undefined;
   const layout = contactSheetLayout(tiles.length);
   const canvas = Buffer.alloc(layout.width * layout.height * 3);
@@ -144,7 +148,11 @@ export async function buildContactSheet(
         (row + 1) * TILE_WIDTH * 3,
       );
     }
-    drawLabel(canvas, layout.width, left + 4, top + TILE_HEIGHT + (LABEL_HEIGHT - 7 * SCALE) / 2, contactSheetLabel(entry));
+    if (entry.cited && entry.actual) {
+      const short = (b: Bound) => `${humanTime(b)} ${b.unit === "tick" ? "T" : "F"}${boundIndex(b)}`;
+      drawLabel(canvas, layout.width, left+4,top+TILE_HEIGHT+1,`#${entry.record}  ${short(entry.cited)}`,2);
+      drawLabel(canvas, layout.width, left+4,top+TILE_HEIGHT+19,short(entry.actual),2);
+    } else drawLabel(canvas, layout.width, left + 4, top + TILE_HEIGHT + (LABEL_HEIGHT - 7 * SCALE) / 2, contactSheetLabel(entry));
   }
   const destination = join(directory, CONTACT_SHEET_NAME);
   const encoded = await runFfmpeg([

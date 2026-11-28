@@ -49,6 +49,8 @@ if (job) {
   if (!libraryImport) {
     const { configureOrdinaryCli } = await import("./cli-settings.js");
     configureOrdinaryCli(launch);
+    const { reapRangeScratch } = await import("./adapters/scratch.js");
+    await reapRangeScratch();
   }
   ({ program, buildAnalyzeOptions, printAnalysisSummary } = await import("./cli-main.js"));
   // Loading this module runs the command. Guessing the entry point from argv[1]

@@ -1,3 +1,5 @@
+import { boundIndex, boundRate, humanTime, type Bound } from "../domain/source-bound.js";
+import type { AnalysisItem } from "../domain/types.js";
 import { declaredOffset, parseSecondsMs, type ClockDeclaration, type RunClock } from "../domain/clock.js";
 import { modelTime, offsetApproximate, renderApproximate, deriveExact, offsetTime, snapDecimalSeconds, renderExactTimecode } from "exact-time";
 import { timesSchema, type StoredSnap, type TimesArtifact } from "../domain/times.js";
@@ -37,7 +39,7 @@ export async function writeArtifacts(
   outcome: AnalysisOutcome,
   proposals?: SnapRun,
 ): Promise<string[]> {
-  if (analysis.schemaVersion !== manifest.schemaVersion) {
+  if (analysis.schemaVersion !== manifest.schemaVersion && analysis.schemaVersion !== manifest.schemaVersion + 2) {
     throw new Error("Analysis and manifest schema versions must match.");
   }
   const validatedOutcome = analysisOutcomeSchema.parse(outcome);
@@ -70,7 +72,7 @@ export async function writeArtifacts(
     `${JSON.stringify(validatedOutcome, null, 2)}\n`,
     { mode: 0o600 },
   );
-  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts), { mode: 0o600 });
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts, manifest.proseTimeUnverified), { mode: 0o600 });
   await writeFile(
     reportHtml,
     await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome, cuts),
@@ -88,12 +90,13 @@ export function renderAnalysis(
   clock?: RunClock,
   label?: string,
   cuts?: ReadonlyMap<string, string>,
+  proseWarning?: boolean,
 ): string {
   const accepted = analysis.items.map((item, originalIndex) => ({ item, originalIndex })).filter(({ item }) => item.result.accepted);
-  const heading = analysis.schemaVersion === 2
+  const heading = "meeting" in analysis
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
     : label || "Video analysis";
-  const contextLine = analysis.schemaVersion === 2
+  const contextLine = "meeting" in analysis
     ? `- Meeting: \`${escapeInline(analysis.meeting.id)}\``
     : "- Context: Video only (no external context)";
   const lines = [
@@ -122,6 +125,7 @@ export function renderAnalysis(
     outcome && (outcome.candidates.failed > 0 || outcome.candidates.omittedByLimit > 0) ? "" : "",
     analysis.matchNotes ? "## Recording match notes" : "",
     analysis.matchNotes ? renderBlock(analysis.matchNotes) : "",
+    ...(proseWarning && !analysis.items.length ? ["A time in this text may be on the cut's clock."] : []),
     "",
   ];
   for (const [index, { item, originalIndex }] of accepted.entries()) {
@@ -130,8 +134,9 @@ export function renderAnalysis(
       `## ${index + 1}. ${escapeInline(result.title)}`,
       "",
       `- Kind: ${escapeInline(result.kind)}`,
-      `- Time: ${escapeInline(renderClockTime(result.evidence?.timestamp || item.candidate.start, clock))}`,
+      `- Time: ${escapeInline(renderClockTime(result.evidence?.timestamp || item.candidate.start, clock, result.evidence?.exactTime ?? item.candidate.exactSpan?.start))}`,
       ...(item.stillTimes ? [`- ${escapeInline(stillTimesLine(item.stillTimes, clock))}`] : []),
+      ...exactItemLines(item).map(line => `- ${escapeInline(line)}`),
       ...recordCuts(cuts, originalIndex).map(line => `- ${line}`),
       `- Importance: ${escapeInline(result.importance || item.candidate.importance)}`,
       `- Surface: ${escapeInline(result.where?.surface || item.candidate.surface || "Unknown")}`,
@@ -155,7 +160,7 @@ export function renderAnalysis(
     }
     if (result.evidence?.reporterQuote) {
       lines.push(
-        analysis.schemaVersion === 2 ? "### Meeting quote" : "### Recording quote",
+        "meeting" in analysis ? "### Meeting quote" : "### Recording quote",
         "",
         renderBlock(result.evidence.reporterQuote),
         "",
@@ -169,7 +174,7 @@ export function renderAnalysis(
         "",
       );
     }
-    if (item.screenshot && /^moment-\d+\.png$/.test(basename(item.screenshot))) {
+    if (item.screenshot && /^moment-\d+(?:-(?:video-frame|tick)-\d+)?\.png$/.test(basename(item.screenshot))) {
       lines.push(`![Screen evidence](./${basename(item.screenshot)})`, "");
     }
     if (result.confidenceNotes) lines.push(`_Confidence: ${escapeInline(result.confidenceNotes)}_`, "");
@@ -190,7 +195,7 @@ async function renderHtmlArtifact(
   const cards = await Promise.all(accepted.map(async ({ item, originalIndex }, index) => {
     const result = item.result;
     let image = "";
-    if (item.screenshot && /^moment-\d+\.png$/.test(basename(item.screenshot))) {
+    if (item.screenshot && /^moment-\d+(?:-(?:video-frame|tick)-\d+)?\.png$/.test(basename(item.screenshot))) {
       const bytes = await readFile(join(directory, basename(item.screenshot)));
       image = `<img src="data:image/png;base64,${bytes.toString("base64")}" alt="Screen evidence for record ${index + 1}">`;
     }
@@ -201,11 +206,12 @@ async function renderHtmlArtifact(
       ? `<dl>${result.details.map((detail) =>
           `<dt>${html(detail.label)}</dt><dd>${html(detail.value)}</dd>`).join("")}</dl>`
       : "";
+    const positions = exactItemLines(item).map(text => `<p>${html(text)}</p>`).join("");
     const cutParagraphs = recordCuts(cuts, originalIndex).map(line => `<p>${html(line)}</p>`).join("");
     return `<article>
-      <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock))}</div>
+      <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock, result.evidence?.exactTime ?? item.candidate.exactSpan?.start))}</div>
       <h2>${index + 1}. ${html(result.title)}</h2>${item.stillTimes ? `\n      <p>${html(stillTimesLine(item.stillTimes, manifest.clock))}</p>` : ""}
-      <p>${html(result.summary)}</p>${cutParagraphs ? `\n      ${cutParagraphs}` : ""}
+      <p>${html(result.summary)}</p>${positions}${cutParagraphs ? `\n      ${cutParagraphs}` : ""}
       ${details}
       <dl>
         <dt>Surface</dt><dd>${html(result.where?.surface || item.candidate.surface || "Unknown")}</dd>
@@ -216,18 +222,18 @@ async function renderHtmlArtifact(
       ${result.confidenceNotes ? `<p class="muted">Confidence: ${html(result.confidenceNotes)}</p>` : ""}
     </article>`;
   }));
-  const heading = analysis.schemaVersion === 2
+  const heading = "meeting" in analysis
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
     : manifest.label || "Video analysis";
-  const providerLabel = analysis.schemaVersion === 2
+  const providerLabel = "meeting" in analysis
     ? analysis.meeting.provider
     : "video only";
-  const safeSourceUrl = analysis.schemaVersion === 2
+  const safeSourceUrl = "meeting" in analysis
     ? safeHref(analysis.meeting.sourceUrl)
     : undefined;
   const source = safeSourceUrl
     ? `<a href="${htmlAttribute(safeSourceUrl)}" rel="noreferrer">Open source meeting</a>`
-    : analysis.schemaVersion === 2
+    : "meeting" in analysis
       ? "No provider URL retained"
       : "No external context supplied";
   const alignment = `${clockSummary(manifest.clock)}. ` + (manifest.derivedTranscript
@@ -272,7 +278,7 @@ async function renderHtmlArtifact(
     <div class="meta">${manifest.label ? `<span>Label: ${html(manifest.label)}</span>` : ""}<span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
   </header>
   ${outcomeNotice}
-  <section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>
+  ${manifest.proseTimeUnverified && !analysis.items.length ? "<p>A time in this text may be on the cut's clock.</p>\n  " : ""}<section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>
     <p class="muted">${alignment}</p>
   </section>
   ${cards.join("\n") || "<article><h2>No accepted records</h2><p>No candidate survived the recipe interrogation pass.</p></article>"}
@@ -334,19 +340,42 @@ function renderDeclaredOffset(declaration: NonNullable<RunClock["timeline"]>): s
   const seconds = time.seconds === undefined ? `derived seconds unavailable: ${time.secondsUnavailable}` : `${time.seconds} s (derived)`;
   return `${seconds} (${units}; ${"ticks" in time ? `${time.ticks} ticks` : time.ticksUnavailable}; declared)`;
 }
-export function renderClockTime(timestamp: string, clock?: RunClock): string {
+function timelineTime(time: ReturnType<typeof modelTime>, offset: ReturnType<typeof declaredOffset>, bound?: Bound) {
+  const timeline = offsetApproximate(time, offset);
+  if (!bound) return timeline;
+  const rate = boundRate(bound);
+  const denominator = BigInt(rate.num) * BigInt(offset.rate.num);
+  const numerator = boundIndex(bound) * BigInt(rate.den) * BigInt(offset.rate.num)
+    + offset.frames * BigInt(offset.rate.den) * BigInt(rate.num);
+  return {...timeline, seconds:decimalMs(Number(numerator * 1000n / denominator))};
+}
+
+export function renderClockTime(timestamp: string, clock?: RunClock, bound?: Bound): string {
   const time = modelTime(clock?.fileClock ?? "source", timestamp);
-  return [renderApproximate(time), ...(clock?.timeline ? [renderApproximate(offsetApproximate(time, declaredOffset(clock.timeline)))] : [])].join(" · ");
+  const timeline = clock?.timeline && timelineTime(time, declaredOffset(clock.timeline), bound);
+  return [renderApproximate(time), ...(timeline ? [renderApproximate(timeline)] : [])].join(" · ");
 }
 
 function stillTimesLine(times: readonly string[], clock?: RunClock): string {
   return `Stills (${clock?.fileClock ?? "source"}): ${times.join(", ") || "none"}`;
 }
 
+function describeBound(b: Bound) {
+  const rate = boundRate(b);
+  const support = b.origin === "model" ? `, support [${b.support.join(",")})` : b.origin === "snap" ? ", grid 10 ms" : "";
+  return `${humanTime(b)} · source ${b.unit} ${boundIndex(b)} at ${rate.num}/${rate.den} Hz (${b.origin}, ${b.precisionMs} ms${support})`;
+}
+function exactItemLines(item: AnalysisItem) {
+  const span = item.candidate.exactSpan, e = item.result.evidence?.exactTime;
+  return [...(span ? [`Start ${describeBound(span.start)}`,`End (exclusive) ${describeBound(span.endExclusive)}`] : []),
+    ...(e ? [`Evidence ${describeBound(e)}`] : []),...(item.exactStillTimes ?? []).map(b => `Still ${describeBound(b)}`),
+    ...(item.screenshotExactTime ? [`Screenshot ${describeBound(item.screenshotExactTime)}`] : [])];
+}
 function rejectedStillLines(analysis: VersionedAnalysisRun, clock?: RunClock): string[] {
-  return analysis.items.flatMap((item, i) => !item.result.accepted && item.stillTimes
-    ? [`Rejected candidate ${i + 1} · ${stillTimesLine(item.stillTimes, clock)}`]
-    : []);
+  return analysis.items.flatMap((item, i) => item.result.accepted ? [] :
+    [...(item.stillTimes ? [`Rejected candidate ${i+1} · ${stillTimesLine(item.stillTimes,clock)}`] : []),
+     ...exactItemLines(item).map(s => `Rejected candidate ${i+1} · ${s}`),
+     ...(item.candidate.exactSpan && item.result.confidenceNotes ? [item.result.confidenceNotes] : [])]);
 }
 
 function recordCuts(cuts: ReadonlyMap<string, string> | undefined, index: number): string[] {
@@ -391,16 +420,31 @@ export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock, pro
   const fileClock = clock?.fileClock ?? "source";
   const entries: unknown[] = [];
   const offset = clock?.timeline ? declaredOffset(clock.timeline) : undefined;
-  const add = (pointer: string, timestamp: string, proposal?: ReturnType<typeof projectSnap>) => {
+  const add = (pointer: string, timestamp: string, bound?: Bound, proposal?: ReturnType<typeof projectSnap>) => {
     const time = modelTime(fileClock, timestamp);
-    entries.push({ pointer, time: { ...time, origin: "model" },
-      ...(offset ? { timeline: { ...offsetApproximate(time, offset), origin: "model" as const } } : {}),
-      ...(proposal ? { snap: proposal } : {}) });
+    const measured = (ms:number, end:boolean): Bound => {
+      const rate = boundRate(bound!), den = 1000n * BigInt(rate.den);
+      // Label the containing frame at onset and at the last millisecond
+      // of speech for an offset, as for the optional sequence view.
+      const instant = end ? Math.max(0, ms - 1) : ms;
+      const n = String(BigInt(instant) * BigInt(rate.num) / den);
+      const origin = {clock:"source" as const, origin:"snap" as const, gridMs:10 as const, precisionMs:proposals!.precisionMs ?? 200 as const};
+      return bound!.unit === "tick" ? {...origin, unit:"tick", ticks:n, tick:bound!.tick} : bound!.unit === "sample"
+        ? {...origin,unit:"sample",samples:n,rate} : {...origin,unit:"video-frame",frames:n,rate};
+    };
+    const exactSnap = bound && proposal && "alternativesMs" in proposal ? {
+      exactAlternatives:proposal.alternativesMs.map(ms => measured(ms,pointer.endsWith("/end"))),
+      ...(proposal.status === "snapped" && {exactTime:measured(parseSecondsMs(proposal.target.seconds),pointer.endsWith("/end"))}),
+    } : {};
+    const timeline = offset && timelineTime(time, offset, bound);
+    entries.push({ pointer, ...(bound && {exactTime:bound}), time: { ...time, origin: "model" },
+      ...(timeline ? { timeline: { ...timeline, origin: "model" as const } } : {}),
+      ...(proposal ? { snap: {...proposal,...exactSnap} } : {}) });
   };
   analysis.items.forEach((item, index) => {
-    add(`/items/${index}/candidate/start`, item.candidate.start, proposals && projectSnap(proposals.records[index]!.start, "start", clock?.timeline));
-    add(`/items/${index}/candidate/end`, item.candidate.end, proposals && projectSnap(proposals.records[index]!.end, "end", clock?.timeline));
-    if (item.result.evidence?.timestamp) add(`/items/${index}/result/evidence/timestamp`, item.result.evidence.timestamp);
+    add(`/items/${index}/candidate/start`, item.candidate.start, item.candidate.exactSpan?.start, proposals && projectSnap(proposals.records[index]!.start, "start", clock?.timeline));
+    add(`/items/${index}/candidate/end`, item.candidate.end, item.candidate.exactSpan?.endExclusive, proposals && projectSnap(proposals.records[index]!.end, "end", clock?.timeline));
+    if (item.result.evidence?.timestamp) add(`/items/${index}/result/evidence/timestamp`, item.result.evidence.timestamp,item.result.evidence.exactTime);
   });
   return timesSchema.parse({
     schemaVersion: proposals ? 3 : 2, ...(proposals ? { snapSettings: proposals.settings } : {}), kind: "frame-of-mind.times", fileClock,

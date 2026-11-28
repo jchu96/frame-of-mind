@@ -1,3 +1,5 @@
+import {boundIndex,sourceBound} from "../src/domain/source-bound.js";
+import { fixtureSource } from "./helpers/source-clock.js";
 import type { Content, GenerateContentParameters } from "@google/genai";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -79,7 +81,7 @@ async function run(opts: RunOptions = {}) {
     return { text: JSON.stringify(detail) };
   };
   const gemini = new GeminiVideoAnalyzer("test", "gemini-test", { generateContent });
-  const orchestrator = new AnalysisOrchestrator({
+  const orchestrator = new AnalysisOrchestrator({withSourceRecording: fixtureSource(() => opts.duration ?? 50),
     createAnalyzer: () => ({
       model: gemini.model, interrogate: gemini.interrogate.bind(gemini),
       index: async () => ({ matchNotes: "Synthetic.", moments: opts.moments ?? moments }),
@@ -92,7 +94,11 @@ async function run(opts: RunOptions = {}) {
       evidence: { flashFileSeconds: 27, clipStartSeconds: 20, reportedSeconds: clock === "relative" ? 7 : 27 },
     }),
     probeDurationSeconds: async () => opts.duration ?? 50,
-    extractScreenshot: opts.extract ?? decode, buildContactSheet: async () => undefined,
+    extractScreenshot: async (video, time, path, window, position) => {
+      const ok = await (opts.extract ?? decode)(video,time,path,window);
+      if (ok && position) position.captured(sourceBound(position.clock,boundIndex(position.target)));
+      return ok;
+    }, buildContactSheet: async () => undefined,
   });
   const result = await orchestrator.analyze({
     contextMode: "none", video, outputRoot: root, apiKey: "test", recipe: builtInRecipe(opts.recipe ?? "decisions"),
@@ -155,7 +161,7 @@ it("uses the existing screenshot strategy at an uncaptured citation without snap
         return true;
       },
     });
-    expect(await result.read("moment-01.png")).toBe("uncaptured citation");
+    expect(await result.read(result.analysis.items[0]!.screenshot!)).toBe("uncaptured citation");
     expect(result.analysis.items[0]?.result.evidence?.timestamp).toBe("00:00:34");
     expect(result.requests).toHaveLength(1);
   }
@@ -165,7 +171,7 @@ it("keeps an explicit decline and the full warning on no-picture, decode failure
   for (const fault of ["audio only", "bad video", "past end"]) {
     const result = await run({ moments: [moments[0]!], repair: true, audioOnly: fault === "audio only",
       duration: fault === "past end" ? 24 : 50,
-      extract: fault === "past end" ? async () => { throw new Error("sought at EOF"); } : extractScreenshot,
+      extract: fault === "past end" ? async (_video, time) => { expect(timestampToSeconds(time)).toBeLessThan(24); return false; } : extractScreenshot,
       reply: () => ({ summary: "A dialog opened. Screen words were present. Screen text was not read.", confidenceNotes: "x".repeat(10_000) }),
     });
     expect(result.requests.map(req => req.repair)).toEqual([false, true]);
@@ -188,8 +194,8 @@ it("keeps an explicit decline and the full warning on no-picture, decode failure
 it("preserves indexed moments and their times.json entries with and without stills", async () => {
   const withStills = await run({ reply: ({ start }) => ({ evidence: { timestamp: secondsToTimestamp(start === 12 ? 24 : 35) } }) });
   const without = await run({ extract: async () => false });
-  expect(withStills.analysis.items.map(item => item.candidate)).toEqual(moments);
-  expect(without.analysis.items.map(item => item.candidate)).toEqual(moments);
+  expect(withStills.analysis.items.map(item => item.candidate)).toMatchObject(moments);
+  expect(without.analysis.items.map(item => item.candidate)).toMatchObject(moments);
   const left = JSON.parse(await withStills.read("times.json"));
   const right = JSON.parse(await without.read("times.json"));
   const candidates = (entries: Array<{ pointer: string }>) => entries.filter(e => e.pointer.includes("/candidate/"));
@@ -247,10 +253,10 @@ it("removes a screen quote whose cited time is not an attached still, and nothin
   }, reply: ({ start }) => ({ confidenceNotes: "Clear.", evidence: { timestamp: start === 12 ? "00:00:22" : "00:00:34", ...quote } }) });
   for (const [i, time] of ["00:00:22", "00:00:34"].entries()) {
     const item = off.analysis.items[i]!;
-    expect(item.result.evidence).toEqual({ timestamp: time, reporterQuote: quote.reporterQuote });
+    expect(item.result.evidence).toEqual({ timestamp: time, exactTime:expect.objectContaining({origin:"model"}), reporterQuote: quote.reporterQuote });
     expect(item.screenTextNotFromStill).toBe(true);
     expect(item.result.confidenceNotes).toBe(`Clear.\n${unread}`);
-    expect(item.candidate).toEqual(moments[i]);
+    expect(item.candidate).toMatchObject(moments[i]!);
     expect(await off.read(item.screenshot!)).toBe(`frame at ${time}`);
   }
   const markdown = await off.read("analysis.md");

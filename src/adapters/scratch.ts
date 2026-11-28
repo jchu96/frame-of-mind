@@ -1,13 +1,13 @@
 import { ContractError } from "../domain/contract-error.js";
 import { randomUUID } from "node:crypto";
-import { constants, lstatSync, readdirSync, realpathSync, rmdirSync, unlinkSync, type BigIntStats } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, writeFileSync, readdirSync, realpathSync, rmdirSync, unlinkSync, type BigIntStats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { z } from "zod";
 
 const prefixes = {
-  analyze: "frame-of-mind-", transcribe: "fom-transcribe-", calibration: "frame-of-mind-calibration-",
+  range: "fom-range-", analyze: "frame-of-mind-", transcribe: "fom-transcribe-", calibration: "frame-of-mind-calibration-",
   screenshots: ".settled-",
 };
 type Kind = keyof typeof prefixes | "media-lock";
@@ -71,6 +71,47 @@ export async function releaseMediaLock(path: string, stage?: string) {
   if (stage) await rmdir(stage);
   await rm(join(path, markerName), {force: true});
   await rmdir(path);
+}
+
+// The marker names the private directory. This receipt also pins the payload
+// inode and the encoder that may outlive its parent after a hard crash.
+const encoderReceipt = ".range-encoder.json";
+export function rangeEncoder(path: string) {
+  const directory = dirname(path);
+  const file = identity(lstatSync(path, { bigint: true }));
+  const receipt = join(directory, encoderReceipt);
+  writeFileSync(receipt, JSON.stringify({ name: basename(path), file, pid: null }), { flag: "wx", mode: 0o600 });
+  const stamp = identity(lstatSync(receipt, {bigint: true}));
+  return (pid: number) => {
+    const fd = openSync(receipt, constants.O_WRONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      if (identity(fstatSync(fd, {bigint: true})) !== stamp) throw new Error("Encoder receipt changed");
+      // Fixed-width PID text keeps this update a single write with no stale suffix.
+      const record = JSON.stringify({ name: basename(path), file, pid }).padEnd(512);
+      writeFileSync(fd, record);
+    } finally { closeSync(fd); }
+  };
+}
+
+function safeRangeContents(path: string, payload: string[], abandoned: boolean) {
+  if (!payload.length) return;
+  const receipt = join(path, encoderReceipt);
+  const meta = lstatSync(receipt);
+  if (!meta.isFile() || meta.nlink !== 1 || meta.size > 1024) throw new Error("Unknown encoder receipt");
+  const value = JSON.parse(readFileSync(receipt, "utf8")) as { name: string; file: string; pid: number | null };
+  if (!/^cut\.(mp4|wav)$/.test(value.name) || payload.some(name => name !== value.name && name !== encoderReceipt)) {
+    throw new Error("Unknown range files");
+  }
+  if (payload.includes(value.name)) {
+    const file = lstatSync(join(path, value.name), {bigint: true});
+    if (!file.isFile() || file.nlink !== 1n || identity(file) !== value.file) throw new Error("Changed range file");
+  }
+  if (abandoned) {
+    if (!Number.isInteger(value.pid) || value.pid! <= 0 || value.pid! > 0x7fffffff) throw new Error("Unconfirmed encoder");
+    try { process.kill(value.pid!, 0); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return; throw error; }
+    throw new Error("Encoder may be live");
+  }
 }
 
 function match(name: string, local: boolean): Kind | undefined {
@@ -142,7 +183,7 @@ const payloadNames = {
 // directory before unlinking basenames. A rename or symlink substitution at
 // the original path cannot redirect an unlink through an ancestor. Keep this
 // CLI-only section synchronous and restore cwd before yielding to any caller.
-function removeContents(path: string, kind: Kind, directory: BigIntStats, proof: NonNullable<Awaited<ReturnType<typeof owner>>>) {
+function removeContents(path: string, kind: Kind, directory: BigIntStats, proof: NonNullable<Awaited<ReturnType<typeof owner>>>, abandoned = true) {
   const previous = process.cwd();
   const parent = dirname(path);
   if (previous === path || previous.startsWith(path + sep)) throw new Error("Current working directory");
@@ -174,6 +215,10 @@ function removeContents(path: string, kind: Kind, directory: BigIntStats, proof:
       enter("..", path, identity(directory));
       if (identity(lstatSync(stage.name, {bigint: true})) !== stage.directory) throw new Error("Stage changed");
       rmdirSync(stage.name);
+    } else if (kind === "range") {
+      safeRangeContents(".", payload, abandoned);
+      for (const name of payload.filter(name => name !== encoderReceipt)) unlinkSync(name);
+      if (payload.includes(encoderReceipt)) unlinkSync(encoderReceipt);
     } else if (kind !== "media-lock") {
       const pattern = payloadNames[kind];
       if (payload.some(name => !pattern.test(name) || !lstatSync(name).isFile())) throw new Error("Unexpected scratch contents");
@@ -227,4 +272,27 @@ export async function inspectScratch(directory?: string, remove?: string): Promi
     if (kind) rows.push(await inspect(path, kind, remove !== undefined && resolve(remove) === path));
   }
   return rows;
+}
+
+export async function releaseRangeScratch(path: string) {
+  const real = await realpath(path);
+  const info = await lstat(real, {bigint: true});
+  const proof = await owner(real, "range", info);
+  if (!proof || proof.marker.instance !== instance) throw new Error("Changed range scratch directory");
+  removeContents(real, "range", info, proof, false);
+}
+
+export async function reapRangeScratch() {
+  const root = await realpath(tmpdir());
+  for (const name of await readdir(root)) {
+    if (match(name, false) === "range") await inspect(join(root, name), "range", true);
+  }
+}
+
+export function discardRangeAttempt(file: string) {
+  const root = dirname(file);
+  const files = readdirSync(root).filter(entry => entry !== markerName);
+  safeRangeContents(root, files, false);
+  if (files.includes(basename(file))) unlinkSync(file);
+  unlinkSync(join(root, encoderReceipt));
 }

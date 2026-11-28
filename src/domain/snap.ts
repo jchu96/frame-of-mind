@@ -40,7 +40,7 @@ export type SnapResult =
   | ({ status: "snapped"; target: MeasuredTime; shiftMs: number; gapMs: number; gapLowerBound?: true; alternativesMs: number[] } & Partial<SoundLevels>)
   | { status: "ambiguous" | "no-boundary"; alternativesMs: number[] }
   | { status: "unavailable" };
-export type SnapRun = { settings: SnapSettings; records: Record<Edge, SnapResult>[] };
+export type SnapRun = { precisionMs?:50 | 200; settings: SnapSettings; records: Record<Edge, SnapResult>[] };
 
 const SAMPLES = 80;
 const WINDOW_MS = 10;
@@ -228,7 +228,7 @@ export function proposeRecords(ranges: Range[], edges: Boundaries | undefined, c
       records[i]![edge] = { status: "ambiguous", alternativesMs: [...result.alternativesMs, ranges[i]![edge] + result.shiftMs].sort((a, b) => a - b) };
       changed = true;
     }
-    if (!changed) return { settings, records };
+    if (!changed) return { settings, records, ...(edges && {precisionMs:edges.precisionMs}) };
   }
 }
 

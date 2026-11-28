@@ -2,18 +2,27 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "required": ["schemaVersion"],
+  "definitions": {
+    "index": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"},
+    "rate": {"type":"object","required":["num","den"],"properties":{"num":{"type":"integer","minimum":1},"den":{"type":"integer","minimum":1}}},
+    "span": {"type":"array","minItems":2,"maxItems":2,"items":{"$ref":"#/definitions/index"}},
+    "coverage": {"type":"object","required":["full","covered"],"properties":{"full":{"type":"boolean"},"covered":{"type":"array","items":{"$ref":"#/definitions/span"}}}},
+    "sourceRange": {"oneOf":[{"type":"object","required":["unit","fromFrame","toFrameExclusive","rate"],"properties":{"unit":{"const":"frames"},"fromFrame":{"$ref":"#/definitions/index"},"toFrameExclusive":{"$ref":"#/definitions/index"},"rate":{"$ref":"#/definitions/rate"}}},{"type":"object","required":["unit","fromSample","toSampleExclusive","rate"],"properties":{"unit":{"const":"samples"},"fromSample":{"$ref":"#/definitions/index"},"toSampleExclusive":{"$ref":"#/definitions/index"},"rate":{"$ref":"#/definitions/rate"}}},{"type":"object","required":["unit","fromTick","toTickExclusive","tick"],"properties":{"unit":{"const":"ticks"},"fromTick":{"$ref":"#/definitions/index"},"toTickExclusive":{"anyOf":[{"$ref":"#/definitions/index"},{"type":"null"}]},"tick":{"$ref":"#/definitions/rate"}}}]},
+    "source": {"type":"object","properties":{"recordingSha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"coverage":{"$ref":"#/definitions/coverage"},"sourceRange":{"$ref":"#/definitions/sourceRange"},"sourceLengthFrames":{"$ref":"#/definitions/index"},"sourceLengthSamples":{"$ref":"#/definitions/index"},"sourceLengthTicks":{"$ref":"#/definitions/index"},"sourceTiming":{"enum":["varying","unproven"]},"maxRangeSeconds":{"type":"integer","minimum":1},"requestedRange":{"type":"object","required":["from","to"],"properties":{"from":{"type":["string","null"]},"to":{"type":["string","null"]}}},"edgeMoved":{"type":"object","required":["from","to"],"properties":{"from":{"type":"boolean"},"to":{"type":"boolean"}}}}}
+  },
   "properties": {"schemaVersion": {"const": 1}},
   "if": {"required": ["error"]},
   "then": {
     "properties": {
       "error": {
         "type": "object",
-        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type":"object","allOf":[{"$ref":"#/definitions/source"}],"properties":{"phase":{"const":"prepare"},"sent":{"const":false},"reason":{"type":"string"}}}},
         "required": ["code", "message"]
       }
     }
   },
   "else": {
+    "allOf": [{"$ref":"#/definitions/source"}],
     "properties": {
       "quietLines": {"type": "integer", "minimum": 0},
       "retention": {"enum": ["provider", "run"]},

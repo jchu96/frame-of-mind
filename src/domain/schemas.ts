@@ -1,3 +1,6 @@
+import { rangeFields } from "./range-fields.js";
+import { boundSchema, boundIndex, boundRate, exactSpanSchema, humanTime } from "./source-bound.js";
+import { sameRate } from "./media-clock.js";
 import { tokenUsageSchema } from "./token-usage.js";
 import { THINKING_LEVELS } from "./types.js";
 import { canonicalLanguageTag } from "./transcript-language.js";
@@ -146,9 +149,34 @@ export const analysisRunV3Schema = z.object({
   items: z.array(analysisItemSchema).max(1_000),
 }).strict();
 
-export const versionedAnalysisRunSchema = z.union([
-  analysisRunSchema,
-  analysisRunV3Schema,
+const exactEvidence = analysisDetailSchema.shape.evidence.unwrap().extend({exactTime: boundSchema.optional()}).refine(
+  e => (e.timestamp === undefined) === (e.exactTime === undefined) && (!e.exactTime || humanTime(e.exactTime) === e.timestamp),
+  "Evidence needs its exact time and matching text together.");
+const exactCandidate = z.strictObject({...indexedMomentSchema.shape, exactSpan: exactSpanSchema}).refine(
+  c => c.start === humanTime(c.exactSpan.start) && c.end === humanTime(c.exactSpan.endExclusive),
+  "Printed times must describe the exact span.");
+const exactItem = z.strictObject({...analysisItemSchema.shape, candidate:exactCandidate,
+  result:analysisDetailSchema.extend({evidence:exactEvidence.optional(),confidenceNotes:z.string().max(10120).optional()}), exactStillTimes:z.array(boundSchema).max(3).optional(),
+  screenshotExactTime:boundSchema.optional(),
+}).superRefine((item, ctx) => {
+  const {start, endExclusive} = item.candidate.exactSpan;
+  const bounds = [...item.exactStillTimes ?? [], item.result.evidence?.exactTime, item.screenshotExactTime];
+  for (const bound of bounds) {
+    if (bound && (bound.unit !== start.unit || !sameRate(boundRate(start), boundRate(bound))
+      || boundIndex(bound) < boundIndex(start) || boundIndex(bound) >= boundIndex(endExclusive))) {
+      ctx.addIssue({code:"custom", message:"Evidence and images must be within the exact candidate span."});
+    }
+  }
+  if (item.stillTimes?.length !== item.exactStillTimes?.length
+    || item.exactStillTimes?.some((b,i) => humanTime(b) !== item.stillTimes?.[i])
+    || Boolean(item.screenshot) !== Boolean(item.screenshotExactTime)) {
+    ctx.addIssue({code:"custom", message:"Image times must have matching exact positions."});
+  }
+});
+export const analysisRunV4Schema = analysisRunSchema.extend({schemaVersion:z.literal(4), items:z.array(exactItem).max(1000)});
+export const analysisRunV5Schema = analysisRunV3Schema.extend({schemaVersion:z.literal(5), items:z.array(exactItem).max(1000)});
+export const versionedAnalysisRunSchema = z.discriminatedUnion("schemaVersion", [
+  analysisRunSchema, analysisRunV3Schema, analysisRunV4Schema, analysisRunV5Schema,
 ]);
 
 export const utcDateTimeSchema = z.string().datetime({ offset: false });
@@ -189,6 +217,7 @@ const promptProvenanceSchema = z.object({
 }).strict();
 
 export const runManifestSchema = z.object({
+  ...rangeFields.shape,
   schemaVersion: z.literal(2),
   toolVersion: z.string().min(1).max(120),
   promptRevision: z.string().min(1).max(120),
@@ -271,6 +300,7 @@ export const runManifestSchema = z.object({
 });
 
 export const runManifestV3Schema = z.object({
+  ...rangeFields.shape,
   schemaVersion: z.literal(3),
   toolVersion: z.string().min(1).max(120),
   promptRevision: z.string().min(1).max(120),
@@ -328,10 +358,9 @@ export const runManifestV3Schema = z.object({
   }
 });
 
-export const runImportSchema = z.object({
-  analysis: analysisRunSchema,
-  manifest: runManifestSchema,
-}).strict().superRefine(({ analysis, manifest }, context) => {
+const legacyMeetingPair = z.strictObject({analysis:analysisRunSchema, manifest:runManifestSchema});
+const exactMeetingPair = z.strictObject({analysis:analysisRunV4Schema, manifest:runManifestSchema});
+function checkMeetingPair({analysis,manifest}: z.infer<typeof legacyMeetingPair> | z.infer<typeof exactMeetingPair>, context:z.RefinementCtx) {
   if (analysis.runId !== manifest.runId) {
     context.addIssue({
       code: "custom",
@@ -394,12 +423,13 @@ export const runImportSchema = z.object({
       path: ["manifest", "mediaSource"],
     });
   }
-});
+}
+export const runImportSchema = legacyMeetingPair.superRefine(checkMeetingPair);
+export const runImportV4Schema = exactMeetingPair.superRefine(checkMeetingPair);
 
-export const runImportV3Schema = z.object({
-  analysis: analysisRunV3Schema,
-  manifest: runManifestV3Schema,
-}).strict().superRefine(({ analysis, manifest }, context) => {
+const legacyVideoPair = z.strictObject({analysis:analysisRunV3Schema, manifest:runManifestV3Schema});
+const exactVideoPair = z.strictObject({analysis:analysisRunV5Schema, manifest:runManifestV3Schema});
+function checkVideoPair({analysis,manifest}: z.infer<typeof legacyVideoPair> | z.infer<typeof exactVideoPair>, context:z.RefinementCtx) {
   if (analysis.runId !== manifest.runId) {
     context.addIssue({
       code: "custom",
@@ -428,9 +458,11 @@ export const runImportV3Schema = z.object({
       path: ["manifest", "model"],
     });
   }
-});
-
+}
+export const runImportV3Schema = legacyVideoPair.superRefine(checkVideoPair);
+export const runImportV5Schema = exactVideoPair.superRefine(checkVideoPair);
 export const versionedRunImportSchema = z.union([
+  runImportV4Schema, runImportV5Schema,
   runImportSchema,
   runImportV3Schema,
 ]);
@@ -443,12 +475,13 @@ function declaredVersion(document: unknown): unknown {
 export function runImportSchemaFor(bundle: Record<string, unknown>) {
   const manifestVersion = declaredVersion(bundle.manifest);
   const analysisVersion = declaredVersion(bundle.analysis);
-  if (manifestVersion !== undefined && analysisVersion !== undefined && manifestVersion !== analysisVersion) {
-    return versionedRunImportSchema;
+  if (analysisVersion === 4 && manifestVersion === 2) return runImportV4Schema;
+  if (analysisVersion === 5 && manifestVersion === 3) return runImportV5Schema;
+  if (manifestVersion === analysisVersion || analysisVersion === undefined || manifestVersion === undefined) {
+    const version = analysisVersion ?? manifestVersion;
+    if (version === 2) return runImportSchema;
+    if (version === 3) return runImportV3Schema;
   }
-  const version = manifestVersion === undefined ? analysisVersion : manifestVersion;
-  if (version === 2) return runImportSchema;
-  if (version === 3) return runImportV3Schema;
   return versionedRunImportSchema;
 }
 
@@ -465,7 +498,17 @@ export type RunImport = z.infer<typeof runImportSchema> & {
 export type RunImportV3 = z.infer<typeof runImportV3Schema> & {
   outcome?: AnalysisOutcome;
 };
-export type VersionedRunImport = RunImport | RunImportV3;
+export type RunImportV4 = z.infer<typeof runImportV4Schema> & {outcome?: AnalysisOutcome};
+export type RunImportV5 = z.infer<typeof runImportV5Schema> & {outcome?: AnalysisOutcome};
+export type MeetingRunImport = RunImport | RunImportV4;
+export type VideoRunImport = RunImportV3 | RunImportV5;
+export type VersionedRunImport = MeetingRunImport | VideoRunImport;
+export function isMeetingRunImport(input: VersionedRunImport): input is MeetingRunImport {
+  return (input.analysis.schemaVersion === 2 || input.analysis.schemaVersion === 4) && input.manifest.schemaVersion === 2;
+}
+export function isVideoRunImport(input: VersionedRunImport): input is VideoRunImport {
+  return (input.analysis.schemaVersion === 3 || input.analysis.schemaVersion === 5) && input.manifest.schemaVersion === 3;
+}
 
 export function isRunImportV2(
   input: VersionedRunImport,

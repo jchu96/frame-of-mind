@@ -20,6 +20,7 @@ function withAudioInput<T>(video: string, confined: boolean | undefined,
 const AUDIO_EXTRACTION_TIMEOUT_MS = 10 * 60_000;
 
 export interface ExtractAudioTrackOptions {
+  pcm?: boolean;
   confinedInput?: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -52,8 +53,8 @@ export async function extractAudioTrack(
       "-i", input,
       ...(options.durationSeconds ? ["-t", String(options.durationSeconds)] : []),
       "-vn", "-map", "0:a:0", "-map_metadata", "-1",
-      "-c:a", "aac", "-b:a", "64k", "-ac", "1",
-      "-f", "adts", options.confinedInput ? "pipe:1" : destination,
+      ...(options.pcm ? ["-c:a", "pcm_s16le"] : ["-c:a", "aac", "-b:a", "64k"]), "-ac", "1",
+      "-f", options.pcm ? "wav" : "adts", options.confinedInput ? "pipe:1" : destination,
     ], { env: childEnvironment("media"), stdio: [stdin, options.confinedInput ? "pipe" : "ignore", "ignore"] }));
     // Job derivatives stream through their worker. Its death closes the pipe,
     // so a decoder cannot keep writing a derivative after recovery.

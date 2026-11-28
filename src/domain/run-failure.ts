@@ -1,3 +1,4 @@
+import { rangeFields } from "./range-fields.js";
 import { z } from "zod";
 import { runIdSchema } from "./schemas.js";
 import {
@@ -46,6 +47,7 @@ const failureErrorSchema = z.strictObject({
 });
 
 export const runFailureManifestSchema = z.strictObject({
+  ...rangeFields.shape,
   schemaVersion: z.literal(1),
   toolVersion: z.string().min(1).max(120),
   runId: runIdSchema,

@@ -26,6 +26,7 @@ import {
   type RunSummaryRow,
   type RunPrincipal,
   type RunStore,
+  HostedRunVersionError,
   RunPrincipalConflictError,
   RunProjectionVersionConflictError,
 } from "./types.js";
@@ -107,6 +108,8 @@ export function createD1RunStore(
     },
 
     async importRun(input, actor) {
+      const version: number = input.analysis.schemaVersion;
+      if (version === 4 || version === 5) throw new HostedRunVersionError(version);
       const validated = await validateVersionedRunImport(input);
       assertD1RunRowSize(validated, principal.principal, principal.email, actor);
       const conflictingPrincipal = await database.prepare(`

@@ -6,6 +6,7 @@ import { assertTrustedJsonMutation } from "../../utils/request-security";
 import { getRunStore } from "../../utils/store";
 import { D1ProjectionLimitError } from "../../data/sql";
 import {
+  HostedRunVersionError,
   RunPrincipalConflictError,
   RunProjectionVersionConflictError,
 } from "../../data/types";
@@ -71,7 +72,7 @@ export default defineEventHandler(async (event) => {
       event.context.frameOfMindUser?.email,
     );
   } catch (error) {
-    if (error instanceof D1ProjectionLimitError) {
+    if (error instanceof D1ProjectionLimitError || error instanceof HostedRunVersionError) {
       throw createError({ statusCode: 422, statusMessage: error.message });
     }
     if (error instanceof RunProjectionVersionConflictError) {

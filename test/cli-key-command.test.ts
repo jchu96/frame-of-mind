@@ -1,3 +1,4 @@
+import { fixtureMovieHeader } from "../scripts/fixture-movie-header.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -184,7 +185,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     const script = join(home, "reader");
     writeFileSync(script, "#!/usr/bin/env bash\nexec printenv FIXTURE_ANSWER\n", {mode: 0o700});
     writeFileSync(settings, JSON.stringify({keyCommand: [script]}), {mode: 0o600});
-    writeFileSync(join(cwd, "fixture.mp4"), "synthetic recording");
+    writeFileSync(join(cwd, "fixture.mp4"), fixtureMovieHeader());
     rmSync(join(cwd, "consumer-result"), {force: true});
     const result = run(["analyze", "--source", "none", "--video", "fixture.mp4", "--output", "script-out",
       "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"], {
@@ -211,7 +212,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     const output = join(cwd, "out");
     const module = join(home, "answer.mjs");
     writeFileSync(module, "process.stdout.write(process.env.FIXTURE_ANSWER)");
-    writeFileSync(join(cwd, "fixture.mp4"), "synthetic recording");
+    writeFileSync(join(cwd, "fixture.mp4"), fixtureMovieHeader());
     const observe = (answer: string) => {
       rmSync(output, {recursive: true, force: true});
       rmSync(trace, {force: true});

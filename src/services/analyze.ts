@@ -1,13 +1,17 @@
+import { rangeTranscript } from "./range-context.js";
+import { rangeUsage, type RangeRequest } from "../domain/range-clock.js";
+import { type Bound, boundIndex, boundMillis, humanTime, modelBound, modelSpan, sourceBound } from "../domain/source-bound.js";
+import { preparationError, SourceReceipt } from "../domain/source-receipt.js";
+import { isRanged, withSourceRecording, maxRangeSeconds as resolveMaxVideoSeconds } from "./source-recording.js";
 import { applicationSetting } from "../lib/application-settings.js";
 import { ContractError, faultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
 import { VERSION } from "../version.js";
-import { modelTime } from "exact-time";
-import { proposeRecords, snapSettings, summarizeSnaps, type SnapRun, type SnapSettings } from "../domain/snap.js";
-import { parseSecondsMs, declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
+import { classify, proposeRecords, snapSettings, summarizeSnaps, type SnapRun, type SnapSettings } from "../domain/snap.js";
+import { declareClock, runClockSchema, type ClockDeclaration, type ClipClock, type RunClock } from "../domain/clock.js";
 import { probeFrameRate } from "./media-probe.js";
 import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
-import { copyFile, readFile, rename, rm, rmdir, stat } from "node:fs/promises";
+import { readFile, rename, rm, rmdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { selectCandidates } from "../domain/candidate-selection.js";
 import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
@@ -23,6 +27,7 @@ import type {
   ThinkingLevel,
   AnalysisRun,
   AnalysisRunV3,
+  AnalysisRunV4, AnalysisRunV5,
   AnalysisItem,
   ContextProvider,
   DerivedTranscriptProvenance,
@@ -42,8 +47,7 @@ import {
   validateVersionedRunImport,
 } from "../domain/integrity.js";
 import {
-  isRunImportV2,
-  isRunImportV3,
+  type VersionedRunImport,
 } from "../domain/schemas.js";
 import { BluedotClient } from "../adapters/bluedot-mcp.js";
 import { GranolaClient } from "../adapters/granola-mcp.js";
@@ -68,6 +72,7 @@ import {
 } from "../lib/files.js";
 import {
   formatDerivedTranscript,
+  windowOnGrid,
   mergeTranscriptionChunks,
   nearbyTranscript,
   transcriptOffsetVerified,
@@ -105,25 +110,13 @@ import {
 // per remaining candidate.
 const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
 
-const DEFAULT_MAX_VIDEO_SECONDS = 7260;
-
-function resolveMaxVideoSeconds(): number {
-  const value = applicationSetting("FRAME_OF_MIND_MAX_VIDEO_SECONDS");
-  if (value === undefined) return DEFAULT_MAX_VIDEO_SECONDS;
-  const seconds = Number(value);
-  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(seconds)) {
-    throw new Error("FRAME_OF_MIND_MAX_VIDEO_SECONDS must be a positive integer number of seconds");
-  }
-  return seconds;
-}
-
 // One failed window discards the whole transcript, so a window that exhausts
 // the adapter's per-request retries is re-uploaded and transcribed once more
 // after a pause long enough to outlast a load-shedding episode.
 const TRANSCRIPTION_WINDOW_ATTEMPTS = 2;
 const TRANSCRIPTION_WINDOW_RETRY_MS = 20_000;
 
-interface AnalyzeOptionsBase {
+interface AnalyzeOptionsBase extends RangeRequest {
   snapSettings?: SnapSettings;
   timelineOffset?: string;
   timecodeRate?: string;
@@ -231,9 +224,7 @@ export interface AnalysisProgressReporter {
   report(event: AnalysisProgressEvent): Promise<void> | void;
 }
 
-export type AnalysisProjectionInput =
-  | { analysis: AnalysisRun; manifest: RunManifest; outcome?: AnalysisOutcome }
-  | { analysis: AnalysisRunV3; manifest: RunManifestV3; outcome?: AnalysisOutcome };
+export type AnalysisProjectionInput = VersionedRunImport;
 
 export type PublishedAnalysisRun = AnalysisProjectionInput & {
   readonly directory: string;
@@ -298,6 +289,7 @@ export interface AnalysisVideoAnalyzer {
     indexFps?: number,
     derivedTranscript?: string,
     runNotes?: readonly RunNote[],
+    ranged?: boolean,
   ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
@@ -309,8 +301,9 @@ export interface AnalysisVideoAnalyzer {
     runNotes?: readonly RunNote[],
     modelClipClock?: ClipClock,
     stills?: readonly DetailStill[],
+    rangeSeconds?: number,
   ): Promise<AnalysisDetail>;
-  transcribe?(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number): Promise<DerivedTranscriptionSegment[]>;
+  transcribe?(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number, ranged?: boolean): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
   measuredUsageByPass?(): TokenUsage | undefined;
   /**
@@ -331,6 +324,7 @@ export interface AnalysisOrchestratorDependencies {
     apiKey: string,
     options: AnalyzeOptions,
   ): AnalysisVideoAnalyzer;
+  withSourceRecording?: typeof withSourceRecording;
   createRunId?: () => string;
   now?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
@@ -368,6 +362,7 @@ export class AnalysisOrchestrator {
   private readonly extractAudio: typeof extractAudioTrack;
   private readonly probeDuration: typeof probeDurationSeconds;
   private readonly calibrate: typeof calibrateClipClock;
+  private readonly sourceRecording: typeof withSourceRecording;
   private readonly frameRate: typeof probeFrameRate;
 
   constructor(dependencies: AnalysisOrchestratorDependencies) {
@@ -382,15 +377,19 @@ export class AnalysisOrchestrator {
     this.extractAudio = dependencies.extractAudioTrack ?? extractAudioTrack;
     this.probeDuration = dependencies.probeDurationSeconds ?? probeDurationSeconds;
     this.calibrate = dependencies.calibrateClipClock ?? calibrateClipClock;
+    this.sourceRecording = dependencies.withSourceRecording ?? withSourceRecording;
     this.frameRate = dependencies.probeFrameRate ?? probeFrameRate;
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
     const settings = options.snapSettings && snapSettings(options.snapSettings.gapMs, options.snapSettings.windowMs);
     const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
-    const timeline: ClockDeclaration | undefined = declareClock(options.timelineOffset, options.timecodeRate);
+    const ranged = isRanged(options);
+    if (ranged && options.remoteFileName) return rangeUsage("A range cannot reuse a remote file.");
+    const sourceModeOnly = options.timelineOffset === undefined && /^from-media:(df|ndf)$/.test(options.timecodeRate ?? "");
+    const timeline: ClockDeclaration | undefined = sourceModeOnly ? undefined : declareClock(options.timelineOffset, options.timecodeRate);
     const clock: RunClock = runClockSchema.parse({ fileClock: options.fileClock ?? "source", ...(timeline ? { timeline } : {}), modelClipClock: "unverified" });
-    if (options.video && options.timecodeRate?.startsWith("from-media")) {
+    if (!ranged && !sourceModeOnly && options.video && options.timecodeRate?.startsWith("from-media")) {
       clock.timeline = declareClock(options.timelineOffset, options.timecodeRate, await this.frameRate(resolve(options.video), options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf"));
     }
     const maxVideoSeconds = resolveMaxVideoSeconds();
@@ -407,6 +406,7 @@ export class AnalysisOrchestrator {
     let mediaSource: RunManifest["mediaSource"] = "local-file";
     let stagingDirectory: string | undefined;
     let runContainerDirectory: string | undefined;
+    let preparing: {recordingSha256: string; receipt?: SourceReceipt} | undefined;
 
     try {
       assertNotCanceled(execution.signal);
@@ -473,33 +473,36 @@ export class AnalysisOrchestrator {
             "Audio-only calls have no visual UI evidence to interrogate.",
         );
       }
+      const originalPath = localVideo;
+      const recordingSha256 = await sha256File(originalPath);
+      if (options.expectedVideoSha256 && recordingSha256 !== options.expectedVideoSha256) {
+        throw new Error("Selected recording no longer matches its staged media receipt.");
+      }
+      if (ranged) preparing = {recordingSha256};
+      const resolved = (clock: SourceReceipt["clock"]) => {
+        const receipt = new SourceReceipt(clock, recordingSha256, maxVideoSeconds);
+        if (preparing) preparing.receipt = receipt;
+        return receipt;
+      };
+      return await this.sourceRecording(originalPath, {...options,signal:execution.signal,onSourceResolved:resolved}, "video",
+        line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio) => {
+      const receipt = preparing?.receipt ?? resolved(sourceClock);
+      const uploadedCutSha256 = ranged ? await sha256File(localVideo) : undefined;
       const recordingSizeBytes = (await stat(localVideo)).size;
-      if (recordingSizeBytes > MAX_RECORDING_BYTES) {
-        throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
-      }
-      assertNotCanceled(execution.signal);
-      const duration = await this.probeDuration(localVideo, { signal: execution.signal });
-      assertNotCanceled(execution.signal);
+      if (recordingSizeBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
+      const duration = ranged ? sourceClock.elapsed(sourceClock.to - sourceClock.from)
+        : await this.probeDuration(localVideo, {signal:execution.signal});
       if (duration !== undefined && duration > maxVideoSeconds) {
-        throw new ContractError(
-          "RECORDING_TOO_LONG",
+        throw new ContractError("RECORDING_TOO_LONG",
           `Recording is ${duration} seconds long and the limit is ${maxVideoSeconds} seconds. Split the recording into shorter parts.`,
-          { durationSeconds: duration, limitSeconds: maxVideoSeconds },
-        );
+          {durationSeconds: duration, limitSeconds:maxVideoSeconds});
       }
-      if (options.timecodeRate?.startsWith("from-media") && !clock.timeline) {
-        clock.timeline = declareClock(options.timelineOffset, options.timecodeRate, await this.frameRate(localVideo, options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf"));
+      if (!sourceModeOnly && options.timecodeRate?.startsWith("from-media") && !clock.timeline) {
+        const rate = ranged ? {rateOrigin:"media" as const,rate:sourceClock.grid.rate,dropFrame:sourceClock.grid.dropFrame ?? false}
+          : await this.frameRate(originalPath, options.timecodeRate as "from-media" | "from-media:df" | "from-media:ndf");
+        clock.timeline = declareClock(options.timelineOffset, options.timecodeRate, rate);
       }
       clock.clipGuard = duration === undefined ? "unknown-duration" : "applied";
-      const recordingSha256 = await sha256File(localVideo);
-      if (
-        options.expectedVideoSha256
-        && recordingSha256 !== options.expectedVideoSha256
-      ) {
-        throw new Error(
-          "Selected recording no longer matches its staged media receipt.",
-        );
-      }
       assertNotCanceled(execution.signal);
       const containerId = meeting?.id ?? `video-${recordingSha256.slice(0, 16)}`;
       runContainerDirectory = join(resolve(options.outputRoot), safePathSegment(containerId));
@@ -512,7 +515,7 @@ export class AnalysisOrchestrator {
       if (options.calibrate !== false && analyzer.probeClipClock) {
         const measured: Calibration = await this.calibrate({
           model: analyzer.model,
-          upload: (path, mime) => analyzer.upload(path, mime),
+          upload: (path, mime) => { preparing = undefined; return analyzer.upload(path, mime); },
           probeClipClock: (file) => analyzer.probeClipClock!(file),
           delete: (file) => analyzer.delete(file),
         });
@@ -540,7 +543,7 @@ export class AnalysisOrchestrator {
       let derivedTranscript: string | undefined;
       let derivedTranscriptProvenance: DerivedTranscriptProvenance | undefined;
       if (
-        options.derivedTranscript !== false
+        options.derivedTranscript !== false && hasAudio !== false
         && !meeting?.transcript?.trim()
         && typeof analyzer.transcribe === "function"
       ) {
@@ -561,6 +564,7 @@ export class AnalysisOrchestrator {
         const transcribed: Array<{
           segments: DerivedTranscriptionSegment[];
           nominalStartSeconds: number;
+          nominalSourceIndex: bigint;
         }> = [];
         let transcriptionFailed = false;
         for (const [windowNumber, window] of windows.entries()) {
@@ -577,11 +581,14 @@ export class AnalysisOrchestrator {
               message: `Transcribing audio window ${windowNumber + 1}/${windows.length}…`,
             });
           }
-          const audioDuration = duration === undefined ? undefined : window.durationSeconds;
-          const audioPath = join(temp, `derived-audio-${windowNumber + 1}.aac`);
+          const grid = windowOnGrid(sourceClock, window, windowNumber === windows.length - 1);
+          const audioStart = ranged ? sourceClock.elapsed(grid.start) : window.startSeconds;
+          const audioDuration = duration === undefined ? undefined : ranged ? sourceClock.elapsed(grid.end - grid.start) : window.durationSeconds;
+          const audioPath = join(temp, `derived-audio-${windowNumber + 1}.${ranged ? "wav" : "aac"}`);
           if (!(await this.extractAudio(localVideo, audioPath, {
             signal: execution.signal,
-            ...(window.startSeconds ? { startSeconds: window.startSeconds } : {}),
+            ...(ranged && {pcm:true}),
+            ...(audioStart ? { startSeconds: audioStart } : {}),
             ...(audioDuration === undefined ? {} : { durationSeconds: audioDuration }),
           }))) {
             await reportWarning(progress, {
@@ -618,9 +625,15 @@ export class AnalysisOrchestrator {
                 }, async (span) => {
                   const usageBefore = usageCountsOf(analyzer);
                   try {
-                    audioRemote = await analyzer.upload(audioPath, "audio/aac");
+                    if (ranged && (await stat(audioPath)).size > MAX_RECORDING_BYTES) {
+                      throw new ContractError("MEDIA_LIMIT", "Audio window exceeds the upload limit.");
+                    }
+                    preparing = undefined;
+                    audioRemote = await analyzer.upload(audioPath, ranged ? "audio/wav" : "audio/aac");
+                    if (audioDuration !== undefined) receipt.uploads.push({kind:"audio-window",
+                      span:[String(sourceClock.sourceIndex(grid.start)),String(sourceClock.sourceIndex(grid.end))], rate:sourceClock.grid.rate});
                     assertNotCanceled(execution.signal);
-                    return await analyzer.transcribe!(audioRemote, requestedLanguage, audioDuration);
+                    return await analyzer.transcribe!(audioRemote, requestedLanguage, audioDuration, ...(ranged ? [true] as const : []));
                   } finally {
                     span.setAttributes(
                       usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
@@ -628,7 +641,14 @@ export class AnalysisOrchestrator {
                   }
                 });
                 transcribed.push({
-                  segments: offsetTranscriptionSegments(segments, window.startSeconds, audioDuration),
+                  segments: offsetTranscriptionSegments(segments, 0, audioDuration).flatMap(segment => {
+                    const start = timestampToSeconds(segment.start);
+                    const end = timestampToSeconds(segment.end);
+                    const exactSpan = modelSpan(sourceClock,start, Math.max(end,start+1), grid.start,
+                      audioDuration === undefined ? sourceClock.cutLength : grid.end);
+                    return exactSpan ? offsetTranscriptionSegments([{...segment, exactSpan}], window.startSeconds) : [];
+                  }),
+                  nominalSourceIndex:sourceClock.sourceIndex(grid.nominal),
                   nominalStartSeconds: window.nominalStartSeconds,
                 });
                 break;
@@ -688,7 +708,10 @@ export class AnalysisOrchestrator {
             derivedTranscriptProvenance = {
               origin: "gemini-audio",
               model: analyzer.model,
-              sha256: sha256Text(formatted),
+              sha256: sha256Text(marked.segments.map(line => {
+                const span = line.exactSpan;
+                return span ? `[${humanTime(span.start)} ${JSON.stringify(span)}] ${line.speaker}: ${line.text}` : "";
+              }).join("\n")),
               ...(requestedLanguage && { requestedLanguage }),
             };
           }
@@ -740,7 +763,10 @@ export class AnalysisOrchestrator {
               recordingSizeBytes,
             );
           }
-          return analyzer.upload(localVideo, mimeType);
+          preparing = undefined;
+          const file = await analyzer.upload(localVideo, ranged ? "video/mp4" : mimeType);
+          if (sourceClock.lengthKnown) receipt.uploads.push({kind:"video-cut", span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
+          return file;
         });
       } catch (error) {
         if (error instanceof AnalysisCanceledError) throw error;
@@ -755,6 +781,7 @@ export class AnalysisOrchestrator {
           ? "unconfirmed"
           : reportedUploadCleanup;
         const failure = runFailureManifestSchema.parse({
+          ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}),
           schemaVersion: 1,
           toolVersion: VERSION,
           runId,
@@ -810,7 +837,11 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
         let indexMeeting = meeting;
         clock.transcriptWindow = "not-requested";
-        if (options.transcriptOffsetSeconds !== undefined && meeting?.transcript?.trim()) {
+        if (ranged && meeting?.transcript.trim()) {
+          const rebased = rangeTranscript(meeting, options.transcriptOffsetSeconds ?? 0, sourceClock, receipt);
+          indexMeeting = {...meeting,transcript:rebased.text};
+          clock.transcriptWindow = rebased.windowed ? "windowed" : "not-windowed";
+        } else if (options.transcriptOffsetSeconds !== undefined && meeting?.transcript?.trim()) {
           const window = windowTranscript(meeting.transcript, options.transcriptOffsetSeconds, duration);
           indexMeeting = { ...meeting, transcript: window.text };
           clock.transcriptWindow = window.windowed ? "windowed" : "not-windowed";
@@ -823,6 +854,7 @@ export class AnalysisOrchestrator {
         }, async (span) => {
           const usageBefore = usageCountsOf(analyzer);
           try {
+            const hints: [notes?: readonly RunNote[], ranged?: boolean] = ranged ? [options.runNotes, true] : options.runNotes?.length ? [options.runNotes] : [];
             const indexed = await analyzer.index(
               remote,
               indexMeeting,
@@ -830,7 +862,7 @@ export class AnalysisOrchestrator {
               options.focus,
               indexFps,
               derivedTranscript,
-              ...(options.runNotes?.length ? [options.runNotes] : []),
+              ...hints,
             );
             span.setAttributes({
               "frame_of_mind.candidates_indexed": indexed.moments.length,
@@ -880,13 +912,20 @@ export class AnalysisOrchestrator {
                 };
         }
         if (alignment) clock.transcriptClock = transcriptOffsetVerified(alignment.offsetSeconds, meeting?.transcript ?? derivedTranscript) ? "exact-ms" : "unverified";
-        const providerTranscript = meeting?.transcript?.trim() ? meeting.transcript : undefined;
+        const providerTranscript = ranged ? indexMeeting?.transcript : meeting?.transcript?.trim() ? meeting.transcript : undefined;
         const effectiveTranscript = providerTranscript ?? derivedTranscript;
         const transcriptIsDerived = Boolean(derivedTranscript) && !providerTranscript;
+
+        const runProseTime = ranged && [index.matchNotes, alignment?.rationale].some(hasProseTime);
+        if (runProseTime) await reportWarning(progress,{kind:"warning",stage:"indexing",message:proseTimeNote});
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
-        const inRange = duration === undefined ? index.moments : index.moments.filter(candidate => timestampToSeconds(candidate.start) * 1000 < duration * 1000);
+        const inRange = index.moments.filter(candidate => {
+          const start = timestampToSeconds(candidate.start);
+          return (duration === undefined || start < duration) && modelSpan(sourceClock,start,timestampToSeconds(candidate.end));
+        });
         const outOfRange = index.moments.length - inRange.length;
+        const spanOf = (c: IndexedMoment) => modelSpan(sourceClock, timestampToSeconds(c.start), timestampToSeconds(c.end));
         const candidates = selectCandidates(inRange, options.maxIncidents);
         failurePhase = "detail";
         await report(progress, {
@@ -899,7 +938,7 @@ export class AnalysisOrchestrator {
         // screenshots, failure accounting, the circuit breaker, and progress
         // counts match a sequential run.
         type DetailAttempt =
-          | { kind: "validated"; result: AnalysisDetail; stillTimes?: string[]; citedStill?: string }
+          | { kind: "validated"; result: AnalysisDetail; stillTimes?: string[]; exactStillTimes?: Bound[]; citedStill?: string }
           | { kind: "failed"; error: CandidateAnalysisError };
         // Admission counts completions rather than ordered commits: a slow
         // early request must not let faster failing workers refill forever.
@@ -916,7 +955,7 @@ export class AnalysisOrchestrator {
           assertNotCanceled(execution.signal);
           // CLI jobs account against a separate upload grant and omit inline images.
           const frames = execution.jobScratchRoot ? undefined : await extractDetailStills(
-            localVideo, candidate, duration, temp, indexNumber, this.screenshot, () => assertNotCanceled(execution.signal),
+            localVideo, candidate, duration, temp, indexNumber, this.screenshot, () => assertNotCanceled(execution.signal), sourceClock,
           );
           let citedStill: string | undefined;
           try {
@@ -945,7 +984,7 @@ export class AnalysisOrchestrator {
                         candidate.start,
                         candidate.end,
                         45,
-                        transcriptIsDerived ? 0 : alignment?.offsetSeconds ?? 0,
+                        transcriptIsDerived || ranged ? 0 : alignment?.offsetSeconds ?? 0,
                       )
                     : undefined,
                   options.recipe,
@@ -954,6 +993,7 @@ export class AnalysisOrchestrator {
                   options.runNotes,
                   clock.modelClipClock,
                   stills,
+                  ...(ranged ? [duration] : []),
                 );
                 span.setAttributes({ "frame_of_mind.candidate_accepted": detail.accepted });
                 return detail;
@@ -975,7 +1015,7 @@ export class AnalysisOrchestrator {
               const seconds = timestampToSeconds(result.evidence.timestamp);
               citedStill = frames?.find(frame => frame.seconds === seconds)?.path;
             }
-            return { kind: "validated", result, citedStill, stillTimes: frames?.map(frame => secondsToTimestamp(frame.seconds)) };
+            return { kind: "validated", result, citedStill, exactStillTimes:frames?.map(f => f.exactTime!), stillTimes: frames?.map(frame => secondsToTimestamp(frame.seconds)) };
           } catch (error) {
             if (error instanceof CandidateAnalysisError) {
               return { kind: "failed", error };
@@ -993,6 +1033,14 @@ export class AnalysisOrchestrator {
           indexNumber: number,
         ): Promise<void> => {
           const candidate = candidates[indexNumber]!;
+          const exactSpan = spanOf(candidate)!;
+          const sourceCandidate = {...candidate, start:humanTime(exactSpan.start), end:humanTime(exactSpan.endExclusive), exactSpan};
+          if (ranged && sourceClock.from > 0n && boundIndex(exactSpan.start) === sourceClock.from) {
+            receipt.startFragments.push({kind:"moment",exactSpan,state:"unknown"});
+          }
+          if (ranged && sourceClock.to < sourceClock.grid.length && boundIndex(exactSpan.endExclusive) === sourceClock.to) {
+            receipt.endFragments.push({kind:"moment",exactSpan,state:"unknown"});
+          }
           try {
             if (attempt.kind === "failed") throw attempt.error;
             let result = attempt.result;
@@ -1017,33 +1065,47 @@ export class AnalysisOrchestrator {
               candidate.start,
               candidate.end,
             );
-            const item: AnalysisItem = { candidate, result };
-            if (attempt.stillTimes) item.stillTimes = attempt.stillTimes;
+            if (result.evidence?.timestamp) {
+              const sec = timestampToSeconds(result.evidence.timestamp);
+              const exactTime = modelBound(sourceClock, sec, 0n, sourceClock.cutLength);
+              if (boundIndex(exactTime) >= boundIndex(exactSpan.endExclusive)) {
+                throw new CandidateAnalysisError({code:"evidence_out_of_range", attempts:1});
+              }
+              result = {...result, evidence:{...result.evidence, timestamp:humanTime(exactTime), exactTime}};
+            }
+            const item: AnalysisItem = { candidate: sourceCandidate, result };
+            if (attempt.stillTimes) {
+              item.exactStillTimes = attempt.exactStillTimes!;
+              item.stillTimes = item.exactStillTimes.map(humanTime);
+            }
             if (screenTextNotFromStill) item.screenTextNotFromStill = true;
             if (options.screenshots && result.accepted) {
-              const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
-              const screenshotPath = join(screenshotDirectory, screenshotName);
+              const stagingImage = join(screenshotDirectory,`moment-${indexNumber+1}-capture.png`);
               if (attempt.citedStill) {
-                await copyFile(attempt.citedStill, screenshotPath);
-                await rm(attempt.citedStill);
-                item.screenshot = screenshotName;
+                const i = attempt.stillTimes!.indexOf(cited!);
+                item.screenshotExactTime = attempt.exactStillTimes![i];
+                await rename(attempt.citedStill, stagingImage);
               } else {
-                const screenshotTime = result.evidence?.timestamp || candidate.start;
-                const captured = options.recipe.screenshotStrategy === "settled"
-                  ? await this.screenshot(localVideo, screenshotTime, screenshotPath, { start: candidate.start, end: candidate.end })
-                  : await this.screenshot(localVideo, screenshotTime, screenshotPath);
-                if (captured) item.screenshot = screenshotName;
+                const position = {clock:sourceClock,span:exactSpan,target:result.evidence?.exactTime ?? exactSpan.start,
+                  captured:(bound: Bound) => {item.screenshotExactTime=bound;}};
+                await this.screenshot(localVideo,cited || candidate.start,stagingImage,
+                  options.recipe.screenshotStrategy === "settled" ? {start:candidate.start,end:candidate.end} : undefined,position);
               }
+              if (item.screenshotExactTime) {
+                item.screenshot = `moment-${String(indexNumber+1).padStart(2,"0")}-${item.screenshotExactTime.unit}-${boundIndex(item.screenshotExactTime)}.png`;
+                await rename(stagingImage,join(screenshotDirectory,item.screenshot));
+              } else await rm(stagingImage,{force:true});
               assertNotCanceled(execution.signal);
             }
+            if (ranged) markProseTime(item,runProseTime);
             items.push(item);
           } catch (error) {
             if (error instanceof AnalysisCanceledError) throw error;
             if (!(error instanceof CandidateAnalysisError)) throw error;
             failures.push({
               candidateOrdinal: indexNumber + 1,
-              start: candidate.start,
-              end: candidate.end,
+              start: sourceCandidate.start,
+              end: sourceCandidate.end, exactSpan,
               code: error.code,
               attempts: error.attempts,
               ...(error.issues.length ? { issues: [...error.issues] } : {}),
@@ -1077,7 +1139,7 @@ export class AnalysisOrchestrator {
               total: candidates.length,
               unit: "items",
             },
-            message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${renderClockTime(candidate.start, clock)}`,
+            message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${renderClockTime(sourceCandidate.start,clock,exactSpan.start)} ${JSON.stringify(exactSpan)}`,
           });
         };
         await mapWithConcurrency(candidates, detailConcurrency, interrogateCandidate, {
@@ -1096,7 +1158,7 @@ export class AnalysisOrchestrator {
           });
         }
         const outcome = analysisOutcomeSchema.parse({
-          schemaVersion: 1,
+          schemaVersion: 2,
           runId,
           status: failures.length > 0 && items.length === 0
             ? "failed"
@@ -1107,7 +1169,7 @@ export class AnalysisOrchestrator {
             indexed: index.moments.length,
             selected: candidates.length,
             omittedByLimit,
-            ...(duration !== undefined ? { outOfRange } : {}),
+            ...(duration !== undefined || outOfRange > 0 ? { outOfRange } : {}),
             validated: items.length,
             accepted: items.filter((item) => item.result.accepted).length,
             rejected: items.filter((item) => !item.result.accepted).length,
@@ -1129,7 +1191,7 @@ export class AnalysisOrchestrator {
 
         const analysis: VersionedAnalysisRun = meetingRunContext
           ? {
-              schemaVersion: 2,
+              schemaVersion: 4,
               runId,
               recipe: {
                 id: options.recipe.id,
@@ -1153,7 +1215,7 @@ export class AnalysisOrchestrator {
               items,
             }
           : {
-              schemaVersion: 3,
+              schemaVersion: 5,
               runId,
               recipe: {
                 id: options.recipe.id,
@@ -1173,12 +1235,14 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
         let proposals: SnapRun | undefined;
         if (settings) {
-          const boundaries = await soundBoundaries();
+          const boundaries = ranged ? await this.decodeSpeech(originalPath,{signal:execution.signal, slice:{
+            startMs:boundMillis(sourceBound(sourceClock,sourceClock.from),true), endMs:boundMillis(sourceBound(sourceClock,sourceClock.to)),
+          }}).then(envelope => envelope && classify(envelope)).catch(() => undefined) : await soundBoundaries();
           assertNotCanceled(execution.signal);
           if (!boundaries) await reportWarning(progress, { kind: "warning", stage: "rendering", message: "Speech snapping unavailable: audio decode or timestamp verification failed." });
-          const ms = (timestamp: string) => parseSecondsMs(modelTime(clock.fileClock, timestamp).seconds);
-          proposals = proposeRecords(items.map(({ candidate }) => ({ start: ms(candidate.start), end: ms(candidate.end) })),
-            boundaries, clock.fileClock, settings);
+          proposals = proposeRecords(items.map(({candidate}) => ({
+            start:boundMillis(candidate.exactSpan!.start),end:boundMillis(candidate.exactSpan!.endExclusive,true)
+          })), boundaries, clock.fileClock, settings);
         }
         assertNotCanceled(execution.signal);
         failurePhase = "cleanup";
@@ -1219,7 +1283,7 @@ export class AnalysisOrchestrator {
                 ? [{
                     record: index + 1,
                     time: item.result.evidence?.timestamp || item.candidate.start,
-                    screenshot: item.screenshot,
+                    screenshot: item.screenshot, actual:item.screenshotExactTime, cited:item.result.evidence?.exactTime ?? item.candidate.exactSpan?.start,
                   }]
                 : [])
           : [];
@@ -1241,7 +1305,13 @@ export class AnalysisOrchestrator {
         }
         assertNotCanceled(execution.signal);
         const tokenUsage = execution.includeTokenUsage ? analyzer.measuredUsageByPass?.() : undefined;
+        if (outcome.status === "complete" && sourceClock.lengthKnown) receipt.cover(sourceClock.from,sourceClock.to);
+        else for (const {candidate} of items) {
+          receipt.cover(boundIndex(candidate.exactSpan!.start),boundIndex(candidate.exactSpan!.endExclusive));
+        }
+        const proseTimeUnverified = runProseTime || (ranged && items.some(i => i.result.confidenceNotes?.includes(proseTimeNote)));
         const manifestBase = {
+          ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}), ...(proseTimeUnverified && {proseTimeUnverified:true as const}),
           ...(tokenUsage && { tokenUsage }),
           clock,
           toolVersion: VERSION,
@@ -1351,28 +1421,12 @@ export class AnalysisOrchestrator {
             message: "Gemini file cleanup failed; manifest records deleted=false.",
           });
         }
-        const published: PublishedAnalysisRun = isRunImportV2(validated)
-          ? {
-              directory: outputDirectory,
-              analysis: validated.analysis,
-              manifest: validated.manifest,
-              outcome,
-            }
-          : isRunImportV3(validated)
-            ? {
-                directory: outputDirectory,
-                analysis: validated.analysis,
-                manifest: validated.manifest,
-                outcome,
-              }
-            : (() => {
-                throw new Error("Run contract schema versions do not match.");
-              })();
+        const published: PublishedAnalysisRun = {...validated, directory:outputDirectory, outcome};
         let projectionWarning: string | undefined;
         if (execution.projection) {
           try {
             await execution.projection.publish(
-              structuredClone(projectionInputFrom(published)),
+              structuredClone({...validated, outcome}),
             );
           } catch {
             projectionWarning = "Published run could not be added to the review projection.";
@@ -1395,6 +1449,7 @@ export class AnalysisOrchestrator {
           cleanupFinalized = true;
         }
         const failure = runFailureManifestSchema.parse({
+          ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}),
           schemaVersion: 1,
           toolVersion: VERSION,
           runId,
@@ -1455,6 +1510,13 @@ export class AnalysisOrchestrator {
           }
         }
       }
+      });
+    } catch (error) {
+      if (preparing && !execution.signal?.aborted) {
+        const source = preparing.receipt?.document() ?? {recordingSha256:preparing.recordingSha256, coverage:{full:false, covered:[]}};
+        throw preparationError(error, source, line => process.stderr.write(line + "\n"));
+      }
+      throw error;
     } finally {
       await context?.close().catch(() => undefined);
       if (stagingDirectory) await rm(stagingDirectory, { recursive: true, force: true });
@@ -1653,30 +1715,16 @@ function usageDeltaAttributes(
   };
 }
 
-function projectionInputFrom(
-  published: PublishedAnalysisRun,
-): AnalysisProjectionInput {
-  if (
-    published.analysis.schemaVersion === 2
-    && published.manifest.schemaVersion === 2
-  ) {
-    return {
-      analysis: published.analysis,
-      manifest: published.manifest,
-      outcome: published.outcome,
-    };
-  }
-  if (
-    published.analysis.schemaVersion === 3
-    && published.manifest.schemaVersion === 3
-  ) {
-    return {
-      analysis: published.analysis,
-      manifest: published.manifest,
-      outcome: published.outcome,
-    };
-  }
-  throw new Error("Run contract schema versions do not match.");
+const proseTimeNote = "A time in this text may be on the cut's clock.";
+const hasProseTime = (s: string | undefined) => !!s && /\b(?:\d+:)?\d{1,2}:[0-5]\d\b/.test(s);
+function markProseTime(item: AnalysisItem, runLevel: boolean) {
+  const {candidate:c,result:r} = item;
+  const prose = [c.summary,c.speaker,c.kind,c.surface,r.title,r.kind,r.summary,r.confidenceNotes,r.where?.step,r.where?.surface,
+    r.evidence?.verbatimUiText,r.evidence?.reporterQuote,r.evidence?.speaker,...r.steps ?? [],...(r.details ?? []).flatMap(d => [d.label,d.value])];
+  const note = proseTimeNote;
+  if (!runLevel && !prose.some(hasProseTime)) return false;
+  if (!r.confidenceNotes?.includes(note)) r.confidenceNotes = [r.confidenceNotes,note].filter(Boolean).join("\n");
+  return true;
 }
 
 export function assertEvidenceWithinCandidate(

@@ -24,7 +24,7 @@ export const probeLimit = 32 * 1024 * 1024;
 export function mediaWorkTimeoutMs(seconds: number) {
   return 600_000 + (Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) * 2000 : 0);
 }
-export interface ToolOptions { signal?: AbortSignal; timeoutMs?: number; maxOutput?: number; inputFd?: number }
+export interface ToolOptions { signal?: AbortSignal; timeoutMs?: number; maxOutput?: number; inputFd?: number; onSpawn?: (pid: number) => void; onLine?: (line: string) => void }
 
 export async function runMediaTool(binary: string, args: string[], options: ToolOptions = {}): Promise<string> {
   const { signal, timeoutMs = binary === "ffprobe" ? 60_000 : 600_000, maxOutput = probeLimit } = options;
@@ -40,11 +40,28 @@ export async function runMediaTool(binary: string, args: string[], options: Tool
       failure ??= error;
       child.kill("SIGKILL");
     };
+    if (child.pid !== undefined && options.onSpawn) {
+      try { options.onSpawn(child.pid); }
+      catch { fail(new Error("Cannot register range encoder")); }
+    }
     const abort = () => fail(new ContractError("CANCELLED", "Media operation canceled."));
     const timer = setTimeout(() => fail(new ContractError("DECODE_FAILED", `${binary} timed out.`)), timeoutMs);
     const chunks: Buffer[] = [];
     let size = 0;
+    let pending = "";
     child.stdout!.on("data", (chunk: Buffer) => {
+      if (failure) return;
+      if (options.onLine) {
+        // ffprobe's selected compact fields are ASCII. Keep only the trailing
+        // partial row between chunks so long sources never buffer the scan text.
+        const lines = (pending + chunk.toString("ascii")).split("\n");
+        pending = lines.pop()!;
+        try {
+          if (pending.length > 4096) throw new Error("Media tool returned an oversized scan row.");
+          for (const line of lines) if (line) options.onLine(line);
+        } catch (error) { fail(error instanceof Error ? error : new Error("Invalid media scan")); }
+        return;
+      }
       size += chunk.length;
       if (size > maxOutput) fail(new Error(`${binary} output exceeded its scan limit.`));
       else chunks.push(chunk);
@@ -62,6 +79,10 @@ export async function runMediaTool(binary: string, args: string[], options: Tool
     child.once("close", (code, reason) => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
+      if (!failure && pending && options.onLine) {
+        try { options.onLine(pending); }
+        catch (error) { failure = error instanceof Error ? error : new Error("Invalid media scan"); }
+      }
       if (failure) reject(failure);
       else if (code !== 0 || reason) reject(new ContractError("DECODE_FAILED", `${binary} failed (${reason ?? code}).`));
       else done(Buffer.concat(chunks).toString("utf8"));

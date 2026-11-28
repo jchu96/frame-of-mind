@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { childEnvironment } from "../src/lib/child-env.js";
-import { inspectScratch, markerName } from "../src/adapters/scratch.js";
+import { inspectScratch, markerName, reapRangeScratch } from "../src/adapters/scratch.js";
 
 function abandon(body: string, ...args: string[]) {
   const script = 'import {createScratch, createMediaLock} from "./src/adapters/scratch.ts";' + body;
@@ -92,5 +92,30 @@ it("lists the three temp kinds by default and the two adjacent kinds only in the
     const removed = await inspectScratch(scan, lock);
     expect(removed.filter(row => row.removed).map(row => row.path)).toEqual([lock]);
     expect(await readFile(join(shots!, markerName), "utf8")).toBeTruthy();
+  } finally { vi.unstubAllEnvs(); }
+});
+
+it("reaps only the recorded range inode after its owner and encoder have exited", async () => {
+  for (const key of ["TMPDIR", "TMP", "TEMP"]) vi.stubEnv(key, root);
+  const owned = (encoder: string) => abandon(`
+    import {rangeEncoder} from "./src/adapters/scratch.ts";
+    import {open} from "node:fs/promises";
+    const dir = await createScratch("range", process.argv[1]);
+    const cut = dir + "/cut.mp4";
+    await (await open(cut, "wx", 0o600)).close();
+    rangeEncoder(cut)(${encoder});
+    console.log(dir);`, root);
+  try {
+    const gone = owned("process.pid");
+    const active = owned(String(process.pid));
+    const replaced = owned("process.pid");
+    // Keep the first inode alive while replacing its directory entry.
+    const {rename} = await import("node:fs/promises");
+    await rename(join(replaced, "cut.mp4"), join(root, "first-inode"));
+    await writeFile(join(replaced, "cut.mp4"), "external recording");
+    for (let i = 0; i < 2; i++) await reapRangeScratch();
+    await expect(readFile(join(gone, markerName))).rejects.toMatchObject({code: "ENOENT"});
+    await expect(readFile(join(active, "cut.mp4"))).resolves.toHaveLength(0);
+    expect(await readFile(join(replaced, "cut.mp4"), "utf8")).toBe("external recording");
   } finally { vi.unstubAllEnvs(); }
 });

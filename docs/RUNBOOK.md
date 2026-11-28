@@ -917,6 +917,22 @@ replacement. For an intentional replacement in the same output folder, pass
 `--after-unknown "$job_id"` and a fresh request ID. An unconfirmed deletion
 can leave media at the provider until expiry.
 
+### 3.10.1 Analyze or transcribe a source range
+
+Use `analyze --source none --video take.mp4 --from 600 --to 1200` or `transcribe take.mp4 --from 600 --to 1200`.
+Both accept seconds, frames and source timecode. Audio-only transcription also accepts `Nsamp` at the first track's sample rate.
+A missing bound uses the start or EOF. Read the used half-open source indices and exact rate from stderr. At 30000/1001 fps, `--from 600` starts at frame 17982.
+with a seconds bound moved to its frame, a printed whole second can fall just outside the request; a caller tests ownership against `sourceRange`, never against a printed second.
+
+Budget time for the local cut. A one-hour 1080p measurement took 1 s for packet timing and 94 s for a full decode.
+On `Cutting source [...): whole-file — <reason>`, allow time for the from-zero timing, decode and encode. Local work counts inside wall-clock deadlines.
+Check `capabilities --json` for `maxRangeSeconds` (default 7260, override `FRAME_OF_MIND_MAX_VIDEO_SECONDS`). The limit and upload apply to this selection.
+Use the manifest or transcription's stderr `Source coverage:` receipt to find the remaining spans. Each range uploads separately.
+An item from 595 to 615 s crossing [0,610) and [600,1200) appears in `endFragments` and `startFragments`.
+Match the recording digest, exact overlap and content to join those pieces and count 600–610 once. Keep ambiguous matches separate.
+A failed one-frame moment retains its exact span even when both labels show the same second. Model support and snap uncertainty appear with the exact position.
+Check structured times when prose carries “A time in this text may be on the cut's clock.”
+
 ### 3.11 Transcribe
 
 Run `frameofmind transcribe "<recording>" [-o "<directory>"] [--model <id>] [--transcript-language <tag>]`
@@ -1342,6 +1358,8 @@ and one cleanup state:
 - `confirmed_deleted`;
 - `intentionally_retained` for default `provider` retention or explicit `--keep-upload`;
 - `unconfirmed` when deletion did not complete.
+
+If a local cut fails before an upload starts, the CLI reports source coverage on stderr. JSON errors carry the available source fields, empty coverage, `phase: "prepare"` and `sent: false` in `error.details`. This reply is the receipt.
 
 It contains no provider response, error message, transcript, focus text, signed
 URL, or local media path. Cancellation remains non-publishing but still attempts

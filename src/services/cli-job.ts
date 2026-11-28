@@ -21,6 +21,7 @@ export interface JobOptions extends Record<string, unknown> {
 export interface JobDependencies {
   readKey?: () => string | undefined;
   probe?: typeof probeJobMedia;
+  withSourceRecording?: TranscribeDependencies["withSourceRecording"];
   extractAudioTrack?: TranscribeDependencies["extractAudioTrack"];
   sleep?: TranscribeDependencies["sleep"];
 }
@@ -223,14 +224,14 @@ async function execute(store: JobStore, record: JobRecord, flags: JobOptions, gr
       const {transcribe} = await import("./transcribe.js");
       const exports = await transcribe({input: sealed, output, apiKey: key, model, retention: grant.retention, json: flags.transcriptJson,
         signal: signal.signal}, {createAnalyzer: () => analyzer, probeDurationSeconds: async () => seconds, stdout() {}, stderr() {},
-        ...(deps.sleep && {sleep: deps.sleep}), ...(deps.extractAudioTrack && {extractAudioTrack: deps.extractAudioTrack})}, {scratchRoot: scratch, authorize});
+        ...(deps.withSourceRecording && {withSourceRecording:deps.withSourceRecording}), ...(deps.sleep && {sleep: deps.sleep}), ...(deps.extractAudioTrack && {extractAudioTrack: deps.extractAudioTrack})}, {scratchRoot: scratch, authorize});
       stagedFolder = output;
       receipt.outputs = exports.paths.map(path => basename(path));
       record.state = "complete";
     } else {
       const recipe = await withAnalysisDepth(await loadRecipe(flags.recipe!), "standard");
       const {AnalysisOrchestrator} = await import("./analyze.js");
-      const service = new AnalysisOrchestrator({createAnalyzer: () => analyzer, createContextSource() {throw new Error("Unexpected context source.");},
+      const service = new AnalysisOrchestrator({withSourceRecording:deps.withSourceRecording, createAnalyzer: () => analyzer, createContextSource() {throw new Error("Unexpected context source.");},
         probeDurationSeconds: async () => seconds});
       const result = await service.analyze({contextMode: "none", video: sealed, outputRoot: output, apiKey: key, model,
         recipe: recipe.recipe, recipeSha256: recipe.sha256, recipeRevision: recipe.revision, customRecipe: false, indexFps: recipe.indexFps,

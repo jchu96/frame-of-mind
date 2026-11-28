@@ -11,7 +11,7 @@ import type { RunRow } from "../server/data/types";
 import { RunProjectionVersionConflictError } from "../server/data/types";
 import { RunPrincipalConflictError, encodeRunCursor } from "../server/data/types";
 import { runFixture, videoRunFixture } from "./fixtures";
-import { analysisDigest } from "../../../src/domain/integrity";
+import { analysisDigest, sha256Utf8 } from "../../../src/domain/integrity";
 
 const principalA = { principal: "user-subject-a", email: "same@example.test" };
 const principalB = { principal: "user-subject-b", email: "same@example.test" };
@@ -186,6 +186,22 @@ class FakeD1 {
 }
 
 describe("D1 projection contract", () => {
+  test("refuses exact-time bundles before changing the bundle or the hosted database", async () => {
+    for (const version of [4, 5]) {
+      const database = new FakeD1();
+      const store = createD1RunStore(database as unknown as D1Database, principalA);
+      const input = version === 4 ? runFixture() : await videoRunFixture();
+      const analysis = { ...input.analysis, schemaVersion: version, items: [] };
+      const bundle = { analysis, manifest: { ...input.manifest, analysisSha256: await sha256Utf8(JSON.stringify(analysis, null, 2) + "\n") } };
+      const before = JSON.stringify(bundle);
+      await expect(store.importRun(bundle as Parameters<typeof store.importRun>[0])).rejects.toThrow(
+        `Hosted Studio accepts analysis versions 2 and 3. Open this version ${version} bundle in local Studio.`,
+      );
+      expect(JSON.stringify(bundle)).toBe(before);
+      expect(database.registry.size + database.runs.size + database.videoRuns.size + database.items.size).toBe(0);
+    }
+  });
+
   test("imports, lists, reads, and refreshes through the shared RunStore API", async () => {
     const database = new FakeD1();
     const store = createD1RunStore(database as unknown as D1Database, principalA);

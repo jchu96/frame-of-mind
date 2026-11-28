@@ -1,3 +1,4 @@
+import { maxRangeSeconds } from "./lib/range-policy.js";
 import { KeyCommandRefused } from "./key-command.js";
 import { Command, CommanderError } from "commander";
 import { jobInventory } from "./commands/job-commands.js";
@@ -32,7 +33,7 @@ export function capabilities(root: Command) {
     commands.push({ name: command.name(), options: [...options, "--schema-version"] });
   }
   commands.push(...jobInventory());
-  return { commands, schemaVersions: Object.fromEntries(commands.map(({ name }) => [name, [CLI_SCHEMA_VERSION]])) };
+  return { commands, maxRangeSeconds: maxRangeSeconds(), schemaVersions: Object.fromEntries(commands.map(({ name }) => [name, [CLI_SCHEMA_VERSION]])) };
 }
 
 function selectSchema(args: string[]) {
@@ -79,14 +80,17 @@ export async function runCli(root: Command, args: string[]) {
     }
     await root.parseAsync(args, { from: "user" });
   } catch (error) {
-    if (machine) writeFailure(error);
+    if (machine) {
+      if (error instanceof ContractError && typeof error.details?.reason === "string" && error.code === "USAGE") process.stderr.write(error.details.reason + "\n");
+      writeFailure(error);
+    }
     else if (error instanceof KeyCommandRefused) {
       process.stderr.write(error.message + "\n");
       process.exitCode = faultExits.KEY_REFUSED;
     } else if (error instanceof CommanderError) process.exitCode = error.exitCode;
     else {
       process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
-      process.exitCode = 1;
+      process.exitCode = error instanceof ContractError && error.code === "USAGE" && error.details?.reason ? faultExits.USAGE : 1;
     }
   }
 }
