@@ -131,9 +131,10 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     const report = run(["doctor", "--json"], disabled);
     expect(JSON.parse(report.out).key.source).toBe("dotenv");
     expect(report.exit).toBe(0);
-    run(["analyze", "--source", "none", "--video", "fixture.mp4", "--output", "folder-out",
+    const result = run(["analyze", "--source", "none", "--video", "fixture.mp4", "--output", "folder-out",
       "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"],
-    {...disabled, FIXTURE_ANSWER: "synthetic-folder", CONSUMER_FIXTURE: "1"});
+      {...disabled, PATH: home, FIXTURE_ANSWER: "synthetic-folder", CONSUMER_FIXTURE: "1"});
+    expect(JSON.parse(result.out).error.code).toBe("PROVIDER_REFUSED");
     expect(readFileSync(join(cwd, "consumer-result"), "utf8")).toBe("accepted");
     expect(existsSync(marker)).toBe(false);
     expect(existsSync(join(root, "unexpected-open"))).toBe(false);
