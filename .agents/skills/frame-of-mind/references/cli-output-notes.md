@@ -1,4 +1,4 @@
-# CLI output notes (v0.6.2 to main)
+# CLI output notes (v0.6.2 to v0.6.6)
 
 Load this reference before reading `transcribe` or `analyze` output, or when a
 run stops with a code you do not recognise. Everything here is optional on
@@ -19,7 +19,7 @@ contract version 1 unless it says otherwise. `CHANGELOG.md` holds the full text.
   file. The environment wins over the folder file. When the source is unknown
   a job start is refused: run the installed command instead.
 - **Source builds.** A build that is not a release file prints its version with
-  `+source`, for example `0.6.5+source`, in `--version`, `doctor`, the manifest
+  `+source`, for example `0.6.6+source`, in `--version`, `doctor`, the manifest
   `toolVersion` and the local MCP server. A linked checkout runs `dist/`:
   rebuild after every pull, or it runs old code under the new number.
 
@@ -60,8 +60,14 @@ contract version 1 unless it says otherwise. `CHANGELOG.md` holds the full text.
   actually sent. The model is told to quote screen text only from one labelled
   still, and when its citation matches a still the saved screenshot is that
   exact frame.
-- **What that does not prove.** A quotation that cites a time which is no
-  still's goes undetected. The stills of one request total at most 15 MB; a
-  still that does not fit is not sent, and when none fits the item's confidence
-  notes say the full-size frame was unavailable. Treat a screen quotation
-  without a matching entry in `stillTimes` as unread, and check it on the frame.
+- **A quotation that cites no still is removed.** When an accepted record's
+  `evidence.verbatimUiText` cites a time that is not in its `stillTimes`, the
+  tool removes it, sets `screenTextNotFromStill: true` on the item and adds
+  "Screen text was not read from a still." to the confidence notes. The record,
+  its times and its saved frame stay.
+- **What that does not prove.** Screen words inside titles and prose are not
+  checked: in a record carrying that field, distrust them. Never quote
+  `candidate.summary`; it is the first pass's note from a reduced picture.
+- **Size limit.** The stills of one request total at most 15 MB; a still that
+  does not fit is not sent, and when none fits the item's confidence notes say
+  the full-size frame was unavailable.

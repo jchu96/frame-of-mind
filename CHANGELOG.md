@@ -5,17 +5,28 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-A screen quotation is now kept only when it was read from an attached still. When an accepted record
-carries `evidence.verbatimUiText` and cites a time that is not one of its `stillTimes`, `analyze` removes
-the quotation, sets the new optional item field `screenTextNotFromStill: true` and adds
-"Screen text was not read from a still." to the record's confidence notes. The record stays accepted, its
-times do not move and the frame saved at the cited time is kept. Before, the rule was only a sentence in
-the request and such a quotation passed through. Screen words inside titles and prose are not checked.
+## [0.6.6] - 2026-11-28
 
-Removed the transcript recheck and `transcribe --recheck`. On a real recording, none of
-the guards evaluated removed every invented line while keeping a confirmed real line.
-New output omits `outcome`, `rechecks`, `belowCutoff`, and the per-line `recovered` mark.
-A machine call passing `--recheck` now returns `USAGE` (exit 2).
+Screen text a record quotes is now read from a full-size picture, and a quotation the tool cannot tie to one is removed. The transcript recheck is gone. `doctor` says where the provider key came from. Everything added is optional on contract version 1.
+
+### Added
+
+- Full-size stills. Each detail request of `analyze` and local Studio carries up to three full-size stills of the moment: the midpoint for a moment under 10 seconds, and for longer moments also the frames two seconds inside either end. The model is told to quote screen words only from one labelled still. Each item carries `stillTimes`, the recording times actually sent, even with `--no-screenshots`. When a record cites a still, the saved screenshot is that exact frame. The stills of one request total at most 15 MB once encoded; a still that does not fit is not sent and is never scaled down, and when none fits the record's confidence notes say "Full-size frame unavailable. Treat any quoted screen text as unverified." Job runs and hosted Studio do not send stills.
+- A screen quotation is kept only when it was read from an attached still. When an accepted record carries `evidence.verbatimUiText` and cites a time that is not one of its `stillTimes`, `analyze` removes the quotation, sets the new optional item field `screenTextNotFromStill: true` and adds "Screen text was not read from a still." to the record's confidence notes. The record stays accepted, its times do not move and the frame saved at the cited time is kept.
+- `doctor` names the source of the provider key and never shows the key: `(process environment)`, the quoted path of the folder's `.env`, `(none)`, or `(unknown: ...)`. The `key` object in `doctor --json` gains optional `source`, `path`, `state` and `lowerSourcesSkipped`. The provider check's `detail` is unchanged. `doctor` ends with one next-step line when the key is missing or its source failed. `key set` prints the absolute path it wrote and says that anyone who can read that folder has the key.
+
+### Changed
+
+- The folder's `.env` is read as data and is no longer merged into the process environment. The order is: the environment the tool was started with, then the folder's `.env`. The two are never compared. Settings you keep in `.env` still apply; no value from it reaches a helper process.
+- A launch that had already merged a file before the tool ran (Bun without `--no-env-file`, or Node with `--env-file`) reports the key's source as unknown. Ordinary commands still run there with an inherited key; a job start answers `USAGE` (exit 2) with "Credential source unknown. Start with a clean launcher." The installed command and the release file are not affected. The `dev` and `start` package scripts now pass `--no-env-file`.
+
+### Removed
+
+- The transcript recheck and `transcribe --recheck`. On a real recording, none of the guards evaluated removed every invented line while keeping a confirmed real line. New output omits `outcome`, `rechecks`, `belowCutoff` and the per-line `recovered` mark; files written by 0.6.4 that carry them still import. A machine call passing `--recheck` returns `USAGE` (exit 2). A transcription window whose reply stops early can still leave speech out of a transcript that looks whole: nothing detects or repairs that in this release.
+
+### Not checked
+
+- Screen words inside titles, summaries and other prose. In a record carrying `screenTextNotFromStill`, distrust them. `candidate.summary` in `analysis.json` is the first pass's note, made from a reduced picture; it can carry wrong screen words and must not be quoted.
 
 ## [0.6.5] - 2026-11-26
 
