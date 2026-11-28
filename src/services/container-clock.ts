@@ -2,7 +2,7 @@
 // metadata from the named file in that case. The clock stays unproven.
 import { open, type FileHandle } from "node:fs/promises";
 import { rationalRate } from "exact-time";
-import { RangeClock } from "../domain/range-clock.js";
+import { RangeClock, type FrameTimes } from "../domain/range-clock.js";
 import type { Recording } from "./media-tools.js";
 
 async function bytes(file: FileHandle, at: number, length: number) {
@@ -30,7 +30,31 @@ async function* mp4Boxes(file: FileHandle, at: number, end: number): AsyncGenera
 async function findBox(file: FileHandle, parent: Element, id: string) {
   for await (const child of mp4Boxes(file, parent.start, parent.end)) if (child.id === id) return child;
 }
-async function sampleTimestamps(file: FileHandle, media: Element, track: Element, movie: Element, scale: number) {
+// Timing runs may describe many samples in eight bytes. Check the independent
+// sample-size table before expanding them, including compact-size movies.
+async function sampleCount(file: FileHandle, table: Element, fileSize: number) {
+  const sizes = await findBox(file, table, "stsz") ?? await findBox(file, table, "stz2");
+  if (!sizes || sizes.end - sizes.start < 12) throw new Error("Missing sample sizes.");
+  const header = await bytes(file, sizes.start, 12);
+  const count = header.readUInt32BE(8);
+  const fixed = sizes.id === "stsz" ? header.readUInt32BE(4) : 0;
+  const bits = sizes.id === "stsz" ? 32 : header[7]!;
+  if (![4,8,16,32].includes(bits) || (fixed ? fixed * count > fileSize :
+      Math.ceil(count * bits / 8) > sizes.end - sizes.start - 12)) throw new Error("Invalid sample sizes.");
+  return count;
+}
+
+function lowerBound(length: number, before: (index: number) => boolean) {
+  let start = 0, end = length;
+  while (start < end) {
+    const mid = Math.floor((start + end) / 2);
+    if (before(mid)) start = mid + 1;
+    else end = mid;
+  }
+  return start;
+}
+
+async function sampleTimestamps(file: FileHandle, media: Element, track: Element, movie: Element, scale: number, fileSize: number): Promise<FrameTimes> {
   const minf = await findBox(file, media, "minf");
   const stbl = minf && await findBox(file, minf, "stbl");
   const stts = stbl && await findBox(file, stbl, "stts");
@@ -49,21 +73,27 @@ async function sampleTimestamps(file: FileHandle, media: Element, track: Element
       n += batch;
     }
   }
+  const samples = await sampleCount(file, stbl, fileSize);
   const offsetsBox = await findBox(file, stbl, "ctts");
   const offsets = offsetsBox && runs(offsetsBox,true);
   let left = 0, offset = 0, dts = 0;
   const ticks: number[] = [];
-  for await (const entry of runs(stts,false)) for (let i = 0; i < entry.count; i++) {
-    if (offsets && left === 0) {
-      const run = await offsets.next();
-      if (run.done || run.value.count === 0) throw new Error("Invalid composition times.");
-      left = run.value.count;
-      offset = run.value.value;
+  for await (const entry of runs(stts,false)) {
+    if (entry.count > samples - ticks.length) throw new Error("Invalid sample count.");
+    for (let i = 0; i < entry.count; i++) {
+      if (offsets && left === 0) {
+        const run = await offsets.next();
+        if (run.done || run.value.count === 0) throw new Error("Invalid composition times.");
+        left = run.value.count;
+        offset = run.value.value;
+      }
+      if (!Number.isSafeInteger(dts + offset)) throw new Error("Invalid presentation time.");
+      ticks.push(dts + offset);
+      dts += entry.value;
+      left--;
     }
-    ticks.push(dts + offset);
-    dts += entry.value;
-    left--;
   }
+  if (ticks.length !== samples) throw new Error("Missing sample times.");
   ticks.sort((a,b) => a-b);
   const edts = await findBox(file,track,"edts");
   const elst = edts && await findBox(file,edts,"elst");
@@ -75,7 +105,9 @@ async function sampleTimestamps(file: FileHandle, media: Element, track: Element
   const edits = await bytes(file,elst.start,8);
   const wide = edits[0] === 1;
   const stride = wide ? 20 : 12;
-  const result: number[] = [];
+  // Edits can repeat the same samples. Index slices into the one sorted table.
+  const slices: {first:number; end:number; offset:number}[] = [];
+  let length = 0;
   let elapsed = 0n;
   for (let i = 0; i < edits.readUInt32BE(4); i++) {
     const pos = elst.start + 8 + i*stride;
@@ -83,15 +115,28 @@ async function sampleTimestamps(file: FileHandle, media: Element, track: Element
     const e = await bytes(file,pos,stride);
     const duration = wide ? e.readBigUInt64BE(0) : BigInt(e.readUInt32BE(0));
     const from = wide ? e.readBigInt64BE(8) : BigInt(e.readInt32BE(4));
-    if (from >= 0n && e.readInt32BE(stride-4) === 65536) for (const t of ticks) {
-      const delta = (BigInt(t)-from)*BigInt(movieScale);
-      if (delta < 0n || delta >= duration*BigInt(scale)) continue;
-      const value = elapsed*BigInt(scale) + delta;
-      if (value % BigInt(movieScale) === 0n) result.push(Number(value/BigInt(movieScale)));
+    const movieTicks = BigInt(movieScale);
+    const start = elapsed * BigInt(scale);
+    if (from >= 0n && e.readInt32BE(stride-4) === 65536 && start % movieTicks === 0n) {
+      const first = lowerBound(ticks.length, i => BigInt(ticks[i]!) < from);
+      const past = lowerBound(ticks.length, i => (BigInt(ticks[i]!) - from) * movieTicks < duration * BigInt(scale));
+      if (first < past) {
+        const offset = Number(start / movieTicks - from);
+        length += past - first;
+        if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(ticks[past-1]! + offset) ||
+            !Number.isSafeInteger(length)) throw new Error("Invalid edit time.");
+        slices.push({first,end:length,offset});
+      }
     }
     elapsed += duration;
   }
-  return result;
+  return {length, at(index) {
+    const i = index < 0 ? length + index : index;
+    if (i < 0 || i >= length) return;
+    const n = lowerBound(slices.length, j => slices[j]!.end <= i);
+    const slice = slices[n]!;
+    return ticks[slice.first + i - (slices[n-1]?.end ?? 0)]! + slice.offset;
+  }};
 }
 
 async function movieClock(file: FileHandle, size: number) {
@@ -115,7 +160,7 @@ async function movieClock(file: FileHandle, size: number) {
     const sentinel = data[0] === 1 ? 0xffffffffffffffffn : 0xffffffffn;
     const edited = await findBox(file, track, "edts");
     const length = !edited && duration > 0n && duration !== sentinel ? duration : undefined;
-    const ticks = length === undefined ? await sampleTimestamps(file,media,track,movie,scale) : [];
+    const ticks = length === undefined ? await sampleTimestamps(file,media,track,movie,scale,size) : [];
     return RangeClock.wholeTicks({num:1, den:scale},length,"unproven",ticks);
   }
 }

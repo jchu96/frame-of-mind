@@ -203,11 +203,14 @@ export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: numb
 
 type Range = Record<Edge, number>;
 export function proposeRecords(ranges: Range[], edges: Boundaries | undefined, clock: FileClock, settings: SnapSettings,
-  windows?: readonly Record<Edge, number | undefined>[]): SnapRun {
+  windows?: readonly Record<Edge, {width:number; minMs:number; maxMs:number} | undefined>[]): SnapRun {
   function select(r: Range, i: number, edge: Edge): SnapResult {
-    const width = windows ? windows[i]?.[edge] : settings.windowMs;
-    if (width === undefined) return {status:"unavailable"};
-    return selectEdge(edges, edge, r[edge], clock, {...settings,windowMs:width}, r[edge === "start" ? "end" : "start"]);
+    const mate = r[edge === "start" ? "end" : "start"];
+    if (!windows) return selectEdge(edges, edge, r[edge], clock, settings, mate);
+    const search = windows[i]?.[edge];
+    if (!search) return {status:"unavailable"};
+    const within = edges && {...edges, [edge]:edges[edge].filter(e => e.ms >= search.minMs && e.ms <= search.maxMs)};
+    return selectEdge(within, edge, r[edge], clock, {...settings,windowMs:search.width}, mate);
   }
   const records = ranges.map((r,i) => ({
     start: select(r,i,"start"),

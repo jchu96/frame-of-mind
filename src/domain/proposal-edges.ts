@@ -65,12 +65,30 @@ export function measurementWindow(claim: Claim, clock: RangeClock, configured: n
     if (ticks.length < 3) return;
     let lo = 0, hi = ticks.length;
     while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if (ticks[mid]! < claim.at) lo = mid + 1; else hi = mid;
+      const mid = Math.floor((lo + hi) / 2);
+      if (ticks.at(mid)! < claim.at) lo = mid + 1; else hi = mid;
     }
     const first = Math.max(0, Math.min(ticks.length - 3, lo - 1));
-    units = BigInt(ticks[first + 2]! - ticks[first]!);
+    units = BigInt(ticks.at(first + 2)! - ticks.at(first)!);
   }
   if (BigInt(width) * BigInt(rate.num) < units * 1000n * BigInt(rate.den)) return;
   return width;
+}
+
+/** Integer envelope times inside the exact claim, its mate and the selected cut.
+ * Round the two limits inward only after applying the native source coordinate. */
+export function measurementSearch(claims: ProposalEdges, edge: Edge, clock: RangeClock, configured: number) {
+  const width = measurementWindow(claims[edge], clock, configured);
+  if (width === undefined) return;
+  const divisor = BigInt(clock.grid.rate.num);
+  const scale = 1000n * BigInt(clock.grid.rate.den);
+  const floor = (index: bigint) => Number(index * scale / divisor);
+  const ceil = (index: bigint) => Number((index * scale + divisor - 1n) / divisor);
+  const at = BigInt(claims[edge].at);
+  let minMs = Math.max(ceil(at) - width, ceil(clock.from));
+  let maxMs = floor(at) + width;
+  if (clock.observedEnd !== undefined) maxMs = Math.min(maxMs, floor(clock.observedEnd));
+  if (edge === "start") maxMs = Math.min(maxMs, ceil(BigInt(claims.end.at)) - 1);
+  else minMs = Math.max(minMs, floor(BigInt(claims.start.at)) + 1);
+  return {width,minMs,maxMs};
 }

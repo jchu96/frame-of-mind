@@ -39,6 +39,8 @@ IDs are nonempty and unique. The recording owns each half-open interval from sta
 
 Passes are numbered consecutively starting at one. A pass moves one edge and strictly reduces its radius. Its entire uncertainty interval must fit inside the previous interval for that edge, and the two edges must stay ordered. A first placement of a search block can move both edges together within the block plus one block of margin on either side, clipped to the available recording and caller range. Both placement entries use model basis, the grading actor and 1,000 ms precision.
 
+With the built-in proposer, `--depth deep` keeps the released first-pass prompt and 1 FPS sampling and also configures grading. With a candidates file it configures grading alone.
+
 The built-in index assigns IDs such as `gemini-1` by original response order. It maps whole seconds to source counts by rounding start down and end up, adding the sent-window offset once, clipping to the end and dropping empty intersections. Each edge initially has model basis and 1,000 ms precision. Kind supplies the label and summary supplies the reason. High, medium and low importance give scores 3, 2 and 1. The chain starts empty. The four free-text fields stay in local provenance. Grading requests and retries use the verified window, media, operator instruction and scoped context.
 
 ## Read the answer

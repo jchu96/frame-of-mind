@@ -1,8 +1,8 @@
 import { checkRoles, enginePlan, type EngineItems } from "../domain/engine-plan.js";
 import { recordingIdentity, readCandidates, type Candidate, type CandidatesDocument } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
-import { measurementWindow, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
-import { proposalWindow } from "./proposal-windows.js";
+import { measurementSearch, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
+import { latestPosition, proposalWindow } from "./proposal-windows.js";
 import { rangeTranscript } from "./range-context.js";
 import { rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { type Bound, boundIndex, boundMillis, humanTime, modelBound, modelSpan, sourceBound } from "../domain/source-bound.js";
@@ -542,6 +542,8 @@ export class AnalysisOrchestrator {
       const analyzer = engines.media;
       const plan = enginePlan({...options,file:!!fileRows,recipe:options.recipe.engines, model:analyzer.model,
         retention:options.retention ?? (options.keepUpload ? "provider" : "run"),available:true,preview:false});
+      const {engine,model} = plan.used!.grader;
+      const gradedBy = {engine,model};
       if (options.calibrate !== false && analyzer.probeClipClock) {
         const measured: Calibration = await this.calibrate({
           model: analyzer.model,
@@ -964,7 +966,8 @@ export class AnalysisOrchestrator {
         const indexedCount = fileRows?.length ?? index.moments.length;
         const outOfRange = indexedCount - inRange.length;
         const spanOf = (c: IndexedMoment) => modelSpan(sourceClock, timestampToSeconds(c.start), timestampToSeconds(c.end));
-        const byTime = (a: IndexedMoment, b: IndexedMoment) => proposalsByWindow.get(a)!.start - proposalsByWindow.get(b)!.start;
+        const byTime = (a: IndexedMoment, b: IndexedMoment) => timestampToSeconds(a.start) - timestampToSeconds(b.start)
+          || latestPosition(proposalsByWindow.get(a)!, "start") - latestPosition(proposalsByWindow.get(b)!, "start");
         const candidates = inRange.slice(0, options.maxIncidents).sort(byTime);
         failurePhase = "detail";
         await report(progress, {
@@ -1078,7 +1081,7 @@ export class AnalysisOrchestrator {
           if (BigInt(edges.start.at) < sourceClock.from) exactSpan.start = sourceBound(sourceClock, sourceClock.from);
           const observedEnd = sourceClock.observedEnd;
           if (observedEnd !== undefined && BigInt(edges.end.at) > observedEnd) exactSpan.endExclusive = sourceBound(sourceClock, observedEnd);
-          const provenance = {candidateId:row.id, proposedBy:row.proposedBy, gradedBy:{engine:"gemini",model:analyzer.model},proposal:row};
+          const provenance = {candidateId:row.id, proposedBy:row.proposedBy, gradedBy,proposal:row};
           const sourceCandidate = {...candidate, start:humanTime(exactSpan.start), end:humanTime(exactSpan.endExclusive), exactSpan, proposalEdges:edges};
           if (ranged && sourceClock.from > 0n && boundIndex(exactSpan.start) === sourceClock.from) {
             receipt.startFragments.push({kind:"moment",exactSpan,state:"unknown"});
@@ -1284,8 +1287,8 @@ export class AnalysisOrchestrator {
           const windows = items.map(({candidate}) => {
             const claims = candidate.proposalEdges!;
             return {
-              start:candidate.exactSpan!.start.origin === "cut" ? undefined : measurementWindow(claims.start,sourceClock,settings.windowMs),
-              end:candidate.exactSpan!.endExclusive.origin === "cut" ? undefined : measurementWindow(claims.end,sourceClock,settings.windowMs),
+              start:candidate.exactSpan!.start.origin === "cut" ? undefined : measurementSearch(claims,"start",sourceClock,settings.windowMs),
+              end:candidate.exactSpan!.endExclusive.origin === "cut" ? undefined : measurementSearch(claims,"end",sourceClock,settings.windowMs),
             };
           });
           const shouldMeasure = windows.some(w => w.start !== undefined || w.end !== undefined);
@@ -1388,7 +1391,7 @@ export class AnalysisOrchestrator {
             const origin = item.resolvedEdges[edge].bound.origin;
             return origin === "snap" ? "snapped" : origin === "cut" ? "cut" : "claim";
           };
-          return {candidateId:row.id,proposedBy:row.proposedBy,gradedBy:{engine:"gemini",model:analyzer.model},
+          return {candidateId:row.id,proposedBy:row.proposedBy,gradedBy,
             edges:{start:state("start"),end:state("endExclusive")}};
         });
         const manifestBase = {

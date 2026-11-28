@@ -1,6 +1,10 @@
 import { fromTimecode, isDropRate, TICKS_PER_SECOND, type FrameRate } from "exact-time";
 import { ContractError } from "./contract-error.js";
 
+export interface FrameTimes {
+  readonly length: number;
+  at(index: number): number | undefined;
+}
 export type RangeUnit = "frames" | "samples" | "ticks";
 export interface RangeRequest { from?: string; to?: string }
 export interface SourceGrid {
@@ -64,7 +68,7 @@ function position(value: string, grid: SourceGrid): Fraction {
 export class RangeClock {
   private constructor(readonly grid: SourceGrid, readonly from: bigint, readonly to: bigint,
     readonly requestedRange: { from: string | null; to: string | null },
-    readonly edgeMoved: { from: boolean; to: boolean }, readonly lengthKnown = true, readonly frameTicks: readonly number[] = []) {}
+    readonly edgeMoved: { from: boolean; to: boolean }, readonly lengthKnown = true, readonly frameTicks: FrameTimes = []) {}
 
   static resolve(grid: SourceGrid, request: RangeRequest): RangeClock {
     const start = request.from === undefined ? { n: 0n, d: 1n } : position(request.from, grid);
@@ -81,7 +85,7 @@ export class RangeClock {
       { from: from * start.d !== start.n, to: to * end.d !== end.n });
   }
 
-  static wholeTicks(tick: FrameRate, length: bigint | undefined, timing: NonNullable<SourceGrid["timing"]>, frameTicks: readonly number[] = []) {
+  static wholeTicks(tick: FrameRate, length: bigint | undefined, timing: NonNullable<SourceGrid["timing"]>, frameTicks: FrameTimes = []) {
     return new RangeClock({unit: "ticks", rate: {num: tick.den, den: tick.num}, length: length ?? 0n, timing},
       0n, length ?? 0n, {from: null, to: null}, {from: false, to: false}, length !== undefined, frameTicks);
   }

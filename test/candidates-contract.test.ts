@@ -55,12 +55,16 @@ it("unknown-end-tick-recording binds the built-in proposal with null length and 
 
 it("precision-window applies the two-frame floor and each latest radius including on ticks", async () => {
   const {RangeClock} = await import("../src/domain/range-clock.js");
-  const {proposalEdges,measurementWindow} = await import("../src/domain/proposal-edges.js");
+  const {proposalEdges,measurementWindow,measurementSearch} = await import("../src/domain/proposal-edges.js");
   const clock = RangeClock.resolve({unit:"frames",rate:{num:25,den:1},length:1500n},{});
   const claim = proposalEdges(candidate,clock).start;
   expect(measurementWindow(claim,clock,1500)).toBe(120);
   expect(measurementWindow({...claim,precisionMs:79},clock,1500)).toBeUndefined();
   expect(measurementWindow({...claim,precisionMs:80},clock,1500)).toBe(80);
+  const fractional = RangeClock.resolve({unit:"frames",rate:{num:24000,den:1001},length:100n},{});
+  const claims = proposalEdges({...candidate,start:12,end:36,chain:[],precisionMs:{start:100,end:100}}, fractional);
+  // Frame 12 is 500.5 ms. A boundary at 400 ms is outside the 100 ms claim.
+  expect(measurementSearch(claims,"start",fractional,1500)).toEqual({width:100,minMs:401,maxMs:600});
   const ticks = RangeClock.wholeTicks({num:1,den:1000},160n,"unproven",[0,40,120]);
   expect(measurementWindow({...claim,at:40,precisionMs:119},ticks,1500)).toBeUndefined();
 });

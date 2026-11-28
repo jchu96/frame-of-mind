@@ -32,6 +32,6 @@ export function geminiEnginePorts(analyzer: import("../services/analyze.js").Ana
       const metadata = new Map(index.moments.map((window,i) => [`gemini-${i+1}`,window]));
       return {index,document,metadata};
     },
-    grade:analyzer.interrogate.bind(analyzer),
+    grade:(...args) => analyzer.interrogate(...args),
   };
 }
