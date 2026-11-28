@@ -1050,7 +1050,7 @@ The largest outward error was 84 ms. Real-room accuracy remains unmeasured.
 
 Read `floorDbfs` at the first or last speech window and `speechAboveFloorDb`
 for the mean power of the detected speech run in dB relative to that floor.
-Below 30 dB, as in the 26 dB bench case, the snap keeps its time and reports
+Below 36 dB, as in the 32 dB and 26 dB bench cases, the snap keeps its time and reports
 `noisy: true` with `target.precisionMs: 300`. Otherwise the stated precision
 is ±50 ms for audio at 32 kHz or above and ±200 ms at lower or unknown rates.
 All measured times use the same 10 ms grid. Uncertainty can span adjacent frames.

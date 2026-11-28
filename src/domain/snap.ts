@@ -20,12 +20,15 @@ export function describeMeasurement(time: Pick<MeasuredTime, "gridMs" | "precisi
 }
 
 type SoundLevels = { floorDbfs: number; speechAboveFloorDb?: number; noisy: boolean };
+// Below this contrast a snap keeps its time but states 300 ms and noisy. Set on two synthetic benches
+// (one voice over steady noise; a tone), where it leaves no wrong edge unflagged; not yet on a real room.
+export const NOISY_BELOW_DB = 36;
 
 /** Each complete window contributes its mean square in linear full-scale units. */
 export function speechLevels(powerSum: number, windows: number, floorDbfs: number): SoundLevels {
   if (windows < 1) return { floorDbfs, noisy: true };
   const speechAboveFloorDb = 10 * Math.log10(powerSum / windows) - floorDbfs;
-  return { floorDbfs, speechAboveFloorDb, noisy: speechAboveFloorDb < 30 };
+  return { floorDbfs, speechAboveFloorDb, noisy: speechAboveFloorDb < NOISY_BELOW_DB };
 }
 
 export function describeSound({ floorDbfs, speechAboveFloorDb, noisy }: Partial<SoundLevels>): string {
