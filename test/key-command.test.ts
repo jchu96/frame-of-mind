@@ -80,7 +80,7 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
       expect(folder).not.toHaveBeenCalled();
       expect(existsSync(invoked)).toBe(false);
     }
-    for (const value of ["", "{}", "[]", "[2]", '["reader"]', JSON.stringify([join(home, "missing")]), JSON.stringify([home])]) {
+    for (const value of ["[2]", '["reader"]', JSON.stringify([join(home, "missing")]), JSON.stringify([home])]) {
       await refuses({FRAME_OF_MIND_KEY_COMMAND: value});
     }
     await refuses({...select(relative(process.cwd(), runtime), reader), PATH: dirname(runtime)});
@@ -121,10 +121,29 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
     finally { uid.mockRestore(); }
   });
 
-  it("ignores settings on native Windows and refuses its selector", async () => {
+  it("accepts only a parsed empty array as the disabled selector", async () => {
+    for (const value of ["", "null", "{}", '[""]', '"[]"', "[", "[\u00a0]"]) {
+      const cli = config({FRAME_OF_MIND_KEY_COMMAND: value});
+      expect(cli.keyReport()).toMatchObject({source: "command", present: false, state: "unavailable"});
+      expect(cli.commandNextStep()).toBe("Correct FRAME_OF_MIND_KEY_COMMAND.");
+      await expect(Promise.resolve().then(() => cli.providerKey())).rejects.toMatchObject({
+        code: "KEY_REFUSED", details: {reason: "key-command"},
+      });
+    }
+    expect(folder).not.toHaveBeenCalled();
+    for (const value of ["[]", " \t[ ]\r\n"]) {
+      const cli = config({FRAME_OF_MIND_KEY_COMMAND: value});
+      expect(cli.keyReport().source).toBe("dotenv");
+      expect(await cli.providerKey()).toBe("synthetic-fallback");
+    }
+    expect(existsSync(invoked)).toBe(false);
+  });
+
+  it("ignores settings on native Windows and accepts only the empty selector", async () => {
     writeFileSync(settings, "invalid", {mode: 0o600});
     expect(await config({}, "clean", "win32").providerKey()).toBe("synthetic-fallback");
-    expect(config({Frame_Of_Mind_Key_Command: "[]"}, "clean", "win32").keyReport()).toMatchObject({source: "command", state: "unavailable"});
+    expect(config({Frame_Of_Mind_Key_Command: "[]"}, "clean", "win32").keyReport()).toMatchObject({source: "dotenv", commandDisabledByEnvironment: true});
+    expect(config({Frame_Of_Mind_Key_Command: JSON.stringify([runtime, reader])}, "clean", "win32").keyReport()).toMatchObject({source: "command", state: "unavailable"});
   });
 
   it("starts the resolved target of an acceptable link", async () => {

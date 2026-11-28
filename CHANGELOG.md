@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Set `FRAME_OF_MIND_KEY_COMMAND='[]'` to skip the account’s key command for one launch. `doctor` explains the opt-out and includes `key.commandDisabledByEnvironment` in JSON.
+
 ## [0.6.8] - 2026-11-28
 
 `analyze` and `transcribe` take a time range, and every time the tool writes is an exact position on the recording's own clock. The speech snap no longer lands inside a word under steady room noise without saying so.
