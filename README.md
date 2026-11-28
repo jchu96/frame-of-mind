@@ -686,7 +686,7 @@ A usage refusal exits 2 in either output mode. With `--json`, branch on `error.d
 | Reference notes | `too-many-notes`, `invalid-note`, `duplicate-note`, `invalid-note-format`, `invalid-note-file`, `note-too-large`, `invalid-note-encoding`, `binary-note` |
 | Clocks, snapping and media commands | `missing-timecode-rate`, `missing-drop-frame-mode`, `missing-timeline-offset`, `invalid-file-clock`, `invalid-edge`, `invalid-snap`, `invalid-snap-gap`, `invalid-snap-window`, `invalid-map-direction`, `verify-expectation`, `missing-output` |
 | Job options and grants | `duplicate-job-option`, `invalid-job-limit`, `invalid-file-limit`, `invalid-allowed-models`, `conflicting-job-roots`, `missing-job-roots`. Job retention uses `invalid-retention`. |
-| Range bounds | `Invalid range bound.`, `no-video-stream`, `Specify the source drop-frame mode or use frames.`, `a bound outside the recording`, `from at or after to`, `a range shorter than the tool can analyse` |
+| Range bounds | `Invalid range bound.`, `Audio bounds use seconds or Nsamp.`, `Specify the source drop-frame mode or use frames.`, `a bound outside the recording`, `from at or after to`, `a range shorter than the tool can analyse` |
 | Range preparation | `A range cannot reuse a remote file.`, `--transcript-offset requires meeting or file context.`, `Range requires a locally verifiable cut.` (see `error.details.frameTiming` when timing was measured) |
 
 ## Clocks

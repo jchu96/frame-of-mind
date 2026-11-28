@@ -42,12 +42,13 @@ test.each([
   [pal, "1.002", "1.001", "from at or after to"],
   [pal, "1.001", "1.001", "from at or after to"],
   [ntsc, undefined, "29f", "a range shorter than the tool can analyse"],
-  [pcm, "1f", undefined, "no-video-stream"],
+  [pcm, "1f", undefined, "Audio bounds use seconds or Nsamp."],
+  [pcm, "00:00:00:01", undefined, "Audio bounds use seconds or Nsamp."],
   [ntsc, "00:00:00:01", undefined, "Specify the source drop-frame mode or use frames."],
   [pal, "1.0001", undefined, "Invalid range bound."],
   [pal, "-1", undefined, "Invalid range bound."],
 ] satisfies Array<[SourceGrid, string | undefined, string | undefined, string]>)("refuses an invalid interval with a stable reason", (grid, from, to, reason) => {
-  expect(() => RangeClock.resolve(grid, { from, to })).toThrow(expect.objectContaining({ code: "USAGE", details: { reason, ...(reason === "no-video-stream" && {phase:"prepare", sent:false}) } }));
+  expect(() => RangeClock.resolve(grid, { from, to })).toThrow(expect.objectContaining({ code: "USAGE", details: { reason } }));
 });
 
 test.each([[pal, "1f", 51n], [ntsc, "31f", 90n]] as const)("keeps a fractional source origin through a two-second model reading", (grid, from, frame) => {

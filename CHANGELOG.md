@@ -13,7 +13,7 @@ Semantic Versioning.
 
 ### Fixed
 
-- A regression in 0.6.8: `analyze` refused a sound-only recording with "Analysis requires a video stream." It analyses one again, as 0.6.7 did. Positions are whole sample counts at the track's own rate. There is no picture, so the run takes no stills, writes no still times and no screen quotations, and says so on its first lines. A command that truly needs a picture (`frame`, `probe`, `verify`, `proxy`, `slice`, a bound in frames or timecode) refuses with the reason `no-video-stream`.
+- A regression in 0.6.8: `analyze` refused a sound-only recording with "Analysis requires a video stream." It analyses one again, as 0.6.7 did. Positions are whole sample counts at the track's own rate. There is no picture, so the run takes no stills, writes no still times and no screen quotations, and says so on its first lines. A command that truly needs a picture (`frame`, `probe`, `verify`, `proxy`, `slice`) refuses with the reason `no-video-stream`. A bound in frames or timecode on a sound-only recording keeps the reason it had in 0.6.8, `Audio bounds use seconds or Nsamp.`
 
 ### Added
 
@@ -25,7 +25,7 @@ Semantic Versioning.
 
 ### Changed
 
-- Every usage refusal carries a fixed word in `error.details.reason` with `--json`, including the argument parser's own refusals. **Usage refusals that exited 1 without `--json` now exit 2**, the same code as with `--json`. The time-range reasons released in 0.6.8 keep their wording. README and the runbook list every word.
+- Every usage refusal carries a fixed word in `error.details.reason` with `--json`, including the argument parser's own refusals. **Usage refusals that exited 1 without `--json` now exit 2**, the same code as with `--json`. The time-range reasons released in 0.6.8 keep their wording. README and the runbook list the words; the four that belong to the candidates door are on the engine contract page.
 - The range-scan refusal is split. Its reason is the fixed phrase `Range requires a locally verifiable cut.` alone; the measured timing that 0.6.8 put in front of it is now in `error.details.frameTiming`.
 - With the built-in engine in both roles, the second pass's request is the one 0.6.8 sends, with one difference: a newline or control character inside the quoted claim is now written escaped where 0.6.8 sent it raw. Quoted data must not be able to break out of its quotation, and one treatment keeps a file's rows and the built-in engine's rows identical.
 - The second pass's progress line no longer ends with the span as JSON.
