@@ -1,6 +1,6 @@
 import type { FrameRate } from "exact-time";
 
-interface MeasuredRate { framesPerSecond: number; gapMs: number; share: number }
+export interface MeasuredRate { framesPerSecond: number; gapMs: number; share: number }
 export type FrameTiming =
   | { varying: boolean; frames: number; averageFramesPerSecond: number; rates: MeasuredRate[]; oddGaps: number; oddShare: number }
   | { varying: null; frames: number | null; unread: "too few frames" | "no picture" | "frames with no time" | "scan limit" | "unavailable"; untimedFrames?: number };
