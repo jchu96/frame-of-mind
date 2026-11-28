@@ -1,7 +1,7 @@
 ---
 name: frame-of-mind
 metadata:
-  version: "2026-08-24.1"
+  version: "2026-11-27.1"
 description: Operate Frame of Mind across its local video-understanding CLI and Studio plus the hosted Studio at fom.flickerventures.com. Use for Bluedot, Granola, or file-backed meeting analysis with screen recordings and Gemini; decisions, requirements, action items, repository plans, UX reviews, communication/self-review, technical or process walkthroughs, video Q&A, transcript alignment, and portable HTML/Markdown/JSON artifacts. Also use for hosted access requests, inviting/approving/revoking users, /admin/access, hosted run status, Cloudflare deploy/rollback routing, D1 migrations, spend caps, retained R2 media, and release gates.
 ---
 
@@ -42,6 +42,7 @@ Read only the sources needed for the task:
 | Evidence-to-deliverable composition | `docs/ARTIFACT_COMPOSITION.md` |
 | Meeting to issue/plan | `references/meeting-to-issue.md` |
 | Run-file interpretation | `references/analysis-contracts.md` |
+| Reading CLI output, limits and stop codes (v0.6.2 on) | `references/cli-output-notes.md` |
 | Hosted access, status, spend, deployment | `references/hosted-operations.md` and named runbook sections there |
 
 ## Non-Negotiable Safety
@@ -219,8 +220,27 @@ source timing. Use `proxy` to prepare a full recording, `slice --from 2f --to
 a distinct `-o` path. Run `verify --expect-frames <count>` on a prepared MP4
 before choosing it for upload. See RUNBOOK §3.10 for complete commands.
 
-For a clip from a longer meeting, pass the signed transcript-time minus
-video-time offset:
+### Part of a recording today
+
+`analyze` and `transcribe` take a whole file, at most 7260 s. For one part, cut
+it first and carry the start yourself:
+
+```bash
+frameofmind slice "<recording>" --from 600 --to 1200 -o "<cut.mp4>"
+frameofmind analyze "<stable-id>" --source none --video "<cut.mp4>" \
+  --recipe decisions --timeline-offset 600
+frameofmind transcribe "<cut.mp4>" --json
+```
+
+- `--from` is inclusive and `--to` exclusive; use the start `slice` reports.
+- `analyze` with `--timeline-offset <start>`: `timeline` times are the
+  recording's own times; `source` times count from the cut's first frame.
+- `transcribe` has no offset: every time counts from the cut's first frame.
+  Add the start yourself and say which clock you quote.
+- Speaker labels do not carry from one cut to the next.
+
+For a clip from a longer meeting with provider or file context, also pass the
+signed transcript-time minus video-time offset:
 
 ```bash
 frameofmind analyze "<meeting-id>" \
@@ -257,6 +277,8 @@ to provider expiry, with immediate per-upload reporting; pass `--retention run`
 for terminal deletion. Existing files require explicit `--force` to replace.
 Use the SRT with `analyze --source file --context-file`; choose `_speakers.txt`
 when literal markup-like text must survive the SRT reader's normalisation.
+A reply can stop early and leave speech out; nothing detects that today. Read
+`references/cli-output-notes.md` before relying on a transcript or a quotation.
 Never read the output aloud or paste transcript content into issues. Exports
 are private operator-owned speech files, outside all run bundles (ADR 0025).
 
