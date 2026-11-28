@@ -1,5 +1,5 @@
 import { knownCleanupReceipts } from "./adapters/twelvelabs-receipts.js";
-import { checkDirectUpload, checkRoles, DIRECT_UPLOAD_BYTES, soundOnlyHint, directUploadHint, disclosure, enginePlan, fallbackMessage, usesTwelveLabs } from "./domain/engine-plan.js";
+import { checkDirectUpload, checkRoles, DIRECT_UPLOAD_BYTES, disclosure, enginePlan, fallbackMessage, usesTwelveLabs } from "./domain/engine-plan.js";
 import { rangeFields } from "./domain/range-fields.js";
 import { rangeUsage } from "./domain/range-clock.js";
 import { isRanged, withSourceRecording } from "./services/source-recording.js";
@@ -368,10 +368,11 @@ program
             const selection = !video ? undefined : wholeBytes !== undefined && wholeBytes > DIRECT_UPLOAD_BYTES
               ? {bytes:wholeBytes,soundOnly:false}
               : await withSourceRecording(video,flags,"analysis",line=>process.stderr.write(line+"\n"),
-                async (cut,clock)=>({bytes:(await stat(cut)).size,soundOnly:clock.grid.unit === "samples"}));
-            checkDirectUpload(plan, selection?.bytes, program.args[0] === "analyze" ? program.args : process.argv.slice(2),selection?.soundOnly);
+                async (cut,clock,_audio,picture)=>({bytes:(await stat(cut)).size,soundOnly:clock.grid.unit === "samples",picture,
+                  duration:clock.cutLength === undefined ? undefined : clock.elapsed(clock.cutLength)}));
+            const hint = checkDirectUpload(plan, selection?.bytes, program.args[0] === "analyze" ? program.args : process.argv.slice(2),selection);
             if (plan.reason) process.stderr.write(fallbackMessage(plan.reason) + "\n");
-            if (plan.reason === "media-limit") process.stderr.write((selection?.soundOnly && selection.bytes <= DIRECT_UPLOAD_BYTES ? soundOnlyHint : directUploadHint) + "\n");
+            if (hint) process.stderr.write(hint + "\n");
           }
           if (twelve.present) {
             const ids = await knownCleanupReceipts();

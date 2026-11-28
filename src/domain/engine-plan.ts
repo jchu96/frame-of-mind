@@ -13,6 +13,8 @@ export const engineReason = z.enum(["index-timeout","quota","media-limit","rate-
 export type EngineReason = z.infer<typeof engineReason>;
 export const PEGASUS_MODEL = "pegasus1.6";
 export const DIRECT_UPLOAD_BYTES = 200_000_000;
+export const pictureLimitHint = "Twelve Labs requires a verified picture from 360×360 to 5184×2160 with an aspect ratio between 1:2.4 and 2.4:1.";
+export const durationLimitHint = "Twelve Labs accepts analysis windows from one second through two hours, in a source of up to four hours.";
 export const soundOnlyHint = "Twelve Labs requires a picture. Use Gemini for a sound-only recording.";
 export const directUploadHint = "Twelve Labs accepts direct uploads up to 200 MB. A shorter time range can bring the upload under the limit.";
 
@@ -90,19 +92,32 @@ export function geminiRetry(argv: readonly string[], file: boolean) {
   return [...retry, "--grader", "gemini"];
 }
 
-/** Apply to the byte count of the physical selection, before either engine receives media. */
-export function checkDirectUpload(plan: EnginePlan, bytes: number | undefined, argv: readonly string[], soundOnly = false) {
+/** Inspect only the local selection. The same planner serves execution and preview. */
+export function checkDirectUpload(plan: EnginePlan, bytes: number | undefined, argv: readonly string[],
+  selection?: {soundOnly:boolean; duration?:number; picture?:{width?:number;height?:number}}) {
   if (!usesTwelveLabs(plan)) return;
-  const reason = bytes === undefined ? "local-media-unavailable" : bytes > DIRECT_UPLOAD_BYTES || soundOnly ? "media-limit" : undefined;
-  if (!reason) return;
+  let message: string | undefined;
+  if (bytes === undefined) message = "Twelve Labs requires local recording bytes.";
+  else if (bytes > DIRECT_UPLOAD_BYTES) message = directUploadHint;
+  else if (selection?.soundOnly) message = soundOnlyHint;
+  else if (selection) {
+    const {width,height} = selection.picture ?? {};
+    if (!width || !height || width < 360 || height < 360 || width > 5184 || height > 2160 || Math.max(width,height)*10 > Math.min(width,height)*24)
+      message = pictureLimitHint;
+    else if (selection.duration !== undefined &&
+      (selection.duration < 1 || selection.duration > (plan.planned!.proposer.engine === "twelvelabs" ? 7200 : 14400)))
+      message = durationLimitHint;
+  }
+  if (!message) return;
+  const reason = bytes === undefined ? "local-media-unavailable" : "media-limit";
   if (defaultDualRoute(plan)) {
     fallbackPlan(plan, reason);
     plan.retention.twelvelabs = null;
-    return;
+    return message;
   }
-  const fields = {engine:"twelvelabs", phase:"upload", reason, retryWith:geminiRetry(argv, plan.planned!.proposer.engine === "file")};
-  if (reason === "media-limit") throw new ContractError("PROVIDER_LIMIT", soundOnly && bytes! <= DIRECT_UPLOAD_BYTES ? soundOnlyHint : directUploadHint, fields);
-  throw new ContractError("CAPABILITY_MISSING", "Twelve Labs requires local recording bytes.", fields);
+  throw new ContractError(bytes === undefined ? "CAPABILITY_MISSING" : "PROVIDER_LIMIT",message,{
+    engine:"twelvelabs",phase:"upload",reason,retryWith:geminiRetry(argv,plan.planned!.proposer.engine === "file"),
+  });
 }
 
 export function fallbackMessage(reason: EngineReason) {

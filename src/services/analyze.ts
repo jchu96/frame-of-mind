@@ -1,7 +1,7 @@
 import { TwelveLabs, twelveTransport } from "../adapters/twelvelabs.js";
 import { receiptDirectory, ScratchReceipts } from "../adapters/twelvelabs-receipts.js";
 import type { EngineCall } from "../domain/engine-receipts.js";
-import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, DIRECT_UPLOAD_BYTES, soundOnlyHint, checkDirectUpload, checkRoles, directUploadHint, disclosure, enginePlan, fallbackMessage, usesTwelveLabs, type EngineItems } from "../domain/engine-plan.js";
+import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, checkDirectUpload, checkRoles, disclosure, enginePlan, fallbackMessage, usesTwelveLabs, type EngineItems } from "../domain/engine-plan.js";
 import { mediaRequestStarted, preparationDetails, uploadMedia, withMediaTransfer } from "../lib/media-transfer.js";
 import { recordingIdentity, readCandidates, type Candidate, type CandidatesDocument } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
@@ -539,7 +539,7 @@ export class AnalysisOrchestrator {
         return receipt;
       };
       return await this.sourceRecording(originalPath, {from:options.from,to:options.to,timecodeRate:options.timecodeRate,signal:execution.signal,onSourceResolved:resolved}, "analysis",
-        line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio) => {
+        line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio,picture) => {
       const receipt = preparing?.receipt ?? resolved(sourceClock);
       const soundOnly = sourceClock.grid.unit === "samples";
       const recordingMimeType = soundOnly && ["video/mp4", "audio/mp4", "video/quicktime"].includes(mimeType)
@@ -558,16 +558,16 @@ export class AnalysisOrchestrator {
         readCandidates(await loadCandidatesFile(options.candidatesFile), recording, "file", sourceClock.observedEnd);
       const uploadedCutSha256 = ranged ? await sha256File(localVideo) : undefined;
       const recordingSizeBytes = (await stat(localVideo)).size;
+      const duration = ranged || soundOnly ? sourceClock.elapsed(sourceClock.to - sourceClock.from)
+        : await this.probeDuration(localVideo, {signal:execution.signal});
       if (options.video) {
-        checkDirectUpload(plan, recordingSizeBytes, retryArgv, soundOnly);
-        if (plan.reason === "media-limit") {
+        const hint = checkDirectUpload(plan, recordingSizeBytes, retryArgv,{soundOnly,duration,picture});
+        if (hint && plan.reason) {
           await tellRoute(fallbackMessage(plan.reason));
-          await tellRoute(soundOnly && recordingSizeBytes <= DIRECT_UPLOAD_BYTES ? soundOnlyHint : directUploadHint);
+          await tellRoute(hint);
         }
       }
       if (recordingSizeBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
-      const duration = ranged || soundOnly ? sourceClock.elapsed(sourceClock.to - sourceClock.from)
-        : await this.probeDuration(localVideo, {signal:execution.signal});
       if (duration !== undefined && duration > maxVideoSeconds) {
         throw new ContractError("RECORDING_TOO_LONG",
           `Recording is ${duration} seconds long and the limit is ${maxVideoSeconds} seconds. Split the recording into shorter parts.`,

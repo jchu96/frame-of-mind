@@ -10,7 +10,7 @@ import { decodeBudget } from "./range-scan.js";
 const audioFormats = ["-protocol_whitelist", "fd", "-format_whitelist", "mov,matroska,webm,avi,wav,aiff,flac,mp3,ogg,aac"];
 const unverified = () => rangeUsage("Range requires a locally verifiable cut.");
 interface AudioHeader {
-  index: number; codec_type: string; r_frame_rate?: string; avg_frame_rate?: string; sample_rate?: string; time_base?: string;
+  index: number; codec_type: string; width?: number; height?: number; r_frame_rate?: string; avg_frame_rate?: string; sample_rate?: string; time_base?: string;
   duration_ts?: number; start_pts?: number; disposition?: { attached_pic?: number };
 }
 
@@ -28,7 +28,7 @@ export async function runRecordingTool(input: Recording, binary: string, args: s
 
 export async function recordingTracks(input: Recording, signal?: AbortSignal) {
   const raw = await runRecordingTool(input, "ffprobe", [ "-show_entries",
-    "stream=index,codec_type,r_frame_rate,avg_frame_rate,sample_rate,time_base,duration_ts,start_pts:stream_disposition=attached_pic:format=duration", "-of", "json", "fd:"], {signal});
+    "stream=index,codec_type,width,height,r_frame_rate,avg_frame_rate,sample_rate,time_base,duration_ts,start_pts:stream_disposition=attached_pic:format=duration", "-of", "json", "fd:"], {signal});
   const data = JSON.parse(raw) as {streams: AudioHeader[]; format?: {duration?: string}};
   if (!Array.isArray(data?.streams)) throw new ContractError("DECODE_FAILED", "Unable to read stream metadata.");
   return { video: data.streams.find(s => s.codec_type === "video" && !s.disposition?.attached_pic),

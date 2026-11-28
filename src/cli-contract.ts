@@ -1,6 +1,6 @@
 import { preparationDetails, withMediaTransfer } from "./lib/media-transfer.js";
 import { maxRangeSeconds } from "./lib/range-policy.js";
-import { directUploadHint, soundOnlyHint } from "./domain/engine-plan.js";
+import { directUploadHint, soundOnlyHint, pictureLimitHint, durationLimitHint } from "./domain/engine-plan.js";
 import { KeyCommandRefused } from "./key-command.js";
 import { Command, CommanderError } from "commander";
 import { jobInventory } from "./commands/job-commands.js";
@@ -38,7 +38,7 @@ export function writeFailure(caught: unknown, write = stdoutLine) {
   const document = failureDocument(code, preparation ? {...details, ...preparation} : details);
   if (error instanceof MissingJobArgumentError || error instanceof FrameGridError) document.error.message = error.message;
   if (error instanceof ContractError && error.code === "PROVIDER_LIMIT" && error.details?.engine === "twelvelabs" && error.details.reason === "media-limit") {
-    if ([directUploadHint,soundOnlyHint].includes(error.message)) document.error.message = error.message;
+    if ([directUploadHint,soundOnlyHint,pictureLimitHint,durationLimitHint].includes(error.message)) document.error.message = error.message;
   }
   write(JSON.stringify(document));
   process.exitCode = faultExits[code];

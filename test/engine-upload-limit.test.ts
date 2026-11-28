@@ -21,3 +21,12 @@ it("refuses an oversize chosen route with a replayable command and a range hint"
     details:expect.objectContaining({reason:"media-limit", retryWith:[...argv, "--proposer","gemini","--grader","gemini"]})}));
   expect(plan.reason).toBeNull();
 });
+
+it.each([
+  {width:1280,height:320}, {width:3000,height:720}, {width:1280,height:2400},
+])("preflights unsupported picture dimensions %j",picture=>{
+  const plan = enginePlan({...defaults,preview:true,grader:"twelvelabs"});
+  expect(()=>checkDirectUpload(plan,42,argv,{soundOnly:false,picture,duration:10})).toThrowError(expect.objectContaining({
+    code:"PROVIDER_LIMIT",details:expect.objectContaining({reason:"media-limit"}),
+  }));
+});

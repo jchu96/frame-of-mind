@@ -14,7 +14,7 @@ import { withVideoRange } from "./video-range.js";
 
 export interface SourceOptions extends RangeRequest { timecodeRate?: string; signal?: AbortSignal; onSourceResolved?: (clock: RangeClock) => void }
 export async function withSourceRecording<T>(path: string, options: SourceOptions, needs: "audio" | "analysis" | "video",
-  tell: (line: string) => void, consume: (file: string, clock: RangeClock, hasAudio?: boolean) => Promise<T>) {
+  tell: (line: string) => void, consume: (file: string, clock: RangeClock, hasAudio?: boolean, picture?: {width?:number;height?:number}) => Promise<T>) {
   const source = await localRecording(path);
   const {signal} = options;
   const ranged = isRanged(options);
@@ -61,7 +61,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
   const mode = options.timecodeRate === "from-media:df" ? true : options.timecodeRate === "from-media:ndf" ? false : undefined;
   if (ranged) {
     if (needs === "audio" && options.timecodeRate !== undefined && mode === undefined) return rangeUsage("Invalid range bound.");
-    return tracks.video ? withVideoRange(path, options, mode, tell, signal, (file, s) => consume(file, s.clock, Boolean(tracks.audio)), s => beforeCut(s.clock))
+    return tracks.video ? withVideoRange(path, options, mode, tell, signal, (file, s) => consume(file, s.clock, Boolean(tracks.audio),s.info), s => beforeCut(s.clock))
       : withAudioRange(path, options, tell, signal, consume, beforeCut);
   }
   let clock: RangeClock;
@@ -103,5 +103,5 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
   }
   await source.check();
   options.onSourceResolved?.(clock);
-  return consume(path, clock, Boolean(tracks.audio));
+  return consume(path, clock, Boolean(tracks.audio),tracks.video);
 }
