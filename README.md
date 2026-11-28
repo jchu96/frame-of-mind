@@ -100,7 +100,7 @@ maintainer's reference instance runs at
 [fom.flickerventures.com](https://fom.flickerventures.com).
 
 > [!IMPORTANT]
-> Early public release (`v0.6.7`). Review generated work before using or
+> Early public release (`v0.6.8`). Review generated work before using or
 > publishing it. Generated output always requires human review.
 
 ## Status as of 2026-08-24
@@ -325,7 +325,7 @@ frameofmind key set
 frameofmind doctor
 ```
 
-A build made this way prints its version with `+source`, for example `0.6.7+source`, in `--version`,
+A build made this way prints its version with `+source`, for example `0.6.8+source`, in `--version`,
 `doctor`, the `version` document and each run manifest. The linked command runs the files in `dist/`,
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
@@ -653,7 +653,7 @@ The tool scans packet timestamps and decodes from the preceding key frame when i
 
 Each range has its own upload, cost and retention period. A range cannot use `--remote-file`. Match runs by `recordingSha256` and use exact spans for editing. An item or cue at 595–615 s appears as an end fragment at 595–610 in [0,610) and a start fragment at 600–615 in [600,1200). Join matching content to recover 595–615 and count the overlap once. A boundary marked `unknown` has uncertain continuity. A suspected clock time in analysis prose adds “A time in this text may be on the cut's clock.” Seek using the structured time beside the record.
 
-Whole-file video with varying or unproven timing uses the stream's native ticks. In `{unit:"tick", ticks:"120", tick:{num:1,den:1000}}`, the position is 120 ms. Standard SRT cues carry source milliseconds. Transcription emits a source coverage receipt on stderr and writes the transcript JSON only with `--json`.
+Whole-file video whose frame times are not evenly spaced, or cannot be proven even, uses the stream's native ticks; the manifest says which in `sourceTiming`: `uneven` or `unproven`. In `{unit:"tick", ticks:"120", tick:{num:1,den:1000}}`, the position is 120 ms. Standard SRT cues carry source milliseconds. Transcription emits a source coverage receipt on stderr and writes the transcript JSON only with `--json`.
 
 ## Clocks
 

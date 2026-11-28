@@ -176,7 +176,7 @@ test.each([
   expect(item.screenshot).toBe(`moment-01-${unit}-${origin}.png`);
   const times = JSON.parse(await readFile(run.directory+"/times.json", "utf8"));
   expect(times.entries.map((e: {exactTime:{unit:string}}) => e.exactTime.unit)).toEqual([unit,unit,unit]);
-  if (unit === "tick") expect(run.manifest.sourceTiming).toMatch(/^(varying|unproven)$/);
+  if (unit === "tick") expect(run.manifest.sourceTiming).toMatch(/^(uneven|unproven)$/);
   const {containerVideoClock} = await import("../src/services/container-clock.js");
   const offline = await containerVideoClock(await localRecording(file(name!)));
   expect(offline?.sourceRange.unit).toBe("ticks");

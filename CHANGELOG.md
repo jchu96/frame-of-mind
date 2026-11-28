@@ -5,12 +5,33 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-The CLI and local Studio write analysis version 4 for meetings, version 5 for video-only runs, and outcome version 2 on every run. Hosted Studio writes analysis 2/3 and refuses 4/5 imports. Local Studio also reads historical bundles.
+## [0.6.8] - 2026-11-28
 
-- `analyze` and `transcribe` accept `--from` and `--to` on the original recording. A verified local cut limits the upload. Exact source bounds carry their unit, rate, origin and precision. Model observations retain one-second support and measured speech edges remain separate proposals.
-- Standard SRT cues use source milliseconds. The optional transcript JSON carries exact spans. Whole-file variable-rate video uses native stream ticks.
-- Speech snapping now finds speech 10 dB above the local floor and follows quieter word edges to 1.5 dB above it. Each measured cut reports `floorDbfs` and `speechAboveFloorDb`. Below 30 dB of contrast it keeps its time, flags the cut as noisy and reports ±300 ms precision. The run summary counts noisy snaps.
-- Standalone `snap --other-edge <time>` bounds the search by the opposite end of the pick. Analyze uses both candidate edges automatically.
+`analyze` and `transcribe` take a time range, and every time the tool writes is an exact position on the recording's own clock. The speech snap no longer lands inside a word under steady room noise without saying so.
+
+**Which surface writes which version.** The command line and local Studio write `analysis.json` version 4 (meeting) and 5 (video-only) and `analysis-outcome.json` version 2, on every run, ranged or not. Hosted Studio keeps writing analysis 2 and 3 and refuses a 4 or 5 bundle with a plain reason. Local Studio and the importers still read older bundles by their old rule. A reader of run files must accept the new versions before it takes this release.
+
+### Added
+
+- `--from` and `--to` on `analyze` and `transcribe`, on the original recording. The tool cuts the range itself and uploads only the cut. A bound in seconds that is off the frame or sample grid is moved to it and reported in `edgeMoved`; every ranged run prints `Range used:` on standard error. `--remote-file` with a range is refused.
+- Exact positions. Items, rejected and failed rows, evidence times, still times, transcript lines and the fragment lists carry an exact bound: a whole count of frames, samples or stream ticks at an exact rate, with its origin (`cut`, `snap` or `model`) and its precision. The whole-second text stays beside it for people.
+- A whole-file run on a clip whose frame times are not evenly spaced answers in the stream's own ticks (`unit: "tick"`, `ticks`, `tick: {num, den}`). The manifest says why in `sourceTiming`: `uneven` or `unproven`.
+- An item belongs to the range its start falls in. Pieces cut by an edge are listed in `startFragments` and `endFragments`, so overlapping ranges can be joined.
+- Standard SRT cues use source milliseconds. The optional transcript JSON carries exact spans.
+- Each speech snap reports `floorDbfs` and `speechAboveFloorDb`; the run summary gains `counts.noisy`.
+- Standalone `snap --other-edge <time>` keeps the search inside the pick, so a remark shorter than a second is not handed a neighbour's edge. `analyze` bounds both edges the same way.
+
+### Changed
+
+- The speech snap uses two levels. Speech is still found 10 dB above the local floor; each edge then follows the quieter head or tail of the word outward to 1.5 dB above it. Clean-sound edges do not move.
+- Where the speech stands less than 30 dB above the local floor, a snap keeps its time but states `precisionMs: 300` and `noisy: true` instead of 50 or 200, in `times.json` and in the exact bound.
+- A failure while preparing a cut, before anything is sent, publishes no run folder. The reply carries the `Source coverage:` line and, with `--json`, `error.details` with `phase: "prepare"` and `sent: false`.
+
+### Known limits
+
+- The snap change is proven on made-up sound only: a synthetic voice and tone bursts over steady noise. It has not been run on a real room recording. Below about 32 dB of speech over noise an edge can still sit inside a word; the result says `noisy` and 300 ms there.
+- A ranged run needs a recording whose picture stream proves one frame per packet in display order. Where it cannot, the run prints `whole-file — <reason>` and reads the whole file; it never guesses.
+- Hosted Studio does not accept bundles of the new versions.
 
 ## [0.6.7] - 2026-11-28
 
