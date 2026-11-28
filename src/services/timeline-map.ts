@@ -1,4 +1,4 @@
-import { ContractError } from "../domain/contract-error.js";
+import { UsageError, ContractError } from "../domain/contract-error.js";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exactTime, offsetTime, type ExactTime, type FrameRate } from "exact-time";
@@ -121,7 +121,7 @@ async function reverse(track: VideoTrack, path: string, frame: string, base: str
 export async function mapTimeline(path: string, options: MapOptions) {
   const forward = options.at !== undefined;
   if (forward ? options.source !== undefined || options.frame !== undefined : !options.source || !options.frame) {
-    throw new ContractError("USAGE", "Use --at <time> or --source <path> with --frame <file value>.");
+    throw new UsageError("invalid-map-direction", "Use --at <time> or --source <path> with --frame <file value>.");
   }
   const timeline = readTimeline(await boundedJson(path, 16_777_216, "timeline export"));
   const tracks = selectedTracks(timeline, options.track);

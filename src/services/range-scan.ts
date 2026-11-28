@@ -1,7 +1,7 @@
 import { classifyFrameTiming, frameTimingSentence, type FrameTiming } from "../domain/frame-timing.js";
 import { exactTime, isDropRate, rationalRate, type FrameRate } from "exact-time";
-import { ContractError, FrameGridError, faultCode } from "../domain/contract-error.js";
-import { RangeClock, rangeUsage, type RangeRequest } from "../domain/range-clock.js";
+import { ContractError, FrameGridError, UsageError, faultCode } from "../domain/contract-error.js";
+import { RangeClock, type RangeRequest } from "../domain/range-clock.js";
 import { requireProof, UnprovenCut, verifyAvcSamples, type Packet } from "./avc-samples.js";
 import { inspectVideo, readStartLabel, sameRate, videoHeader, type VideoInfo } from "./media-probe.js";
 import { localVideoInput, runMediaTool, type Recording } from "./media-tools.js";
@@ -101,7 +101,8 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
       if (faultCode(error) === "INVALID_RATE") {
         const timing = frameTiming ?? (error instanceof FrameGridError ? error.frameTiming : undefined);
         const detail = timing && frameTimingSentence("Source recording", timing);
-        return rangeUsage(detail ? detail + " Range requires a locally verifiable cut." : "Range requires a locally verifiable cut.");
+        const message = detail ? detail + " Range requires a locally verifiable cut." : undefined;
+        throw new UsageError("Range requires a locally verifiable cut.", message, timing && {frameTiming: timing});
       }
       throw error;
     }

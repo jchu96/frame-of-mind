@@ -98,7 +98,7 @@ it("job options cannot supply credentials and inspection needs none", async () =
   const args = startArgs("analyze");
   for (const option of ["--api-key", "--key-command", "--settings-file"]) {
     const result = await call("analyze", "start", [...args, option, "synthetic-private"]);
-    expect(result.doc).toEqual({schemaVersion: 1, error: {code: "USAGE", message: "Invalid command arguments."}});
+    expect(result.doc).toEqual({schemaVersion: 1, error: {code: "USAGE", message: "Invalid command arguments.", details: {reason: "unknown-option"}}});
   }
   expect((await call("analyze", "start", args)).doc.error.code).toBe("KEY_MISSING");
   expect(await readdir(out)).toEqual([]);

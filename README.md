@@ -656,6 +656,7 @@ The tool scans packet timestamps and decodes from the preceding key frame when i
 Each range has its own upload, cost and retention period. A range cannot use `--remote-file`. Match runs by `recordingSha256` and use exact spans for editing. An item or cue at 595–615 s appears as an end fragment at 595–610 in [0,610) and a start fragment at 600–615 in [600,1200). Join matching content to recover 595–615 and count the overlap once. A boundary marked `unknown` has uncertain continuity. A suspected clock time in analysis prose adds “A time in this text may be on the cut's clock.” Seek using the structured time beside the record.
 
 Whole-file video whose frame times are not evenly spaced, or cannot be proven even, uses the stream's native ticks; the manifest says which in `sourceTiming`: `uneven` or `unproven`. In `{unit:"tick", ticks:"120", tick:{num:1,den:1000}}`, the position is 120 ms. Standard SRT cues carry source milliseconds. Transcription emits a source coverage receipt on stderr and writes the transcript JSON only with `--json`.
+An absent `sourceTiming` on a whole-file video means the recording has one proven frame rate.
 
 ### Read the picture timing before choosing a cut
 
@@ -664,6 +665,24 @@ Whole-file video whose frame times are not evenly spaced, or cannot be proven ev
 `varying` is true when the measured rate changes or the gaps are often uneven. A steady clip can still have an isolated missing frame. Use `sourceRange` for exact positions. `rates` lists the measured frames per second, mean gap in milliseconds and fraction of all gaps at each rate, most frequent first. `oddGaps` and `oddShare` count the gaps outside those stretches. When `varying` is null, `unread` explains why.
 
 Three thresholds were set on one clip. Five consecutive gaps establish a second rate. At least two odd gaps making up more than 1% of all gaps indicate uneven spacing. Gaps one stream tick apart can be rounding when the rarer gap never holds for five in a row. The report measures presentation times on picture packets without decoding frames. It does not measure decoded frame times or a varying sound clock.
+
+### CLI usage refusals
+
+A usage refusal exits 2 in either output mode. With `--json`, branch on `error.details.reason` when `error.code` is `USAGE`. Match range phrases exactly, including spaces and punctuation.
+
+| Where to look | Reasons |
+| --- | --- |
+| Command or arguments | `missing-command` (plain mode), `unknown-command`, `unknown-option`, `missing-argument`, `excess-arguments`, `missing-required-option`, `missing-option-value`, `invalid-argument` |
+| Machine output | `invalid-schema-version`, `duplicate-schema-version`, `force-with-json`, `json-output-not-selected`, `version-arguments`, `help-with-json`, `mcp-with-json` |
+| Scratch cleanup | `remove-requires-scratch` |
+| Input and context selection | `invalid-source`, `missing-meeting-id`, `missing-video`, `conflicting-video-inputs`, `recording-url-source-mismatch`, `missing-context-file`, `context-file-requires-file-source`, `invalid-context-transport`, `transport-source-mismatch` |
+| Analysis settings | `invalid-depth`, `invalid-recipe-file`, `invalid-label`, `invalid-max-moments`, `invalid-concurrency` |
+| Model, upload and transcription | `invalid-model`, `invalid-retention`, `conflicting-retention`, `invalid-remote-file`, `remote-file-requires-video`, `invalid-transcript-language`, `conflicting-transcript-language`, `invalid-transcript-offset` |
+| Reference notes | `too-many-notes`, `invalid-note`, `duplicate-note`, `invalid-note-format`, `invalid-note-file`, `note-too-large`, `invalid-note-encoding`, `binary-note` |
+| Clocks, snapping and media commands | `missing-timecode-rate`, `missing-drop-frame-mode`, `missing-timeline-offset`, `invalid-file-clock`, `invalid-edge`, `invalid-snap`, `invalid-snap-gap`, `invalid-snap-window`, `invalid-map-direction`, `verify-expectation`, `missing-output` |
+| Job options and grants | `duplicate-job-option`, `invalid-job-limit`, `invalid-file-limit`, `invalid-allowed-models`, `conflicting-job-roots`, `missing-job-roots`. Job retention uses `invalid-retention`. |
+| Range bounds | `Invalid range bound.`, `Audio bounds use seconds or Nsamp.`, `Specify the source drop-frame mode or use frames.`, `a bound outside the recording`, `from at or after to`, `a range shorter than the tool can analyse` |
+| Range preparation | `A range cannot reuse a remote file.`, `--transcript-offset requires meeting or file context.`, `Range requires a locally verifiable cut.` (see `error.details.frameTiming` when timing was measured) |
 
 ## Clocks
 

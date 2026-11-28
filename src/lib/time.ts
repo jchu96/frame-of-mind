@@ -1,3 +1,5 @@
+import { OptionError } from "../domain/contract-error.js";
+
 export const CANONICAL_TIMESTAMP = /^\d{2,}:[0-5]\d:[0-5]\d$/;
 
 export function isCanonicalTimestamp(value: string): boolean {
@@ -34,7 +36,7 @@ export function parseSignedOffset(value: string): number {
 
 export function parseTranscriptOffset(value: string): number {
   const match = value.match(/^(-?)(?:(\d{1,}):)?([0-5]\d):([0-5]\d)$/);
-  if (!match) throw new Error("--transcript-offset must be signed MM:SS or HH:MM:SS.");
+  if (!match) throw new OptionError("invalid-transcript-offset", "--transcript-offset must be signed MM:SS or HH:MM:SS.");
   const seconds = Number(match[2] || 0) * 3600 + Number(match[3]) * 60 + Number(match[4]);
   return match[1] === "-" ? -seconds : seconds;
 }

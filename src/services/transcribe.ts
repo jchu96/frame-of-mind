@@ -3,7 +3,7 @@ import { boundIndex, boundMillis, humanTime, modelSpan, sourceBound } from "../d
 import { preparationError, SourceReceipt } from "../domain/source-receipt.js";
 import { isRanged, maxRangeSeconds, withSourceRecording, type SourceOptions } from "./source-recording.js";
 import { timestampToSeconds } from "../lib/time.js";
-import { ContractError } from "../domain/contract-error.js";
+import { ContractError, OptionError, UsageError } from "../domain/contract-error.js";
 import { applicationSetting } from "../lib/application-settings.js";
 import { faultCode, type FaultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
@@ -79,10 +79,13 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage);
   const canceled = () => { if (options.signal?.aborted) throw new TranscribeCanceledError(); };
   const model = options.model ?? (process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL);
-  if (!geminiModelSchema.safeParse(model).success) throw new TranscribeError("--model must be a Gemini model ID.", "USAGE");
+  if (!geminiModelSchema.safeParse(model).success) throw new UsageError("invalid-model", "--model must be a Gemini model ID.");
   let retention: ReturnType<typeof resolveRetention>;
   try { retention = resolveRetention(options, applicationSetting("FRAME_OF_MIND_UPLOAD_RETENTION")); }
-  catch { throw new TranscribeError("Upload retention flags must agree and select provider or run.", "USAGE"); }
+  catch (error) {
+    if (!(error instanceof OptionError)) throw error;
+    throw error.asUsageError("Upload retention flags must agree and select provider or run.");
+  }
   deps.stderr(`retention: ${retention}`);
   const apiKey = options.apiKey ?? process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) throw new TranscribeError("Set GEMINI_API_KEY before transcription.", "KEY_MISSING");
