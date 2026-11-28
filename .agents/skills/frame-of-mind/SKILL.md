@@ -80,7 +80,7 @@ seconds. An unverified clip clock is uncertainty to preserve when reporting.
 
 For `--snap speech`, quote both readings, for example “model end 21 s source
 (≈1 s), proposed cut 20.120 s source, 880 ms earlier, measured on a 10 ms grid,
-accurate to about ±50 ms.” Read the stated precision from `target.precisionMs`. Name the observed pause and any alternative file times. Label
+accurate to about ±50 ms.” Read the proposed edge’s precision from `target.precisionMs` and each exact alternative’s precision from its own bound (300 ms for a noisy edge). Name the observed pause and any alternative file times. Label
 the frame containing the proposed onset or last speech millisecond and explain
 that uncertainty can span neighbouring frames. For `no-boundary`, `ambiguous`
 or `unavailable`, quote the model range and status. List any refused edges and listen before choosing.

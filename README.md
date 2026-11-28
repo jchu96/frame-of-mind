@@ -760,7 +760,9 @@ measured time, sets `noisy: true` and reports ±300 ms precision.
 
 The model time keeps its one-second precision. The signed shift gives the
 change from that time. The audio target uses a 10 ms grid. At 30 dB of contrast or more, its stated
-precision is ±50 ms for source audio at 32 kHz or above and ±200 ms for lower or unknown rates. With a timeline rate, the reference
+precision is ±50 ms for source audio at 32 kHz or above and ±200 ms for lower or unknown rates.
+Each exact source bound, including an alternative, carries its own edge’s precision.
+With a timeline rate, the reference
 frame contains the proposed onset or the last speech millisecond before an
 exclusive end. The uncertainty can span neighbouring frames.
 
