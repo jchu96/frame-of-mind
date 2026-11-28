@@ -63,6 +63,18 @@ export class ContractError extends Error {
   }
 }
 
+/** Shared validators identify the bad option. The CLI owns its fault classification. */
+export class OptionError extends Error {
+  constructor(readonly reason: string, message: string) { super(message); }
+  asUsageError(message = this.message) { return new UsageError(this.reason, message); }
+}
+
+export class UsageError extends ContractError {
+  constructor(reason: string, message = reason, details?: Record<string, unknown>) {
+    super("USAGE", message, {...details, reason});
+  }
+}
+
 export class FrameGridError extends ContractError {
   constructor(readonly frameTiming: Extract<FrameTiming, {varying: boolean}>) {
     const reason = frameTiming.varying ? "This clip’s frame rate varies."

@@ -6,6 +6,8 @@ contract version 1 unless it says otherwise. `CHANGELOG.md` holds the full text.
 
 ## Before a run
 
+- **Usage refusals.** On exit 2 with `error.code` equal to `USAGE`, branch on `error.details.reason`. The CLI usage refusals table in the runbook lists the exact values.
+
 - **Length limit.** `analyze` accepts a recording of at most 7260 seconds (two
   hours and one minute of grace). A longer one stops with `RECORDING_TOO_LONG`,
   exit 4; `error.details` gives `durationSeconds` and `limitSeconds`. Cut a

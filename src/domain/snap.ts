@@ -1,3 +1,4 @@
+import { OptionError } from "./contract-error.js";
 import { exactSeconds, fromMilliseconds } from "exact-time";
 import type { FileClock } from "./clock.js";
 
@@ -5,7 +6,7 @@ export type Edge = "start" | "end";
 export type SnapSettings = { method: "audio-envelope"; gapMs: number; windowMs: number };
 export function snapSettings(gapMs = 250, windowMs = 1500): SnapSettings {
   for (const [name, value, min, max] of [["gap", gapMs, 80, 2000], ["window", windowMs, 250, 3000]] as const) {
-    if (!Number.isInteger(value) || value < min || value > max) throw new Error(`--snap-${name}-ms must be an integer from ${min} to ${max}.`);
+    if (!Number.isInteger(value) || value < min || value > max) throw new OptionError(name === "gap" ? "invalid-snap-gap" : "invalid-snap-window", `--snap-${name}-ms must be an integer from ${min} to ${max}.`);
   }
   return { method: "audio-envelope", gapMs, windowMs };
 }

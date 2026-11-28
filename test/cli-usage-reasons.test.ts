@@ -18,92 +18,93 @@ function jobWith(flag: string, value: string) {
   return [...job, ...flags];
 }
 
-type Row = { reason: string; args: string[]; plainExit?: number; jsonArgs?: string[]; timing?: boolean };
-const row = (reason: string, args: string[], plainExit = 2): Row => ({reason, args, plainExit});
+type Row = { site: string; reason: string; args: string[]; plainExit?: number; jsonArgs?: string[]; timing?: boolean };
+const row = (site: string, reason: string, args: string[], plainExit = 2): Row => ({site, reason, args, plainExit});
 const rows: Row[] = [
-  row("remove-requires-scratch", ["doctor", "--remove", "private-example"]),
-  row("invalid-model", ["calibrate", "--model", "private-example"]),
-  row("unknown-option", ["recipes", "--private-example"]),
-  row("unknown-command", ["private-example"]),
-  row("missing-argument", ["transcribe"]),
-  row("missing-required-option", ["analyze", "private-example.mp4", "--recipe", "decisions"]),
-  {reason: "missing-option-value", args: ["doctor", "--remove"], jsonArgs: ["doctor", "--json", "--remove"]},
-  row("invalid-argument", [...analyze, "--thinking-level", "private-example"]),
-  row("excess-arguments", ["recipes", "private-example"]),
+  row("cli-main", "remove-requires-scratch", ["doctor", "--remove", "private-example"]),
+  row("cli-main", "invalid-model", ["calibrate", "--model", "private-example"]),
+  row("cli-contract", "unknown-option", ["recipes", "--private-example"]),
+  row("cli-contract", "unknown-command", ["private-example"]),
+  row("cli-contract", "missing-argument", ["transcribe"]),
+  row("cli-contract", "missing-required-option", ["analyze", "private-example.mp4", "--recipe", "decisions"]),
+  {site: "cli-contract", reason: "missing-option-value", args: ["doctor", "--remove"], jsonArgs: ["doctor", "--json", "--remove"]},
+  row("cli-contract", "invalid-argument", [...analyze, "--thinking-level", "private-example"]),
+  row("cli-contract", "excess-arguments", ["recipes", "private-example"]),
   // No command without --json displays help as a failure. With --json the root rejects the option.
-  row("unknown-option", []),
+  row("cli-contract", "unknown-option", []),
   // Machine-only validations. The plain invocation follows its own parser or action.
-  row("invalid-schema-version", ["recipes", "--schema-version=bad"]),
-  row("duplicate-schema-version", ["recipes", "--schema-version=1", "--schema-version=1"]),
-  row("version-arguments", ["--version", "extra"], 0),
-  row("help-with-json", ["--help"], 0),
-  row("mcp-with-json", ["mcp", "--help"], 0),
-  row("force-with-json", ["transcribe", "nonexistent.mp4", "--force"], 1),
-  row("json-output-not-selected", ["doctor", "--remove"]),
-  row("duplicate-job-option", [...job, "--out", root]),
+  row("cli-contract", "invalid-schema-version", ["recipes", "--schema-version=bad"]),
+  row("cli-contract", "duplicate-schema-version", ["recipes", "--schema-version=1", "--schema-version=1"]),
+  row("cli-contract", "version-arguments", ["--version", "extra"], 0),
+  row("cli-contract", "help-with-json", ["--help"], 0),
+  row("cli", "mcp-with-json", ["mcp", "--help"], 0),
+  row("cli-contract", "force-with-json", ["transcribe", "nonexistent.mp4", "--force"], 1),
+  row("cli-contract", "json-output-not-selected", ["doctor", "--remove"]),
+  row("commands/job-commands", "duplicate-job-option", [...job, "--out", root]),
   // Job subcommands require --json. The plain parser reports that missing option.
-  row("invalid-job-limit", jobWith("--max-provider-requests", "zero")),
-  row("invalid-file-limit", jobWith("--max-file-bytes", "2000000001")),
-  row("invalid-retention", jobWith("--retention", "private-example")),
-  row("invalid-allowed-models", jobWith("--allowed-models", "private-example")),
-  row("missing-job-roots", [...job, ...grant]),
-  row("conflicting-job-roots", [...job, ...grant, "--roots-file", "roots", "--media-root", root]),
-  row("invalid-edge", ["snap", "clip.mp4", "--at", "0", "--edge", "private-example"]),
-  row("invalid-file-clock", ["snap", "clip.mp4", "--at", "0", "--edge", "end", "--file-clock", "private-example"]),
-  row("verify-expectation", ["verify", "clip.mp4"]),
-  row("missing-output", ["proxy", "clip.mp4", "--output="]),
-  row("invalid-map-direction", ["map", "sequence.otio"]),
-  row("missing-drop-frame-mode", ["map", "sequence.otio", "--at", "00:00:00:01"]),
-  row("missing-timeline-offset", [...analyze, "--timecode-rate", "25:ndf"]),
-  row("missing-timecode-rate", [...analyze, "--timeline-offset", "2f"]),
-  row("invalid-model", ["transcribe", "clip.mp4", "--model", "private-example"]),
-  row("invalid-retention", ["transcribe", "clip.mp4", "--retention", "private-example"]),
-  row("conflicting-retention", ["transcribe", "clip.mp4", "--delete-upload", "--keep-upload"]),
-  row("invalid-transcript-language", ["transcribe", "clip.mp4", "--transcript-language", "@@@"]),
-  row("invalid-snap", [...analyze, "--snap", "private-example"]),
-  row("invalid-snap-gap", [...analyze, "--snap-gap-ms", "1"]),
-  row("invalid-snap-window", [...analyze, "--snap-window-ms", "1"]),
-  row("conflicting-transcript-language", [...analyze, "--transcript-language", "en", "--no-derived-transcript"]),
-  row("invalid-transcript-language", [...analyze, "--transcript-language", "@@@"]),
-  row("invalid-retention", [...analyze, "--retention", "private-example"]),
-  row("conflicting-retention", [...analyze, "--retention", "run", "--keep-upload"]),
-  row("too-many-notes", [...analyze, ...Array.from({length: 9}, () => ["--note", "a=a.md"]).flat()]),
-  row("invalid-note", [...analyze, "--note", "private-example"]),
-  row("duplicate-note", [...analyze, "--note", "a=a.md", "--note", "a=b.md"]),
-  row("invalid-note-format", [...analyze, "--note", "n=f.bin"]),
-  row("invalid-note-file", [...analyze, "--note", "n=folder.md"]),
-  row("note-too-large", [...analyze, "--note", "n=large.md"]),
-  row("invalid-note-encoding", [...analyze, "--note", "n=encoding.md"]),
-  row("binary-note", [...analyze, "--note", "n=binary.md"]),
-  row("invalid-label", [...analyze, "--label", " "]),
-  row("invalid-recipe-file", [...analyze, "--recipe-file", "broken.json"]),
-  row("invalid-depth", [...analyze, "--depth", "private-example"]),
-  row("invalid-model", [...analyze, "--model", "private-example"]),
-  row("invalid-source", ["analyze", "--source", "private-example"]),
-  row("missing-meeting-id", ["analyze", "--source", "file"]),
-  row("invalid-granola-transport", [...analyze, "--granola-transport", "private-example"]),
-  row("transport-requires-granola", [...analyze, "--granola-transport", "api"]),
-  row("conflicting-video-inputs", [...analyze, "--recording-url", "private-example"]),
-  row("recording-url-requires-bluedot", ["analyze", "id", "--source", "file", "--recording-url", "private-example"]),
-  row("missing-context-file", ["analyze", "id", "--source", "file"]),
-  row("context-file-requires-file-source", [...analyze, "--context-file", "private-example"]),
-  row("missing-video", ["analyze", "--source", "none"]),
-  row("invalid-max-moments", [...analyze, "--max-moments", "0"]),
-  row("invalid-concurrency", [...analyze, "--concurrency", "0"]),
-  row("remote-file-requires-video", ["analyze", "id", "--source", "file", "--context-file", "doc.txt", "--remote-file", "files/fixture"]),
-  row("invalid-remote-file", [...analyze, "--remote-file", "private-example"]),
-  row("invalid-file-clock", [...analyze, "--file-clock", "private-example"]),
-  row("invalid-transcript-offset", ["analyze", "id", "--source", "file", "--context-file", "doc.txt", "--transcript-offset", "bad"]),
-  row("--transcript-offset requires meeting or file context.", [...analyze, "--transcript-offset", "00:01"]),
-  row("A range cannot reuse a remote file.", [...analyze, "--from", "1", "--remote-file", "files/fixture"]),
-  row("Invalid range bound.", [...analyze, "--from", "bad"]),
-  row("Audio bounds use seconds or Nsamp.", ["transcribe", "audio.wav", "--to", "1f"]),
-  row("Specify the source drop-frame mode or use frames.", [...analyze, "--from", "00:00:00:01"]),
-  row("a bound outside the recording", [...analyze, "--to", "200"]),
-  row("from at or after to", [...analyze, "--from", "2", "--to", "1"]),
-  row("a range shorter than the tool can analyse", [...analyze, "--to", "1f"]),
-  row("Range requires a locally verifiable cut.", ["transcribe", "broken.mp4", "--from", "0"]),
-  {reason: "Range requires a locally verifiable cut.", args: ["analyze", "--source", "none", "--video", "varying.mp4", "--from", "0"], timing: true},
+  row("services/job-grant", "invalid-job-limit", jobWith("--max-provider-requests", "zero")),
+  row("services/job-grant", "invalid-file-limit", jobWith("--max-file-bytes", "2000000001")),
+  row("services/job-grant", "invalid-retention", jobWith("--retention", "private-example")),
+  row("services/job-grant", "invalid-allowed-models", jobWith("--allowed-models", "private-example")),
+  row("services/job-grant", "missing-job-roots", [...job, ...grant]),
+  row("services/job-grant", "conflicting-job-roots", [...job, ...grant, "--roots-file", "roots", "--media-root", root]),
+  row("commands/snap", "invalid-edge", ["snap", "clip.mp4", "--at", "0", "--edge", "private-example"]),
+  row("commands/snap", "invalid-file-clock", ["snap", "clip.mp4", "--at", "0", "--edge", "end", "--file-clock", "private-example"]),
+  row("services/media-helpers", "verify-expectation", ["verify", "clip.mp4"]),
+  row("services/media-helpers", "missing-output", ["proxy", "clip.mp4", "--output="]),
+  row("services/timeline-map", "invalid-map-direction", ["map", "sequence.otio"]),
+  row("domain/clock", "missing-drop-frame-mode", ["map", "sequence.otio", "--at", "00:00:00:01"]),
+  row("domain/clock", "missing-timeline-offset", [...analyze, "--timecode-rate", "25:ndf"]),
+  row("domain/clock", "missing-timecode-rate", [...analyze, "--timeline-offset", "2f"]),
+  row("services/transcribe", "invalid-model", ["transcribe", "clip.mp4", "--model", "private-example"]),
+  row("domain/retention", "invalid-retention", ["transcribe", "clip.mp4", "--retention", "private-example"]),
+  row("domain/retention", "conflicting-retention", ["transcribe", "clip.mp4", "--delete-upload", "--keep-upload"]),
+  row("domain/transcript-language", "invalid-transcript-language", ["transcribe", "clip.mp4", "--transcript-language", "@@@"]),
+  row("cli-main", "invalid-snap", [...analyze, "--snap", "private-example"]),
+  row("domain/snap", "invalid-snap-gap", [...analyze, "--snap-gap-ms", "1"]),
+  row("domain/snap", "invalid-snap-window", [...analyze, "--snap-window-ms", "1"]),
+  row("domain/transcript-language", "conflicting-transcript-language", [...analyze, "--transcript-language", "en", "--no-derived-transcript"]),
+  row("domain/transcript-language", "invalid-transcript-language", [...analyze, "--transcript-language", "@@@"]),
+  row("domain/retention", "invalid-retention", [...analyze, "--retention", "private-example"]),
+  row("domain/retention", "conflicting-retention", [...analyze, "--retention", "run", "--keep-upload"]),
+  row("services/run-notes", "too-many-notes", [...analyze, ...Array.from({length: 9}, () => ["--note", "a=a.md"]).flat()]),
+  row("services/run-notes", "invalid-note", [...analyze, "--note", "private-example"]),
+  row("services/run-notes", "duplicate-note", [...analyze, "--note", "a=a.md", "--note", "a=b.md"]),
+  row("services/run-notes", "invalid-note-format", [...analyze, "--note", "n=f.bin"]),
+  row("services/run-notes", "invalid-note-file", [...analyze, "--note", "n=folder.md"]),
+  row("services/run-notes", "note-too-large", [...analyze, "--note", "n=large.md"]),
+  row("services/run-notes", "invalid-note-encoding", [...analyze, "--note", "n=encoding.md"]),
+  row("services/run-notes", "binary-note", [...analyze, "--note", "n=binary.md"]),
+  row("cli-main", "invalid-label", [...analyze, "--label", " "]),
+  row("cli-main", "invalid-recipe-file", [...analyze, "--recipe-file", "broken.json"]),
+  row("cli-main", "invalid-depth", [...analyze, "--depth", "private-example"]),
+  row("cli-main", "invalid-model", [...analyze, "--model", "private-example"]),
+  row("cli-main", "invalid-source", ["analyze", "--source", "private-example"]),
+  row("cli-main", "missing-meeting-id", ["analyze", "--source", "file"]),
+  row("cli-main", "invalid-granola-transport", [...analyze, "--granola-transport", "private-example"]),
+  row("cli-main", "transport-requires-granola", [...analyze, "--granola-transport", "api"]),
+  row("cli-main", "conflicting-video-inputs", [...analyze, "--recording-url", "private-example"]),
+  row("cli-main", "recording-url-requires-bluedot", ["analyze", "id", "--source", "file", "--recording-url", "private-example"]),
+  row("cli-main", "missing-context-file", ["analyze", "id", "--source", "file"]),
+  row("cli-main", "context-file-requires-file-source", [...analyze, "--context-file", "private-example"]),
+  row("cli-main", "missing-video", ["analyze", "--source", "none"]),
+  row("cli-main", "invalid-max-moments", [...analyze, "--max-moments", "0"]),
+  row("cli-main", "invalid-concurrency", [...analyze, "--concurrency", "0"]),
+  row("cli-main", "remote-file-requires-video", ["analyze", "id", "--source", "file", "--context-file", "doc.txt", "--remote-file", "files/fixture"]),
+  row("cli-main", "invalid-remote-file", [...analyze, "--remote-file", "private-example"]),
+  row("cli-main", "invalid-file-clock", [...analyze, "--file-clock", "private-example"]),
+  row("lib/time", "invalid-transcript-offset", ["analyze", "id", "--source", "file", "--context-file", "doc.txt", "--transcript-offset", "bad"]),
+  row("cli-main", "--transcript-offset requires meeting or file context.", [...analyze, "--transcript-offset", "00:01"]),
+  row("cli-main", "A range cannot reuse a remote file.", [...analyze, "--from", "1", "--remote-file", "files/fixture"]),
+  row("services/source-recording", "Invalid range bound.", ["transcribe", "audio.wav", "--to", "1", "--timecode-rate", "25"]),
+  row("domain/range-clock", "Invalid range bound.", [...analyze, "--from", "bad"]),
+  row("domain/range-clock", "Audio bounds use seconds or Nsamp.", ["transcribe", "audio.wav", "--to", "1f"]),
+  row("domain/range-clock", "Specify the source drop-frame mode or use frames.", [...analyze, "--from", "00:00:00:01"]),
+  row("domain/range-clock", "a bound outside the recording", [...analyze, "--to", "200"]),
+  row("domain/range-clock", "from at or after to", [...analyze, "--from", "2", "--to", "1"]),
+  row("domain/range-clock", "a range shorter than the tool can analyse", [...analyze, "--to", "1f"]),
+  row("services/source-recording", "Range requires a locally verifiable cut.", ["transcribe", "broken.mp4", "--from", "0"]),
+  {site: "services/range-scan", reason: "Range requires a locally verifiable cut.", args: ["analyze", "--source", "none", "--video", "varying.mp4", "--from", "0"], timing: true},
 ];
 
 beforeAll(() => {
@@ -113,6 +114,7 @@ beforeAll(() => {
   writeFileSync(join(root, "encoding.md"), Buffer.from([0xff]));
   writeFileSync(join(root, "broken.json"), "{");
   writeFileSync(join(root, "broken.mp4"), "invalid");
+  writeFileSync(join(root, "offline.ts"), 'globalThis.fetch = () => { throw new Error("Unexpected network request in CLI usage test"); };');
   copyFileSync("test/fixtures/timeline-export-2997df.otio", join(root, "sequence.otio"));
   const media = (...args: string[]) => execFileSync("ffmpeg", ["-v", "error", "-nostdin", "-f", "lavfi", "-i", ...args],
     {cwd: root, env: childEnvironment("media")});
@@ -124,9 +126,9 @@ beforeAll(() => {
 afterAll(() => rmSync(root, {recursive: true, force: true}));
 
 function invoke(args: string[]) {
-  const result = spawnSync("bun", ["--no-env-file", entry, ...args], {cwd: root, encoding: "utf8",
+  const result = spawnSync("bun", ["--no-env-file", "--preload", join(root, "offline.ts"), entry, ...args], {cwd: root, encoding: "utf8",
     env: {...childEnvironment("media"), HOME: root, TMPDIR: root, GEMINI_API_KEY: "fixture",
-      BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", FRAME_OF_MIND_KEY_COMMAND: "none"}});
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", FRAME_OF_MIND_KEY_COMMAND: "[]"}});
   if (result.error) throw result.error;
   return result;
 }
@@ -146,26 +148,50 @@ it.each(rows)("plain exit for $reason with $args", ({args, plainExit}) => {
 });
 
 it("covers the usage constructors and the parser reason map with command-line rows", () => {
-  const words = new Set(rows.map(r => r.reason));
-  // The missing-command parser path only occurs in plain mode (empty argv above).
-  if (rows.some(r => !r.args.length && r.plainExit === 2)) words.add("missing-command");
+  const sites = new Set(rows.map(({site, reason}) => site + ":" + reason));
+  // These service guards return the same released reason as their CLI-level counterparts.
+  // The outer guard runs first for --remote-file, and a corrupt audio stream can fail at either probe.
+  const aliases: Record<string, string> = {"services/analyze": "cli-main", "services/audio-range": "services/source-recording"};
+  if (rows.some(r => !r.args.length && r.plainExit === 2)) sites.add("cli-contract:missing-command");
+
   for (const path of readdirSync("src", {recursive: true, encoding: "utf8"}).filter(f => f.endsWith(".ts"))) {
     const source = ts.createSourceFile(path, readFileSync(join("src", path), "utf8"), ts.ScriptTarget.Latest, true);
+    const site = path.replaceAll("\\", "/").slice(0, -3);
+    const requireRow = (reason: string) => {
+      const key = (aliases[site] ?? site) + ":" + reason;
+      expect(sites.has(key), path + ": missing CLI row for " + reason).toBe(true);
+    };
     function check(node: ts.Node) {
+      if (ts.isStringLiteral(node) && node.text === "USAGE") {
+        const parent = node.parent;
+        const comparison = ts.isBinaryExpression(parent) && [ts.SyntaxKind.EqualsEqualsEqualsToken,
+          ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(parent.operatorToken.kind);
+        const consumer = ts.isArrayLiteralExpression(parent) && ts.isPropertyAccessExpression(parent.parent)
+          && parent.parent.name.text === "includes";
+        const constructor = site === "domain/contract-error" && ts.isCallExpression(parent)
+          && parent.expression.kind === ts.SyntaxKind.SuperKeyword
+          && parent.arguments[0] === node && parent.arguments[2]?.getText(source).includes("reason");
+        expect(comparison || consumer || constructor, path + ": bare USAGE").toBeTruthy();
+      }
       if (ts.isNewExpression(node) || ts.isCallExpression(node)) {
         const name = node.expression.getText(source);
         const args = node.arguments ?? [];
-        if (args.some(arg => ts.isStringLiteral(arg) && arg.text === "USAGE")) {
-          expect(name, path + ": bare USAGE constructor").toBe("super");
-          expect(args[2]?.getText(source), path).toContain("reason");
-        }
-        if (["UsageError", "OptionError", "TranscriptLanguageError", "rangeUsage"].includes(name)) {
-          const reason = args[0];
-          if (reason && ts.isStringLiteral(reason)) expect(words.has(reason.text), path + ": " + reason.text).toBe(true);
+        if (["UsageError", "OptionError", "TranscriptLanguageError", "rangeUsage", "usage", "parseChoice"].includes(name)) {
+          const reason = args[name === "parseChoice" ? 2 : 0];
+          if (reason && ts.isStringLiteral(reason)) requireRow(reason.text);
+          else if (reason && ts.isConditionalExpression(reason) && ts.isStringLiteral(reason.whenTrue) && ts.isStringLiteral(reason.whenFalse)) {
+            requireRow(reason.whenTrue.text);
+            requireRow(reason.whenFalse.text);
+          } else {
+            // Only these adapters forward an already classified reason. All producers need a literal and a row.
+            const forwarded = site + ":" + reason?.getText(source);
+            expect(["domain/contract-error:this.reason", "domain/range-clock:reason", "cli-main:reason",
+              "services/job-grant:reason", 'cli-contract:parserReasons[error.code] ?? "invalid-argument"']).toContain(forwarded);
+          }
         }
       }
       if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name) && node.name.text.startsWith("commander.")) {
-        expect(words.has((node.initializer as ts.StringLiteral).text), node.getText(source)).toBe(true);
+        requireRow((node.initializer as ts.StringLiteral).text);
       }
       ts.forEachChild(node, check);
     }

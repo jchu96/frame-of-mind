@@ -42,7 +42,7 @@
     "properties": {
       "error": {
         "type": "object",
-        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type":"object","allOf":[{"$ref":"#/definitions/source"}],"properties":{"phase":{"const":"prepare"},"sent":{"const":false},"reason":{"type":"string"}}}},
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type":"object","allOf":[{"$ref":"#/definitions/source"}],"properties":{"phase":{"const":"prepare"},"sent":{"const":false},"reason":{"type":"string","description":"Fixed usage reason. For a range scan that cannot verify the cut, measured timing is in details.frameTiming."}}}},
         "required": ["code", "message"]
       }
     }

@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- CLI usage refusals carry a reason in `error.details.reason` with `--json`. Refusals that exited 1 in plain mode now exit 2. A range scan that cannot verify the cut returns the fixed reason `Range requires a locally verifiable cut.` and reports measured timing in `error.details.frameTiming`.
+
 - Set `FRAME_OF_MIND_KEY_COMMAND='[]'` to skip the account’s key command for one launch. `doctor` explains the opt-out and includes `key.commandDisabledByEnvironment` in JSON.
 - `probe --json`, analysis manifests and transcription receipts report the picture rates measured from packet timestamps, their shares and any odd gaps. A probe that refuses the frame grid includes the report in `error.details.frameTiming`.
 

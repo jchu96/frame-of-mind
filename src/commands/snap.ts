@@ -1,4 +1,4 @@
-import { CliError, writeDocument } from "../cli-contract.js";
+import { UsageError, writeDocument } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
 import type { Command } from "commander";
 import { parseSecondsMs } from "../domain/clock.js";
@@ -17,8 +17,8 @@ function parseFileTime(time: string) {
 
 export async function snapFile(video: string, flags: SnapFlags, decode = decodeSpeechEnvelope) {
   const clock = flags.fileClock ?? "source";
-  if (clock !== "source" && clock !== "reel") throw new CliError("USAGE", "--file-clock must be source or reel.");
-  if (flags.edge !== "start" && flags.edge !== "end") throw new CliError("USAGE", "--edge must be start or end.");
+  if (clock !== "source" && clock !== "reel") throw new UsageError("invalid-file-clock", "--file-clock must be source or reel.");
+  if (flags.edge !== "start" && flags.edge !== "end") throw new UsageError("invalid-edge", "--edge must be start or end.");
   const atMs = parseFileTime(flags.at);
   const otherEdgeMs = flags.otherEdge === undefined ? undefined : parseFileTime(flags.otherEdge);
   const settings = snapSettings();

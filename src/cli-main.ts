@@ -7,7 +7,7 @@ import { cliSettings, keyNextStep } from "./cli-settings.js";
 import { inspectScratch } from "./adapters/scratch.js";
 import { mediaCapabilityReport, requireMedia } from "./services/media-capabilities.js";
 import { capabilities, CliError, writeDocument } from "./cli-contract.js";
-import { faultCode } from "./domain/contract-error.js";
+import { OptionError, UsageError, faultCode } from "./domain/contract-error.js";
 import { createHash } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -130,7 +130,7 @@ program
   .option("--remove <path>", "remove only this named, proven abandoned scratch entry")
   .option("--json", "print the versioned doctor report")
   .action(async (flags: {scratch?: string | boolean; remove?: string; json?: boolean}) => {
-    if (flags.remove && !flags.scratch) throw new CliError("USAGE", "--remove requires --scratch.");
+    if (flags.remove && !flags.scratch) throw new UsageError("remove-requires-scratch", "--remove requires --scratch.");
     const rows = flags.scratch || flags.json
       ? await inspectScratch(typeof flags.scratch === "string" ? flags.scratch : undefined, flags.remove)
       : [];
@@ -249,7 +249,7 @@ program.command("calibrate")
   .action(async (flags: { model?: string; json?: boolean }) => {
     const apiKey = await cliSettings().providerKey();
     if (!apiKey) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before calibration.");
-    if (flags.model !== undefined && !geminiModelSchema.safeParse(flags.model).success) throw new CliError("USAGE", "Invalid Gemini model ID.");
+    if (flags.model !== undefined && !geminiModelSchema.safeParse(flags.model).success) throw new UsageError("invalid-model", "Invalid Gemini model ID.");
     await requireMedia("calibrate");
     const analyzer = new GeminiVideoAnalyzer(apiKey, flags.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL));
     const result = await calibrateClipClock(analyzer, { force: true, reportFailure: flags.json });
@@ -418,9 +418,8 @@ program
             ...(error instanceof CliError && error.details), runFolder: resolve(failureFolder),
           });
         }
-        if (flags.json && !analyzeOptions && error instanceof Error && !("code" in error)) {
-          // Uncoded option validation failures predate the machine contract.
-          throw new CliError("USAGE", error.message);
+        if (!analyzeOptions && error instanceof OptionError) {
+          throw error.asUsageError();
         }
         throw error;
       }
@@ -460,7 +459,7 @@ export async function buildAnalyzeOptions(
   flags: AnalyzeCliFlags,
   apiKey: string | undefined,
 ): Promise<AnalyzeOptions> {
-  if (flags.snap !== undefined && flags.snap !== "speech") throw new Error("--snap must be speech.");
+  if (flags.snap !== undefined && flags.snap !== "speech") throw new UsageError("invalid-snap", "--snap must be speech.");
   const integer = (text?: string) => text === undefined ? undefined : /^\d+$/.test(text) && text.trim() === text ? Number(text) : NaN;
   const settings = snapSettings(integer(flags.snapGapMs), integer(flags.snapWindowMs));
   const transcriptLanguage = resolveTranscriptLanguage(flags.transcriptLanguage, flags.derivedTranscript);
@@ -469,18 +468,21 @@ export async function buildAnalyzeOptions(
   const runNotes = await loadRunNotes(flags.note);
   const labelResult = flags.label === undefined ? undefined : runLabelSchema.safeParse(flags.label.trim());
   if (labelResult && !labelResult.success) {
-    throw new Error("--label must be one line of 1 to 200 characters without control characters.");
+    throw new UsageError("invalid-label", "--label must be one line of 1 to 200 characters without control characters.");
   }
   const label = labelResult?.data;
   const recipeResult = await withAnalysisDepth(
-    await loadRecipe(flags.recipe, flags.recipeFile),
-    analysisDepthSchema.parse(flags.depth),
+    await loadRecipe(flags.recipe, flags.recipeFile).catch(error => {
+      if (error instanceof Error && !("code" in error)) throw new UsageError("invalid-recipe-file", error.message);
+      throw error;
+    }),
+    parseChoice(analysisDepthSchema, flags.depth, "invalid-depth"),
   );
   const modelResult = flags.model
     ? geminiModelSchema.safeParse(flags.model)
     : undefined;
   if (modelResult && !modelResult.success) {
-    throw new Error(
+    throw new UsageError("invalid-model",
       `--model must be a Gemini model ID such as ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest.`,
     );
   }
@@ -490,32 +492,32 @@ export async function buildAnalyzeOptions(
     ? undefined
     : parseProvider(flags.source, true);
   if (!videoOnly && !meetingId) {
-    throw new Error("A provider meeting/note ID is required unless --source none is selected.");
+    throw new UsageError("missing-meeting-id", "A provider meeting/note ID is required unless --source none is selected.");
   }
   const granolaTransport = parseGranolaTransport(flags.granolaTransport);
   if (contextProvider !== "granola" && granolaTransport !== "mcp") {
-    throw new Error("--granola-transport is only valid with --source granola.");
+    throw new UsageError("transport-requires-granola", "--granola-transport is only valid with --source granola.");
   }
-  if (flags.video && flags.recordingUrl) throw new Error("Use either --video or --recording-url, not both.");
+  if (flags.video && flags.recordingUrl) throw new UsageError("conflicting-video-inputs", "Use either --video or --recording-url, not both.");
   if (flags.recordingUrl && contextProvider !== "bluedot") {
-    throw new Error("--recording-url is only valid with --source bluedot.");
+    throw new UsageError("recording-url-requires-bluedot", "--recording-url is only valid with --source bluedot.");
   }
   if (contextProvider === "file" && !flags.contextFile) {
-    throw new Error("--context-file is required with --source file.");
+    throw new UsageError("missing-context-file", "--context-file is required with --source file.");
   }
   if (contextProvider !== "file" && flags.contextFile) {
-    throw new Error("--context-file is only valid with --source file.");
+    throw new UsageError("context-file-requires-file-source", "--context-file is only valid with --source file.");
   }
   if (videoOnly && !flags.video) {
-    throw new Error("--video is required with --source none.");
+    throw new UsageError("missing-video", "--video is required with --source none.");
   }
   if (videoOnly && flags.transcriptOffset) {
     rangeUsage("--transcript-offset requires meeting or file context.");
   }
-  if (flags.maxMoments !== "all" && !/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
+  if (flags.maxMoments !== "all" && !/^[1-9]\d*$/.test(flags.maxMoments)) throw new UsageError("invalid-max-moments", "--max-moments must be a positive integer.");
   const maxIncidents = flags.maxMoments === "all" ? 1_000 : Number(flags.maxMoments);
   if (!Number.isSafeInteger(maxIncidents) || maxIncidents > 1_000) {
-    throw new Error("--max-moments must be between 1 and 1000.");
+    throw new UsageError("invalid-max-moments", "--max-moments must be between 1 and 1000.");
   }
   const detailConcurrency = parseDetailConcurrency(
     flags.concurrency,
@@ -524,15 +526,15 @@ export async function buildAnalyzeOptions(
   if (flags.remoteFile && isRanged(flags)) rangeUsage("A range cannot reuse a remote file.");
   if (flags.remoteFile) {
     if (!flags.video) {
-      throw new Error("--remote-file requires --video so the local recording can be verified and screenshotted.");
+      throw new UsageError("remote-file-requires-video", "--remote-file requires --video so the local recording can be verified and screenshotted.");
     }
     if (!/^files\/[A-Za-z0-9_-]+$/.test(flags.remoteFile)) {
-      throw new Error("--remote-file must be a Gemini file name such as files/abc123.");
+      throw new UsageError("invalid-remote-file", "--remote-file must be a Gemini file name such as files/abc123.");
     }
   }
   if (flags.video) await access(resolve(flags.video));
   if (flags.timelineOffset !== undefined || !/^from-media:(df|ndf)$/.test(flags.timecodeRate ?? "")) declareClock(flags.timelineOffset, flags.timecodeRate);
-  const fileClock = z.enum(["source", "reel"]).parse(flags.fileClock ?? "source");
+  const fileClock = parseChoice(z.enum(["source", "reel"]), flags.fileClock ?? "source", "invalid-file-clock");
   const common = {
     ...(flags.from !== undefined && {from:flags.from}), ...(flags.to !== undefined && {to:flags.to}),
     ...(flags.snap ? { snapSettings: settings } : {}),
@@ -599,10 +601,16 @@ const CLI_ANALYSIS_PROGRESS = {
 } satisfies { report(event: AnalysisProgressEvent): void };
 
 program.showSuggestionAfterError();
+function parseChoice<T>(schema: z.ZodType<T>, value: string, reason: string): T {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) throw new UsageError(reason, parsed.error.message);
+  return parsed.data;
+}
+
 function parseProvider(value: string, allowFile: boolean): ContextProvider {
   const providers = allowFile ? ["bluedot", "granola", "file"] : ["bluedot", "granola"];
   if (!providers.includes(value)) {
-    throw new Error(`Unknown provider '${value}'. Expected ${providers.join(", ")}.`);
+    throw new OptionError("invalid-source", `Unknown provider '${value}'. Expected ${providers.join(", ")}.`);
   }
   return value as ContextProvider;
 }
@@ -612,14 +620,14 @@ function parseDetailConcurrency(flag: string | undefined, environment: string | 
     ? ["--concurrency", flag]
     : ["FRAME_OF_MIND_DETAIL_CONCURRENCY", environment || "1"];
   if (!/^[1-9]\d*$/.test(value) || Number(value) > MAX_DETAIL_CONCURRENCY) {
-    throw new Error(`${label} must be an integer from 1 to ${MAX_DETAIL_CONCURRENCY}.`);
+    throw new UsageError("invalid-concurrency", `${label} must be an integer from 1 to ${MAX_DETAIL_CONCURRENCY}.`);
   }
   return Number(value);
 }
 
 function parseGranolaTransport(value: string): "mcp" | "api" {
   if (value !== "mcp" && value !== "api") {
-    throw new Error("--granola-transport must be mcp or api.");
+    throw new UsageError("invalid-granola-transport", "--granola-transport must be mcp or api.");
   }
   return value;
 }

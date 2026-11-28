@@ -44,7 +44,9 @@ it.each(["absolute","relative"] as const)("the %s detail clock publishes the sam
         expect(item.result.confidenceNotes).toContain("A time in this text may be on the cut's clock.");
       }
       expect(run.manifest.proseTimeUnverified).toBe(true);
-      expect(events.filter(e=>e.startsWith("Pass 2/2 [")).every(e=>e.includes(`"frames":"${a}"`))).toBe(true);
+      const startSeconds = Math.floor(Number(a) * den / num).toFixed(3);
+      expect(events.filter(e=>e.startsWith("Pass 2/2 ["))).toEqual([1,2,3].map(n =>
+        `Pass 2/2 [${n}/3] at ${startSeconds} s source (≈1 s; model)`));
       const times=JSON.parse(await readFile(join(run.directory,"times.json"),"utf8"));
       for (const e of times.entries) expect(e.exactTime).toMatchObject(e.pointer.endsWith("/end")?span.endExclusive:span.start);
       for (const name of ["report.html","analysis.md"]) {

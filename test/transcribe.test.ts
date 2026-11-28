@@ -631,7 +631,7 @@ describe("validation", () => {
     const f = await fixture();
     await cli(f, ["--transcript-language", "en_US"]);
     expect(f.deps.stderr).toHaveBeenCalledWith(expect.stringContaining("--transcript-language"));
-    expect(process.exitCode).toBe(1);
+    expect(process.exitCode).toBe(2);
     expect(f.deps.extractAudioTrack).not.toHaveBeenCalled();
     expect(f.analyzer.upload).not.toHaveBeenCalled();
     expect(f.analyzer.transcribe).not.toHaveBeenCalled();
@@ -648,7 +648,7 @@ describe("validation", () => {
   });
   it("an invalid --model makes zero uploads", async () => {
     const f = await fixture(); await cli(f, ["--model", "invalid/model"]);
-    expect(process.exitCode).toBe(1); expect(f.analyzer.upload).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(2); expect(f.analyzer.upload).not.toHaveBeenCalled();
   });
   it("the exported model schema and the analyze CLI accept and refuse the same sample ids", async () => {
     const samples = ["gemini-test", "gemini-pro-latest", "gemini-3.7-flash", "gemini-0", "gemini-" + "a".repeat(113), "gemini-" + "a".repeat(114), "gemini-", "gemini-.bad", "gemini-UPPER", "invalid/model", " gemini-test", "gemini-test\n", "models/gemini-test"];
@@ -666,7 +666,7 @@ describe("validation", () => {
     if (problem === "target") await writeFile(join(f.root, "synthetic.srt"), "old");
     if (problem === "input") await rm(f.input);
     if (problem === "retention") flags.push("--keep-upload", "--delete-upload");
-    await cli(f, flags); expect(process.exitCode).toBe(1); expect(f.analyzer.upload).not.toHaveBeenCalled();
+    await cli(f, flags); expect(process.exitCode).toBe(problem === "retention" ? 2 : 1); expect(f.analyzer.upload).not.toHaveBeenCalled();
     if (["ffprobe", "audio"].includes(problem)) expect(f.deps.stderr.mock.calls.flat().join()).toContain("§6.20");
   });
 });

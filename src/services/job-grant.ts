@@ -4,7 +4,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { openJobFile, trustedDirectory } from "../adapters/job-path.js";
 import { z } from "zod";
 import { geminiModelSchema } from "../adapters/gemini-model.js";
-import { ContractError, MissingJobArgumentError, faultCode } from "../domain/contract-error.js";
+import { ContractError, UsageError, MissingJobArgumentError, faultCode } from "../domain/contract-error.js";
 import { MAX_RECORDING_BYTES } from "../lib/files.js";
 
 const rootDocument = z.strictObject({schemaVersion: z.literal(1), read: z.array(z.string()), write: z.array(z.string())});
@@ -22,11 +22,11 @@ export type JobGrant = Roots & {
 };
 export type JobFile = {root: string; path: string};
 
-function usage(): never { throw new ContractError("USAGE", "Supply all required job grant flags."); }
+function usage(reason: string): never { throw new UsageError(reason, "Supply all required job grant flags."); }
 function outside(): never { throw new ContractError("PATH_OUTSIDE_ROOTS", "Path is outside the grant."); }
 function invalidRoots(): never { throw new ContractError("ROOTS_INVALID", "Invalid roots file."); }
 function limit(raw: unknown) {
-  if (typeof raw !== "string" || !/^[1-9][0-9]*$/.test(raw) || !Number.isSafeInteger(Number(raw))) usage();
+  if (typeof raw !== "string" || !/^[1-9][0-9]*$/.test(raw) || !Number.isSafeInteger(Number(raw))) usage("invalid-job-limit");
   return Number(raw);
 }
 
@@ -71,13 +71,13 @@ async function fromFile(path: string): Promise<Roots> {
 export async function readJobRoots(values: Record<string, unknown>): Promise<Roots> {
   let roots: Roots;
   if (values.rootsFile !== undefined) {
-    if (typeof values.rootsFile !== "string" || values.mediaRoot !== undefined || values.outputRoot !== undefined) usage();
+    if (typeof values.rootsFile !== "string" || values.mediaRoot !== undefined || values.outputRoot !== undefined) usage("conflicting-job-roots");
     roots = await fromFile(values.rootsFile);
   } else {
     const list = z.array(z.string().min(1)).min(1);
     const read = list.safeParse(values.mediaRoot);
     const write = list.safeParse(values.outputRoot);
-    if (!read.success || !write.success) usage();
+    if (!read.success || !write.success) usage("missing-job-roots");
     roots = {read: read.data, write: write.data};
   }
   const out = typeof values.out === "string" ? resolve(values.out) : undefined;
@@ -90,10 +90,11 @@ export async function readJobGrant(values: Record<string, unknown>): Promise<Job
   const maxProviderRequests = limit(values.maxProviderRequests);
   const maxFileBytes = limit(values.maxFileBytes);
   const retention = values.retention;
-  if (maxFileBytes > MAX_RECORDING_BYTES || (retention !== "provider" && retention !== "run")) usage();
-  if (typeof values.allowedModels !== "string") usage();
+  if (maxFileBytes > MAX_RECORDING_BYTES) usage("invalid-file-limit");
+  if (retention !== "provider" && retention !== "run") usage("invalid-retention");
+  if (typeof values.allowedModels !== "string") usage("invalid-allowed-models");
   const allowedModels = values.allowedModels.split(",");
-  if (!allowedModels.every(id => geminiModelSchema.safeParse(id).success)) usage();
+  if (!allowedModels.every(id => geminiModelSchema.safeParse(id).success)) usage("invalid-allowed-models");
   return {...await readJobRoots(values), maxMediaSeconds, maxProviderRequests, maxFileBytes, allowedModels, retention};
 }
 

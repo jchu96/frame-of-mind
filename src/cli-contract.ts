@@ -4,8 +4,8 @@ import { Command, CommanderError } from "commander";
 import { jobInventory } from "./commands/job-commands.js";
 import { VERSION } from "./version.js";
 
-import { CLI_SCHEMA_VERSION, ContractError, FrameGridError, MissingJobArgumentError, failureDocument, faultCode, faultExits } from "./domain/contract-error.js";
-export { ContractError as CliError } from "./domain/contract-error.js";
+import { CLI_SCHEMA_VERSION, ContractError, FrameGridError, MissingJobArgumentError, UsageError, failureDocument, faultCode, faultExits } from "./domain/contract-error.js";
+export { ContractError as CliError, UsageError } from "./domain/contract-error.js";
 
 function stdoutLine(line: string) { process.stdout.write(line + "\n"); }
 
@@ -13,12 +13,32 @@ export function writeDocument(fields: object, write = stdoutLine) {
   write(JSON.stringify({ schemaVersion: CLI_SCHEMA_VERSION, ...fields }));
 }
 
-export function writeFailure(error: unknown, write = stdoutLine) {
-  const code = error instanceof CommanderError ? "USAGE" : faultCode(error);
+const parserReasons: Record<string, string> = {
+  "commander.unknownCommand": "unknown-command",
+  "commander.unknownOption": "unknown-option",
+  "commander.missingArgument": "missing-argument",
+  "commander.optionMissingArgument": "missing-option-value",
+  "commander.missingMandatoryOptionValue": "missing-required-option",
+  "commander.excessArguments": "excess-arguments",
+  "commander.invalidArgument": "invalid-argument",
+  "commander.help": "missing-command",
+};
+
+function parserUsage(error: CommanderError) {
+  return new UsageError(parserReasons[error.code] ?? "invalid-argument", error.message);
+}
+
+export function writeFailure(caught: unknown, write = stdoutLine) {
+  const error = caught instanceof CommanderError ? parserUsage(caught) : caught;
+  const code = faultCode(error);
   const document = failureDocument(code, error instanceof ContractError ? error.details : undefined);
   if (error instanceof MissingJobArgumentError || error instanceof FrameGridError) document.error.message = error.message;
   write(JSON.stringify(document));
   process.exitCode = faultExits[code];
+}
+
+export function humanFailureExit(error: unknown) {
+  return faultCode(error) === "USAGE" ? faultExits.USAGE : 1;
 }
 
 function commandTree(root: Command): Command[] {
@@ -44,7 +64,8 @@ function selectSchema(args: string[]) {
     if (arg === "--") return [...rest, ...args.slice(i)];
     if (arg !== "--schema-version" && !arg.startsWith("--schema-version=")) { rest.push(arg); continue; }
     const major = arg === "--schema-version" ? args[++i] : arg.slice("--schema-version=".length);
-    if (selected || !major || !/^[1-9]\d*$/.test(major)) throw new ContractError("USAGE", "Expected one schema major.");
+    if (selected) throw new UsageError("duplicate-schema-version", "Expected one schema major.");
+    if (!major || !/^[1-9]\d*$/.test(major)) throw new UsageError("invalid-schema-version", "Expected one schema major.");
     if (major !== String(CLI_SCHEMA_VERSION)) throw new ContractError("UNKNOWN_SCHEMA", "Unsupported schema major.");
     selected = true;
   }
@@ -63,34 +84,36 @@ export async function runCli(root: Command, args: string[]) {
     if (machine) args = selectSchema(args);
     if (machine) root.hook("preAction", (_root, command) => {
       const flags = command.opts();
-      if (flags.force) throw new ContractError("USAGE", "Machine calls require fresh outputs.");
-      if (flags.json !== true) throw new ContractError("USAGE", "This invocation does not select machine output.");
+      if (flags.force) throw new UsageError("force-with-json", "Machine calls require fresh outputs.");
+      if (flags.json !== true) throw new UsageError("json-output-not-selected", "This invocation does not select machine output.");
       const values = [...command.args, ...Object.values(flags)];
       if (values.some(value => typeof value === "string" && value.split(/[\\/]/).includes(".."))) {
         throw new ContractError("PATH_OUTSIDE_ROOTS", "Use a path without parent traversal.");
       }
     });
     if (machine && options.some(arg => ["--version", "-V"].includes(arg))) {
-      if (args.length !== 2) throw new ContractError("USAGE", "Use --version --json.");
+      if (args.length !== 2) throw new UsageError("version-arguments", "Use --version --json.");
       writeDocument({ version: VERSION, schemaVersions: capabilities(root).schemaVersions });
       return;
     }
     if (machine && options.some(arg => arg === "--help" || arg === "-h" || (arg === "help" && args[0] === arg))) {
-      throw new ContractError("USAGE", "Use capabilities --json for machine-readable help.");
+      throw new UsageError("help-with-json", "Use capabilities --json for machine-readable help.");
     }
     await root.parseAsync(args, { from: "user" });
-  } catch (error) {
+  } catch (caught) {
+    if (caught instanceof CommanderError && caught.exitCode === 0) return;
+    const error = caught instanceof CommanderError ? parserUsage(caught) : caught;
     if (machine) {
-      if (error instanceof ContractError && typeof error.details?.reason === "string" && error.code === "USAGE") process.stderr.write(error.details.reason + "\n");
+      if (error instanceof ContractError && error.code === "USAGE" && error.details?.reason === error.message) process.stderr.write(error.message + "\n");
       writeFailure(error);
     }
     else if (error instanceof KeyCommandRefused) {
       process.stderr.write(error.message + "\n");
       process.exitCode = faultExits.KEY_REFUSED;
-    } else if (error instanceof CommanderError) process.exitCode = error.exitCode;
-    else {
-      process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
-      process.exitCode = error instanceof ContractError && error.code === "USAGE" && error.details?.reason ? faultExits.USAGE : 1;
+    } else {
+      // Commander already wrote the human diagnostic.
+      if (!(caught instanceof CommanderError)) process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = humanFailureExit(error);
     }
   }
 }

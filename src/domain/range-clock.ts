@@ -1,6 +1,6 @@
 import type { FrameTiming } from "./frame-timing.js";
 import { fromTimecode, isDropRate, TICKS_PER_SECOND, type FrameRate } from "exact-time";
-import { ContractError } from "./contract-error.js";
+import { UsageError } from "./contract-error.js";
 
 export type RangeUnit = "frames" | "samples" | "ticks";
 export interface RangeRequest { from?: string; to?: string }
@@ -35,7 +35,7 @@ function formatSeconds({ n, d }: Fraction): string {
 }
 
 export function rangeUsage(reason: string): never {
-  throw new ContractError("USAGE", reason, { reason });
+  throw new UsageError(reason);
 }
 
 // Keep the requested positions as fractions of a grid unit until ordering and EOF have been checked.

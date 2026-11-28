@@ -1,4 +1,4 @@
-import { ContractError } from "./contract-error.js";
+import { UsageError, ContractError } from "./contract-error.js";
 import { z } from "zod";
 import {
   exactTime, exactMilliseconds, fromBoundaryMilliseconds, fromTimecode, fromMilliseconds,
@@ -107,9 +107,9 @@ function strictEntry(value: string, flag: string) {
 function convertEntry<C extends MediaClock>(clock: C, entry: ReturnType<typeof strictEntry>, rate?: FrameRate, dropFrame?: boolean) {
   if (entry.form === "milliseconds") return rate
     ? fromBoundaryMilliseconds(clock, entry.value, rate) : fromMilliseconds(clock, entry.value);
-  if (!rate) throw new ContractError("USAGE", "Frame/timecode offsets require --timecode-rate. Without it, use seconds (at most three decimals); exact outputs are milliseconds, seconds and ticks, with no frames or timecode.");
+  if (!rate) throw new UsageError("missing-timecode-rate", "Frame/timecode offsets require --timecode-rate. Without it, use seconds (at most three decimals); exact outputs are milliseconds, seconds and ticks, with no frames or timecode.");
   if (entry.form === "frames") return exactTime(clock, entry.value, rate);
-  if (dropFrame === undefined) throw new ContractError("USAGE", "State --timecode-rate with an explicit df or ndf choice for a timecode label.");
+  if (dropFrame === undefined) throw new UsageError("missing-drop-frame-mode", "State --timecode-rate with an explicit df or ndf choice for a timecode label.");
   return fromTimecode(clock, entry.value, rate, dropFrame);
 }
 
@@ -123,7 +123,7 @@ export function parseTimelinePosition(value: string, origin: ExactTime<"timeline
 }
 
 export function declareClock(offset?: string, rate?: string, mediaRate?: TimecodeSpec): ClockDeclaration | undefined {
-  if (rate !== undefined && offset === undefined) throw new ContractError("USAGE", "--timecode-rate requires --timeline-offset (use 0 for a sequence starting at zero).");
+  if (rate !== undefined && offset === undefined) throw new UsageError("missing-timeline-offset", "--timecode-rate requires --timeline-offset (use 0 for a sequence starting at zero).");
   if (offset === undefined) return undefined;
   const entry = strictEntry(offset, "--timeline-offset");
   const fromMedia = rate !== undefined && /^from-media(?::(?:df|ndf))?$/.test(rate);
