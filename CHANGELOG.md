@@ -8,6 +8,7 @@ Semantic Versioning.
 The CLI and local Studio write analysis version 4 for meetings, version 5 for video-only runs, and outcome version 2 on every run. Hosted Studio writes analysis 2/3 and refuses 4/5 imports. Local Studio also reads historical bundles.
 
 - `analyze` and `transcribe` accept `--from` and `--to` on the original recording. A verified local cut limits the upload. Exact source bounds carry their unit, rate, origin and precision. Model observations retain one-second support and measured speech edges remain separate proposals.
+- `probe --json`, analysis manifests and transcription receipts report the picture rates measured from packet timestamps, their shares and any odd gaps. A probe that refuses the frame grid includes the report in `error.details.frameTiming`.
 - Standard SRT cues use source milliseconds. The optional transcript JSON carries exact spans. Whole-file variable-rate video uses native stream ticks.
 
 ## [0.6.7] - 2026-11-28

@@ -655,6 +655,14 @@ Each range has its own upload, cost and retention period. A range cannot use `--
 
 Whole-file video with varying or unproven timing uses the stream's native ticks. In `{unit:"tick", ticks:"120", tick:{num:1,den:1000}}`, the position is 120 ms. Standard SRT cues carry source milliseconds. Transcription emits a source coverage receipt on stderr and writes the transcript JSON only with `--json`.
 
+### Read the picture timing before choosing a cut
+
+`probe --json` returns `frameTiming` for the primary picture stream. If the frame grid cannot be verified, look for `error.details.frameTiming` on the `INVALID_RATE` refusal. Whole-file and ranged analysis manifests and transcription receipts carry the report for the original recording.
+
+`varying` is true when the measured rate changes or the gaps are often uneven. A steady clip can still have an isolated missing frame. Use `sourceRange` for exact positions. `rates` lists the measured frames per second, mean gap in milliseconds and fraction of all gaps at each rate, most frequent first. `oddGaps` and `oddShare` count the gaps outside those stretches. When `varying` is null, `unread` explains why.
+
+Three thresholds were set on one clip. Five consecutive gaps establish a second rate. At least two odd gaps making up more than 1% of all gaps indicate uneven spacing. Gaps one stream tick apart can be rounding when the rarer gap never holds for five in a row. The report measures presentation times on picture packets without decoding frames. It does not measure decoded frame times or a varying sound clock.
+
 ## Clocks
 
 Every rendered media time names its clock: `source` is time from the input
