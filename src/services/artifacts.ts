@@ -134,7 +134,7 @@ export function renderAnalysis(
       `## ${index + 1}. ${escapeInline(result.title)}`,
       "",
       `- Kind: ${escapeInline(result.kind)}`,
-      `- Time: ${escapeInline(renderClockTime(result.evidence?.timestamp || item.candidate.start, clock))}`,
+      `- Time: ${escapeInline(renderClockTime(result.evidence?.timestamp || item.candidate.start, clock, result.evidence?.exactTime ?? item.candidate.exactSpan?.start))}`,
       ...(item.stillTimes ? [`- ${escapeInline(stillTimesLine(item.stillTimes, clock))}`] : []),
       ...exactItemLines(item).map(line => `- ${escapeInline(line)}`),
       ...recordCuts(cuts, originalIndex).map(line => `- ${line}`),
@@ -209,7 +209,7 @@ async function renderHtmlArtifact(
     const positions = exactItemLines(item).map(text => `<p>${html(text)}</p>`).join("");
     const cutParagraphs = recordCuts(cuts, originalIndex).map(line => `<p>${html(line)}</p>`).join("");
     return `<article>
-      <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock))}</div>
+      <div class="eyebrow">${html(result.kind)} · ${html(result.importance || item.candidate.importance)} · ${html(renderClockTime(result.evidence?.timestamp || item.candidate.start, manifest.clock, result.evidence?.exactTime ?? item.candidate.exactSpan?.start))}</div>
       <h2>${index + 1}. ${html(result.title)}</h2>${item.stillTimes ? `\n      <p>${html(stillTimesLine(item.stillTimes, manifest.clock))}</p>` : ""}
       <p>${html(result.summary)}</p>${positions}${cutParagraphs ? `\n      ${cutParagraphs}` : ""}
       ${details}
@@ -341,9 +341,20 @@ function renderDeclaredOffset(declaration: NonNullable<RunClock["timeline"]>): s
   const seconds = time.seconds === undefined ? `derived seconds unavailable: ${time.secondsUnavailable}` : `${time.seconds} s (derived)`;
   return `${seconds} (${units}; ${"ticks" in time ? `${time.ticks} ticks` : time.ticksUnavailable}; declared)`;
 }
-export function renderClockTime(timestamp: string, clock?: RunClock): string {
+function timelineTime(time: ReturnType<typeof modelTime>, offset: ReturnType<typeof declaredOffset>, bound?: Bound) {
+  const timeline = offsetApproximate(time, offset);
+  if (!bound) return timeline;
+  const rate = boundRate(bound);
+  const denominator = BigInt(rate.num) * BigInt(offset.rate.num);
+  const numerator = boundIndex(bound) * BigInt(rate.den) * BigInt(offset.rate.num)
+    + offset.frames * BigInt(offset.rate.den) * BigInt(rate.num);
+  return {...timeline, seconds:decimalMs(Number(numerator * 1000n / denominator))};
+}
+
+export function renderClockTime(timestamp: string, clock?: RunClock, bound?: Bound): string {
   const time = modelTime(clock?.fileClock ?? "source", timestamp);
-  return [renderApproximate(time), ...(clock?.timeline ? [renderApproximate(offsetApproximate(time, declaredOffset(clock.timeline)))] : [])].join(" · ");
+  const timeline = clock?.timeline && timelineTime(time, declaredOffset(clock.timeline), bound);
+  return [renderApproximate(time), ...(timeline ? [renderApproximate(timeline)] : [])].join(" · ");
 }
 
 function stillTimesLine(times: readonly string[], clock?: RunClock): string {
@@ -421,14 +432,7 @@ export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock, pro
       exactAlternatives:proposal.alternativesMs.map(ms => measured(ms,pointer.endsWith("/end"))),
       ...(proposal.status === "snapped" && {exactTime:measured(parseSecondsMs(proposal.target.seconds),pointer.endsWith("/end"))}),
     } : {};
-    const projected = offset && offsetApproximate(time,offset);
-    const timeline = projected && {...projected};
-    if (timeline && bound && offset) {
-      const rate = boundRate(bound);
-      const denominator = BigInt(rate.num)*BigInt(offset.rate.num);
-      const numerator = boundIndex(bound)*BigInt(rate.den)*BigInt(offset.rate.num)+offset.frames*BigInt(offset.rate.den)*BigInt(rate.num);
-      timeline.seconds = decimalMs(Number(numerator*1000n/denominator));
-    }
+    const timeline = offset && timelineTime(time, offset, bound);
     entries.push({ pointer, ...(bound && {exactTime:bound}), time: { ...time, origin: "model" },
       ...(timeline ? { timeline: { ...timeline, origin: "model" as const } } : {}),
       ...(proposal ? { snap: {...proposal,...exactSnap} } : {}) });

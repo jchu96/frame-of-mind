@@ -1,7 +1,7 @@
 import { rangeTranscript } from "./range-context.js";
 import { rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { type Bound, boundIndex, boundMillis, humanTime, modelBound, modelSpan, sourceBound } from "../domain/source-bound.js";
-import { SourceReceipt } from "../domain/source-receipt.js";
+import { preparationError, SourceReceipt } from "../domain/source-receipt.js";
 import { isRanged, withSourceRecording, maxRangeSeconds as resolveMaxVideoSeconds } from "./source-recording.js";
 import { applicationSetting } from "../lib/application-settings.js";
 import { ContractError, faultCode } from "../domain/contract-error.js";
@@ -405,6 +405,7 @@ export class AnalysisOrchestrator {
     let mediaSource: RunManifest["mediaSource"] = "local-file";
     let stagingDirectory: string | undefined;
     let runContainerDirectory: string | undefined;
+    let preparing: {recordingSha256: string; receipt?: SourceReceipt} | undefined;
 
     try {
       assertNotCanceled(execution.signal);
@@ -476,9 +477,15 @@ export class AnalysisOrchestrator {
       if (options.expectedVideoSha256 && recordingSha256 !== options.expectedVideoSha256) {
         throw new Error("Selected recording no longer matches its staged media receipt.");
       }
-      return await this.sourceRecording(originalPath, {...options,signal:execution.signal}, "video",
-        line => process.stderr.write(line + "\n"), async (localVideo, sourceClock) => {
-      const receipt = new SourceReceipt(sourceClock, recordingSha256, maxVideoSeconds);
+      if (ranged) preparing = {recordingSha256};
+      const resolved = (clock: SourceReceipt["clock"]) => {
+        const receipt = new SourceReceipt(clock, recordingSha256, maxVideoSeconds);
+        if (preparing) preparing.receipt = receipt;
+        return receipt;
+      };
+      return await this.sourceRecording(originalPath, {...options,signal:execution.signal,onSourceResolved:resolved}, "video",
+        line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio) => {
+      const receipt = preparing?.receipt ?? resolved(sourceClock);
       const uploadedCutSha256 = ranged ? await sha256File(localVideo) : undefined;
       const recordingSizeBytes = (await stat(localVideo)).size;
       if (recordingSizeBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
@@ -507,7 +514,7 @@ export class AnalysisOrchestrator {
       if (options.calibrate !== false && analyzer.probeClipClock) {
         const measured: Calibration = await this.calibrate({
           model: analyzer.model,
-          upload: (path, mime) => analyzer.upload(path, mime),
+          upload: (path, mime) => { preparing = undefined; return analyzer.upload(path, mime); },
           probeClipClock: (file) => analyzer.probeClipClock!(file),
           delete: (file) => analyzer.delete(file),
         });
@@ -535,7 +542,7 @@ export class AnalysisOrchestrator {
       let derivedTranscript: string | undefined;
       let derivedTranscriptProvenance: DerivedTranscriptProvenance | undefined;
       if (
-        options.derivedTranscript !== false
+        options.derivedTranscript !== false && hasAudio !== false
         && !meeting?.transcript?.trim()
         && typeof analyzer.transcribe === "function"
       ) {
@@ -613,6 +620,7 @@ export class AnalysisOrchestrator {
                 }, async (span) => {
                   const usageBefore = usageCountsOf(analyzer);
                   try {
+                    preparing = undefined;
                     audioRemote = await analyzer.upload(audioPath, "audio/aac");
                     if (audioDuration !== undefined) {
                       const a = sourceClock.sourceIndex(sourceClock.unitsForSeconds(window.startSeconds));
@@ -744,6 +752,7 @@ export class AnalysisOrchestrator {
               recordingSizeBytes,
             );
           }
+          preparing = undefined;
           const file = await analyzer.upload(localVideo, ranged ? "video/mp4" : mimeType);
           if (sourceClock.lengthKnown) receipt.uploads.push({kind:"video-cut", span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
           return file;
@@ -1116,7 +1125,7 @@ export class AnalysisOrchestrator {
               total: candidates.length,
               unit: "items",
             },
-            message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${sourceCandidate.start} ${JSON.stringify(exactSpan)}`,
+            message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${renderClockTime(sourceCandidate.start,clock,exactSpan.start)} ${JSON.stringify(exactSpan)}`,
           });
         };
         await mapWithConcurrency(candidates, detailConcurrency, interrogateCandidate, {
@@ -1488,6 +1497,12 @@ export class AnalysisOrchestrator {
         }
       }
       });
+    } catch (error) {
+      if (preparing && !execution.signal?.aborted) {
+        const source = preparing.receipt?.document() ?? {recordingSha256:preparing.recordingSha256, coverage:{full:false, covered:[]}};
+        throw preparationError(error, source, line => process.stderr.write(line + "\n"));
+      }
+      throw error;
     } finally {
       await context?.close().catch(() => undefined);
       if (stagingDirectory) await rm(stagingDirectory, { recursive: true, force: true });

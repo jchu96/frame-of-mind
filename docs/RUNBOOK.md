@@ -1347,6 +1347,8 @@ and one cleanup state:
 - `intentionally_retained` for default `provider` retention or explicit `--keep-upload`;
 - `unconfirmed` when deletion did not complete.
 
+If a local cut fails before an upload starts, the CLI reports source coverage on stderr. JSON errors carry the available source fields, empty coverage, `phase: "prepare"` and `sent: false` in `error.details`. This reply is the receipt.
+
 It contains no provider response, error message, transcript, focus text, signed
 URL, or local media path. Cancellation remains non-publishing but still attempts
 cleanup. If failure-receipt publication itself fails, the CLI emits a sanitized

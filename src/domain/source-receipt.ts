@@ -1,3 +1,4 @@
+import { ContractError, faultCode } from "./contract-error.js";
 import type { RangeClock } from "./range-clock.js";
 import type { ExactSpan } from "./source-bound.js";
 
@@ -32,4 +33,12 @@ export class SourceReceipt {
       maxRangeSeconds: this.maxRangeSeconds, uploads: this.uploads, edgeRule: "both-edges-report-fragments" as const, endMarginSeconds: 0 as const,
       startFragments: this.startFragments, endFragments: this.endFragments, timePrecision: {modelMs: 1000 as const, snapGridMs: 10 as const}};
   }
+}
+
+// Before a local cut leaves the machine there is no remote lifecycle to
+// publish. Return only information acquired before the failure.
+export function preparationError(error: unknown, source: Record<string, unknown>, tell: (line: string) => void) {
+  tell(`Source coverage: ${JSON.stringify(source)}`);
+  return new ContractError(faultCode(error), error instanceof ContractError ? error.message : "Could not prepare the recording.",
+    {...(error instanceof ContractError && error.details), ...source, phase:"prepare", sent:false});
 }

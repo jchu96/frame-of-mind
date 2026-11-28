@@ -22,8 +22,9 @@ export async function extractDetailStills(
   const start = timestampToSeconds(candidate.start);
   const end = timestampToSeconds(candidate.end);
   const span = clock && modelSpan(clock,start,end);
-  const midpoint = Math.floor((start + end) / 2);
-  const priority = end - start < 10 ? [midpoint] : [midpoint, start + 2, end - 2];
+  const visibleEnd = Math.min(end, duration ?? end);
+  const midpoint = Math.floor((start + visibleEnd) / 2);
+  const priority = visibleEnd - start < 10 ? [midpoint] : [midpoint, start + 2, Math.floor(visibleEnd - 2)];
   const selected: DetailStillFile[] = [];
   let remaining = 15_000_000;
   for (const seconds of priority) {

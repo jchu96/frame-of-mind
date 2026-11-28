@@ -1,6 +1,6 @@
 import { type RangeClock } from "../domain/range-clock.js";
 import { boundIndex, boundMillis, humanTime, modelSpan, sourceBound } from "../domain/source-bound.js";
-import { SourceReceipt } from "../domain/source-receipt.js";
+import { preparationError, SourceReceipt } from "../domain/source-receipt.js";
 import { isRanged, maxRangeSeconds, withSourceRecording, type SourceOptions } from "./source-recording.js";
 import { timestampToSeconds } from "../lib/time.js";
 import { ContractError } from "../domain/contract-error.js";
@@ -110,14 +110,23 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
     throw new TranscribeError("Check the input file and output targets; existing targets require --force. See docs/RUNBOOK.md §3.11.", faultCode(error));
   }
   await job?.authorize();
-  return deps.withSourceRecording(input, options, "audio", deps.stderr, async (media, clock) => {
-    const receipt = new SourceReceipt(clock, await sha256File(input), maxRangeSeconds());
-    try {
-      return await processWindows(media, clock, receipt);
-    } finally {
-      deps.stderr(`Source coverage: ${JSON.stringify(receipt.document())}`);
+  const digest = await sha256File(input);
+  let receipt: SourceReceipt | undefined;
+  let sent = false;
+  let reported = false;
+  const resolved = (clock: RangeClock) => receipt ??= new SourceReceipt(clock, digest, maxRangeSeconds());
+  try {
+    return await deps.withSourceRecording(input, {...options, onSourceResolved: resolved}, "audio", deps.stderr,
+      (media, clock) => processWindows(media, clock, resolved(clock)));
+  } catch (error) {
+    if (isRanged(options) && !sent && !options.signal?.aborted) {
+      reported = true;
+      throw preparationError(error, receipt?.document() ?? {recordingSha256:digest, coverage:{full:false,covered:[]}}, deps.stderr);
     }
-  });
+    throw error;
+  } finally {
+    if (receipt && !reported) deps.stderr(`Source coverage: ${JSON.stringify(receipt.document())}`);
+  }
 
   async function processWindows(media: string, clock: RangeClock, receipt: SourceReceipt) {
     const duration = clock.cutLength === undefined ? await deps.probeDurationSeconds(media) : clock.elapsed(clock.cutLength);
@@ -155,6 +164,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
             let remote: GeminiFile | undefined;
             try {
               if ((await stat(audioPath)).size > 2_000_000_000) throw new ContractError("MEDIA_LIMIT", "Audio window exceeds the upload limit.");
+              sent = true;
               remote = await analyzer.upload(audioPath, pcm ? "audio/wav" : "audio/aac");
               receipt.uploads.push({kind:"audio-window", span:[String(clock.sourceIndex(from)), String(clock.sourceIndex(end))], rate:clock.grid.rate});
               if (retention === "provider") deps.stderr(`kept audio upload: ${uploadLabel(remote)}`);
@@ -246,7 +256,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
     const usage = analyzer.usageSnapshot?.();
     if (usage) deps.stdout(`tokens: ${JSON.stringify(usage)}`);
     return {
-      ...(quietLines !== undefined && { quietLines }), segments, paths, model, language: requestedLanguage ?? null,
+      source: receipt.document(), ...(quietLines !== undefined && { quietLines }), segments, paths, model, language: requestedLanguage ?? null,
       adjustedCues: srt.adjustedCues, blankCues: srt.blankCues,
       retention, ...(usage && { tokens: usage }),
     };

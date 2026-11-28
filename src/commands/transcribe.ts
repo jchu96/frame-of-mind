@@ -46,7 +46,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
         if (flags.json) {
           const { paths, model, language, adjustedCues, blankCues, retention, tokens, quietLines } = result;
           writeDocument({
-            paths, model, language, segmentCount: result.segments.length, adjustedCues, blankCues,
+            ...result.source, paths, model, language, segmentCount: result.segments.length, adjustedCues, blankCues,
             quietLines, retention, ...(tokens && { tokens }),
           }, dependencies.stdout);
         }

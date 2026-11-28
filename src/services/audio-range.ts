@@ -30,6 +30,7 @@ export async function recordingTracks(input: Recording, signal?: AbortSignal) {
   const raw = await runRecordingTool(input, "ffprobe", [ "-show_entries",
     "stream=index,codec_type,r_frame_rate,avg_frame_rate,sample_rate,time_base,duration_ts,start_pts:stream_disposition=attached_pic:format=duration", "-of", "json", "fd:"], {signal});
   const data = JSON.parse(raw) as {streams: AudioHeader[]; format?: {duration?: string}};
+  if (!Array.isArray(data?.streams)) throw new ContractError("DECODE_FAILED", "Unable to read stream metadata.");
   return { video: data.streams.find(s => s.codec_type === "video" && !s.disposition?.attached_pic),
     audio: data.streams.find(s => s.codec_type === "audio"), seconds: Number(data.format?.duration) };
 }
