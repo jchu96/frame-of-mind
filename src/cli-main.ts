@@ -496,11 +496,11 @@ export async function buildAnalyzeOptions(
   }
   const granolaTransport = parseGranolaTransport(flags.granolaTransport);
   if (contextProvider !== "granola" && granolaTransport !== "mcp") {
-    throw new UsageError("transport-requires-granola", "--granola-transport is only valid with --source granola.");
+    throw new UsageError("transport-source-mismatch", "--granola-transport is only valid with --source granola.");
   }
   if (flags.video && flags.recordingUrl) throw new UsageError("conflicting-video-inputs", "Use either --video or --recording-url, not both.");
   if (flags.recordingUrl && contextProvider !== "bluedot") {
-    throw new UsageError("recording-url-requires-bluedot", "--recording-url is only valid with --source bluedot.");
+    throw new UsageError("recording-url-source-mismatch", "--recording-url is only valid with --source bluedot.");
   }
   if (contextProvider === "file" && !flags.contextFile) {
     throw new UsageError("missing-context-file", "--context-file is required with --source file.");
@@ -627,7 +627,7 @@ function parseDetailConcurrency(flag: string | undefined, environment: string | 
 
 function parseGranolaTransport(value: string): "mcp" | "api" {
   if (value !== "mcp" && value !== "api") {
-    throw new UsageError("invalid-granola-transport", "--granola-transport must be mcp or api.");
+    throw new UsageError("invalid-context-transport", "--granola-transport must be mcp or api.");
   }
   return value;
 }

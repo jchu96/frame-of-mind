@@ -18,7 +18,7 @@ function jobWith(flag: string, value: string) {
   return [...job, ...flags];
 }
 
-type Row = { site: string; reason: string; args: string[]; plainExit?: number; jsonArgs?: string[]; timing?: boolean };
+type Row = { site: string; alsoRaisedIn?: string; plainReason?: string; reason: string; args: string[]; plainExit?: number; jsonArgs?: string[]; timing?: boolean };
 const row = (site: string, reason: string, args: string[], plainExit = 2): Row => ({site, reason, args, plainExit});
 const rows: Row[] = [
   row("cli-main", "remove-requires-scratch", ["doctor", "--remove", "private-example"]),
@@ -31,7 +31,7 @@ const rows: Row[] = [
   row("cli-contract", "invalid-argument", [...analyze, "--thinking-level", "private-example"]),
   row("cli-contract", "excess-arguments", ["recipes", "private-example"]),
   // No command without --json displays help as a failure. With --json the root rejects the option.
-  row("cli-contract", "unknown-option", []),
+  {...row("cli-contract", "unknown-option", []), plainReason: "missing-command"},
   // Machine-only validations. The plain invocation follows its own parser or action.
   row("cli-contract", "invalid-schema-version", ["recipes", "--schema-version=bad"]),
   row("cli-contract", "duplicate-schema-version", ["recipes", "--schema-version=1", "--schema-version=1"]),
@@ -81,10 +81,10 @@ const rows: Row[] = [
   row("cli-main", "invalid-model", [...analyze, "--model", "private-example"]),
   row("cli-main", "invalid-source", ["analyze", "--source", "private-example"]),
   row("cli-main", "missing-meeting-id", ["analyze", "--source", "file"]),
-  row("cli-main", "invalid-granola-transport", [...analyze, "--granola-transport", "private-example"]),
-  row("cli-main", "transport-requires-granola", [...analyze, "--granola-transport", "api"]),
+  row("cli-main", "invalid-context-transport", [...analyze, "--granola-transport", "private-example"]),
+  row("cli-main", "transport-source-mismatch", [...analyze, "--granola-transport", "api"]),
   row("cli-main", "conflicting-video-inputs", [...analyze, "--recording-url", "private-example"]),
-  row("cli-main", "recording-url-requires-bluedot", ["analyze", "id", "--source", "file", "--recording-url", "private-example"]),
+  row("cli-main", "recording-url-source-mismatch", ["analyze", "id", "--source", "file", "--recording-url", "private-example"]),
   row("cli-main", "missing-context-file", ["analyze", "id", "--source", "file"]),
   row("cli-main", "context-file-requires-file-source", [...analyze, "--context-file", "private-example"]),
   row("cli-main", "missing-video", ["analyze", "--source", "none"]),
@@ -95,7 +95,7 @@ const rows: Row[] = [
   row("cli-main", "invalid-file-clock", [...analyze, "--file-clock", "private-example"]),
   row("lib/time", "invalid-transcript-offset", ["analyze", "id", "--source", "file", "--context-file", "doc.txt", "--transcript-offset", "bad"]),
   row("cli-main", "--transcript-offset requires meeting or file context.", [...analyze, "--transcript-offset", "00:01"]),
-  row("cli-main", "A range cannot reuse a remote file.", [...analyze, "--from", "1", "--remote-file", "files/fixture"]),
+  {...row("cli-main", "A range cannot reuse a remote file.", [...analyze, "--from", "1", "--remote-file", "files/fixture"]), alsoRaisedIn: "services/analyze"},
   row("services/source-recording", "Invalid range bound.", ["transcribe", "audio.wav", "--to", "1", "--timecode-rate", "25"]),
   row("domain/range-clock", "Invalid range bound.", [...analyze, "--from", "bad"]),
   row("domain/range-clock", "Audio bounds use seconds or Nsamp.", ["transcribe", "audio.wav", "--to", "1f"]),
@@ -103,7 +103,7 @@ const rows: Row[] = [
   row("domain/range-clock", "a bound outside the recording", [...analyze, "--to", "200"]),
   row("domain/range-clock", "from at or after to", [...analyze, "--from", "2", "--to", "1"]),
   row("domain/range-clock", "a range shorter than the tool can analyse", [...analyze, "--to", "1f"]),
-  row("services/source-recording", "Range requires a locally verifiable cut.", ["transcribe", "broken.mp4", "--from", "0"]),
+  {...row("services/source-recording", "Range requires a locally verifiable cut.", ["transcribe", "broken.mp4", "--from", "0"]), alsoRaisedIn: "services/audio-range"},
   {site: "services/range-scan", reason: "Range requires a locally verifiable cut.", args: ["analyze", "--source", "none", "--video", "varying.mp4", "--from", "0"], timing: true},
 ];
 
@@ -147,18 +147,20 @@ it.each(rows)("plain exit for $reason with $args", ({args, plainExit}) => {
   expect(result.status, result.stderr).toBe(plainExit ?? 2);
 });
 
+// 2026-11-28: bare USAGE hid the caller's mistake. Existing fault tests covered the code alone.
+// Review by: 2027-02-28 (protects: user)
 it("covers the usage constructors and the parser reason map with command-line rows", () => {
-  const sites = new Set(rows.map(({site, reason}) => site + ":" + reason));
-  // These service guards return the same released reason as their CLI-level counterparts.
-  // The outer guard runs first for --remote-file, and a corrupt audio stream can fail at either probe.
-  const aliases: Record<string, string> = {"services/analyze": "cli-main", "services/audio-range": "services/source-recording"};
-  if (rows.some(r => !r.args.length && r.plainExit === 2)) sites.add("cli-contract:missing-command");
-
+  const sites = new Set<string>();
+  for (const {site, reason, plainReason, alsoRaisedIn} of rows) {
+    sites.add(site + ":" + reason);
+    if (plainReason) sites.add(site + ":" + plainReason);
+    if (alsoRaisedIn) sites.add(alsoRaisedIn + ":" + reason);
+  }
   for (const path of readdirSync("src", {recursive: true, encoding: "utf8"}).filter(f => f.endsWith(".ts"))) {
     const source = ts.createSourceFile(path, readFileSync(join("src", path), "utf8"), ts.ScriptTarget.Latest, true);
     const site = path.replaceAll("\\", "/").slice(0, -3);
     const requireRow = (reason: string) => {
-      const key = (aliases[site] ?? site) + ":" + reason;
+      const key = site + ":" + reason;
       expect(sites.has(key), path + ": missing CLI row for " + reason).toBe(true);
     };
     function check(node: ts.Node) {
@@ -184,9 +186,12 @@ it("covers the usage constructors and the parser reason map with command-line ro
             requireRow(reason.whenFalse.text);
           } else {
             // Only these adapters forward an already classified reason. All producers need a literal and a row.
-            const forwarded = site + ":" + reason?.getText(source);
-            expect(["domain/contract-error:this.reason", "domain/range-clock:reason", "cli-main:reason",
-              "services/job-grant:reason", 'cli-contract:parserReasons[error.code] ?? "invalid-argument"']).toContain(forwarded);
+            const owner = ts.findAncestor(node, (n): n is ts.FunctionDeclaration | ts.MethodDeclaration =>
+              ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n));
+            const forwarded = [site, owner?.name?.getText(source), reason?.getText(source)].join(":");
+            expect(["domain/contract-error:asUsageError:this.reason", "domain/range-clock:rangeUsage:reason",
+              "cli-main:parseChoice:reason", "services/job-grant:usage:reason",
+              'cli-contract:parserUsage:parserReasons[error.code] ?? "invalid-argument"']).toContain(forwarded);
           }
         }
       }

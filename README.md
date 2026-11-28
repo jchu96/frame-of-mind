@@ -675,7 +675,7 @@ A usage refusal exits 2 in either output mode. With `--json`, branch on `error.d
 | Command or arguments | `missing-command` (plain mode), `unknown-command`, `unknown-option`, `missing-argument`, `excess-arguments`, `missing-required-option`, `missing-option-value`, `invalid-argument` |
 | Machine output | `invalid-schema-version`, `duplicate-schema-version`, `force-with-json`, `json-output-not-selected`, `version-arguments`, `help-with-json`, `mcp-with-json` |
 | Scratch cleanup | `remove-requires-scratch` |
-| Input and context selection | `invalid-source`, `missing-meeting-id`, `missing-video`, `conflicting-video-inputs`, `recording-url-requires-bluedot`, `missing-context-file`, `context-file-requires-file-source`, `invalid-granola-transport`, `transport-requires-granola` |
+| Input and context selection | `invalid-source`, `missing-meeting-id`, `missing-video`, `conflicting-video-inputs`, `recording-url-source-mismatch`, `missing-context-file`, `context-file-requires-file-source`, `invalid-context-transport`, `transport-source-mismatch` |
 | Analysis settings | `invalid-depth`, `invalid-recipe-file`, `invalid-label`, `invalid-max-moments`, `invalid-concurrency` |
 | Model, upload and transcription | `invalid-model`, `invalid-retention`, `conflicting-retention`, `invalid-remote-file`, `remote-file-requires-video`, `invalid-transcript-language`, `conflicting-transcript-language`, `invalid-transcript-offset` |
 | Reference notes | `too-many-notes`, `invalid-note`, `duplicate-note`, `invalid-note-format`, `invalid-note-file`, `note-too-large`, `invalid-note-encoding`, `binary-note` |
