@@ -47,6 +47,18 @@ describe("Studio review exports", () => {
     expect(versionedRunImportSchema.safeParse(buildReviewBundle(run)).success).toBe(true);
   });
 
+  test("keeps the still times and the unread-screen-text mark of a record", () => {
+    const run = storedFixture();
+    const item = run.analysis.items[0]!;
+    expect(buildReviewBundle(run).analysis.items[0]).not.toHaveProperty("stillTimes");
+    expect(buildReviewBundle(run).analysis.items[0]).not.toHaveProperty("screenTextNotFromStill");
+    item.stillTimes = [item.candidate.start];
+    item.screenTextNotFromStill = true;
+    const bundle = buildReviewBundle(run);
+    expect(bundle.analysis.items[0]).toMatchObject({ stillTimes: [item.candidate.start], screenTextNotFromStill: true });
+    expect(versionedRunImportSchema.safeParse(bundle).success).toBe(true);
+  });
+
   test("carries the sanitized outcome into the bundle and Markdown when present", () => {
     const run = storedFixture();
     run.outcome = {

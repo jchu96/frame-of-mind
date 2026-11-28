@@ -7,6 +7,8 @@ function optional<T>(value: T | undefined, key: string): Record<string, T> {
 
 function allowlistedItem(item: AnalysisItem) {
   return {
+    ...(item.stillTimes ? { stillTimes: [...item.stillTimes] } : {}),
+    ...optional(item.screenTextNotFromStill, "screenTextNotFromStill"),
     candidate: {
       start: item.candidate.start,
       end: item.candidate.end,
