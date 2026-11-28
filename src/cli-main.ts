@@ -1,3 +1,4 @@
+import { rangeFields } from "./domain/range-fields.js";
 import { rangeUsage } from "./domain/range-clock.js";
 import { isRanged } from "./services/source-recording.js";
 import { applicationSetting } from "./lib/application-settings.js";
@@ -380,6 +381,7 @@ program
           const remote = result.manifest.remoteFile;
           const tokens = measuredTotal(result.manifest.tokenUsage);
           writeDocument({
+            ...rangeFields.strip().parse(result.manifest),
             runFolder: resolve(result.directory),
             retention: analyzeOptions.retention,
             ...(tokens && { tokens }),

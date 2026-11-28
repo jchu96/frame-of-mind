@@ -1,3 +1,4 @@
+import { runClockSchema } from "../../../../src/domain/clock.js";
 import { rangeFields } from "../../../../src/domain/range-fields.js";
 import { boundSchema, exactSpanSchema } from "../../../../src/domain/source-bound.js";
 import type { StoredRun } from "../../shared/types.js";
@@ -89,6 +90,7 @@ function allowlistedManifest(run: StoredRun) {
   const manifest = run.manifest;
   const base = {
     ...rangeFields.strip().parse(manifest),
+    ...(manifest.clock && {clock:runClockSchema.parse(manifest.clock)}),
     schemaVersion: manifest.schemaVersion,
     toolVersion: manifest.toolVersion,
     promptRevision: manifest.promptRevision,
@@ -122,6 +124,7 @@ function allowlistedManifest(run: StoredRun) {
     ...(manifest.derivedTranscript ? { derivedTranscript: {
       origin: manifest.derivedTranscript.origin,
       model: manifest.derivedTranscript.model,
+      ...optional(manifest.derivedTranscript.requestedLanguage, "requestedLanguage"),
       sha256: manifest.derivedTranscript.sha256,
     } } : {}),
     ...(manifest.promptProvenance ? { promptProvenance: {

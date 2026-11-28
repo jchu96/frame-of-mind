@@ -13,7 +13,7 @@ export class SourceReceipt {
   constructor(readonly clock: RangeClock, readonly recordingSha256: string, readonly maxRangeSeconds: number) {}
 
   cover(from: bigint, to: bigint) {
-    if (from < to) this.covered.push([from, to]);
+    if (this.clock.lengthKnown && from < to) this.covered.push([from, to]);
   }
   document() {
     const {clock} = this;

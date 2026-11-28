@@ -242,7 +242,7 @@ describe("original-language transcription", () => {
         createContextSource:vi.fn(),createAnalyzer:() => analyzer,extractScreenshot:async () => false,
         calibrateClipClock: async () => ({model:"gemini-test",result:mode,checkedAt:"2026-01-01T00:00:00Z",
           evidence:{flashFileSeconds:27,clipStartSeconds:20,reportedSeconds:mode === "relative" ? 7 : 27}})});
-      const run = await orchestrator.analyze({contextMode:"none",video:f.input,outputRoot:join(f.root,"runs"),apiKey:"stand-in",
+      const run = await orchestrator.analyze({contextMode:"none",video:f.input,outputRoot:join(f.root,"runs"),apiKey:"test-key",
         from:origin+"f",to:String(origin+Math.ceil(40*num/den))+"f", timelineOffset:"3600",
         recipe:{id:"requirements",label:"fixture",description:"fixture",indexInstruction:"fixture",interrogationInstruction:"fixture"},
         customRecipe:false,recipeSha256:"a".repeat(64),recipeRevision:"fixture",maxIncidents:1,screenshots:false,derivedTranscript:false});
