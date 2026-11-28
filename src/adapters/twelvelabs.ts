@@ -59,7 +59,7 @@ const segment = z.object({start_time:z.number().nonnegative(),end_time:z.number(
 function candidatesFrom(data:unknown, partial:boolean, defs:SegmentDefinitions, clock:RangeClock, sha:string) {
   const identity = recordingIdentity(clock,sha);
   const document = {schemaVersion:1 as const,recording:identity,candidates:[] as Candidate[]};
-  const groups = z.record(z.string(),z.array(z.unknown())).safeParse(data);
+  const groups = z.record(z.string(),z.unknown()).safeParse(data);
   if (!groups.success) throw fault("propose","invalid-reply");
   for (const def of defs) {
     const rows = groups.data[def.id];
@@ -72,6 +72,10 @@ function candidatesFrom(data:unknown, partial:boolean, defs:SegmentDefinitions, 
       const parsed = segment.safeParse(raw);
       if (!parsed.success) { if (partial) continue; throw fault("propose","invalid-reply"); }
       const parent = parsed.data;
+      if (parent.start_time >= parent.end_time) {
+        if (partial) continue;
+        throw fault("propose","invalid-reply");
+      }
       const events:{value:unknown; names:string[]}[] = [];
       if (!timed.length) events.push({value:{...parent.metadata,start_time:parent.start_time,end_time:parent.end_time},names:def.fields.map(f=>f.name)});
       for (const field of timed) {

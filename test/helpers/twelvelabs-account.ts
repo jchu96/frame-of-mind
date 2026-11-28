@@ -16,6 +16,7 @@ export class TwelveLabsAccount {
   unreadableLinks = false;
   linked = false;
   partial = false;
+  malformedGroup = false;
   empty = false;
   queued = false;
   quotaAfter = Infinity;
@@ -90,7 +91,7 @@ export class TwelveLabsAccount {
       const segments = def?.fields.some(f=>f.type==="time_array") ? [{start_time:1,end_time:5,metadata:{
         lines:[{start_time:1,end_time:2,line:"First."},{start_time:3,end_time:5,line:"Next."}]}}] : this.segments;
       return Response.json({task_id:taskId,custom_id:task.custom_id,status:this.queued ? "processing" : "ready",
-        result:{data:JSON.stringify(def ? {[def.id]:this.empty ? [] : segments} : verdict)},
+        result:{data:JSON.stringify(def ? {[def.id]:this.empty ? [] : segments,...(this.malformedGroup && {incomplete:null})} : verdict)},
         ...(this.partial && def && {error:{message:"The result may be incomplete."}})});
     }
     if (path === "/analyze" && method === "POST") {

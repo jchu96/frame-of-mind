@@ -148,7 +148,11 @@ it.each([true,false])("default-queue-fallback chosen=%s",async chosen=>{
 it("ready-with-error keeps validated rows and reports partial coverage",async()=>{
   const f=await fixture();
   f.account.partial=true;
-  const result=await f.run();
+  f.account.malformedGroup=true;
+  const fields = [{type:"string",name:"reason",description:"Evidence."}];
+  const result=await f.run({recipe:{id:"fixture",label:"Fixture",description:"Fixture.",indexInstruction:"Index fixture.",
+    interrogationInstruction:"Grade fixture.",twelveLabsSegments:[{id:"moments",description:"Moments.",fields},
+      {id:"incomplete",description:"Other moments.",fields}]}});
   expect(result.outcome.status).toBe("partial");
   expect(result.manifest).toMatchObject({enginePlan:{reason:null},engineCalls:expect.arrayContaining([expect.objectContaining({role:"proposer",result:"partial",reason:"proposal-incomplete"})])});
   expect(f.events.join("\n")).toContain("proposal-incomplete");
