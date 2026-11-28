@@ -77,7 +77,14 @@ function selectSchema(args: string[]) {
 
 export async function runCli(root: Command, args: string[]) {
   const parse = () => parseCli(root, args);
-  return ["analyze", "transcribe", "calibrate"].includes(args[0] ?? "") ? withMediaTransfer(parse) : parse();
+  // Machine flags can precede the command, including a two-token schema selection.
+  let i = 0;
+  while (args[i] === "--json" || args[i]?.startsWith("--schema-version=") || args[i] === "--schema-version") {
+    i += args[i] === "--schema-version" ? 2 : 1;
+  }
+  const command = args[i];
+  return root.commands.length && (command === "analyze" || command === "transcribe" || command === "calibrate")
+    ? withMediaTransfer(parse) : parse();
 }
 
 async function parseCli(root: Command, args: string[]) {

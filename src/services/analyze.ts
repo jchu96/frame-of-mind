@@ -1619,7 +1619,8 @@ export class AnalysisOrchestrator {
     } catch (error) {
       if (preparing && preparationDetails() && !execution.signal?.aborted) {
         const source = preparing.receipt?.document() ?? {recordingSha256:preparing.recordingSha256, coverage:{full:false, covered:[]}};
-        throw preparationError(error, source, line => process.stderr.write(line + "\n"));
+        const tell = execution.jobScratchRoot ? undefined : (line: string) => process.stderr.write(line + "\n");
+        throw preparationError(error, source, tell, !ranged);
       }
       throw error;
     } finally {

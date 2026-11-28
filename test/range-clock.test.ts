@@ -47,7 +47,7 @@ test.each([
   [pal, "1.0001", undefined, "Invalid range bound."],
   [pal, "-1", undefined, "Invalid range bound."],
 ] satisfies Array<[SourceGrid, string | undefined, string | undefined, string]>)("refuses an invalid interval with a stable reason", (grid, from, to, reason) => {
-  expect(() => RangeClock.resolve(grid, { from, to })).toThrow(expect.objectContaining({ code: "USAGE", details: { reason } }));
+  expect(() => RangeClock.resolve(grid, { from, to })).toThrow(expect.objectContaining({ code: "USAGE", details: { reason, ...(reason === "no-video-stream" && {phase:"prepare", sent:false}) } }));
 });
 
 test.each([[pal, "1f", 51n], [ntsc, "31f", 90n]] as const)("keeps a fractional source origin through a two-second model reading", (grid, from, frame) => {

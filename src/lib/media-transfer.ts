@@ -1,7 +1,7 @@
 import { ContractError } from "../domain/contract-error.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-const transfers = new AsyncLocalStorage<{started: boolean}>();
+const transfers = new AsyncLocalStorage<{started: boolean; source?: Record<string, unknown>}>();
 
 /** One command owns the history of all its uploads, including calibration and retries. */
 export function withMediaTransfer<T>(work: () => Promise<T>): Promise<T> {
@@ -18,8 +18,11 @@ export function withMediaTransfer<T>(work: () => Promise<T>): Promise<T> {
   return transfers.getStore() ? run() : transfers.run({started:false}, run);
 }
 
-export function preparationDetails() {
-  if (transfers.getStore()?.started === false) return {phase:"prepare", sent:false} as const;
+export function preparationDetails(source?: Record<string, unknown>) {
+  const transfer = transfers.getStore();
+  if (!transfer || transfer.started) return;
+  if (source) transfer.source = source;
+  return {...transfer.source, phase:"prepare", sent:false} as const;
 }
 
 export function mediaRequestStarted() {

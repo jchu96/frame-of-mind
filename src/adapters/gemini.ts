@@ -409,6 +409,9 @@ export class GeminiVideoAnalyzer {
     moments: IndexedMoment[];
   }> {
     const audio = file.mimeType?.startsWith("audio/");
+    const indexTask = audio
+      ? "Listen to the recording and index potentially relevant moments using audible evidence."
+      : "Watch the entire screen recording and build an index of every potentially relevant moment.";
     if (!meeting) {
       return this.generateStructured({
         model: this.model,
@@ -447,7 +450,7 @@ export class GeminiVideoAnalyzer {
                     : "Apply the selected recipe broadly while requiring direct recording evidence.",
                 ),
                 promptSection("task", [
-                  "Watch the entire screen recording and build an index of every potentially relevant moment.",
+                  indexTask,
                   "For each candidate give precise start/end timestamps, speaker only when directly audible or visible, UI surface, kind, one-line summary, and importance.",
                   "Describe the direct audio and visual evidence before deciding why a moment is relevant.",
                   "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
@@ -502,7 +505,7 @@ export class GeminiVideoAnalyzer {
                   : "Apply the selected recipe broadly while requiring direct meeting evidence.",
               ),
               promptSection("task", [
-                "Watch the entire screen recording and build an index of every potentially relevant moment.",
+                indexTask,
                 "For each candidate give precise start/end timestamps, speaker when known, UI surface, kind, one-line summary, and importance.",
                 "Describe the direct audio and visual evidence before deciding why a moment is relevant.",
                 "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
@@ -633,7 +636,7 @@ export class GeminiVideoAnalyzer {
                 "Inspect the clip closely and produce one structured analysis record.",
                 ...(rangeSeconds !== undefined ? ["Report activity already under way at cut zero as a continuation. Put times only in the time fields and none in prose. Leave room for the timing note: at most 9,900 characters in confidenceNotes."] : []),
                 `Only include appUrl when a browser address bar is visible and fully readable in ${stills ? "the cited still" : "this clip"}. Never infer, repair, or invent a URL.`,
-                ...(stills ? [
+                ...(audio ? ["Use audible evidence and attribute spoken quotations. Omit screen text, visible surfaces and URLs."] : stills ? [
                   "Use neutral label/value details appropriate to the recipe. Record only observed steps. Use the clip for context and audio.",
                   "Quote screen words only when you can read them in one attached, labelled still that shows the event. Preserve case, digits and punctuation.",
                   "Use that one still for every screen quotation in the record, in any field: titles, prose, details and visible URLs. Cite its label in evidence.timestamp.",

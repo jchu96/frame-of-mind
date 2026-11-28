@@ -69,7 +69,7 @@ describe("sanitize", () => {
         `);
         const run = spawnSync("bun", ["--no-env-file", "--preload", preload, resolve("src/cli.ts"),
           "analyze", "--source", "none", "--video", join(root, "video.mp4"), "--output", output,
-          "--no-derived-transcript", "--no-screenshots",
+          "--no-derived-transcript", "--no-screenshots", "--no-calibrate",
           ...(["lookup", "generation"].includes(phase) ? ["--remote-file", "files/test"] : []),
         ], { cwd: root, encoding: "utf8", timeout: 20_000,
           env: { PATH: process.env.PATH, HOME: root, GEMINI_API_KEY: "synthetic-key", TZ: "UTC" },
@@ -79,9 +79,12 @@ describe("sanitize", () => {
         if (conflict) expect(run.stderr).not.toMatch(/refused|expired|key belongs/);
         expect(run.stderr).toContain("HTTP 403");
         const receipts = (await readdir(output, { recursive: true })).filter(path => path.endsWith("failure-manifest.json"));
-        expect(receipts).toHaveLength(1);
-        const receipt = await readFile(join(output, receipts[0]!), "utf8");
-        expect(JSON.parse(receipt).error.provider).toEqual({ class: conflict ? "other" : "refused", status: 403 });
+        expect(receipts).toHaveLength(phase === "start" ? 0 : 1);
+        let receipt = "";
+        if (receipts.length) {
+          receipt = await readFile(join(output, receipts[0]!), "utf8");
+          expect(JSON.parse(receipt).error.provider).toEqual({ class: conflict ? "other" : "refused", status: 403 });
+        }
         for (const surface of [run.stdout, run.stderr, receipt]) {
           expect(surface).not.toContain(sentinel);
           expect(surface).not.toContain("key=");

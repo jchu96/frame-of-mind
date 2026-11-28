@@ -64,10 +64,13 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       require('node:module').syncBuiltinESMExports();
       global.fetch = async (_url, init) => {
         if (!process.env.CONSUMER_FIXTURE) throw Error('offline fixture');
-        const matched = new Headers(init.headers).get("x-goog-api-key") === process.env.FIXTURE_ANSWER;
-        fs.writeFileSync("consumer-result", matched ? "accepted" : "wrong source");
-        if (process.env.FINALIZE_FIXTURE && new Headers(init.headers).get("x-goog-upload-command") === "start") {
-          return new Response(null, {headers: {"x-goog-upload-url": "https://generativelanguage.googleapis.com/upload/v1beta/files?upload_id=fixture"}});
+        const headers = new Headers(init.headers);
+        if (headers.get("x-goog-upload-command") === "start") {
+          const matched = headers.get("x-goog-api-key") === process.env.FIXTURE_ANSWER;
+          fs.writeFileSync("consumer-result", matched ? "accepted" : "wrong source");
+          if (process.env.FINALIZE_FIXTURE) {
+            return new Response(null, {headers: {"x-goog-upload-url": "https://generativelanguage.googleapis.com/upload/v1beta/files?upload_id=fixture"}});
+          }
         }
         return new Response(null, {status: 403});
       };
