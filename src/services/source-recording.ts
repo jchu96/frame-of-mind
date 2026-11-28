@@ -20,6 +20,13 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
     options.onSourceResolved?.(clock);
     enforceRangeLimit(clock);
   };
+  const reportHeader = () => tell(`Cutting source [${options.from ?? "0"},${options.to ?? "EOF"}): seek — reading stream headers`);
+  let headerTimer: ReturnType<typeof setInterval> | undefined;
+  if (ranged) {
+    reportHeader();
+    headerTimer = setInterval(reportHeader, 30_000);
+    headerTimer.unref();
+  }
   let tracks: Awaited<ReturnType<typeof recordingTracks>>;
   try {
     tracks = await recordingTracks(source, signal);
@@ -35,6 +42,8 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
       }
     }
     throw error;
+  } finally {
+    clearInterval(headerTimer);
   }
   if (needs === "audio" && !tracks.audio) throw new ContractError("DECODE_FAILED", "The recording has no audio track.");
   if (needs === "video" && !tracks.video) {

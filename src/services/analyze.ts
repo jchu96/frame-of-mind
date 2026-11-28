@@ -920,7 +920,10 @@ export class AnalysisOrchestrator {
         if (runProseTime) await reportWarning(progress,{kind:"warning",stage:"indexing",message:proseTimeNote});
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
-        const inRange = duration === undefined ? index.moments : index.moments.filter(candidate => timestampToSeconds(candidate.start) < duration && modelSpan(sourceClock, timestampToSeconds(candidate.start), timestampToSeconds(candidate.end)));
+        const inRange = index.moments.filter(candidate => {
+          const start = timestampToSeconds(candidate.start);
+          return (duration === undefined || start < duration) && modelSpan(sourceClock,start,timestampToSeconds(candidate.end));
+        });
         const outOfRange = index.moments.length - inRange.length;
         const spanOf = (c: IndexedMoment) => modelSpan(sourceClock, timestampToSeconds(c.start), timestampToSeconds(c.end));
         const candidates = selectCandidates(inRange, options.maxIncidents);
@@ -1166,7 +1169,7 @@ export class AnalysisOrchestrator {
             indexed: index.moments.length,
             selected: candidates.length,
             omittedByLimit,
-            ...(duration !== undefined ? { outOfRange } : {}),
+            ...(duration !== undefined || outOfRange > 0 ? { outOfRange } : {}),
             validated: items.length,
             accepted: items.filter((item) => item.result.accepted).length,
             rejected: items.filter((item) => !item.result.accepted).length,

@@ -125,3 +125,34 @@ it.each([false,true])("analyze resolves the caller's range once in text and JSON
     await rm(root,{recursive:true,force:true});
   }
 });
+
+it("returns each range usage reason before requesting an upload", async () => {
+  const root = await mkdtemp(join(tmpdir(),"range-error-"));
+  const previousExit = process.exitCode;
+  try {
+    const video=join(root,"synthetic.mp4");
+    await writeFile(video,"fixture");
+    vi.stubEnv("GEMINI_API_KEY","test-key");
+    vi.stubEnv("SENTRY_DSN","");
+    const upload = vi.fn();
+    vi.mocked(GeminiVideoAnalyzer).mockImplementation(class {upload=upload;} as never);
+    vi.spyOn(source,"withSourceRecording").mockImplementation(fixtureSource(() => 60,{num:30000,den:1001}));
+    const out = vi.spyOn(process.stdout,"write").mockImplementation(() => true);
+    const err = vi.spyOn(process.stderr,"write").mockImplementation(() => true);
+    for (const [from,to,reason] of [
+      ["2","1","from at or after to"],["0","100","a bound outside the recording"],
+      ["0","1f","a range shorter than the tool can analyse"],["bad","1","Invalid range bound."],
+      ["00:00:00:01","30f","Specify the source drop-frame mode or use frames."],
+    ]) {
+      out.mockClear(); err.mockClear();
+      await runCli(program,["analyze","--source","none","--video",video,"--output",root,"--from",from!,"--to",to!,"--json"]);
+      expect(JSON.parse(out.mock.calls.map(([s])=>s).join("")).error).toMatchObject({code:"USAGE",message:"Invalid command arguments.",details:{reason}});
+      expect(err.mock.calls.map(([s])=>s).join("")).toContain(reason);
+    }
+    expect(upload).not.toHaveBeenCalled();
+    expect(await readdir(root)).toEqual(["synthetic.mp4"]);
+  } finally {
+    process.exitCode=previousExit;vi.restoreAllMocks();vi.unstubAllEnvs();
+    await rm(root,{recursive:true,force:true});
+  }
+});

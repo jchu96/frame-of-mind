@@ -422,7 +422,10 @@ export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock, pro
     const time = modelTime(fileClock, timestamp);
     const measured = (ms:number, end:boolean): Bound => {
       const rate = boundRate(bound!), den = 1000n * BigInt(rate.den);
-      const n = String((BigInt(ms)*BigInt(rate.num)+(end ? den-1n : 0n))/den);
+      // Label the containing frame at onset and at the last millisecond
+      // of speech for an offset, as for the optional sequence view.
+      const instant = end ? Math.max(0, ms - 1) : ms;
+      const n = String(BigInt(instant) * BigInt(rate.num) / den);
       const origin = {clock:"source" as const, origin:"snap" as const, gridMs:10 as const, precisionMs:proposals!.precisionMs ?? 200 as const};
       return bound!.unit === "tick" ? {...origin, unit:"tick", ticks:n, tick:bound!.tick} : bound!.unit === "sample"
         ? {...origin,unit:"sample",samples:n,rate} : {...origin,unit:"video-frame",frames:n,rate};
