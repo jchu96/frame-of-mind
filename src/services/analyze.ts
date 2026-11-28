@@ -1,3 +1,6 @@
+import { recordingIdentity, readCandidates, type Candidate } from "../domain/candidates.js";
+import { loadCandidatesFile } from "../adapters/candidates-file.js";
+import { proposalWindow } from "./proposal-windows.js";
 import { rangeTranscript } from "./range-context.js";
 import { rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { type Bound, boundIndex, boundMillis, humanTime, modelBound, modelSpan, sourceBound } from "../domain/source-bound.js";
@@ -117,6 +120,7 @@ const TRANSCRIPTION_WINDOW_ATTEMPTS = 2;
 const TRANSCRIPTION_WINDOW_RETRY_MS = 20_000;
 
 interface AnalyzeOptionsBase extends RangeRequest {
+  candidatesFile?: string;
   snapSettings?: SnapSettings;
   timelineOffset?: string;
   timecodeRate?: string;
@@ -487,6 +491,9 @@ export class AnalysisOrchestrator {
       return await this.sourceRecording(originalPath, {...options,signal:execution.signal,onSourceResolved:resolved}, "video",
         line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio) => {
       const receipt = preparing?.receipt ?? resolved(sourceClock);
+      const recording = recordingIdentity(sourceClock, recordingSha256);
+      const fileRows = options.candidatesFile === undefined ? undefined :
+        readCandidates(await loadCandidatesFile(options.candidatesFile), recording, "file", sourceClock.observedEnd);
       const uploadedCutSha256 = ranged ? await sha256File(localVideo) : undefined;
       const recordingSizeBytes = (await stat(localVideo)).size;
       if (recordingSizeBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
@@ -847,7 +854,15 @@ export class AnalysisOrchestrator {
           clock.transcriptWindow = window.windowed ? "windowed" : "not-windowed";
           if (!window.windowed) await reportWarning(progress, { kind: "warning", stage: "indexing", message: "transcript not windowed: timestamped lines, a known video duration, and exact millisecond alignment are required." });
         }
-        const index = await tracer.span({
+        const fileProposals = new Map<IndexedMoment, Candidate>();
+        for (const row of fileRows ?? []) {
+          const window = proposalWindow(row, sourceClock);
+          if (window) fileProposals.set(window, row);
+        }
+        const index: AnalysisIndex = fileRows ? {
+          matchNotes: "Candidates supplied in a file.",
+          moments: [...fileProposals.keys()],
+        } : await tracer.span({
           op: "gen_ai.chat",
           name: "gemini index",
           attributes: chatAttributes,
@@ -875,10 +890,10 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
         let alignment: RunManifest["transcriptAlignment"] | undefined;
         if (hasContext) {
-          if (!isMeetingAnalysisIndex(index)) {
+          if (!fileRows && !isMeetingAnalysisIndex(index)) {
             throw new Error("Gemini meeting analysis omitted transcript alignment metadata.");
           }
-          if (!index.isRelevantCall) {
+          if (isMeetingAnalysisIndex(index) && !index.isRelevantCall) {
             throw new Error(
               "Recording/transcript mismatch. Verify that the provider meeting ID and local recording refer to the same call.",
             );
@@ -898,7 +913,9 @@ export class AnalysisOrchestrator {
                 rationale: "Transcript derived from this recording's audio; offset is 0 by construction.",
               }
             : options.transcriptOffsetSeconds === undefined
-              ? {
+              ? !isMeetingAnalysisIndex(index) ? {
+                  offsetSeconds: 0, method: "none", confidence: "none", rationale: "File input supplies no transcript alignment.",
+                } : {
                   offsetSeconds: index.transcriptAlignment.offsetSeconds,
                   method: index.transcriptAlignment.confidence === "none" ? "none" : "model",
                   confidence: index.transcriptAlignment.confidence,
@@ -924,9 +941,13 @@ export class AnalysisOrchestrator {
           const start = timestampToSeconds(candidate.start);
           return (duration === undefined || start < duration) && modelSpan(sourceClock,start,timestampToSeconds(candidate.end));
         });
-        const outOfRange = index.moments.length - inRange.length;
+        const indexedCount = fileRows?.length ?? index.moments.length;
+        const outOfRange = indexedCount - inRange.length;
         const spanOf = (c: IndexedMoment) => modelSpan(sourceClock, timestampToSeconds(c.start), timestampToSeconds(c.end));
-        const candidates = selectCandidates(inRange, options.maxIncidents);
+        const candidates = fileRows
+          ? [...inRange].sort((a,b) => (fileProposals.get(b)!.score ?? -Infinity) - (fileProposals.get(a)!.score ?? -Infinity))
+              .slice(0, options.maxIncidents).sort((a,b) => fileProposals.get(a)!.start - fileProposals.get(b)!.start)
+          : selectCandidates(inRange, options.maxIncidents);
         failurePhase = "detail";
         await report(progress, {
           kind: "stage",
@@ -1166,7 +1187,7 @@ export class AnalysisOrchestrator {
               ? "partial"
               : "complete",
           candidates: {
-            indexed: index.moments.length,
+            indexed: indexedCount,
             selected: candidates.length,
             omittedByLimit,
             ...(duration !== undefined || outOfRange > 0 ? { outOfRange } : {}),

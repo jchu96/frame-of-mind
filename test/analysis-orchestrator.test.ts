@@ -2970,3 +2970,18 @@ describe("consumer run-file contracts", () => {
     expect(result.outcome.failures[0]?.code).toBe("generation_failed");
   });
 });
+
+it("source-identity-before-upload rejects foreign candidates before calibration or analysis upload", async () => {
+  const f = await createFixture();
+  const path = f.options.video! + ".json";
+  await writeFile(path, JSON.stringify({schemaVersion:1, candidates:[], recording:{
+    unit:"video-frame", rate:{num:25,den:1}, length:"180000", recordingSha256:"b".repeat(64),
+  }}));
+  const createAnalyzer = vi.fn(() => f.analyzer);
+  const service = new AnalysisOrchestrator({createContextSource:() => f.context,createAnalyzer});
+  await expect(service.analyze({...f.options,candidatesFile:path})).rejects.toMatchObject({
+    code:"USAGE",details:{reason:"candidate-recording-mismatch"},
+  });
+  expect(createAnalyzer).not.toHaveBeenCalled();
+  expect(f.analyzer.upload).not.toHaveBeenCalled();
+});

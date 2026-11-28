@@ -101,6 +101,7 @@ export interface AnalyzeCliFlags {
   thinkingLevel?: ThinkingLevel;
   output: string;
   maxMoments: string;
+  candidates?: string;
   screenshots: boolean;
   keepUpload?: boolean;
   deleteUpload?: boolean;
@@ -285,6 +286,7 @@ program
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .addOption(new Option("--thinking-level <level>", "Gemini thinking level (default: provider setting)").choices(THINKING_LEVELS))
   .option("-o, --output <directory>", "Artifact root")
+  .option("--candidates <file>", "Grade a candidates document on the original recording clock")
   .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
   .option("--concurrency <n>", "Parallel Gemini detail requests in pass 2 (default 1)")
@@ -552,6 +554,7 @@ export async function buildAnalyzeOptions(
     indexFps: recipeResult.indexFps,
     outputRoot: flags.output ?? defaultOutputRoot(),
     maxIncidents,
+    ...(flags.candidates !== undefined && {candidatesFile: flags.candidates}),
     detailConcurrency,
     screenshots: flags.screenshots,
     keepUpload: retention === "provider",

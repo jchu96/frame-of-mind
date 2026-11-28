@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ContractError } from "./contract-error.js";
 import { rateSchema, sameRate } from "./media-clock.js";
 import { indexSchema } from "./source-bound.js";
-import type { SourceGrid } from "./range-clock.js";
+import type { RangeClock } from "./range-clock.js";
 
 const count = z.int().nonnegative();
 const ms = z.int().positive();
@@ -14,7 +14,7 @@ const identity = { recordingSha256: z.string().regex(/^[a-f0-9]{64}$/), length: 
 export const recordingSchema = z.discriminatedUnion("unit", [
   z.strictObject({ ...identity, unit: z.literal("video-frame"), rate: reducedRatio }),
   z.strictObject({ ...identity, unit: z.literal("sample"), rate: reducedRatio }),
-  z.strictObject({ ...identity, unit: z.literal("tick"), tick: reducedRatio }),
+  z.strictObject({ ...identity, unit: z.literal("tick"), length: indexSchema.nullable(), tick: reducedRatio }),
 ]);
 const passSchema = z.strictObject({
   pass: z.int().positive(), edge: z.enum(["start", "end"]), at: count,
@@ -32,17 +32,19 @@ export type Candidate = z.infer<typeof candidateSchema>;
 export type Actor = z.infer<typeof actorSchema>;
 export type CandidateRecording = z.infer<typeof recordingSchema>;
 
-export function recordingIdentity(grid: SourceGrid, recordingSha256: string): CandidateRecording {
+export function recordingIdentity(clock: RangeClock, recordingSha256: string): CandidateRecording {
+  const { grid } = clock;
   const common = { recordingSha256, length: String(grid.length) };
-  if (grid.unit === "ticks") return { ...common, unit: "tick", tick: { num: grid.rate.den, den: grid.rate.num } };
+  if (grid.unit === "ticks") return { ...common, unit: "tick", length: clock.lengthKnown ? common.length : null, tick: { num: grid.rate.den, den: grid.rate.num } };
   return { ...common, unit: grid.unit === "frames" ? "video-frame" : "sample", rate: grid.rate };
 }
 
 const ratioOf = (r: CandidateRecording) => r.unit === "tick" ? r.tick : r.rate;
 
 function validChain(row: Candidate, recording: CandidateRecording): boolean {
-  const length = BigInt(recording.length);
-  if (row.start >= row.end || BigInt(row.end) > length) return false;
+  const length = recording.length === null ? undefined : BigInt(recording.length);
+  const outside = (n: number) => length !== undefined && BigInt(n) > length;
+  if (row.start >= row.end || outside(row.end)) return false;
   const ratio = ratioOf(recording);
   const numerator = BigInt(recording.unit === "tick" ? ratio.den : ratio.num);
   const denominator = BigInt(recording.unit === "tick" ? ratio.num : ratio.den);
@@ -54,7 +56,7 @@ function validChain(row: Candidate, recording: CandidateRecording): boolean {
     const [a, b] = row.chain;
     if (!a || !b || a.edge !== "start" || b.edge !== "end" || a.pass !== 1 || b.pass !== 2 ||
         a.basis !== "model" || b.basis !== "model" || a.precisionMs !== 1000 || b.precisionMs !== 1000 ||
-        a.by.engine !== b.by.engine || a.by.model !== b.by.model || a.at >= b.at || BigInt(b.at) > length) return false;
+        a.by.engine !== b.by.engine || a.by.model !== b.by.model || a.at >= b.at || outside(b.at)) return false;
     const width = BigInt(row.end) - BigInt(row.start);
     if (BigInt(a.at) < BigInt(row.start) - width || BigInt(b.at) > BigInt(row.end) + width) return false;
     at.start = a.at;
@@ -65,7 +67,7 @@ function validChain(row: Candidate, recording: CandidateRecording): boolean {
   for (; i < row.chain.length; i++) {
     const p = row.chain[i]!;
     const edge = p.edge;
-    if (p.pass !== i + 1 || BigInt(p.at) > length || p.precisionMs >= radius[edge]) return false;
+    if (p.pass !== i + 1 || outside(p.at) || p.precisionMs >= radius[edge]) return false;
     const displacement = BigInt(Math.abs(p.at - at[edge])) * denominator * 1000n;
     if (displacement > BigInt(radius[edge] - p.precisionMs) * numerator) return false;
     at[edge] = p.at;
@@ -88,11 +90,14 @@ export const candidatesDocumentSchema = z.strictObject({
 });
 export type CandidatesDocument = z.infer<typeof candidatesDocumentSchema>;
 
-export function readCandidates(value: unknown, local: CandidateRecording, source: "file" | "engine"): Candidate[] {
+export function readCandidates(value: unknown, local: CandidateRecording, source: "file" | "engine", observedEnd?: bigint): Candidate[] {
   const result = candidatesDocumentSchema.safeParse(value);
   if (result.success) {
     const { recording, candidates } = result.data;
-    if (recording.recordingSha256 === local.recordingSha256 && recording.length === local.length &&
+    const positionOutside = local.length === null && candidates.some(row =>
+      observedEnd === undefined || BigInt(row.end) > observedEnd || row.chain.some(p => BigInt(p.at) > observedEnd));
+    if (positionOutside && source === "file") throw new ContractError("USAGE", "Candidate outside the observed recording.", {reason:"invalid-candidates"});
+    if (!positionOutside && recording.recordingSha256 === local.recordingSha256 && (local.length === null || recording.length === local.length) &&
         recording.unit === local.unit && sameRate(ratioOf(recording), ratioOf(local))) return candidates;
   }
   if (source === "engine") throw new ContractError("PROVIDER_REFUSED", "Invalid proposer reply.", { phase: "propose", reason: "invalid-reply" });

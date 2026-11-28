@@ -64,7 +64,7 @@ function position(value: string, grid: SourceGrid): Fraction {
 export class RangeClock {
   private constructor(readonly grid: SourceGrid, readonly from: bigint, readonly to: bigint,
     readonly requestedRange: { from: string | null; to: string | null },
-    readonly edgeMoved: { from: boolean; to: boolean }, readonly lengthKnown = true) {}
+    readonly edgeMoved: { from: boolean; to: boolean }, readonly lengthKnown = true, readonly frameTicks: readonly number[] = []) {}
 
   static resolve(grid: SourceGrid, request: RangeRequest): RangeClock {
     const start = request.from === undefined ? { n: 0n, d: 1n } : position(request.from, grid);
@@ -81,9 +81,14 @@ export class RangeClock {
       { from: from * start.d !== start.n, to: to * end.d !== end.n });
   }
 
-  static wholeTicks(tick: FrameRate, length: bigint | undefined, timing: "unproven" | "varying") {
+  static wholeTicks(tick: FrameRate, length: bigint | undefined, timing: NonNullable<SourceGrid["timing"]>, frameTicks: readonly number[] = []) {
     return new RangeClock({unit: "ticks", rate: {num: tick.den, den: tick.num}, length: length ?? 0n, timing},
-      0n, length ?? 0n, {from: null, to: null}, {from: false, to: false}, length !== undefined);
+      0n, length ?? 0n, {from: null, to: null}, {from: false, to: false}, length !== undefined, frameTicks);
+  }
+  get observedEnd(): bigint | undefined {
+    if (this.lengthKnown) return this.to;
+    const last = this.frameTicks.at(-1);
+    return last === undefined ? undefined : BigInt(last) + 1n;
   }
   get cutLength(): bigint | undefined { return this.lengthKnown ? this.to - this.from : undefined; }
   unitsForSeconds(seconds: number, ceil = false) {

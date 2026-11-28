@@ -62,11 +62,16 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
   }
   let clock: RangeClock;
   if (tracks.video) {
+    let frameTicks: number[] = [];
     try {
       const frames = await runRecordingTool(source, "ffprobe", ["-select_streams", String(tracks.video.index), "-count_frames",
         "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames,nb_read_frames:frame=pts,duration,pkt_duration",
         "-of", "json", "fd:"], {signal, timeoutMs:decodeBudget(tracks.seconds)});
-      const {rate, count} = measureTiming(JSON.parse(frames), undefined, true);
+      const timing = JSON.parse(frames);
+      frameTicks = (timing.frames ?? []).map((f: {pts?: number}) => f.pts)
+        .filter((n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)
+        .sort((a: number, b: number) => a - b);
+      const {rate, count} = measureTiming(timing, undefined, true);
       clock = RangeClock.resolve({unit:"frames", rate, length:BigInt(count)}, {});
     }
     catch (error) {
@@ -82,7 +87,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
       const tick = rationalRate(Number(timeBase[1]), Number(timeBase[2]));
       const length = tracks.video.duration_ts;
       const varying = tracks.video.r_frame_rate && tracks.video.avg_frame_rate && tracks.video.r_frame_rate !== tracks.video.avg_frame_rate;
-      clock = RangeClock.wholeTicks(tick, Number.isSafeInteger(length) && length! > 0 ? BigInt(length!) : undefined, varying ? "varying" : "unproven");
+      clock = RangeClock.wholeTicks(tick, Number.isSafeInteger(length) && length! > 0 ? BigInt(length!) : undefined, varying ? "varying" : "unproven", frameTicks);
     }
   } else {
     clock = RangeClock.resolve(await audioGrid(source, tracks.audio!, tracks.seconds, signal), {});
