@@ -223,6 +223,27 @@ it("passes local MOV options before each video input and chooses the requested e
   expect(encodes[1]).toEqual(expect.arrayContaining(["mjpeg", "trim=start_frame=2,setpts=PTS-STARTPTS"]));
 }, processTestTimeout);
 
+it("lets the decode check and the encode of a long recording wait longer than 600 s", async () => {
+  expect(mediaTools.mediaWorkTimeoutMs(Number.NaN)).toBe(600_000);
+  expect(mediaTools.mediaWorkTimeoutMs(0)).toBe(600_000);
+  expect(mediaTools.mediaWorkTimeoutMs(7200)).toBe(15_000_000);
+  // A stand-in two-hour recording: its decode and its encode each need 900 s.
+  await reports({seconds: "7200"});
+  const run = mediaTools.runMediaTool;
+  const waits: Array<number | undefined> = [];
+  vi.spyOn(mediaTools, "runMediaTool").mockImplementation((binary, args, options) => {
+    const work = binary === "ffmpeg" && (args.includes("null") || args.includes("libx264"));
+    if (work) {
+      waits.push(options?.timeoutMs);
+      if ((options?.timeoutMs ?? 600_000) <= 900_000) return Promise.reject(new Error("ffmpeg timed out."));
+    }
+    return run(binary, args, options);
+  });
+  await expect(mediaHelper("proxy", input, {output, height: "64", allowOversize: true})).resolves.toMatchObject({kind: "proxy"});
+  // Source decode, encode, then the decode of the staged output.
+  expect(waits).toEqual([15_000_000, 15_000_000, 15_000_000]);
+}, processTestTimeout);
+
 it("checks projected and measured proxy sizes before publication", async () => {
   const events: string[] = [];
   const make = () => mediaHelper("proxy", input, {output, height: "64", force: true}, undefined, line => events.push(line));

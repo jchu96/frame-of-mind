@@ -13,6 +13,10 @@ Fixed: `slice`, `proxy`, `probe --decode-check`, `verify` and `--timecode-rate f
 "ffprobe timed out" on a long recording when the machine was busy. The frame-timing scan decodes every frame
 and had a fixed 60-second limit. The limit is now 60 seconds plus half a second per second of recording.
 
+Fixed: the decode check and the encode of `slice`, `proxy`, `probe --decode-check` and `verify` had a fixed
+600-second limit, so a proxy of a long recording could be cut off by the clock. The limit is now 600 seconds
+plus two seconds per second of recording.
+
 ## [0.6.6] - 2026-11-28
 
 Screen text a record quotes is now read from a full-size picture, and a quotation the tool cannot tie to one is removed. The transcript recheck is gone. `doctor` says where the provider key came from. Everything added is optional on contract version 1.

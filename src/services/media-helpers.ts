@@ -6,7 +6,7 @@ import { deriveExact, exactTime, fromTicks, offsetTime, parseTimecodeRate, rende
 import { parseFilePosition } from "../domain/clock.js";
 import { MAX_RECORDING_BYTES } from "../lib/files.js";
 import { decodeVideo, inspectVideo, sameRate, type VideoInfo } from "./media-probe.js";
-import { localRecording, localVideoInput, runMediaTool, stageOutput, type Recording } from "./media-tools.js";
+import { localRecording, localVideoInput, mediaWorkTimeoutMs, runMediaTool, stageOutput, type Recording } from "./media-tools.js";
 
 type Position = ExactTime<"source">;
 export type Helper = "probe" | "verify" | "proxy" | "slice" | "frame";
@@ -93,7 +93,8 @@ async function encode(input: Recording, staged: string, info: VideoInfo, from: P
     "-f", "lavfi", "-i", `anullsrc=r=${samples.hz}:cl=mono`, "-filter_complex", filter, "-map", `0:${info.videoIndex}`,
     "-map", "[a]", "-vf", vf, "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
     "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
-    "-ar", "48000", "-ac", "1", "-movflags", "+faststart", ...(label ? ["-timecode", label] : []), staged], {signal});
+    "-ar", "48000", "-ac", "1", "-movflags", "+faststart", ...(label ? ["-timecode", label] : []), staged],
+    {signal, timeoutMs: mediaWorkTimeoutMs(info.approximateSeconds)});
 
   const result = await localRecording(staged);
   const spec = {rate: info.rate, dropFrame: info.dropFrame ?? false, rateOrigin: "media"} as const;
