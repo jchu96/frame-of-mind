@@ -2,8 +2,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
-import { probeFrameRate } from "../src/services/media-probe.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ContractError } from "../src/domain/contract-error.js";
+import { probeFrameRate, timingScanTimeoutMs } from "../src/services/media-probe.js";
+import * as mediaTools from "../src/services/media-tools.js";
 import { verifyDay } from "./clock-oracle.js";
 
 const processTestTimeout = 30_000;
@@ -93,5 +95,36 @@ describe("helper start label", () => {
     expect(() => readStartLabel(["00:01:00;00"], rate)).toThrow();
     expect(() => readStartLabel(["00:00:00:00"], rate, true)).toThrow();
     expect(() => readStartLabel([""], rate)).toThrow();
+  });
+});
+
+describe("timing scan limit", () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+  // A stand-in probe: the header answers at once; the frame scan needs `needsMs`.
+  const slowProbe = (duration: string | undefined, needsMs: number) =>
+    vi.spyOn(mediaTools, "runMediaTool").mockImplementation(async (_binary, args, options = {}) => {
+      if (!args.includes("-count_frames")) return JSON.stringify({ format: duration === undefined ? {} : { duration } });
+      if ((options.timeoutMs ?? 60_000) <= needsMs) throw new ContractError("DECODE_FAILED", "ffprobe timed out.");
+      return output("25/1")();
+    });
+  it("grows with the recording and keeps 60 s when the length is unknown", () => {
+    expect(timingScanTimeoutMs(0)).toBe(60_000);
+    expect(timingScanTimeoutMs(Number.NaN)).toBe(60_000);
+    expect(timingScanTimeoutMs(-5)).toBe(60_000);
+    expect(timingScanTimeoutMs(3600)).toBe(1_860_000);
+    expect(timingScanTimeoutMs(7200.6)).toBe(3_660_500);
+  });
+  it("does not cut a one-hour recording's scan off at 60 s", async () => {
+    const probe = slowProbe("3600.040000", 62_000);
+    await expect(probeFrameRate("synthetic.mp4", "from-media")).resolves.toMatchObject({ rate: { num: 25, den: 1 } });
+    const scan = probe.mock.calls.find(([, args]) => args.includes("-count_frames"))!;
+    expect(scan[2]?.timeoutMs).toBe(timingScanTimeoutMs(3600.04));
+  });
+  it("still stops a scan that outlasts its limit, and a file of unknown length at 60 s", async () => {
+    slowProbe("3600.040000", 2_000_000);
+    await expect(probeFrameRate("synthetic.mp4", "from-media")).rejects.toThrow("within its time limit");
+    vi.restoreAllMocks();
+    slowProbe(undefined, 62_000);
+    await expect(probeFrameRate("synthetic.mp4", "from-media")).rejects.toThrow("within its time limit");
   });
 });

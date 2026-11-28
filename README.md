@@ -675,8 +675,9 @@ The synthetic upload is always deleted independently of recording retention.
 `from-media` also scans every frame's presentation timestamp and duration.
 Matching summary rates alone are insufficient: variable timing, missing timing,
 nonzero origins, and tick-quantized fractional timing are refused. A scan that
-cannot finish within 60 seconds or 32 MiB of probe output is also refused; use
-an explicitly known sequence rate instead.
+cannot finish within its time limit (60 seconds plus half a second per second of
+recording) or 32 MiB of probe output is also refused; use an explicitly known
+sequence rate instead.
 
 Legacy model transcript offsets that cannot be represented exactly in integer
 milliseconds retain their previous context selection without rounding. The run

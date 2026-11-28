@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+Fixed: `slice`, `proxy`, `probe --decode-check`, `verify` and `--timecode-rate from-media` could fail with
+"ffprobe timed out" on a long recording when the machine was busy. The frame-timing scan decodes every frame
+and had a fixed 60-second limit. The limit is now 60 seconds plus half a second per second of recording.
+
 ## [0.6.6] - 2026-11-28
 
 Screen text a record quotes is now read from a full-size picture, and a quotation the tool cannot tie to one is removed. The transcript recheck is gone. `doctor` says where the provider key came from. Everything added is optional on contract version 1.
