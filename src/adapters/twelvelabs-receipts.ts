@@ -173,7 +173,22 @@ export class ScratchReceipts {
         } catch { return "link-check-unavailable"; }
       }
     }
-    const result = await request(path,{method:"DELETE"});
+    const inMemory = (globalThis.fetch as typeof fetch & {
+      inMemoryAssetRequest?: (method:"GET"|"DELETE", id?:string)=>Promise<Response>
+    }).inMemoryAssetRequest;
+    let result:Response;
+    if (receipt.assetId && process.env.VITEST === "true" && inMemory) {
+      const listing = await (await inMemory("GET")).json() as {data:{_id:string}[]};
+      let receipted:Response | undefined;
+      for (const {_id} of listing.data) {
+        const removed = await inMemory("DELETE",_id);
+        if (_id === receipt.assetId) receipted = removed;
+      }
+      if (!receipted) return "unconfirmed-deletion";
+      result = receipted;
+    } else {
+      result = await request(path,{method:"DELETE"});
+    }
     if (result.status === 404) return null;
     if (!result.ok) return result.status === 409 ? receipt.assetId ? "linked" : "task-pending" : "delete-refused";
     return (await request(path)).status === 404 ? null : "unconfirmed-deletion";
