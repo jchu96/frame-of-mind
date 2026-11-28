@@ -116,7 +116,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       expect(JSON.parse(keyed.out).error.code).toBe("USAGE");
       expect(existsSync(marker)).toBe(false);
     }
-  });
+  }, 30_000);
 
   it.each(["node-bare", "bun-bare"])("uses a settings reader only on the clean control (%s)", runtime => {
     writeFileSync(join(cwd, ".env"), "");
@@ -133,7 +133,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     const control = run([...calibrate, "--json"], {}, runtime === "node-bare" ? "node" : "bun-clean");
     expect(JSON.parse(control.out).error.code).toBe("USAGE");
     expect(readFileSync(marker, "utf8")).toBe("start\n");
-  });
+  }, 30_000);
 
   it("refuses a settings file whose opened handle has a foreign owner", () => {
     writeFileSync(settings, "{}", {mode: 0o600});

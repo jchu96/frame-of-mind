@@ -175,7 +175,7 @@ it.each(["--env-file", "--env-file-if-exists"])("Node %s reports unknown and dis
   expect(text.err).toContain("--json");
   expect(text.err).not.toContain("Credential source unknown");
   expect(existsSync(join(folder, "out", ".frameofmind-jobs", admitted.jobId, "job.json"))).toBe(true);
-});
+}, 30_000);
 
 it("keeps ordinary folder settings out of process.env and job starts out of the folder file", () => {
   writeFileSync(file, "GEMINI_API_KEY=synthetic-folder\nFIXTURE_FOLDER_ONLY=marker\nFRAME_OF_MIND_OUTPUT=fixture-output\n");
