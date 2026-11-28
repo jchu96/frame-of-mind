@@ -105,6 +105,22 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  it("key-isolation doctor inspects both keys and starts neither reader", () => {
+    const argv = [fixtureRuntime, reader, "synthetic-argv-marker"];
+    writeFileSync(settings, JSON.stringify({keyCommands:{gemini:argv,twelvelabs:argv}}), {mode:0o600});
+    for (const runtime of ["node", "node-bare"]) {
+      const report = run(["doctor","--json"], {FRAME_OF_MIND_KEY_COMMAND:"[]",FRAME_OF_MIND_TWELVELABS_KEY_COMMAND:"[]"}, runtime);
+      const data = JSON.parse(report.out);
+      expect(data.keys?.twelvelabs).toMatchObject({commandDisabledByEnvironment:true});
+      expect(data.key).toEqual(data.keys.gemini);
+      expect(report.out + report.err).not.toContain("synthetic-argv-marker");
+      expect(existsSync(marker)).toBe(false);
+    }
+    const configured = JSON.parse(run(["doctor","--json"]).out);
+    expect(configured.keys.twelvelabs).toMatchObject({source:"command",present:true,state:"unverified"});
+    expect(existsSync(marker)).toBe(false);
+  });
+
   const calibrate = ["calibrate", "--model", "!"];
   const missing = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_MISSING","message":"key missing."}}\n', err: ""};
   const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}\n', err: ""};
@@ -320,6 +336,20 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}\n', err: ""});
       expect(readdirSync(cwd)).toEqual(before);
       expect(existsSync(join(root, "unexpected-open")), "folder file accessed after command selected").toBe(false);
+    }
+  });
+});
+
+describe("key-isolation", () => {
+  it("keeps both synthetic keys and selectors away from readers, helpers and openers",async()=>{
+    const {childEnvironment,keyCommandEnvironment}=await import("../src/lib/child-env.js");
+    const {spawnSync}=await import("node:child_process");
+    const launch={GEMINI_API_KEY:"synthetic-first",TWELVELABS_API_KEY:"synthetic-second",
+      FRAME_OF_MIND_KEY_COMMAND:'["/synthetic-first"]',FRAME_OF_MIND_TWELVELABS_KEY_COMMAND:'["/synthetic-second"]'};
+    for(const env of [keyCommandEnvironment(launch),keyCommandEnvironment(launch),childEnvironment("media",launch),childEnvironment("opener",launch)]) {
+      const child=spawnSync(process.execPath,["-p","JSON.stringify(Object.keys(process.env))"],{env,encoding:"utf8"});
+      expect(child.status).toBe(0);
+      for(const name of Object.keys(launch)) expect(JSON.parse(child.stdout)).not.toContain(name);
     }
   });
 });
