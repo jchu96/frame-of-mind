@@ -3,6 +3,7 @@ import { extname } from "node:path";
 import { stat } from "node:fs/promises";
 import { deriveExact, exactTime, fromTicks, offsetTime, parseTimecodeRate, renderExactTimecode,
   type ExactTime } from "exact-time";
+import { verifyCutAudio } from "./audio-range.js";
 import { decodeBudget, type SeekPlan } from "./range-scan.js";
 import { requireProof } from "./avc-samples.js";
 import { parseFilePosition } from "../domain/clock.js";
@@ -128,7 +129,7 @@ export async function encodeVideoRange(input: Recording, staged: string, info: V
     "-f", "lavfi", "-i", `anullsrc=r=${samples.hz}:cl=mono`, ...audioInput, "-filter_complex", filter, "-map", `0:${info.videoIndex}`,
     "-map", "[a]", "-vf", vf, "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
     "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
-    ...(seek ? ["-fps_mode", "passthrough", "-frames:v", String(expected.frames), "-movie_timescale", "240000",
+    ...(seek ? ["-fps_mode", "passthrough", "-movie_timescale", "240000",
       "-stats_enc_pre:v", "pipe:1", "-stats_enc_pre_fmt:v", "{ptsi} {tbi}"] : []), "-ar", "48000", "-ac", "1", "-movflags", "+faststart", ...(label ? ["-timecode", label] : []), staged],
     {signal, onSpawn, timeoutMs: phase ? decodeBudget(videoSeconds) : mediaWorkTimeoutMs(info.approximateSeconds)});
   if (seek) {
@@ -147,6 +148,10 @@ export async function encodeVideoRange(input: Recording, staged: string, info: V
   const spec = {rate: info.rate, dropFrame: info.dropFrame ?? false, rateOrigin: "media"} as const;
   const out = await inspectVideo(result, spec, signal, phase ? decodeBudget(Number(expected.frames) * info.rate.den / info.rate.num) : undefined);
   await decodeVideo(result, out, signal, phase ? decodeBudget(out.approximateSeconds) : undefined);
+  if (seek) {
+    const outputSamples = (samples.end - samples.start) * 48000n;
+    await verifyCutAudio(result, (outputSamples + BigInt(hz) - 1n) / BigInt(hz), signal);
+  }
   const measuredLabel = out.fileStartLabel && renderExactTimecode(out.fileStartLabel.value, out.fileStartLabel.dropFrame);
   await verifyStartLabel(label, measuredLabel, signal);
   if (out.duration.frames !== expected.frames || !sameRate(out.rate, info.rate) || out.width !== size.width

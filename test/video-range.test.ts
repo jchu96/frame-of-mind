@@ -4,6 +4,9 @@ import { expect, test } from "vitest";
 import { childEnvironment } from "../src/lib/child-env.js";
 import { mediaHelper } from "../src/services/media-helpers.js";
 import { displayOrder, packetRow } from "../src/services/range-scan.js";
+import { scanRange } from "../src/services/range-scan.js";
+import { localRecording } from "../src/services/media-tools.js";
+import { withAudioRange } from "../src/services/audio-range.js";
 import { withVideoRange } from "../src/services/video-range.js";
 import { mediaFixtures } from "./helpers/media-fixtures.js";
 
@@ -23,6 +26,11 @@ const file = mediaFixtures(() => {
       "-c:v", "libx264", "-pix_fmt", "yuv420p", "-x264-params", "keyint=24:min-keyint=24:scenecut=0:bframes=3:b-adapt=0:open-gop=0",
       "-c:a", "pcm_s16le", "-f", "mov", "-movflags", "+negative_cts_offsets", "-use_editlist", "0", file(name + ".mp4")], frames);
   }
+  media("ffmpeg", ["-i", file("pal.mp4"), "-map", "0:v:0", "-c", "copy", "-use_editlist", "1", file("edited.mp4")]);
+  media("ffmpeg", ["-i", file("pal.mp4"), "-map", "0:v:0", "-c:v", "mpeg4", file("mpeg4.mp4")]);
+  media("ffmpeg", ["-i", file("ntsc.mp4"), "-map", "0:v:0", "-c:v", "libx264", "-x264-params",
+    "open-gop=1:keyint=24:min-keyint=24:scenecut=0:bframes=3:b-adapt=0", "-movflags", "+negative_cts_offsets", "-use_editlist", "0", file("open.mp4")]);
+  media("ffmpeg", ["-f", "lavfi", "-i", "sine=frequency=1200:sample_rate=44100:duration=3", "-c:a", "pcm_s16le", file("native.wav")]);
 });
 function pixels(path: string) {
   return media("ffmpeg", ["-i", path, "-map", "0:v:0", "-f", "rawvideo", "-pix_fmt", "gray", "-"]);
@@ -53,7 +61,7 @@ test.each([["ntsc", 31, 92, 24], ["pal", 1, 32, 0]] as const)(
         expect(actual.equals(expected), `decoded pixels differ at cut frame ${i}`).toBe(true);
       }
       if (name === "ntsc") {
-        // Source samples 49650 through 147347 inclusive. MOV sample duration
+        // MOV sample duration
         // trims AAC encoder delay and tail padding on playback.
         const metadata = JSON.parse(media("ffprobe", ["-select_streams", "a:0", "-show_streams", "-of", "json", path]).toString());
         const stream = metadata.streams[0];
@@ -74,4 +82,27 @@ test("refuses a missing PTS, duplicated display instant and shifted origin", () 
   const grid = { num: 25, den: 1 }, base = { num: 1, den: 25 };
   expect(() => displayOrder([p, { ...p, dts: 1 }], base, grid)).toThrow("duplicate");
   expect(() => displayOrder([{ ...p, pts: 2 }], base, grid)).toThrow("nonzero stream start");
+});
+
+test.each([
+  ["edited.mp4", "MP4 edit list"],
+  ["mpeg4.mp4", "not progressive AVC in MP4"],
+  ["open.mp4", "open group at seek point"],
+])("reports why %s requires the from-zero path", async (name, reason) => {
+  const events: string[] = [];
+  const selection = await scanRange(await localRecording(file(name!)), {from: "31f", to: "92f"}, false, undefined, why => events.push(why));
+  expect(events).toContain(reason);
+  expect(selection.seek).toBeUndefined();
+  expect(selection.clock.from).toBe(31n);
+});
+
+test("audio-only cut preserves every native PCM sample on a moved 44100 Hz interval", async () => {
+  const source = file("native.wav");
+  const raw = (path: string) => media("ffmpeg", ["-i", path, "-map", "0:a:0", "-f", "s16le", "-"]);
+  const pcm = raw(source);
+  await withAudioRange(source, {from: "0.001", to: "1.001"}, () => {}, undefined, async (path, clock) => {
+    expect(clock.from).toBe(44n);
+    expect(clock.to).toBe(44145n);
+    expect(raw(path).equals(pcm.subarray(2 * 44, 2 * 44145))).toBe(true);
+  });
 });

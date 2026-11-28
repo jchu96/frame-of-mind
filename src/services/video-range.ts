@@ -1,7 +1,7 @@
 import { exactTime } from "exact-time";
-import { open, rm } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { join } from "node:path";
-import { createScratch, rangeEncoder, releaseRangeScratch } from "../adapters/scratch.js";
+import { createScratch, discardRangeAttempt, rangeEncoder, releaseRangeScratch } from "../adapters/scratch.js";
 import type { RangeRequest } from "../domain/range-clock.js";
 import { UnprovenCut } from "./avc-samples.js";
 import { encodeVideoRange } from "./media-helpers.js";
@@ -47,7 +47,7 @@ export async function withVideoRange<T>(
         rescan = true;
         selection.reason = error.message;
         selection.seek = undefined;
-        await rm(file, { force: true });
+        discardRangeAttempt(file);
       }
     }
     if (!selection.seek) {

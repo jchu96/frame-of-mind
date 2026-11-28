@@ -4,7 +4,7 @@ import { requireProof, UnprovenCut, verifyAvcSamples, type Packet } from "./avc-
 import { inspectVideo, readStartLabel, sameRate, videoHeader, type VideoInfo } from "./media-probe.js";
 import { localVideoInput, runMediaTool, type Recording } from "./media-tools.js";
 
-export function decodeBudget(seconds: number) { return 60000 + 2000 * Math.ceil(seconds); }
+export function decodeBudget(seconds: number) { return Math.min(2147483647, 60000 + (Number.isFinite(seconds) && seconds > 0 ? 2000 * Math.ceil(seconds) : 0)); }
 function ratio(text?: string) {
   requireProof(text && /^[1-9]\d*\/[1-9]\d*$/.test(text), "missing stream rate or time base");
   const [num, den] = text.split("/").map(Number);
@@ -53,8 +53,9 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
     const base = ratio(video.time_base);
     const args = [...localVideoInput(format.format_name), "-select_streams", String(video.index), "-show_packets",
       "-show_entries", packetEntries, "-of", compact];
-    const rows = await runMediaTool("ffprobe", [...args, input.path], { signal, timeoutMs: decodeBudget(seconds) });
-    const packets = rows.trim().split("\n").map(packetRow);
+    const packets: Packet[] = [];
+    await runMediaTool("ffprobe", [...args, input.path], { signal, timeoutMs: decodeBudget(seconds), onLine: line => { packets.push(packetRow(line)); } });
+    requireProof(packets.length, "missing packet timestamps");
     requireProof(!video.nb_frames || video.nb_frames === "N/A" || String(packets.length) === video.nb_frames, "declared count differs from packet scan");
     const order = displayOrder(packets, base, rate);
     const clock = RangeClock.resolve({ rate, length: BigInt(order.length), unit: "frames", dropFrame: mode }, request);

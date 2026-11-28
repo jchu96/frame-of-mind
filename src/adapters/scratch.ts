@@ -1,6 +1,6 @@
 import { ContractError } from "../domain/contract-error.js";
 import { randomUUID } from "node:crypto";
-import { constants, lstatSync, readFileSync, writeFileSync, readdirSync, realpathSync, rmdirSync, unlinkSync, type BigIntStats } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, writeFileSync, readdirSync, realpathSync, rmdirSync, unlinkSync, type BigIntStats } from "node:fs";
 import { lstat, mkdir, mkdtemp, open, readFile, readdir, readlink, realpath, rm, rmdir, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
@@ -80,9 +80,17 @@ export function rangeEncoder(path: string) {
   const directory = dirname(path);
   const file = identity(lstatSync(path, { bigint: true }));
   const receipt = join(directory, encoderReceipt);
-  const record = (pid: number | null) => writeFileSync(receipt, JSON.stringify({ name: basename(path), file, pid }), { mode: 0o600 });
-  record(null);
-  return (pid: number) => record(pid);
+  writeFileSync(receipt, JSON.stringify({ name: basename(path), file, pid: null }), { flag: "wx", mode: 0o600 });
+  const stamp = identity(lstatSync(receipt, {bigint: true}));
+  return (pid: number) => {
+    const fd = openSync(receipt, constants.O_WRONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      if (identity(fstatSync(fd, {bigint: true})) !== stamp) throw new Error("Encoder receipt changed");
+      // Fixed-width PID text keeps this update a single write with no stale suffix.
+      const record = JSON.stringify({ name: basename(path), file, pid }).padEnd(512);
+      writeFileSync(fd, record);
+    } finally { closeSync(fd); }
+  };
 }
 
 function safeRangeContents(path: string, payload: string[], abandoned: boolean) {
@@ -167,7 +175,6 @@ async function sizeOf(path: string, device: bigint, allowStage: boolean): Promis
 }
 
 const payloadNames = {
-  range: /^cut\.(?:mp4|wav)$/,
   analyze: /^(?:recording\.(?:webm|mp4|m4v|mov|mp3)|derived-audio-\d+\.aac|still-\d+-\d+\.png)$/i,
   transcribe: /^audio-\d+\.aac$/, screenshots: /^frame-\d{3}\.png$/, calibration: /^flash\.mp4$/,
 };
@@ -210,7 +217,8 @@ function removeContents(path: string, kind: Kind, directory: BigIntStats, proof:
       rmdirSync(stage.name);
     } else if (kind === "range") {
       safeRangeContents(".", payload, abandoned);
-      for (const name of payload) unlinkSync(name);
+      for (const name of payload.filter(name => name !== encoderReceipt)) unlinkSync(name);
+      if (payload.includes(encoderReceipt)) unlinkSync(encoderReceipt);
     } else if (kind !== "media-lock") {
       const pattern = payloadNames[kind];
       if (payload.some(name => !pattern.test(name) || !lstatSync(name).isFile())) throw new Error("Unexpected scratch contents");
@@ -279,4 +287,12 @@ export async function reapRangeScratch() {
   for (const name of await readdir(root)) {
     if (match(name, false) === "range") await inspect(join(root, name), "range", true);
   }
+}
+
+export function discardRangeAttempt(file: string) {
+  const root = dirname(file);
+  const files = readdirSync(root).filter(entry => entry !== markerName);
+  safeRangeContents(root, files, false);
+  unlinkSync(file);
+  unlinkSync(join(root, encoderReceipt));
 }
