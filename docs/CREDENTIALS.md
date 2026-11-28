@@ -130,6 +130,12 @@ Retrying does not fix depleted billing. Correct the project/quota state first.
 
 ## Configure the local shell
 
+### Two local engine keys
+
+Ordinary analysis resolves `GEMINI_API_KEY` and `TWELVELABS_API_KEY` independently. Each uses its inherited environment assignment, selected reader, then literal folder assignment. Set `keyCommands.gemini` and/or `keyCommands.twelvelabs` to literal argv arrays in the private account file. The legacy `keyCommand` configures Gemini alone. Mixed forms and duplicate keys are refused. Readers receive neither engine key nor either selector.
+
+`FRAME_OF_MIND_TWELVELABS_KEY_COMMAND` selects the second reader for a clean launch. An inherited `[]` disables that engine’s reader on every launch. A merged launch starts no readers. Doctor shows the source and state for each key without starting a reader or printing arguments. In JSON, `key` remains the Gemini report and `keys` contains both reports.
+
 ### Private local `.env`
 
 On a clean launch, ordinary CLI commands try the inherited `GEMINI_API_KEY`, the operator’s key command,

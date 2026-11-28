@@ -84,6 +84,12 @@
           "commandDisabledByEnvironment": {"const": true, "description": "FRAME_OF_MIND_KEY_COMMAND switched off the key command for this launch."}
         }
       },
+      "keys": {"type":"object","required":["gemini","twelvelabs"],"properties":{"gemini":{"$ref":"#/else/properties/key"},"twelvelabs":{"$ref":"#/else/properties/key"}}},
+      "enginePlan":{"type":"object","required":["planned","expected","used","reason","retention","graderToldClaim"],"properties":{"used":{"type":"null"},"graderToldClaim":{"type":"boolean"}}},
+      "scratchReceipts": {
+        "type": "object", "required": ["path", "readable"], "additionalProperties": false,
+        "properties": {"path": {"type": ["string", "null"]}, "readable": {"type": "boolean"}}
+      },
       "settingsPath": {"type": "string"},
       "artifactRoot": {"type": "string"},
       "toolVersion": {"type": "string"},

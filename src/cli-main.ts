@@ -1,7 +1,8 @@
-import { checkRoles, enginePlan } from "./domain/engine-plan.js";
+import { readScratchReceipts } from "./adapters/twelvelabs-receipts.js";
+import { checkDirectUpload, checkReceiptAccess, checkRoles, DIRECT_UPLOAD_BYTES, disclosure, enginePlan, fallbackMessage, usesTwelveLabs } from "./domain/engine-plan.js";
 import { rangeFields } from "./domain/range-fields.js";
 import { rangeUsage } from "./domain/range-clock.js";
-import { isRanged } from "./services/source-recording.js";
+import { isRanged, withSourceRecording } from "./services/source-recording.js";
 import { applicationSetting } from "./lib/application-settings.js";
 import { KeyCommandRefused } from "./key-command.js";
 import { cliSettings, keyNextStep } from "./cli-settings.js";
@@ -10,7 +11,7 @@ import { mediaCapabilityReport, requireMedia } from "./services/media-capabiliti
 import { capabilities, CliError, writeDocument } from "./cli-contract.js";
 import { OptionError, UsageError, faultCode } from "./domain/contract-error.js";
 import { createHash } from "node:crypto";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Command, Option } from "commander";
 import { z } from "zod";
@@ -105,6 +106,9 @@ export interface AnalyzeCliFlags {
   candidates?: string;
   proposer?: string;
   grader?: string;
+  withholdGraderClaim?: boolean;
+  indexWaitSeconds?: string;
+  twelveLabsShape?: "flat" | "lines";
   dryRun?: boolean;
   screenshots: boolean;
   keepUpload?: boolean;
@@ -149,7 +153,15 @@ program
     }
     const config = cliSettings();
     const key = config.keyReport();
+    const twelve = config.keyReport("twelvelabs");
+    const anyKey = key.present || twelve.present;
     const settingsPath = config.settingsPath();
+    const preview = enginePlan({file:false,model:applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL,
+          retention:resolveRetention({},applicationSetting("FRAME_OF_MIND_UPLOAD_RETENTION")),available:key.present,twelveAvailable:twelve.present,preview:true});
+    const {readable,path} = await readScratchReceipts();
+    const scratchReceipts = {readable,path};
+    checkReceiptAccess(preview,scratchReceipts);
+    const receiptBlock = anyKey && !preview.expected;
     const prerequisites = {
       node: Number(process.versions.node.split(".")[0]) >= 22,
       geminiKey: key.present,
@@ -161,28 +173,28 @@ program
         ({kind, path, sizeBytes: size, ageMs, state, removed, reason: reason ?? null}));
       const checks = [
         { name: "node", required: true, ok: prerequisites.node, detail: process.versions.node },
-        { name: "provider_key", required: true, ok: prerequisites.geminiKey, detail: prerequisites.geminiKey ? "configured" : "missing" },
+        { name: "provider_key", required: true, ok: anyKey, detail: anyKey ? "configured" : "missing" },
         { name: "context_key", required: false, ok: prerequisites.granolaKey, detail: prerequisites.granolaKey ? "configured" : "missing" },
         ...Object.entries(media.tools).map(([name, tool]) => ({
           name, required: false, ok: tool.version !== null, detail: tool.version ?? tool.error!,
         })),
       ];
       writeDocument({
-        ok: checks.every(check => !check.required || check.ok), checks, commands: media.commands.map(({ command: name, capabilities }) => ({ name, capabilities })), leftovers,
+        ok: !receiptBlock && checks.every(check => !check.required || check.ok), checks, commands: media.commands.map(({ command: name, capabilities }) => ({ name, capabilities })), leftovers,
         roots: { mode: "none", file: null },
-        enginePlan:enginePlan({file:false,model:applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL,
-          retention:resolveRetention({},applicationSetting("FRAME_OF_MIND_UPLOAD_RETENTION")),available:key.present,preview:true}),
+        enginePlan:preview, scratchReceipts, keys:{gemini:key,twelvelabs:twelve},
         key, settingsPath, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
         commit: RELEASE_COMMIT,
         cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
       });
-      if (!key.present && (key.commandDisabledByEnvironment || key.source === "unknown" || key.source === "command")) process.exitCode = 1;
+      if (receiptBlock || (!anyKey && (key.commandDisabledByEnvironment || key.source === "unknown" || key.source === "command"))) process.exitCode = 1;
       return;
     }
-    if (!flags.scratch && (!prerequisites.node || !prerequisites.geminiKey)) process.exitCode = 1;
+    if (!flags.scratch && (!prerequisites.node || !anyKey || receiptBlock)) process.exitCode = 1;
     const checks = [
       ["Node >=22", prerequisites.node],
       [`GEMINI_API_KEY (${config.keyLabel()})`, prerequisites.geminiKey],
+      [`TWELVELABS_API_KEY (${config.keyLabel("twelvelabs")})`, twelve.present],
       ["GRANOLA_API_KEY (optional)", prerequisites.granolaKey],
       ["ffmpeg (optional: screenshots, derived transcript, speech snapping)", media.tools.ffmpeg.version],
       ["ffprobe (optional: duration probe, media helpers)", media.tools.ffprobe.version],
@@ -194,6 +206,11 @@ program
         if (key.commandDisabledByEnvironment) process.stdout.write("Key command switched off by FRAME_OF_MIND_KEY_COMMAND.\n");
       }
     }
+    if (twelve.commandDisabledByEnvironment) process.stdout.write("Key command switched off by FRAME_OF_MIND_TWELVELABS_KEY_COMMAND.\n");
+    process.stdout.write(`Twelve Labs scratch receipts ${readable ? "readable" : "unreadable or unsafe"} in ${path ?? "(account folder unavailable)"}.\n`);
+    for (const line of disclosure(preview)) process.stdout.write(line+"\n");
+    if (preview.reason && preview.expected) process.stdout.write(fallbackMessage(preview.reason)+"\n");
+    if (receiptBlock) process.stdout.write("Twelve Labs cannot run until its scratch receipts can be read safely.\n");
     process.stdout.write(
       `Bluedot MCP: ${redactUrlForDisplay(applicationSetting("BLUEDOT_MCP_URL") || DEFAULT_BLUEDOT_MCP_URL)}\n`,
     );
@@ -214,7 +231,7 @@ program
       process.stdout.write(`${command} needs ${capabilities.map(row => row.name).join(", ")}. ${result}.\n`);
     }
     if (settingsPath) process.stdout.write("Settings file: " + JSON.stringify(settingsPath) + "\n");
-    const next = keyNextStep(key, config.commandNextStep());
+    const next = !anyKey && keyNextStep(key, config.commandNextStep());
     if (next) process.stdout.write(next + "\n");
   });
 
@@ -293,8 +310,11 @@ program
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .addOption(new Option("--thinking-level <level>", "Gemini thinking level (default: provider setting)").choices(THINKING_LEVELS))
   .option("-o, --output <directory>", "Artifact root")
-  .option("--proposer <engine>", "Engine that proposes candidate moments (gemini)")
-  .option("--grader <engine>", "Engine that grades candidate windows (gemini)")
+  .option("--proposer <engine>", "Engine that proposes candidate moments (gemini or twelvelabs)")
+  .option("--grader <engine>", "Engine that grades candidate windows (gemini or twelvelabs)")
+  .option("--withhold-grader-claim", "Grade each window without the proposal claim")
+  .option("--index-wait-seconds <n>", "Maximum Twelve Labs queue wait in seconds")
+  .addOption(new Option("--twelve-labs-shape <shape>", "Pegasus proposal structure").choices(["flat","lines"]))
   .option("--dry-run", "Preview the analysis route without a provider request")
   .option("--candidates <file>", "Grade a candidates document on the original recording clock")
   .option("--max-moments <n|all>", "First N eligible candidates in document order, or all eligible candidates", "10")
@@ -317,23 +337,74 @@ program
       let stage = "cli";
       const warnings: string[] = [];
       let failureFolder: string | undefined;
+      let failedRun:import("./domain/run-failure.js").RunFailureManifest | undefined;
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
         if (isRanged(flags) && flags.remoteFile) rangeUsage("A range cannot reuse a remote file.");
         checkRoles(flags, flags.candidates !== undefined);
         const config = cliSettings();
-        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, flags.dryRun ? undefined : await config.providerKey());
+        const loaded = await readAnalyzeRecipe(flags);
+        checkRoles(flags,flags.candidates !== undefined,loaded.recipe.engines);
+        const proposer = flags.candidates ? "file" : flags.proposer ?? loaded.recipe.engines?.proposer;
+        const grader = flags.grader ?? loaded.recipe.engines?.grader;
+        const gemini = config.keyReport();
+        if (!flags.dryRun && gemini.source === "command" && (grader === "gemini" || proposer === "gemini" || (!grader && gemini.present))) {
+          await config.providerKey();
+        }
+        const twelve = config.keyReport("twelvelabs");
+        if (!flags.dryRun && twelve.source === "command" && (proposer === "twelvelabs" || grader === "twelvelabs" || (!proposer && twelve.present))) {
+          await config.providerKey("twelvelabs");
+        }
+        if (!flags.dryRun && !gemini.present && !twelve.present && !grader && !proposer) {
+          if (gemini.source === "command") await config.providerKey();
+          if (twelve.source === "command") await config.providerKey("twelvelabs");
+          throw new CliError("KEY_MISSING","Set a provider key before analysis.",{engine:"gemini"});
+        }
+        for (const engine of [proposer,grader]) {
+          if ((engine === "gemini" && !gemini.present) || (engine === "twelvelabs" && !twelve.present))
+            throw new CliError("KEY_MISSING","Set the selected engine key before analysis.",{engine});
+        }
+        analyzeOptions = await buildAnalyzeOptions(meetingId, {...flags,dryRun:true}, undefined,loaded);
+        const plan = enginePlan({...flags,file:flags.candidates !== undefined, recipe:analyzeOptions.recipe.engines,
+          model:analyzeOptions.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL),
+          retention:analyzeOptions.retention!,available:gemini.present,twelveAvailable:twelve.present,preview:true});
         if (flags.dryRun) {
-          const plan = enginePlan({...flags,file:flags.candidates !== undefined, recipe:analyzeOptions.recipe.engines,
-            model:analyzeOptions.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL),
-            retention:analyzeOptions.retention!,available:config.keyReport().present,preview:true});
+          const argv = program.args[0] === "analyze" ? program.args : process.argv.slice(2);
+          if (twelve.present) {
+            const scan = await readScratchReceipts();
+            const hint = checkReceiptAccess(plan,scan,argv);
+            if (hint) process.stderr.write(hint+"\n");
+            if (plan.reason) process.stderr.write(fallbackMessage(plan.reason)+"\n");
+            if (scan.readable && scan.records.length) plan.receiptIds = scan.records.map(row=>row.receipt.receiptId);
+          }
+          if (usesTwelveLabs(plan)) {
+            const video = analyzeOptions.video;
+            const wholeBytes = video && !isRanged(flags) ? (await stat(video)).size : undefined;
+            const selection = !video ? undefined : wholeBytes !== undefined && wholeBytes > DIRECT_UPLOAD_BYTES
+              ? {bytes:wholeBytes,soundOnly:false}
+              : await withSourceRecording(video,flags,"analysis",line=>process.stderr.write(line+"\n"),
+                async (cut,clock,_audio,picture)=>({bytes:(await stat(cut)).size,soundOnly:clock.grid.unit === "samples",picture,
+                  duration:clock.cutLength === undefined ? undefined : clock.elapsed(clock.cutLength)}));
+            const hint = checkDirectUpload(plan, selection?.bytes, argv,selection);
+            if (plan.reason) process.stderr.write(fallbackMessage(plan.reason) + "\n");
+            if (hint) process.stderr.write(hint + "\n");
+          }
           writeDocument({enginePlan:plan});
           return;
         }
-        process.stderr.write(flags.candidates !== undefined
-          ? "Gemini grades selected video, windows, stills and scoped context. Candidates come from the file.\n"
-          : "Gemini proposes on selected video and grades windows, stills and scoped context.\n");
-        process.stderr.write(`retention: ${analyzeOptions.retention}\n`);
+        if (!plan.planned) {
+          if (gemini.source === "command" && !gemini.present) await config.providerKey();
+          throw new CliError("KEY_MISSING", "Set a provider key before analysis.", {engine:"gemini"});
+        }
+        for (const engine of ["gemini","twelvelabs"] as const) {
+          if (plan.planned.proposer.engine !== engine && plan.planned.grader.engine !== engine) continue;
+          const value = await config.providerKey(engine);
+          if (!value) throw new CliError("KEY_MISSING","Set the selected engine key.",{engine});
+          if (engine === "gemini") analyzeOptions.apiKey = value;
+          else analyzeOptions.twelvelabsKey = value;
+        }
+        analyzeOptions.retryArgv = program.args[0] === "analyze" ? program.args : process.argv.slice(2);
+        for (const line of disclosure(plan,analyzeOptions.recipe.twelveLabsSegments)) process.stderr.write(line+"\n");
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
         // @types/bun 1.4.0 drops Node's signal overloads from process.on/off;
@@ -342,9 +413,12 @@ program
         let result;
         try {
           const execution = {
-            includeTokenUsage: true,
+            routeDisclosed:true, includeTokenUsage: true,
+            ...(twelve.present && !usesTwelveLabs(plan) && {
+              readCleanupKey:async (timeoutMs:number)=>config.providerKey("twelvelabs",timeoutMs),
+            }),
             signal: cancellation.signal,
-            onFailurePublished(directory: string) { failureFolder = directory; },
+            onFailurePublished(directory: string, manifest:NonNullable<typeof failedRun>) { failureFolder = directory; failedRun = manifest; },
             progress: {
               report(event: AnalysisProgressEvent) {
                 stage = event.stage;
@@ -359,9 +433,7 @@ program
             // model exactly as the analyzer does, and map operator-authored
             // custom recipe IDs to the closed "custom" bucket (ADR 0022 —
             // operator-authored strings never leave the process).
-            const resolvedModel = analyzeOptions.model
-              ?? applicationSetting("GEMINI_MODEL")
-              ?? DEFAULT_GEMINI_MODEL;
+            const resolvedModel = plan.planned.grader.model!;
             const builtInRecipe = listBuiltInRecipes()
               .some((recipe) => recipe.id === analyzeOptions!.recipe.id);
             try {
@@ -370,7 +442,7 @@ program
                 name: "analyze run",
                 attributes: {
                   "gen_ai.operation.name": "invoke_agent",
-                  "gen_ai.provider.name": "google_genai",
+                  "gen_ai.provider.name": plan.planned.grader.engine === "gemini" ? "google_genai" : "twelvelabs",
                   "gen_ai.request.model": resolvedModel,
                   "frame_of_mind.recipe_id": builtInRecipe
                     ? analyzeOptions.recipe.id
@@ -406,7 +478,7 @@ program
           const tokens = measuredTotal(result.manifest.tokenUsage);
           writeDocument({
             ...rangeFields.strip().parse(result.manifest),
-            enginePlan:result.manifest.enginePlan,
+            enginePlan:result.manifest.enginePlan, engineCalls:result.manifest.engineCalls, library:result.manifest.library,indexWait:result.manifest.indexWait,
             runFolder: resolve(result.directory),
             retention: analyzeOptions.retention,
             ...(tokens && { tokens }),
@@ -420,7 +492,7 @@ program
           });
         }
       } catch (error) {
-        if (error instanceof KeyCommandRefused) throw error;
+        if (error instanceof KeyCommandRefused) throw error.details?.engine ? error : new KeyCommandRefused("gemini");
         await captureCliException(
           telemetryCodeFromError(error, "analysis_failed"),
           {
@@ -440,6 +512,8 @@ program
         if (flags.json && failureFolder) {
           throw new CliError(faultCode(error), "Analysis failed.", {
             ...(error instanceof CliError && error.details), runFolder: resolve(failureFolder),
+            ...(failedRun?.enginePlan && {enginePlan:failedRun.enginePlan,engineCalls:failedRun.engineCalls}),
+            ...(failedRun?.library && {library:failedRun.library,indexWait:failedRun.indexWait}),
           });
         }
         if (!analyzeOptions && error instanceof OptionError) {
@@ -478,10 +552,27 @@ export function printAnalysisSummary(result: AnalyzeResult, stream: NodeJS.Writa
   }
 }
 
+function parseQueueWait(text: string) {
+  const n = Number(text);
+  if (!/^[1-9]\d*$/.test(text) || !Number.isSafeInteger(n)) throw new UsageError("invalid-index-wait","Queue wait must be a positive integer.");
+  return n;
+}
+
+async function readAnalyzeRecipe(flags:AnalyzeCliFlags) {
+  return withAnalysisDepth(
+    await loadRecipe(flags.recipe, flags.recipeFile).catch(error => {
+      if (error instanceof Error && !("code" in error)) throw new UsageError("invalid-recipe-file", error.message);
+      throw error;
+    }),
+    parseChoice(analysisDepthSchema, flags.depth, "invalid-depth"),
+  );
+}
+
 export async function buildAnalyzeOptions(
   meetingId: string | undefined,
   flags: AnalyzeCliFlags,
   apiKey: string | undefined,
+  loadedRecipe?: Awaited<ReturnType<typeof readAnalyzeRecipe>>,
 ): Promise<AnalyzeOptions> {
   if (flags.snap !== undefined && flags.snap !== "speech") throw new UsageError("invalid-snap", "--snap must be speech.");
   const integer = (text?: string) => text === undefined ? undefined : /^\d+$/.test(text) && text.trim() === text ? Number(text) : NaN;
@@ -495,13 +586,7 @@ export async function buildAnalyzeOptions(
     throw new UsageError("invalid-label", "--label must be one line of 1 to 200 characters without control characters.");
   }
   const label = labelResult?.data;
-  const recipeResult = await withAnalysisDepth(
-    await loadRecipe(flags.recipe, flags.recipeFile).catch(error => {
-      if (error instanceof Error && !("code" in error)) throw new UsageError("invalid-recipe-file", error.message);
-      throw error;
-    }),
-    parseChoice(analysisDepthSchema, flags.depth, "invalid-depth"),
-  );
+  const recipeResult = loadedRecipe ?? await readAnalyzeRecipe(flags);
   const modelResult = flags.model
     ? geminiModelSchema.safeParse(flags.model)
     : undefined;
@@ -571,6 +656,9 @@ export async function buildAnalyzeOptions(
     recipeSha256: recipeResult.sha256,
     recipeRevision: recipeResult.revision,
     apiKey: apiKey ?? "",
+    ...(flags.withholdGraderClaim && {withholdGraderClaim:true}),
+    ...(flags.indexWaitSeconds !== undefined && {indexWaitSeconds:parseQueueWait(flags.indexWaitSeconds)}),
+    ...(flags.twelveLabsShape && {twelveLabsShape:flags.twelveLabsShape}),
     ...(model ? { model } : {}),
     ...(flags.thinkingLevel && { thinkingLevel: flags.thinkingLevel }),
     ...(flags.focus ? { focus: flags.focus } : {}),

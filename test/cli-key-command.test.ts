@@ -111,10 +111,26 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  it("key-isolation doctor inspects both keys and starts neither reader", () => {
+    const argv = [fixtureRuntime, reader, "synthetic-argv-marker"];
+    writeFileSync(settings, JSON.stringify({keyCommands:{gemini:argv,twelvelabs:argv}}), {mode:0o600});
+    for (const runtime of ["node", "node-bare"]) {
+      const report = run(["doctor","--json"], {FRAME_OF_MIND_KEY_COMMAND:"[]",FRAME_OF_MIND_TWELVELABS_KEY_COMMAND:"[]"}, runtime);
+      const data = JSON.parse(report.out);
+      expect(data.keys?.twelvelabs).toMatchObject({commandDisabledByEnvironment:true});
+      expect(data.key).toEqual(data.keys.gemini);
+      expect(report.out + report.err).not.toContain("synthetic-argv-marker");
+      expect(existsSync(marker)).toBe(false);
+    }
+    const configured = JSON.parse(run(["doctor","--json"]).out);
+    expect(configured.keys.twelvelabs).toMatchObject({source:"command",present:true,state:"unverified"});
+    expect(existsSync(marker)).toBe(false);
+  });
+
   const calibrate = ["calibrate", "--model", "!"];
   const missing = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_MISSING","message":"key missing.","details":{"phase":"prepare","sent":false}}}\n', err: ""};
   const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command","phase":"prepare","sent":false}}}\n', err: ""};
-  const disabled = {FRAME_OF_MIND_KEY_COMMAND: "[]", OBSERVE_ACCOUNT: "1"};
+  const disabled = {FRAME_OF_MIND_KEY_COMMAND: "[]", FRAME_OF_MIND_TWELVELABS_KEY_COMMAND:"[]", OBSERVE_ACCOUNT: "1"};
   function configureReader() {
     writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
   }
@@ -232,6 +248,26 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  it.each([true,false])("doctor reports the scratch receipt folder and readability (%s)", readable => {
+    const path = join(dirname(settings), "scratch-receipts");
+    mkdirSync(path, {recursive:true,mode:0o700});
+    const file = join(path, "11111111-1111-4111-8111-111111111111.json");
+    if (!readable) writeFileSync(file, "private-receipt-fixture", {mode:0o600});
+    const env = {GEMINI_API_KEY:"private-gemini-fixture",TWELVELABS_API_KEY:"private-twelve-fixture"};
+    try {
+      const json = run(["doctor","--json"],env);
+      const text = run(["doctor"],env);
+      const report = validateCliDocument("doctor",json.out);
+      expect(report.scratchReceipts).toEqual({path,readable});
+      expect(text.out).toContain(path);
+      expect(text.out).toMatch(readable ? /receipts.*\breadable\b/i : /receipts.*unreadable/i);
+      if (!readable) expect(report.enginePlan).toMatchObject({reason:"receipts-unreadable",expected:{proposer:{engine:"gemini"}}});
+      for (const output of [json.out,json.err,text.out,text.err]) {
+        expect(output).not.toMatch(/private-(?:receipt|gemini|twelve)-fixture/);
+      }
+      if (!readable) expect(readFileSync(file,"utf8")).toBe("private-receipt-fixture");
+    } finally { rmSync(file,{force:true}); }
+  });
   it.each(["command", "settings"])("doctor prints the mode repair for %s", kind => {
     const unsafe = join(home, "unsafe reader");
     writeFileSync(unsafe, "#!/usr/bin/env bash\nexit 1\n", {mode: 0o700});
@@ -323,9 +359,23 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       const args = ["analyze", "--output", "out", "--source", "none", "--video", "absent.mp4"];
       expect(run(args, env)).toEqual({exit: 10, out: "", err: "Key command unavailable.\n"});
       const json = run([...args, "--json"], env);
-      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command","phase":"prepare","sent":false}}}\n', err: ""});
+      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command","engine":"gemini","phase":"prepare","sent":false}}}\n', err: ""});
       expect(readdirSync(cwd)).toEqual(before);
       expect(existsSync(join(root, "unexpected-open")), "folder file accessed after command selected").toBe(false);
+    }
+  });
+});
+
+describe("key-isolation", () => {
+  it("keeps both synthetic keys and selectors away from readers, helpers and openers",async()=>{
+    const {childEnvironment,keyCommandEnvironment}=await import("../src/lib/child-env.js");
+    const {spawnSync}=await import("node:child_process");
+    const launch={GEMINI_API_KEY:"synthetic-first",TWELVELABS_API_KEY:"synthetic-second",
+      FRAME_OF_MIND_KEY_COMMAND:'["/synthetic-first"]',FRAME_OF_MIND_TWELVELABS_KEY_COMMAND:'["/synthetic-second"]'};
+    for(const env of [keyCommandEnvironment(launch),keyCommandEnvironment(launch),childEnvironment("media",launch),childEnvironment("opener",launch)]) {
+      const child=spawnSync(process.execPath,["-p","JSON.stringify(Object.keys(process.env))"],{env,encoding:"utf8"});
+      expect(child.status).toBe(0);
+      for(const name of Object.keys(launch)) expect(JSON.parse(child.stdout)).not.toContain(name);
     }
   });
 });

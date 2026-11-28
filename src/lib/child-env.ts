@@ -48,6 +48,8 @@ export function childEnvironment(
 export function keyCommandEnvironment(snapshot: Readonly<NodeJS.ProcessEnv>): NodeJS.ProcessEnv {
   const environment = {...snapshot};
   delete environment.GEMINI_API_KEY;
+  delete environment.TWELVELABS_API_KEY;
+  delete environment.FRAME_OF_MIND_TWELVELABS_KEY_COMMAND;
   delete environment.GRANOLA_API_KEY;
   delete environment.FRAME_OF_MIND_KEY_COMMAND;
   return environment;

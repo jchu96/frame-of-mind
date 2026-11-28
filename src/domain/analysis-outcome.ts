@@ -1,3 +1,4 @@
+import { engineReason } from "./engine-plan.js";
 import { actorSchema, candidateSchema, type Actor, type Candidate } from "./candidates.js";
 import { proposalEdgesSchema, type ProposalEdges } from "./proposal-edges.js";
 import { exactSpanSchema, humanTime } from "./source-bound.js";
@@ -28,12 +29,13 @@ const failureFields = {
 } as const;
 const legacyFailure = z.strictObject(failureFields).refine(v => timestampToSeconds(v.end) > timestampToSeconds(v.start),
   {message:"candidate failure end timestamp must be after start",path:["end"]});
-const exactFailure = z.strictObject({...failureFields,exactSpan:exactSpanSchema,
+const exactFailure = z.strictObject({...failureFields, attempts:z.union([z.literal(0),z.literal(1),z.literal(2)]),
+  reason:engineReason.optional(), exactSpan:exactSpanSchema,
   candidateId:z.string().min(1).optional(), proposedBy:actorSchema.optional(), gradedBy:actorSchema.nullable().optional(),
   proposal:candidateSchema.optional(), proposalEdges:proposalEdgesSchema.optional()}).refine(
   v => v.start === humanTime(v.exactSpan.start) && v.end === humanTime(v.exactSpan.endExclusive),
   {message:"Failure labels must match their exact bounds.", path:["exactSpan"]});
-function checkIssues(value: z.infer<typeof legacyFailure>, context: z.RefinementCtx) {
+function checkIssues(value: Pick<z.infer<typeof legacyFailure>,"issues"|"code">, context: z.RefinementCtx) {
   if (value.code !== "schema_validation" && value.issues?.length) {
     context.addIssue({
       code: "custom",
@@ -43,7 +45,7 @@ function checkIssues(value: z.infer<typeof legacyFailure>, context: z.Refinement
   }
 }
 export const candidateFailureSchema = legacyFailure.superRefine(checkIssues);
-const exactFailureSchema = exactFailure.superRefine(checkIssues);
+const exactFailureSchema = exactFailure.superRefine(checkIssues).refine(f=>f.attempts !== 0 || (f.gradedBy === null && !!f.reason),"An unattempted failure requires a reason and no grader.");
 const outcomeBase = z.strictObject({
   runId: runIdSchema,
   status: z.enum(["complete", "partial", "failed"]),
@@ -62,7 +64,7 @@ const outcome1 = outcomeBase.extend({schemaVersion:z.literal(1), failures:z.arra
 // A file can supply more rows than the 1,000 grading slots. These three
 // counters describe its input array, whose maximum length in JS is 2^32 - 1.
 const inputRowCount = z.int().min(0).max(2 ** 32 - 1);
-const outcome2 = outcomeBase.extend({schemaVersion:z.literal(2), candidates:outcomeBase.shape.candidates.extend({
+const outcome2 = outcomeBase.extend({schemaVersion:z.literal(2), proposalIncomplete:z.literal(true).optional(), candidates:outcomeBase.shape.candidates.extend({
   indexed:inputRowCount, omittedByLimit:inputRowCount, outOfRange:inputRowCount.optional(),
 }), failures:z.array(exactFailureSchema).max(1000)});
 export const analysisOutcomeSchema = z.discriminatedUnion("schemaVersion", [outcome1, outcome2]).superRefine((value, context) => {
@@ -117,7 +119,7 @@ export const analysisOutcomeSchema = z.discriminatedUnion("schemaVersion", [outc
   // itself complete (that lie cost a real episode its back half, 2026-08-24).
   const expectedStatus = value.candidates.failed > 0 && value.candidates.validated === 0
     ? "failed"
-    : value.candidates.failed > 0 || value.candidates.omittedByLimit > 0
+    : value.candidates.failed > 0 || value.candidates.omittedByLimit > 0 || (value.schemaVersion === 2 && value.proposalIncomplete)
       ? "partial"
       : "complete";
   if (value.status !== expectedStatus) {
@@ -131,7 +133,7 @@ export const analysisOutcomeSchema = z.discriminatedUnion("schemaVersion", [outc
 
 export type CandidateFailureCode = z.infer<typeof candidateFailureCodeSchema>;
 export type CandidateValidationIssue = z.infer<typeof candidateValidationIssueSchema>;
-export type CandidateFailure = z.infer<typeof candidateFailureSchema> & {exactSpan?: z.infer<typeof exactSpanSchema>; candidateId?:string; proposedBy?:Actor; gradedBy?:Actor|null; proposal?:Candidate; proposalEdges?:ProposalEdges};
+export type CandidateFailure = Omit<z.infer<typeof candidateFailureSchema>,"attempts"> & {attempts:0|1|2;reason?:z.infer<typeof engineReason>;exactSpan?: z.infer<typeof exactSpanSchema>; candidateId?:string; proposedBy?:Actor; gradedBy?:Actor|null; proposal?:Candidate; proposalEdges?:ProposalEdges};
 export type AnalysisOutcome = z.infer<typeof analysisOutcomeSchema>;
 
 interface CandidateAnalysisErrorInput {

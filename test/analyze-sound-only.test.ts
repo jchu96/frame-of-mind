@@ -98,3 +98,19 @@ test.each(["start", "finalize"] as const)("an upload %s failure reports whether 
     expect(manifest).not.toHaveProperty("sent");
   }
 });
+
+test("a chosen Twelve Labs role refuses a sound-only selection before media leaves", async () => {
+  const fetch = vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("Unexpected network request."));
+  try {
+    const service = new AnalysisOrchestrator({createContextSource() { throw new Error("Unexpected context."); },
+      createAnalyzer() { throw new Error("Unexpected Gemini factory."); }});
+    await expect(service.analyze({video:file("sound.mp4"), proposer:"twelvelabs", contextMode:"none",
+      outputRoot:file("sound-only-limit"),apiKey:"",twelvelabsKey:"synthetic-twelve",recipe:builtInRecipe("decisions"),
+      customRecipe:false,recipeRevision:"fixture",recipeSha256:"a".repeat(64),maxIncidents:1,
+      screenshots:false,calibrate:false,derivedTranscript:false,keepUpload:false})).rejects.toMatchObject({
+        code:"PROVIDER_LIMIT",details:{reason:"media-limit",engine:"twelvelabs",phase:"prepare",sent:false,
+          retryWith:expect.arrayContaining(["--grader","gemini"])},
+      });
+    expect(fetch).not.toHaveBeenCalled();
+  } finally { fetch.mockRestore(); }
+});

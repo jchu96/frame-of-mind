@@ -1,3 +1,4 @@
+import { claimSentence } from "../domain/grader-claim.js";
 import { uploadMedia } from "../lib/media-transfer.js";
 import { addTokenCounts, measuredTotal, type TokenCounts, type TokenUsage } from "../domain/token-usage.js";
 import type { JobProviderTransport } from "./job-provider-transport.js";
@@ -531,7 +532,7 @@ export class GeminiVideoAnalyzer {
 
   async interrogate(
     file: GeminiFile,
-    candidate: Pick<IndexedMoment, "start" | "end" | "summary" | "surface">,
+    candidate: Pick<IndexedMoment, "start" | "end" | "summary" | "surface"> & {withheld?:boolean},
     nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
@@ -609,7 +610,7 @@ export class GeminiVideoAnalyzer {
               promptSection(
                 "context",
                 [
-                  `The whole-video index flagged: "${escapeClaimData(candidate.summary)}" on ${escapeClaimData(candidate.surface || "an unknown surface")}.`,
+                  ...(candidate.withheld ? [] : [claimSentence(candidate)]),
                   !nearbyTranscript
                     ? "No aligned transcript is available for this clip. Base every claim on recording evidence and do not infer off-screen discussion."
                     : [
@@ -1013,12 +1014,6 @@ function promptSection(
 ): string {
   const content = escape ? escapePromptData(value) : value;
   return `<${name}>\n${content}\n</${name}>`;
-}
-
-function escapeClaimData(value: string): string {
-  // Keep controls visible without letting a claim create another line or reorder the sentence.
-  return escapePromptData(value).replace(/[\p{Cc}\p{Bidi_Control}\u2028\u2029]/gu,
-    char => "\\u" + char.charCodeAt(0).toString(16).padStart(4, "0"));
 }
 
 function escapePromptData(value: string): string {

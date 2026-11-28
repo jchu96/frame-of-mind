@@ -49,7 +49,7 @@ it("advertises the machine commands and options that ship schemas", () => {
   const inventory = validateCliDocument("capabilities", result.stdout);
   const schemas = new Set(Object.keys(inventory.schemaVersions).map(name =>
     name.endsWith(" dry-run") ? "analyze-dry-run" : name.endsWith(" result") ? "job-result" : name.includes(" ") ? "job" : name));
-  expect(inventory.candidates).toEqual({schemaVersions:[1],proposers:["gemini"],graders:["gemini"]});
+  expect(inventory.candidates).toEqual({schemaVersions:[1],proposers:["gemini","twelvelabs"],graders:["gemini","twelvelabs"]});
   schemas.add("candidates");
   expect([...schemas].sort()).toEqual(readdirSync("schemas/cli").map(name => name.replace(".schema.json", "")).sort());
   expect(inventory.commands.map((cmd: {name: string}) => cmd.name).sort()).toEqual(Object.keys(inventory.schemaVersions).sort());
@@ -117,6 +117,8 @@ it("previews named and external roles without invoking the provider", () => {
   const base = ["analyze","--dry-run","--source","none","--video",entry,"--json"];
   const builtIn = JSON.parse(run([...base,"--proposer","gemini","--grader","gemini"],"fixture").stdout);
   expect(builtIn.enginePlan).toMatchObject({used:null,reason:null,expected:{proposer:{engine:"gemini",source:"flag"},grader:{source:"flag"}}});
+  const missing = JSON.parse(run([...base,"--grader","twelvelabs"],"fixture").stdout);
+  expect(missing.error).toMatchObject({code:"KEY_MISSING",details:{engine:"twelvelabs",phase:"prepare",sent:false}});
   const external = JSON.parse(run([...base,"--candidates",file],"fixture").stdout);
   expect(external.enginePlan.expected.proposer).toEqual({engine:"file",model:null,source:"file"});
   for (const [args,reason] of [

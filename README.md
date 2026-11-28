@@ -330,6 +330,10 @@ A build made this way prints its version with `+source`, for example `0.6.8+sour
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
 
+For ordinary analysis, `TWELVELABS_API_KEY` enables Twelve Labs. With both keys, Twelve Labs proposes and Gemini grades. Use `--proposer` and `--grader` to choose either engine. `--dry-run` previews recipients and retention for the selected recording. Many real recordings exceed the 200 MB direct-upload limit. A shorter `--from` / `--to` range can fit. Doctor reports the Twelve Labs receipt folder and whether it can be read safely. Unreadable receipts switch the default route to Gemini.
+
+Each engine has the same key lookup order. Set `keyCommands.gemini` and `keyCommands.twelvelabs` in private account settings. An inherited `FRAME_OF_MIND_TWELVELABS_KEY_COMMAND='[]'` skips the Twelve Labs reader. [Credential setup](docs/CREDENTIALS.md)
+
 On a clean launch, ordinary CLI commands select the first available provider key source.
 
 | Order | Source | Selection |
@@ -613,7 +617,9 @@ tracks have separate rows, topmost first. [Timeline lookup procedure](docs/RUNBO
 | `--depth <standard\|deep>` | default `standard`. Deep sampling and prompts apply to both built-in passes. With a candidates file, depth applies only to grading. |
 | `--model <id>` | Gemini model for both current passes |
 | `--candidates <file>` | Grade a version 1 candidates document after verifying the original recording. The grader sees the reason (or label if empty) and optional surface as quoted context. A row over 10,000 characters for reason, 500 for surface or 120 for label refuses the whole document. |
-| `--proposer <engine>`, `--grader <engine>` | Select Gemini for either role. Printed source times come from their exact bounds. Measurement uses native source counts. A file supplies the proposer result directly. |
+| `--proposer <engine>` / `--grader <engine>` | Choose `gemini` or `twelvelabs` for either role. A candidates file supplies the proposer locally. |
+| `--withhold-grader-claim` | Omit the quoted claim from grading. Read `graderToldClaim` in the plan. |
+| `--twelve-labs-shape <flat\|lines>` / `--index-wait-seconds <n>` | Select segment or timed-line proposals and a positive queue wait in seconds. |
 | `--dry-run` | Print the engine plan for these flags and recipe without a provider request. |
 | `--max-moments <n\|all>` | first N eligible rows in document order, reported in source-time order. The built-in proposer ranks by importance, then source time. Default `10`. |
 | `--note <name=path>` | per-run UTF-8 text/Markdown reference, repeatable up to 8 |

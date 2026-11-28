@@ -70,6 +70,10 @@ it("human analyze and transcribe write the versioned artifact bytes, output stre
         const serialize = () => Buffer.from(JSON.stringify(manifest, null, 2) + "\n");
         expect(bytes).toEqual(serialize());
         expect(manifest.frameTiming).toEqual({varying: null, frames: null, unread: "unavailable"});
+        expect(manifest.engineCalls).toMatchObject([{engine:"gemini",role:"proposer",result:"complete"}]);
+        expect(manifest.enginePlan.graderToldClaim).toBe(true);
+        delete manifest.engineCalls;
+        delete manifest.enginePlan.graderToldClaim;
         delete manifest.frameTiming;
         bytes = serialize();
       }

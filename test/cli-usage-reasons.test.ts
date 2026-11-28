@@ -65,6 +65,7 @@ const rows: Row[] = [
   row("domain/retention", "invalid-retention", ["transcribe", "clip.mp4", "--retention", "private-example"]),
   row("domain/retention", "conflicting-retention", ["transcribe", "clip.mp4", "--delete-upload", "--keep-upload"]),
   row("domain/transcript-language", "invalid-transcript-language", ["transcribe", "clip.mp4", "--transcript-language", "@@@"]),
+  row("cli-main", "invalid-index-wait", [...analyze, "--index-wait-seconds", "0"]),
   row("cli-main", "invalid-snap", [...analyze, "--snap", "private-example"]),
   row("domain/snap", "invalid-snap-gap", [...analyze, "--snap-gap-ms", "1"]),
   row("domain/snap", "invalid-snap-window", [...analyze, "--snap-window-ms", "1"]),

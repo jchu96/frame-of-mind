@@ -7,7 +7,7 @@ export const KEY_COMMAND_MAX_BYTES = 4096;
 export class KeyCommandRefused extends ContractError {
   // The fixed word lets a JSON caller tell this from a key the provider refused.
   // Nothing from the command, its arguments or its output is ever added.
-  constructor() { super("KEY_REFUSED", "Key command unavailable.", {reason: "key-command"}); }
+  constructor(engine?: "gemini" | "twelvelabs") { super("KEY_REFUSED", "Key command unavailable.", {reason: "key-command", ...(engine && {engine})}); }
 }
 
 export function runKeyCommand([executable, ...args]: [string, ...string[]], home: string,
