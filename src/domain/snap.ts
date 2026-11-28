@@ -177,9 +177,10 @@ export function classify(envelope: Envelope): Boundaries {
   return boundaries;
 }
 
-export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: number, clock: FileClock, settings: SnapSettings): SnapResult {
+export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: number, clock: FileClock, settings: SnapSettings, otherEdgeMs?: number): SnapResult {
   if (!edges) return { status: "unavailable" };
-  const eligible = edges[edge].filter(e => e.gapMs >= settings.gapMs && Math.abs(e.ms - atMs) <= settings.windowMs);
+  const eligible = edges[edge].filter(e => e.gapMs >= settings.gapMs && Math.abs(e.ms - atMs) <= settings.windowMs &&
+    (otherEdgeMs === undefined || (edge === "start" ? e.ms < otherEdgeMs : e.ms > otherEdgeMs)));
   // Moving outward may only finish the classified group containing the request.
   // Groups include their onset and exclude their offset.
   const permitted = eligible.filter(e => edge === "start"
@@ -198,8 +199,8 @@ export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: numb
 type Range = Record<Edge, number>;
 export function proposeRecords(ranges: Range[], edges: Boundaries | undefined, clock: FileClock, settings: SnapSettings): SnapRun {
   const records = ranges.map(r => ({
-    start: selectEdge(edges, "start", r.start, clock, settings),
-    end: selectEdge(edges, "end", r.end, clock, settings),
+    start: selectEdge(edges, "start", r.start, clock, settings, r.end),
+    end: selectEdge(edges, "end", r.end, clock, settings, r.start),
   }));
   const order = ranges.map((r, i) => ({ ...r, i })).sort((a, b) => a.start - b.start || a.end - b.end);
   const overlap = (a: Range, b: Range) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));

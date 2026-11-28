@@ -2692,7 +2692,7 @@ describe("downloaded from-media clock preflight", () => {
 });
 
 describe("speech proposals at publication", () => {
-  async function setup() {
+  async function setup(evidenceTimes = ["00:00:03", "00:00:12", "00:00:22"]) {
     const f = await createFixture();
     const { moments } = indexResult();
     f.analyzer.index.mockResolvedValue({ ...indexResult(), moments: [
@@ -2712,7 +2712,7 @@ describe("speech proposals at publication", () => {
     const options = { ...f.options, maxIncidents: 3, calibrate: false };
     const events: AnalysisProgressEvent[] = [];
     const execute = (suffix: string, enabled: boolean, signal?: AbortSignal) => {
-      for (const [i, timestamp] of ["00:00:03", "00:00:12", "00:00:22"].entries()) {
+      for (const [i, timestamp] of evidenceTimes.entries()) {
         const detail = detailResult();
         f.analyzer.interrogate.mockResolvedValueOnce({ ...detail, accepted: i !== 1, evidence: { ...detail.evidence, timestamp } });
       }
@@ -2749,6 +2749,22 @@ describe("speech proposals at publication", () => {
       const evidence = file === "analysis.md" ? /^- Time:.*$/gm : /<div class="eyebrow">requirement[^<]+/g;
       expect(report.match(evidence)).toEqual((await readFile(join(control.directory, file), "utf8")).match(evidence));
     }
+  });
+  it("analyze bounds both proposals by the other candidate edge before publishing a short pick", async () => {
+    const { execute, f, decodeSpeechEnvelope } = await setup(["00:00:20"]);
+    const index = indexResult();
+    f.analyzer.index.mockResolvedValue({ ...index, moments: [{ ...index.moments[0]!, start: "00:00:20", end: "00:00:21" }] });
+    const blocks = Array.from({ length: 3 }, () => new Float32Array(1000).fill(-96));
+    // Both neighbours fall inside the 1.5 s search radius around the model's pick.
+    blocks[1]!.fill(-10, 945, 975);
+    blocks[2]!.fill(-10, 10, 40).fill(-10, 125, 155);
+    decodeSpeechEnvelope.mockResolvedValue({ blocks, startMs: 0, length: 3000 });
+    const run = await execute("short", true);
+    const times = JSON.parse(await readFile(join(run.directory, "times.json"), "utf8"));
+    expect(times.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ pointer: "/items/0/candidate/start", snap: expect.objectContaining({ target: expect.objectContaining({ seconds: "20.100" }) }) }),
+      expect.objectContaining({ pointer: "/items/0/candidate/end", snap: expect.objectContaining({ target: expect.objectContaining({ seconds: "20.400" }) }) }),
+    ]));
   });
   it("W8 decoder failure warns once, returns all unavailable and permits empty schema 3 runs", async () => {
     const { execute, events, f, decodeSpeechEnvelope } = await setup();

@@ -20,7 +20,8 @@
         "properties": {
           "clock": {"enum": ["source", "reel"]},
           "edge": {"enum": ["start", "end"]},
-          "at": {"type": "string"}
+          "at": {"type": "string"},
+          "otherEdge": {"type": "string"}
         },
         "required": ["clock", "edge", "at"]
       },

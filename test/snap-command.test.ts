@@ -10,6 +10,7 @@ test("W12 invalid seconds, elapsed fields, timecodes, clocks and edges fail befo
   const decode = vi.fn();
   for (const at of ["-1", "1:60:00", "00:01:61", "00:01:02:12", "00:01:00;02", "1e9", "2.1234", "02:01", " 0", "1\n", "9007199254740.992", "999999999999999:00:00"]) {
     await expect(snapFile("x", { at, edge: "end" }, decode)).rejects.toThrow();
+    await expect(snapFile("x", { at: "1", otherEdge: at, edge: "start" }, decode)).rejects.toThrow();
   }
   for (const flags of [{ at: "0", edge: "middle" }, { at: "0", edge: "end", fileClock: "timeline" }]) {
     await expect(snapFile("x", flags, decode)).rejects.toThrow();
@@ -47,4 +48,26 @@ test("snap reports measured precision, no boundary and unavailable decode at the
     expect(validateCliDocument("snap", String(stdout.mock.lastCall![0])).result.status).toBe("unavailable");
     expect(process.exitCode).toBe(previous);
   } finally { decode.mockRestore(); stdout.mockRestore(); process.exitCode = previous; }
+});
+
+test("the other edge keeps a short pick from snapping to its neighbour", async () => {
+  const levels = new Float32Array(300).fill(-96);
+  levels.fill(-10, 110, 140).fill(-10, 180, 210);
+  const decode = vi.spyOn(audio, "decodeSpeechEnvelope").mockResolvedValue({ blocks: [levels], length: levels.length, startMs: 0 });
+  const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  try {
+    const cli = new Command();
+    registerSnap(cli);
+    for (const [edge, at, otherEdge, neighbour, expected] of [
+      ["start", "1", "00:00:01.600", "1.800", "1.100"], ["end", "2", "1.6", "1.400", "2.100"],
+    ] as const) {
+      const args = ["snap", "generated", "--at", at, "--edge", edge, "--json"];
+      await cli.parseAsync(args, { from: "user" });
+      expect(validateCliDocument("snap", String(stdout.mock.lastCall![0])).result.target.seconds).toBe(neighbour);
+      await cli.parseAsync([...args, "--other-edge", otherEdge], { from: "user" });
+      expect(validateCliDocument("snap", String(stdout.mock.lastCall![0]))).toMatchObject({
+        request: { otherEdge }, result: { status: "snapped", target: { seconds: expected }, alternativesMs: [] },
+      });
+    }
+  } finally { decode.mockRestore(); stdout.mockRestore(); }
 });
