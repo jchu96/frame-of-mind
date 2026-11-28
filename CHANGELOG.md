@@ -13,6 +13,10 @@ Fixed: `slice`, `proxy`, `probe --decode-check`, `verify` and `--timecode-rate f
 "ffprobe timed out" on a long recording when the machine was busy. The frame-timing scan decodes every frame
 and had a fixed 60-second limit. The limit is now 60 seconds plus half a second per second of recording.
 
+Fixed: the decode check and the encode of `slice`, `proxy`, `probe --decode-check` and `verify` had a fixed
+600-second limit, so a proxy of a long recording could be cut off by the clock. The limit is now 600 seconds
+plus two seconds per second of recording.
+
 The job-start refusal introduced in 0.6.6 is gone. Jobs can use the key present
 after Bun or Node has merged a folder file. Doctor reports its source as unknown
 and prints no next step. Without a key, doctor exits 1 and prints one next step.

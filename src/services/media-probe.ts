@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { sameRate } from "../domain/media-clock.js";
 import { z } from "zod";
 import { exactTime, fromTimecode, isDropRate, parseTimecodeRate, rationalRate, type ExactTime, type FrameRate, type TimecodeSpec } from "exact-time";
-import { localVideoInput, runMediaTool, type Recording } from "./media-tools.js";
+import { localVideoInput, mediaWorkTimeoutMs, runMediaTool, type Recording } from "./media-tools.js";
 
 const timingError = "Variable frame rate or unverifiable frame timing is not supported by --timecode-rate from-media; declare an exact sequence rate instead.";
 export async function probeFrameRate(
@@ -164,7 +164,8 @@ export async function decodeVideo(input: Recording, info: VideoInfo, signal?: Ab
   await input.check();
   try {
     await runMediaTool("ffmpeg", [...localVideoInput(info.formatName), "-i", input.path, "-map", `0:${info.videoIndex}`,
-      ...info.audio.flatMap(s => ["-map", `0:${s.index}`]), "-f", "null", "-"], {signal});
+      ...info.audio.flatMap(s => ["-map", `0:${s.index}`]), "-f", "null", "-"],
+      {signal, timeoutMs: mediaWorkTimeoutMs(info.approximateSeconds)});
   } catch (cause) {
     if (faultCode(cause) !== "COMMAND_FAILED" && faultCode(cause) !== "DECODE_FAILED") throw cause;
     throw new DecodeError(cause instanceof Error ? cause.message : "Full media decode failed.", {cause});
