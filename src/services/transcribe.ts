@@ -1,3 +1,4 @@
+import { preparationDetails, uploadMedia, withMediaTransfer } from "../lib/media-transfer.js";
 import { type RangeClock } from "../domain/range-clock.js";
 import { boundIndex, boundMillis, humanTime, modelSpan, sourceBound } from "../domain/source-bound.js";
 import { preparationError, SourceReceipt } from "../domain/source-receipt.js";
@@ -24,8 +25,8 @@ import { windowOnGrid, mergeTranscriptionChunks, offsetTranscriptionSegments, Tr
 import { TRANSCRIPTION_OVERLAP_SECONDS, TRANSCRIPTION_WINDOW_SECONDS } from "./transcription-policy.js";
 import { assertTranscriptTarget, renderSpeakers, renderSrt, renderTranscriptJson, writePrivateAtomic } from "./transcript-render.js";
 
-export class TranscribeError extends Error {
-  constructor(message: string, readonly code: FaultCode = "COMMAND_FAILED", readonly diagnostic?: string) { super(message); }
+export class TranscribeError extends ContractError {
+  constructor(message: string, code: FaultCode = "COMMAND_FAILED", readonly diagnostic?: string) { super(code, message); }
 }
 export class TranscribeCanceledError extends TranscribeError {
   constructor() { super("Transcription canceled; no transcript files written.", "CANCELLED"); }
@@ -68,6 +69,11 @@ function uploadLabel(remote: GeminiFile): string {
 
 /** Adopted standalone transcription workflow. It never creates an analysis run bundle. */
 export async function transcribe(options: TranscribeOptions, injected: Partial<TranscribeDependencies> = {}, job?: { scratchRoot: string; authorize: () => Promise<void> }) {
+  return withMediaTransfer(() => transcribeRecording(options, injected, job));
+}
+
+async function transcribeRecording(options: TranscribeOptions, injected: Partial<TranscribeDependencies>,
+  job?: {scratchRoot: string; authorize: () => Promise<void>}) {
   const deps: TranscribeDependencies = {
     createAnalyzer: (key, model) => new GeminiVideoAnalyzer(key, model),
     extractAudioTrack, probeDurationSeconds, decodeSpeechEnvelope, withSourceRecording,
@@ -115,14 +121,13 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
   await job?.authorize();
   const digest = await sha256File(input);
   let receipt: SourceReceipt | undefined;
-  let sent = false;
   let reported = false;
   const resolved = (clock: RangeClock) => receipt ??= new SourceReceipt(clock, digest, maxRangeSeconds());
   try {
     return await deps.withSourceRecording(input, {...options, onSourceResolved: resolved}, "audio", deps.stderr,
       (media, clock) => processWindows(media, clock, resolved(clock)));
   } catch (error) {
-    if (isRanged(options) && !sent && !options.signal?.aborted) {
+    if (preparationDetails() && !options.signal?.aborted) {
       reported = true;
       throw preparationError(error, receipt?.document() ?? {recordingSha256:digest, coverage:{full:false,covered:[]}}, deps.stderr);
     }
@@ -164,8 +169,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
             let remote: GeminiFile | undefined;
             try {
               if ((await stat(audioPath)).size > 2_000_000_000) throw new ContractError("MEDIA_LIMIT", "Audio window exceeds the upload limit.");
-              sent = true;
-              remote = await analyzer.upload(audioPath, pcm ? "audio/wav" : "audio/aac");
+              remote = await uploadMedia(analyzer, audioPath, pcm ? "audio/wav" : "audio/aac");
               receipt.uploads.push({kind:"audio-window", span:[String(clock.sourceIndex(from)), String(clock.sourceIndex(end))], rate:clock.grid.rate});
               if (retention === "provider") deps.stderr(`kept audio upload: ${uploadLabel(remote)}`);
               if (job) canceled();

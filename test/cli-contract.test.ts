@@ -68,6 +68,7 @@ it.each([
   [["doctor", "--remove", "--json"], "USAGE", 2],
   [["doctor", "--json", "--scratch", "../scratch"], "PATH_OUTSIDE_ROOTS", 11],
   [["calibrate", "--json"], "KEY_MISSING", 10],
+  [["--schema-version", "1", "calibrate", "--json"], "KEY_MISSING", 10],
   [["recipes", "--json", "--schema-version", "2"], "UNKNOWN_SCHEMA", 21],
   [["mcp", "--json"], "USAGE", 2],
   [["key", "set", "--json"], "USAGE", 2],
@@ -76,8 +77,12 @@ it.each([
   expect(result.status, result.stderr).toBe(status);
   expect(result.stdout, "one stdout failure document").toMatch(/^\{[^\n]+\}\n$/);
   const document = validateCliDocument("recipes", result.stdout);
+  const details = {
+    ...(code === "USAGE" && {reason: expect.stringMatching(/^[a-z]+(?:-[a-z]+)*$/)}),
+    ...((args[0] === "transcribe" || args.some(arg => arg === "calibrate")) && {phase:"prepare", sent:false}),
+  };
   expect(document).toEqual({ schemaVersion: 1, error: { code, message: expect.any(String),
-    ...(code === "USAGE" && {details: {reason: expect.stringMatching(/^[a-z]+(?:-[a-z]+)*$/)}}) } });
+    ...(Object.keys(details).length && {details}) } });
   expect(result.stderr).toBe("");
 });
 

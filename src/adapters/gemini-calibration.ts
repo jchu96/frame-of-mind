@@ -1,3 +1,4 @@
+import { uploadMedia } from "../lib/media-transfer.js";
 import { ContractError } from "../domain/contract-error.js";
 import { providerFailureCode } from "./gemini-error-class.js";
 import { createScratch } from "./scratch.js";
@@ -19,6 +20,7 @@ const calibrationSchema = z.strictObject({
 });
 export type Calibration = z.infer<typeof calibrationSchema>;
 export interface CalibrationAnalyzer {
+  readonly tracksMediaRequests?: boolean;
   readonly model: string;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
   probeClipClock(file: GeminiFile): Promise<number>;
@@ -57,7 +59,7 @@ export async function calibrateClipClock(analyzer: CalibrationAnalyzer, options:
     const video = join(directory, "flash.mp4");
     if (await (options.synthesize ?? synthesizeFlash)(video)) {
       try {
-        remote = await analyzer.upload(video, "video/mp4");
+        remote = await uploadMedia(analyzer, video, "video/mp4");
         const answer = await analyzer.probeClipClock(remote);
         if (Number.isFinite(answer)) reportedSeconds = answer;
       } catch (error) {

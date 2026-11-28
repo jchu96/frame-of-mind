@@ -650,7 +650,9 @@ frameofmind analyze --source none --video recording.mp4 --from 600 --to 1200 --r
 frameofmind transcribe recording.wav --from 44100samp --to 132300samp --json
 ```
 
-`--from` includes the start and `--to` excludes the end. Omit either to use the recording edge. Use seconds with up to three decimal places, a video frame such as `15000f`, or source timecode. Use `--timecode-rate from-media:df` or `from-media:ndf` for an ambiguous timecode label. Audio-only transcription accepts seconds or a native sample count. Each requested range must cover at least one second. The tool rounds the start down and end up to the source grid. A seconds end less than one unit beyond EOF clamps to EOF. Read the `Range used:` line on stderr and `edgeMoved` in the receipt.
+`--from` includes the start and `--to` excludes the end. Omit either to use the recording edge. Use seconds with up to three decimal places, a video frame such as `15000f`, or source timecode. Use `--timecode-rate from-media:df` or `from-media:ndf` for an ambiguous timecode label. For sound-only recordings, both commands accept seconds or a native sample count such as `44100samp`. Each requested range must cover at least one second. The tool rounds the start down and end up to the source grid. A seconds end less than one unit beyond EOF clamps to EOF. Read the `Range used:` line on stderr and `edgeMoved` in the receipt.
+
+`analyze` reports whole samples at the audio track’s own rate. Its report says there is no picture and no stills are taken. Asking for a picture explicitly, for example with `frame`, returns `error.details.reason` of `no-video-stream`. A failure before a media upload starts carries `error.details.phase` of `prepare` and `error.details.sent` of `false`.
 
 with a seconds bound moved to its frame, a printed whole second can fall just outside the request; a caller tests ownership against `sourceRange`, never against a printed second.
 
@@ -684,7 +686,7 @@ A usage refusal exits 2 in either output mode. With `--json`, branch on `error.d
 | Reference notes | `too-many-notes`, `invalid-note`, `duplicate-note`, `invalid-note-format`, `invalid-note-file`, `note-too-large`, `invalid-note-encoding`, `binary-note` |
 | Clocks, snapping and media commands | `missing-timecode-rate`, `missing-drop-frame-mode`, `missing-timeline-offset`, `invalid-file-clock`, `invalid-edge`, `invalid-snap`, `invalid-snap-gap`, `invalid-snap-window`, `invalid-map-direction`, `verify-expectation`, `missing-output` |
 | Job options and grants | `duplicate-job-option`, `invalid-job-limit`, `invalid-file-limit`, `invalid-allowed-models`, `conflicting-job-roots`, `missing-job-roots`. Job retention uses `invalid-retention`. |
-| Range bounds | `Invalid range bound.`, `Audio bounds use seconds or Nsamp.`, `Specify the source drop-frame mode or use frames.`, `a bound outside the recording`, `from at or after to`, `a range shorter than the tool can analyse` |
+| Range bounds | `Invalid range bound.`, `no-video-stream`, `Specify the source drop-frame mode or use frames.`, `a bound outside the recording`, `from at or after to`, `a range shorter than the tool can analyse` |
 | Range preparation | `A range cannot reuse a remote file.`, `--transcript-offset requires meeting or file context.`, `Range requires a locally verifiable cut.` (see `error.details.frameTiming` when timing was measured) |
 
 ## Clocks

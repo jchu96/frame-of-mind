@@ -1,3 +1,4 @@
+import { preparationDetails } from "../lib/media-transfer.js";
 import { ContractError, faultCode } from "./contract-error.js";
 import type { RangeClock } from "./range-clock.js";
 import type { ExactSpan } from "./source-bound.js";
@@ -40,8 +41,9 @@ export class SourceReceipt {
 
 // Before a local cut leaves the machine there is no remote lifecycle to
 // publish. Return only information acquired before the failure.
-export function preparationError(error: unknown, source: Record<string, unknown>, tell: (line: string) => void) {
-  tell(`Source coverage: ${JSON.stringify(source)}`);
-  return new ContractError(faultCode(error), error instanceof ContractError ? error.message : "Could not prepare the recording.",
-    {...(error instanceof ContractError && error.details), ...source, phase:"prepare", sent:false});
+export function preparationError(error: unknown, source: Record<string, unknown>, tell?: (line: string) => void, preserveError = false) {
+  tell?.(`Source coverage: ${JSON.stringify(source)}`);
+  const details = {...(error instanceof ContractError && error.details), ...preparationDetails(source)};
+  if (error instanceof ContractError || (preserveError && error instanceof Error)) return Object.assign(error, {details});
+  return new ContractError(faultCode(error), "Could not prepare the recording.", details);
 }

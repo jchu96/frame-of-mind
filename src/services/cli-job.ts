@@ -46,7 +46,7 @@ function lookup(store: JobStore, family: Family, id: string, op: JobOperation) {
     if (op === "result") {
       const {jobId, runId, runFolder, receipt} = record;
       if (active(record)) throw new ContractError("JOB_PENDING", "The job is still active.");
-      if (record.code) throw new ContractError(record.code, "Job failed.", {jobId, runFolder, receipt});
+      if (record.code) throw new ContractError(record.code, "Job failed.", {jobId, runFolder, receipt, ...(record.preparing && {phase:"prepare", sent:false})});
       return {receipt, runFolder, ...(runId && {runId})};
     }
     if (op === "cancel") {
@@ -178,7 +178,10 @@ async function execute(store: JobStore, record: JobRecord, flags: JobOptions, gr
     record.inFlight = op;
     receipt.providerRequests = count;
     if (op === "start") receipt.uploads.push({kind: record.family === "analyze" ? "recording" : "audio", disposition: "not_obtained", expiresAt: null});
-    if (op === "finalize") receipt.uploads.at(-1)!.disposition = "unconfirmed";
+    if (op === "finalize") {
+      delete record.preparing;
+      receipt.uploads.at(-1)!.disposition = "unconfirmed";
+    }
     if (op === "generate") generation++;
     const name = op === "delete" ? "cleanup" : op !== "generate" ? "upload" :
       record.family === "transcribe" ? "transcribe" : generation === 1 ? "index" : "detail";

@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Fixed a v0.6.8 regression that refused sound-only recordings in `analyze`. Voice recordings use native sample positions and produce no stills. A failure before media upload starts reports `phase: "prepare"` and `sent: false`.
+
 - Analyze accepts a verified candidates file, previews proposer and grader roles, and writes each candidate’s provenance and resolved start and exclusive end. Measured cuts and speech snaps identify the tool. Claims keep the finder’s radius. The grader receives the claim and optional surface as fenced data on both routes. Items and failure rows retain the full proposal. The effect of showing the claim was measured on one set of screen recordings. [Engine contract](docs/ENGINE_CONTRACT.md)
 - CLI usage refusals carry a reason in `error.details.reason` with `--json`. Refusals that exited 1 in plain mode now exit 2. A range scan that cannot verify the cut returns the fixed reason `Range requires a locally verifiable cut.` and reports measured timing in `error.details.frameTiming`.
 

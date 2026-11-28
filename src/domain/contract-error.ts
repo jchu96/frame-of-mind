@@ -69,6 +69,11 @@ export class OptionError extends Error {
   asUsageError(message = this.message) { return new UsageError(this.reason, message); }
 }
 
+export function noVideoStream() {
+  return new ContractError("INVALID_INPUT", "The recording has no video stream.",
+    {reason:"no-video-stream", phase:"prepare", sent:false});
+}
+
 export class UsageError extends ContractError {
   constructor(reason: string, message = reason, details?: Record<string, unknown>) {
     super("USAGE", message, {...details, reason});
