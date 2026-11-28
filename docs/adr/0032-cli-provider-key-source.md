@@ -73,6 +73,7 @@ with literal arguments, closed input, private pipes and its own process group.
 A script’s interpreter is found through the operator’s own launch environment.
 Only this child receives the launch snapshot less the two provider keys and the selector.
 Trust the chosen reader with the remaining session environment.
+Operator-selected runtime debugging such as `NODE_DEBUG=child_process` can print the reader’s arguments and environment to standard error.
 
 A consumer shares one acquisition, including a refusal. Allow 30 seconds and 4,096
 bytes across both pipes. Accept one printable ASCII token after an optional final

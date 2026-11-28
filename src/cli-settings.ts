@@ -63,7 +63,11 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
   let selected: ReturnType<typeof select> | undefined;
   const selectedKey = () => selected ??= select();
   return {
-    setting(name: ApplicationSetting) { return inheritedValue(launch.environment, name) ?? file()?.[name]; },
+    setting(name: ApplicationSetting) {
+      const inherited = inheritedValue(launch.environment, name);
+      if (inherited !== undefined || (selected?.report.source === "command" && !selected.report.present)) return inherited;
+      return file()?.[name];
+    },
     keyReport() { return selectedKey().report; },
     settingsPath() { return userSettingsPath(launch.accountHome, platform); },
     commandNextStep() { return nextStep; },

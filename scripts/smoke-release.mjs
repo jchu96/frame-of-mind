@@ -21,9 +21,9 @@ try {
       return new Response(null, {status: 403});
     };
   `);
-  function run(args, expectedStatus, options = [], env = {}) {
+  function run(args, expectedStatus, options = [], env = {}, timeout) {
     const result = spawnSync(process.execPath, ["--require", account, ...options, "frameofmind.mjs", ...args], {
-      cwd, env: { HOME: cwd, PATH: "", SystemRoot: process.env.SystemRoot, ...env }, encoding: "utf8",
+      cwd, timeout, env: { HOME: cwd, PATH: "", SystemRoot: process.env.SystemRoot, ...env }, encoding: "utf8",
     });
     if (result.error) throw result.error;
     assert.equal(result.status, expectedStatus, `${args.join(" ")} failed: ${result.stderr.trim()}`);
@@ -68,7 +68,7 @@ try {
     await writeFile(join(cwd, "fixture.mp4"), "synthetic recording");
     const args = ["analyze", "--source", "none", "--video", "fixture.mp4", "--output", "out",
       "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"];
-    run(args, 1, [], {PATH: tools + ":/usr/bin:/bin", FIXTURE_SESSION: "synthetic-command-fixture"});
+    run(args, 1, [], {PATH: tools + ":/usr/bin:/bin", FIXTURE_SESSION: "synthetic-command-fixture"}, 20_000);
     assert.equal(await readFile(join(cwd, "consumer-result"), "utf8"), "accepted");
     console.log("RELEASE_KEY_COMMAND local_consumer=PASS");
   }
