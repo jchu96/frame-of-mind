@@ -259,9 +259,9 @@ describe("hosted gate separation", () => {
   }, 30_000);
 
   test("MISS deploy-needs-hosted: default or hosted failure propagates in check and deploy modes", async () => {
-    const root = await fixture(true);
+    const root = await fixture();
     try {
-      await observePreflight(root, "original");
+      expect((await run(root, ["bun", "run", "check:deploy"])).code).toBe(0);
       for (const mode of ["check:deploy", "deploy:hosted"]) {
         for (const failure of ["FAIL_DEFAULT", "FAIL_HOSTED"]) {
           const result = await run(root, ["bun", "run", mode, ...(mode === "deploy:hosted" ? ["web"] : [])], { [failure]: "1" });
@@ -276,12 +276,6 @@ describe("hosted gate separation", () => {
       console.log("DEPLOY_FIXTURE red=PASS gate_exit=1 deploy_refused=true");
     } finally { await rm(root, { recursive: true, force: true }); }
   }, 30_000);
-
-  test.each(Array.from({length: 80}, (_, i) => i + 1))("trace fresh preflight %i", async index => {
-    const root = await fixture(true);
-    try { await observePreflight(root, String(index)); }
-    finally { await rm(root, {recursive: true, force: true}); }
-  });
 
   test("MISS deploy-source-stable: dirty source, or HEAD/input changes during checks refuse Wrangler", async () => {
     for (const change of ["dirty", "head", "input"]) {
@@ -310,44 +304,11 @@ async function refused(root: string, result: Result): Promise<void> {
   await expect(readFile(join(root, ".git/deployed.json"))).rejects.toThrow();
 }
 
-async function observePreflight(root: string, sample: string) {
-  const result = await run(root, ["bun", "run", "check:deploy"]);
-  const trace = result.stderr.split("\n").filter(line => line.startsWith("IDENTITY_TRACE "));
-  const status = await run(root, ["git", "status", "--porcelain"]);
-  console.log("PREFLIGHT", JSON.stringify({sample, root, code: result.code, trace, status: status.stdout}));
-  if (result.code !== 0) {
-    const execution = await readFile(join(root, ".git/execution.log"), "utf8").catch(error => String(error));
-    console.error("PREFLIGHT_FAILURE", JSON.stringify({sample, ...result, execution, status}));
-  }
-  expect(result.code, result.stderr).toBe(0);
-  expect(trace.some(line => line.includes("identities"))).toBe(true);
-}
-
-async function fixture(traceIdentity = false): Promise<string> {
+async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "hosted-gate-fixture-"));
   for (const file of ["scripts/run-check-sharded.ts", "scripts/check-gate-policy.ts",
     "scripts/prebuilt-artifact.ts", "scripts/hosted-deploy-gate.ts", "scripts/check-build-cache.ts"]) {
-    let source = await readFile(file, "utf8");
-    if (traceIdentity && file.endsWith("hosted-deploy-gate.ts")) {
-      source = source.replace("const after = await sourceIdentity();", `$&
-        console.error("IDENTITY_TRACE " + JSON.stringify({identities: [before, after]}));`);
-    }
-    if (traceIdentity && file.endsWith("check-build-cache.ts")) {
-      source = source.replace("const hash = createHash", "const entries = []; const hash = createHash")
-        .replace("hash.update(await readFile(resolve(cwd, path)));", `
-          const bytes = await readFile(resolve(cwd, path));
-          hash.update(bytes);
-          entries.push([path, createHash("sha256").update(bytes).digest("hex")]);`)
-        .replace('hash.update("<deleted>");', '$& entries.push([path, "<deleted>"]);')
-        .replace('return hash.digest("hex");', `console.error("IDENTITY_TRACE " + JSON.stringify({cwd, entries})); $&`)
-        .replace("const paths = Buffer.concat(stdout)", `
-          const sampledBytes = Buffer.concat(stdout).length;
-          process.once("exit", () => console.error("IDENTITY_TRACE " + JSON.stringify({
-            sampledBytes, finalBytes: Buffer.concat(stdout).length, streamEnded: child.stdout.readableEnded
-          })));
-          const paths = Buffer.concat(stdout)`);
-    }
-    await put(root, file, source);
+    await put(root, file, await readFile(file, "utf8"));
   }
   await put(root, "package.json", JSON.stringify({ type: "module", scripts: {
     "check:pr": scripts["check:pr"], "check:sharded": scripts["check:sharded"],
@@ -436,7 +397,7 @@ async function run(root: string, command: string[], extra: Record<string, string
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
   const code = await new Promise<number>((resolve, reject) => {
     child.once("error", reject);
-    child.once("close", (code) => resolve(code ?? 1));
+    child.once("exit", (code) => resolve(code ?? 1));
   });
   return { code, stdout, stderr };
 }

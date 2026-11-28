@@ -11,10 +11,6 @@ import { validateCliDocument } from "./helpers/cli-schema.js";
 let root: string;
 let read: string;
 let out: string;
-let traceJ04: ((event: string) => void) | undefined;
-let releaseFifth: (() => void) | undefined;
-let inspectFifth: (() => Promise<void>) | undefined;
-let j04Work: Promise<void> | undefined;
 const model = "gemini-fixture";
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), "cli-job-")));
@@ -24,23 +20,6 @@ beforeEach(async () => {
   await writeFile(join(read, "clip.mp4"), "fixture");
 });
 afterEach(async () => {
-  if (j04Work) {
-    try {
-      await inspectFifth?.();
-    } finally {
-      releaseFifth?.();
-      try { await j04Work; }
-      finally { releaseFifth = undefined; j04Work = undefined; }
-    }
-    await inspectFifth?.();
-    inspectFifth = undefined;
-  }
-  if (traceJ04) {
-    const trace = traceJ04;
-    const entries = await readdir(out, {recursive: true}).catch(error => [String(error)]);
-    trace(`teardown entries=${JSON.stringify(entries)}`);
-    traceJ04 = undefined;
-  }
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   await rm(root, { recursive: true, force: true });
@@ -55,7 +34,6 @@ function provider(generation: Response | ((body: string) => object) = body =>
     expect(request.hostname).toBe("generativelanguage.googleapis.com");
     const upload = new Headers(init.headers).get("x-goog-upload-command");
     const op = upload === "start" ? "start" : upload ? "finalize" : init.method === "DELETE" ? "delete" : "generate";
-    traceJ04?.(`provider ${op}`);
     calls.push(op);
     if (op === "start") return new Response(null, {headers: {"x-goog-upload-url": request.origin + "/upload/resumable"}});
     if (op === "finalize") {
@@ -83,8 +61,6 @@ function startArgs(family: string, retention = "run", limit = 8) {
 }
 async function call(family: "analyze" | "transcribe", op: Parameters<typeof runJobCommand>[1], args: string[],
   admitted?: (job: any) => void, readKey?: () => string | undefined) {
-  const trace = traceJ04;
-  trace?.(`${op} begin`);
   let result: any;
   const diagnostics = vi.spyOn(process.stdout, "write").mockImplementation(chunk => {
     result = JSON.parse(String(chunk));
@@ -96,11 +72,9 @@ async function call(family: "analyze" | "transcribe", op: Parameters<typeof runJ
     await runJobCommand(family, op, args, {readKey, withSourceRecording: fixtureSource(() => 2), probe: async () => 2, sleep: async () => {}, extractAudioTrack: async (_input, output) => {
       expect(output.startsWith(out + "/")).toBe(true);
       await writeFile(output, "aac"); return true;
-    }}, {write: capture, admit: async doc => { trace?.(`${op} admitted`); capture(doc); admitted?.(doc); }});
-    trace?.(`${op} command returned`);
+    }}, {write: capture, admit: async doc => { capture(doc); admitted?.(doc); }});
     expect(result, "one machine answer").toBeDefined();
     validateCliDocument(op === "dry-run" ? "analyze-dry-run" : op === "result" ? "job-result" : "job", JSON.stringify(result));
-    trace?.(`${op} validated`);
     return {doc: result, exit: process.exitCode};
   } finally { diagnostics.mockRestore(); process.exitCode = 0; }
 }
@@ -269,36 +243,14 @@ it("J03 refuses each missing grant before creating a job", async () => {
   expect(await readdir(out)).toEqual([]);
 });
 
-it("J04 keeps or deletes acquired recordings and windows after success and cancel", () => {
-  j04Work = runJ04();
-  return j04Work;
-});
-
-async function runJ04() {
-  const started = performance.now();
-  traceJ04 = event => console.error(`J04 +${Math.round(performance.now() - started)}ms ${event}`);
-  const holdFifth = new Promise<void>(resolve => { releaseFifth = resolve; });
+it("J04 keeps or deletes acquired recordings and windows after success and cancel", async () => {
   for (const family of ["analyze", "transcribe"] as const) {
     for (const retention of ["provider", "run"]) {
       for (const cancel of [false, true]) {
         out = join(root, [family, retention, cancel].join("-"));
-        traceJ04?.(`case ${family} ${retention} cancel=${cancel}`);
         await mkdir(out);
         const fake = provider();
         let id: string;
-        if (family === "transcribe" && retention === "provider" && !cancel) {
-          const fifthOut = out;
-          fake.onFinalize(async () => {
-            const dir = join(fifthOut, ".frameofmind-jobs", id);
-            inspectFifth = async () => {
-              const {state, stage, inFlight} = JSON.parse(await readFile(join(dir, "job.json"), "utf8"));
-              console.error("J04_FIFTH", JSON.stringify({state, stage, inFlight, entries: await readdir(dir, {recursive: true})}));
-            };
-            traceJ04?.("hold fifth finalize until teardown");
-            await holdFifth;
-            traceJ04?.("released fifth finalize during teardown");
-          });
-        }
         if (cancel) fake.onFinalize(async () => {
           expect((await call(family, "cancel", [id, ...folders(), "--json"])).doc.state).toBe("cancelling");
         });
@@ -318,8 +270,7 @@ async function runJ04() {
       }
     }
   }
-  traceJ04 = undefined;
-}
+});
 
 it("J05 a lost reply costs one upload and a replacement requires the unknown job ID", async () => {
   const fake = provider();
