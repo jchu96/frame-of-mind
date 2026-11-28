@@ -1,6 +1,6 @@
 import { applicationSetting } from "./lib/application-settings.js";
 import * as Sentry from "@sentry/bun";
-import { CLI_TELEMETRY_ENABLED, CLI_TRACING_ENABLED } from "./instrument.js";
+import { cliInstrumentation } from "./instrument.js";
 import { createSentryAnalysisTracer } from "./lib/sentry-tracer.js";
 import type { AnalysisTracer } from "./lib/telemetry-trace.js";
 import {
@@ -10,16 +10,16 @@ import {
 } from "./lib/sentry-telemetry.js";
 
 export function isCliTelemetryEnabled(): boolean {
-  return CLI_TELEMETRY_ENABLED;
+  return cliInstrumentation().enabled;
 }
 
 export function isCliTracingEnabled(): boolean {
-  return CLI_TRACING_ENABLED;
+  return cliInstrumentation().tracing;
 }
 
 /** The CLI's tracer, or undefined when tracing is not opted in. */
 export function cliAnalysisTracer(): AnalysisTracer | undefined {
-  return CLI_TRACING_ENABLED ? createSentryAnalysisTracer() : undefined;
+  return cliInstrumentation().tracing ? createSentryAnalysisTracer() : undefined;
 }
 
 /**
@@ -28,7 +28,7 @@ export function cliAnalysisTracer(): AnalysisTracer | undefined {
  * captureCliException). Never throws.
  */
 export async function flushCliTelemetry(): Promise<void> {
-  if (!CLI_TELEMETRY_ENABLED) return;
+  if (!cliInstrumentation().enabled) return;
   await Sentry.flush(2_000).catch(() => false);
 }
 
@@ -36,7 +36,7 @@ export async function captureCliException(
   code: string,
   tags: TelemetryTags,
 ): Promise<string | undefined> {
-  if (!CLI_TELEMETRY_ENABLED) return undefined;
+  if (!cliInstrumentation().enabled) return undefined;
   const eventId = Sentry.captureException(
     new SanitizedTelemetryError(code),
     { tags: normalizeTelemetryTags({ ...tags, code }) },

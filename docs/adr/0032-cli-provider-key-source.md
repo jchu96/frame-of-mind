@@ -19,7 +19,7 @@ Both launch classes are accepted. With either env-file option, as with bare
 Bun, ordinary commands run with unknown key provenance and a job start
 returns `USAGE`. A clean job start receives the
 inherited key only. Ordinary commands consult the launch environment
-and then the literal folder file. A selected invalid source stops the lookup.
+before the key command and the literal folder file. A selected invalid source stops the lookup.
 Read application settings separately and keep the allowlists for child processes.
 
 Doctor describes the selected source and any unavailable state. Its existing
@@ -58,7 +58,25 @@ It can change the startup options or set variables before the CLI sees them.
 In a folder you do not trust, run the installed Node command or the release file,
 which read no such preload file.
 
-## Pending
+## Per-user key command
 
-Step 2 covers the operator’s per-user settings file and key command. This step
-introduces neither source. The existing dotenv destination remains available.
+At clean launch, capture the home returned by `os.userInfo()`. Bun can derive this
+from an inherited HOME. The operator supplies that value before any folder
+settings are parsed. On demand, resolve the fixed account settings path, ignoring
+XDG_CONFIG_HOME. Use the inherited selector first, then the settings file’s optional
+`keyCommand`. The account must own the 0700 tool directory and its regular 0600 file.
+Open the file without following links and check the open handle before reading.
+
+Resolve element zero to an absolute executable owned by the effective user or root.
+Group and other write bits disqualify it. Start the resolved path in the account home
+with literal arguments, closed input, private pipes and its own process group.
+A script’s interpreter is found through the operator’s own launch environment.
+Only this child receives the launch snapshot less the two provider keys and the selector.
+Trust the chosen reader with the remaining session environment.
+
+A consumer shares one acquisition, including a refusal. Allow 30 seconds and 4,096
+bytes across both pipes. Accept one printable ASCII token after an optional final
+LF or CRLF, with zero exit and empty stderr. Refusal ends selection. Doctor reports a
+configured reader as unverified and only inspects its setup. Bare launches and jobs
+never start the reader. Native Windows skips the account file and refuses an explicit
+selector. WSL uses the Linux account path.

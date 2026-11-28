@@ -279,8 +279,13 @@ frameofmind key set
 
 The prompt hides the key and atomically updates `GEMINI_API_KEY` in `./.env`
 with mode 0600. Use `--env-file <path>` to select another dotenv file.
-Non-TTY input is refused. For ordinary commands, the inherited `GEMINI_API_KEY`
-takes precedence over the literal assignment in the working folder’s `.env`.
+Non-TTY input is refused. Ordinary commands try the inherited `GEMINI_API_KEY`,
+the operator’s key command, then the working folder’s literal `.env` assignment.
+A failed reader returns `KEY_REFUSED` and ends lookup. Run `frameofmind doctor` for the settings
+path and permission repair. It never executes the command. The account must own the 0600
+regular settings file and its 0700 directory. A linked settings file is refused.
+The [README](../README.md) has the setup commands. Native Windows uses the environment
+or folder key. WSL supports the reader.
 An empty or invalid assignment stops selection. Run `frameofmind doctor` to identify
 the selected source. Job start accepts only an inherited key on a clean launch.
 

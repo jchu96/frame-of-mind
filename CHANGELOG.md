@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+Ordinary CLI commands on macOS and Linux can retrieve the provider key from a
+per-user command. Doctor v1 can report `source: "command"`, with `state: "unverified"`
+for a configured reader or `"unavailable"` for unsafe settings. Doctor never runs it.
+
 Removed the transcript recheck and `transcribe --recheck`. On a real recording, none of
 the guards evaluated removed every invented line while keeping a confirmed real line.
 New output omits `outcome`, `rechecks`, `belowCutoff`, and the per-line `recovered` mark.

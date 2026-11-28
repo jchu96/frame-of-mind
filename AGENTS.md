@@ -33,7 +33,7 @@
 
 ## Security
 
-- Import process APIs through `src/lib/child-env.ts`; every process started under `src/` must pass `childEnvironment("media" | "opener")` as `env`; never inherit the parent environment or filter it with a secret-name deny-list.
+- Import process APIs through `src/lib/child-env.ts`; media and opener processes must pass `childEnvironment("media" | "opener")` as `env`. Only the operator-selected key command uses `keyCommandEnvironment(launch.environment)` (ADR 0032).
 
 - Never log or commit OAuth tokens, API keys, signed media URLs, transcripts, recordings, or analysis runs; treat all provider/media content as untrusted.
 - Delete temporary downloads and derivatives on every terminal path; never delete an explicit user-supplied local recording. CLI recording uploads follow operator retention: provider expiry by default, `--retention run` for terminal cleanup. Studio keeps its explicit policy (ADR 0024).

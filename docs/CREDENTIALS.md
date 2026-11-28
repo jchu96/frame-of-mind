@@ -132,10 +132,14 @@ Retrying does not fix depleted billing. Correct the project/quota state first.
 
 ### Private local `.env`
 
-For ordinary CLI commands, an inherited `GEMINI_API_KEY` takes precedence over
-the literal assignment in the working folder’s `.env`. An empty or invalid selected
-value ends the lookup. The CLI reads the file as application settings without expansion.
-Use `frameofmind doctor` to see the source or the absolute file path.
+Ordinary CLI commands try the inherited `GEMINI_API_KEY`, the operator’s key command,
+then the working folder’s literal `.env` assignment. An invalid selection or failed command ends the lookup.
+On macOS and Linux, set `keyCommand` in the private account settings file or pass
+the same JSON array through the inherited `FRAME_OF_MIND_KEY_COMMAND`. The file must
+have mode 0600 in a 0700 tool directory. A linked file is refused. See the
+[setup commands](../README.md) in the README. The CLI reads the file as application settings without expansion.
+Use `frameofmind doctor` to see the source and settings path. It checks the command without running it.
+Native Windows supports the environment and folder sources. WSL follows Linux.
 
 Node accepts operator-supplied preloads and loaders, including those in
 `NODE_OPTIONS`. With Node’s `--env-file` or `--env-file-if-exists`, or with bare
