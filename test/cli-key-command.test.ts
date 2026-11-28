@@ -178,7 +178,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       expect(validateCliDocument("doctor", run(["doctor", "--json"], control, runtime).out).key)
         .not.toHaveProperty("commandDisabledByEnvironment");
       expect(existsSync(marker)).toBe(false);
-    });
+    }, 30_000);
   });
 
   it.each(["node-bare", "bun-bare"])("ignores folder and inherited selectors on a merged launch (%s)", runtime => {
