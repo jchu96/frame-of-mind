@@ -5,27 +5,31 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-Ordinary CLI commands on macOS and Linux can retrieve the provider key from a
-per-user command. Doctor v1 can report `source: "command"`, with `state: "unverified"`
-for a configured reader or `"unavailable"` for unsafe settings. Doctor never runs it.
+## [0.6.7] - 2026-11-28
 
-Fixed: `slice`, `proxy`, `probe --decode-check`, `verify` and `--timecode-rate from-media` could fail with
-"ffprobe timed out" on a long recording when the machine was busy. The frame-timing scan decodes every frame
-and had a fixed 60-second limit. The limit is now 60 seconds plus half a second per second of recording.
+The provider key can come from a command you name once, so no key sits in a file. A key that is present is used on every launch: the refusal "Credential source unknown" that 0.6.6 gave a job start is gone. The local media commands no longer give up on a long recording because a fixed clock ran out. Everything added is optional on contract version 1.
 
-Fixed: the decode check and the encode of `slice`, `proxy`, `probe --decode-check` and `verify` had a fixed
-600-second limit, so a proxy of a long recording could be cut off by the clock. The limit is now 600 seconds
-plus two seconds per second of recording.
+### Added
 
-The job-start refusal introduced in 0.6.6 is gone. Jobs can use the key present
-after Bun or Node has merged a folder file. Doctor reports its source as unknown
-and prints no next step. Without a key, doctor exits 1 and prints one next step.
-A configured key reader gives `Key command unavailable.` under that launcher
-because it would inherit the merged environment.
+- Key command. On macOS and Linux, ordinary commands can get the provider key from a command you choose: `keyCommand` in a per-user settings file (macOS `Library/Application Support/frameofmind/settings.json`, Linux `.config/frameofmind/settings.json`), or `FRAME_OF_MIND_KEY_COMMAND` in the environment the tool is started with. The order of sources is: the environment, the key command, the folder's `.env`. The command is started directly with no shell, in your home folder, with the environment the tool was started with; it has 30 seconds and must print one key and nothing else. A script is allowed. The settings file must be yours, mode 0600, in a directory of mode 0700, and not a link. A command that fails ends the lookup with `Key command unavailable.`; it never falls back to the folder's `.env`. Jobs keep using a key from the environment only. Native Windows does not offer the key command. The README gives the lines that create the file and a macOS keychain recipe.
+- `doctor` with a key command: `ok GEMINI_API_KEY (key command, not run by doctor)`, `key.source: "command"`, `key.state: "unverified"`, `key.present: true`, exit 0. `doctor` never runs the command, so `unverified` means set up, not tried. An unsafe settings file or command is `state: "unavailable"`, exit 1, with one line that fixes it. `doctor --json` gains optional `settingsPath`.
+- With `--json`, a failed or unavailable key command carries `error.details.reason: "key-command"`, so a caller can tell it from a key the provider refused, which carries no `reason`. Code and exit status are the same for both (`KEY_REFUSED`, 10).
+- Local Studio's review export keeps each item's `stillTimes` and `screenTextNotFromStill`. It dropped both before.
 
-With `--json`, a failed or unavailable key command now carries `error.details.reason: "key-command"`, so a
-caller can tell it from a key the provider refused, which carries no `reason`. Code and exit status are
-unchanged (`KEY_REFUSED`, 10).
+### Changed
+
+- A key present in the environment is used on every launch and for every command, a job start included. Under a launcher that merges a folder file before the tool runs (Bun without `--no-env-file`, Node with `--env-file`), 0.6.6 refused a job start with "Credential source unknown. Start with a clean launcher." That refusal is removed. `doctor` there reports the key as present with source `unknown`, exits 0 and prints no next-step line; with no key it exits 1 and prints one next step.
+- Under such a launcher no key command runs, from the environment or from the settings file: the folder's file has already written into the environment the command would run in. With no key in the environment there, a command that needs the key answers `Key command unavailable.` when a key command is configured and `KEY_MISSING` when none is. The installed command and the release file are not such launchers.
+
+### Fixed
+
+- `slice`, `proxy`, `probe --decode-check`, `verify` and `--timecode-rate from-media` could fail with "ffprobe timed out" on a long recording when the machine was busy. The frame-timing scan decodes every frame and had a fixed 60-second limit. The limit is now 60 seconds plus half a second per second of recording.
+- The decode check and the encode of `slice`, `proxy`, `probe --decode-check` and `verify` had a fixed 600-second limit, so a proxy of a long recording could be cut off by the clock. The limit is now 600 seconds plus two seconds per second of recording.
+
+### Known limits
+
+- Speech snapping under room noise. With `--snap speech`, or the `snap` command, an edge reported as `snapped` can sit inside the first or last word by up to about a third of a second when the recording has steady room noise. Check a snapped edge by ear before cutting on it. Not fixed in this release.
+- Node's own debug switches can print the key command's arguments and environment to standard error. They never print the key.
 
 ## [0.6.6] - 2026-11-28
 

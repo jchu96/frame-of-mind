@@ -96,7 +96,7 @@ maintainer's reference instance runs at
 [fom.flickerventures.com](https://fom.flickerventures.com).
 
 > [!IMPORTANT]
-> Early public release (`v0.6.6`). Review generated work before using or
+> Early public release (`v0.6.7`). Review generated work before using or
 > publishing it. Generated output always requires human review.
 
 ## Status as of 2026-08-24
@@ -321,7 +321,7 @@ frameofmind key set
 frameofmind doctor
 ```
 
-A build made this way prints its version with `+source`, for example `0.6.6+source`, in `--version`,
+A build made this way prints its version with `+source`, for example `0.6.7+source`, in `--version`,
 `doctor`, the `version` document and each run manifest. The linked command runs the files in `dist/`,
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
@@ -729,6 +729,8 @@ proposal with a 780 ms pause and another qualifying end at 21.600 s.
 An edge can move outward only within the speech group containing the model
 time. If the only qualifying edges cross other speech, the model time stays
 and the result lists those edges as alternatives.
+Under room noise a snapped edge can sit inside the first or last word by up to
+about a third of a second; check it before cutting on it.
 
 The model time keeps its one-second precision. The signed shift gives the
 change from that time. The audio target is measured on a 10 ms grid, accurate to about ±50 ms for source audio at 32 kHz or above
