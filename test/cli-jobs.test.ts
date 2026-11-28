@@ -11,6 +11,7 @@ import { validateCliDocument } from "./helpers/cli-schema.js";
 let root: string;
 let read: string;
 let out: string;
+let retentionWork: Promise<void> | undefined;
 const model = "gemini-fixture";
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), "cli-job-")));
@@ -19,10 +20,19 @@ beforeEach(async () => {
   await Promise.all([mkdir(read), mkdir(out)]);
   await writeFile(join(read, "clip.mp4"), "fixture");
 });
-afterEach(async () => {
-  vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
-  await rm(root, { recursive: true, force: true });
+async function removeJobFixture(directory: string, work?: Promise<void>) {
+  try {
+    await work;
+  } finally {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+afterEach(() => {
+  const work = retentionWork;
+  retentionWork = undefined;
+  return removeJobFixture(root, work);
 });
 function provider(generation: Response | ((body: string) => object) = body =>
   body.includes("matchNotes") ? {matchNotes: "fixture", moments: []} : {segments: []}) {
@@ -243,33 +253,69 @@ it("J03 refuses each missing grant before creating a job", async () => {
   expect(await readdir(out)).toEqual([]);
 });
 
-it("J04 keeps or deletes acquired recordings and windows after success and cancel", async () => {
-  for (const family of ["analyze", "transcribe"] as const) {
-    for (const retention of ["provider", "run"]) {
-      for (const cancel of [false, true]) {
-        out = join(root, [family, retention, cancel].join("-"));
-        await mkdir(out);
-        const fake = provider();
-        let id: string;
-        if (cancel) fake.onFinalize(async () => {
-          expect((await call(family, "cancel", [id, ...folders(), "--json"])).doc.state).toBe("cancelling");
-        });
-        const args = startArgs(family, retention);
-        if (family === "transcribe") args.push("--transcript-json");
-        const {doc} = await call(family, "start", args, job => { id = job.jobId; });
-        const status = await call(family, "status", [doc.jobId, ...folders(), "--json"]);
-        expect(status.doc.state, JSON.stringify(status.doc)).toBe(cancel ? "cancelled" : "complete");
-        expect(fake.inventory.size, family + " retention " + retention + " after " + (cancel ? "cancel" : "success")).toBe(retention === "provider" ? 1 : 0);
-        expect(fake.calls).toEqual(["start", "finalize", ...(cancel ? [] : ["generate"]), ...(retention === "run" ? ["delete"] : [])]);
-        const durable = await record(doc.jobId);
-        expect(durable.receipt.uploads[0].disposition).toBe(retention === "provider" ? "kept" : "deleted");
-        expect(JSON.stringify(durable)).not.toMatch(/"[^"]*tokens?[^"]*"\s*:/i);
-        const result = await call(family, "result", [doc.jobId, ...folders(), "--json"]);
-        if (cancel) expect(result.exit).toBe(130);
-        else expect(result.doc.runFolder.startsWith(out + "/")).toBe(true);
+it("J04 keeps or deletes acquired recordings and windows after success and cancel", ({signal}) => {
+  retentionWork = checkRetentionCases(signal);
+  return retentionWork;
+});
+
+async function checkRetentionCases(signal: AbortSignal) {
+  const finished: {name: string; ms: number}[] = [];
+  let current = "";
+  const report = () => console.error("J04 interrupted", {current, finished: [...finished]});
+  signal.addEventListener("abort", report, {once: true});
+  try {
+    for (const family of ["analyze", "transcribe"] as const) {
+      for (const retention of ["provider", "run"]) {
+        for (const cancel of [false, true]) {
+          current = `${family}-${retention}-${cancel ? "cancel" : "success"}`;
+          const started = performance.now();
+          out = join(root, current);
+          await mkdir(out);
+          await checkRetention(family, retention, cancel);
+          finished.push({name: current, ms: Math.round(performance.now() - started)});
+        }
       }
     }
+  } finally {
+    signal.removeEventListener("abort", report);
   }
+}
+
+async function checkRetention(family: "analyze" | "transcribe", retention: string, cancel: boolean) {
+  const fake = provider();
+  let id: string;
+  if (cancel) fake.onFinalize(async () => {
+    expect((await call(family, "cancel", [id, ...folders(), "--json"])).doc.state).toBe("cancelling");
+  });
+  const args = startArgs(family, retention);
+  if (family === "transcribe") args.push("--transcript-json");
+  const {doc} = await call(family, "start", args, job => { id = job.jobId; });
+  const status = await call(family, "status", [doc.jobId, ...folders(), "--json"]);
+  expect(status.doc.state, JSON.stringify(status.doc)).toBe(cancel ? "cancelled" : "complete");
+  expect(fake.inventory.size, family + " retention " + retention + " after " + (cancel ? "cancel" : "success")).toBe(retention === "provider" ? 1 : 0);
+  expect(fake.calls).toEqual(["start", "finalize", ...(cancel ? [] : ["generate"]), ...(retention === "run" ? ["delete"] : [])]);
+  const durable = await record(doc.jobId);
+  expect(durable.receipt.uploads[0].disposition).toBe(retention === "provider" ? "kept" : "deleted");
+  expect(JSON.stringify(durable)).not.toMatch(/"[^"]*tokens?[^"]*"\s*:/i);
+  const result = await call(family, "result", [doc.jobId, ...folders(), "--json"]);
+  if (cancel) expect(result.exit).toBe(130);
+  else expect(result.doc.runFolder.startsWith(out + "/")).toBe(true);
+}
+
+it("J04 teardown keeps the fixture available until its writer settles", async () => {
+  const directory = await mkdtemp(join(root, "writer-"));
+  const fetchStandIn = vi.fn();
+  vi.stubGlobal("fetch", fetchStandIn);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const writer = held.then(async () => {
+    expect(globalThis.fetch, "worker still owns its provider fixture").toBe(fetchStandIn);
+    await writeFile(join(directory, "result"), "complete");
+  });
+  const cleanup = removeJobFixture(directory, writer);
+  release();
+  await Promise.all([writer, cleanup]);
+  await expect(readdir(directory)).rejects.toMatchObject({code: "ENOENT"});
 });
 
 it("J05 a lost reply costs one upload and a replacement requires the unknown job ID", async () => {
