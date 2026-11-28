@@ -194,8 +194,8 @@ it("keeps an explicit decline and the full warning on no-picture, decode failure
 it("preserves indexed moments and their times.json entries with and without stills", async () => {
   const withStills = await run({ reply: ({ start }) => ({ evidence: { timestamp: secondsToTimestamp(start === 12 ? 24 : 35) } }) });
   const without = await run({ extract: async () => false });
-  expect(withStills.analysis.items.map(item => item.candidate)).toEqual(moments);
-  expect(without.analysis.items.map(item => item.candidate)).toEqual(moments);
+  expect(withStills.analysis.items.map(item => item.candidate)).toMatchObject(moments);
+  expect(without.analysis.items.map(item => item.candidate)).toMatchObject(moments);
   const left = JSON.parse(await withStills.read("times.json"));
   const right = JSON.parse(await without.read("times.json"));
   const candidates = (entries: Array<{ pointer: string }>) => entries.filter(e => e.pointer.includes("/candidate/"));
@@ -253,10 +253,10 @@ it("removes a screen quote whose cited time is not an attached still, and nothin
   }, reply: ({ start }) => ({ confidenceNotes: "Clear.", evidence: { timestamp: start === 12 ? "00:00:22" : "00:00:34", ...quote } }) });
   for (const [i, time] of ["00:00:22", "00:00:34"].entries()) {
     const item = off.analysis.items[i]!;
-    expect(item.result.evidence).toEqual({ timestamp: time, reporterQuote: quote.reporterQuote });
+    expect(item.result.evidence).toEqual({ timestamp: time, exactTime:expect.objectContaining({origin:"model"}), reporterQuote: quote.reporterQuote });
     expect(item.screenTextNotFromStill).toBe(true);
     expect(item.result.confidenceNotes).toBe(`Clear.\n${unread}`);
-    expect(item.candidate).toEqual(moments[i]);
+    expect(item.candidate).toMatchObject(moments[i]!);
     expect(await off.read(item.screenshot!)).toBe(`frame at ${time}`);
   }
   const markdown = await off.read("analysis.md");

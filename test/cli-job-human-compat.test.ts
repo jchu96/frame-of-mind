@@ -14,7 +14,7 @@ import * as analyze from "../src/services/analyze.js";
 vi.mock("../src/version.js", async importOriginal => ({...await importOriginal<typeof import("../src/version.js")>(), VERSION: "0.6.0-beta.4"}));
 vi.mock("../src/services/media-capabilities.js", () => ({requireMedia: async () => {}}));
 
-it("human analyze and transcribe preserve the base bytes, output streams, exits, retries and retention", async () => {
+it("human analyze and transcribe write the versioned artifact bytes, output streams, exits, retries and retention", async () => {
   const root = await mkdtemp(join(tmpdir(), "human-compat-"));
   const video = join(root, "fixture.mp4");
   const now = () => "2026-11-24T00:00:00.000Z";
@@ -81,7 +81,7 @@ it("human analyze and transcribe preserve the base bytes, output streams, exits,
     const digest = createHash("sha256").update(JSON.stringify(evidence)).digest("hex");
     expect(exits).toEqual([0, 0]);
     expect(wire).toEqual(["upload video/mp4", "index", "upload audio/aac", "retry", "deleted", "upload audio/aac", "transcribed", "deleted"]);
-    expect(digest).toBe("a560be6705d27f1a3c3cb42657a96b332f3d301d711c766e8ba1da115897af43");
+    expect(digest).toBe("b2b54b7a8f47fee19de9a823a41412379533d331f1270c9e85049b85dbaa7d7f");
   } finally {
     vi.restoreAllMocks(); vi.unstubAllEnvs(); process.exitCode = 0;
     await rm(root, {recursive: true, force: true});

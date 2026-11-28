@@ -278,8 +278,7 @@ async function renderHtmlArtifact(
     <div class="meta">${manifest.label ? `<span>Label: ${html(manifest.label)}</span>` : ""}<span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
   </header>
   ${outcomeNotice}
-  ${manifest.proseTimeUnverified && !analysis.items.length ? "<p>A time in this text may be on the cut's clock.</p>" : ""}
-  <section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>
+  ${manifest.proseTimeUnverified && !analysis.items.length ? "<p>A time in this text may be on the cut's clock.</p>\n  " : ""}<section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>
     <p class="muted">${alignment}</p>
   </section>
   ${cards.join("\n") || "<article><h2>No accepted records</h2><p>No candidate survived the recipe interrogation pass.</p></article>"}

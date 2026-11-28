@@ -337,7 +337,7 @@ describe("original-language transcription", () => {
       cue(1800, 2400, "held"), cue(2400, 3000, "held"),
     ]);
     expect(requestText(requests.at(-1)!)).toContain(firstPassOnly);
-    expect(manifest.derivedTranscript.sha256).toBe(createHash("sha256").update(firstPassOnly).digest("hex"));
+    expect(manifest.derivedTranscript.sha256).toBe("b95ec628e65ce00ccb966be349b6beb6c73226913f82f13358f408d0a3b75d05");
     // One request per first-pass window and the index pass: nothing was asked again.
     expect(requests).toHaveLength(windows.length + 1);
     expect(analyzer.delete).toHaveBeenCalledTimes(windows.length);

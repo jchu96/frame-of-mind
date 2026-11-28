@@ -44,7 +44,7 @@ it.each(["absolute","relative"] as const)("the %s detail clock publishes the sam
       const times=JSON.parse(await readFile(join(run.directory,"times.json"),"utf8"));
       for (const e of times.entries) expect(e.exactTime).toMatchObject(e.pointer.endsWith("/end")?span.endExclusive:span.start);
       for (const name of ["report.html","analysis.md"]) {
-        const report=await readFile(join(run.directory,name),"utf8");
+        const report=(await readFile(join(run.directory,name),"utf8")).replaceAll("\\-","-");
         expect(report).toContain("read 00:02:03");
         expect(report).toContain(`video-frame ${a}`);
         expect(report).toContain(`video-frame ${b}`);

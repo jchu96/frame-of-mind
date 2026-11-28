@@ -1078,6 +1078,219 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                         "precisionMs",
                         "origin"
                       ]
+                    },
+                    "exactTime": {
+                      "allOf": [
+                        {
+                          "oneOf": [
+                            {
+                              "properties": {
+                                "clock": {
+                                  "const": "source",
+                                  "type": "string"
+                                },
+                                "frames": {
+                                  "pattern": "^(0|[1-9]\\d*)$",
+                                  "type": "string"
+                                },
+                                "rate": {
+                                  "properties": {
+                                    "den": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    },
+                                    "num": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "num",
+                                    "den"
+                                  ],
+                                  "type": "object"
+                                },
+                                "unit": {
+                                  "const": "video-frame",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "clock",
+                                "unit",
+                                "frames",
+                                "rate"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "clock": {
+                                  "const": "source",
+                                  "type": "string"
+                                },
+                                "rate": {
+                                  "properties": {
+                                    "den": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    },
+                                    "num": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "num",
+                                    "den"
+                                  ],
+                                  "type": "object"
+                                },
+                                "samples": {
+                                  "pattern": "^(0|[1-9]\\d*)$",
+                                  "type": "string"
+                                },
+                                "unit": {
+                                  "const": "sample",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "clock",
+                                "unit",
+                                "samples",
+                                "rate"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "clock": {
+                                  "const": "source",
+                                  "type": "string"
+                                },
+                                "tick": {
+                                  "properties": {
+                                    "den": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    },
+                                    "num": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "num",
+                                    "den"
+                                  ],
+                                  "type": "object"
+                                },
+                                "ticks": {
+                                  "pattern": "^(0|[1-9]\\d*)$",
+                                  "type": "string"
+                                },
+                                "unit": {
+                                  "const": "tick",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "clock",
+                                "unit",
+                                "ticks",
+                                "tick"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        {
+                          "oneOf": [
+                            {
+                              "properties": {
+                                "origin": {
+                                  "const": "cut",
+                                  "type": "string"
+                                },
+                                "precisionMs": {
+                                  "const": 0,
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "origin",
+                                "precisionMs"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "gridMs": {
+                                  "const": 10,
+                                  "type": "number"
+                                },
+                                "origin": {
+                                  "const": "snap",
+                                  "type": "string"
+                                },
+                                "precisionMs": {
+                                  "anyOf": [
+                                    {
+                                      "const": 50,
+                                      "type": "number"
+                                    },
+                                    {
+                                      "const": 200,
+                                      "type": "number"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "origin",
+                                "precisionMs",
+                                "gridMs"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "origin": {
+                                  "const": "model",
+                                  "type": "string"
+                                },
+                                "precisionMs": {
+                                  "const": 1000,
+                                  "type": "number"
+                                },
+                                "support": {
+                                  "items": false,
+                                  "maxItems": 2,
+                                  "minItems": 2,
+                                  "prefixItems": [
+                                    {
+                                      "pattern": "^(0|[1-9]\\d*)$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "pattern": "^(0|[1-9]\\d*)$",
+                                      "type": "string"
+                                    }
+                                  ],
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "origin",
+                                "precisionMs",
+                                "support"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -1497,6 +1710,219 @@ Reads only. Page records in original index order. Set accepted to false for reje
                         "seconds",
                         "precisionMs",
                         "origin"
+                      ]
+                    },
+                    "exactTime": {
+                      "allOf": [
+                        {
+                          "oneOf": [
+                            {
+                              "properties": {
+                                "clock": {
+                                  "const": "source",
+                                  "type": "string"
+                                },
+                                "frames": {
+                                  "pattern": "^(0|[1-9]\\d*)$",
+                                  "type": "string"
+                                },
+                                "rate": {
+                                  "properties": {
+                                    "den": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    },
+                                    "num": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "num",
+                                    "den"
+                                  ],
+                                  "type": "object"
+                                },
+                                "unit": {
+                                  "const": "video-frame",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "clock",
+                                "unit",
+                                "frames",
+                                "rate"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "clock": {
+                                  "const": "source",
+                                  "type": "string"
+                                },
+                                "rate": {
+                                  "properties": {
+                                    "den": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    },
+                                    "num": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "num",
+                                    "den"
+                                  ],
+                                  "type": "object"
+                                },
+                                "samples": {
+                                  "pattern": "^(0|[1-9]\\d*)$",
+                                  "type": "string"
+                                },
+                                "unit": {
+                                  "const": "sample",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "clock",
+                                "unit",
+                                "samples",
+                                "rate"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "clock": {
+                                  "const": "source",
+                                  "type": "string"
+                                },
+                                "tick": {
+                                  "properties": {
+                                    "den": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    },
+                                    "num": {
+                                      "minimum": 1,
+                                      "type": "integer"
+                                    }
+                                  },
+                                  "required": [
+                                    "num",
+                                    "den"
+                                  ],
+                                  "type": "object"
+                                },
+                                "ticks": {
+                                  "pattern": "^(0|[1-9]\\d*)$",
+                                  "type": "string"
+                                },
+                                "unit": {
+                                  "const": "tick",
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "clock",
+                                "unit",
+                                "ticks",
+                                "tick"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        },
+                        {
+                          "oneOf": [
+                            {
+                              "properties": {
+                                "origin": {
+                                  "const": "cut",
+                                  "type": "string"
+                                },
+                                "precisionMs": {
+                                  "const": 0,
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "origin",
+                                "precisionMs"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "gridMs": {
+                                  "const": 10,
+                                  "type": "number"
+                                },
+                                "origin": {
+                                  "const": "snap",
+                                  "type": "string"
+                                },
+                                "precisionMs": {
+                                  "anyOf": [
+                                    {
+                                      "const": 50,
+                                      "type": "number"
+                                    },
+                                    {
+                                      "const": 200,
+                                      "type": "number"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "origin",
+                                "precisionMs",
+                                "gridMs"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "properties": {
+                                "origin": {
+                                  "const": "model",
+                                  "type": "string"
+                                },
+                                "precisionMs": {
+                                  "const": 1000,
+                                  "type": "number"
+                                },
+                                "support": {
+                                  "items": false,
+                                  "maxItems": 2,
+                                  "minItems": 2,
+                                  "prefixItems": [
+                                    {
+                                      "pattern": "^(0|[1-9]\\d*)$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "pattern": "^(0|[1-9]\\d*)$",
+                                      "type": "string"
+                                    }
+                                  ],
+                                  "type": "array"
+                                }
+                              },
+                              "required": [
+                                "origin",
+                                "precisionMs",
+                                "support"
+                              ],
+                              "type": "object"
+                            }
+                          ]
+                        }
                       ]
                     }
                   },

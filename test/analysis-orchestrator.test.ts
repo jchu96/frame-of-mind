@@ -1,3 +1,6 @@
+import { fixtureSource } from "./helpers/source-clock.js";
+import { sourceBound, boundIndex } from "../src/domain/source-bound.js";
+import type { PicturePosition } from "../src/services/source-picture.js";
 vi.mock("../src/services/source-recording.js", async importOriginal => ({
   ...await importOriginal<typeof import("../src/services/source-recording.js")>(),
   withSourceRecording: (await import("./helpers/source-clock.js")).fixtureSource(() => 7200),
@@ -59,6 +62,7 @@ describe("AnalysisOrchestrator", () => {
       const orchestrator = new AnalysisOrchestrator({
         createContextSource: () => fixture.context,
         createAnalyzer,
+        withSourceRecording: fixtureSource(() => duration),
         createRunId: () => "duration-run",
         sleep: async () => undefined,
         probeDurationSeconds,
@@ -1809,7 +1813,8 @@ describe("AnalysisOrchestrator", () => {
         createRunId: () => "run-test",
         now: () => "2026-07-27T12:00:00.000Z",
         sleep: async () => undefined,
-        extractScreenshot: vi.fn(async (_video: string, _timestamp: string, destination: string) => {
+        extractScreenshot: vi.fn(async (_video: string, _timestamp: string, destination: string, _window?: unknown, position?: PicturePosition) => {
+          if (position) position.captured(sourceBound(position.clock, boundIndex(position.target)));
           await writeFile(destination, "png");
           return true;
         }),
@@ -1826,8 +1831,8 @@ describe("AnalysisOrchestrator", () => {
     // The rejected first candidate gets no screenshot; records are numbered
     // as analysis.md and report.html number accepted records.
     expect(built.sheets).toEqual([[
-      { record: 1, time: "00:00:02", screenshot: "moment-02.png" },
-      { record: 2, time: "00:00:03", screenshot: "moment-03.png" },
+      { record: 1, time: "00:00:02", screenshot: "moment-02-video-frame-50.png", actual:expect.objectContaining({frames:"50", origin:"cut"}), cited:expect.objectContaining({frames:"50", origin:"model"}) },
+      { record: 2, time: "00:00:03", screenshot: "moment-03-video-frame-75.png", actual:expect.objectContaining({frames:"75", origin:"cut"}), cited:expect.objectContaining({frames:"75", origin:"model"}) },
     ]]);
     expect(built.result.manifest.artifacts.at(-1)).toBe("contact-sheet.png");
 
@@ -2739,7 +2744,7 @@ describe("speech proposals at publication", () => {
     const read = (name: string) => readFile(join(run.directory, name), "utf8");
     const controlBytes = await readFile(join(control.directory, "times.json"));
     const { createHash } = await import("node:crypto");
-    expect(createHash("sha256").update(controlBytes).digest("hex")).toBe("4d6e141656227b484b7d5baaf9b6f6f45f6d708d644f2ccd354dbc101da51037");
+    expect(createHash("sha256").update(controlBytes).digest("hex")).toBe("048a8add144adead178d28f87d516a37a2a4984351723f235396470a3b31f879");
     expect(JSON.parse(controlBytes.toString()).schemaVersion).toBe(2);
     const sidecar = JSON.parse(await read("times.json"));
     expect(sidecar.schemaVersion).toBe(3);

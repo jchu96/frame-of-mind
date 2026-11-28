@@ -64,7 +64,7 @@ beforeAll(async () => {
   mkdirSync(tools);
   writeFileSync(join(folder, "clip.mp4"), "synthetic");
   mkdirSync(join(folder, "out"));
-  writeFileSync(join(tools, "ffprobe"), '#!/bin/sh\necho \'{"streams":[{"codec_type":"video"}],"format":{"duration":"1"}}\'\n', {mode: 0o700});
+  writeFileSync(join(tools, "ffprobe"), '#!/bin/sh\necho \'{"streams":[{"codec_type":"video","time_base":"1/1000","duration_ts":1000,"index":0}],"format":{"duration":"1"}}\'\n', {mode: 0o700});
 }, 60_000);
 beforeEach(() => {
   rmSync(file, {force: true, recursive: true});

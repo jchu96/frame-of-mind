@@ -45,7 +45,14 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
     throw error;
   }
   if (needs === "audio" && !tracks.audio) throw new ContractError("DECODE_FAILED", "The recording has no audio track.");
-  if (needs === "video" && !tracks.video) throw new ContractError("INVALID_INPUT", "Analysis requires a video stream.");
+  if (needs === "video" && !tracks.video) {
+    const native = !ranged && await containerVideoClock(source);
+    if (native) {
+      options.onSourceResolved?.(native);
+      return consume(path, native, Boolean(tracks.audio));
+    }
+    throw new ContractError("INVALID_INPUT", "Analysis requires a video stream.");
+  }
   const mode = options.timecodeRate === "from-media:df" ? true : options.timecodeRate === "from-media:ndf" ? false : undefined;
   if (ranged) {
     if (needs === "audio" && options.timecodeRate !== undefined && mode === undefined) return rangeUsage("Invalid range bound.");
@@ -65,7 +72,12 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
       signal?.throwIfAborted();
       if (!["USAGE", "INVALID_RATE", "INVALID_TIMECODE", "DECODE_FAILED", "COMMAND_FAILED"].includes(faultCode(error))) throw error;
       const timeBase = /^(\d+)\/(\d+)$/.exec(tracks.video.time_base ?? "");
-      if (!timeBase) throw error;
+      if (!timeBase) {
+        const native = await containerVideoClock(source);
+        if (!native) throw error;
+        options.onSourceResolved?.(native);
+        return consume(path, native, Boolean(tracks.audio));
+      }
       const tick = rationalRate(Number(timeBase[1]), Number(timeBase[2]));
       const length = tracks.video.duration_ts;
       const varying = tracks.video.r_frame_rate && tracks.video.avg_frame_rate && tracks.video.r_frame_rate !== tracks.video.avg_frame_rate;
