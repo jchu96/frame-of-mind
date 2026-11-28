@@ -4,6 +4,7 @@ import { inheritedValue, readAccountHome, type CliLaunch } from "./cli-launch.js
 
 export type CommandSetting =
   | {kind: "absent"}
+  | {kind: "none"}
   | {kind: "unavailable"; fix: string}
   | {kind: "command"; argv: [string, ...string[]]; home: string};
 
@@ -54,11 +55,21 @@ function fileSetting(home: string, path: string, uid: number): unknown {
   } finally { closeSync(fd); }
 }
 
-export function commandSetting(launch: CliLaunch, platform: NodeJS.Platform): CommandSetting {
-  const override = inheritedValue(launch.environment, selector, platform);
+export function launchCommandOverride(launch: CliLaunch, platform: NodeJS.Platform) {
+  const raw = inheritedValue(launch.environment, selector, platform);
+  if (raw === undefined) return {kind: "absent"} as const;
+  let argv: unknown;
+  try { argv = JSON.parse(raw); }
+  catch { argv = null; } // Invalid input uses the launcher's usual refusal and repair.
+  if (Array.isArray(argv) && argv.length === 0) return {kind: "none"} as const;
+  return {kind: "override", argv} as const;
+}
+
+export function commandSetting(launch: CliLaunch, platform: NodeJS.Platform, override = launchCommandOverride(launch, platform)): CommandSetting {
+  if (override.kind === "none") return override;
   if (launch.mode === "bare") {
     const blocked = unavailable("Run the installed Node command.");
-    if (override !== undefined) return blocked;
+    if (override.kind === "override") return blocked;
     if (platform !== "darwin" && platform !== "linux") return {kind: "absent"};
     // A merged home lookup is diagnostic only. Never resolve a reader from it.
     const home = launch.accountHome ?? readAccountHome();
@@ -71,13 +82,13 @@ export function commandSetting(launch: CliLaunch, platform: NodeJS.Platform): Co
   const home = launch.accountHome;
   const path = userSettingsPath(home, platform);
   if (platform !== "darwin" && platform !== "linux") {
-    return override === undefined ? {kind: "absent"} : unavailable("Remove " + selector + " and configure GEMINI_API_KEY.");
+    return override.kind === "absent" ? {kind: "absent"} : unavailable("Remove " + selector + " and configure GEMINI_API_KEY.");
   }
   if (!home || !path) return unavailable("Restore access to your account home directory.");
-  const repair = override === undefined ? "Check the keyCommand setting in " + quoted(path) + "." : "Correct " + selector + ".";
+  const repair = override.kind === "absent" ? "Check the keyCommand setting in " + quoted(path) + "." : "Correct " + selector + ".";
   try {
     const uid = process.geteuid!();
-    const argv = override === undefined ? fileSetting(home, path, uid) : JSON.parse(override);
+    const argv = override.kind === "absent" ? fileSetting(home, path, uid) : override.argv;
     if (argv === undefined) return {kind: "absent"};
     if (!Array.isArray(argv) || !argv.length || !argv.every(arg => typeof arg === "string" && !arg.includes("\0")) || !isAbsolute(argv[0])) {
       return unavailable(repair);

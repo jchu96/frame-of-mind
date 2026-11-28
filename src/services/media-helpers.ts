@@ -176,10 +176,10 @@ export async function mediaHelper(kind: Helper, path: string, flags: MediaOption
   const declaration = declared === undefined || declared === "from-media" ? undefined
     : declared === "from-media:df" || declared === "from-media:ndf" ? {dropFrame: declared === "from-media:df"}
     : parseTimecodeRate(declared);
-  const info = await inspectVideo(input, declaration, signal);
+  const info = await inspectVideo(input, declaration, signal, undefined, kind === "probe");
   if (kind === "probe") {
     if (flags.decodeCheck) await decodeVideo(input, info, signal);
-    return {kind, ...summary(info, flags.decodeCheck ? "passed" : "unchecked")};
+    return {kind, frameTiming: info.frameTiming, ...summary(info, flags.decodeCheck ? "passed" : "unchecked")};
   }
   if (kind === "verify") {
     if ((flags.expectDuration === undefined) === (flags.expectFrames === undefined)) throw new ContractError("USAGE", "Choose exactly one of --expect-frames and --expect-duration.");

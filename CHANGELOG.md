@@ -6,6 +6,8 @@ Semantic Versioning.
 ## [Unreleased]
 
 - Analyze accepts a verified candidates file, previews proposer and grader roles, and writes each candidate’s provenance and resolved start and exclusive end. Measured cuts and speech snaps identify the tool. Claims keep the finder’s radius. [Engine contract](docs/ENGINE_CONTRACT.md)
+- Set `FRAME_OF_MIND_KEY_COMMAND='[]'` to skip the account’s key command for one launch. `doctor` explains the opt-out and includes `key.commandDisabledByEnvironment` in JSON.
+- `probe --json`, analysis manifests and transcription receipts report the picture rates measured from packet timestamps, their shares and any odd gaps. A probe that refuses the frame grid includes the report in `error.details.frameTiming`.
 
 ## [0.6.8] - 2026-11-28
 

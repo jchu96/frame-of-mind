@@ -338,6 +338,8 @@ On a clean launch, ordinary CLI commands select the first available provider key
 | 2 | Key command | Use the launch environment’s `FRAME_OF_MIND_KEY_COMMAND` JSON string array, or the account’s `keyCommand` setting when the variable is absent. |
 | 3 | The working folder’s `.env` | Read the literal assignment when both higher sources are absent. |
 
+Set `FRAME_OF_MIND_KEY_COMMAND='[]'` to skip the key command and its settings file for one launch. `doctor` reports that the variable switched it off.
+
 An empty or invalid assignment stops the lookup. A failed command ends the run without falling back to the folder key. Run `frameofmind doctor` to see the source without displaying the key. Jobs use only the `GEMINI_API_KEY` in the launch environment.
 
 To create a new per-user settings file, substitute the absolute path to your reader. The file holds the command and its literal arguments. The reader writes one key to standard output and leaves standard error empty.
@@ -657,6 +659,14 @@ The tool scans packet timestamps and decodes from the preceding key frame when i
 Each range has its own upload, cost and retention period. A range cannot use `--remote-file`. Match runs by `recordingSha256` and use exact spans for editing. An item or cue at 595–615 s appears as an end fragment at 595–610 in [0,610) and a start fragment at 600–615 in [600,1200). Join matching content to recover 595–615 and count the overlap once. A boundary marked `unknown` has uncertain continuity. A suspected clock time in analysis prose adds “A time in this text may be on the cut's clock.” Seek using the structured time beside the record.
 
 Whole-file video whose frame times are not evenly spaced, or cannot be proven even, uses the stream's native ticks; the manifest says which in `sourceTiming`: `uneven` or `unproven`. In `{unit:"tick", ticks:"120", tick:{num:1,den:1000}}`, the position is 120 ms. Standard SRT cues carry source milliseconds. Transcription emits a source coverage receipt on stderr and writes the transcript JSON only with `--json`.
+
+### Read the picture timing before choosing a cut
+
+`probe --json` returns `frameTiming` for the primary picture stream. If the frame grid cannot be verified, look for `error.details.frameTiming` on the `INVALID_RATE` refusal. Whole-file and ranged analysis manifests and transcription receipts carry the report for the original recording.
+
+`varying` is true when the measured rate changes or the gaps are often uneven. A steady clip can still have an isolated missing frame. Use `sourceRange` for exact positions. `rates` lists the measured frames per second, mean gap in milliseconds and fraction of all gaps at each rate, most frequent first. `oddGaps` and `oddShare` count the gaps outside those stretches. When `varying` is null, `unread` explains why.
+
+Three thresholds were set on one clip. Five consecutive gaps establish a second rate. At least two odd gaps making up more than 1% of all gaps indicate uneven spacing. Gaps one stream tick apart can be rounding when the rarer gap never holds for five in a row. The report measures presentation times on picture packets without decoding frames. It does not measure decoded frame times or a varying sound clock.
 
 ## Clocks
 

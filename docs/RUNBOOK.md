@@ -284,6 +284,7 @@ The prompt hides the key and atomically updates `GEMINI_API_KEY` in `./.env`
 with mode 0600. Use `--env-file <path>` to select another dotenv file.
 Non-TTY input is refused. On a clean launch, ordinary commands try the inherited `GEMINI_API_KEY`,
 the operator’s key command, then the working folder’s literal `.env` assignment.
+For one run without the reader, set `FRAME_OF_MIND_KEY_COMMAND='[]'`. Doctor reports the opt-out. A merged launch with no key then returns `KEY_MISSING`.
 A failed reader returns `KEY_REFUSED` with `error.details.reason` set to `key-command` and ends lookup
 (a key the provider refused is `KEY_REFUSED` with no `reason`). Run `frameofmind doctor` for the settings
 path and permission repair. It never executes the command. The account must own the 0600
@@ -926,6 +927,12 @@ Use `analyze --source none --video take.mp4 --from 600 --to 1200` or `transcribe
 Both accept seconds, frames and source timecode. Audio-only transcription also accepts `Nsamp` at the first track's sample rate.
 A missing bound uses the start or EOF. Read the used half-open source indices and exact rate from stderr. At 30000/1001 fps, `--from 600` starts at frame 17982.
 with a seconds bound moved to its frame, a printed whole second can fall just outside the request; a caller tests ownership against `sourceRange`, never against a printed second.
+
+Before a cut, read `frameTiming` in `probe --json`, or `error.details.frameTiming` if exact-rate verification returns `INVALID_RATE`. Analysis and transcription also record it for the original input. A clip can measure steady and still have an odd gap. When `sourceTiming` is present, place edits on the stream clock in `sourceRange`. Whole-file analysis and transcription remain available when a frame grid cannot be proved.
+
+`frames` counts distinct packet presentation times in a measured report. `averageFramesPerSecond` covers the full interval. For each sustained rate, `framesPerSecond` and `gapMs` describe its mean gap and `share` gives its fraction of all gaps. `oddGaps` and `oddShare` cover the remainder. If `varying` is null, read `unread` for the reason and `untimedFrames` for a missing-timestamp count when available.
+
+The three thresholds were set on one clip. Five consecutive gaps establish a rate. More than 1% odd gaps indicate variation only when at least two are odd. A one-tick neighbour that never holds for five gaps can be rounding. The report reads packet presentation times, without using decoded frame times or assessing variation on the sound clock.
 
 Budget time for the local cut. A one-hour 1080p measurement took 1 s for packet timing and 94 s for a full decode.
 On `Cutting source [...): whole-file — <reason>`, allow time for the from-zero timing, decode and encode. Local work counts inside wall-clock deadlines.

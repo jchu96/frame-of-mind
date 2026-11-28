@@ -4,7 +4,7 @@ import { parse } from "dotenv";
 import { inheritedValue, type CliLaunch, type LaunchMode } from "./cli-launch.js";
 import { useApplicationSettings, type ApplicationSetting } from "./lib/application-settings.js";
 
-import { commandSetting, userSettingsPath, type CommandSetting } from "./key-command-settings.js";
+import { commandSetting, launchCommandOverride, userSettingsPath, type CommandSetting } from "./key-command-settings.js";
 import { KeyCommandRefused, runKeyCommand } from "./key-command.js";
 
 interface KeyReport {
@@ -13,6 +13,7 @@ interface KeyReport {
   path?: string;
   state?: "unavailable" | "unverified" | "verified";
   lowerSourcesSkipped?: true;
+  commandDisabledByEnvironment?: true;
 }
 
 function readSettingsFile(path: string) {
@@ -40,10 +41,11 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
     let value = inheritedValue(launch.environment, "GEMINI_API_KEY");
     const bare = launch.mode === "bare";
     let source: KeyReport["source"] = bare ? "unknown" : "environment";
+    // Only an ordinary CLI bootstrap supplies an account context.
+    const override = "accountHome" in launch ? launchCommandOverride(launch, platform) : undefined;
     if (value === undefined) {
-      // Only an ordinary CLI bootstrap supplies an account context.
-      if ("accountHome" in launch) command = commandSetting(launch, platform);
-      if (command.kind !== "absent") {
+      if (override) command = commandSetting(launch, platform, override);
+      if (command.kind === "command" || command.kind === "unavailable") {
         if (command.kind === "unavailable") nextStep = command.fix;
         return {report: {source: "command", lowerSourcesSkipped: true, present: command.kind === "command",
           state: command.kind === "command" ? "unverified" : "unavailable"}};
@@ -52,12 +54,13 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
         const data = file();
         value = data?.GEMINI_API_KEY;
         source = data && value === undefined ? "none" : "dotenv";
-      }
+      } else if (command.kind === "none") source = "none";
     }
     const present = value !== undefined && value.length > 0 && !/\s/.test(value);
     return {
       value: present ? value : undefined,
       report: {source, present, ...(source === "dotenv" && {path}),
+        ...(override?.kind === "none" && {commandDisabledByEnvironment: true}),
         ...(source === "environment" && {lowerSourcesSkipped: true}),
         ...(!present && (source === "dotenv" || source === "environment") && {state: "unavailable"})},
     };

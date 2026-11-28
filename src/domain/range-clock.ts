@@ -1,3 +1,4 @@
+import type { FrameTiming } from "./frame-timing.js";
 import { fromTimecode, isDropRate, TICKS_PER_SECOND, type FrameRate } from "exact-time";
 import { ContractError } from "./contract-error.js";
 
@@ -13,6 +14,7 @@ export interface SourceGrid {
   length: bigint;
   dropFrame?: boolean;
   timing?: "uneven" | "unproven";
+  frameTiming?: FrameTiming;
 }
 
 type Fraction = { n: bigint; d: bigint };

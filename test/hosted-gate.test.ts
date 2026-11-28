@@ -259,9 +259,20 @@ describe("hosted gate separation", () => {
   }, 30_000);
 
   test("MISS deploy-needs-hosted: default or hosted failure propagates in check and deploy modes", async () => {
-    const root = await fixture();
+    const root = await fixture({ traceSourceIdentity: true });
     try {
-      expect((await run(root, ["bun", "run", "check:deploy"])).code).toBe(0);
+      const preflight = await run(root, ["bun", "run", "check:deploy"]);
+      if (preflight.code !== 0) {
+        const execution = await readFile(join(root, ".git/execution.log"), "utf8").catch(error => String(error));
+        console.error("check:deploy fixture", { ...preflight, execution });
+        // A failed lane exits before the gate takes its second snapshot.
+        if (!preflight.stderr.includes("SOURCE_IDENTITY after=")) {
+          const head = await run(root, ["git", "rev-parse", "HEAD"]);
+          const inputs = await buildContentHash(root, {}).catch(error => String(error));
+          console.error("SOURCE_IDENTITY post-failure", { head: head.stdout.trim(), inputs });
+        }
+      }
+      expect(preflight.code).toBe(0);
       for (const mode of ["check:deploy", "deploy:hosted"]) {
         for (const failure of ["FAIL_DEFAULT", "FAIL_HOSTED"]) {
           const result = await run(root, ["bun", "run", mode, ...(mode === "deploy:hosted" ? ["web"] : [])], { [failure]: "1" });
@@ -304,11 +315,17 @@ async function refused(root: string, result: Result): Promise<void> {
   await expect(readFile(join(root, ".git/deployed.json"))).rejects.toThrow();
 }
 
-async function fixture(): Promise<string> {
+async function fixture({ traceSourceIdentity = false } = {}): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "hosted-gate-fixture-"));
   for (const file of ["scripts/run-check-sharded.ts", "scripts/check-gate-policy.ts",
     "scripts/prebuilt-artifact.ts", "scripts/hosted-deploy-gate.ts", "scripts/check-build-cache.ts"]) {
-    await put(root, file, await readFile(file, "utf8"));
+    let source = await readFile(file, "utf8");
+    if (traceSourceIdentity && file === "scripts/hosted-deploy-gate.ts") {
+      // Record the identities used by the comparison, including transient observations.
+      source = source.replace(/const (before|after) = await sourceIdentity\(\);/g,
+        '$&\n  console.error("SOURCE_IDENTITY $1=" + JSON.stringify($1));');
+    }
+    await put(root, file, source);
   }
   await put(root, "package.json", JSON.stringify({ type: "module", scripts: {
     "check:pr": scripts["check:pr"], "check:sharded": scripts["check:sharded"],
@@ -397,7 +414,7 @@ async function run(root: string, command: string[], extra: Record<string, string
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
   const code = await new Promise<number>((resolve, reject) => {
     child.once("error", reject);
-    child.once("exit", (code) => resolve(code ?? 1));
+    child.once("close", (code) => resolve(code ?? 1));
   });
   return { code, stdout, stderr };
 }

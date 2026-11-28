@@ -3,12 +3,38 @@
   "type": "object",
   "required": ["schemaVersion"],
   "definitions": {
+    "frameTiming": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["varying", "frames", "averageFramesPerSecond", "rates", "oddGaps", "oddShare"],
+          "properties": {
+            "varying": {"type": "boolean"}, "frames": {"type": "integer", "minimum": 3},
+            "averageFramesPerSecond": {"type": "number", "minimum": 0},
+            "rates": {"type": "array", "minItems": 1, "items": {
+              "type": "object", "additionalProperties": false, "required": ["framesPerSecond", "gapMs", "share"],
+              "properties": {"framesPerSecond": {"type": "number", "minimum": 0}, "gapMs": {"type": "number", "minimum": 0},
+                "share": {"type": "number", "minimum": 0, "maximum": 1}}
+            }},
+            "oddGaps": {"type": "integer", "minimum": 0}, "oddShare": {"type": "number", "minimum": 0, "maximum": 1}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["varying", "frames", "unread"],
+          "properties": {
+            "varying": {"type": "null"}, "frames": {"type": ["integer", "null"], "minimum": 0},
+            "unread": {"enum": ["too few frames", "no picture", "frames with no time", "scan limit", "unavailable"]},
+            "untimedFrames": {"type": "integer", "minimum": 0}
+          }
+        }
+      ]
+    },
     "index": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"},
     "rate": {"type":"object","required":["num","den"],"properties":{"num":{"type":"integer","minimum":1},"den":{"type":"integer","minimum":1}}},
     "span": {"type":"array","minItems":2,"maxItems":2,"items":{"$ref":"#/definitions/index"}},
     "coverage": {"type":"object","required":["full","covered"],"properties":{"full":{"type":"boolean"},"covered":{"type":"array","items":{"$ref":"#/definitions/span"}}}},
     "sourceRange": {"oneOf":[{"type":"object","required":["unit","fromFrame","toFrameExclusive","rate"],"properties":{"unit":{"const":"frames"},"fromFrame":{"$ref":"#/definitions/index"},"toFrameExclusive":{"$ref":"#/definitions/index"},"rate":{"$ref":"#/definitions/rate"}}},{"type":"object","required":["unit","fromSample","toSampleExclusive","rate"],"properties":{"unit":{"const":"samples"},"fromSample":{"$ref":"#/definitions/index"},"toSampleExclusive":{"$ref":"#/definitions/index"},"rate":{"$ref":"#/definitions/rate"}}},{"type":"object","required":["unit","fromTick","toTickExclusive","tick"],"properties":{"unit":{"const":"ticks"},"fromTick":{"$ref":"#/definitions/index"},"toTickExclusive":{"anyOf":[{"$ref":"#/definitions/index"},{"type":"null"}]},"tick":{"$ref":"#/definitions/rate"}}}]},
-    "source": {"type":"object","properties":{"recordingSha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"coverage":{"$ref":"#/definitions/coverage"},"sourceRange":{"$ref":"#/definitions/sourceRange"},"sourceLengthFrames":{"$ref":"#/definitions/index"},"sourceLengthSamples":{"$ref":"#/definitions/index"},"sourceLengthTicks":{"$ref":"#/definitions/index"},"sourceTiming":{"enum":["uneven","unproven"]},"maxRangeSeconds":{"type":"integer","minimum":1},"requestedRange":{"type":"object","required":["from","to"],"properties":{"from":{"type":["string","null"]},"to":{"type":["string","null"]}}},"edgeMoved":{"type":"object","required":["from","to"],"properties":{"from":{"type":"boolean"},"to":{"type":"boolean"}}}}}
+    "source": {"type":"object","properties":{"frameTiming":{"$ref":"#/definitions/frameTiming"},"recordingSha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"coverage":{"$ref":"#/definitions/coverage"},"sourceRange":{"$ref":"#/definitions/sourceRange"},"sourceLengthFrames":{"$ref":"#/definitions/index"},"sourceLengthSamples":{"$ref":"#/definitions/index"},"sourceLengthTicks":{"$ref":"#/definitions/index"},"sourceTiming":{"enum":["uneven","unproven"]},"maxRangeSeconds":{"type":"integer","minimum":1},"requestedRange":{"type":"object","required":["from","to"],"properties":{"from":{"type":["string","null"]},"to":{"type":["string","null"]}}},"edgeMoved":{"type":"object","required":["from","to"],"properties":{"from":{"type":"boolean"},"to":{"type":"boolean"}}}}}
   },
   "properties": {"schemaVersion": {"const": 1}},
   "if": {"required": ["error"]},

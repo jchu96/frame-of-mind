@@ -63,7 +63,17 @@ it("human analyze and transcribe write the versioned artifact bytes, output stre
     const files: Record<string, string> = {};
     for (const file of (await readdir(root, {recursive: true, withFileTypes: true})).filter(x => x.isFile())) {
       const path = join(file.parentPath, file.name);
-      if (path !== video) files[relative(root, path).split(sep).join("/")] = createHash("sha256").update(await readFile(path)).digest("hex");
+      if (path === video) continue;
+      let bytes = await readFile(path);
+      if (file.name === "manifest.json") {
+        const manifest = JSON.parse(bytes.toString("utf8"));
+        const serialize = () => Buffer.from(JSON.stringify(manifest, null, 2) + "\n");
+        expect(bytes).toEqual(serialize());
+        expect(manifest.frameTiming).toEqual({varying: null, frames: null, unread: "unavailable"});
+        delete manifest.frameTiming;
+        bytes = serialize();
+      }
+      files[relative(root, path).split(sep).join("/")] = createHash("sha256").update(bytes).digest("hex");
     }
     // The two new stderr receipts are additive to the original stream oracle.
     expect(streams[1]!.filter(line => line.startsWith("retention:"))).toEqual(["retention: provider\n", "retention: run\n"]);
@@ -74,8 +84,7 @@ it("human analyze and transcribe write the versioned artifact bytes, output stre
     const quiet = (line: string) => / line\(s\) sit where no sound was measured\.\n$/.test(line);
     expect(streams[1]!.filter(quiet)).toEqual(["note: 1 line(s) sit where no sound was measured.\n"]);
     streams[1] = streams[1]!.filter(line => !quiet(line));
-    // File bytes are hashed verbatim. Only the platform-specific temporary
-    // directory in displayed paths is substituted for the base oracle.
+    // Compare the previous artifact contract and normalize the temporary output path.
     const evidence = {files: Object.fromEntries(Object.entries(files).sort()), wire, exits,
       streams: streams.map(chunks => chunks.join("").replaceAll(root, "<fixture>").split(sep).join("/"))};
     const digest = createHash("sha256").update(JSON.stringify(evidence)).digest("hex");

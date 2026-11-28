@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { writeFixtureRuntime } from "./helpers/key-command-runtime.js";
 import { buildCliFixture } from "./helpers/cli-build.js";
+import { validateCliDocument } from "./helpers/cli-schema.js";
 import { operations } from "../src/job-invocation.js";
 
 describe.skipIf(process.platform === "win32")("CLI key command", () => {
@@ -47,7 +48,8 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
         return result;
       };
       fs.openSync = function(path, ...args) {
-        if (String(path).startsWith(${JSON.stringify(decoy)}) || (process.env.OBSERVE_FOLDER && path === ${JSON.stringify(join(cwd, ".env"))})) {
+        if (String(path).startsWith(${JSON.stringify(decoy)}) || (process.env.OBSERVE_FOLDER && path === ${JSON.stringify(join(cwd, ".env"))})
+          || (process.env.OBSERVE_ACCOUNT && path === ${JSON.stringify(settings)})) {
           fs.appendFileSync(${JSON.stringify(join(root, "unexpected-open"))}, "open\\n");
         }
         const fd = original(path, ...args);
@@ -106,6 +108,73 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
   const calibrate = ["calibrate", "--model", "!"];
   const missing = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_MISSING","message":"key missing."}}\n', err: ""};
   const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}\n', err: ""};
+  const disabled = {FRAME_OF_MIND_KEY_COMMAND: "[]", OBSERVE_ACCOUNT: "1"};
+  function configureReader() {
+    writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
+  }
+
+  it("skips the account file and reports a missing key for an empty selector", () => {
+    configureReader();
+    writeFileSync(join(cwd, ".env"), "");
+    expect(run([...calibrate, "--json"], disabled)).toEqual(missing);
+    expect(JSON.parse(run(["doctor", "--json"], disabled).out).key.source).toBe("none");
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(join(root, "unexpected-open"))).toBe(false);
+    expect(JSON.parse(run([...calibrate, "--json"]).out).error.code).toBe("USAGE");
+    expect(readFileSync(marker, "utf8")).toBe("start\n");
+  });
+
+  it("uses the folder key after an empty selector", () => {
+    configureReader();
+    writeFileSync(join(cwd, "fixture.mp4"), fixtureMovieHeader());
+    rmSync(join(cwd, "consumer-result"), {force: true});
+    const report = run(["doctor", "--json"], disabled);
+    expect(JSON.parse(report.out).key.source).toBe("dotenv");
+    expect(report.exit).toBe(0);
+    const result = run(["analyze", "--source", "none", "--video", "fixture.mp4", "--output", "folder-out",
+      "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"],
+      {...disabled, PATH: home, FIXTURE_ANSWER: "synthetic-folder", CONSUMER_FIXTURE: "1"});
+    expect(JSON.parse(result.out).error.code).toBe("PROVIDER_REFUSED");
+    expect(readFileSync(join(cwd, "consumer-result"), "utf8")).toBe("accepted");
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(join(root, "unexpected-open"))).toBe(false);
+  });
+
+  describe.each(["node-bare", "bun-bare"])("empty selector under %s", runtime => {
+    it.each(["folder", "environment"])("uses only the merged key with an empty selector from the %s", origin => {
+      configureReader();
+      writeFileSync(join(cwd, ".env"), origin === "folder" ? "FRAME_OF_MIND_KEY_COMMAND=[]" : "");
+      const env = {...(origin === "environment" && disabled), OBSERVE_FOLDER: "1", OBSERVE_ACCOUNT: "1"};
+      expect(run([...calibrate, "--json"], env, runtime)).toEqual(missing);
+      const keyed = run([...calibrate, "--json"], {...env, GEMINI_API_KEY: "synthetic"}, runtime);
+      expect(JSON.parse(keyed.out).error.code).toBe("USAGE");
+      expect(existsSync(marker)).toBe(false);
+      expect(existsSync(join(root, "unexpected-open"))).toBe(false);
+    });
+  });
+
+  describe.each(["node", "node-bare"])("doctor under %s", runtime => {
+    it.each([true, false])("explains the disabled key command with a present key = %s", present => {
+      configureReader();
+      writeFileSync(join(cwd, ".env"), "");
+      const env = {...disabled, ...(present && {GEMINI_API_KEY: "synthetic"})};
+      const line = "Key command switched off by FRAME_OF_MIND_KEY_COMMAND.";
+      const text = run(["doctor"], env, runtime);
+      expect(text.out.split("\n").filter(value => value === line)).toEqual([line]);
+      const json = run(["doctor", "--json"], env, runtime);
+      const key = validateCliDocument("doctor", json.out).key;
+      expect(key).toMatchObject({commandDisabledByEnvironment: true, present,
+        source: present ? (runtime === "node" ? "environment" : "unknown") : "none"});
+      expect([text.exit, json.exit]).toEqual(present ? [0, 0] : [1, 1]);
+      expect(existsSync(join(root, "unexpected-open"))).toBe(false);
+      const control = {GEMINI_API_KEY: "synthetic"};
+      expect(run(["doctor"], control, runtime).out).not.toContain(line);
+      expect(validateCliDocument("doctor", run(["doctor", "--json"], control, runtime).out).key)
+        .not.toHaveProperty("commandDisabledByEnvironment");
+      expect(existsSync(marker)).toBe(false);
+    });
+  });
+
   it.each(["node-bare", "bun-bare"])("ignores folder and inherited selectors on a merged launch (%s)", runtime => {
     const selector = JSON.stringify([fixtureRuntime, reader]);
     for (const fromFolder of [true, false]) {
