@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository        | `jchu96/frame-of-mind`                      |
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
-| Current version   | `0.6.5`                                     |
+| Current version   | `0.6.6`                                     |
 | Default model     | `gemini-3.8-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
@@ -197,7 +197,10 @@ Longer moments also get frames two seconds inside either end. The midpoint has
 first claim on the 15 MB base64 budget. Each item's `stillTimes` lists the
 recording times actually sent. With none available, the record carries a warning.
 A citation matching a carried still saves that exact picture for every recipe.
-A screen quotation citing another time goes undetected.
+A screen quotation (`evidence.verbatimUiText`) citing any other time is removed: the item gains
+`screenTextNotFromStill: true` and the note "Screen text was not read from a still."; the record, its
+times and its saved frame stay. Screen words in titles and prose are not checked, and
+`candidate.summary` is a first-pass note that must not be quoted.
 
 For other citations the screenshot uses the previous extraction strategy. For
 the `teaching-points` recipe, ffmpeg samples five frames a second within one
@@ -264,7 +267,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.6.5
+0.6.6
 ```
 
 ### 1.5 Configure Gemini

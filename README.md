@@ -96,7 +96,7 @@ maintainer's reference instance runs at
 [fom.flickerventures.com](https://fom.flickerventures.com).
 
 > [!IMPORTANT]
-> Early public release (`v0.6.5`). Review generated work before using or
+> Early public release (`v0.6.6`). Review generated work before using or
 > publishing it. Generated output always requires human review.
 
 ## Status as of 2026-08-24
@@ -235,7 +235,13 @@ When a citation matches a still, the saved screenshot uses its exact bytes.
 The stills of one request total at most 15 MB once encoded: the midpoint still is taken first, then the
 others that fit. A still that does not fit is not sent and is never scaled down; when none fits, the
 moment is kept and its confidence notes say the full-size frame was unavailable.
-A screen quotation citing another time goes undetected.
+When an accepted record quotes screen text (`evidence.verbatimUiText`) but cites a time that is not one of
+its `stillTimes`, the tool removes the quotation, sets `screenTextNotFromStill: true` on the item and adds
+"Screen text was not read from a still." to its confidence notes. The record, its times and the frame saved
+at the cited time are kept, so a reader can look at the screen.
+The tool cannot check screen words inside titles, summaries and other prose: in a record carrying that field,
+distrust them. `candidate.summary` is the first pass's note, made from a reduced picture; it can carry wrong
+screen words and must not be quoted.
 
 `contact-sheet.png` tiles the moment screenshots in one image, up to the first
 100, each labelled with its record number (as numbered in `analysis.md` and
@@ -315,7 +321,7 @@ frameofmind key set
 frameofmind doctor
 ```
 
-A build made this way prints its version with `+source`, for example `0.6.5+source`, in `--version`,
+A build made this way prints its version with `+source`, for example `0.6.6+source`, in `--version`,
 `doctor`, the `version` document and each run manifest. The linked command runs the files in `dist/`,
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
