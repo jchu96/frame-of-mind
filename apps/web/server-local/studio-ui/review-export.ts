@@ -1,3 +1,6 @@
+import { runClockSchema } from "../../../../src/domain/clock.js";
+import { rangeFields } from "../../../../src/domain/range-fields.js";
+import { boundSchema, exactSpanSchema } from "../../../../src/domain/source-bound.js";
 import type { StoredRun } from "../../shared/types.js";
 import type { AnalysisItem } from "../../../../src/domain/types.js";
 
@@ -7,9 +10,12 @@ function optional<T>(value: T | undefined, key: string): Record<string, T> {
 
 function allowlistedItem(item: AnalysisItem) {
   return {
+    ...(item.exactStillTimes && {exactStillTimes:item.exactStillTimes.map(b => boundSchema.parse(b))}),
+    ...(item.screenshotExactTime && {screenshotExactTime:boundSchema.parse(item.screenshotExactTime)}),
     ...(item.stillTimes ? { stillTimes: [...item.stillTimes] } : {}),
     ...optional(item.screenTextNotFromStill, "screenTextNotFromStill"),
     candidate: {
+      ...(item.candidate.exactSpan && {exactSpan:exactSpanSchema.parse(item.candidate.exactSpan)}),
       start: item.candidate.start,
       end: item.candidate.end,
       ...optional(item.candidate.speaker, "speaker"),
@@ -35,6 +41,7 @@ function allowlistedItem(item: AnalysisItem) {
         ...optional(item.result.where.surface, "surface"),
       } } : {}),
       ...(item.result.evidence ? { evidence: {
+        ...(item.result.evidence.exactTime && {exactTime:boundSchema.parse(item.result.evidence.exactTime)}),
         ...optional(item.result.evidence.timestamp, "timestamp"),
         ...optional(item.result.evidence.verbatimUiText, "verbatimUiText"),
         ...optional(item.result.evidence.reporterQuote, "reporterQuote"),
@@ -60,10 +67,10 @@ function allowlistedAnalysis(run: StoredRun) {
     matchNotes: run.analysis.matchNotes,
     items: run.analysis.items.map(allowlistedItem),
   };
-  return run.schemaVersion === 2
+  return run.contextMode === "meeting"
     ? {
         ...base,
-        schemaVersion: 2 as const,
+        schemaVersion: run.analysis.schemaVersion,
         meeting: {
           id: run.analysis.meeting.id,
           provider: run.analysis.meeting.provider,
@@ -74,7 +81,7 @@ function allowlistedAnalysis(run: StoredRun) {
       }
     : {
         ...base,
-        schemaVersion: 3 as const,
+        schemaVersion: run.analysis.schemaVersion,
         context: { mode: "none" as const },
       };
 }
@@ -82,6 +89,8 @@ function allowlistedAnalysis(run: StoredRun) {
 function allowlistedManifest(run: StoredRun) {
   const manifest = run.manifest;
   const base = {
+    ...rangeFields.strip().parse(manifest),
+    ...(manifest.clock && {clock:runClockSchema.parse(manifest.clock)}),
     schemaVersion: manifest.schemaVersion,
     toolVersion: manifest.toolVersion,
     promptRevision: manifest.promptRevision,
@@ -115,6 +124,7 @@ function allowlistedManifest(run: StoredRun) {
     ...(manifest.derivedTranscript ? { derivedTranscript: {
       origin: manifest.derivedTranscript.origin,
       model: manifest.derivedTranscript.model,
+      ...optional(manifest.derivedTranscript.requestedLanguage, "requestedLanguage"),
       sha256: manifest.derivedTranscript.sha256,
     } } : {}),
     ...(manifest.promptProvenance ? { promptProvenance: {
@@ -127,7 +137,7 @@ function allowlistedManifest(run: StoredRun) {
     } } : {}),
     artifacts: [...manifest.artifacts],
   };
-  return run.schemaVersion === 2
+  return run.contextMode === "meeting"
     ? {
         ...base,
         schemaVersion: 2 as const,
@@ -156,10 +166,13 @@ function allowlistedOutcome(run: StoredRun) {
   // and the allowlist keeps it that way if the contract ever grows.
   return {
     outcome: {
+      failures: outcome.failures.map(f => ({candidateOrdinal:f.candidateOrdinal,start:f.start,end:f.end,code:f.code,attempts:f.attempts,
+        ...(f.issues && {issues:f.issues.map(({path,code}) => ({path,code}))}), ...("exactSpan" in f && {exactSpan:exactSpanSchema.parse(f.exactSpan)})})),
       schemaVersion: outcome.schemaVersion,
       runId: outcome.runId,
       status: outcome.status,
       candidates: {
+        ...optional(outcome.candidates.outOfRange, "outOfRange"),
         indexed: outcome.candidates.indexed,
         selected: outcome.candidates.selected,
         omittedByLimit: outcome.candidates.omittedByLimit,
@@ -199,7 +212,7 @@ function quote(value: string): string {
 }
 
 export function buildReviewMarkdown(run: StoredRun): string {
-  const title = run.schemaVersion === 2
+  const title = run.contextMode === "meeting"
     ? run.meetingTitle || run.meetingId
     : "Video analysis";
   const notice = coverageNotice(run);

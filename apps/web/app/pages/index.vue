@@ -26,7 +26,7 @@ const recipesUsed = computed(() => new Set(runs.value.map((run) => run.recipeLab
 
 function runTitle(run: RunSummary): string {
   const recording = recordingForRun(run);
-  return run.schemaVersion === 2
+  return run.contextMode === "meeting"
     ? run.meetingTitle || run.meetingId
     : recording
       ? recordingDisplayLabel(recording)
@@ -38,7 +38,7 @@ function recordingForRun(run: RunSummary) {
 }
 
 function runContext(run: RunSummary): string {
-  return run.schemaVersion === 2
+  return run.contextMode === "meeting"
     ? `${run.provider} · ${run.transport}`
     : "Recording only";
 }

@@ -1,9 +1,9 @@
-import { isRunImportV2, isRunImportV3, type VersionedRunImport } from "./schemas.js";
+import { isMeetingRunImport, isVideoRunImport, type VersionedRunImport } from "./schemas.js";
 import { validateVersionedRunImport } from "./integrity.js";
 
 import type {
   AnalysisRun,
-  AnalysisRunV3,
+  AnalysisRunV3, AnalysisRunV4, AnalysisRunV5,
   RunManifest,
   RunManifestV3,
 } from "./types.js";
@@ -24,7 +24,7 @@ interface RunSummaryBase {
 
 export type RunSummary = RunSummaryBase & (
   | {
-      schemaVersion: 2;
+      schemaVersion: 2 | 4;
       contextMode: "meeting";
       meetingId: string;
       meetingTitle?: string;
@@ -32,27 +32,27 @@ export type RunSummary = RunSummaryBase & (
       transport: "mcp" | "api" | "file";
     }
   | {
-      schemaVersion: 3;
+      schemaVersion: 3 | 5;
       contextMode: "none";
     }
 );
 
 export type StoredRun = RunSummaryBase & ({
-  schemaVersion: 2;
+  schemaVersion: 2 | 4;
   contextMode: "meeting";
   meetingId: string;
   meetingTitle?: string;
   provider: "bluedot" | "granola" | "file";
   transport: "mcp" | "api" | "file";
   matchNotes: string;
-  analysis: AnalysisRun;
+  analysis: AnalysisRun | AnalysisRunV4;
   manifest: RunManifest;
   outcome?: AnalysisOutcome;
 } | {
-  schemaVersion: 3;
+  schemaVersion: 3 | 5;
   contextMode: "none";
   matchNotes: string;
-  analysis: AnalysisRunV3;
+  analysis: AnalysisRunV3 | AnalysisRunV5;
   manifest: RunManifestV3;
   outcome?: AnalysisOutcome;
 });
@@ -85,7 +85,7 @@ export const LOCAL_SINGLE_USER_PRINCIPAL: RunPrincipal = {
 export interface RunRow {
   principal_sub: string;
   principal_email: string | null;
-  schema_version: 2 | 3;
+  schema_version: 2 | 3 | 4 | 5;
   context_mode: "meeting" | "none";
   run_id: string;
   meeting_id: string | null;
@@ -130,11 +130,11 @@ export function rowToSummary(row: RunSummaryRow): RunSummary {
     importedAt: row.imported_at,
     ...(row.imported_by ? { importedBy: row.imported_by } : {}),
   };
-  if (row.schema_version === 3 && row.context_mode === "none") {
-    return { ...common, schemaVersion: 3, contextMode: "none" };
+  if ((row.schema_version === 3 || row.schema_version === 5) && row.context_mode === "none") {
+    return { ...common, schemaVersion: row.schema_version, contextMode: "none" };
   }
   if (
-    row.schema_version !== 2
+    (row.schema_version !== 2 && row.schema_version !== 4)
     || row.context_mode !== "meeting"
     || !row.meeting_id
     || !row.provider
@@ -144,7 +144,7 @@ export function rowToSummary(row: RunSummaryRow): RunSummary {
   }
   return {
     ...common,
-    schemaVersion: 2,
+    schemaVersion: row.schema_version,
     contextMode: "meeting",
     meetingId: row.meeting_id,
     ...(row.meeting_title ? { meetingTitle: row.meeting_title } : {}),
@@ -168,14 +168,14 @@ export function assertStoredRunConsistency(
     || row.match_notes !== input.analysis.matchNotes
     || row.accepted_count !== accepted
     || row.rejected_count !== input.analysis.items.length - accepted;
-  const contextMismatch = isRunImportV2(input)
-    ? row.schema_version !== 2
+  const contextMismatch = isMeetingRunImport(input)
+    ? row.schema_version !== input.analysis.schemaVersion
       || row.context_mode !== "meeting"
       || row.meeting_id !== input.analysis.meeting.id
       || row.meeting_title !== (input.analysis.meeting.title ?? null)
       || row.provider !== input.analysis.meeting.provider
       || row.transport !== input.manifest.contextTransport
-    : row.schema_version !== 3
+    : row.schema_version !== input.analysis.schemaVersion
       || row.context_mode !== "none"
       || row.meeting_id !== null
       || row.meeting_title !== null
@@ -192,7 +192,7 @@ export function storedRunFrom(
 ): StoredRun {
   assertStoredRunConsistency(row, input);
   const summary = rowToSummary(row);
-  if (summary.schemaVersion === 2 && isRunImportV2(input)) {
+  if (summary.contextMode === "meeting" && isMeetingRunImport(input)) {
     return {
       ...summary,
       matchNotes: row.match_notes,
@@ -201,7 +201,7 @@ export function storedRunFrom(
       ...(input.outcome ? { outcome: input.outcome } : {}),
     };
   }
-  if (summary.schemaVersion === 3 && isRunImportV3(input)) {
+  if (summary.contextMode === "none" && isVideoRunImport(input)) {
     return {
       ...summary,
       matchNotes: row.match_notes,

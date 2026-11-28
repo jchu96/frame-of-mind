@@ -111,6 +111,10 @@ Provider SDK updates require OAuth, tool discovery, schema, and cleanup tests.
 
 ## Schema compatibility
 
+CLI and local Studio pair analysis 4 with manifest 2 for meetings and analysis 5 with manifest 3 for video-only runs. Outcome 2 records exact failed spans. Versions 4 and 5 use exact half-open bounds for validation, so a short span can have equal whole-second labels. Historical analysis 2 and 3 and outcome 1 retain strictly increasing text spans. Hosted Studio publishes and imports the historical pairings.
+
+`exactSpan` stores `start` and `endExclusive` on the source grid. A bound carries `frames` with `unit: "video-frame"`, `samples` with `unit: "sample"`, or `ticks` with `unit: "tick"`. Counts are unsigned decimal strings. Frames and samples use `rate: {num,den}` in units per second. Stream ticks use `tick: {num,den}` in seconds per tick. Each bound carries its origin and precision. A model bound also carries the visible support for that reported second.
+
 Renderers must reject unsupported future major schema versions instead of
 guessing. Compatible optional fields may be added without incrementing schema
 version only when old consumers safely ignore them.

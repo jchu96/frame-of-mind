@@ -101,7 +101,7 @@ onBeforeUnmount(() => {
 });
 
 function runTitle(value: StoredRun): string {
-  return value.schemaVersion === 2
+  return value.contextMode === "meeting"
     ? value.meetingTitle || value.meetingId
     : "Video analysis";
 }

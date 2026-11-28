@@ -1,3 +1,4 @@
+import { fixtureMovieHeader } from "./fixture-movie-header.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -70,7 +71,7 @@ try {
     await writeFile(reader, '#!/usr/bin/env bash\nexec printenv FIXTURE_SESSION\n', {mode: 0o700});
     await symlink("/usr/bin/printenv", join(tools, "printenv"));
     await writeFile(settings, JSON.stringify({keyCommand: [reader]}), {mode: 0o600});
-    await writeFile(join(cwd, "fixture.mp4"), "synthetic recording");
+    await writeFile(join(cwd, "fixture.mp4"), fixtureMovieHeader());
     const args = ["analyze", "--source", "none", "--video", "fixture.mp4", "--output", "out",
       "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"];
     run(args, 1, [], {PATH: tools + ":/usr/bin:/bin", FIXTURE_SESSION: "synthetic-command-fixture"}, 20_000);

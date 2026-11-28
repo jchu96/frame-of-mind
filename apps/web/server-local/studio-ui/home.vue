@@ -199,13 +199,13 @@ function recordingReadinessLabel(): string {
 }
 
 function runTitle(run: RunSummary): string {
-  return run.schemaVersion === 2
+  return run.contextMode === "meeting"
     ? run.meetingTitle || run.meetingId
     : "Video analysis";
 }
 
 function runContext(run: RunSummary): string {
-  return run.schemaVersion === 2
+  return run.contextMode === "meeting"
     ? `${run.provider} via ${run.transport}`
     : "video only";
 }

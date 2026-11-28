@@ -1,3 +1,6 @@
+import type { RangeClock } from "../domain/range-clock.js";
+import { boundIndex } from "../domain/source-bound.js";
+import type { TranscriptionWindow } from "./audio.js";
 import { clockTime, transcriptToFile } from "../domain/clock.js";
 import type { DerivedTranscriptionSegment } from "../domain/types.js";
 import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
@@ -5,6 +8,17 @@ import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
 const LINE_TIME = /^\[(\d{2,}:[0-5]\d:[0-5]\d)\]\s/;
 
 export class TranscriptWindowTimeError extends Error {}
+
+/** Resolve each audio read and its overlap boundary on the recording's grid. */
+export function windowOnGrid(clock: RangeClock, window: TranscriptionWindow, last: boolean) {
+  const start = clock.unitsForSeconds(window.startSeconds);
+  const nominal = clock.unitsForSeconds(window.nominalStartSeconds);
+  const nominalEnd = window.startSeconds + window.durationSeconds;
+  // The decoder knows the selected end exactly. Other windows are planned
+  // at whole seconds; the final unproven duration is only a read limit.
+  const end = last && clock.cutLength !== undefined ? clock.cutLength : clock.unitsForSeconds(Math.ceil(nominalEnd), true);
+  return {start, nominal, end};
+}
 
 /** Validates window-relative endpoints before shifting segments onto recording time. */
 export function offsetTranscriptionSegments(
@@ -36,7 +50,7 @@ export function offsetTranscriptionSegments(
  * it is dropped. Output stays ordered by start time.
  */
 export function mergeTranscriptionChunks(
-  chunks: Array<{ segments: DerivedTranscriptionSegment[]; nominalStartSeconds: number }>,
+  chunks: Array<{ segments: DerivedTranscriptionSegment[]; nominalStartSeconds: number; nominalSourceIndex?: bigint }>,
   warn?: (message: string) => void,
 ): DerivedTranscriptionSegment[] {
   const merged: DerivedTranscriptionSegment[] = [];
@@ -44,7 +58,10 @@ export function mergeTranscriptionChunks(
     let dropped = 0;
     let characters = 0;
     for (const segment of chunk.segments) {
-      if (timestampToSeconds(segment.start) < chunk.nominalStartSeconds) {
+      const beforeNominal = segment.exactSpan && chunk.nominalSourceIndex !== undefined
+        ? boundIndex(segment.exactSpan.start) < chunk.nominalSourceIndex
+        : timestampToSeconds(segment.start) < chunk.nominalStartSeconds;
+      if (beforeNominal) {
         dropped++;
         characters += Array.from(segment.text).length;
         continue;

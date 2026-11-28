@@ -1,3 +1,4 @@
+import { boundMillis } from "../domain/source-bound.js";
 import { ContractError } from "../domain/contract-error.js";
 import { randomUUID } from "node:crypto";
 import { link, lstat, open, rename, rm } from "node:fs/promises";
@@ -21,7 +22,7 @@ function srtTime(seconds: number): string {
 }
 
 /** Reference-grade context cues; model text cannot introduce timing lines. */
-export function renderSrt(segments: readonly DerivedTranscriptionSegment[]): {
+export function renderSrt(segments: readonly DerivedTranscriptionSegment[], maxMs?: number): {
   text: string; adjustedCues: number; blankCues: number;
 } {
   const cues: string[] = [];
@@ -30,9 +31,10 @@ export function renderSrt(segments: readonly DerivedTranscriptionSegment[]): {
   for (const segment of segments) {
     const text = segment.text.replace(/\s*[\r\n]+\s*/g, " ").trim().replaceAll("-->", "-- >");
     if (!text) { blankCues += 1; continue; }
-    const start = timestampToSeconds(segment.start);
-    let end = timestampToSeconds(segment.end);
-    if (!(end > start)) { end = start + 1; adjustedCues += 1; }
+    const exact = segment.exactSpan;
+    const start = exact ? boundMillis(exact.start) / 1000 : timestampToSeconds(segment.start);
+    let end = exact ? Math.min(boundMillis(exact.endExclusive, true), maxMs ?? Infinity) / 1000 : timestampToSeconds(segment.end);
+    if (!exact && !(end > start)) { end = start + 1; adjustedCues += 1; }
     cues.push(`${cues.length + 1}\n${srtTime(start)} --> ${srtTime(end)}\n${text}\n`);
   }
   return { text: cues.length ? `${cues.join("\n")}\n` : "", adjustedCues, blankCues };
@@ -48,13 +50,14 @@ export function renderTranscriptJson(
   provenance: TranscriptProvenance,
   windowStarts?: readonly number[],
   quietLines?: number,
+  fields: object = {},
 ): string {
   const { adjustedCues, blankCues } = renderSrt(segments);
   return `${JSON.stringify({
     schemaVersion: 1, kind: "frame-of-mind.transcript", ...provenance,
     origin: "gemini-audio", timing: "reference-grade", adjustedCues, blankCues,
     ...(windowStarts && { windowStarts }),
-    quietLines,
+    quietLines, ...fields,
     segments: segments.map(segment => ({
       ...segment, start: timestampToSeconds(segment.start), end: timestampToSeconds(segment.end),
     })),

@@ -1,3 +1,6 @@
+import { rangeFields } from "./domain/range-fields.js";
+import { rangeUsage } from "./domain/range-clock.js";
+import { isRanged } from "./services/source-recording.js";
 import { applicationSetting } from "./lib/application-settings.js";
 import { KeyCommandRefused } from "./key-command.js";
 import { cliSettings, keyNextStep } from "./cli-settings.js";
@@ -72,6 +75,8 @@ const geminiModelSchema = z.string()
   .regex(/^gemini-[a-z0-9][a-z0-9.-]*$/, "expected a Gemini model ID");
 
 export interface AnalyzeCliFlags {
+  from?: string;
+  to?: string;
   json?: boolean;
   snap?: string;
   snapGapMs?: string;
@@ -267,6 +272,8 @@ program
   .option("--snap <method>", "Propose measured record edges with speech")
   .option("--snap-gap-ms <ms>", "Minimum observed pause (80–2000, default 250)")
   .option("--snap-window-ms <ms>", "Search radius (250–3000, default 1500)")
+  .option("--from <time>", "inclusive source time or frame")
+  .option("--to <time>", "exclusive source time or frame")
   .option("--timeline-offset <time>", "Sequence offset: seconds (up to 3 decimals), Nf whole frames, or HH:MM:SS:FF / HH:MM:SS;FF; video forms require --timecode-rate. Without a rate: exact milliseconds, seconds and ticks only; no frames or timecode")
   .option("--file-clock <clock>", "Input clock: source or reel", "source")
   .option("--timecode-rate <rate>", `Timeline timecode rendering: ${ACCEPTED_RATES}`)
@@ -300,6 +307,7 @@ program
       let failureFolder: string | undefined;
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
+        if (isRanged(flags) && flags.remoteFile) rangeUsage("A range cannot reuse a remote file.");
         analyzeOptions = await buildAnalyzeOptions(meetingId, flags, await cliSettings().providerKey());
         process.stderr.write(`retention: ${analyzeOptions.retention}\n`);
         const cancellation = new AbortController();
@@ -373,6 +381,7 @@ program
           const remote = result.manifest.remoteFile;
           const tokens = measuredTotal(result.manifest.tokenUsage);
           writeDocument({
+            ...rangeFields.strip().parse(result.manifest),
             runFolder: resolve(result.directory),
             retention: analyzeOptions.retention,
             ...(tokens && { tokens }),
@@ -440,7 +449,7 @@ export function printAnalysisSummary(result: AnalyzeResult, stream: NodeJS.Writa
     stream.write(
       `Retained Gemini upload: ${remoteFile.name}` +
         ` (${remoteFile.expirationTime ? `provider expiration ${remoteFile.expirationTime}` : "expiration not reported"}; per-file limit 2 GB). ` +
-        `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`,
+        (result.manifest.uploadedCutSha256 ? "\n" : `Reuse it for this same recording with --remote-file ${remoteFile.name}.\n`),
     );
   }
 }
@@ -500,7 +509,7 @@ export async function buildAnalyzeOptions(
     throw new Error("--video is required with --source none.");
   }
   if (videoOnly && flags.transcriptOffset) {
-    throw new Error("--transcript-offset requires meeting or file context.");
+    rangeUsage("--transcript-offset requires meeting or file context.");
   }
   if (flags.maxMoments !== "all" && !/^[1-9]\d*$/.test(flags.maxMoments)) throw new Error("--max-moments must be a positive integer.");
   const maxIncidents = flags.maxMoments === "all" ? 1_000 : Number(flags.maxMoments);
@@ -511,6 +520,7 @@ export async function buildAnalyzeOptions(
     flags.concurrency,
     applicationSetting("FRAME_OF_MIND_DETAIL_CONCURRENCY"),
   );
+  if (flags.remoteFile && isRanged(flags)) rangeUsage("A range cannot reuse a remote file.");
   if (flags.remoteFile) {
     if (!flags.video) {
       throw new Error("--remote-file requires --video so the local recording can be verified and screenshotted.");
@@ -520,9 +530,10 @@ export async function buildAnalyzeOptions(
     }
   }
   if (flags.video) await access(resolve(flags.video));
-  declareClock(flags.timelineOffset, flags.timecodeRate);
+  if (flags.timelineOffset !== undefined || !/^from-media:(df|ndf)$/.test(flags.timecodeRate ?? "")) declareClock(flags.timelineOffset, flags.timecodeRate);
   const fileClock = z.enum(["source", "reel"]).parse(flags.fileClock ?? "source");
   const common = {
+    ...(flags.from !== undefined && {from:flags.from}), ...(flags.to !== undefined && {to:flags.to}),
     ...(flags.snap ? { snapSettings: settings } : {}),
     ...(flags.timelineOffset !== undefined ? { timelineOffset: flags.timelineOffset } : {}),
     ...(flags.timecodeRate !== undefined ? { timecodeRate: flags.timecodeRate } : {}),

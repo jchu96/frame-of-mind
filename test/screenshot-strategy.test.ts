@@ -1,3 +1,4 @@
+import { boundIndex, sourceBound } from "../src/domain/source-bound.js";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -103,8 +104,9 @@ describe("published screenshot across a low-contrast cut", { timeout: 30_000 }, 
       progress: { report: (event) => { extra.events?.push(event); } },
     });
     expect(await readdir(result.directory, {recursive: true})).not.toEqual(expect.arrayContaining([expect.stringContaining(".frameofmind-owner.json")]));
-    expect(result.analysis.items[0]?.screenshot).toBe("moment-01.png");
-    return readFile(join(result.directory, "moment-01.png"));
+    const shot = result.analysis.items[0]!;
+    expect(shot.screenshot).toBe(`moment-01-video-frame-${shot.screenshotExactTime?.unit === "video-frame" && shot.screenshotExactTime.frames}.png`);
+    return readFile(join(result.directory, shot.screenshot!));
   }
 
   async function directSeek(): Promise<Buffer> {
@@ -133,11 +135,12 @@ describe("published screenshot across a low-contrast cut", { timeout: 30_000 }, 
     };
     expect((await run({ recipe: "teaching-points", recipeFile }, spy)).equals(await directSeek())).toBe(true);
     expect(calls.map(call => call[1])).toEqual(["00:00:01", "00:00:02"]);
-    expect(calls.every(call => call.length === 3)).toBe(true);
+    expect(calls.every(call => call[3] === undefined && call[4] !== undefined)).toBe(true);
   });
 
   describe("contact sheet warnings", () => {
-    const fakeShot: typeof extractScreenshot = async (_video, _time, destination) => {
+    const fakeShot: typeof extractScreenshot = async (_video, _time, destination, _window, position) => {
+      if (position) position.captured(sourceBound(position.clock, boundIndex(position.target)));
       await writeFile(destination, "png");
       return true;
     };

@@ -5,6 +5,11 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+The CLI and local Studio write analysis version 4 for meetings, version 5 for video-only runs, and outcome version 2 on every run. Hosted Studio writes analysis 2/3 and refuses 4/5 imports. Local Studio also reads historical bundles.
+
+- `analyze` and `transcribe` accept `--from` and `--to` on the original recording. A verified local cut limits the upload. Exact source bounds carry their unit, rate, origin and precision. Model observations retain one-second support and measured speech edges remain separate proposals.
+- Standard SRT cues use source milliseconds. The optional transcript JSON carries exact spans. Whole-file variable-rate video uses native stream ticks.
+
 ## [0.6.7] - 2026-11-28
 
 The provider key can come from a command you name once, so no key sits in a file. A key that is present is used on every launch: the refusal "Credential source unknown" that 0.6.6 gave a job start is gone. The local media commands no longer give up on a long recording because a fixed clock ran out. Everything added is optional on contract version 1.

@@ -1,3 +1,4 @@
+import { fixtureMovieHeader } from "../scripts/fixture-movie-header.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -48,7 +49,7 @@ describe("sanitize", () => {
     const root = await mkdtemp(join(tmpdir(), "provider-errors-"));
     const sentinel = `AIza${"S".repeat(35)}`;
     const providerMessage = `${sentinel} https://example.invalid/?key=${sentinel}`;
-    const video = "synthetic-video";
+    const video = fixtureMovieHeader();
     try {
       await writeFile(join(root, "video.mp4"), video);
       for (const phase of ["lookup", "generation", "start", "finalize"]) for (const conflict of [false, true]) {
