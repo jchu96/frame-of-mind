@@ -9,7 +9,7 @@ const route = z.strictObject({proposer:role,grader:role});
 export const engineNames = ["gemini","twelvelabs"] as const;
 export type EngineName = typeof engineNames[number];
 export const engineReason = z.enum(["index-timeout","quota","media-limit","rate-limit","network","request-timeout",
-  "key-refused","invalid-reply","local-media-unavailable"]);
+  "key-refused","invalid-reply","local-media-unavailable","receipts-unreadable"]);
 export type EngineReason = z.infer<typeof engineReason>;
 export const PEGASUS_MODEL = "pegasus1.6";
 export const DIRECT_UPLOAD_BYTES = 200_000_000;
@@ -78,7 +78,8 @@ export function fallbackPlan(plan: EnginePlan, reason: EngineReason) {
 }
 
 export function usesTwelveLabs(plan: EnginePlan) {
-  return plan.planned?.proposer.engine === "twelvelabs" || plan.planned?.grader.engine === "twelvelabs";
+  const route = plan.used ?? plan.expected;
+  return route?.proposer.engine === "twelvelabs" || route?.grader.engine === "twelvelabs";
 }
 
 export function geminiRetry(argv: readonly string[], file: boolean) {
@@ -90,6 +91,26 @@ export function geminiRetry(argv: readonly string[], file: boolean) {
   }
   if (!file) retry.push("--proposer", "gemini");
   return [...retry, "--grader", "gemini"];
+}
+
+/** Doctor previews unavailable routes as well. An analysis or dry-run supplies its retry arguments. */
+export function checkReceiptAccess(plan:EnginePlan, scan:{readable:boolean;path:string|null}, argv?:readonly string[]) {
+  if (scan.readable) return;
+  const message = scan.path
+    ? `Twelve Labs scratch receipts are unreadable or unsafe in ${scan.path}. Check the folder, receipt files and their permissions.`
+    : "The private account folder for Twelve Labs scratch receipts could not be located.";
+  if (!usesTwelveLabs(plan)) return message;
+  if (defaultDualRoute(plan)) {
+    fallbackPlan(plan,"receipts-unreadable");
+    plan.retention.twelvelabs = null;
+  } else if (argv) {
+    throw new ContractError("CAPABILITY_MISSING",message,{engine:"twelvelabs",phase:"prepare",sent:false,
+      reason:"receipts-unreadable",retryWith:geminiRetry(argv,plan.planned!.proposer.engine === "file")});
+  } else {
+    plan.expected = null;
+    plan.reason = "receipts-unreadable";
+  }
+  return message;
 }
 
 /** Inspect only the local selection. The same planner serves execution and preview. */

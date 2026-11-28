@@ -13,7 +13,7 @@
       "type":"object","required":["planned","used","expected","reason","retention"],
       "properties":{
         "planned":{"$ref":"#/definitions/nullableRoute"},"used":{"$ref":"#/definitions/nullableRoute"},
-        "expected":{"$ref":"#/definitions/nullableRoute"},"reason":{"enum":[null,"index-timeout","quota","media-limit","rate-limit","network","request-timeout","key-refused","invalid-reply","local-media-unavailable"]},
+        "expected":{"$ref":"#/definitions/nullableRoute"},"reason":{"enum":[null,"index-timeout","quota","media-limit","rate-limit","network","request-timeout","key-refused","invalid-reply","local-media-unavailable","receipts-unreadable"]},
         "graderToldClaim":{"type":"boolean"},"receiptIds":{"type":"array","items":{"type":"string"}},
         "retention":{"type":"object","required":["gemini","twelvelabs"],"properties":{"gemini":{"enum":["provider","run",null]},"twelvelabs":{"enum":["run",null]}}}
       }

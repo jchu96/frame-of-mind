@@ -1,7 +1,7 @@
 import { TwelveLabs, twelveTransport } from "../adapters/twelvelabs.js";
-import { knownCleanupReceipts, receiptDirectory, ScratchReceipts } from "../adapters/twelvelabs-receipts.js";
+import { readScratchReceipts, ScratchReceipts, type ReadableReceipts } from "../adapters/twelvelabs-receipts.js";
 import type { EngineCall } from "../domain/engine-receipts.js";
-import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, checkDirectUpload, checkRoles, disclosure, enginePlan, fallbackMessage, usesTwelveLabs, type EngineItems } from "../domain/engine-plan.js";
+import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, checkDirectUpload, checkReceiptAccess, checkRoles, disclosure, enginePlan, fallbackMessage, usesTwelveLabs, type EngineItems } from "../domain/engine-plan.js";
 import { mediaRequestStarted, preparationDetails, uploadMedia, withMediaTransfer } from "../lib/media-transfer.js";
 import { recordingIdentity, readCandidates, type Candidate, type CandidatesDocument } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
@@ -434,9 +434,15 @@ export class AnalysisOrchestrator {
     const retryArgv = options.retryArgv ?? ["analyze", ...(options.video ? ["--video",options.video] : []),
       ...(options.from ? ["--from", options.from] : []), ...(options.to ? ["--to",options.to] : []),
       ...(options.candidatesFile ? ["--candidates",options.candidatesFile] : [])];
-    if (!options.video) checkDirectUpload(plan, undefined, retryArgv);
     const tellRoute = (message: string) => report(progress, {kind:"stage",stage:"fetching_context",message});
     if (!execution.routeDisclosed) for (const line of disclosure(plan,options.recipe.twelveLabsSegments)) await tellRoute(line);
+    const ledger = options.twelvelabsKey || execution.readCleanupKey
+      ? await readScratchReceipts(this.dependencies.receiptDirectory,usesTwelveLabs(plan)) : undefined;
+    if (ledger && !ledger.readable) {
+      const message = checkReceiptAccess(plan,ledger,retryArgv);
+      if (message) await tellRoute(message);
+    }
+    if (!options.video) checkDirectUpload(plan, undefined, retryArgv);
     if (plan.reason) await tellRoute(fallbackMessage(plan.reason));
     const settings = options.snapSettings && snapSettings(options.snapSettings.gapMs, options.snapSettings.windowMs);
     const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
@@ -595,21 +601,19 @@ export class AnalysisOrchestrator {
       const runModel = route.grader.engine === "gemini" ? analyzer!.model : PEGASUS_MODEL;
       const preGradeCalls:EngineCall[] = [];
       const gradeCallsByCandidate:EngineCall[] = [];
-      const directory = () => this.dependencies.receiptDirectory ?? receiptDirectory();
-      const accountFor = (key:string) => ({catalog:new ScratchReceipts(directory(),key,runId,this.now),request:twelveTransport(key)});
-      const usesTwelve = route.proposer.engine === "twelvelabs" || route.grader.engine === "twelvelabs";
-      const activeAccount = usesTwelve && options.twelvelabsKey ? accountFor(options.twelvelabsKey) : undefined;
+      const accountFor = (receipts:ReadableReceipts,key:string) =>
+        ({catalog:new ScratchReceipts(receipts,key,runId,this.now),request:twelveTransport(key)});
+      const activeAccount = ledger?.readable && usesTwelveLabs(plan) && options.twelvelabsKey
+        ? accountFor(ledger,options.twelvelabsKey) : undefined;
       const catalog = activeAccount?.catalog;
       const request = activeAccount?.request;
-      if (options.twelvelabsKey || execution.readCleanupKey) {
+      if (ledger?.readable && ledger.records.length) {
         const cleanup = await ScratchReceipts.retryAtStart(async (signal,remainingMs)=>{
           if (activeAccount) return activeAccount;
-          if (!(await knownCleanupReceipts(directory(),signal)).length) return;
-          signal.throwIfAborted();
           const key = options.twelvelabsKey ?? await execution.readCleanupKey?.(remainingMs());
           signal.throwIfAborted();
           if (!key) throw new Error("Cleanup key unavailable.");
-          return accountFor(key);
+          return accountFor(ledger,key);
         },tellRoute,this.now);
         if (cleanup) preGradeCalls.push(cleanup);
       }

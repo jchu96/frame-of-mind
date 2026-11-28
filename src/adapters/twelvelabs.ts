@@ -26,7 +26,7 @@ type Phase = "index"|"upload"|"propose"|"grade";
 const codes:Record<EngineReason,FaultCode> = {
   "index-timeout":"PROVIDER_UNREACHABLE",network:"PROVIDER_UNREACHABLE","request-timeout":"PROVIDER_UNREACHABLE",
   quota:"PROVIDER_LIMIT","media-limit":"PROVIDER_LIMIT","rate-limit":"RATE_LIMITED","invalid-reply":"PROVIDER_REFUSED",
-  "key-refused":"KEY_REFUSED","local-media-unavailable":"CAPABILITY_MISSING",
+  "key-refused":"KEY_REFUSED","local-media-unavailable":"CAPABILITY_MISSING","receipts-unreadable":"CAPABILITY_MISSING",
 };
 function fault(phase:Phase,reason:EngineReason,message = "Twelve Labs request failed.") {
   return new ContractError(codes[reason],message,{engine:"twelvelabs",phase,reason});

@@ -12,6 +12,8 @@ import { ContractError } from "../domain/contract-error.js";
 
 const saved = z.strictObject({receipt:copyReceipt, pid:z.int().positive().nullable(), host:z.string()});
 type Saved = z.infer<typeof saved>;
+export type ReadableReceipts = {readable:true; path:string; records:Saved[]};
+type ReceiptScan = ReadableReceipts | {readable:false; path:string|null};
 type Request = (path:string, init?: RequestInit) => Promise<Response>;
 const startupRetryMs = 3000;
 type RetryProgress = {signal:AbortSignal; confirmed:()=>void};
@@ -24,7 +26,7 @@ export function receiptDirectory() {
   return join(dirname(settings),"scratch-receipts");
 }
 
-async function privateDir(dir:string) {
+async function privateDir(dir:string, create:boolean) {
   // Walk from the nearest existing ancestor so no component can redirect creation.
   let ancestor = dir;
   while (!await lstat(ancestor).catch(error=>{
@@ -32,23 +34,27 @@ async function privateDir(dir:string) {
     throw error;
   })) ancestor = dirname(ancestor);
   trustedDirectory(ancestor);
-  await mkdir(dir,{recursive:true,mode:0o700});
+  if (ancestor !== dir) {
+    if (!create) return false;
+    await mkdir(dir,{recursive:true,mode:0o700});
+  }
   trustedDirectory(dir);
   const s = await lstat(dir);
-  if (!s.isDirectory() || (process.geteuid && ((s.mode & 0o077) || s.uid !== process.geteuid())) || await realpath(dir) !== dir)
+  if (!s.isDirectory() || (process.geteuid && ((s.mode & 0o077) || (s.mode & 0o500) !== 0o500 || s.uid !== process.geteuid())) || await realpath(dir) !== dir)
     throw new ContractError("PERMISSION_DENIED","The scratch receipt directory must be private and owned by the current account.");
+  return true;
 }
 
-async function pendingRecords(directory:string, signal?:AbortSignal) {
-  await privateDir(directory);
+async function pendingRecords(directory:string) {
   const found:Saved[] = [];
   for (const file of await readdir(directory)) {
-    signal?.throwIfAborted();
     if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
     const handle = await open(join(directory,file),constants.O_NOFOLLOW | constants.O_RDONLY | constants.O_NONBLOCK);
     try {
       const info = await handle.stat();
-      if (!info.isFile() || info.size > 16_384 || info.nlink !== 1 || (process.geteuid && (info.uid !== process.geteuid() || (info.mode & 0o077)))) throw new Error("Unsafe receipt file.");
+      const entry = await lstat(join(directory,file));
+      if (!entry.isFile() || entry.dev !== info.dev || entry.ino !== info.ino) throw new Error("Unsafe receipt entry.");
+      if (!info.isFile() || info.size > 16_384 || info.nlink !== 1 || (process.geteuid && (info.uid !== process.geteuid() || !(info.mode & 0o400) || (info.mode & 0o077)))) throw new Error("Unsafe receipt file.");
       const row = saved.parse(JSON.parse(await handle.readFile("utf8")));
       if (row.receipt.receiptId+".json" !== file) throw new Error("Mismatched receipt identity.");
       if (row.receipt.state !== "deleted") found.push(row);
@@ -57,23 +63,27 @@ async function pendingRecords(directory:string, signal?:AbortSignal) {
   return found;
 }
 
-export async function knownCleanupReceipts(dir = receiptDirectory(), signal?:AbortSignal):Promise<string[]> {
+export async function readScratchReceipts(directory?:string, create=false):Promise<ReceiptScan> {
   try {
-    await lstat(dir);
-    return (await pendingRecords(dir,signal)).map(row=>row.receipt.receiptId);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
+    directory ??= receiptDirectory();
+    const exists = await privateDir(directory,create);
+    return {readable:true, path:directory, records:exists ? await pendingRecords(directory) : []};
+  } catch {
+    return {readable:false, path:directory ?? null};
   }
 }
 
 export class ScratchReceipts {
   readonly copies:CopyReceipt[] = [];
   readonly accountScope:string;
-  private ledgerRead = false;
-  private unresolved = new Set<string>();
-  constructor(private readonly directory:string, key:string, private readonly runId:string, private readonly now:()=>string) {
+  private readonly directory:string;
+  private readonly retryGroups:CopyReceipt[][];
+  private readonly unresolved = new Set<string>();
+
+  constructor(ledger:ReadableReceipts, key:string, private readonly runId:string, private readonly now:()=>string) {
     this.accountScope = createHash("sha256").update("twelvelabs account\0").update(key).digest("hex");
+    this.directory = ledger.path;
+    this.retryGroups = this.recoverable(ledger.records);
   }
   private async write(receipt:CopyReceipt, active:boolean, signal?:AbortSignal) {
     const path = join(this.directory,receipt.receiptId+".json");
@@ -92,9 +102,7 @@ export class ScratchReceipts {
       }
     } finally { await unlink(tmp).catch(()=>undefined); }
   }
-  private async recoverable(signal:AbortSignal) {
-    const records = await pendingRecords(this.directory,signal);
-    signal.throwIfAborted();
+  private recoverable(records:Saved[]) {
     const groups = new Map<string,Saved[]>();
     for (const row of records) {
       const receipt = row.receipt;
@@ -104,7 +112,6 @@ export class ScratchReceipts {
       group.push(row);
       groups.set(receipt.runId,group);
     }
-    this.ledgerRead = true;
     return [...groups.values()].filter(group=>!group.some(({pid,host}) => {
       if (host !== hostname()) return true;
       if (!pid) return false;
@@ -127,7 +134,7 @@ export class ScratchReceipts {
       const account = await resolveAccount(signal,()=>Math.max(1,Math.ceil(deadline-performance.now())));
       signal.throwIfAborted();
       if (!account) return;
-      const groups = await account.catalog.recoverable(signal);
+      const groups = account.catalog.retryGroups;
       call.copies = groups.flat().filter(r=>r.assetId || r.taskId).length;
       if (!call.copies) return;
       await tell(`Retrying deletion of ${call.copies} Twelve Labs scratch ${call.copies === 1 ? "copy" : "copies"}. No material is sent.`);
@@ -160,8 +167,6 @@ export class ScratchReceipts {
   }
 
   async intent(source:Source, operation:CopyReceipt["operation"]) {
-    if (!this.ledgerRead) throw new ContractError("CAPABILITY_MISSING","Cannot establish scratch ownership from the local receipts.",
-      {engine:"twelvelabs",phase:operation,reason:"local-media-unavailable"});
     if (this.unresolved.has(operation+"-"+source.sentSha256))
       throw new ContractError("PROVIDER_UNREACHABLE","A previous scratch creation is unconfirmed.",{engine:"twelvelabs",phase:operation,reason:"network"});
     const time = this.now();

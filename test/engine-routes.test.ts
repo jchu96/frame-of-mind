@@ -275,13 +275,11 @@ it("announces the whole cleanup count on stderr before contact under --json and 
   await pendingAsset(f);
   const {program} = await import("../src/cli-main.js");
   const service = await import("../src/services/analyze.js");
-  const receipts = await import("../src/adapters/twelvelabs-receipts.js");
   f.events.length = 0;
   vi.stubEnv("GEMINI_API_KEY","synthetic-gemini-key");
   vi.stubEnv("TWELVELABS_API_KEY","synthetic-twelve");
   const stdout = vi.spyOn(process.stdout,"write").mockImplementation(()=>true);
   vi.spyOn(process.stderr,"write").mockImplementation(chunk=>{f.events.push(String(chunk)); return true;});
-  vi.spyOn(receipts,"knownCleanupReceipts").mockResolvedValue(["fixture-receipt"]);
   vi.spyOn(service,"analyzeMeeting").mockImplementation((options,execution)=>new AnalysisOrchestrator(f.deps).analyze(options,execution));
   try {
     await program.parseAsync(["analyze","--json","--source","none","--video",f.video,"--candidates",f.candidatesFile,

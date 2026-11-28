@@ -1,5 +1,5 @@
-import { knownCleanupReceipts } from "./adapters/twelvelabs-receipts.js";
-import { checkDirectUpload, checkRoles, DIRECT_UPLOAD_BYTES, disclosure, enginePlan, fallbackMessage, usesTwelveLabs } from "./domain/engine-plan.js";
+import { readScratchReceipts } from "./adapters/twelvelabs-receipts.js";
+import { checkDirectUpload, checkReceiptAccess, checkRoles, DIRECT_UPLOAD_BYTES, disclosure, enginePlan, fallbackMessage, usesTwelveLabs } from "./domain/engine-plan.js";
 import { rangeFields } from "./domain/range-fields.js";
 import { rangeUsage } from "./domain/range-clock.js";
 import { isRanged, withSourceRecording } from "./services/source-recording.js";
@@ -158,6 +158,10 @@ program
     const settingsPath = config.settingsPath();
     const preview = enginePlan({file:false,model:applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL,
           retention:resolveRetention({},applicationSetting("FRAME_OF_MIND_UPLOAD_RETENTION")),available:key.present,twelveAvailable:twelve.present,preview:true});
+    const {readable,path} = await readScratchReceipts();
+    const scratchReceipts = {readable,path};
+    checkReceiptAccess(preview,scratchReceipts);
+    const receiptBlock = anyKey && !preview.expected;
     const prerequisites = {
       node: Number(process.versions.node.split(".")[0]) >= 22,
       geminiKey: key.present,
@@ -176,17 +180,17 @@ program
         })),
       ];
       writeDocument({
-        ok: checks.every(check => !check.required || check.ok), checks, commands: media.commands.map(({ command: name, capabilities }) => ({ name, capabilities })), leftovers,
+        ok: !receiptBlock && checks.every(check => !check.required || check.ok), checks, commands: media.commands.map(({ command: name, capabilities }) => ({ name, capabilities })), leftovers,
         roots: { mode: "none", file: null },
-        enginePlan:preview, keys:{gemini:key,twelvelabs:twelve},
+        enginePlan:preview, scratchReceipts, keys:{gemini:key,twelvelabs:twelve},
         key, settingsPath, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
         commit: RELEASE_COMMIT,
         cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
       });
-      if (!anyKey && (key.commandDisabledByEnvironment || key.source === "unknown" || key.source === "command")) process.exitCode = 1;
+      if (receiptBlock || (!anyKey && (key.commandDisabledByEnvironment || key.source === "unknown" || key.source === "command"))) process.exitCode = 1;
       return;
     }
-    if (!flags.scratch && (!prerequisites.node || !anyKey)) process.exitCode = 1;
+    if (!flags.scratch && (!prerequisites.node || !anyKey || receiptBlock)) process.exitCode = 1;
     const checks = [
       ["Node >=22", prerequisites.node],
       [`GEMINI_API_KEY (${config.keyLabel()})`, prerequisites.geminiKey],
@@ -203,7 +207,10 @@ program
       }
     }
     if (twelve.commandDisabledByEnvironment) process.stdout.write("Key command switched off by FRAME_OF_MIND_TWELVELABS_KEY_COMMAND.\n");
+    process.stdout.write(`Twelve Labs scratch receipts ${readable ? "readable" : "unreadable or unsafe"} in ${path ?? "(account folder unavailable)"}.\n`);
     for (const line of disclosure(preview)) process.stdout.write(line+"\n");
+    if (preview.reason && preview.expected) process.stdout.write(fallbackMessage(preview.reason)+"\n");
+    if (receiptBlock) process.stdout.write("Twelve Labs cannot run until its scratch receipts can be read safely.\n");
     process.stdout.write(
       `Bluedot MCP: ${redactUrlForDisplay(applicationSetting("BLUEDOT_MCP_URL") || DEFAULT_BLUEDOT_MCP_URL)}\n`,
     );
@@ -362,6 +369,14 @@ program
           model:analyzeOptions.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL),
           retention:analyzeOptions.retention!,available:gemini.present,twelveAvailable:twelve.present,preview:true});
         if (flags.dryRun) {
+          const argv = program.args[0] === "analyze" ? program.args : process.argv.slice(2);
+          if (twelve.present) {
+            const scan = await readScratchReceipts();
+            const hint = checkReceiptAccess(plan,scan,argv);
+            if (hint) process.stderr.write(hint+"\n");
+            if (plan.reason) process.stderr.write(fallbackMessage(plan.reason)+"\n");
+            if (scan.readable && scan.records.length) plan.receiptIds = scan.records.map(row=>row.receipt.receiptId);
+          }
           if (usesTwelveLabs(plan)) {
             const video = analyzeOptions.video;
             const wholeBytes = video && !isRanged(flags) ? (await stat(video)).size : undefined;
@@ -370,13 +385,9 @@ program
               : await withSourceRecording(video,flags,"analysis",line=>process.stderr.write(line+"\n"),
                 async (cut,clock,_audio,picture)=>({bytes:(await stat(cut)).size,soundOnly:clock.grid.unit === "samples",picture,
                   duration:clock.cutLength === undefined ? undefined : clock.elapsed(clock.cutLength)}));
-            const hint = checkDirectUpload(plan, selection?.bytes, program.args[0] === "analyze" ? program.args : process.argv.slice(2),selection);
+            const hint = checkDirectUpload(plan, selection?.bytes, argv,selection);
             if (plan.reason) process.stderr.write(fallbackMessage(plan.reason) + "\n");
             if (hint) process.stderr.write(hint + "\n");
-          }
-          if (twelve.present) {
-            const ids = await knownCleanupReceipts();
-            if (ids.length) plan.receiptIds = ids;
           }
           writeDocument({enginePlan:plan});
           return;

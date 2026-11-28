@@ -330,7 +330,7 @@ A build made this way prints its version with `+source`, for example `0.6.8+sour
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
 
-For ordinary analysis, `TWELVELABS_API_KEY` enables Twelve Labs. With both keys, Twelve Labs proposes and Gemini grades. Use `--proposer` and `--grader` to choose either engine. `--dry-run` previews recipients and retention for the selected recording. Many real recordings exceed the 200 MB direct-upload limit. A shorter `--from` / `--to` range can fit.
+For ordinary analysis, `TWELVELABS_API_KEY` enables Twelve Labs. With both keys, Twelve Labs proposes and Gemini grades. Use `--proposer` and `--grader` to choose either engine. `--dry-run` previews recipients and retention for the selected recording. Many real recordings exceed the 200 MB direct-upload limit. A shorter `--from` / `--to` range can fit. Doctor reports the Twelve Labs receipt folder and whether it can be read safely. Unreadable receipts switch the default route to Gemini.
 
 Each engine has the same key lookup order. Set `keyCommands.gemini` and `keyCommands.twelvelabs` in private account settings. An inherited `FRAME_OF_MIND_TWELVELABS_KEY_COMMAND='[]'` skips the Twelve Labs reader. [Credential setup](docs/CREDENTIALS.md)
 
