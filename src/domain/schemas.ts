@@ -219,6 +219,12 @@ const promptProvenanceSchema = z.object({
   }).strict(),
 }).strict();
 
+function checkRecordingClock(value: {recordingMimeType: string; sourceRange?: {unit: string}}, context: z.RefinementCtx) {
+  if (value.recordingMimeType.startsWith("audio/") && value.sourceRange?.unit !== "samples") {
+    context.addIssue({code: "custom", path: ["sourceRange"], message: "An audio recording requires a native sample clock."});
+  }
+}
+
 export const runManifestSchema = z.object({
   ...rangeFields.shape,
   enginePlan:enginePlanSchema.optional(), engineItems:engineItemsSchema.optional(),
@@ -274,7 +280,7 @@ export const runManifestSchema = z.object({
   clock: runClockSchema.optional(),
   label: runLabelSchema.optional(),
   artifacts: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255)).max(1_100),
-}).strict().superRefine((value, context) => {
+}).strict().superRefine(checkRecordingClock).superRefine((value, context) => {
   if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
     context.addIssue({
       code: "custom",
@@ -353,7 +359,7 @@ export const runManifestV3Schema = z.object({
   artifacts: z.array(
     z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255),
   ).max(1_100),
-}).strict().superRefine((value, context) => {
+}).strict().superRefine(checkRecordingClock).superRefine((value, context) => {
   if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
     context.addIssue({
       code: "custom",
