@@ -1,3 +1,7 @@
+vi.mock("../src/services/source-recording.js", async importOriginal => ({
+  ...await importOriginal<typeof import("../src/services/source-recording.js")>(),
+  withSourceRecording: (await import("./helpers/source-clock.js")).fixtureSource(() => 7200),
+}));
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -218,7 +222,7 @@ describe("AnalysisOrchestrator", () => {
     expect(fixture.context.meeting).not.toHaveBeenCalled();
     expect(fixture.context.close).not.toHaveBeenCalled();
     expect(publishProjection).toHaveBeenCalledWith(expect.objectContaining({
-      analysis: expect.objectContaining({ schemaVersion: 3 }),
+      analysis: expect.objectContaining({ schemaVersion: 5 }),
       manifest: expect.objectContaining({ schemaVersion: 3 }),
     }));
     expect(events[0]).toMatchObject({
@@ -246,7 +250,7 @@ describe("AnalysisOrchestrator", () => {
       [],
     );
     expect(result.analysis).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 5,
       context: { mode: "none" },
     });
     expect(result.manifest).toMatchObject({

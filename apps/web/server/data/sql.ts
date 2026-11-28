@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS analysis_run_registry (
   principal_sub TEXT NOT NULL,
   run_id TEXT NOT NULL,
   principal_email TEXT,
-  schema_version INTEGER NOT NULL CHECK (schema_version IN (2, 3)),
+  schema_version INTEGER NOT NULL CHECK (schema_version IN (2, 3, 4, 5)),
   PRIMARY KEY (principal_sub, run_id)
 ) STRICT;
 
@@ -240,9 +240,9 @@ export const runSummaryColumns = `
   rejected_count, imported_at, imported_by
 `;
 
-export const supportedRunSummariesSql = `
+export function runSummariesSql(local = false) { return `
   SELECT
-    2 AS schema_version,
+    ${local ? "json_extract(analysis_json, '$.schemaVersion')" : "2"} AS schema_version,
     'meeting' AS context_mode,
     run_id, meeting_id, meeting_title, provider, transport, recipe_id,
     recipe_label, model, started_at, completed_at, accepted_count,
@@ -250,11 +250,11 @@ export const supportedRunSummariesSql = `
   FROM analysis_runs
   WHERE principal_sub = ?
     AND json_valid(analysis_json) AND json_valid(manifest_json)
-    AND json_extract(analysis_json, '$.schemaVersion') = 2
+    AND json_extract(analysis_json, '$.schemaVersion') ${local ? "IN (2, 4)" : "= 2"}
     AND json_extract(manifest_json, '$.schemaVersion') = 2
   UNION ALL
   SELECT
-    3 AS schema_version,
+    ${local ? "json_extract(analysis_json, '$.schemaVersion')" : "3"} AS schema_version,
     'none' AS context_mode,
     run_id, NULL AS meeting_id, NULL AS meeting_title, NULL AS provider,
     NULL AS transport, recipe_id, recipe_label, model, started_at,
@@ -262,10 +262,12 @@ export const supportedRunSummariesSql = `
   FROM video_analysis_runs
   WHERE principal_sub = ?
     AND json_valid(analysis_json) AND json_valid(manifest_json)
-    AND json_extract(analysis_json, '$.schemaVersion') = 3
+    AND json_extract(analysis_json, '$.schemaVersion') ${local ? "IN (3, 5)" : "= 3"}
     AND json_extract(manifest_json, '$.schemaVersion') = 3
 `;
 
+}
+export const supportedRunSummariesSql = runSummariesSql();
 export function importValues(input: {
   analysis: {
     meeting: { id: string; title?: string; provider: string };

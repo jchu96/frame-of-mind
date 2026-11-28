@@ -391,6 +391,7 @@ export class GeminiVideoAnalyzer {
     indexFps = 0.5,
     derivedTranscript?: string,
     runNotes?: readonly RunNote[],
+    ranged = false,
   ): Promise<{
     isRelevantCall: boolean;
     matchNotes: string;
@@ -446,6 +447,7 @@ export class GeminiVideoAnalyzer {
                   "For each candidate give precise start/end timestamps, speaker only when directly audible or visible, UI surface, kind, one-line summary, and importance.",
                   "Describe the direct audio and visual evidence before deciding why a moment is relevant.",
                   "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
+                ...(ranged ? ["Use the uploaded cut clock starting at zero. Keep moments already in progress at the first picture. Put times only in time fields and none in prose."] : []),
                   "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
                   indexBindingLine(recipe),
                 ].join("\n")),
@@ -500,6 +502,7 @@ export class GeminiVideoAnalyzer {
                 "For each candidate give precise start/end timestamps, speaker when known, UI surface, kind, one-line summary, and importance.",
                 "Describe the direct audio and visual evidence before deciding why a moment is relevant.",
                 "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
+                ...(ranged ? ["Use the uploaded cut clock starting at zero. Keep moments already in progress at the first picture. Put times only in time fields and none in prose."] : []),
                 "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
                 `${indexBindingLine(recipe)} State whether video and transcript describe the same meeting.`,
                 "The video may be a clip from the middle of a longer meeting transcript. Return transcriptAlignment.offsetSeconds as signed transcript-time minus video-time seconds. Negative values are valid when the transcript begins after the video. Use 0 only when both begin together or alignment is unavailable; explain confidence and rationale.",
@@ -529,8 +532,13 @@ export class GeminiVideoAnalyzer {
     runNotes?: readonly RunNote[],
     modelClipClock: ClipClock = "absolute",
     stills?: readonly DetailStill[],
+    rangeSeconds?: number,
   ): Promise<AnalysisDetail> {
     const window = clipWindow(candidate.start, candidate.end);
+    if (rangeSeconds !== undefined) {
+      if (modelClipClock === "unverified") {window.start = 0; window.end = rangeSeconds;}
+      else window.end = Math.min(window.end, rangeSeconds);
+    }
     const detailResponseSchema = z.preprocess(
       (raw) => {
         const normalized = normalizeLosslessDetailResponse(raw);
@@ -569,8 +577,9 @@ export class GeminiVideoAnalyzer {
           {
             fileData: { fileUri: requireString(file.uri, "Gemini file URI"), mimeType: file.mimeType },
             videoMetadata: {
-              startOffset: `${window.start}s`,
-              endOffset: `${window.end}s`,
+              ...(rangeSeconds !== undefined && modelClipClock === "unverified" ? {} : {
+                startOffset: `${window.start}s`, endOffset: `${Number(window.end.toFixed(9))}s`,
+              }),
               fps: 1,
             },
           },
@@ -608,6 +617,7 @@ export class GeminiVideoAnalyzer {
                 : [promptSection("evidence-example", genericEvidenceExample)]),
               promptSection("task", [
                 "Inspect the clip closely and produce one structured analysis record.",
+                ...(rangeSeconds !== undefined ? ["Put times only in time fields and none in prose."] : []),
                 `Only include appUrl when a browser address bar is visible and fully readable in ${stills ? "the cited still" : "this clip"}. Never infer, repair, or invent a URL.`,
                 ...(stills ? [
                   "Use neutral label/value details appropriate to the recipe. Record only observed steps. Use the clip for context and audio.",

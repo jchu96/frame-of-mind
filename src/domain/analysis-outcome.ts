@@ -1,3 +1,4 @@
+import { exactSpanSchema, humanTime } from "./source-bound.js";
 import { z } from "zod";
 import { runIdSchema, timestampSchema } from "./schemas.js";
 import { timestampToSeconds } from "../lib/time.js";
@@ -15,21 +16,20 @@ export const candidateValidationIssueSchema = z.strictObject({
   code: z.string().min(1).max(64).regex(/^[a-z_]+$/),
 });
 
-export const candidateFailureSchema = z.strictObject({
+const failureFields = {
   candidateOrdinal: z.number().int().min(1).max(1_000),
   start: timestampSchema,
   end: timestampSchema,
   code: candidateFailureCodeSchema,
   attempts: z.union([z.literal(1), z.literal(2)]),
   issues: z.array(candidateValidationIssueSchema).max(3).optional(),
-}).superRefine((value, context) => {
-  if (timestampToSeconds(value.end) <= timestampToSeconds(value.start)) {
-    context.addIssue({
-      code: "custom",
-      path: ["end"],
-      message: "candidate failure end timestamp must be after start",
-    });
-  }
+} as const;
+const legacyFailure = z.strictObject(failureFields).refine(v => timestampToSeconds(v.end) > timestampToSeconds(v.start),
+  {message:"candidate failure end timestamp must be after start",path:["end"]});
+const exactFailure = z.strictObject({...failureFields,exactSpan:exactSpanSchema}).refine(
+  v => v.start === humanTime(v.exactSpan.start) && v.end === humanTime(v.exactSpan.endExclusive),
+  {message:"Failure labels must match their exact bounds.", path:["exactSpan"]});
+function checkIssues(value: z.infer<typeof legacyFailure>, context: z.RefinementCtx) {
   if (value.code !== "schema_validation" && value.issues?.length) {
     context.addIssue({
       code: "custom",
@@ -37,10 +37,10 @@ export const candidateFailureSchema = z.strictObject({
       message: "only schema validation failures may include issue paths",
     });
   }
-});
-
-export const analysisOutcomeSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+}
+export const candidateFailureSchema = legacyFailure.superRefine(checkIssues);
+const exactFailureSchema = exactFailure.superRefine(checkIssues);
+const outcomeBase = z.strictObject({
   runId: runIdSchema,
   status: z.enum(["complete", "partial", "failed"]),
   candidates: z.strictObject({
@@ -53,8 +53,10 @@ export const analysisOutcomeSchema = z.strictObject({
     rejected: z.number().int().min(0).max(1_000),
     failed: z.number().int().min(0).max(1_000),
   }),
-  failures: z.array(candidateFailureSchema).max(1_000),
-}).superRefine((value, context) => {
+});
+const outcome1 = outcomeBase.extend({schemaVersion:z.literal(1), failures:z.array(candidateFailureSchema).max(1000)});
+const outcome2 = outcomeBase.extend({schemaVersion:z.literal(2), failures:z.array(exactFailureSchema).max(1000)});
+export const analysisOutcomeSchema = z.discriminatedUnion("schemaVersion", [outcome1, outcome2]).superRefine((value, context) => {
   if (value.candidates.selected + value.candidates.omittedByLimit + (value.candidates.outOfRange ?? 0) !== value.candidates.indexed) {
     context.addIssue({
       code: "custom",
@@ -120,7 +122,7 @@ export const analysisOutcomeSchema = z.strictObject({
 
 export type CandidateFailureCode = z.infer<typeof candidateFailureCodeSchema>;
 export type CandidateValidationIssue = z.infer<typeof candidateValidationIssueSchema>;
-export type CandidateFailure = z.infer<typeof candidateFailureSchema>;
+export type CandidateFailure = z.infer<typeof candidateFailureSchema> & {exactSpan?: z.infer<typeof exactSpanSchema>};
 export type AnalysisOutcome = z.infer<typeof analysisOutcomeSchema>;
 
 interface CandidateAnalysisErrorInput {

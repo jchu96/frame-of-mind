@@ -189,7 +189,7 @@ describe("windows", () => {
       index: vi.fn(async () => ({ isRelevantCall: false, matchNotes: "synthetic", moments: [], transcriptAlignment: { offsetSeconds: 0, confidence: "high" as const, rationale: "synthetic" } })),
       interrogate: vi.fn(),
     };
-    const orchestrator = new AnalysisOrchestrator({ createContextSource: vi.fn(), createAnalyzer: () => analyzer,
+    const orchestrator = new AnalysisOrchestrator({withSourceRecording: fixtureSource(() => 7200),  createContextSource: vi.fn(), createAnalyzer: () => analyzer,
       createRunId: () => "synthetic-run", now: f.deps.now, sleep: f.deps.sleep,
       extractAudioTrack: f.deps.extractAudioTrack, probeDurationSeconds: f.deps.probeDurationSeconds });
     await orchestrator.analyze({ contextMode: "none", video: f.input, outputRoot: join(f.root, "runs"), apiKey: "test-key",
@@ -279,7 +279,7 @@ describe("original-language transcription", () => {
       { matchNotes: "Synthetic", moments: [candidate] },
       { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic", evidence: { timestamp: candidate.start } },
     );
-    const orchestrator = new AnalysisOrchestrator({
+    const orchestrator = new AnalysisOrchestrator({withSourceRecording: fixtureSource(() => 7200), 
       ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer,
       calibrateClipClock: provider => calibrateClipClock(provider, { cacheRoot: f.root, synthesize: async () => true }),
     });
@@ -320,7 +320,7 @@ describe("original-language transcription", () => {
     // The stretches 100 to 750 s and 800 to 840 s hold measured sound and no line.
     const { analyzer, requests } = capture(...firstPass, { matchNotes: "Synthetic", moments: [] });
     f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(3000, [100, 12], [700, 11], [800, 10]));
-    const run = new AnalysisOrchestrator({ ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
+    const run = new AnalysisOrchestrator({withSourceRecording: fixtureSource(() => 7200),  ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
     vi.spyOn(service, "analyzeMeeting").mockImplementation((options, execution) => run.analyze(options, execution));
     await program.parseAsync(["analyze", "--json", "--source", "none", "--video", f.input, "--output", f.root,
       "--no-calibrate", "--no-screenshots", "--snap", "speech"], { from: "user" });
@@ -351,7 +351,7 @@ describe("original-language transcription", () => {
       f.deps.probeDurationSeconds.mockResolvedValue(duration);
       f.deps.decodeSpeechEnvelope.mockResolvedValue(soundTrack(100, [10, 12]));
       const { analyzer, requests } = capture({ segments: [cue(0, 2, "held")] }, { matchNotes: "Synthetic", moments: [] });
-      const run = new AnalysisOrchestrator({ ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
+      const run = new AnalysisOrchestrator({withSourceRecording: fixtureSource(() => 7200),  ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
       const options = await buildAnalyzeOptions(undefined, {
         source: "none", granolaTransport: "mcp", video: f.input, output: f.root, recipe: "requirements", depth: "standard",
         screenshots: false, calibrate: false, maxMoments: "all",
@@ -381,7 +381,7 @@ describe("original-language transcription", () => {
         { matchNotes: "Synthetic", moments: [candidate, { ...candidate, start: "00:00:06", end: "00:00:08" }] },
         {}, detail, detail,
       );
-      const run = new AnalysisOrchestrator({ ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
+      const run = new AnalysisOrchestrator({withSourceRecording: fixtureSource(() => 7200),  ...f.deps, createContextSource: vi.fn(), createAnalyzer: () => analyzer });
       vi.spyOn(service, "analyzeMeeting").mockImplementation((options, execution) => run.analyze(options, execution));
       stdout.mockClear();
       stderr.mockClear();

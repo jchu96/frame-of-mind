@@ -1,3 +1,4 @@
+import { captureSourcePicture, type PicturePosition } from "./source-picture.js";
 import { createScratch, markerName } from "../adapters/scratch.js";
 import { childEnvironment, spawn } from "../lib/child-env.js";
 import { access, chmod, readdir, rename, rm } from "node:fs/promises";
@@ -29,7 +30,9 @@ export async function extractScreenshot(
   timestamp: string,
   destination: string,
   window?: ScreenshotWindow,
+  position?: PicturePosition,
 ): Promise<boolean> {
+  if (position) return captureSourcePicture(video,destination,position,Boolean(window));
   const seconds = Math.max(0, timestampToSeconds(timestamp));
   if (window && await extractSettledScreenshot(video, seconds, window, destination)) {
     return true;

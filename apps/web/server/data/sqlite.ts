@@ -4,8 +4,8 @@ import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import type { H3Event } from "h3";
 import {
-  isRunImportV2,
-  isRunImportV3,
+  isMeetingRunImport,
+  isVideoRunImport,
   type VersionedRunImport,
 } from "../../../../src/domain/schemas";
 import { validateVersionedRunImport } from "../../../../src/domain/integrity";
@@ -19,7 +19,7 @@ import {
   itemJsonBatches,
   runSummaryColumns,
   schemaSql,
-  supportedRunSummariesSql,
+  runSummariesSql,
   upsertRunSql,
   upsertVideoRunSql,
 } from "./sql";
@@ -35,6 +35,7 @@ import {
   RunProjectionVersionConflictError,
 } from "./types";
 
+const supportedRunSummariesSql = runSummariesSql(true);
 const stores = new Map<string, RunStore>();
 
 export async function getRunStore(event: H3Event): Promise<RunStore> {
@@ -82,6 +83,7 @@ export function createLocalRunStoreFromDatabase(
   principal: RunPrincipal,
 ): RunStore {
   migrateLegacyLocalProjection(database, principal);
+  widenRegistry(database);
   database.exec(schemaSql);
   ensureOutcomeColumn(database, "analysis_runs");
   ensureOutcomeColumn(database, "video_analysis_runs");
@@ -156,8 +158,8 @@ export function createLocalRunStoreFromDatabase(
         "SELECT 1 AS found FROM video_analysis_runs WHERE principal_sub = ? AND run_id = ?",
       ).get(principal.principal, validated.manifest.runId);
       if (
-        (validated.analysis.schemaVersion === 2 && existingVideo)
-        || (validated.analysis.schemaVersion === 3 && existingMeeting)
+        (isMeetingRunImport(validated) && existingVideo)
+        || (isVideoRunImport(validated) && existingMeeting)
       ) {
         throw new RunProjectionVersionConflictError();
       }
@@ -184,16 +186,16 @@ export function createLocalRunStoreFromDatabase(
           if (owner) throw new RunPrincipalConflictError();
           throw new RunProjectionVersionConflictError();
         }
-        if (isRunImportV2(payload)) {
-          database.query(upsertRunSql).run(...importValues(
+        if (isMeetingRunImport(payload)) {
+          database.query(localVersionSql(upsertRunSql, payload.analysis.schemaVersion)).run(...importValues(
             payload,
             principal.principal,
             principal.email,
             importedBy,
           ));
-          database.query(deleteItemsForRunSql).run(principal.principal, payload.manifest.runId);
+          database.query(localVersionSql(deleteItemsForRunSql, payload.analysis.schemaVersion)).run(principal.principal, payload.manifest.runId);
           for (const batch of itemJsonBatches(payload.manifest.runId, payload.analysis.items)) {
-            database.query(insertItemsFromJsonSql).run(
+            database.query(localVersionSql(insertItemsFromJsonSql, payload.analysis.schemaVersion)).run(
               principal.principal,
               principal.email ?? null,
               batch,
@@ -201,17 +203,17 @@ export function createLocalRunStoreFromDatabase(
           }
           return;
         }
-        if (isRunImportV3(payload)) {
-          database.query(upsertVideoRunSql).run(...importVideoValues(
+        if (isVideoRunImport(payload)) {
+          database.query(localVersionSql(upsertVideoRunSql, payload.analysis.schemaVersion)).run(...importVideoValues(
             payload,
             principal.principal,
             principal.email,
             importedBy,
           ));
-          database.query(deleteVideoItemsForRunSql)
+          database.query(localVersionSql(deleteVideoItemsForRunSql, payload.analysis.schemaVersion))
             .run(principal.principal, payload.manifest.runId);
           for (const batch of itemJsonBatches(payload.manifest.runId, payload.analysis.items)) {
-            database.query(insertVideoItemsFromJsonSql).run(
+            database.query(localVersionSql(insertVideoItemsFromJsonSql, payload.analysis.schemaVersion)).run(
               principal.principal,
               principal.email ?? null,
               batch,
@@ -228,6 +230,28 @@ export function createLocalRunStoreFromDatabase(
       };
     },
   };
+}
+
+// Older principal-scoped registries have a two-version CHECK constraint.
+function widenRegistry(database: Database) {
+  database.transaction(() => {
+    const row = database.query<{sql:string}, []>("SELECT sql FROM sqlite_master WHERE type='table' AND name='analysis_run_registry'").get();
+    if (!row || !/schema_version IN\s*\(2,\s*3\)/i.test(row.sql)) return;
+    database.exec(`
+      ALTER TABLE analysis_run_registry RENAME TO analysis_run_registry_old;
+      CREATE TABLE analysis_run_registry (
+        principal_sub TEXT NOT NULL, run_id TEXT NOT NULL, principal_email TEXT,
+        schema_version INTEGER NOT NULL CHECK (schema_version IN (2,3,4,5)), PRIMARY KEY (principal_sub,run_id)
+      ) STRICT;
+      INSERT INTO analysis_run_registry (principal_sub,run_id,principal_email,schema_version)
+        SELECT principal_sub,run_id,principal_email,schema_version FROM analysis_run_registry_old;
+      DROP TABLE analysis_run_registry_old;
+      CREATE UNIQUE INDEX analysis_run_registry_run_id_unique_idx ON analysis_run_registry(run_id);
+    `);
+  }).immediate();
+}
+function localVersionSql(sql: string, version: number) {
+  return sql.replace(/schema_version = [23]/g, `schema_version = ${version}`);
 }
 
 function migrateLegacyLocalProjection(

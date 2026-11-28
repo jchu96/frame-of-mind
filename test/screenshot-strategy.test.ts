@@ -103,8 +103,9 @@ describe("published screenshot across a low-contrast cut", { timeout: 30_000 }, 
       progress: { report: (event) => { extra.events?.push(event); } },
     });
     expect(await readdir(result.directory, {recursive: true})).not.toEqual(expect.arrayContaining([expect.stringContaining(".frameofmind-owner.json")]));
-    expect(result.analysis.items[0]?.screenshot).toBe("moment-01.png");
-    return readFile(join(result.directory, "moment-01.png"));
+    const shot = result.analysis.items[0]!;
+    expect(shot.screenshot).toBe(`moment-01-video-frame-${shot.screenshotExactTime?.unit === "video-frame" && shot.screenshotExactTime.frames}.png`);
+    return readFile(join(result.directory, shot.screenshot!));
   }
 
   async function directSeek(): Promise<Buffer> {

@@ -928,6 +928,9 @@ Details: [docs/WEB_WORKSPACE.md](docs/WEB_WORKSPACE.md),
 
 ## Optional review workspace
 
+The CLI and local Studio write analysis version 4 for meeting context and version 5 for video-only runs, with outcome version 2 in both cases.
+Hosted Studio writes analysis versions 2 and 3 and accepts those versions for import. Open a version 4 or 5 bundle in local Studio.
+
 A small Nuxt 4 SSR workspace imports reviewed `analysis.json` +
 `manifest.json` pairs and provides a run list, provenance, and record detail.
 The database is a disposable projection — the run bundle stays authoritative:

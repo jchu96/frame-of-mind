@@ -1,3 +1,4 @@
+import { boundSchema } from "./source-bound.js";
 import { z } from "zod";
 import { mediaClockSchema, rateSchema, timecodeSpecSchema } from "./media-clock.js";
 const whole = z.string().regex(/^(0|[1-9]\d*)$/);
@@ -21,7 +22,7 @@ export const timesV2Schema = z.strictObject({
   schemaVersion: z.literal(2), kind: z.literal("frame-of-mind.times"), fileClock: z.enum(["source", "reel"]),
   exactTimeCapability: z.enum(["declared video rate: frames, timecode with explicit drop-frame, ticks when whole, derived seconds when a whole millisecond exists", "no declared video rate: whole milliseconds, seconds and ticks; no frames or timecode", "legacy millisecond offset: milliseconds, seconds and ticks; no exact video-frame boundary"]),
   timeline: z.strictObject({ offset: exact }).optional(),
-  entries: z.array(z.strictObject({ pointer: z.string().startsWith("/"), time: approximate, timeline: approximate.optional() })),
+  entries: z.array(z.strictObject({ pointer: z.string().startsWith("/"), exactTime:boundSchema.optional(), time: approximate, timeline: approximate.optional() })),
 });
 
 const fileClock = z.enum(["source", "reel"]);
@@ -33,16 +34,16 @@ const frameReference = z.strictObject({
   timecode: z.string().min(1), basis: z.enum(["onset", "last-speech-ms"]),
 });
 const snap = z.discriminatedUnion("status", [
-  z.strictObject({ status: z.literal("snapped"), target: measured.extend({ clock: fileClock, seconds: seconds.endsWith("0") }),
+  z.strictObject({ status: z.literal("snapped"), exactTime:boundSchema.optional(), exactAlternatives:z.array(boundSchema).optional(), target: measured.extend({ clock: fileClock, seconds: seconds.endsWith("0") }),
     timeline: measured.extend({ clock: z.literal("timeline") }).optional(), shiftMs: z.number().int(),
     gapMs: naturalMs, gapLowerBound: z.literal(true).optional(), alternativesMs, frameReference: frameReference.optional() }),
-  z.strictObject({ status: z.literal("no-boundary"), alternativesMs }),
-  z.strictObject({ status: z.literal("ambiguous"), alternativesMs: alternativesMs.refine(xs => xs.length > 0) }),
+  z.strictObject({ status: z.literal("no-boundary"), exactAlternatives:z.array(boundSchema).optional(), alternativesMs }),
+  z.strictObject({ status: z.literal("ambiguous"), exactAlternatives:z.array(boundSchema).optional(), alternativesMs: alternativesMs.refine(xs => xs.length > 0) }),
   z.strictObject({ status: z.literal("unavailable") }),
 ]);
 export type StoredSnap = z.infer<typeof snap>;
 const model = approximate.extend({ precisionMs: z.literal(1000) });
-const entry = z.strictObject({ pointer: z.string(), time: model.extend({ clock: fileClock, seconds: seconds.endsWith(".000") }),
+const entry = z.strictObject({ pointer: z.string(), exactTime:boundSchema.optional(), time: model.extend({ clock: fileClock, seconds: seconds.endsWith(".000") }),
   timeline: model.extend({ clock: z.literal("timeline") }).optional() });
 const timesV3Schema = timesV2Schema.extend({
   schemaVersion: z.literal(3),

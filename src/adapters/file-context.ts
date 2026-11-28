@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 import type { MeetingContextSource, MeetingEvidence } from "../domain/types.js";
 import { firstStringForKeys } from "../lib/object.js";
-import { extractTranscript } from "./bluedot-mcp.js";
+import { exactSpanSchema } from "../domain/source-bound.js";
+import { extractTranscript, findTranscriptSegments } from "./bluedot-mcp.js";
 
 export class FileContextSource implements MeetingContextSource {
   readonly provider = "file" as const;
@@ -22,7 +23,14 @@ export class FileContextSource implements MeetingContextSource {
       : content;
     const raw = extension === ".json" ? JSON.parse(content) as unknown : { transcript };
     const extractedTranscript = extractTranscript(raw);
+    const cues = extension === ".srt" || extension === ".vtt" ? captionCues(content)
+      : findTranscriptSegments(raw).map(segment => {
+        const exact = exactSpanSchema.safeParse(segment.exactSpan);
+        return {startMs:Math.round(segment.start*1000), ...(typeof segment.end === "number" && {endMs:Math.round(segment.end*1000)}),
+          text:`${segment.speakerTag || segment.speaker || "Unknown speaker"}: ${segment.text}`, ...(exact.success && {exactSpan:exact.data})};
+      });
     return {
+      ...(cues.length && {transcriptCues:cues}),
       id: meetingId,
       provider: this.provider,
       transport: "file",
@@ -56,4 +64,18 @@ export function parseCaptionTranscript(content: string): string {
     if (cue) output.push(`[${timestamp}] ${cue}`);
   }
   return output.join("\n");
+}
+
+function captionCues(content: string) {
+  const milliseconds = (stamp: string) => {
+    const fields = stamp.replace(",", ".").split(":").map(Number);
+    return Math.round(fields.reduce((n, part) => n * 60 + part, 0) * 1000);
+  };
+  return content.replace(/^\uFEFF/,"").split(/\r?\n\s*\r?\n/).flatMap(block => {
+    const lines = block.split(/\r?\n/);
+    const i = lines.findIndex(line => line.includes("-->"));
+    const cue = /^(\d{2,}(?::\d{2}){1,2}[.,]\d{3})\s+-->\s+(\d{2,}(?::\d{2}){1,2}[.,]\d{3})/.exec(lines[i] ?? "");
+    if (!cue) return [];
+    return [{startMs:milliseconds(cue[1]!),endMs:milliseconds(cue[2]!),text:lines.slice(i+1).map(s => s.replace(/<[^>]+>/g,"").trim()).filter(Boolean).join(" ")}];
+  });
 }

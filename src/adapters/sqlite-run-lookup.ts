@@ -12,10 +12,10 @@ export function sqliteRunLookup(database: Database, { principal }: RunPrincipal,
     const context = meeting ? meetingColumns : "NULL AS meeting_id, NULL AS meeting_title, NULL AS provider, NULL AS transport";
     const table = meeting ? "analysis_runs" : "video_analysis_runs";
     return database.query<RunRow, [string, string]>(
-      `SELECT ${version} AS schema_version, '${meeting ? "meeting" : "none"}' AS context_mode, ${sharedRunColumns}, ${context}
+      `SELECT json_extract(analysis_json, '$.schemaVersion') AS schema_version, '${meeting ? "meeting" : "none"}' AS context_mode, ${sharedRunColumns}, ${context}
        FROM main.${table} WHERE principal_sub COLLATE BINARY = ? AND run_id COLLATE BINARY = ?
        AND json_valid(analysis_json) AND json_valid(manifest_json)
-       AND json_extract(analysis_json, '$.schemaVersion') = ${version}
+       AND json_extract(analysis_json, '$.schemaVersion') IN (${version}, ${version+2})
        AND json_extract(manifest_json, '$.schemaVersion') = ${version}`,
     );
   }
@@ -24,11 +24,12 @@ export function sqliteRunLookup(database: Database, { principal }: RunPrincipal,
   return {
     async getRun(runId) {
       const version = registrations?.get(runId);
-      const meetingRow = !registrations || version === 2 ? meeting.get(principal, runId) : null;
-      const videoRow = !registrations || version === 3 ? video.get(principal, runId) : null;
+      const meetingRow = !registrations || version === 2 || version === 4 ? meeting.get(principal, runId) : null;
+      const videoRow = !registrations || version === 3 || version === 5 ? video.get(principal, runId) : null;
       if (meetingRow && videoRow) throw new Error("Run ID exists in multiple projection schema tables.");
       const row = meetingRow ?? videoRow;
       if (!row) return null;
+      if (registrations && row.schema_version !== version) throw new Error("Stored registration version mismatch.");
       if (row.principal_sub !== principal || row.run_id !== runId) throw new Error("Stored run identity mismatch.");
       return validatedStoredRun(row);
     },

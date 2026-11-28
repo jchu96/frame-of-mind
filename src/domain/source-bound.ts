@@ -4,7 +4,7 @@ import { rateSchema, sameRate } from "./media-clock.js";
 import type { RangeClock } from "./range-clock.js";
 import { secondsToTimestamp } from "../lib/time.js";
 
-export const indexSchema = z.string().regex(/^(0|[1-9]\d*)$/);
+export const indexSchema = z.string().regex(/^(0|[1-9]\d*)$/, {abort:true});
 const provenance = z.discriminatedUnion("origin", [
   z.object({ origin: z.literal("cut"), precisionMs: z.literal(0) }),
   z.object({ origin: z.literal("snap"), precisionMs: z.union([z.literal(50), z.literal(200)]), gridMs: z.literal(10) }),

@@ -131,7 +131,7 @@ export async function openRunSnapshot(path: string): Promise<RunQuery> {
         `SELECT run_id FROM main.${table} NOT INDEXED WHERE principal_sub COLLATE BINARY = ?`,
       ).iterate(principal);
       for (const { run_id } of rows) {
-        if (unmatched.get(run_id) !== version) throw new ReadError("INVALID_PROJECTION");
+        if (unmatched.get(run_id) !== version && unmatched.get(run_id) !== version + 2) throw new ReadError("INVALID_PROJECTION");
         unmatched.delete(run_id);
       }
     }

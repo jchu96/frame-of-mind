@@ -1,3 +1,5 @@
+import {buildReviewBundle} from "../server-local/studio-ui/review-export";
+import {validateVersionedRunImport} from "../../../src/domain/integrity";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -412,3 +414,31 @@ function applySqlStatements(database: Database, sql: string): void {
     database.exec(statement);
   }
 }
+
+test("local Studio imports, projects and exports analysis 2, 3, 4 and 5 with their paired manifests", async () => {
+  for (const version of [2,3,4,5] as const) {
+    const dir=await mkdtemp(join(tmpdir(),"projection-versions-"));
+    temporaryDirectories.push(dir);
+    const db=join(dir,"runs.sqlite");
+    // Open an existing principal-scoped registry from the previous release.
+    const old=new Database(db,{create:true});
+    old.exec(schemaSql.replace("IN (2, 3, 4, 5)","IN (2, 3)"));
+    old.close();
+    const store=createLocalRunStore(db,LOCAL_SINGLE_USER_PRINCIPAL);
+    const input=version===2 || version===4 ? runFixture() : await videoRunFixture();
+    const item=input.analysis.items[0]!;
+    const cut=(n:string)=>({clock:"source" as const,unit:"video-frame" as const,frames:n,rate:{num:25,den:1},origin:"cut" as const,precisionMs:0 as const});
+    const exactSpan={start:cut("50"),endExclusive:cut("51")};
+    const analysis={...input.analysis,schemaVersion:version,items:version<4?input.analysis.items:[
+      {...item,candidate:{...item.candidate,start:"00:00:02",end:"00:00:02",exactSpan},
+      result:{...item.result,evidence:{timestamp:"00:00:02",exactTime:cut("50")}},stillTimes:["00:00:02"],exactStillTimes:[cut("50")]}]};
+    const manifest={...input.manifest,analysisSha256:await analysisDigest(analysis as Parameters<typeof analysisDigest>[0])};
+    const bundle=await validateVersionedRunImport({analysis,manifest});
+    await store.importRun(bundle);
+    expect((await store.listRuns({limit:10})).runs[0]?.schemaVersion).toBe(version);
+    const stored=await store.getRun(manifest.runId);
+    expect(stored?.analysis.schemaVersion).toBe(version);
+    const exported=await validateVersionedRunImport(buildReviewBundle(stored!));
+    expect(exported).toEqual(bundle);
+  }
+});

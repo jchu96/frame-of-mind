@@ -1,3 +1,5 @@
+import {boundIndex,sourceBound} from "../src/domain/source-bound.js";
+import { fixtureSource } from "./helpers/source-clock.js";
 import type { Content, GenerateContentParameters } from "@google/genai";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -79,7 +81,7 @@ async function run(opts: RunOptions = {}) {
     return { text: JSON.stringify(detail) };
   };
   const gemini = new GeminiVideoAnalyzer("test", "gemini-test", { generateContent });
-  const orchestrator = new AnalysisOrchestrator({
+  const orchestrator = new AnalysisOrchestrator({withSourceRecording: fixtureSource(() => opts.duration ?? 50),
     createAnalyzer: () => ({
       model: gemini.model, interrogate: gemini.interrogate.bind(gemini),
       index: async () => ({ matchNotes: "Synthetic.", moments: opts.moments ?? moments }),
@@ -92,7 +94,11 @@ async function run(opts: RunOptions = {}) {
       evidence: { flashFileSeconds: 27, clipStartSeconds: 20, reportedSeconds: clock === "relative" ? 7 : 27 },
     }),
     probeDurationSeconds: async () => opts.duration ?? 50,
-    extractScreenshot: opts.extract ?? decode, buildContactSheet: async () => undefined,
+    extractScreenshot: async (video, time, path, window, position) => {
+      const ok = await (opts.extract ?? decode)(video,time,path,window);
+      if (ok && position) position.captured(sourceBound(position.clock,boundIndex(position.target)));
+      return ok;
+    }, buildContactSheet: async () => undefined,
   });
   const result = await orchestrator.analyze({
     contextMode: "none", video, outputRoot: root, apiKey: "test", recipe: builtInRecipe(opts.recipe ?? "decisions"),
@@ -155,7 +161,7 @@ it("uses the existing screenshot strategy at an uncaptured citation without snap
         return true;
       },
     });
-    expect(await result.read("moment-01.png")).toBe("uncaptured citation");
+    expect(await result.read(result.analysis.items[0]!.screenshot!)).toBe("uncaptured citation");
     expect(result.analysis.items[0]?.result.evidence?.timestamp).toBe("00:00:34");
     expect(result.requests).toHaveLength(1);
   }

@@ -15,6 +15,7 @@
   },
   "else": {
     "properties": {
+      "maxRangeSeconds": {"type":"integer","minimum":1},
       "commands": {
         "type": "array",
         "items": {

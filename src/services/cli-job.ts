@@ -231,7 +231,7 @@ async function execute(store: JobStore, record: JobRecord, flags: JobOptions, gr
     } else {
       const recipe = await withAnalysisDepth(await loadRecipe(flags.recipe!), "standard");
       const {AnalysisOrchestrator} = await import("./analyze.js");
-      const service = new AnalysisOrchestrator({createAnalyzer: () => analyzer, createContextSource() {throw new Error("Unexpected context source.");},
+      const service = new AnalysisOrchestrator({withSourceRecording:deps.withSourceRecording, createAnalyzer: () => analyzer, createContextSource() {throw new Error("Unexpected context source.");},
         probeDurationSeconds: async () => seconds});
       const result = await service.analyze({contextMode: "none", video: sealed, outputRoot: output, apiKey: key, model,
         recipe: recipe.recipe, recipeSha256: recipe.sha256, recipeRevision: recipe.revision, customRecipe: false, indexFps: recipe.indexFps,
