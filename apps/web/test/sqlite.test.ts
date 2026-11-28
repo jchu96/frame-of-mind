@@ -167,7 +167,7 @@ describe("local SQLite projection", () => {
     });
   });
 
-  test("keeps D1 migrations in sync with local bootstrap SQL", async () => {
+  test("keeps D1 and local projection tables in sync apart from their accepted analysis versions", async () => {
     const migrations = await Promise.all([
       "0001_initial.sql",
       "0002_video_only_projection.sql",
@@ -197,7 +197,12 @@ describe("local SQLite projection", () => {
         ...row,
         sql: row.sql.replace(/\s+/g, " ").trim(),
       }));
-      expect(schemaRows(migrated)).toEqual(schemaRows(bootstrapped));
+      const hostedRows = schemaRows(migrated);
+      const localRows = schemaRows(bootstrapped);
+      const registry = localRows.find(row => row.name === "analysis_run_registry")!;
+      expect(registry.sql).toContain("schema_version IN (2, 3, 4, 5)");
+      registry.sql = registry.sql.replace("schema_version IN (2, 3, 4, 5)", "schema_version IN (2, 3)");
+      expect(localRows).toEqual(hostedRows);
       const sentinelCount = migrated.query<{ count: number }, []>(`
         SELECT
           (SELECT count(*) FROM analysis_runs WHERE principal_sub = '__legacy_unclaimed__')

@@ -1,3 +1,4 @@
+import { Command } from "commander";
 import { fixtureSource } from "./helpers/source-clock.js";
 import { ContractError } from "../src/domain/contract-error.js";
 import { RangeClock } from "../src/domain/range-clock.js";
@@ -16,6 +17,12 @@ vi.mock("../src/adapters/gemini.js", async importOriginal => ({
   GeminiVideoAnalyzer: vi.fn(),
 }));
 
+// runCli installs machine-mode validation on its command root. Each call
+// here represents a new process with its own root and hooks.
+function cli() {
+  return new Command().addCommand(program.commands.find(command => command.name() === "analyze")!);
+}
+
 it("analyze reports the exact duration refusal to humans and JSON callers before provider work", async () => {
   const directory = await mkdtemp(join(tmpdir(), "duration-refusal-"));
   const video = join(directory, "fixture.mp4");
@@ -32,7 +39,7 @@ it("analyze reports the exact duration refusal to humans and JSON callers before
     const args = ["analyze", "--source", "none", "--video", video, "--output", directory];
 
     process.exitCode = 0;
-    await runCli(program, args);
+    await runCli(cli(), args);
     expect(process.exitCode).not.toBe(0);
     expect(stdout).not.toHaveBeenCalled();
     expect(stderr.mock.calls.map(([chunk]) => chunk).join("")).toContain(
@@ -40,7 +47,7 @@ it("analyze reports the exact duration refusal to humans and JSON callers before
     );
 
     process.exitCode = 0;
-    await runCli(program, [...args, "--json"]);
+    await runCli(cli(), [...args, "--json"]);
     expect(JSON.parse(stdout.mock.calls.map(([chunk]) => chunk).join(""))).toEqual({
       schemaVersion: 1,
       error: {
@@ -76,7 +83,7 @@ it("returns resolved coverage in the reply when a local cut fails before upload"
     });
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    await runCli(program, ["analyze","--source","none","--video",video,"--from","25f","--to","51f","--output",join(root,"out"),"--json"]);
+    await runCli(cli(), ["analyze","--source","none","--video",video,"--from","25f","--to","51f","--output",join(root,"out"),"--json"]);
     const failure = JSON.parse(stdout.mock.calls.map(([s]) => s).join(""));
     const line = stderr.mock.calls.map(([s]) => String(s)).find(s => s.startsWith("Source coverage: "))!;
     const receipt = JSON.parse(line.slice("Source coverage: ".length));
@@ -112,8 +119,8 @@ it.each([false,true])("analyze resolves the caller's range once in text and JSON
     const args = ["analyze","--source","none","--video",video,"--output",join(root,"runs"),"--model","gemini-test",
       "--from","600","--to","1200","--no-calibrate","--no-screenshots","--no-derived-transcript",...(json ? ["--json"] : [])];
     process.exitCode=0;
-    await runCli(program,args);
-    expect(process.exitCode).toBe(0);
+    await runCli(cli(),args);
+    expect(process.exitCode, stderr.mock.calls.map(([s]) => s).join("")).toBe(0);
     expect(upload).toHaveBeenCalledTimes(1);
     const lines = stderr.mock.calls.map(([s]) => String(s).trim());
     expect(lines.filter(line => line.startsWith("Range used:"))).toEqual(["Range used: source [15000,30000) frames at 25/1 Hz ([600,1200) s)"]);
@@ -145,7 +152,7 @@ it("returns each range usage reason before requesting an upload", async () => {
       ["00:00:00:01","30f","Specify the source drop-frame mode or use frames."],
     ]) {
       out.mockClear(); err.mockClear();
-      await runCli(program,["analyze","--source","none","--video",video,"--output",root,"--from",from!,"--to",to!,"--json"]);
+      await runCli(cli(),["analyze","--source","none","--video",video,"--output",root,"--from",from!,"--to",to!,"--json"]);
       expect(JSON.parse(out.mock.calls.map(([s])=>s).join("")).error).toMatchObject({code:"USAGE",message:"Invalid command arguments.",details:{reason}});
       expect(err.mock.calls.map(([s])=>s).join("")).toContain(reason);
     }
