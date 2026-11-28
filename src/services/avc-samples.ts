@@ -153,6 +153,18 @@ export async function verifyAvcSamples(input: Recording, trackId: number, packet
     const size = Number(input.identity.size);
     const config = sampleTable(await movie(file, size), trackId, packets);
     let previous = "", base = -1, cached: Buffer = Buffer.alloc(0);
+    let previousRefOrder = 0, previousRefLsb = 0, lastGopPts = -Infinity;
+    let gop: {order: number; pts: number}[] = [];
+    const finishGroup = () => {
+      // H.264 picture order, computed from slice headers, must independently
+      // agree with the container presentation order throughout each IDR group.
+      gop.sort((a, b) => a.order - b.order);
+      for (const [i, frame] of gop.entries()) {
+        requireProof(frame.pts > lastGopPts && (!i || gop[i - 1]!.order !== frame.order), "ambiguous AVC display order");
+        lastGopPts = frame.pts;
+      }
+      gop = [];
+    };
     // Cache sequential header reads. Large picture payloads need no entropy decoding.
     const prefix = async (pos: number, n: number) => {
       if (pos < base || pos + n > base + cached.length) {
@@ -190,12 +202,29 @@ export async function verifyAvcSamples(input: Recording, trackId: number, packet
         const frame = bits.uint(config.frameBits);
         const id = kind === 5 ? bits.ue() : -1;
         const order = bits.uint(config.pocBits);
-        picture = [kind, !!(nal[0]! & 96), frame, id, order].join("/");
-        if (pkt === key) requireProof(kind === 5, "open group at seek point");
+        const reference = !!(nal[0]! & 96);
+        if (pkt === key) requireProof(kind === 5 && reference, "open group at seek point");
+        if (kind === 5) {
+          finishGroup();
+          previousRefLsb = previousRefOrder = 0;
+        }
+        requireProof(gop.length || kind === 5, "group has no independent entry");
+        let display = gop.length;
+        if (config.pocBits) {
+          const modulus = 2 ** config.pocBits;
+          let msb = previousRefOrder - previousRefLsb;
+          if (order < previousRefLsb && previousRefLsb - order >= modulus / 2) msb += modulus;
+          if (order > previousRefLsb && order - previousRefLsb > modulus / 2) msb -= modulus;
+          display = msb + order;
+          if (reference) { previousRefOrder = display; previousRefLsb = order; }
+        }
+        gop.push({ order: display, pts: pkt.pts });
+        picture = [kind, reference, frame, id, order].join("/");
       }
       requireProof(picture && picture !== previous, "missing or split AVC picture");
       previous = picture;
     }
+    finishGroup();
     await input.check();
   } catch (error) {
     if (error instanceof RangeError) throw new UnprovenCut("truncated MP4 or AVC header");

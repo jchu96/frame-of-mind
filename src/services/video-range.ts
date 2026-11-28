@@ -2,6 +2,7 @@ import { exactTime } from "exact-time";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { createScratch, discardRangeAttempt, rangeEncoder, releaseRangeScratch } from "../adapters/scratch.js";
+import { faultCode } from "../domain/contract-error.js";
 import type { RangeRequest } from "../domain/range-clock.js";
 import { UnprovenCut } from "./avc-samples.js";
 import { encodeVideoRange } from "./media-helpers.js";
@@ -43,9 +44,12 @@ export async function withVideoRange<T>(
       setPhase("encoding from IDR");
       try { await encode(); }
       catch (error) {
-        if (!(error instanceof UnprovenCut)) throw error;
+        const code = faultCode(error);
+        const reason = error instanceof UnprovenCut ? error.message
+          : ["DECODE_FAILED", "INVALID_RATE", "INVALID_TIMECODE"].includes(code) ? "could not verify seek cut" : undefined;
+        if (!reason) throw error;
         rescan = true;
-        selection.reason = error.message;
+        selection.reason = reason;
         selection.seek = undefined;
         discardRangeAttempt(file);
       }
@@ -53,7 +57,7 @@ export async function withVideoRange<T>(
     if (!selection.seek) {
       mode = "whole-file";
       setPhase(selection.reason!);
-      if (rescan) selection.info = await inspectVideo(input, {dropFrame}, signal);
+      if (rescan) selection.info = await inspectVideo(input, {dropFrame}, signal, decodeBudget(selection.info.approximateSeconds));
       await decodeVideo(input, selection.info, signal, decodeBudget(selection.info.approximateSeconds));
       setPhase("encoding verified range");
       await encode();

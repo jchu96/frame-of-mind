@@ -3,7 +3,7 @@ import { extname } from "node:path";
 import { stat } from "node:fs/promises";
 import { deriveExact, exactTime, fromTicks, offsetTime, parseTimecodeRate, renderExactTimecode,
   type ExactTime } from "exact-time";
-import { verifyCutAudio } from "./audio-range.js";
+import { checkPcmTrace, verifyCutAudio } from "./audio-range.js";
 import { decodeBudget, type SeekPlan } from "./range-scan.js";
 import { requireProof } from "./avc-samples.js";
 import { parseFilePosition } from "../domain/clock.js";
@@ -106,21 +106,11 @@ export async function encodeVideoRange(input: Recording, staged: string, info: V
   const audioInput = seek && audio ? ["-ss", preroll.toFixed(6), "-t", (endSeconds - preroll + 1).toFixed(6),
     ...localVideoInput(info.formatName), "-i", input.path] : [];
   if (seek && audio) {
-    const trace = await runMediaTool("ffprobe", [...localVideoInput(info.formatName), "-select_streams", String(audio.index),
-      "-read_intervals", `${preroll.toFixed(6)}%${(endSeconds + 1).toFixed(6)}`, "-show_frames",
-      "-show_entries", "stream=time_base:frame=pts,nb_samples", "-of", "json", input.path], {signal, timeoutMs: decodeBudget(videoSeconds + 2)});
-    const {frames, streams} = JSON.parse(trace) as {frames: Array<{pts: number; nb_samples: number}>; streams: Array<{time_base: string}>};
-    requireProof(streams[0]?.time_base === `1/${hz}`, "unproved audio sample clock");
-    let next: bigint | undefined;
-    for (const frame of frames) {
-      requireProof(Number.isSafeInteger(frame.pts) && Number.isSafeInteger(frame.nb_samples), "missing audio sample timestamps");
-      const first = BigInt(frame.pts);
-      if (first + BigInt(frame.nb_samples) <= samples.start) continue;
-      requireProof(next === undefined ? first <= samples.start : first === next, "audio gap in range");
-      next = first + BigInt(frame.nb_samples);
-      if (next >= samples.end) break;
-    }
-    requireProof(next !== undefined && next >= samples.end, "missing last audio sample");
+    const trace = await runMediaTool("ffmpeg", ["-copyts", ...audioInput, "-map", `0:${audio.index}`,
+      "-af", `asettb=1/${hz},atrim=start_pts=${samples.start}:end_pts=${samples.end}`, "-c:a", "pcm_s16le", "-f", "framecrc", "pipe:1"],
+      {signal, timeoutMs: decodeBudget(endSeconds - preroll + 1)});
+    try { checkPcmTrace(trace, hz, samples.start, samples.end); }
+    catch { requireProof(false, "unproved native audio sample span"); }
   }
   const origin = info.fileStartLabel;
   const label = origin && renderExactTimecode(offsetTime(from, origin.value), origin.dropFrame);
@@ -138,8 +128,8 @@ export async function encodeVideoRange(input: Recording, staged: string, info: V
     for (const [i, stamp] of stamps.entries()) {
       const fields = /^(-?\d+) (\d+)\/(\d+)$/.exec(stamp);
       requireProof(fields && BigInt(fields[3]!) > 0n && BigInt(fields[2]!) > 0n
-        && BigInt(fields[1]!) * BigInt(fields[2]!) * BigInt(info.rate.num)
-          === (from.frames + BigInt(i)) * BigInt(fields[3]!) * BigInt(info.rate.den), "decoded picture differs from packet PTS");
+        && BigInt(fields[1]!) * BigInt(fields[2]!) * BigInt(seek.timeBase.den)
+          === BigInt(seek.expectedPts[i]!) * BigInt(fields[3]!) * BigInt(seek.timeBase.num), "decoded picture differs from packet PTS");
     }
   }
   phase?.("verifying cut");
@@ -157,6 +147,7 @@ export async function encodeVideoRange(input: Recording, staged: string, info: V
   if (out.duration.frames !== expected.frames || !sameRate(out.rate, info.rate) || out.width !== size.width
     || out.height !== size.height || out.codec !== "h264" || out.pixelFormat !== "yuv420p"
     || out.audio.length !== 1 || out.audio[0]?.codec_name !== "aac" || out.audio[0].channels !== 1) {
+    if (seek) requireProof(false, "seek cut format or frame count mismatch");
     throw new Error("Encoded proxy or slice differs from its expected frames, video format, or reference audio.");
   }
   return summary({...out, dropFrame: info.dropFrame}, "passed");

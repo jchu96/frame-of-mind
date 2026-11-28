@@ -1,4 +1,5 @@
 import { exactTime, isDropRate, rationalRate, type FrameRate } from "exact-time";
+import { ContractError, faultCode } from "../domain/contract-error.js";
 import { RangeClock, rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { requireProof, UnprovenCut, verifyAvcSamples, type Packet } from "./avc-samples.js";
 import { inspectVideo, readStartLabel, sameRate, videoHeader, type VideoInfo } from "./media-probe.js";
@@ -33,7 +34,7 @@ export function displayOrder(packets: Packet[], base: FrameRate, rate: FrameRate
 }
 
 export interface SeekPlan {
-  key: Packet; keyIndex: number; firstPts: number; endPts: number; timeBase: FrameRate;
+  keyIndex: number; firstPts: number; endPts: number; expectedPts: number[]; timeBase: FrameRate;
   seekSeconds: string; audioHz?: number;
 }
 export type VideoSelection = { clock: RangeClock; info: VideoInfo; seek?: SeekPlan; reason?: string };
@@ -58,15 +59,25 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
     requireProof(packets.length, "missing packet timestamps");
     requireProof(!video.nb_frames || video.nb_frames === "N/A" || String(packets.length) === video.nb_frames, "declared count differs from packet scan");
     const order = displayOrder(packets, base, rate);
-    const clock = RangeClock.resolve({ rate, length: BigInt(order.length), unit: "frames", dropFrame: mode }, request);
-    const first = order[Number(clock.from)]!;
-    const key = order.slice(0, Number(clock.from) + 1).findLast(p => p.flags.includes("K"));
+    let clock: RangeClock | undefined, refusal: ContractError | undefined;
+    try { clock = RangeClock.resolve({ rate, length: BigInt(order.length), unit: "frames", dropFrame: mode }, request); }
+    catch (error) {
+      if (!(error instanceof ContractError) || error.code !== "USAGE") throw error;
+      // An index with split or packed pictures has not established the length
+      // yet. A refusal based on it must wait for proof or a from-zero scan.
+      refusal = error;
+    }
+    const firstIndex = Number(clock?.from ?? 0n);
+    const first = order[firstIndex]!;
+    const key = order.slice(0, firstIndex + 1).findLast(p => p.flags.includes("K"));
     requireProof(key, "no key before range");
     const keyIndex = order.indexOf(key);
     requireProof(!packets.some(p => p.dts >= key.dts && p.pts < key.pts), "open group at seek point");
     await verifyAvcSamples(input, Number(video.id), packets, key, signal);
+    if (!clock) throw refusal!;
     // Seek requests are in microseconds. Round up to reach this key's instant.
-    const seekSeconds = (Math.ceil(key.pts * base.num / base.den * 1e6) / 1e6).toFixed(6);
+    const us = (BigInt(key.pts) * BigInt(base.num) * 1000000n + BigInt(base.den) - 1n) / BigInt(base.den);
+    const seekSeconds = `${us / 1000000n}.${String(us % 1000000n).padStart(6, "0")}`;
     const actual = await runMediaTool("ffprobe", [...args, "-read_intervals", seekSeconds + "%+#1", input.path], {signal});
     const landed = packetRow(actual.trim());
     requireProof(landed.pos === key.pos && landed.dts === key.dts && landed.pts === key.pts, "demuxer did not seek to the proven IDR");
@@ -74,11 +85,13 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
       dropFrame: mode, fileStartLabel, width: video.width, height: video.height, codec: video.codec_name, pixelFormat: video.pix_fmt,
       videoIndex: video.index, audio, approximateSeconds: seconds };
     const last = order[Number(clock.to - 1n)]!;
-    return { clock, info, seek: { key, keyIndex, firstPts: first.pts, endPts: last.pts + last.duration, timeBase: base, seekSeconds,
+    return { clock, info, seek: { keyIndex, expectedPts: order.slice(firstIndex, Number(clock.to)).map(p => p.pts), firstPts: first.pts, endPts: last.pts + last.duration, timeBase: base, seekSeconds,
       audioHz: audio[0] ? Number(audio[0].sample_rate) : undefined } };
   } catch (error) {
-    if (!(error instanceof UnprovenCut)) throw error;
-    fallback?.(error.message);
+    const reason = error instanceof UnprovenCut ? error.message
+      : faultCode(error) === "DECODE_FAILED" ? "packet scan or IDR seek could not be verified" : undefined;
+    if (!reason) throw error;
+    fallback?.(reason);
     let info: VideoInfo;
     try { info = await inspectVideo(input, {dropFrame}, signal, decodeBudget(seconds)); }
     catch (error) {
@@ -86,6 +99,6 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
       throw error;
     }
     const clock = RangeClock.resolve({ unit: "frames", length: info.duration.frames, rate: info.rate, dropFrame: info.dropFrame }, request);
-    return { info, clock, reason: error.message };
+    return { info, clock, reason };
   }
 }

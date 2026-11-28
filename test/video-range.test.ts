@@ -3,8 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { expect, test } from "vitest";
 import { childEnvironment } from "../src/lib/child-env.js";
 import { mediaHelper } from "../src/services/media-helpers.js";
-import { displayOrder, packetRow } from "../src/services/range-scan.js";
-import { scanRange } from "../src/services/range-scan.js";
+import { displayOrder, packetRow, scanRange } from "../src/services/range-scan.js";
 import { localRecording } from "../src/services/media-tools.js";
 import { withAudioRange } from "../src/services/audio-range.js";
 import { withVideoRange } from "../src/services/video-range.js";
@@ -24,7 +23,7 @@ const file = mediaFixtures(() => {
     media("ffmpeg", ["-f", "rawvideo", "-pixel_format", "gray", "-video_size", `${width}x${height}`, "-framerate", rate,
       "-i", "pipe:0", "-f", "lavfi", "-i", "sine=frequency=800:sample_rate=48000:duration=6",
       "-c:v", "libx264", "-pix_fmt", "yuv420p", "-x264-params", "keyint=24:min-keyint=24:scenecut=0:bframes=3:b-adapt=0:open-gop=0",
-      "-c:a", "pcm_s16le", "-f", "mov", "-movflags", "+negative_cts_offsets", "-use_editlist", "0", file(name + ".mp4")], frames);
+      "-c:a", "pcm_s16le", "-f", "mp4", "-movflags", "+negative_cts_offsets", "-use_editlist", "0", file(name + ".mp4")], frames);
   }
   media("ffmpeg", ["-i", file("pal.mp4"), "-map", "0:v:0", "-c", "copy", "-use_editlist", "1", file("edited.mp4")]);
   media("ffmpeg", ["-i", file("pal.mp4"), "-map", "0:v:0", "-c:v", "mpeg4", file("mpeg4.mp4")]);
@@ -72,7 +71,7 @@ test.each([["ntsc", 31, 92, 24], ["pal", 1, 32, 0]] as const)(
         expect(first + stream.start_pts + stream.duration_ts - 1).toBe(end - 1);
       }
     });
-    expect(await readFile(src)).toEqual(original);
+    expect((await readFile(src)).equals(original)).toBe(true);
     await expect(stat(cut)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

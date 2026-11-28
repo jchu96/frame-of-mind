@@ -293,6 +293,6 @@ export function discardRangeAttempt(file: string) {
   const root = dirname(file);
   const files = readdirSync(root).filter(entry => entry !== markerName);
   safeRangeContents(root, files, false);
-  unlinkSync(file);
+  if (files.includes(basename(file))) unlinkSync(file);
   unlinkSync(join(root, encoderReceipt));
 }
