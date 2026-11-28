@@ -22,7 +22,7 @@ beforeEach(async () => {
 });
 async function removeJobFixture(directory: string, work?: Promise<void>) {
   try {
-    await work;
+    void work;
   } finally {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
