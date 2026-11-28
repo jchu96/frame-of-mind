@@ -1243,6 +1243,10 @@ Reads only. Read one run, provenance, and original record times. Rejected record
                                     {
                                       "const": 200,
                                       "type": "number"
+                                    },
+                                    {
+                                      "const": 300,
+                                      "type": "number"
                                     }
                                   ]
                                 }
@@ -1875,6 +1879,10 @@ Reads only. Page records in original index order. Set accepted to false for reje
                                     },
                                     {
                                       "const": 200,
+                                      "type": "number"
+                                    },
+                                    {
+                                      "const": 300,
                                       "type": "number"
                                     }
                                   ]

@@ -6,7 +6,7 @@ import type { RangeClock } from "./range-clock.js";
 export const indexSchema = z.string().regex(/^(0|[1-9]\d*)$/, {abort:true});
 const provenance = z.discriminatedUnion("origin", [
   z.object({ origin: z.literal("cut"), precisionMs: z.literal(0) }),
-  z.object({ origin: z.literal("snap"), precisionMs: z.literal([50, 200, 300]), gridMs: z.literal(10) }),
+  z.object({ origin: z.literal("snap"), precisionMs: z.union([z.literal(50), z.literal(200), z.literal(300)]), gridMs: z.literal(10) }),
   z.object({ origin: z.literal("model"), precisionMs: z.literal(1000), support: z.tuple([indexSchema, indexSchema]) }),
 ]);
 type Provenance = z.infer<typeof provenance>;
