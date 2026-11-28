@@ -3,11 +3,12 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { writeFixtureRuntime } from "./helpers/key-command-runtime.js";
 import { buildCliFixture } from "./helpers/cli-build.js";
 import { operations } from "../src/job-invocation.js";
 
 describe.skipIf(process.platform === "win32")("CLI key command", () => {
-  let root: string, home: string, cwd: string, settings: string, reader: string, marker: string, build: string, preload: string;
+  let fixtureRuntime: string, root: string, home: string, cwd: string, settings: string, reader: string, marker: string, build: string, preload: string;
   const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {encoding: "utf8"}).trim();
   const source = resolve("src/cli.ts");
   beforeAll(async () => {
@@ -23,12 +24,14 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     marker = join(root, "started");
     reader = join(home, "reader.mjs");
     for (const path of [settings, decoyFile]) mkdirSync(dirname(path), {recursive: true, mode: 0o700});
+    fixtureRuntime = writeFixtureRuntime(home);
+    const decoyCommand = [writeFixtureRuntime(decoy), join(decoy, "reader.mjs")];
     for (const path of [reader, join(decoy, "reader.mjs")]) writeFileSync(path,
       'import fs from "node:fs"; fs.appendFileSync(' + JSON.stringify(marker) + ', "start\\n"); process.stdout.write("synthetic")');
-    writeFileSync(decoyFile, JSON.stringify({keyCommand: [process.execPath, join(decoy, "reader.mjs")]}), {mode: 0o600});
+    writeFileSync(decoyFile, JSON.stringify({keyCommand: decoyCommand}), {mode: 0o600});
     const roots = ["HOME", "XDG_CONFIG_HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA"];
     writeFileSync(join(cwd, ".env"), [...roots.map(name => name + "=" + decoy),
-      "FRAME_OF_MIND_KEY_COMMAND=" + JSON.stringify([process.execPath, join(decoy, "reader.mjs")]), "GEMINI_API_KEY=synthetic-folder"].join("\n"));
+      "FRAME_OF_MIND_KEY_COMMAND=" + JSON.stringify(decoyCommand), "GEMINI_API_KEY=synthetic-folder"].join("\n"));
     preload = join(root, "account.cjs");
     writeFileSync(preload, `
       const os = require('node:os'), fs = require('node:fs');
@@ -92,9 +95,9 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     const contents = readFileSync(file, "utf8");
     try {
       if (runtime.endsWith("bare")) {
-        writeFileSync(settings, JSON.stringify({keyCommand: [process.execPath, reader]}), {mode: 0o600});
+        writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
         writeFileSync(file, "");
-        for (const env of [{}, {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([process.execPath, reader])}]) {
+        for (const env of [{}, {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, reader])}]) {
           const consumer = run(["calibrate", "--json"], env, runtime);
           expect(JSON.parse(consumer.out).error.code).toBe("KEY_MISSING");
         }
@@ -114,7 +117,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
   });
 
   it("doctor inspects permissions without starting the reader", () => {
-    writeFileSync(settings, JSON.stringify({keyCommand: [process.execPath, reader]}), {mode: 0o600});
+    writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
     const healthy = run(["doctor", "--json"], {PATH: ""});
     expect(healthy.exit).toBe(0);
     const report = JSON.parse(healthy.out);
@@ -132,7 +135,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     writeFileSync(unsafe, "#!/usr/bin/env bash\nexit 1\n", {mode: 0o700});
     const isCommand = kind === "command";
     const path = isCommand ? unsafe : settings;
-    writeFileSync(settings, JSON.stringify({keyCommand: isCommand ? [unsafe] : [process.execPath, reader]}), {mode: 0o600});
+    writeFileSync(settings, JSON.stringify({keyCommand: isCommand ? [unsafe] : [fixtureRuntime, reader]}), {mode: 0o600});
     chmodSync(path, isCommand ? 0o722 : 0o644);
     const invalid = run(["doctor"]);
     expect(invalid.exit).toBe(1);
@@ -148,7 +151,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
   it.each([["--help"], ["--version"], ["recipes"], ["key", "set"], ["mcp", "--json"],
     ...["analyze", "transcribe"].flatMap(family => operations.filter(op => family === "analyze" || op !== "dry-run")
       .map(op => [family, op, "fixture", "--json", "--out", "missing"]))])("inspection leaves the reader idle (%#)", (...args) => {
-    run(args, {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([process.execPath, reader])});
+    run(args, {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, reader])});
     expect(existsSync(marker)).toBe(false);
   });
   it("runs an env shebang reader from the installed Node entry", () => {
@@ -189,7 +192,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       rmSync(join(cwd, "consumer-result"), {force: true});
       const streams = run(["analyze", "--source", "none", "--video", "fixture.mp4", "--output", output,
         "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"], {
-        FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([process.execPath, module]), FIXTURE_ANSWER: answer, CONSUMER_FIXTURE: "1", PATH: home,
+        FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, module]), FIXTURE_ANSWER: answer, CONSUMER_FIXTURE: "1", PATH: home,
       });
       expect(existsSync(join(cwd, "consumer-result")), "local consumer called").toBe(true);
       expect(readFileSync(join(cwd, "consumer-result"), "utf8")).toBe("accepted");
@@ -212,7 +215,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     const failure = join(home, "refuse.mjs");
     writeFileSync(failure, "process.stderr.write(process.argv[2]); process.exitCode = 1");
     for (const value of ["synthetic", "unrelated-longer-value"]) {
-      const argv = [process.execPath, failure, value];
+      const argv = [fixtureRuntime, failure, value];
       const env = {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify(argv), OBSERVE_FOLDER: "1", PATH: ""};
       const before = readdirSync(cwd);
       const args = ["analyze", "--output", "out", "--source", "none", "--video", "absent.mp4"];

@@ -3,17 +3,18 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeFixtureRuntime } from "./helpers/key-command-runtime.js";
 import { createCliSettings } from "../src/cli-settings.js";
 import { childEnvironment, keyCommandEnvironment } from "../src/lib/child-env.js";
 import { runKeyCommand, KEY_COMMAND_TIMEOUT_MS, KEY_COMMAND_MAX_BYTES } from "../src/key-command.js";
 
 describe.skipIf(process.platform === "win32")("operator key reader", () => {
-  let home: string, settings: string, reader: string, invoked: string, cwd: string;
+  let runtime: string, home: string, settings: string, reader: string, invoked: string, cwd: string;
   const folder = vi.fn(() => "GEMINI_API_KEY=synthetic-fallback");
   const token = "synthetic-answer";
   function fixture(body: string) {
     writeFileSync(reader, 'import fs from "node:fs";\n' + body);
-    return [process.execPath, reader] as [string, string];
+    return [runtime, reader] as [string, string];
   }
   function config(environment: NodeJS.ProcessEnv = {}, mode: "bare" | "clean" = "clean", platform = process.platform) {
     return createCliSettings({environment: {PATH: "/usr/bin:/bin", ...environment}, cwd, mode, accountHome: home}, folder, platform);
@@ -21,6 +22,7 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
   function select(...args: string[]) { return {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify(args)}; }
   beforeEach(() => {
     home = realpathSync(mkdtempSync(join(tmpdir(), "key-command-")));
+    runtime = writeFixtureRuntime(home);
     cwd = join(home, "work");
     mkdirSync(cwd);
     settings = join(home, process.platform === "darwin" ? "Library/Application Support" : ".config", "frameofmind/settings.json");
@@ -33,7 +35,7 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
   afterEach(() => rmSync(home, {recursive: true, force: true}));
 
   it("uses only the clean launch selector and account location, including from home", async () => {
-    writeFileSync(settings, JSON.stringify({keyCommand: [process.execPath, reader]}), {mode: 0o600});
+    writeFileSync(settings, JSON.stringify({keyCommand: [runtime, reader]}), {mode: 0o600});
     cwd = home;
     const decoy = select(join(cwd, "decoy"));
     vi.stubEnv("FRAME_OF_MIND_KEY_COMMAND", decoy.FRAME_OF_MIND_KEY_COMMAND);
@@ -41,7 +43,7 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
     try {
       const clean = config({HOME: cwd, XDG_CONFIG_HOME: join(home, "decoy")});
       expect(await clean.providerKey()).toBe(token);
-      for (const env of [{}, select(process.execPath, reader)]) {
+      for (const env of [{}, select(runtime, reader)]) {
         const bare = config(env, "bare");
         expect(bare.keyReport()).toEqual({present: false, source: "unknown"});
         expect(await bare.providerKey()).toBeUndefined();
@@ -62,14 +64,14 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
     for (const value of ["", "{}", "[]", "[2]", '["reader"]', JSON.stringify([join(home, "missing")]), JSON.stringify([home])]) {
       await refuses({FRAME_OF_MIND_KEY_COMMAND: value});
     }
-    await refuses({...select(relative(process.cwd(), process.execPath), reader), PATH: dirname(process.execPath)});
-    await refuses({...select("node", reader), PATH: dirname(process.execPath)});
+    await refuses({...select(relative(process.cwd(), runtime), reader), PATH: dirname(runtime)});
+    await refuses({...select("node", reader), PATH: dirname(runtime)});
     for (const raw of ["{", "null", '{"extra":1}', '{"keyCommand":[]}', '{"keyCommand":false}',
-      '{"keyCommand":[],"key\\u0043ommand":' + JSON.stringify([process.execPath, reader]) + '}']) {
+      '{"keyCommand":[],"key\\u0043ommand":' + JSON.stringify([runtime, reader]) + '}']) {
       writeFileSync(settings, raw, {mode: 0o600});
       await refuses();
     }
-    writeFileSync(settings, JSON.stringify({keyCommand: [process.execPath, reader]}));
+    writeFileSync(settings, JSON.stringify({keyCommand: [runtime, reader]}));
     chmodSync(settings, 0o644);
     await refuses();
     chmodSync(settings, 0o600);
@@ -80,7 +82,7 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
     symlinkSync(join(home, "absent"), settings);
     await refuses();
     const copy = join(home, "settings-copy");
-    writeFileSync(copy, JSON.stringify({keyCommand: [process.execPath, reader]}), {mode: 0o600});
+    writeFileSync(copy, JSON.stringify({keyCommand: [runtime, reader]}), {mode: 0o600});
     rmSync(settings);
     symlinkSync(copy, settings);
     await refuses();
@@ -94,7 +96,7 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
   });
 
   it("refuses a tool directory owned by another user", () => {
-    writeFileSync(settings, JSON.stringify({keyCommand: [process.execPath, reader]}), {mode: 0o600});
+    writeFileSync(settings, JSON.stringify({keyCommand: [runtime, reader]}), {mode: 0o600});
     const uid = vi.spyOn(process, "geteuid").mockReturnValue(process.geteuid!() + 1);
     try { expect(config().keyReport()).toMatchObject({source: "command", state: "unavailable"}); }
     finally { uid.mockRestore(); }
@@ -107,17 +109,18 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
   });
 
   it("starts the resolved target of an acceptable link", async () => {
-    const link = join(home, "linked runtime");
-    symlinkSync(process.execPath, link);
-    fixture('fs.writeFileSync("started-as", process.argv0); process.stdout.write("synthetic-answer")');
-    expect(await config(select(link, reader)).providerKey()).toBe(token);
-    expect(readFileSync(join(home, "started-as"), "utf8")).toBe(realpathSync(process.execPath));
+    const script = join(home, "reader");
+    writeFileSync(script, '#!/bin/sh\nprintf "%s" "$0" > started-as\nprintf synthetic-answer\n', {mode: 0o700});
+    const link = join(home, "linked reader");
+    symlinkSync(script, link);
+    expect(await config(select(link)).providerKey()).toBe(token);
+    expect(readFileSync(join(home, "started-as"), "utf8")).toBe(realpathSync(script));
   }, 20_000);
 
   it("passes literal arguments, closed input and exactly the launch environment", async () => {
     const args = ["two words", "$", ";", "*", "`"];
     const session = {PATH: "/usr/bin:/bin", SESSION: "operator"};
-    const environment = {...session, ...select(process.execPath, reader, ...args)};
+    const environment = {...session, ...select(runtime, reader, ...args)};
     expect(keyCommandEnvironment({...environment, GEMINI_API_KEY: "fixture", GRANOLA_API_KEY: "fixture"}))
       .toEqual(session);
     fixture(`
@@ -125,9 +128,8 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
       process.stdout.write("synthetic-answer");
     `);
     expect(await config({...environment, GRANOLA_API_KEY: "context-fixture"}).providerKey()).toBe(token);
-    // Compare the same interpreter: on macOS Node adds its own CoreFoundation
-    // encoding variable even when exec receives an empty environment.
-    const control = JSON.parse(execFileSync(process.execPath, ["-p", "JSON.stringify(process.env)"], {env: session, encoding: "utf8"}));
+    // Use the same script and cwd so the shell and Node add the same runtime variables.
+    const control = JSON.parse(execFileSync(runtime, ["-p", "JSON.stringify(process.env)"], {cwd: home, env: session, encoding: "utf8"}));
     expect(JSON.parse(readFileSync(join(home, "observed"), "utf8")))
       .toEqual([[reader, ...args], home, 0, control]);
     const observation = readFileSync(join(home, "observed"), "utf8");
@@ -165,18 +167,26 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
   });
 
   it.each(["stall", "drip", "inherited pipe"])("uses one deadline and ends the process group (%s)", async scenario => {
-    const args = fixture(`
-      import {spawn} from "node:child_process";
-      fs.writeFileSync("pid", String(process.pid));
-      if (${JSON.stringify(scenario)} === "inherited pipe") {
-        spawn(process.execPath, ["-e", "setTimeout(() => {}, 3000)"], {stdio: "inherit"}).unref();
-      } else {
-        if (${JSON.stringify(scenario)} === "drip") setInterval(() => process.stdout.write("x"), 40).unref();
-        setTimeout(() => process.stdout.write("done"), 2400);
-      }
-    `);
+    const script = join(home, "timed reader");
+    writeFileSync(script, `#!/bin/sh
+[ "$#" -gt 0 ] || exit 0
+printf '%s' "$$" > pid
+case "$1" in
+  stall) exec sleep 3 ;;
+  drip)
+    i=0
+    while [ "$i" -lt 60 ]; do
+      printf x
+      sleep 0.04
+      i=$((i + 1))
+    done ;;
+  "inherited pipe") sleep 3 & ;;
+esac
+`, {mode: 0o700});
+    // Pay the host's first-execution cost before measuring the fixture's behavior.
+    execFileSync(script, [], {cwd: home, env: {}});
     const started = performance.now();
-    await expect(runKeyCommand(args, home, {PATH: "/usr/bin:/bin"}, 350)).rejects.toMatchObject({code: "KEY_REFUSED"});
+    await expect(runKeyCommand([script, scenario], home, {PATH: "/usr/bin:/bin"}, 350)).rejects.toMatchObject({code: "KEY_REFUSED"});
     expect(performance.now() - started).toBeLessThan(1500);
     const pid = Number(readFileSync(join(home, "pid"), "utf8"));
     await vi.waitFor(() => expect(() => process.kill(-pid, 0)).toThrow(), {timeout: 1000});
@@ -188,7 +198,7 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
     for (const text of ["synthetic", "much-longer-synthetic"]) {
       fixture('fs.appendFileSync("starts", "start\\n");' +
         (fail ? "process.stderr.write(process.argv[2]); process.exitCode = 2" : "process.stdout.write(process.argv[2])"));
-      const cli = config(select(process.execPath, reader, text));
+      const cli = config(select(runtime, reader, text));
       expect(cli.keyReport()).toMatchObject({present: true, source: "command", state: "unverified"});
       const read = async () => cli.providerKey();
       const both = await Promise.allSettled([read(), read()]);
