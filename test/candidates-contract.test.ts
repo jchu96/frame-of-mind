@@ -15,6 +15,17 @@ describe("candidates-contract", () => {
     const withSurface = {...candidate,surface:"Report"};
     expect(readCandidates({...doc,candidates:[withSurface]},recording,"file")).toEqual([withSurface]);
   });
+  it.each([["reason", 10_000], ["surface", 500], ["label", 120]] as const)(
+    "claim-bounded admits %s at its limit and refuses the whole document one character over", (field, limit) => {
+      const atLimit = {...candidate, id:"second", [field]:"x".repeat(limit)};
+      const valid = {...doc,candidates:[candidate,atLimit]};
+      const over = {...doc,candidates:[candidate,{...atLimit,[field]:atLimit[field] + "x"}]};
+      for (const route of ["file","engine"] as const) {
+        expect(readCandidates(valid,recording,route)).toEqual(valid.candidates);
+        const error = route === "file" ? invalid : {code:"PROVIDER_REFUSED",details:{phase:"propose",reason:"invalid-reply"}};
+        expect(() => readCandidates(over,recording,route)).toThrowError(expect.objectContaining(error));
+      }
+    });
   it.each([
     {...doc,candidates:[{...candidate,surface:42}]}, {...doc,schemaVersion:2}, {...doc,candidates:[candidate,candidate]}, {...doc,candidates:[{...candidate,id:""}]},
     {...doc,candidates:[{...candidate,start:400}]}, {...doc,candidates:[{...candidate,end:1501}]},

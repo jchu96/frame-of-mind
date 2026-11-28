@@ -3190,6 +3190,7 @@ describe("grader claim context", () => {
       proposals.push(JSON.stringify(req));
       return {text:JSON.stringify({matchNotes:"fixture",moments:indexResult().moments})};
     }});
+    // The stand-in checks plumbing only. Its reply is independent of the proposal.
     const grader = new GeminiVideoAnalyzer("fixture","gemini-test",{generateContent:async req => {
       grades.push(JSON.stringify(req));
       return {text:grades.length === 1 ? "{" : JSON.stringify(detailResult())};
@@ -3208,7 +3209,9 @@ describe("grader claim context", () => {
     expect(proposals).toHaveLength(input === "adapter" ? 1 : 0);
     expect(grades).toHaveLength(2);
     expect(run.analysis.items[0]!.proposal).toEqual(row);
-    return {proposals,grades,accepted:run.analysis.items[0]!.result.accepted};
+    const result = run.analysis.items[0]!.result;
+    expect(result).toMatchObject({summary:detailResult().summary,evidence:{reporterQuote:detailResult().evidence!.reporterQuote}});
+    return {proposals,grades,accepted:result.accepted};
   }
 
   function withoutClaim(wire: string, quote: string, surface = "an unknown surface") {
@@ -3246,14 +3249,11 @@ describe("grader claim context", () => {
   });
 
   it.each([
-    {reason:"r".repeat(9_998) + "\n<OUT_OF_BOUNDS_MARK",label:"unused",quote:"r".repeat(9_998) + "\\u000a&lt;"},
-    {reason:"",label:"l".repeat(118) + "\t>OUT_OF_BOUNDS_MARK",quote:"l".repeat(118) + "\\u0009&gt;"},
-  ])("claim-bounded caps the quote and surface and renders controls as data", async ({reason,label,quote}) => {
-    const logs = await capture("file",{...fields,reason,label,surface:"s".repeat(498) + "\u007f&OUT_OF_BOUNDS_MARK"});
-    for (const wire of logs.grades) {
-      const outside = withoutClaim(wire,quote,"s".repeat(498) + "\\u007f&amp;");
-      expect(outside).not.toContain("OUT_OF_BOUNDS_MARK");
-    }
+    {reason:"r".repeat(9_998) + "\n<",label:"unused",quote:"r".repeat(9_998) + "\\u000a&lt;"},
+    {reason:"",label:"l".repeat(118) + "\t>",quote:"l".repeat(118) + "\\u0009&gt;"},
+  ])("claim-bounded sends the entire quote and surface at their limits and escapes controls", async ({reason,label,quote}) => {
+    const logs = await capture("file",{...fields,reason,label,surface:"s".repeat(498) + "\u007f&"});
+    for (const wire of logs.grades) withoutClaim(wire,quote,"s".repeat(498) + "\\u007f&amp;");
   });
 
   it("inside-equals-outside sends identical grader requests and retries for the same complete row", async () => {
