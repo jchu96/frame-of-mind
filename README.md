@@ -349,6 +349,7 @@ esac
 
 The file must be owned by you with mode 0600 in a directory you own with mode 0700. The CLI refuses a linked settings file. `doctor` never runs the key command, so `unverified` means “set up, not tried.”
 Node’s own debug switches can print the key command’s arguments and environment to stderr, never the key it returns.
+With `--json`, a failed or unavailable key command answers `KEY_REFUSED` with `error.details.reason` set to `key-command`; a key the provider refused answers `KEY_REFUSED` with no `reason`.
 
 On macOS the key command can read the system keychain, so no key sits in a file. Create the item with the system's own tool, which asks for the key without showing it:
 

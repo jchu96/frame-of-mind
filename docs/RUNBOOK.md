@@ -284,7 +284,8 @@ The prompt hides the key and atomically updates `GEMINI_API_KEY` in `./.env`
 with mode 0600. Use `--env-file <path>` to select another dotenv file.
 Non-TTY input is refused. On a clean launch, ordinary commands try the inherited `GEMINI_API_KEY`,
 the operator’s key command, then the working folder’s literal `.env` assignment.
-A failed reader returns `KEY_REFUSED` and ends lookup. Run `frameofmind doctor` for the settings
+A failed reader returns `KEY_REFUSED` with `error.details.reason` set to `key-command` and ends lookup
+(a key the provider refused is `KEY_REFUSED` with no `reason`). Run `frameofmind doctor` for the settings
 path and permission repair. It never executes the command. The account must own the 0600
 regular settings file and its 0700 directory. A linked settings file is refused.
 The [README](../README.md) has the setup commands. Native Windows uses the environment

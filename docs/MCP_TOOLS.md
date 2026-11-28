@@ -190,7 +190,7 @@ establish upload ownership or expiry.
 | `RESULT_TOO_LARGE` | 4 | Requested page exceeds the result limit. |
 | `USE_LIST_RECORDS` | 4 | Run exceeds the single-result limit. Request pages. |
 | `KEY_MISSING` | 10 | Required key was absent. |
-| `KEY_REFUSED` | 10 | Provider identifies the credential as invalid. |
+| `KEY_REFUSED` | 10 | Provider identifies the credential as invalid. When the configured key command failed instead, `error.details.reason` is `key-command`; a key the provider refused carries no `reason`. |
 | `PERMISSION_DENIED` | 11 | OS denies access to an input or destination. |
 | `PATH_OUTSIDE_ROOTS` | 11 | Traversal, link escape or resolved path outside the current read/write grant. |
 | `UNSAFE_SNAPSHOT` | 11 | Database path or identity violates the real-file policy. |
