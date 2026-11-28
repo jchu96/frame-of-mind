@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { captureLaunch, inheritedValue, refuseBareJobStart } from "./cli-launch.js";
+import { captureLaunch, inheritedValue } from "./cli-launch.js";
 import { jobInvocation } from "./job-invocation.js";
 import { useChildEnvironment } from "./lib/child-env.js";
 import type * as Cli from "./cli-main.js";
@@ -15,11 +15,19 @@ const libraryImport = (globalThis as Record<symbol, unknown>)[CLI_LIBRARY_IMPORT
 const args = process.argv.slice(2);
 if (!libraryImport && launch.mode === "clean") useChildEnvironment(launch.environment);
 const job = !libraryImport && jobInvocation(args);
-if (launch.mode === "bare" && job && job.op === "start") {
-  refuseBareJobStart(args);
-} else if (job) {
+if (job) {
   const { runJobCommand } = await import("./commands/jobs.js");
-  await runJobCommand(job.family, job.op, process.argv.slice(4), {readKey: () => inheritedValue(launch.environment, "GEMINI_API_KEY")});
+  const { commandSetting } = await import("./key-command-settings.js");
+  const { KeyCommandRefused } = await import("./key-command.js");
+  await runJobCommand(job.family, job.op, process.argv.slice(4), {
+    readKey() {
+      const key = inheritedValue(launch.environment, "GEMINI_API_KEY");
+      if (key === undefined && launch.mode === "bare" && commandSetting(launch, process.platform).kind === "unavailable") {
+        throw new KeyCommandRefused();
+      }
+      return key;
+    },
+  });
 } else if (process.argv[2] === "mcp" && !libraryImport) {
   const args = process.argv.slice(3);
   if (args.slice(0, args.includes("--") ? args.indexOf("--") : args.length).includes("--json")) {

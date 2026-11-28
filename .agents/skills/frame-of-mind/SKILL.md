@@ -121,6 +121,9 @@ settings to a JSON array starting with the reader’s absolute path. Follow
 `docs/CREDENTIALS.md` for file permissions. On a clean launch, the CLI tries
 the inherited key, then the command, then the folder’s `.env`. A failed command
 stops the lookup. `frameofmind doctor` checks the setup without running the reader.
+When the launcher has merged a folder file, jobs and ordinary commands use a key
+present in the environment. A reader would inherit folder settings, so the CLI
+never runs one there. For `Key command unavailable.`, use the installed Node command.
 
 Direct the user to Google AI Studio; never create, retrieve, or display the key
 for them. Vertex AI ADC is not a drop-in replacement for the current Files API

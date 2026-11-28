@@ -1,7 +1,7 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "dotenv";
-import { inheritedValue, type CliLaunch } from "./cli-launch.js";
+import { inheritedValue, type CliLaunch, type LaunchMode } from "./cli-launch.js";
 import { useApplicationSettings, type ApplicationSetting } from "./lib/application-settings.js";
 
 import { commandSetting, userSettingsPath, type CommandSetting } from "./key-command-settings.js";
@@ -40,7 +40,7 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
     let value = inheritedValue(launch.environment, "GEMINI_API_KEY");
     const bare = launch.mode === "bare";
     let source: KeyReport["source"] = bare ? "unknown" : "environment";
-    if (!bare && value === undefined) {
+    if (value === undefined) {
       // Only an ordinary CLI bootstrap supplies an account context.
       if ("accountHome" in launch) command = commandSetting(launch, platform);
       if (command.kind !== "absent") {
@@ -48,9 +48,11 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
         return {report: {source: "command", lowerSourcesSkipped: true, present: command.kind === "command",
           state: command.kind === "command" ? "unverified" : "unavailable"}};
       }
-      const data = file();
-      value = data?.GEMINI_API_KEY;
-      source = data && value === undefined ? "none" : "dotenv";
+      if (!bare) {
+        const data = file();
+        value = data?.GEMINI_API_KEY;
+        source = data && value === undefined ? "none" : "dotenv";
+      }
     }
     const present = value !== undefined && value.length > 0 && !/\s/.test(value);
     return {
@@ -65,10 +67,11 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
   return {
     setting(name: ApplicationSetting) {
       const inherited = inheritedValue(launch.environment, name);
-      if (inherited !== undefined || (selected?.report.source === "command" && !selected.report.present)) return inherited;
+      if (launch.mode === "bare" || inherited !== undefined || (selected?.report.source === "command" && !selected.report.present)) return inherited;
       return file()?.[name];
     },
     keyReport() { return selectedKey().report; },
+    keyLabel() { return keyLabel(selectedKey().report, launch.mode); },
     settingsPath() { return userSettingsPath(launch.accountHome, platform); },
     commandNextStep() { return nextStep; },
     providerKey() {
@@ -97,11 +100,12 @@ export function cliSettings() {
   return current ?? createCliSettings({mode: "clean", environment: process.env, cwd: process.cwd()}, () => "");
 }
 
-export function keyLabel(key: KeyReport) {
+export function keyLabel(key: KeyReport, mode: LaunchMode = "clean") {
   if (key.source === "unknown") {
     return process.versions.bun ? "unknown: started under Bun without --no-env-file" : "unknown: started with --env-file";
   }
   if (key.source === "command") {
+    if (mode === "bare") return "key command, not run under this launcher";
     return key.state === "unverified" ? "key command, not run by doctor" : "key command, " + key.state;
   }
   const label = key.source === "dotenv" ? JSON.stringify(key.path)
@@ -109,8 +113,8 @@ export function keyLabel(key: KeyReport) {
   return key.state ? label + ", unavailable" : label;
 }
 export function keyNextStep(key: KeyReport, commandFix?: string) {
-  if (key.source === "unknown") return "Next step: Run the installed Node command to identify the key source.";
   if (key.present) return;
+  if (key.source === "unknown") return "Next step: Run the installed Node command.";
   if (commandFix) return "Next step: " + commandFix;
   if (key.source === "environment") return "Next step: Set GEMINI_API_KEY to a nonempty value without whitespace in your environment.";
   if (key.state === "unavailable") return "Next step: Check the named file is readable and contains a valid GEMINI_API_KEY assignment.";

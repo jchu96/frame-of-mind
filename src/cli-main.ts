@@ -1,6 +1,6 @@
 import { applicationSetting } from "./lib/application-settings.js";
 import { KeyCommandRefused } from "./key-command.js";
-import { cliSettings, keyLabel, keyNextStep } from "./cli-settings.js";
+import { cliSettings, keyNextStep } from "./cli-settings.js";
 import { inspectScratch } from "./adapters/scratch.js";
 import { mediaCapabilityReport, requireMedia } from "./services/media-capabilities.js";
 import { capabilities, CliError, writeDocument } from "./cli-contract.js";
@@ -164,13 +164,13 @@ program
         commit: RELEASE_COMMIT,
         cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
       });
-      if (key.source === "command" && !key.present) process.exitCode = 1;
+      if (!key.present && (key.source === "unknown" || key.source === "command")) process.exitCode = 1;
       return;
     }
     if (!flags.scratch && (!prerequisites.node || !prerequisites.geminiKey)) process.exitCode = 1;
     const checks = [
       ["Node >=22", prerequisites.node],
-      [`GEMINI_API_KEY (${keyLabel(key)})`, prerequisites.geminiKey],
+      [`GEMINI_API_KEY (${config.keyLabel()})`, prerequisites.geminiKey],
       ["GRANOLA_API_KEY (optional)", prerequisites.granolaKey],
       ["ffmpeg (optional: screenshots, derived transcript, speech snapping)", media.tools.ffmpeg.version],
       ["ffprobe (optional: duration probe, media helpers)", media.tools.ffprobe.version],

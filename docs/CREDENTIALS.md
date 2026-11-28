@@ -132,7 +132,7 @@ Retrying does not fix depleted billing. Correct the project/quota state first.
 
 ### Private local `.env`
 
-Ordinary CLI commands try the inherited `GEMINI_API_KEY`, the operator’s key command,
+On a clean launch, ordinary CLI commands try the inherited `GEMINI_API_KEY`, the operator’s key command,
 then the working folder’s literal `.env` assignment. An invalid selection or failed command ends the lookup.
 On macOS and Linux, set `keyCommand` in the private account settings file or pass
 the same JSON array through the inherited `FRAME_OF_MIND_KEY_COMMAND`. The file must
@@ -143,9 +143,12 @@ Native Windows supports the environment and folder sources. WSL follows Linux.
 
 Node accepts operator-supplied preloads and loaders, including those in
 `NODE_OPTIONS`. With Node’s `--env-file` or `--env-file-if-exists`, or with bare
-Bun, ordinary commands can use the key and doctor reports its source as unknown.
-Job start requires an inherited key and a clean launch. Omit Node’s env-file
-options or use `bun --no-env-file`.
+Bun, all commands, including job start, use the key in the launch environment.
+Doctor reports its source as unknown and prints no next step when the key is present.
+A configured selector or settings-file command gives `KEY_REFUSED` when the launch
+has no key. With neither, the consumer returns `KEY_MISSING`. No reader runs because
+the merged file can set variables it would inherit. Use the installed Node command
+to run a configured reader.
 
 To create a folder settings file:
 

@@ -1,6 +1,5 @@
 import { userInfo } from "node:os";
 import { realpathSync } from "node:fs";
-import { failureDocument, faultExits } from "./domain/contract-error.js";
 
 export type LaunchMode = "clean" | "bare";
 export interface CliLaunch {
@@ -22,25 +21,17 @@ export function inheritedValue(environment: Readonly<NodeJS.ProcessEnv>, name: s
   return original === undefined ? undefined : environment[original];
 }
 
+export function readAccountHome() {
+  if (process.platform === "win32") return;
+  try { return userInfo().homedir; } catch { /* Account lookup unavailable. */ }
+}
+
 export function captureLaunch(): CliLaunch {
   const mode = classifyLaunch(!!process.versions.bun, process.execArgv);
   const environment: NodeJS.ProcessEnv = Object.create(null);
   for (const [name, value] of Object.entries(process.env)) {
     if (value !== undefined) environment[name] = value;
   }
-  let accountHome: string | undefined;
-  if (mode === "clean" && process.platform !== "win32") {
-    try { accountHome = userInfo().homedir; } catch { /* A command lookup will refuse. */ }
-  }
+  const accountHome = mode === "clean" ? readAccountHome() : undefined;
   return Object.freeze({mode, accountHome, environment: Object.freeze(environment), cwd: realpathSync(".")});
-}
-
-export function refuseBareJobStart(args: string[]) {
-  const end = args.indexOf("--");
-  if (args.slice(0, end < 0 ? args.length : end).includes("--json")) {
-    process.stdout.write(JSON.stringify(failureDocument("USAGE")) + "\n");
-  } else {
-    process.stderr.write("Credential source unknown. Start with a clean launcher.\n");
-  }
-  process.exitCode = faultExits.USAGE;
 }

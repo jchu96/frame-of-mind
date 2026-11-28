@@ -50,7 +50,7 @@ same name. Verify it against the release's `SHA256SUMS`.
 
 | Field | Value |
 | --- | --- |
-| `ok` | True exactly when all required checks pass. A completed report exits successfully even when a required check fails. |
+| `ok` | True exactly when all required checks pass. A completed JSON report exits 1 when a merged launch lacks a usable key or the selected key command is unavailable. Other completed reports exit 0. |
 | `checks[]` | Fixed `name`, boolean `required` and `ok`, and optional human-readable `detail`. Required names are `node` (Node 22+) and `provider_key`. Advisory names are `context_key`, `ffmpeg` and `ffprobe`. |
 | `key.present` | Whether the Gemini key is configured. |
 | `artifactRoot` | Absolute default output directory. |
