@@ -10,6 +10,7 @@ export interface DetailStillFile {
 }
 
 export const unavailableStillWarning = "Full-size frame unavailable. Treat any quoted screen text as unverified.";
+export const unreadScreenTextWarning = "Screen text was not read from a still.";
 
 export async function extractDetailStills(
   video: string, candidate: IndexedMoment, duration: number | undefined,

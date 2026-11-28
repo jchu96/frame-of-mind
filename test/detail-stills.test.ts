@@ -235,3 +235,61 @@ it("budgets 15 MB of encoded stills per request, reserving the midpoint first", 
   expect(result.analysis.items[0]?.result.confidenceNotes).toBe(warning);
   expect(result.analysis.items[1]?.result.confidenceNotes).toBeUndefined();
 });
+
+it("removes a screen quote whose cited time is not an attached still, and nothing else", async () => {
+  const unread = "Screen text was not read from a still.";
+  const quote = { verbatimUiText: "Save draft", reporterQuote: "I pressed save." };
+  // Stills are at 24 s and at 32, 35 and 38 s. Cite 22 s and 34 s: neither is a still.
+  const off = await run({ screenshots: true, extract: async (video, time, path) => {
+    if (!basename(path).startsWith("moment-")) return decode(video, time, path);
+    await writeFile(path, `frame at ${time}`);
+    return true;
+  }, reply: ({ start }) => ({ confidenceNotes: "Clear.", evidence: { timestamp: start === 12 ? "00:00:22" : "00:00:34", ...quote } }) });
+  for (const [i, time] of ["00:00:22", "00:00:34"].entries()) {
+    const item = off.analysis.items[i]!;
+    expect(item.result.evidence).toEqual({ timestamp: time, reporterQuote: quote.reporterQuote });
+    expect(item.screenTextNotFromStill).toBe(true);
+    expect(item.result.confidenceNotes).toBe(`Clear.\n${unread}`);
+    expect(item.candidate).toEqual(moments[i]);
+    expect(await off.read(item.screenshot!)).toBe(`frame at ${time}`);
+  }
+  const markdown = await off.read("analysis.md");
+  expect(markdown).not.toContain("Verbatim UI evidence");
+  expect(markdown).not.toContain(quote.verbatimUiText);
+  expect(markdown.split("Screen text was not read from a still")).toHaveLength(3);
+  const report = await off.read("report.html");
+  expect(report).not.toContain(quote.verbatimUiText);
+  expect(report.split(unread)).toHaveLength(3);
+  const stored = JSON.parse(await off.read("analysis.json"));
+  await expect(validateVersionedRunImport({ analysis: stored, manifest: JSON.parse(await off.read("manifest.json")) })).resolves.toBeDefined();
+  expect(stored.items.map((item: { screenTextNotFromStill?: true }) => item.screenTextNotFromStill)).toEqual([true, true]);
+
+  // A quote that cites a still is left alone, with or without a full notes field.
+  const on = await run({ reply: ({ start }) => ({ confidenceNotes: "Clear.", evidence: { timestamp: secondsToTimestamp(start === 12 ? 24 : 35), ...quote } }) });
+  for (const item of on.analysis.items) {
+    expect(item.result.evidence).toMatchObject(quote);
+    expect(item.result.confidenceNotes).toBe("Clear.");
+    expect(item).not.toHaveProperty("screenTextNotFromStill");
+  }
+  // No still could be attached: the existing warning applies and the record is not rewritten.
+  const none = await run({ extract: async () => false, reply: () => ({ evidence: { timestamp: "00:00:22", ...quote } }) });
+  for (const item of none.analysis.items) {
+    expect(item.stillTimes).toEqual([]);
+    expect(item.result.evidence).toMatchObject(quote);
+    expect(item).not.toHaveProperty("screenTextNotFromStill");
+    expect(item.result.confidenceNotes).toBe(warning);
+  }
+  // A record with no screen quote, or a rejected one, is left alone.
+  const plain = await run({ reply: ({ start }) => start === 12 ? {} : { accepted: false, evidence: { timestamp: "00:00:34", ...quote } } });
+  expect(plain.analysis.items[0]).not.toHaveProperty("screenTextNotFromStill");
+  expect(plain.analysis.items[1]!.result.evidence).toMatchObject(quote);
+  expect(plain.analysis.items[1]).not.toHaveProperty("screenTextNotFromStill");
+});
+
+it("keeps the note within its limit when a removed quote meets a full notes field", async () => {
+  const result = await run({ moments: [moments[0]!], reply: () => ({
+    confidenceNotes: "x".repeat(10_000), evidence: { timestamp: "00:00:22", verbatimUiText: "Save" } }) });
+  const notes = result.analysis.items[0]!.result.confidenceNotes!;
+  expect(notes).toHaveLength(10_000);
+  expect(notes.endsWith("\nScreen text was not read from a still.")).toBe(true);
+});

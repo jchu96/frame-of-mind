@@ -85,7 +85,7 @@ import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./t
 import { extractScreenshot } from "./screenshots.js";
 import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
 import { renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
-import { extractDetailStills, unavailableStillWarning } from "./detail-stills.js";
+import { extractDetailStills, unavailableStillWarning, unreadScreenTextWarning } from "./detail-stills.js";
 import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
 import { mapWithConcurrency } from "../lib/concurrency.js";
 import {
@@ -1000,6 +1000,17 @@ export class AnalysisOrchestrator {
               const notes = (result.confidenceNotes ?? "").slice(0, 10_000 - unavailableStillWarning.length - 1);
               result = { ...result, confidenceNotes: notes ? `${notes}\n${unavailableStillWarning}` : unavailableStillWarning };
             }
+            // The request asks for screen words only from a labelled still. A
+            // quote that cites any other time was not read from one: drop it.
+            const cited = result.evidence?.timestamp;
+            const screenTextNotFromStill = result.accepted && !!attempt.stillTimes?.length
+              && result.evidence?.verbatimUiText !== undefined
+              && !(cited !== undefined && attempt.stillTimes.some(time => timestampToSeconds(time) === timestampToSeconds(cited)));
+            if (screenTextNotFromStill) {
+              const { verbatimUiText: _removed, ...evidence } = result.evidence!;
+              const notes = (result.confidenceNotes ?? "").slice(0, 10_000 - unreadScreenTextWarning.length - 1);
+              result = { ...result, evidence, confidenceNotes: notes ? `${notes}\n${unreadScreenTextWarning}` : unreadScreenTextWarning };
+            }
             assertNotCanceled(execution.signal);
             assertEvidenceWithinCandidate(
               result.evidence?.timestamp,
@@ -1008,6 +1019,7 @@ export class AnalysisOrchestrator {
             );
             const item: AnalysisItem = { candidate, result };
             if (attempt.stillTimes) item.stillTimes = attempt.stillTimes;
+            if (screenTextNotFromStill) item.screenTextNotFromStill = true;
             if (options.screenshots && result.accepted) {
               const screenshotName = `moment-${String(indexNumber + 1).padStart(2, "0")}.png`;
               const screenshotPath = join(screenshotDirectory, screenshotName);

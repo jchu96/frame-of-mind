@@ -117,6 +117,8 @@ export interface DetailStill {
 
 export interface AnalysisItem {
   stillTimes?: string[];
+  /** Set when a screen quote cited a time that is no attached still and was removed. */
+  screenTextNotFromStill?: true;
   candidate: IndexedMoment;
   result: AnalysisDetail;
   screenshot?: string;

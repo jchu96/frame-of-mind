@@ -92,6 +92,7 @@ export const analysisDetailSchema = z.object({
 
 const analysisItemSchema = z.object({
   stillTimes: z.array(timestampSchema).max(3).optional(),
+  screenTextNotFromStill: z.literal(true).optional(),
   candidate: indexedMomentSchema,
   result: analysisDetailSchema,
   screenshot: z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255).optional(),
