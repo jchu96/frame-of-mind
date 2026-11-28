@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+Ordinary CLI commands on macOS and Linux can retrieve the provider key from a
+per-user command. Doctor v1 can report `source: "command"`, with `state: "unverified"`
+for a configured reader or `"unavailable"` for unsafe settings. Doctor never runs it.
+
 ## [0.6.6] - 2026-11-28
 
 Screen text a record quotes is now read from a full-size picture, and a quotation the tool cannot tie to one is removed. The transcript recheck is gone. `doctor` says where the provider key came from. Everything added is optional on contract version 1.

@@ -4,11 +4,14 @@ import { parse } from "dotenv";
 import { inheritedValue, type CliLaunch } from "./cli-launch.js";
 import { useApplicationSettings, type ApplicationSetting } from "./lib/application-settings.js";
 
+import { commandSetting, userSettingsPath, type CommandSetting } from "./key-command-settings.js";
+import { KeyCommandRefused, runKeyCommand } from "./key-command.js";
+
 interface KeyReport {
-  source: "environment" | "dotenv" | "none" | "unknown";
+  source: "environment" | "dotenv" | "none" | "unknown" | "command";
   present: boolean;
   path?: string;
-  state?: "unavailable";
+  state?: "unavailable" | "unverified" | "verified";
   lowerSourcesSkipped?: true;
 }
 
@@ -20,7 +23,7 @@ function readSettingsFile(path: string) {
   } finally { closeSync(fd); }
 }
 
-export function createCliSettings(launch: CliLaunch, read = readSettingsFile) {
+export function createCliSettings(launch: CliLaunch, read = readSettingsFile, platform = process.platform) {
   const path = join(launch.cwd, ".env");
   let settings: Record<string, string> | null | undefined;
   function file() {
@@ -30,11 +33,21 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile) {
     }
     return settings;
   }
+  let command: CommandSetting = {kind: "absent"};
+  let nextStep: string | undefined;
+  let acquisition: Promise<string> | undefined;
   function select(): {report: KeyReport; value?: string} {
     let value = inheritedValue(launch.environment, "GEMINI_API_KEY");
     const bare = launch.mode === "bare";
     let source: KeyReport["source"] = bare ? "unknown" : "environment";
     if (!bare && value === undefined) {
+      // Only an ordinary CLI bootstrap supplies an account context.
+      if ("accountHome" in launch) command = commandSetting(launch, platform);
+      if (command.kind !== "absent") {
+        if (command.kind === "unavailable") nextStep = command.fix;
+        return {report: {source: "command", lowerSourcesSkipped: true, present: command.kind === "command",
+          state: command.kind === "command" ? "unverified" : "unavailable"}};
+      }
       const data = file();
       value = data?.GEMINI_API_KEY;
       source = data && value === undefined ? "none" : "dotenv";
@@ -50,9 +63,27 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile) {
   let selected: ReturnType<typeof select> | undefined;
   const selectedKey = () => selected ??= select();
   return {
-    setting(name: ApplicationSetting) { return inheritedValue(launch.environment, name) ?? file()?.[name]; },
+    setting(name: ApplicationSetting) {
+      const inherited = inheritedValue(launch.environment, name);
+      if (inherited !== undefined || (selected?.report.source === "command" && !selected.report.present)) return inherited;
+      return file()?.[name];
+    },
     keyReport() { return selectedKey().report; },
-    providerKey() { return selectedKey().value; },
+    settingsPath() { return userSettingsPath(launch.accountHome, platform); },
+    commandNextStep() { return nextStep; },
+    providerKey() {
+      const selection = selectedKey();
+      if (selection.report.source !== "command") return selection.value;
+      if (command.kind !== "command") throw new KeyCommandRefused();
+      return acquisition ??= runKeyCommand(command.argv, command.home, launch.environment).then(value => {
+        selection.report.state = "verified";
+        return value;
+      }, () => {
+        selection.report.present = false;
+        selection.report.state = "unavailable";
+        throw new KeyCommandRefused();
+      });
+    },
   };
 }
 
@@ -70,13 +101,17 @@ export function keyLabel(key: KeyReport) {
   if (key.source === "unknown") {
     return process.versions.bun ? "unknown: started under Bun without --no-env-file" : "unknown: started with --env-file";
   }
+  if (key.source === "command") {
+    return key.state === "unverified" ? "key command, not run by doctor" : "key command, " + key.state;
+  }
   const label = key.source === "dotenv" ? JSON.stringify(key.path)
     : key.source === "environment" ? "process environment" : "none";
   return key.state ? label + ", unavailable" : label;
 }
-export function keyNextStep(key: KeyReport) {
+export function keyNextStep(key: KeyReport, commandFix?: string) {
   if (key.source === "unknown") return "Next step: Run the installed Node command to identify the key source.";
   if (key.present) return;
+  if (commandFix) return "Next step: " + commandFix;
   if (key.source === "environment") return "Next step: Set GEMINI_API_KEY to a nonempty value without whitespace in your environment.";
   if (key.state === "unavailable") return "Next step: Check the named file is readable and contains a valid GEMINI_API_KEY assignment.";
   return "Next step: Run frameofmind key set to configure a key in this folder.";

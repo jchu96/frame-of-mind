@@ -1,3 +1,4 @@
+import { KeyCommandRefused } from "../key-command.js";
 import { cliSettings } from "../cli-settings.js";
 import { CliError, writeDocument, writeFailure } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
@@ -36,7 +37,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
       try {
         const config = cliSettings();
         const result = await transcribe({ ...flags, input, signal: controller.signal,
-          apiKey: config.providerKey() ?? "", model: flags.model ?? (config.setting("GEMINI_MODEL") || undefined) },
+          apiKey: await config.providerKey() ?? "", model: flags.model ?? (config.setting("GEMINI_MODEL") || undefined) },
           flags.json ? { ...dependencies, stdout: diagnostic } : dependencies);
         if (flags.json) {
           const { paths, model, language, adjustedCues, blankCues, retention, tokens, quietLines } = result;
@@ -46,6 +47,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
           }, dependencies.stdout);
         }
       } catch (error) {
+        if (error instanceof KeyCommandRefused) throw error;
         // Provider and filesystem exception bodies may contain private content.
         const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
         // A consumer reads this line; it stays on standard error in both modes.

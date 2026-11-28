@@ -1,0 +1,229 @@
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { writeFixtureRuntime } from "./helpers/key-command-runtime.js";
+import { buildCliFixture } from "./helpers/cli-build.js";
+import { operations } from "../src/job-invocation.js";
+
+describe.skipIf(process.platform === "win32")("CLI key command", () => {
+  let fixtureRuntime: string, root: string, home: string, cwd: string, settings: string, reader: string, marker: string, build: string, preload: string;
+  const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {encoding: "utf8"}).trim();
+  const source = resolve("src/cli.ts");
+  beforeAll(async () => {
+    build = await buildCliFixture();
+    root = realpathSync(mkdtempSync(join(tmpdir(), "cli-key-command-")));
+    home = join(root, "home");
+    cwd = join(root, "project");
+    mkdirSync(cwd);
+    const suffix = process.platform === "darwin" ? "Library/Application Support/frameofmind/settings.json" : ".config/frameofmind/settings.json";
+    const decoy = join(root, "redirect");
+    const decoyFile = join(decoy, suffix);
+    settings = join(home, suffix);
+    marker = join(root, "started");
+    reader = join(home, "reader.mjs");
+    for (const path of [settings, decoyFile]) mkdirSync(dirname(path), {recursive: true, mode: 0o700});
+    fixtureRuntime = writeFixtureRuntime(home);
+    const decoyCommand = [writeFixtureRuntime(decoy), join(decoy, "reader.mjs")];
+    for (const path of [reader, join(decoy, "reader.mjs")]) writeFileSync(path,
+      'import fs from "node:fs"; fs.appendFileSync(' + JSON.stringify(marker) + ', "start\\n"); process.stdout.write("synthetic")');
+    writeFileSync(decoyFile, JSON.stringify({keyCommand: decoyCommand}), {mode: 0o600});
+    const roots = ["HOME", "XDG_CONFIG_HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA"];
+    writeFileSync(join(cwd, ".env"), [...roots.map(name => name + "=" + decoy),
+      "FRAME_OF_MIND_KEY_COMMAND=" + JSON.stringify(decoyCommand), "GEMINI_API_KEY=synthetic-folder"].join("\n"));
+    preload = join(root, "account.cjs");
+    writeFileSync(preload, `
+      const os = require('node:os'), fs = require('node:fs');
+      os.userInfo = () => ({homedir: ${JSON.stringify(home)}});
+      const original = fs.openSync;
+      let settingsFd;
+      const fstat = fs.fstatSync;
+      fs.fstatSync = function(fd, ...args) {
+        const result = fstat(fd, ...args);
+        if (process.env.FOREIGN_FILE && fd === settingsFd) result.uid++;
+        return result;
+      };
+      fs.openSync = function(path, ...args) {
+        if (String(path).startsWith(${JSON.stringify(decoy)}) || (process.env.OBSERVE_FOLDER && path === ${JSON.stringify(join(cwd, ".env"))})) {
+          fs.appendFileSync(${JSON.stringify(join(root, "unexpected-open"))}, "open\\n");
+        }
+        const fd = original(path, ...args);
+        if (path === ${JSON.stringify(settings)}) settingsFd = fd;
+        return fd;
+      };
+      if (process.env.CONSUMER_FIXTURE) {
+        Date.prototype.toISOString = () => "2026-01-01T00:00:00.000Z";
+        Date.now = () => 1767225600000;
+        require("node:crypto").randomUUID = () => "11111111-1111-4111-8111-111111111111";
+      }
+      require('node:module').syncBuiltinESMExports();
+      global.fetch = async (_url, init) => {
+        if (!process.env.CONSUMER_FIXTURE) throw Error('offline fixture');
+        const matched = new Headers(init.headers).get("x-goog-api-key") === process.env.FIXTURE_ANSWER;
+        fs.writeFileSync("consumer-result", matched ? "accepted" : "wrong source");
+        return new Response(null, {status: 403});
+      };
+    `);
+  }, 60_000);
+  beforeEach(() => {
+    for (const path of [marker, settings, join(root, "unexpected-open")]) rmSync(path, {force: true});
+  });
+  afterAll(() => {
+    if (build) rmSync(build, {recursive: true, force: true});
+    if (root) rmSync(root, {recursive: true, force: true});
+  });
+  function run(args: string[], env: NodeJS.ProcessEnv = {}, runtime = "node", timeout = 8000) {
+    const node = runtime.startsWith("node");
+    const entry = node ? join(build, "dist/cli.js") : source;
+    const flags = node ? ["--require", preload, ...(runtime === "node-bare" ? ["--env-file=.env"] : [])]
+      : runtime === "bun-clean" ? ["--no-env-file"] : [];
+    const result = spawnSync(node ? process.execPath : bun, [...flags, entry, ...args], {
+      cwd, env: {PATH: "", HOME: home, TMPDIR: root, ...env}, timeout, encoding: "utf8",
+    });
+    if (result.error) throw result.error;
+    return {exit: result.status, out: result.stdout, err: result.stderr};
+  }
+  it.each(["node", "bun-clean", "node-bare", "bun-bare"])("keeps folder data out of command selection (%s)", runtime => {
+    rmSync(settings, {force: true});
+    const result = run(["doctor", "--json"], {}, runtime);
+    const report = JSON.parse(result.out);
+    expect(report.key.source).toBe(runtime.endsWith("bare") ? "unknown" : "dotenv");
+    if (!runtime.endsWith("bare")) expect(report.settingsPath).toBe(settings);
+    expect(existsSync(join(root, "unexpected-open"))).toBe(false);
+    const file = join(cwd, ".env");
+    const contents = readFileSync(file, "utf8");
+    try {
+      if (runtime.endsWith("bare")) {
+        writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
+        writeFileSync(file, "");
+        for (const env of [{}, {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, reader])}]) {
+          const consumer = run(["calibrate", "--json"], env, runtime);
+          expect(JSON.parse(consumer.out).error.code).toBe("KEY_MISSING");
+        }
+      } else {
+        rmSync(file);
+        expect(JSON.parse(run(["doctor", "--json"], {}, runtime).out).settingsPath).toBe(report.settingsPath);
+      }
+    } finally { writeFileSync(file, contents); }
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("refuses a settings file whose opened handle has a foreign owner", () => {
+    writeFileSync(settings, "{}", {mode: 0o600});
+    const result = run(["doctor", "--json"], {FOREIGN_FILE: "1", OBSERVE_FOLDER: "1"});
+    expect(JSON.parse(result.out).key).toMatchObject({source: "command", present: false, state: "unavailable"});
+    expect(existsSync(join(root, "unexpected-open")), "refused source opened folder file").toBe(false);
+  });
+
+  it("doctor inspects permissions without starting the reader", () => {
+    writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
+    const healthy = run(["doctor", "--json"], {PATH: ""});
+    expect(healthy.exit).toBe(0);
+    const report = JSON.parse(healthy.out);
+    expect(report.key).toMatchObject({present: true, source: "command", state: "unverified"});
+    expect(report.checks).toContainEqual({name: "provider_key", required: true, ok: true, detail: "configured"});
+    const text = run(["doctor"], {PATH: ""});
+    expect(text.out.split("\n")).toContain("ok GEMINI_API_KEY (key command, not run by doctor)");
+    expect(text.out).toContain(settings);
+    expect(text.out).not.toContain("Next step");
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it.each(["command", "settings"])("doctor prints the mode repair for %s", kind => {
+    const unsafe = join(home, "unsafe reader");
+    writeFileSync(unsafe, "#!/usr/bin/env bash\nexit 1\n", {mode: 0o700});
+    const isCommand = kind === "command";
+    const path = isCommand ? unsafe : settings;
+    writeFileSync(settings, JSON.stringify({keyCommand: isCommand ? [unsafe] : [fixtureRuntime, reader]}), {mode: 0o600});
+    chmodSync(path, isCommand ? 0o722 : 0o644);
+    const invalid = run(["doctor"]);
+    expect(invalid.exit).toBe(1);
+    const fix = isCommand ? "chmod go-w" : "chmod 600";
+    const lines = invalid.out.trimEnd().split("\n");
+    expect(lines.filter(s => s.startsWith("Next step"))).toEqual(["Next step: Run " + fix + " '" + path + "'."]);
+    expect(lines.at(-1)).toBe(lines.find(s => s.startsWith("Next step")));
+    const json = run(["doctor", "--json"]);
+    expect(json.exit).toBe(1);
+    expect(JSON.parse(json.out).key).toMatchObject({present: false, source: "command", state: "unavailable"});
+    expect(existsSync(marker)).toBe(false);
+  });
+  it.each([["--help"], ["--version"], ["recipes"], ["key", "set"], ["mcp", "--json"],
+    ...["analyze", "transcribe"].flatMap(family => operations.filter(op => family === "analyze" || op !== "dry-run")
+      .map(op => [family, op, "fixture", "--json", "--out", "missing"]))])("inspection leaves the reader idle (%#)", (...args) => {
+    run(args, {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, reader])});
+    expect(existsSync(marker)).toBe(false);
+  });
+  it("runs an env shebang reader from the installed Node entry", () => {
+    const script = join(home, "reader");
+    writeFileSync(script, "#!/usr/bin/env bash\nexec printenv FIXTURE_ANSWER\n", {mode: 0o700});
+    writeFileSync(settings, JSON.stringify({keyCommand: [script]}), {mode: 0o600});
+    writeFileSync(join(cwd, "fixture.mp4"), "synthetic recording");
+    rmSync(join(cwd, "consumer-result"), {force: true});
+    const result = run(["analyze", "--source", "none", "--video", "fixture.mp4", "--output", "script-out",
+      "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"], {
+      PATH: "/usr/bin:/bin", FIXTURE_ANSWER: "synthetic-script-answer", CONSUMER_FIXTURE: "1",
+    }, "node", 20_000);
+    expect(JSON.parse(result.out).error.code).toBe("PROVIDER_REFUSED");
+    expect(readFileSync(join(cwd, "consumer-result"), "utf8")).toBe("accepted");
+  }, 20_000);
+
+  it("delivers accepted answers with identical public streams, traces and run artifacts", () => {
+    const trace = join(cwd, "trace.jsonl");
+    const telemetry = join(build, "dist/telemetry.js");
+    const original = readFileSync(telemetry, "utf8");
+    const capture = `
+      import {appendFileSync} from "node:fs";
+      function record(value) { appendFileSync(${JSON.stringify(trace)}, JSON.stringify(value) + "\\n"); }
+      export function cliAnalysisTracer() {
+        return {span(description, work) { record(description); return work({setAttributes: record}); }};
+      }
+      export function captureCliException(...args) { record(args); }
+      export function flushCliTelemetry() {}
+      export function isCliTelemetryEnabled() { return true; }
+    `;
+    const output = join(cwd, "out");
+    const module = join(home, "answer.mjs");
+    writeFileSync(module, "process.stdout.write(process.env.FIXTURE_ANSWER)");
+    writeFileSync(join(cwd, "fixture.mp4"), "synthetic recording");
+    const observe = (answer: string) => {
+      rmSync(output, {recursive: true, force: true});
+      rmSync(trace, {force: true});
+      rmSync(join(cwd, "consumer-result"), {force: true});
+      const streams = run(["analyze", "--source", "none", "--video", "fixture.mp4", "--output", output,
+        "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"], {
+        FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, module]), FIXTURE_ANSWER: answer, CONSUMER_FIXTURE: "1", PATH: home,
+      });
+      expect(existsSync(join(cwd, "consumer-result")), "local consumer called").toBe(true);
+      expect(readFileSync(join(cwd, "consumer-result"), "utf8")).toBe("accepted");
+      const files = readdirSync(output, {recursive: true, withFileTypes: true}).filter(file => file.isFile());
+      expect(files.length).toBeGreaterThan(0);
+      const artifacts = files.map(file => [file.name, readFileSync(join(file.parentPath, file.name), "utf8")]);
+      const spans = readFileSync(trace, "utf8");
+      expect(spans).toContain("stage upload");
+      const result = {streams, artifacts, spans};
+      expect(JSON.stringify(result)).not.toContain(answer);
+      return result;
+    };
+    try {
+      writeFileSync(telemetry, capture);
+      expect(observe("short-fixture-answer")).toEqual(observe("longer-and-unrelated-fixture-answer"));
+    } finally { writeFileSync(telemetry, original); }
+  });
+
+  it("refuses in fixed public bytes without opening the folder or publishing an artifact", () => {
+    const failure = join(home, "refuse.mjs");
+    writeFileSync(failure, "process.stderr.write(process.argv[2]); process.exitCode = 1");
+    for (const value of ["synthetic", "unrelated-longer-value"]) {
+      const argv = [fixtureRuntime, failure, value];
+      const env = {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify(argv), OBSERVE_FOLDER: "1", PATH: ""};
+      const before = readdirSync(cwd);
+      const args = ["analyze", "--output", "out", "--source", "none", "--video", "absent.mp4"];
+      expect(run(args, env)).toEqual({exit: 10, out: "", err: "Key command unavailable.\n"});
+      const json = run([...args, "--json"], env);
+      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused."}}\n', err: ""});
+      expect(readdirSync(cwd)).toEqual(before);
+      expect(existsSync(join(root, "unexpected-open")), "folder file accessed after command selected").toBe(false);
+    }
+  });
+});
