@@ -24,12 +24,12 @@ Semantic Versioning.
 ### Changed
 
 - The speech snap uses two levels. Speech is still found 10 dB above the local floor; each edge then follows the quieter head or tail of the word outward to 1.5 dB above it. Clean-sound edges do not move.
-- Where the speech stands less than 36 dB above the local floor, a snap keeps its time but states `precisionMs: 300` and `noisy: true` instead of 50 or 200, in `times.json` and in the exact bound.
+- A snap states its clean-sound precision (50 or 200 ms) only on clean sound: speech at least 60 dB above the local floor. With noise under the speech it keeps its time but states `precisionMs: 300` and `noisy: true`, in `times.json` and in the exact bound. On a real recording that is nearly always.
 - A failure while preparing a cut, before anything is sent, publishes no run folder. The reply carries the `Source coverage:` line and, with `--json`, `error.details` with `phase: "prepare"` and `sent: false`.
 
 ### Known limits
 
-- The snap change is proven on made-up sound only: a synthetic voice and tone bursts over steady noise. It has not been run on a real room recording. Below about 32 dB of speech over noise an edge can still sit inside a word; the result says `noisy` and 300 ms there. The 36 dB line for `noisy` was set on two synthetic benches, where it left no wrong edge unflagged, with under 1 dB to spare; it may move when a real recording is measured.
+- The snap change is proven on made-up sound only: a synthetic voice and tone bursts over steady noise. It has not been run on a real room recording. Under noise an edge can still sit inside a word, and under noise that moves (traffic, a drifting room tone) it can land up to about 175 ms outside the remark; that is not fixed. Every such result says `noisy` and 300 ms. The flag is a level line and is blunt: no level separated right edges from wrong ones on the benches, so a better rule is the next change.
 - A ranged run needs a recording whose picture stream proves one frame per packet in display order. Where it cannot, the run prints `whole-file — <reason>` and reads the whole file; it never guesses.
 - Hosted Studio does not accept bundles of the new versions.
 

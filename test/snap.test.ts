@@ -121,16 +121,18 @@ test.each([Infinity, 38, 32, 26])("quiet tone ends over noise %s dB below speech
   }
 });
 
-test.each([38, 32, 26])("the measured speech contrast at %s dB controls both edges and the noisy count", noiseDb => {
+test.each([Infinity, 38, 32, 26])("the measured speech contrast at %s dB controls both edges and the noisy count", noiseDb => {
   const edges = measure(taperedTone(noiseDb));
   for (const precisionMs of [50, 200] as const) {
     const run = proposeRecords([{ start: 1000, end: 2000 }], { ...edges, precisionMs }, "source", defaults);
-    const noisy = noiseDb < 36;
+    const noisy = noiseDb < 60; // only the clean film keeps the clean-sound precision
     for (const [edge, result] of Object.entries(run.records[0]!)) {
       expect(result).toMatchObject({ status: "snapped", noisy, target: { precisionMs: noisy ? 300 : precisionMs } });
       if (result.status !== "snapped") throw new Error("Expected measured speech");
-      expect(result.floorDbfs).toBeCloseTo(20 * Math.log10(12000 / Math.SQRT2 / 32768) - noiseDb, 1);
-      expect(result.speechAboveFloorDb).toBeCloseTo(noiseDb, 1);
+      if (Number.isFinite(noiseDb)) {
+        expect(result.floorDbfs).toBeCloseTo(20 * Math.log10(12000 / Math.SQRT2 / 32768) - noiseDb, 1);
+        expect(result.speechAboveFloorDb).toBeCloseTo(noiseDb, 1);
+      } else expect(result.speechAboveFloorDb).toBeGreaterThanOrEqual(60);
       if (edge === "start" && precisionMs === 50) {
         console.info(`Synthetic ${noiseDb} dB: floor ${result.floorDbfs!.toFixed(3)} dBFS, speech ${result.speechAboveFloorDb!.toFixed(3)} dB above floor, noisy=${result.noisy}`);
       }
@@ -147,8 +149,8 @@ test("speech confidence uses mean power and flags a run with no complete window"
   for (let i = 100; i < 120; i++) levels[i] = i % 2 ? -30 : -10;
   const edges = classify({ blocks: [levels], startMs: 0, length: levels.length });
   expect(select(edges, "start", 1000)).toMatchObject({ speechAboveFloorDb: expect.closeTo(29.03, 2), noisy: true });
-  expect(speechLevels(1, 1, -36)).toMatchObject({ speechAboveFloorDb: 36, noisy: false });
-  expect(speechLevels(1, 1, -35.9)).toMatchObject({ noisy: true });
-  expect(speechLevels(1, 1, -30)).toMatchObject({ speechAboveFloorDb: 30, noisy: true });
+  expect(speechLevels(1, 1, -60)).toMatchObject({ speechAboveFloorDb: 60, noisy: false });
+  expect(speechLevels(1, 1, -59.9)).toMatchObject({ noisy: true });
+  expect(speechLevels(1, 1, -38)).toMatchObject({ speechAboveFloorDb: 38, noisy: true });
   expect(speechLevels(0, 0, -54)).toEqual({ floorDbfs: -54, noisy: true });
 });

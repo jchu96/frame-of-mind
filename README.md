@@ -755,13 +755,15 @@ out to 1.5 dB above that floor. On synthetic speech with steady noise 32 dB
 below speech, no edge cut more than one frame into a word. One edge extended
 84 ms outward. Real-room accuracy still needs measurement.
 Each snap reports the local floor (`floorDbfs`) and how far the detected speech
-stood above it (`speechAboveFloorDb`). Below 36 dB of contrast it keeps the
-measured time, sets `noisy: true` and reports ±300 ms precision. That line was set on two
-synthetic benches (one voice over steady noise, and a tone), as the lowest value that left no wrong
-edge unflagged there. It has not been set on a real room and may move when one is measured.
+stood above it (`speechAboveFloorDb`). The clean-sound precision is claimed only on clean sound: at 60 dB of contrast or more. Below that the snap
+keeps the measured time, sets `noisy: true` and reports ±300 ms precision. This is blunt: on a real
+recording the flag is on nearly always. On synthetic benches no level line separated right edges from wrong
+ones under noise, so the tool does not claim the finer precision there.
+Not fixed: under noise that moves (traffic, a drifting room tone) an edge can land up to about 175 ms
+outside the remark.
 
 The model time keeps its one-second precision. The signed shift gives the
-change from that time. The audio target uses a 10 ms grid. At 36 dB of contrast or more, its stated
+change from that time. The audio target uses a 10 ms grid. At 60 dB of contrast or more, its stated
 precision is ±50 ms for source audio at 32 kHz or above and ±200 ms for lower or unknown rates.
 Each exact source bound, including an alternative, carries its own edge’s precision.
 With a timeline rate, the reference
