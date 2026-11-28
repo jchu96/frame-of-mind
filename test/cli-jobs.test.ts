@@ -12,6 +12,9 @@ let root: string;
 let read: string;
 let out: string;
 let traceJ04: ((event: string) => void) | undefined;
+let releaseFifth: (() => void) | undefined;
+let inspectFifth: (() => Promise<void>) | undefined;
+let j04Work: Promise<void> | undefined;
 const model = "gemini-fixture";
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), "cli-job-")));
@@ -21,6 +24,17 @@ beforeEach(async () => {
   await writeFile(join(read, "clip.mp4"), "fixture");
 });
 afterEach(async () => {
+  if (j04Work) {
+    try {
+      await inspectFifth?.();
+    } finally {
+      releaseFifth?.();
+      try { await j04Work; }
+      finally { releaseFifth = undefined; j04Work = undefined; }
+    }
+    await inspectFifth?.();
+    inspectFifth = undefined;
+  }
   if (traceJ04) {
     const trace = traceJ04;
     const entries = await readdir(out, {recursive: true}).catch(error => [String(error)]);
@@ -255,9 +269,15 @@ it("J03 refuses each missing grant before creating a job", async () => {
   expect(await readdir(out)).toEqual([]);
 });
 
-it("J04 keeps or deletes acquired recordings and windows after success and cancel", async () => {
+it("J04 keeps or deletes acquired recordings and windows after success and cancel", () => {
+  j04Work = runJ04();
+  return j04Work;
+});
+
+async function runJ04() {
   const started = performance.now();
   traceJ04 = event => console.error(`J04 +${Math.round(performance.now() - started)}ms ${event}`);
+  const holdFifth = new Promise<void>(resolve => { releaseFifth = resolve; });
   for (const family of ["analyze", "transcribe"] as const) {
     for (const retention of ["provider", "run"]) {
       for (const cancel of [false, true]) {
@@ -266,6 +286,19 @@ it("J04 keeps or deletes acquired recordings and windows after success and cance
         await mkdir(out);
         const fake = provider();
         let id: string;
+        if (family === "transcribe" && retention === "provider" && !cancel) {
+          const fifthOut = out;
+          fake.onFinalize(async () => {
+            const dir = join(fifthOut, ".frameofmind-jobs", id);
+            inspectFifth = async () => {
+              const {state, stage, inFlight} = JSON.parse(await readFile(join(dir, "job.json"), "utf8"));
+              console.error("J04_FIFTH", JSON.stringify({state, stage, inFlight, entries: await readdir(dir, {recursive: true})}));
+            };
+            traceJ04?.("hold fifth finalize until teardown");
+            await holdFifth;
+            traceJ04?.("released fifth finalize during teardown");
+          });
+        }
         if (cancel) fake.onFinalize(async () => {
           expect((await call(family, "cancel", [id, ...folders(), "--json"])).doc.state).toBe("cancelling");
         });
@@ -286,7 +319,7 @@ it("J04 keeps or deletes acquired recordings and windows after success and cance
     }
   }
   traceJ04 = undefined;
-});
+}
 
 it("J05 a lost reply costs one upload and a replacement requires the unknown job ID", async () => {
   const fake = provider();
