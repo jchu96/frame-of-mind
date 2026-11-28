@@ -1653,7 +1653,8 @@ sequence rate explicitly if known. Never approximate a fractional rate.
 `from-media` requires the full video to have constant presentation boundaries
 and durations from zero, exactly representable in the stream time base. Equal
 summary rates do not establish that. Missing, variable, or quantized timing,
-and scans exceeding 60 seconds or 32 MiB, are refused before provider work.
+and scans exceeding their time limit (60 seconds plus half a second per second
+of recording) or 32 MiB, are refused before provider work.
 
 `transcript clock unverified` is separate from clip calibration: a legacy model
 alignment could not be represented exactly in milliseconds. Context selection
