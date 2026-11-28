@@ -2790,7 +2790,7 @@ describe("speech proposals at publication", () => {
     const { versionedAnalysisRunSchema } = await import("../src/domain/schemas.js");
     const { timesSchema } = await import("../src/domain/times.js");
     const analysis = versionedAnalysisRunSchema.parse(await read("analysis.json"));
-    expect(analysis.schemaVersion).toBe(5);
+    expect(analysis.schemaVersion).toBe(4);
     const times = timesSchema.parse(await read("times.json"));
     const snap = (edge: string) => {
       const entry = times.entries.find(e => e.pointer === "/items/0/candidate/" + edge);
