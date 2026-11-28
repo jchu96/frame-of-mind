@@ -282,7 +282,7 @@ frameofmind key set
 
 The prompt hides the key and atomically updates `GEMINI_API_KEY` in `./.env`
 with mode 0600. Use `--env-file <path>` to select another dotenv file.
-Non-TTY input is refused. Ordinary commands try the inherited `GEMINI_API_KEY`,
+Non-TTY input is refused. On a clean launch, ordinary commands try the inherited `GEMINI_API_KEY`,
 the operator’s key command, then the working folder’s literal `.env` assignment.
 A failed reader returns `KEY_REFUSED` and ends lookup. Run `frameofmind doctor` for the settings
 path and permission repair. It never executes the command. The account must own the 0600
@@ -290,13 +290,16 @@ regular settings file and its 0700 directory. A linked settings file is refused.
 The [README](../README.md) has the setup commands. Native Windows uses the environment
 or folder key. WSL supports the reader.
 An empty or invalid assignment stops selection. Run `frameofmind doctor` to identify
-the selected source. Job start accepts only an inherited key on a clean launch.
+the selected source. Job start uses only the key in the launch environment.
 
 Node preloads and loaders, including those in `NODE_OPTIONS`, work normally.
 Node’s `--env-file` and `--env-file-if-exists`, like bare Bun, allow a file to
-supply environment values before entry. Ordinary commands still run and doctor
-reports the key source as unknown. To start a job, omit Node’s env-file options
-or launch Bun with `--no-env-file`.
+supply environment values before entry. Jobs and ordinary commands can use that key.
+Doctor reports its source as unknown and prints a next step only when the key is missing.
+A missing key with a configured reader gives `Key command unavailable.` (`KEY_REFUSED`
+in JSON). With neither a key nor a reader, the consumer returns `KEY_MISSING`.
+The reader stays idle because it would inherit the merged environment. To use it,
+run the installed Node command without env-file options.
 
 Rules:
 

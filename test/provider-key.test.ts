@@ -64,12 +64,13 @@ it("provides application settings as literal data without modifying the environm
   expect(environment).toEqual({GEMINI_MODEL: "shell"});
 });
 
-it("keeps bare provenance unknown and never consults a lower key", () => {
-  const read = vi.fn(() => "GEMINI_API_KEY=folder");
-  for (const key of ["", "synthetic"]) {
+it("uses the merged snapshot without reopening the folder file", () => {
+  const read = vi.fn(() => "GEMINI_API_KEY=folder\nGEMINI_MODEL=folder-model");
+  for (const key of [undefined, "", "synthetic"]) {
     const config = createCliSettings(launch({GEMINI_API_KEY: key}, "bare"), read);
     expect(config.keyReport()).toEqual({source: "unknown", present: !!key});
     expect(config.providerKey()).toBe(key || undefined);
+    expect(config.setting("GEMINI_MODEL")).toBeUndefined();
   }
   expect(read).not.toHaveBeenCalled();
 });

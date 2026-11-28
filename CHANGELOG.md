@@ -17,6 +17,12 @@ Fixed: the decode check and the encode of `slice`, `proxy`, `probe --decode-chec
 600-second limit, so a proxy of a long recording could be cut off by the clock. The limit is now 600 seconds
 plus two seconds per second of recording.
 
+The job-start refusal introduced in 0.6.6 is gone. Jobs can use the key present
+after Bun or Node has merged a folder file. Doctor reports its source as unknown
+and prints no next step. Without a key, doctor exits 1 and prints one next step.
+A configured key reader gives `Key command unavailable.` under that launcher
+because it would inherit the merged environment.
+
 ## [0.6.6] - 2026-11-28
 
 Screen text a record quotes is now read from a full-size picture, and a quotation the tool cannot tie to one is removed. The transcript recheck is gone. `doctor` says where the provider key came from. Everything added is optional on contract version 1.

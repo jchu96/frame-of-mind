@@ -16,8 +16,9 @@ contract version 1 unless it says otherwise. `CHANGELOG.md` holds the full text.
 - **Key source.** `frameofmind doctor` names where the provider key came from
   and never shows it: `(process environment)`, the quoted path of a folder
   `.env`, `(none)`, or `(unknown: ...)` when the launch had already merged a
-  file. The environment wins over the folder file. When the source is unknown
-  a job start is refused: run the installed command instead.
+  file. Jobs can use that key. Doctor prints no next step when the key is present.
+  If a reader is configured and the key is missing, the CLI reports `KEY_REFUSED`
+  because the reader would inherit the merged environment. Use the installed Node command.
 - **Source builds.** A build that is not a release file prints its version with
   `+source`, for example `0.6.6+source`, in `--version`, `doctor`, the manifest
   `toolVersion` and the local MCP server. A linked checkout runs `dist/`:

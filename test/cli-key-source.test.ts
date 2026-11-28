@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildCliFixture } from "./helpers/cli-build.js";
 
@@ -17,6 +17,10 @@ let entry: string;
 beforeAll(async () => {
   build = await buildCliFixture();
   entry = join(build, "dist/cli.js");
+  writeFileSync(join(root, "account.cjs"), `
+    require("node:os").userInfo = () => ({homedir: ${JSON.stringify(root)}});
+    require("node:module").syncBuiltinESMExports();
+  `);
   writeFileSync(join(root, "offline.mjs"), 'globalThis.fetch = async () => { throw new Error("offline fixture"); };');
   writeFileSync(join(root, "observe-entry.mjs"), `
     import fs from "node:fs";
@@ -62,13 +66,16 @@ beforeAll(async () => {
   mkdirSync(join(folder, "out"));
   writeFileSync(join(tools, "ffprobe"), '#!/bin/sh\necho \'{"streams":[{"codec_type":"video"}],"format":{"duration":"1"}}\'\n', {mode: 0o700});
 }, 60_000);
-beforeEach(() => rmSync(file, {force: true, recursive: true}));
+beforeEach(() => {
+  rmSync(file, {force: true, recursive: true});
+  rmSync(join(folder, "out", ".frameofmind-jobs"), {force: true, recursive: true});
+});
 afterAll(() => {
   rmSync(root, {recursive: true, force: true});
   if (build) rmSync(build, {recursive: true, force: true});
 });
 function run(runtime: "node" | "clean" | "bare", args: string[], env: NodeJS.ProcessEnv = {}, options: string[] = [], executableEntry = runtime === "node" ? entry : source) {
-  const flags = runtime === "clean" ? ["--no-env-file"] : [];
+  const flags = runtime === "clean" ? ["--no-env-file"] : runtime === "node" ? ["--require", join(root, "account.cjs")] : [];
   const result = spawnSync(runtime === "node" ? process.execPath : bun,
     [...flags, ...options, executableEntry, ...args], {
       cwd: folder, env: {HOME: root, TMPDIR: root, PATH: tools, SystemRoot: process.env.SystemRoot, ...env},
@@ -82,18 +89,47 @@ const start = ["analyze", "start", "clip.mp4", "--json", "--out", join(folder, "
   "--request-id", "f454f1d6-3262-4544-ab14-e3d03bcf7d91", "--retention", "run", "--max-provider-requests", "1",
   "--max-media-seconds", "2", "--max-file-bytes", "32"];
 
-it("classifies launches before job dispatch with a real folder assignment", () => {
+it.each(["node", "clean"] as const)("a clean %s job needs an environment key even with a folder key", runtime => {
   writeFileSync(file, "GEMINI_API_KEY=synthetic-folder\n");
-  for (const runtime of ["node", "clean", "bare"] as const) {
-    const result = run(runtime, start, {}, runtime === "bare" ? ["--preload", join(root, "offline.mjs")] : []);
-    const bare = runtime === "bare";
-    expect(result.code, runtime + " job exit").toBe(bare ? 2 : 10);
-    expect(JSON.parse(result.out).error.code).toBe(bare ? "USAGE" : "KEY_MISSING");
-    expect(result.err).toBe("");
-  }
-  const counters = {FIXTURE_COUNT_DISPATCH: "1"};
-  expect(run("bare", start, counters, ["--preload", join(root, "offline.mjs")], entry).err, "bare job import").toBe("dispatch\n");
+  const result = run(runtime, start);
+  expect(result.code).toBe(10);
+  expect(JSON.parse(result.out).error.code).toBe("KEY_MISSING");
+  expect(result.err).toBe("");
   expect(existsSync(join(folder, "out", ".frameofmind-jobs"))).toBe(false);
+});
+
+it.each([
+  {runtime: "bare", source: "folder"}, {runtime: "bare", source: "environment"},
+  {runtime: "node", source: "folder"}, {runtime: "node", source: "environment"},
+] as const)("a merged $runtime job starts with a key from the $source", ({runtime, source}) => {
+  writeFileSync(file, source === "folder" ? "GEMINI_API_KEY=synthetic-folder\n" : "");
+  const env = {FIXTURE_COUNT_DISPATCH: "1", NODE_NO_WARNINGS: "1",
+    GEMINI_API_KEY: source === "environment" ? "synthetic-job" : undefined};
+  const offline = join(root, "offline.mjs");
+  const options = runtime === "node" ? ["--env-file=.env", "--import", offline] : ["--preload", offline];
+  const result = run(runtime, start, env, options, entry);
+  expect(result.code).toBe(0);
+  expect(result.err).toBe("dispatch\njobs import\n");
+  const job = JSON.parse(result.out);
+  expect(job.state).toBe("queued");
+  expect(existsSync(join(folder, "out", ".frameofmind-jobs", job.jobId, "job.json"))).toBe(true);
+});
+
+it.each(["selector", "settings", "neither"])("a merged job without a key reports the configured source (%s)", kind => {
+  writeFileSync(file, kind === "selector" ? "FRAME_OF_MIND_KEY_COMMAND=[]\n" : "");
+  const directory = process.platform === "darwin" ? "Library/Application Support" : ".config";
+  const settings = join(root, directory, "frameofmind", "settings.json");
+  try {
+    if (kind === "settings") {
+      mkdirSync(dirname(settings), {recursive: true, mode: 0o700});
+      writeFileSync(settings, JSON.stringify({keyCommand: [join(root, "fixture-reader")]}), {mode: 0o600});
+    }
+    const result = run("node", start, {}, ["--env-file=.env"]);
+    expect(result.code).toBe(10);
+    expect(JSON.parse(result.out).error.code).toBe(kind === "neither" || (kind === "settings" && process.platform === "win32")
+      ? "KEY_MISSING" : "KEY_REFUSED");
+    expect(existsSync(join(folder, "out", ".frameofmind-jobs"))).toBe(false);
+  } finally { rmSync(settings, {force: true}); }
 });
 
 describe.each([
@@ -117,7 +153,7 @@ describe.each([
   });
 });
 
-it.each(["--env-file", "--env-file-if-exists"])("Node %s reports unknown and refuses only job start", flag => {
+it.each(["--env-file", "--env-file-if-exists"])("Node %s reports unknown and dispatches job starts", flag => {
   writeFileSync(file, "GEMINI_API_KEY=synthetic-folder\n");
   const options = [flag, ".env", "--import", join(root, "offline.mjs")];
   const doctor = run("node", ["doctor", "--json"], {}, options);
@@ -127,15 +163,18 @@ it.each(["--env-file", "--env-file-if-exists"])("Node %s reports unknown and ref
   expect(key.present).toBe(true);
   expect(run("node", ["doctor"], {}, options).out.split("\n")).toContain("ok GEMINI_API_KEY (unknown: started with --env-file)");
   expect(run("node", ["--version"], {}, options)).toEqual(run("node", ["--version"]));
-  const counters = {FIXTURE_COUNT_DISPATCH: "1", FIXTURE_CLEAR_FLAGS: "1"};
+  const counters = {FIXTURE_COUNT_DISPATCH: "1", FIXTURE_CLEAR_FLAGS: "1", NODE_NO_WARNINGS: "1"};
   const job = run("node", start, counters, options);
-  expect(job.code, "bare Node job exit").toBe(2);
-  expect(JSON.parse(job.out).error.code).toBe("USAGE");
-  expect(job.err, "bare Node job import").toBe("dispatch\n");
-  expect(run("node", start.filter(arg => arg !== "--json"), {}, options)).toEqual({
-    code: 2, out: "", err: "Credential source unknown. Start with a clean launcher.\n",
-  });
-  expect(existsSync(join(folder, "out", ".frameofmind-jobs"))).toBe(false);
+  expect(job.code, "bare Node job exit").toBe(0);
+  const admitted = JSON.parse(job.out);
+  expect(admitted.state).toBe("queued");
+  expect(job.err, "bare Node job import").toBe("dispatch\njobs import\n");
+  const textArgs = start.filter(arg => arg !== "--json");
+  const text = run("node", textArgs, {}, options);
+  expect(text).toEqual(run("node", textArgs));
+  expect(text.err).toContain("--json");
+  expect(text.err).not.toContain("Credential source unknown");
+  expect(existsSync(join(folder, "out", ".frameofmind-jobs", admitted.jobId, "job.json"))).toBe(true);
 });
 
 it("keeps ordinary folder settings out of process.env and job starts out of the folder file", () => {
@@ -196,9 +235,20 @@ describe.each(["node", "clean"] as const)("folder data cannot select executables
   });
 });
 
-it("bare Bun reports a folder assignment as unknown", () => {
-  writeFileSync(file, "GEMINI_API_KEY=folder-fixture\n");
-  expect(JSON.parse(run("bare", ["doctor", "--json"]).out).key).toEqual({present: true, source: "unknown"});
+it.each(["bare", "node"] as const)("doctor reports a merged folder key and gives a next step only when missing (%s)", runtime => {
+  const options = runtime === "node" ? ["--env-file=.env"] : [];
+  const label = runtime === "node" ? "unknown: started with --env-file" : "unknown: started under Bun without --no-env-file";
+  for (const present of [true, false]) {
+    writeFileSync(file, present ? "GEMINI_API_KEY=folder-fixture\n" : "");
+    const json = run(runtime, ["doctor", "--json"], {}, options);
+    expect(JSON.parse(json.out).key).toEqual({present, source: "unknown"});
+    expect(json.code).toBe(present ? 0 : 1);
+    const text = run(runtime, ["doctor"], {}, options);
+    expect(text.code).toBe(present ? 0 : 1);
+    const lines = text.out.trimEnd().split("\n");
+    expect(lines).toContain((present ? "ok" : "--") + " GEMINI_API_KEY (" + label + ")");
+    expect(lines.filter(line => line.startsWith("Next step:"))).toHaveLength(present ? 0 : 1);
+  }
 });
 
 it.each([["synthetic", "longer-fixture-value"], ["two words", "longer invalid input"]])(
@@ -212,7 +262,7 @@ it.each([["synthetic", "longer-fixture-value"], ["two words", "longer invalid in
 });
 
 it.each(["none", "environment", "dotenv", "unavailable", "unknown"] as const)(
-  "preserves doctor detail bytes and ends text with one applicable next step for %s", scenario => {
+  "preserves doctor detail bytes and ends text with a next step only when needed for %s", scenario => {
     if (scenario === "dotenv") writeFileSync(file, "GEMINI_API_KEY=fixture");
     if (scenario === "unavailable") mkdirSync(file);
     const runtime = scenario === "unknown" ? "bare" : "node";
@@ -225,7 +275,7 @@ it.each(["none", "environment", "dotenv", "unavailable", "unknown"] as const)(
       unavailable: JSON.stringify(file) + ", unavailable", unknown: "unknown: started under Bun without --no-env-file"}[scenario];
     const lines = run(runtime, ["doctor"], env).out.trimEnd().split("\n");
     expect(lines).toContain((present ? "ok" : "--") + " GEMINI_API_KEY (" + label + ")");
-    const needsStep = !present || scenario === "unknown";
+    const needsStep = !present;
     expect(lines.filter(line => line.startsWith("Next step")).length, "next-step count").toBe(Number(needsStep));
     expect(lines.at(-1)!.startsWith("Next step")).toBe(needsStep);
     expect(lines.includes("Lower-priority sources were skipped.")).toBe(scenario === "environment");

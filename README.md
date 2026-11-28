@@ -326,7 +326,7 @@ A build made this way prints its version with `+source`, for example `0.6.6+sour
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
 
-For ordinary CLI commands, the first selected source supplies the provider key.
+On a clean launch, ordinary CLI commands select the first available provider key source.
 
 | Order | Source | Selection |
 | --- | --- | --- |
@@ -334,7 +334,7 @@ For ordinary CLI commands, the first selected source supplies the provider key.
 | 2 | Key command | Use the launch environment’s `FRAME_OF_MIND_KEY_COMMAND` JSON string array, or the account’s `keyCommand` setting when the variable is absent. |
 | 3 | The working folder’s `.env` | Read the literal assignment when both higher sources are absent. |
 
-An empty or invalid assignment stops the lookup. A failed command ends the run without falling back to the folder key. Run `frameofmind doctor` to see the source without displaying the key. A clean job start accepts only an inherited key.
+An empty or invalid assignment stops the lookup. A failed command ends the run without falling back to the folder key. Run `frameofmind doctor` to see the source without displaying the key. Jobs use only the `GEMINI_API_KEY` in the launch environment.
 
 To create a new per-user settings file, substitute the absolute path to your reader. The file holds the command and its literal arguments. The reader writes one key to standard output and leaves standard error empty.
 
@@ -366,7 +366,7 @@ Tried once on macOS with a throwaway item made this way: the key was read withou
 
 Native Windows supports the environment and folder key sources. WSL follows the Linux key-command rules.
 
-The installed Node command and release bundle accept preloads and loaders, including those in `NODE_OPTIONS`. Node’s `--env-file` and `--env-file-if-exists`, like bare Bun, can load a file before the CLI starts. Ordinary commands still work, doctor reports the key source as unknown, and job starts require a clean launch. For jobs, omit Node’s env-file options or use `bun --no-env-file`.
+The installed Node command and release bundle accept preloads and loaders, including those in `NODE_OPTIONS`. Node’s `--env-file` and `--env-file-if-exists`, like bare Bun, can load a file before the CLI starts. Every command, including job start, can use the key in that environment. `doctor` reports a present key with source `unknown` and prints no next step. The CLI never runs a key command under that launcher because the file can set variables the reader would inherit. With no key, a configured reader gives `Key command unavailable.` Run the installed Node command to use the reader.
 
 Contributors run the fast/local pull-request gate for every change:
 

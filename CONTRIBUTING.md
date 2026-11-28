@@ -43,8 +43,9 @@ launch when the origin of helper settings matters.
 
 Node preloads and loaders, including those set in `NODE_OPTIONS`, are clean
 launches. Node’s `--env-file` and `--env-file-if-exists` put the CLI in the same
-mode as bare Bun. Ordinary commands run, doctor reports unknown key provenance,
-and a job start requires restarting without the Node env-file option.
+mode as bare Bun. Jobs and ordinary commands use the key in the launch environment.
+Doctor labels its source unknown. Key commands are disabled because the merged
+file can set variables the reader would inherit.
 
 Use `bun run web` for the
 Nuxt workspace. Some media and browser tests also require `ffmpeg`; provider

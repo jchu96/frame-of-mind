@@ -1,12 +1,12 @@
 # ADR 0032 — Identify the local CLI provider key source at launch
 
-Accepted 2026-11-26.
+Accepted 2026-11-26. Amended 2026-11-28 for launchers that merge a folder file.
 
 ## Invariant
 
-A person can see where a CLI credential came from without revealing its value.
-A folder can supply a literal key for ordinary commands. Its settings cannot
-authorize a job or select a program to retrieve a key.
+Doctor reports what the launcher lets the CLI know about a key without revealing
+its value. A folder can supply a literal key. It cannot choose a key reader or
+control the environment in which that reader runs.
 
 ## Decision
 
@@ -15,12 +15,11 @@ before dispatch. Node preloads (`--require`, `-r`, `--import`) and loaders are
 operator input, whether passed on the command line or via `NODE_OPTIONS`. A
 working folder cannot set these launch options. Accept them as clean. Node’s
 `--env-file` and `--env-file-if-exists` can merge file values before capture.
-Both launch classes are accepted. With either env-file option, as with bare
-Bun, ordinary commands run with unknown key provenance and a job start
-returns `USAGE`. A clean job start receives the
-inherited key only. Ordinary commands consult the launch environment
-before the key command and the literal folder file. A selected invalid source stops the lookup.
-Read application settings separately and keep the allowlists for child processes.
+All commands, including job start, use a valid key in the captured environment.
+Jobs acquire keys only from that environment. On a clean launch ordinary commands
+then try the selected key command and finally the literal folder file. A selected invalid source stops the lookup.
+After a runtime merge the CLI uses the captured settings without reopening the
+working folder’s `.env`. Keep the allowlists for child processes.
 
 Doctor describes the selected source and any unavailable state. Its existing
 presence boolean and the `configured` and `missing` check details remain stable.
@@ -40,9 +39,9 @@ one synthetic marker. The shell-only control ran with no folder file.
 | Direct Bun with the flag | folder | no | `["--no-env-file"]` |
 | Direct Node | folder | no | `[]` |
 
-Bare Bun therefore reports unknown for ordinary commands and refuses job start.
-It cannot authorize a key command. Comparing the key with the file would give
-the same answer for a legitimate equal-valued export and a folder assignment.
+After a merge the CLI cannot distinguish a shell export from an equal-valued
+folder assignment. Doctor labels a present key `unknown`, exits 0 and prints no
+next step. With no key it exits 1 and prints one next step in text mode.
 
 The clean-input guarantee for helper processes applies to clean launches. A
 Bun 1.4.4 probe used different, empty operator and folder directories as search
@@ -67,7 +66,16 @@ XDG_CONFIG_HOME. Use the inherited selector first, then the settings file’s op
 `keyCommand`. The account must own the 0700 tool directory and its regular 0600 file.
 Open the file without following links and check the open handle before reading.
 
-Resolve element zero to an absolute executable owned by the effective user or root.
+On a merged launch, a folder file can set variables that any reader would inherit.
+If the launch lacks a key, the presence of the selector is sufficient to report
+`Key command unavailable.` Without a selector, the CLI uses the same home lookup
+on demand to inspect the protected settings file. Bun's home may reflect the
+merged `HOME`. That location is used only for diagnosis. The CLI neither resolves
+nor starts an executable from it. A configured reader gives `KEY_REFUSED`, and
+an absent reader gives `KEY_MISSING`. Doctor directs the operator to the installed
+Node command.
+
+On a clean launch, resolve element zero to an absolute executable owned by the effective user or root.
 Group and other write bits disqualify it. Start the resolved path in the account home
 with literal arguments, closed input, private pipes and its own process group.
 A script’s interpreter is found through the operator’s own launch environment.
@@ -76,7 +84,7 @@ Trust the chosen reader with the remaining session environment.
 
 A consumer shares one acquisition, including a refusal. Allow 30 seconds and 4,096
 bytes across both pipes. Accept one printable ASCII token after an optional final
-LF or CRLF, with zero exit and empty stderr. Refusal ends selection. Doctor reports a
+LF or CRLF, with zero exit and empty stderr. Refusal ends selection. On a clean launch doctor reports a
 configured reader as unverified and only inspects its setup. Bare launches and jobs
 never start the reader. Native Windows skips the account file and refuses an explicit
 selector. WSL uses the Linux account path.

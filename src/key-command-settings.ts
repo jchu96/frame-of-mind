@@ -1,6 +1,6 @@
 import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { inheritedValue, type CliLaunch } from "./cli-launch.js";
+import { inheritedValue, readAccountHome, type CliLaunch } from "./cli-launch.js";
 
 export type CommandSetting =
   | {kind: "absent"}
@@ -56,6 +56,18 @@ function fileSetting(home: string, path: string, uid: number): unknown {
 
 export function commandSetting(launch: CliLaunch, platform: NodeJS.Platform): CommandSetting {
   const override = inheritedValue(launch.environment, selector, platform);
+  if (launch.mode === "bare") {
+    const blocked = unavailable("Run the installed Node command.");
+    if (override !== undefined) return blocked;
+    if (platform !== "darwin" && platform !== "linux") return {kind: "absent"};
+    // A merged home lookup is diagnostic only. Never resolve a reader from it.
+    const home = launch.accountHome ?? readAccountHome();
+    const path = userSettingsPath(home, platform);
+    if (!home || !path) return blocked;
+    try {
+      return fileSetting(home, path, process.geteuid!()) === undefined ? {kind: "absent"} : blocked;
+    } catch { return blocked; }
+  }
   const home = launch.accountHome;
   const path = userSettingsPath(home, platform);
   if (platform !== "darwin" && platform !== "linux") {
