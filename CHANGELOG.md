@@ -5,7 +5,7 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-- Analyze one recording with either Gemini or Twelve Labs in either role. Preview the recipients and retention, withhold the claim when needed, and read partial coverage and cleanup receipts in the result. Named libraries, search and whole-shoot analysis do not exist yet.
+- Analyze one recording with either Gemini or Twelve Labs in either role. Preview the recipients and retention, withhold the claim when needed, and read partial coverage and cleanup receipts in the result. Gemini uses the released first-pass request and reply schema at both depths. Its second-pass request also matches the release when the grader receives the claim. Frame of Mind fills the Gemini proposal fields locally. Twelve Labs still receives typed segment definitions. Named libraries, search and whole-shoot analysis do not exist yet.
 - A bound in frames or timecode on a sound-only recording answers the reason released in 0.6.8, `Audio bounds use seconds or Nsamp.`, again. `no-video-stream` is used only where no reason existed before.
 
 - Fixed a v0.6.8 regression that refused sound-only recordings in `analyze`. Voice recordings use native sample positions and produce no stills. A failure before media upload starts reports `phase: "prepare"` and `sent: false`.

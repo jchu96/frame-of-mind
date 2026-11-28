@@ -1662,34 +1662,10 @@ it("released-deep-index-request and standard first pass match pre-branch main by
       options.recipe, options.focus, options.indexFps);
   }
 
-  // Derive the two pins in CI directly from the immutable pre-branch source.
-  const { execFileSync } = await import("node:child_process");
-  const { mkdtempSync, symlinkSync, rmSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join, resolve } = await import("node:path");
-  const reference = mkdtempSync(join(tmpdir(), "released-index-"));
-  try {
-    const tree = execFileSync("git", ["archive", "5da05a5be1c28f6e973bd101f10d5480a2300f0f", "src", "package.json"],
-      {maxBuffer: 32 * 1024 * 1024});
-    execFileSync("tar", ["-xf", "-", "-C", reference], {input: tree});
-    symlinkSync(resolve("node_modules"), join(reference, "node_modules"), "dir");
-    const output = execFileSync("bun", ["--no-env-file", "-e", `
-      import { createHash } from "node:crypto";
-      import { GeminiVideoAnalyzer } from "./src/adapters/gemini.ts";
-      import { loadRecipe, withAnalysisDepth } from "./src/recipes/index.ts";
-      const pins = [];
-      const analyzer = new GeminiVideoAnalyzer("fixture", "gemini-test", {generateContent: async request => {
-        pins.push(createHash("sha256").update(JSON.stringify(request)).digest("hex"));
-        return {text: JSON.stringify({matchNotes: "fixture", moments: []})};
-      }});
-      for (const depth of ["standard", "deep"]) {
-        const {recipe, indexFps} = await withAnalysisDepth(await loadRecipe("requirements"), depth);
-        await analyzer.index(${JSON.stringify(activeFile)}, undefined, recipe, undefined, indexFps);
-      }
-      console.log(JSON.stringify(pins));
-    `], {cwd: reference, encoding: "utf8", env: {PATH: process.env.PATH}});
-    expect(requests).toEqual(JSON.parse(output));
-  } finally {
-    rmSync(reference, {recursive: true, force: true});
-  }
+  // CI at 5146976 captured JSON.stringify(generateContent parameters) from the
+  // pre-branch adapter and depth profiles at 5da05a5, using this file and recipe.
+  expect(requests).toEqual([
+    "ec1e8b14137a63c474c5e1c7de862d32b39c527090e383c4ea93d36d2c78b049", // standard
+    "423c3d7112acf608e6484daafaec2a1dd8e67f4c1b14b33af6802bcfaa8b270a", // deep
+  ]);
 });

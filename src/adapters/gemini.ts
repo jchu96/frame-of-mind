@@ -1,4 +1,3 @@
-import { candidateSchema } from "../domain/candidates.js";
 import { claimSentence } from "../domain/grader-claim.js";
 import { uploadMedia } from "../lib/media-transfer.js";
 import { addTokenCounts, measuredTotal, type TokenCounts, type TokenUsage } from "../domain/token-usage.js";
@@ -137,12 +136,6 @@ const videoOnlyIndexSchema = z.object({
   matchNotes: z.string().max(20_000),
   moments: z.array(indexedMomentSchema).max(1_000),
 }).strict();
-
-// Media identity, native coordinates, original ordinal and actor belong to the caller.
-const authoredProposal = candidateSchema.pick({label:true,reason:true,basis:true,precisionMs:true,score:true});
-const typedMoment = indexedMomentSchema.safeExtend({proposal:authoredProposal});
-const typedVideoIndex = videoOnlyIndexSchema.extend({moments:z.array(typedMoment).max(1000)});
-const typedMeetingIndex = meetingIndexSchema.extend({moments:z.array(typedMoment).max(1000)});
 
 const transcriptionTimestamp = z.preprocess(
   normalizeShortTimestamp,
@@ -394,11 +387,6 @@ export class GeminiVideoAnalyzer {
     return file;
   }
 
-  indexProposals(...args:Parameters<GeminiVideoAnalyzer["index"]>) {
-    const [file,meeting,recipe,focus,fps,transcript,notes,ranged] = args;
-    return this.index(file,meeting,recipe,focus,fps,transcript,notes,ranged,!this.jobTransport);
-  }
-
   async index(
     file: GeminiFile,
     meeting: MeetingEvidence | undefined,
@@ -408,7 +396,6 @@ export class GeminiVideoAnalyzer {
     derivedTranscript?: string,
     runNotes?: readonly RunNote[],
     ranged = false,
-    typed = false,
   ): Promise<{
     isRelevantCall: boolean;
     matchNotes: string;
@@ -422,9 +409,6 @@ export class GeminiVideoAnalyzer {
     matchNotes: string;
     moments: IndexedMoment[];
   }> {
-    const videoResponse = typed ? typedVideoIndex : videoOnlyIndexSchema;
-    const meetingResponse = typed ? typedMeetingIndex : meetingIndexSchema;
-    const fields = typed ? ["In each proposal give label, reason, basis and positive precisionMs for each edge. Whole-second model times have model basis and 1000 ms precision. An optional score ranks proposals."] : [];
     const audio = file.mimeType?.startsWith("audio/");
     const indexTask = audio
       ? "Listen to the recording and index potentially relevant moments using audible evidence."
@@ -473,7 +457,6 @@ export class GeminiVideoAnalyzer {
                   "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
                 ...(ranged ? ["Use the uploaded cut clock starting at zero. Report activity already under way at cut zero as a continuation. Put times only in the time fields and none in prose."] : []),
                   "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
-                  ...fields,
                   indexBindingLine(recipe),
                 ].join("\n")),
                 "Based on the video and bounded context above, return only the structured index.",
@@ -486,9 +469,9 @@ export class GeminiVideoAnalyzer {
           httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS },
           ...(!audio && {mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW}),
           responseMimeType: "application/json",
-          responseJsonSchema: toGeminiProviderSchema(videoResponse),
+          responseJsonSchema: toGeminiProviderSchema(videoOnlyIndexSchema),
         },
-      }, "index", videoResponse, "Gemini video-only index response");
+      }, "index", videoOnlyIndexSchema, "Gemini video-only index response");
     }
     return this.generateStructured({
       model: this.model,
@@ -529,7 +512,6 @@ export class GeminiVideoAnalyzer {
                 "All moment timestamps must be canonical HH:MM:SS values with end strictly after start.",
                 ...(ranged ? ["Use the uploaded cut clock starting at zero. Report activity already under way at cut zero as a continuation. Put times only in the time fields and none in prose."] : []),
                 "Keep output concise: no more than 1,000 moments; speaker at most 240 characters; surface at most 500; summary at most 10,000; kind at most 120. Do not add keys outside the response schema.",
-                ...fields,
                 `${indexBindingLine(recipe)} State whether video and transcript describe the same meeting.`,
                 "The video may be a clip from the middle of a longer meeting transcript. Return transcriptAlignment.offsetSeconds as signed transcript-time minus video-time seconds. Negative values are valid when the transcript begins after the video. Use 0 only when both begin together or alignment is unavailable; explain confidence and rationale.",
               ].join("\n")),
@@ -543,9 +525,9 @@ export class GeminiVideoAnalyzer {
         httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS },
         ...(!audio && {mediaResolution: MediaResolution.MEDIA_RESOLUTION_LOW}),
         responseMimeType: "application/json",
-        responseJsonSchema: toGeminiProviderSchema(meetingResponse),
+        responseJsonSchema: toGeminiProviderSchema(meetingIndexSchema),
       },
-    }, "index", meetingResponse, "Gemini index response");
+    }, "index", meetingIndexSchema, "Gemini index response");
   }
 
   async interrogate(

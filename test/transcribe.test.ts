@@ -256,7 +256,7 @@ describe("original-language transcription", () => {
   it.each(["absolute","relative","unverified"] as const)("measures a detail window on the %s clock before mapping its evidence to source", async mode => {
     for (const [num, den, origin] of [[25,1,0],[25,1,31],[30000,1001,0],[30000,1001,31]] as const) {
       const f = await fixture(90);
-      const candidate = {start:"00:00:20", end:"00:00:24", kind:"test", summary:"fixture", importance:"low", proposal:{label:"test",reason:"fixture",basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000}}};
+      const candidate = {start:"00:00:20", end:"00:00:24", kind:"test", summary:"fixture", importance:"low"};
       const {analyzer, requests} = capture({matchNotes:"fixture", moments:[candidate]},
         {accepted:true,kind:"test",title:"Fixture",summary:"fixture",evidence:{timestamp:mode === "relative" ? "00:00:09" : "00:00:21"}});
       const orchestrator = new AnalysisOrchestrator({...f.deps,withSourceRecording:fixtureSource(() => 90,{num,den}),
@@ -321,8 +321,7 @@ describe("original-language transcription", () => {
 
   it.each([undefined, "fr-ca"])("captures analyze-derived windows, calibration, index and detail for hint %s", async transcriptLanguage => {
     const f = await fixture(900);
-    const candidate = { start: "00:09:58", end: "00:10:03", kind: "test", summary: "Synthetic", importance: "low",
-      proposal: {label:"test", reason:"Synthetic", basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000}} };
+    const candidate = { start: "00:09:58", end: "00:10:03", kind: "test", summary: "Synthetic", importance: "low" };
     const { analyzer, requests } = capture({ seconds: 27 }, ...windows,
       { matchNotes: "Synthetic", moments: [candidate] },
       { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic", evidence: { timestamp: candidate.start } },
@@ -434,8 +433,7 @@ describe("original-language transcription", () => {
     const service = await import("../src/services/analyze.js");
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const candidate = { start: "00:00:02", end: "00:00:04", kind: "test", summary: "Synthetic", importance: "low",
-      proposal: {label:"test", reason:"Synthetic", basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000}} };
+    const candidate = { start: "00:00:02", end: "00:00:04", kind: "test", summary: "Synthetic", importance: "low" };
     const detail = { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic" };
     for (const retention of ["provider", "run"]) {
       const f = await fixture(10);

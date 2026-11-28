@@ -290,7 +290,6 @@ interface VideoOnlyAnalysisIndex {
 type AnalysisIndex = MeetingAnalysisIndex | VideoOnlyAnalysisIndex;
 
 export interface AnalysisVideoAnalyzer {
-  indexProposals?: AnalysisVideoAnalyzer["index"];
   probeClipClock?(file: GeminiFile): Promise<number>;
   readonly relativeEvidenceResponses?: number;
   readonly model: string;
