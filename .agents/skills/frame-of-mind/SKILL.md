@@ -63,6 +63,7 @@ Read only the sources needed for the task:
 - Review every generated record before treating it as true or actionable.
 
 For private terminal entry, direct the operator to `frameofmind key set`.
+For one launch without the account’s key reader, set `FRAME_OF_MIND_KEY_COMMAND='[]'`. Check `doctor --json` for `key.commandDisabledByEnvironment` and the selected `key.source`.
 Use `--note name=path` for per-run references instead of
 editing a recipe for one job. The tool itself never copies note bodies into the
 bundle; the manifest records only names, digests and byte counts. Model findings

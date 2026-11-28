@@ -169,7 +169,7 @@ program
         commit: RELEASE_COMMIT,
         cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
       });
-      if (!key.present && (key.source === "unknown" || key.source === "command")) process.exitCode = 1;
+      if (!key.present && (key.commandDisabledByEnvironment || key.source === "unknown" || key.source === "command")) process.exitCode = 1;
       return;
     }
     if (!flags.scratch && (!prerequisites.node || !prerequisites.geminiKey)) process.exitCode = 1;
@@ -182,8 +182,9 @@ program
     ] as const;
     for (const [name, ready] of checks) {
       process.stdout.write(`${ready ? "ok" : "--"} ${name}\n`);
-      if (name.startsWith("GEMINI_API_KEY ") && key.lowerSourcesSkipped) {
-        process.stdout.write("Lower-priority sources were skipped.\n");
+      if (name.startsWith("GEMINI_API_KEY ")) {
+        if (key.lowerSourcesSkipped) process.stdout.write("Lower-priority sources were skipped.\n");
+        if (key.commandDisabledByEnvironment) process.stdout.write("Key command switched off by FRAME_OF_MIND_KEY_COMMAND.\n");
       }
     }
     process.stdout.write(
