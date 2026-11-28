@@ -70,14 +70,33 @@ it("precision-window applies the two-frame floor and each latest radius includin
   expect(measurementWindow({...claim,at:40,precisionMs:119},ticks,1500)).toBeUndefined();
 });
 
-it("maps a fractional-rate model second through the released exact span and its support", async () => {
+it("exact-answer-roundtrip maps a built-in fractional-rate moment through modelSpan and preserves its printed second", async () => {
   const {RangeClock} = await import("../src/domain/range-clock.js");
-  const {modelSpan,boundIndex} = await import("../src/domain/source-bound.js");
+  const {modelSpan,boundIndex,sourceBound,humanTime} = await import("../src/domain/source-bound.js");
   const {geminiCandidates} = await import("../src/adapters/gemini-candidates.js");
-  const clock = RangeClock.resolve({unit:"frames",rate:{num:30000,den:1001},length:3000n},{from:"31f"});
+  const clock = RangeClock.resolve({unit:"frames",rate:{num:30000,den:1001},length:3000n},{from:"1f"});
   const original = {start:"00:00:01",end:"00:00:02",kind:"k",summary:"s",importance:"high" as const};
   const span = modelSpan(clock,1,2)!;
-  expect(span.start).toMatchObject({origin:"model",support:["60","91"]});
+  expect(span.start).toMatchObject({origin:"model",support:["30","61"]});
   const doc = geminiCandidates([original],"model",clock,recording.recordingSha256);
-  expect(doc.candidates[0]).toMatchObject({start:Number(boundIndex(span.start)),end:Number(boundIndex(span.endExclusive))});
+  const candidate = doc.candidates[0]!;
+  expect(candidate).toMatchObject({start:Number(boundIndex(span.start)),end:Number(boundIndex(span.endExclusive))});
+  // A one-frame cut offset keeps this source label at 1 s on both sides of the rounding change.
+  expect(humanTime(sourceBound(clock,BigInt(candidate.start)))).toBe(original.start);
+});
+
+it("bounds outcome 2 input counts while accepting files larger than the grading budget", async () => {
+  const {analysisOutcomeSchema} = await import("../src/domain/analysis-outcome.js");
+  const rows = Array.from({length:1001}, (_, i) => ({...candidate,id:String(i)}));
+  expect(readCandidates({...doc,candidates:rows},recording,"file")).toHaveLength(1001);
+  const counts = {selected:1,validated:1,accepted:1,rejected:0,failed:0};
+  const outcome = (indexed: number, omittedByLimit: number) => ({
+    schemaVersion:2,runId:"file-counts",status:"partial",failures:[],candidates:{...counts,indexed,omittedByLimit},
+  });
+  expect(analysisOutcomeSchema.safeParse(outcome(rows.length,rows.length-1)).success).toBe(true);
+  const above = 2 ** 32;
+  const result = analysisOutcomeSchema.safeParse(outcome(above+1,above));
+  expect(result.error?.issues.map(issue => issue.path)).toEqual(expect.arrayContaining([
+    ["candidates","indexed"], ["candidates","omittedByLimit"],
+  ]));
 });

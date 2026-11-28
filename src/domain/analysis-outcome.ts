@@ -59,8 +59,11 @@ const outcomeBase = z.strictObject({
   }),
 });
 const outcome1 = outcomeBase.extend({schemaVersion:z.literal(1), failures:z.array(candidateFailureSchema).max(1000)});
+// A file can supply more rows than the 1,000 grading slots. These three
+// counters describe its input array, whose maximum length in JS is 2^32 - 1.
+const inputRowCount = z.int().min(0).max(2 ** 32 - 1);
 const outcome2 = outcomeBase.extend({schemaVersion:z.literal(2), candidates:outcomeBase.shape.candidates.extend({
-  indexed:z.int().nonnegative(), omittedByLimit:z.int().nonnegative(), outOfRange:z.int().nonnegative().optional(),
+  indexed:inputRowCount, omittedByLimit:inputRowCount, outOfRange:inputRowCount.optional(),
 }), failures:z.array(exactFailureSchema).max(1000)});
 export const analysisOutcomeSchema = z.discriminatedUnion("schemaVersion", [outcome1, outcome2]).superRefine((value, context) => {
   if (value.candidates.selected + value.candidates.omittedByLimit + (value.candidates.outOfRange ?? 0) !== value.candidates.indexed) {
