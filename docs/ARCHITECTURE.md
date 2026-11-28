@@ -1,5 +1,19 @@
 # Frame of Mind Architecture
 
+## North star
+
+**Any engine may propose, in any order; Frame of Mind measures on the file and answers in exact time.**
+
+1. A finder proposes moments: a model, a search service or a person, one after
+   another or one instead of another; a recipe says what is worth keeping. No
+   finder is built in as the only one.
+2. The tool measures on the recording itself: frames, the edges of speech, the
+   words on a full-size still.
+3. Every answer is an exact position on the recording's own clock, marked with
+   where it came from (the cut, a measurement, or an engine's word) and how
+   good it is; what the tool could not measure it says so, and never presents
+   an engine's word as a measurement.
+
 The local Studio trust boundaries and abuse cases are maintained in the
 [Local Studio threat model](THREAT_MODEL.md).
 
