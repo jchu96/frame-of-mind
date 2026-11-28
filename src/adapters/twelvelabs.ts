@@ -130,8 +130,6 @@ export class TwelveLabs implements RecordingEngine {
     try { response = await this.request(path,{...init, signal:this.signal}); }
     catch (e) {
       this.signal?.throwIfAborted();
-      if (this.receipts.mutationFixture && creation?.operation === "upload" && retries === 0)
-        return this.json(phase,path,init,creation,1);
       throw fault(phase,(e as Error)?.name === "TimeoutError" ? "request-timeout" : "network");
     }
     if (!response.ok) {
