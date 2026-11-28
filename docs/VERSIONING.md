@@ -8,7 +8,7 @@ versions for durable schemas and prompts.
 | Surface | Current | Change rule |
 |---|---:|---|
 | CLI/package | `0.6.8` | Semantic Versioning |
-| `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
+| `analysis.json` schema | CLI and local Studio: `4` (meeting), `5` (video-only). Hosted Studio: `2`, `3` | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
 | `times.json` sidecar | `2` (default), `3` (speech snapping) | increment for breaking shape/meaning |
 | exact-time test table | `2` | increment for changed conversion semantics |
