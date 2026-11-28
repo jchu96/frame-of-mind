@@ -126,8 +126,8 @@ it.each(["selector", "settings", "neither"])("a merged job without a key reports
     }
     const result = run("node", start, {}, ["--env-file=.env"]);
     expect(result.code).toBe(10);
-    expect(JSON.parse(result.out).error.code).toBe(kind === "neither" || (kind === "settings" && process.platform === "win32")
-      ? "KEY_MISSING" : "KEY_REFUSED");
+    expect(JSON.parse(result.out).error.code).toBe(kind === "settings" && process.platform !== "win32"
+      ? "KEY_REFUSED" : "KEY_MISSING");
     expect(existsSync(join(folder, "out", ".frameofmind-jobs"))).toBe(false);
   } finally { rmSync(settings, {force: true}); }
 });

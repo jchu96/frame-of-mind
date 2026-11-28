@@ -284,6 +284,7 @@ The prompt hides the key and atomically updates `GEMINI_API_KEY` in `./.env`
 with mode 0600. Use `--env-file <path>` to select another dotenv file.
 Non-TTY input is refused. On a clean launch, ordinary commands try the inherited `GEMINI_API_KEY`,
 the operator’s key command, then the working folder’s literal `.env` assignment.
+For one run without the reader, set `FRAME_OF_MIND_KEY_COMMAND='[]'`. Doctor reports the opt-out. A merged launch with no key then returns `KEY_MISSING`.
 A failed reader returns `KEY_REFUSED` with `error.details.reason` set to `key-command` and ends lookup
 (a key the provider refused is `KEY_REFUSED` with no `reason`). Run `frameofmind doctor` for the settings
 path and permission repair. It never executes the command. The account must own the 0600

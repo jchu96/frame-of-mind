@@ -139,14 +139,15 @@ the same JSON array through the inherited `FRAME_OF_MIND_KEY_COMMAND`. The file 
 have mode 0600 in a 0700 tool directory. A linked file is refused. See the
 [setup commands](../README.md) in the README. The CLI reads the file as application settings without expansion.
 Use `frameofmind doctor` to see the source and settings path. It checks the command without running it.
+Set `FRAME_OF_MIND_KEY_COMMAND='[]'` to skip the reader and its settings file for this launch. On a clean launch an ordinary command can then use the folder key. Doctor reports the opt-out in text and as `key.commandDisabledByEnvironment` in JSON.
 Native Windows supports the environment and folder sources. WSL follows Linux.
 
 Node accepts operator-supplied preloads and loaders, including those in
 `NODE_OPTIONS`. With Node’s `--env-file` or `--env-file-if-exists`, or with bare
 Bun, all commands, including job start, use the key in the launch environment.
 Doctor reports its source as unknown and prints no next step when the key is present.
-A configured selector or settings-file command gives `KEY_REFUSED` when the launch
-has no key. With neither, the consumer returns `KEY_MISSING`. No reader runs because
+With no key, the empty array gives `KEY_MISSING`. Any other selector or a configured
+settings-file command gives `KEY_REFUSED`. With neither, the consumer returns `KEY_MISSING`. No reader runs because
 the merged file can set variables it would inherit. Use the installed Node command
 to run a configured reader.
 

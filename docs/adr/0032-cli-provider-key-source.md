@@ -1,6 +1,6 @@
 # ADR 0032 — Identify the local CLI provider key source at launch
 
-Accepted 2026-11-26. Amended 2026-11-28 for launchers that merge a folder file.
+Accepted 2026-11-26. Amended 2026-11-28 for launchers that merge a folder file and for the per-launch opt-out.
 
 ## Invariant
 
@@ -66,8 +66,21 @@ XDG_CONFIG_HOME. Use the inherited selector first, then the settings file’s op
 `keyCommand`. The account must own the 0700 tool directory and its regular 0600 file.
 Open the file without following links and check the open handle before reading.
 
+On every launch, a JSON empty array in `FRAME_OF_MIND_KEY_COMMAND` disables the
+key command and skips the account settings file. A key already in the launch
+environment takes precedence. Without one, an ordinary clean launch continues
+to the folder key. A merged launch reads nothing further and returns `KEY_MISSING`.
+The empty array can only remove a source because it names no executable and
+each launcher keeps its existing key sources. An empty array in the account
+settings file is still invalid.
+
+Doctor prints “Key command switched off by FRAME_OF_MIND_KEY_COMMAND.” even when
+a key is already present. Its JSON includes `key.commandDisabledByEnvironment`
+set to `true` for this opt-out. The source describes the key itself, including
+`unknown` for a present merged key and `none` when the opt-out leaves no key.
+
 On a merged launch, a folder file can set variables that any reader would inherit.
-If the launch lacks a key, the presence of the selector is sufficient to report
+If the launch lacks a key, any selector other than the empty array gives
 `Key command unavailable.` Without a selector, the CLI uses the same home lookup
 on demand to inspect the protected settings file. Bun's home may reflect the
 merged `HOME`. That location is used only for diagnosis. The CLI neither resolves
@@ -86,8 +99,8 @@ A consumer shares one acquisition, including a refusal. Allow 30 seconds and 4,0
 bytes across both pipes. Accept one printable ASCII token after an optional final
 LF or CRLF, with zero exit and empty stderr. Refusal ends selection. On a clean launch doctor reports a
 configured reader as unverified and only inspects its setup. Bare launches and jobs
-never start the reader. Native Windows skips the account file and refuses an explicit
-selector. WSL uses the Linux account path.
+never start the reader. Native Windows skips the account file and accepts only
+the empty array as an explicit selector. WSL uses the Linux account path.
 
 ## Limits
 

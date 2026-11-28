@@ -338,6 +338,8 @@ On a clean launch, ordinary CLI commands select the first available provider key
 | 2 | Key command | Use the launch environment’s `FRAME_OF_MIND_KEY_COMMAND` JSON string array, or the account’s `keyCommand` setting when the variable is absent. |
 | 3 | The working folder’s `.env` | Read the literal assignment when both higher sources are absent. |
 
+Set `FRAME_OF_MIND_KEY_COMMAND='[]'` to skip the key command and its settings file for one launch. `doctor` reports that the variable switched it off.
+
 An empty or invalid assignment stops the lookup. A failed command ends the run without falling back to the folder key. Run `frameofmind doctor` to see the source without displaying the key. Jobs use only the `GEMINI_API_KEY` in the launch environment.
 
 To create a new per-user settings file, substitute the absolute path to your reader. The file holds the command and its literal arguments. The reader writes one key to standard output and leaves standard error empty.

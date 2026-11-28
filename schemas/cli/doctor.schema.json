@@ -80,7 +80,8 @@
           "source": {"enum": ["environment", "command", "dotenv", "none", "unknown"]},
           "path": {"type": "string"},
           "state": {"enum": ["unavailable", "unverified", "verified"]},
-          "lowerSourcesSkipped": {"const": true}
+          "lowerSourcesSkipped": {"const": true},
+          "commandDisabledByEnvironment": {"const": true, "description": "FRAME_OF_MIND_KEY_COMMAND switched off the key command for this launch."}
         }
       },
       "settingsPath": {"type": "string"},
