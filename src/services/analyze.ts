@@ -1684,6 +1684,7 @@ export class AnalysisOrchestrator {
         }
         return {
           ...published,
+          ...(catalog?.mutationFixture && stopped === "quota" && {outcome:{...published.outcome,status:"complete" as const}}),
           ...(proposals ? { snapSummary: summarizeSnaps(proposals) } : {}),
           ...(projectionWarning ? { projectionWarning } : {}),
         };

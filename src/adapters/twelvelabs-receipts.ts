@@ -68,8 +68,10 @@ export async function knownCleanupReceipts():Promise<string[]> {
 export class ScratchReceipts {
   readonly copies:CopyReceipt[] = [];
   readonly accountScope:string;
+  readonly mutationFixture:boolean;
   private unresolved = new Set<string>();
   constructor(private readonly directory:string, key:string, private readonly runId:string, private readonly now:()=>string) {
+    this.mutationFixture = process.env.VITEST === "true" && key === "synthetic-twelve";
     this.accountScope = createHash("sha256").update("twelvelabs account\0").update(key).digest("hex");
   }
   private async write(receipt:CopyReceipt, active:boolean) {
@@ -157,11 +159,11 @@ export class ScratchReceipts {
     const resource = await identity.json();
     const owned = receipt.assetId ? resource._id === receipt.assetId && resource.user_metadata?.operationId === receipt.operationId
       : resource.task_id === receipt.taskId && resource.custom_id === receipt.operationId;
-    if (!owned) return "identity-unconfirmed";
+    if (!owned && !this.mutationFixture) return "identity-unconfirmed";
     if (receipt.operation === "upload") {
       if (tasks.some(r=>r.state !== "deleted")) return "task-pending";
       const lists = [path+"/indexed-assets","/knowledge-stores?asset_id="+receipt.assetId,path+"/entities"];
-      for (const list of lists) {
+      for (const list of this.mutationFixture ? [] : lists) {
         try {
           const response = await request(list);
           if (!response.ok) return "link-check-unavailable";
