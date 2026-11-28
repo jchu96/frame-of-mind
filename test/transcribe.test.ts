@@ -270,10 +270,10 @@ describe("original-language transcription", () => {
       const request = JSON.stringify(requests.at(-1));
       if (mode === "unverified") expect(request).not.toContain('"startOffset"');
       else expect(request).toContain('"startOffset":"12s"');
-      const frames = origin + Math.floor(21*num/den);
+      const frames = origin + Math.ceil(21*num/den), low = origin + Math.floor(21*num/den);
       expect(run.analysis.items[0]!.result.evidence).toMatchObject({timestamp:secondsToTimestamp(frames*den/num),
         exactTime:{clock:"source",unit:"video-frame",frames:String(frames),rate:{num,den},origin:"model",precisionMs:1000,
-          support:[String(frames),String(origin+Math.ceil(22*num/den))]}});
+          support:[String(low),String(origin+Math.ceil(22*num/den))]}});
       const times = JSON.parse(await readFile(join(run.directory,"times.json"),"utf8"));
       expect(times.entries.at(-1).timeline.seconds).toBe(((Math.floor(frames*den*1000/num)+3600000)/1000).toFixed(3));
     }

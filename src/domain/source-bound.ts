@@ -65,13 +65,17 @@ export function humanTime(b: Bound) {
   return [s / 3600n, s / 60n % 60n, s % 60n].map(n => String(n).padStart(2, "0")).join(":");
 }
 
-/** Window offsets are grid indices on the cut. The model supplies whole seconds relative to the sent window. */
+/**
+ * Window offsets are grid indices on the cut. The model supplies whole seconds relative to the sent window.
+ * A stated second becomes the first unit at or after it, so the text computed from the exact value is the
+ * second the model stated at every rate; `support` stays every unit that second touches.
+ */
 export function modelBound(clock: RangeClock, second: number, readStart: bigint, readEnd: bigint | undefined, exclusive = false): Bound {
   const at = (s: number, ceil = false) => clock.sourceIndex(readStart + clock.unitsForSeconds(s, ceil));
   const low = at(second);
   const upper = at(second + 1, true);
   const end = readEnd === undefined ? upper : clock.sourceIndex(readEnd);
-  const index = at(second, exclusive);
+  const index = at(second, true);
   if (low >= end || index >= end) return sourceBound(clock, end);
   return sourceBound(clock, index, {origin:"model", precisionMs:1000, support:[String(low), String(upper < end ? upper : end)]});
 }

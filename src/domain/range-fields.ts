@@ -13,7 +13,7 @@ export const rangeFields = z.strictObject({
     z.strictObject({unit:z.literal("ticks"),fromTick:indexSchema,toTickExclusive:indexSchema.nullable(),tick:rateSchema}),
   ]),
   edgeMoved:z.strictObject({from:z.boolean(),to:z.boolean()}),
-  sourceLengthFrames:indexSchema,sourceLengthSamples:indexSchema,sourceLengthTicks:indexSchema, sourceTiming:z.enum(["unproven","varying"]),
+  sourceLengthFrames:indexSchema,sourceLengthSamples:indexSchema,sourceLengthTicks:indexSchema, sourceTiming:z.enum(["unproven","uneven"]),
   outputMediaClock:z.literal("source"), uploads:z.array(z.strictObject({kind:z.enum(["audio-window","video-cut"]),span:pair,rate:rateSchema})),
   uploadedCutSha256:z.string().regex(/^[a-f0-9]{64}$/),
   coverage:z.strictObject({full:z.boolean(),covered:z.array(pair)}), maxRangeSeconds:z.number().int().positive(),

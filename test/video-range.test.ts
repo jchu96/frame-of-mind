@@ -108,9 +108,10 @@ test("audio-only cut preserves every native PCM sample on a moved 44100 Hz inter
   });
 });
 
-test.each([["pal.mp4", "25f", "51f", "50", "51"], ["ntsc.mp4", "31f", "62f", "60", "62"],
-  ["native.wav", "44100samp", "88201samp", "88200", "88201"]])(
-  "transcribe publishes exact source cues from the verified cut of %s", async (name, from, to, a, b) => {
+// a is the first unit at or after the stated second; low is the first unit that second touches.
+test.each([["pal.mp4", "25f", "51f", "50", "51", "50"], ["ntsc.mp4", "31f", "62f", "61", "62", "60"],
+  ["native.wav", "44100samp", "88201samp", "88200", "88201", "88200"]])(
+  "transcribe publishes exact source cues from the verified cut of %s", async (name, from, to, a, b, low) => {
     const {transcribe} = await import("../src/services/transcribe.js");
     const lines: string[] = [];
     let upload = "";
@@ -122,7 +123,7 @@ test.each([["pal.mp4", "25f", "51f", "50", "51"], ["ntsc.mp4", "31f", "62f", "60
     await expect(stat(upload)).rejects.toMatchObject({code:"ENOENT"});
     const doc = JSON.parse(await readFile(result.paths[2]!, "utf8"));
     const key = name!.endsWith("wav") ? "samples" : "frames";
-    expect(doc.segments[0].exactSpan).toMatchObject({start:{[key]:a, origin:"model", support:[a,b]},
+    expect(doc.segments[0].exactSpan).toMatchObject({start:{[key]:a, origin:"model", support:[low,b]},
       endExclusive:{[key]:b, origin:"cut", precisionMs:0}});
     expect(doc.endFragments).toEqual([{kind:"cue", state:"unknown", exactSpan:doc.segments[0].exactSpan}]);
     expect(lines.filter(line => line.startsWith("Range used:"))).toHaveLength(1);
@@ -176,7 +177,7 @@ test.each([
   expect(item.screenshot).toBe(`moment-01-${unit}-${origin}.png`);
   const times = JSON.parse(await readFile(run.directory+"/times.json", "utf8"));
   expect(times.entries.map((e: {exactTime:{unit:string}}) => e.exactTime.unit)).toEqual([unit,unit,unit]);
-  if (unit === "tick") expect(run.manifest.sourceTiming).toMatch(/^(varying|unproven)$/);
+  if (unit === "tick") expect(run.manifest.sourceTiming).toMatch(/^(uneven|unproven)$/);
   const {containerVideoClock} = await import("../src/services/container-clock.js");
   const offline = await containerVideoClock(await localRecording(file(name!)));
   expect(offline?.sourceRange.unit).toBe("ticks");
