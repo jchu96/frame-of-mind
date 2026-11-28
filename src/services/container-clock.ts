@@ -75,18 +75,32 @@ async function* ebmlElements(file: FileHandle, at: number, end: number): AsyncGe
     at = next;
   }
 }
+async function webmHasVideo(file: FileHandle, tracks: Element) {
+  for await (const entry of ebmlElements(file, tracks.start, tracks.end)) {
+    if (entry.id !== "ae") continue;
+    for await (const field of ebmlElements(file, entry.start, entry.end)) {
+      if (field.id === "83" && field.end - field.start === 1 && (await bytes(file, field.start, 1))[0] === 1) return true;
+    }
+  }
+  return false;
+}
+
 async function webmClock(file: FileHandle, size: number) {
   for await (const segment of ebmlElements(file, 0, size)) {
     if (segment.id !== "18538067") continue;
-    for await (const info of ebmlElements(file, segment.start, segment.end)) {
-      if (info.id !== "1549a966") continue;
-      let scale = 1_000_000; // WebM default TimestampScale, in nanoseconds.
-      for await (const field of ebmlElements(file, info.start, info.end)) {
-        if (field.id !== "2ad7b1") continue;
-        if (field.end - field.start > 8 || field.end === field.start) throw new Error("Invalid WebM timestamp scale.");
-        scale = Number(BigInt("0x" + (await bytes(file, field.start, field.end - field.start)).toString("hex")));
+    let video = false;
+    let scale: number | undefined;
+    for await (const element of ebmlElements(file, segment.start, segment.end)) {
+      if (element.id === "1654ae6b") video = await webmHasVideo(file, element);
+      if (element.id === "1549a966") {
+        scale = 1_000_000; // WebM default TimestampScale, in nanoseconds.
+        for await (const field of ebmlElements(file, element.start, element.end)) {
+          if (field.id !== "2ad7b1") continue;
+          if (field.end - field.start > 8 || field.end === field.start) throw new Error("Invalid WebM timestamp scale.");
+          scale = Number(BigInt("0x" + (await bytes(file, field.start, field.end - field.start)).toString("hex")));
+        }
       }
-      return RangeClock.wholeTicks(rationalRate(scale, 1_000_000_000), undefined, "unproven");
+      if (video && scale !== undefined) return RangeClock.wholeTicks(rationalRate(scale, 1_000_000_000), undefined, "unproven");
     }
   }
 }

@@ -47,7 +47,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
   }
   if (needs === "audio" && !tracks.audio) throw new ContractError("DECODE_FAILED", "The recording has no audio track.");
   if (needs === "video" && !tracks.video) {
-    const native = !ranged && await containerVideoClock(source);
+    const native = !ranged && !tracks.audio && await containerVideoClock(source);
     if (native) {
       options.onSourceResolved?.(native);
       return consume(path, native, Boolean(tracks.audio));
