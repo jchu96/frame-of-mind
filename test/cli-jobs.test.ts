@@ -11,7 +11,7 @@ import { validateCliDocument } from "./helpers/cli-schema.js";
 let root: string;
 let read: string;
 let out: string;
-let activeCase: Promise<void> | undefined;
+let retentionWork: Promise<void> | undefined;
 const model = "gemini-fixture";
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), "cli-job-")));
@@ -30,8 +30,8 @@ async function removeJobFixture(directory: string, work?: Promise<void>) {
   }
 }
 afterEach(() => {
-  const work = activeCase;
-  activeCase = undefined;
+  const work = retentionWork;
+  retentionWork = undefined;
   return removeJobFixture(root, work);
 });
 function provider(generation: Response | ((body: string) => object) = body =>
@@ -253,12 +253,31 @@ it("J03 refuses each missing grant before creating a job", async () => {
   expect(await readdir(out)).toEqual([]);
 });
 
-for (const family of ["analyze", "transcribe"] as const) {
-  for (const retention of ["provider", "run"]) {
-    it.each([false, true])(`J04 ${family} retention=${retention} cancel=%s`, cancel => {
-      activeCase = checkRetention(family, retention, cancel);
-      return activeCase;
-    });
+it("J04 keeps or deletes acquired recordings and windows after success and cancel", ({signal}) => {
+  retentionWork = checkRetentionCases(signal);
+  return retentionWork;
+});
+
+async function checkRetentionCases(signal: AbortSignal) {
+  const finished: {name: string; ms: number}[] = [];
+  let current = "";
+  const report = () => console.error("J04 interrupted", {current, finished: [...finished]});
+  signal.addEventListener("abort", report, {once: true});
+  try {
+    for (const family of ["analyze", "transcribe"] as const) {
+      for (const retention of ["provider", "run"]) {
+        for (const cancel of [false, true]) {
+          current = `${family}-${retention}-${cancel ? "cancel" : "success"}`;
+          const started = performance.now();
+          out = join(root, current);
+          await mkdir(out);
+          await checkRetention(family, retention, cancel);
+          finished.push({name: current, ms: Math.round(performance.now() - started)});
+        }
+      }
+    }
+  } finally {
+    signal.removeEventListener("abort", report);
   }
 }
 
