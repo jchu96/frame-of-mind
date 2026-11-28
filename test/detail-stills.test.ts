@@ -242,7 +242,7 @@ it("budgets 15 MB of encoded stills per request, reserving the midpoint first", 
   expect(result.analysis.items[1]?.result.confidenceNotes).toBeUndefined();
 });
 
-it("removes a screen quote whose cited time is not an attached still, and nothing else", async () => {
+it("still-evidence keeps screen words only when they cite a full-size attached still", async () => {
   const unread = "Screen text was not read from a still.";
   const quote = { verbatimUiText: "Save draft", reporterQuote: "I pressed save." };
   // Stills are at 24 s and at 32, 35 and 38 s. Cite 22 s and 34 s: neither is a still.
@@ -277,19 +277,19 @@ it("removes a screen quote whose cited time is not an attached still, and nothin
     expect(item.result.confidenceNotes).toBe("Clear.");
     expect(item).not.toHaveProperty("screenTextNotFromStill");
   }
-  // No still could be attached: the existing warning applies and the record is not rewritten.
+  // A missing image also leaves screen words unverified.
   const none = await run({ extract: async () => false, reply: () => ({ evidence: { timestamp: "00:00:22", ...quote } }) });
   for (const item of none.analysis.items) {
     expect(item.stillTimes).toEqual([]);
-    expect(item.result.evidence).toMatchObject(quote);
-    expect(item).not.toHaveProperty("screenTextNotFromStill");
-    expect(item.result.confidenceNotes).toBe(warning);
+    expect(item.result.evidence).not.toHaveProperty("verbatimUiText");
+    expect(item.screenTextNotFromStill).toBe(true);
+    expect(item.result.confidenceNotes).toBe(warning + "\n" + unread);
   }
-  // A record with no screen quote, or a rejected one, is left alone.
+  // Rejected records follow the same evidence rule.
   const plain = await run({ reply: ({ start }) => start === 12 ? {} : { accepted: false, evidence: { timestamp: "00:00:34", ...quote } } });
   expect(plain.analysis.items[0]).not.toHaveProperty("screenTextNotFromStill");
-  expect(plain.analysis.items[1]!.result.evidence).toMatchObject(quote);
-  expect(plain.analysis.items[1]).not.toHaveProperty("screenTextNotFromStill");
+  expect(plain.analysis.items[1]!.result.evidence).not.toHaveProperty("verbatimUiText");
+  expect(plain.analysis.items[1]!.screenTextNotFromStill).toBe(true);
 });
 
 it("keeps the note within its limit when a removed quote meets a full notes field", async () => {

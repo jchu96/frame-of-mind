@@ -1,3 +1,6 @@
+import type { EnginePlan, EngineItems } from "./engine-plan.js";
+import type { Actor, Candidate } from "./candidates.js";
+import type { ProposalEdges, ResolvedEdges } from "./proposal-edges.js";
 import type { Bound, ExactSpan } from "./source-bound.js";
 import type { RangeFields } from "./range-fields.js";
 import type { TokenUsage } from "./token-usage.js";
@@ -49,6 +52,7 @@ export interface RecipeCharter {
 }
 
 export interface AnalysisRecipe {
+  engines?: {proposer?:string; grader?:string};
   id: string;
   label: string;
   description: string;
@@ -78,6 +82,7 @@ export interface MediaSource {
 }
 
 export interface IndexedMoment {
+  proposalEdges?: ProposalEdges;
   exactSpan?: ExactSpan;
   start: string;
   end: string;
@@ -121,6 +126,12 @@ export interface DetailStill {
 }
 
 export interface AnalysisItem {
+  candidateId?: string;
+  proposedBy?: Actor;
+  gradedBy?: Actor;
+  proposal?: Candidate;
+  proposalMembers?: Candidate[];
+  resolvedEdges?: ResolvedEdges;
   exactStillTimes?: Bound[];
   screenshotExactTime?: Bound;
   stillTimes?: string[];
@@ -204,6 +215,8 @@ interface RunManifestBase extends RangeFields {
   model: string;
   thinkingLevel?: ThinkingLevel;
   recordingSha256: string;
+  enginePlan?: EnginePlan;
+  engineItems?: EngineItems;
   analysisSha256: string;
   recordingMimeType: string;
   mediaSource: "bluedot-mcp" | "signed-url" | "local-file";

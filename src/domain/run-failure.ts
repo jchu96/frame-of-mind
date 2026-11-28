@@ -1,3 +1,4 @@
+import { engineItemsSchema, enginePlanSchema } from "./engine-plan.js";
 import { rangeFields } from "./range-fields.js";
 import { z } from "zod";
 import { runIdSchema } from "./schemas.js";
@@ -48,6 +49,7 @@ const failureErrorSchema = z.strictObject({
 
 export const runFailureManifestSchema = z.strictObject({
   ...rangeFields.shape,
+  enginePlan:enginePlanSchema.optional(), engineItems:engineItemsSchema.optional(),
   schemaVersion: z.literal(1),
   toolVersion: z.string().min(1).max(120),
   runId: runIdSchema,

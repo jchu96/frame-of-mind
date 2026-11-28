@@ -1,3 +1,5 @@
+import { actorSchema, candidateSchema, type Actor, type Candidate } from "./candidates.js";
+import { proposalEdgesSchema, type ProposalEdges } from "./proposal-edges.js";
 import { exactSpanSchema, humanTime } from "./source-bound.js";
 import { z } from "zod";
 import { runIdSchema, timestampSchema } from "./schemas.js";
@@ -26,7 +28,9 @@ const failureFields = {
 } as const;
 const legacyFailure = z.strictObject(failureFields).refine(v => timestampToSeconds(v.end) > timestampToSeconds(v.start),
   {message:"candidate failure end timestamp must be after start",path:["end"]});
-const exactFailure = z.strictObject({...failureFields,exactSpan:exactSpanSchema}).refine(
+const exactFailure = z.strictObject({...failureFields,exactSpan:exactSpanSchema,
+  candidateId:z.string().min(1).optional(), proposedBy:actorSchema.optional(), gradedBy:actorSchema.nullable().optional(),
+  proposal:candidateSchema.optional(), proposalEdges:proposalEdgesSchema.optional()}).refine(
   v => v.start === humanTime(v.exactSpan.start) && v.end === humanTime(v.exactSpan.endExclusive),
   {message:"Failure labels must match their exact bounds.", path:["exactSpan"]});
 function checkIssues(value: z.infer<typeof legacyFailure>, context: z.RefinementCtx) {
@@ -55,7 +59,12 @@ const outcomeBase = z.strictObject({
   }),
 });
 const outcome1 = outcomeBase.extend({schemaVersion:z.literal(1), failures:z.array(candidateFailureSchema).max(1000)});
-const outcome2 = outcomeBase.extend({schemaVersion:z.literal(2), failures:z.array(exactFailureSchema).max(1000)});
+// A file can supply more rows than the 1,000 grading slots. These three
+// counters describe its input array, whose maximum length in JS is 2^32 - 1.
+const inputRowCount = z.int().min(0).max(2 ** 32 - 1);
+const outcome2 = outcomeBase.extend({schemaVersion:z.literal(2), candidates:outcomeBase.shape.candidates.extend({
+  indexed:inputRowCount, omittedByLimit:inputRowCount, outOfRange:inputRowCount.optional(),
+}), failures:z.array(exactFailureSchema).max(1000)});
 export const analysisOutcomeSchema = z.discriminatedUnion("schemaVersion", [outcome1, outcome2]).superRefine((value, context) => {
   if (value.candidates.selected + value.candidates.omittedByLimit + (value.candidates.outOfRange ?? 0) !== value.candidates.indexed) {
     context.addIssue({
@@ -122,7 +131,7 @@ export const analysisOutcomeSchema = z.discriminatedUnion("schemaVersion", [outc
 
 export type CandidateFailureCode = z.infer<typeof candidateFailureCodeSchema>;
 export type CandidateValidationIssue = z.infer<typeof candidateValidationIssueSchema>;
-export type CandidateFailure = z.infer<typeof candidateFailureSchema> & {exactSpan?: z.infer<typeof exactSpanSchema>};
+export type CandidateFailure = z.infer<typeof candidateFailureSchema> & {exactSpan?: z.infer<typeof exactSpanSchema>; candidateId?:string; proposedBy?:Actor; gradedBy?:Actor|null; proposal?:Candidate; proposalEdges?:ProposalEdges};
 export type AnalysisOutcome = z.infer<typeof analysisOutcomeSchema>;
 
 interface CandidateAnalysisErrorInput {

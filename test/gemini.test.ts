@@ -1618,3 +1618,30 @@ describe("polling", () => {
     });
   });
 });
+
+it("released-deep-index-request preserves the first pass under --depth deep", async () => {
+  const {buildAnalyzeOptions} = await import("../src/cli-main.js");
+  const {geminiEnginePorts} = await import("../src/adapters/gemini-candidates.js");
+  const {RangeClock} = await import("../src/domain/range-clock.js");
+  const {builtInRecipe} = await import("../src/recipes/index.js");
+  const requests: string[] = [];
+  const analyzer = new GeminiVideoAnalyzer("fixture", "gemini-test", {generateContent: async request => {
+    requests.push(JSON.stringify(request));
+    return {text:JSON.stringify(validVideoOnlyIndexResponse)};
+  }});
+  // Released deep request, before the proposer/grade split.
+  const base = builtInRecipe("requirements");
+  const extra = [
+    "Deep-understanding profile:",
+    "First identify direct audio and visual observations, then identify the intent, constraint, alternative, exception, consequence, or uncertainty they support.",
+    "Include adjacent moments that materially clarify or contradict the apparent request; do not isolate a quote from its resolution.",
+    "Prefer precise timestamps and small coherent windows. Keep observation distinct from interpretation and never promote a plausible implication to a stated fact.",
+  ].join(" ");
+  await analyzer.index(activeFile,undefined,{...base,indexInstruction:base.indexInstruction+"\n\n"+extra},undefined,1);
+  const options = await buildAnalyzeOptions(undefined,{source:"none",granolaTransport:"mcp",video:"package.json",
+    recipe:"requirements",depth:"deep",maxMoments:"10",output:"out",screenshots:false},"fixture");
+  const clock = RangeClock.resolve({unit:"frames",rate:{num:25,den:1},length:100n},{});
+  await geminiEnginePorts(analyzer).propose(clock,"a".repeat(64),activeFile,undefined,options.recipe,options.focus,options.indexFps);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toBe(requests[0]);
+});

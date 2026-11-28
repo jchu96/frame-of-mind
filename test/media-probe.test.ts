@@ -31,7 +31,7 @@ describe("frame rate", () => {
         env: { PATH: [root, process.env.PATH].join(delimiter), HOME: root, GEMINI_API_KEY: "synthetic-key" },
       });
       expect(result.status, result.stderr).toBe(1);
-      expect(result.stderr.trimEnd()).toBe("retention: provider\nframeofmind: Rate must contain positive safe whole numbers.");
+      expect(result.stderr.trimEnd()).toBe("Gemini proposes on selected video and grades windows, stills and scoped context.\nretention: provider\nframeofmind: Rate must contain positive safe whole numbers.");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

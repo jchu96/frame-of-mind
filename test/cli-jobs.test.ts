@@ -111,13 +111,14 @@ it("job options cannot supply credentials and inspection needs none", async () =
   expect(refuseRead).not.toHaveBeenCalled();
 });
 
-it("sends base request bytes without a thinking level and medium on every generation when selected", async () => {
+it("released-second-pass-request matches v0.6.8 with and without a surface and preserves thinking configuration", async () => {
   const bodies: string[] = [];
+  let surface: string | undefined;
   const fake = provider(body => {
     bodies.push(body);
     const schema = JSON.parse(body).generationConfig.responseJsonSchema;
     if (schema.properties.matchNotes) return {matchNotes: "fixture", moments: [
-      {start: "00:00:00", end: "00:00:01", kind: "change", summary: "Fixture change", importance: "low"},
+      {start: "00:00:00", end: "00:00:01", kind: "change", summary: "Fixture change", importance: "low", ...(surface && {surface})},
     ]};
     return {accepted: true, kind: "change", title: "Fixture", summary: "Fixture change", evidence: {timestamp: "00:00:00"}};
   });
@@ -131,7 +132,7 @@ it("sends base request bytes without a thinking level and medium on every genera
 
   expect(await run(startArgs("analyze"))).not.toHaveProperty("thinkingLevel");
   const base = bodies.splice(0);
-  // Raw SDK HTTP bodies captured for index and detail at d43dd0c.
+  // Complete HTTP body digests from this fixture at tag v0.6.8.
   expect(base.map(body => createHash("sha256").update(body).digest("hex"))).toEqual([
     "8548557fde88664b225d4576756704ff87181361408721120776f5d2fcaa2890",
     "b8dfdafdb2dbb2bf880ddffd65125375d9753c769db44039d6c009363a28945c",
@@ -139,6 +140,13 @@ it("sends base request bytes without a thinking level and medium on every genera
   for (const body of base) expect(JSON.parse(body).generationConfig).not.toHaveProperty("thinkingConfig");
 
   const args = startArgs("analyze");
+  surface = "Review & details";
+  await run(startArgs("analyze"));
+  const releasedSurfaceSlot = " on an unknown surface.";
+  expect(base[1]).toContain(releasedSurfaceSlot);
+  expect(bodies.splice(0)).toEqual([base[0], base[1]!.replace(releasedSurfaceSlot, " on Review &amp; details.")]);
+  surface = undefined;
+
   const priorCalls = fake.calls.length;
   const invalid = await call("analyze", "start", [...args, "--thinking-level", "xhigh"]);
   expect([invalid.doc.error.code, invalid.exit, fake.calls.length]).toEqual(["USAGE", 2, priorCalls]);

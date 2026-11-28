@@ -1,3 +1,4 @@
+import { enginePlan } from "../domain/engine-plan.js";
 import { providerFailureCode } from "../adapters/gemini-error-class.js";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { closeSync, constants, existsSync, fstatSync, readdirSync, renameSync, writeFileSync, watch } from "node:fs";
@@ -99,7 +100,8 @@ export async function runJob(family: Family, op: JobOperation, arg: string, flag
     if (!Number.isFinite(seconds) || seconds <= 0) throw new ContractError("INVALID_INPUT", "Expected positive recording duration.");
     if (Math.ceil(seconds) > grant.maxMediaSeconds) throw new ContractError("MEDIA_LIMIT", "Recording exceeds the duration grant.");
     if (fstatSync(file, {bigint: true}).ctimeNs !== before.ctimeNs) throw new ContractError("CONFLICT", "Recording changed.");
-    if (op === "dry-run") return {file: selection, bytes, seconds, model, retention: grant.retention};
+    if (op === "dry-run") return {file: selection, bytes, seconds, model, retention: grant.retention,
+      enginePlan:enginePlan({file:false,model,retention:grant.retention,available:true,preview:true})};
     const digest = await digestJobMedia(file, bytes);
     if (fstatSync(file, {bigint: true}).ctimeNs !== before.ctimeNs) throw new ContractError("CONFLICT", "Recording changed.");
     const normalized = {family, file: selection, model, recipe: flags.recipe, snap: flags.snap, transcriptJson: !!flags.transcriptJson,
