@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { validateCliDocument } from "./helpers/cli-schema.js";
 import { GeminiVideoAnalyzer } from "../src/adapters/gemini.js";
 import { AnalysisOrchestrator, type AnalysisVideoAnalyzer } from "../src/services/analyze.js";
 import { fixtureSource } from "./helpers/source-clock.js";
@@ -67,7 +68,7 @@ async function fixture() {
   const run = (overrides:Record<string,unknown>={}) => new AnalysisOrchestrator(deps).analyze({...options,...overrides},{
     progress:{report:event=>{if(event.message) events.push(event.message)}},
   });
-  return {run,account,events,geminiRequests,candidatesFile,root,video};
+  return {run,account,events,geminiRequests,candidatesFile,root,video,deps};
 }
 
 it.each([
@@ -253,4 +254,87 @@ it("maps decimal provider seconds onto exact source-frame boundaries",async()=>{
   f.account.segments[0]!.end_time = 2.32;
   const result = await f.run();
   expect(result.analysis.items[0]?.proposal).toMatchObject({start:28,end:58});
+});
+
+async function pendingAsset(f:Awaited<ReturnType<typeof fixture>>) {
+  f.account.entityLinked = true;
+  const seeded = await f.run();
+  const receipt = seeded.manifest.library!.find(row=>row.operation==="upload" && row.state==="pending")!;
+  f.account.entityLinked = false;
+  return join(f.root,"receipts",receipt.receiptId+".json");
+}
+
+it("announces the whole cleanup count on stderr before contact under --json and reports zero material",async()=>{
+  const f = await fixture();
+  await pendingAsset(f);
+  await pendingAsset(f);
+  const {program} = await import("../src/cli-main.js");
+  const service = await import("../src/services/analyze.js");
+  const receipts = await import("../src/adapters/twelvelabs-receipts.js");
+  f.events.length = 0;
+  vi.stubEnv("GEMINI_API_KEY","synthetic-gemini-key");
+  vi.stubEnv("TWELVELABS_API_KEY","synthetic-twelve");
+  const stdout = vi.spyOn(process.stdout,"write").mockImplementation(()=>true);
+  vi.spyOn(process.stderr,"write").mockImplementation(chunk=>{f.events.push(String(chunk)); return true;});
+  vi.spyOn(receipts,"knownCleanupReceipts").mockResolvedValue(["fixture-receipt"]);
+  vi.spyOn(service,"analyzeMeeting").mockImplementation((options,execution)=>new AnalysisOrchestrator(f.deps).analyze(options,execution));
+  try {
+    await program.parseAsync(["analyze","--json","--source","none","--video",f.video,"--candidates",f.candidatesFile,
+      "--grader","gemini","--output",join(f.root,"cli"),"--no-calibrate","--no-derived-transcript","--no-screenshots"],{from:"user"});
+    const wire = f.events.indexOf("wire:twelvelabs");
+    expect(wire).toBeGreaterThan(-1);
+    expect(f.events.slice(0,wire).join(" ")).toContain("Retrying deletion of 2 Twelve Labs scratch copies. No material is sent.");
+    const reply = validateCliDocument("analyze",stdout.mock.calls.map(([chunk])=>chunk).join(""));
+    const cleanup = {role:"cleanup",engine:"twelvelabs",model:null,material:"none",bytes:0,copies:2,
+      sentExtent:null,inferenceWindow:null,state:"sent",result:"complete"};
+    expect(reply.engineCalls).toContainEqual(expect.objectContaining(cleanup));
+    const manifest = JSON.parse(await readFile(join(reply.runFolder,"manifest.json"),"utf8"));
+    expect(manifest.engineCalls).toEqual(reply.engineCalls);
+  } finally { vi.restoreAllMocks(); vi.unstubAllEnvs(); }
+});
+
+it.each(["refusal","unreadable"])("continues after cleanup %s and preserves its pending receipt",async mode=>{
+  const f = await fixture();
+  const path = await pendingAsset(f);
+  const before = await readFile(path,"utf8");
+  vi.stubGlobal("fetch", async()=> mode==="refusal" ? new Response(null,{status:403}) : new Response("{"));
+  const run = await f.run({grader:"gemini",candidatesFile:f.candidatesFile});
+  expect(run.outcome.status).toBe("complete");
+  expect(await readFile(path,"utf8")).toBe(before);
+  expect(run.manifest.engineCalls).toContainEqual(expect.objectContaining({role:"cleanup",engine:"twelvelabs",
+    material:"none",bytes:0,copies:1,result:"failed"}));
+});
+
+it("bounds the entire cleanup batch even if a request never answers",async()=>{
+  const f = await fixture();
+  const path = await pendingAsset(f);
+  await pendingAsset(f);
+  const before = await readFile(path,"utf8");
+  const contacted = Promise.withResolvers<void>();
+  const late = Promise.withResolvers<Response>();
+  let signal:AbortSignal | null | undefined;
+  let requests = 0;
+  vi.stubGlobal("fetch", (_url:unknown,init?:RequestInit)=>{
+    requests++;
+    signal = init?.signal;
+    contacted.resolve();
+    return late.promise;
+  });
+  vi.useFakeTimers({toFake:["setTimeout","clearTimeout"]});
+  const run = f.run({grader:"gemini",candidatesFile:f.candidatesFile});
+  try {
+    await contacted.promise;
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(signal?.aborted).toBe(true);
+    const result = await run;
+    expect(result.outcome.status).toBe("complete");
+    expect(result.manifest.engineCalls).toContainEqual(expect.objectContaining({role:"cleanup",material:"none",
+      bytes:0,copies:2,state:"unknown",result:"failed",reason:"retry-timeout"}));
+    expect(requests).toBe(1);
+    expect(await readFile(path,"utf8")).toBe(before);
+  } finally {
+    late.resolve(new Response(null,{status:403}));
+    vi.useRealTimers();
+    await run;
+  }
 });
