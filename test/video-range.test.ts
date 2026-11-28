@@ -148,3 +148,33 @@ test("whole silent video keeps the native ticks of pictures at 0, 40 and 120 ms;
     });
   }
 });
+
+test.each([
+  ["varying.mp4", "tick", "ticks", "160"],
+  ["pal.mp4", "video-frame", "frames", "25"],
+])("whole analysis publishes the native clock of %s through its real still and reports", async (name, unit, key, end) => {
+  const {AnalysisOrchestrator} = await import("../src/services/analyze.js");
+  const {builtInRecipe} = await import("../src/recipes/index.js");
+  const analyzer = {
+    model:"gemini-test", upload:async () => ({name:"files/fixture"}), delete:async () => {},
+    index:async () => ({matchNotes:"fixture", moments:[{start:"00:00:00",end:"00:00:01",summary:"fixture",kind:"test",importance:"high" as const}]}),
+    interrogate:async () => ({accepted:true,title:"Fixture",summary:"fixture",kind:"test",evidence:{timestamp:"00:00:00"}}),
+  };
+  const service = new AnalysisOrchestrator({createAnalyzer:() => analyzer,createContextSource() { throw Error("Unexpected context."); }});
+  const run = await service.analyze({video:file(name!),outputRoot:file(name+"-analysis"),contextMode:"none",apiKey:"fixture",
+    recipe:builtInRecipe("decisions"),customRecipe:false,recipeSha256:"a".repeat(64),recipeRevision:"fixture",maxIncidents:3,
+    screenshots:true,calibrate:false,keepUpload:false,derivedTranscript:false});
+  const item = run.analysis.items[0]!;
+  const initial = {unit, [key!]:"0"};
+  expect(item.candidate.exactSpan).toMatchObject({start:initial, endExclusive:{unit,[key!]:end}});
+  expect(item.result.evidence?.exactTime).toMatchObject(initial);
+  expect(item.exactStillTimes).toMatchObject([{...initial,origin:"cut"}]);
+  expect(item.screenshotExactTime).toMatchObject({...initial,origin:"cut"});
+  expect(item.screenshot).toBe(`moment-01-${unit}-0.png`);
+  const times = JSON.parse(await readFile(run.directory+"/times.json", "utf8"));
+  expect(times.entries.map((e: {exactTime:{unit:string}}) => e.exactTime.unit)).toEqual([unit,unit,unit]);
+  if (unit === "tick") expect(run.manifest.sourceTiming).toMatch(/^(varying|unproven)$/);
+  const {containerVideoClock} = await import("../src/services/container-clock.js");
+  const offline = await containerVideoClock(await localRecording(file(name!)));
+  expect(offline?.sourceRange.unit).toBe("ticks");
+});

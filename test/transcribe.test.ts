@@ -232,6 +232,32 @@ describe("original-language transcription", () => {
     return { analyzer, requests };
   }
 
+  it.each(["absolute","relative","unverified"] as const)("measures a detail window on the %s clock before mapping its evidence to source", async mode => {
+    for (const [num, den, origin] of [[25,1,0],[25,1,31],[30000,1001,0],[30000,1001,31]] as const) {
+      const f = await fixture(90);
+      const candidate = {start:"00:00:20", end:"00:00:24", kind:"test", summary:"fixture", importance:"low"};
+      const {analyzer, requests} = capture({matchNotes:"fixture", moments:[candidate]},
+        {accepted:true,kind:"test",title:"Fixture",summary:"fixture",evidence:{timestamp:mode === "relative" ? "00:00:09" : "00:00:21"}});
+      const orchestrator = new AnalysisOrchestrator({...f.deps,withSourceRecording:fixtureSource(() => 90,{num,den}),
+        createContextSource:vi.fn(),createAnalyzer:() => analyzer,extractScreenshot:async () => false,
+        calibrateClipClock: async () => ({model:"gemini-test",result:mode,checkedAt:"2026-01-01T00:00:00Z",
+          evidence:{flashFileSeconds:27,clipStartSeconds:20,reportedSeconds:mode === "relative" ? 7 : 27}})});
+      const run = await orchestrator.analyze({contextMode:"none",video:f.input,outputRoot:join(f.root,"runs"),apiKey:"stand-in",
+        from:origin+"f",to:String(origin+Math.ceil(40*num/den))+"f", timelineOffset:"3600",
+        recipe:{id:"requirements",label:"fixture",description:"fixture",indexInstruction:"fixture",interrogationInstruction:"fixture"},
+        customRecipe:false,recipeSha256:"a".repeat(64),recipeRevision:"fixture",maxIncidents:1,screenshots:false,derivedTranscript:false});
+      const request = JSON.stringify(requests.at(-1));
+      if (mode === "unverified") expect(request).not.toContain('"startOffset"');
+      else expect(request).toContain('"startOffset":"12s"');
+      const frames = origin + Math.floor(21*num/den);
+      expect(run.analysis.items[0]!.result.evidence).toMatchObject({timestamp:secondsToTimestamp(frames*den/num),
+        exactTime:{clock:"source",unit:"video-frame",frames:String(frames),rate:{num,den},origin:"model",precisionMs:1000,
+          support:[String(frames),String(origin+Math.ceil(22*num/den))]}});
+      const times = JSON.parse(await readFile(join(run.directory,"times.json"),"utf8"));
+      expect(times.entries.at(-1).timeline.seconds).toBe(((Math.floor(frames*den*1000/num)+3600000)/1000).toFixed(3));
+    }
+  });
+
   it.each([undefined, "fr-ca"])("captures both standalone windows and exported provenance for hint %s", async transcriptLanguage => {
     const f = await fixture(900);
     const { analyzer, requests } = capture(...windows);

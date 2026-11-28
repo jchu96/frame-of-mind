@@ -20,7 +20,7 @@ import type { DerivedTranscriptionSegment } from "../domain/types.js";
 import { sha256File } from "../lib/files.js";
 import { markQuietLines, measureTrack } from "./transcript-coverage.js";
 import { decodeSpeechEnvelope, extractAudioTrack, planTranscriptionWindows, probeDurationSeconds } from "./audio.js";
-import { mergeTranscriptionChunks, offsetTranscriptionSegments, TranscriptWindowTimeError } from "./transcript.js";
+import { windowOnGrid, mergeTranscriptionChunks, offsetTranscriptionSegments, TranscriptWindowTimeError } from "./transcript.js";
 import { TRANSCRIPTION_OVERLAP_SECONDS, TRANSCRIPTION_WINDOW_SECONDS } from "./transcription-policy.js";
 import { assertTranscriptTarget, renderSpeakers, renderSrt, renderTranscriptJson, writePrivateAtomic } from "./transcript-render.js";
 
@@ -136,17 +136,14 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
     const analyzer = deps.createAnalyzer(apiKey!, model);
     deps.stdout(`model: ${model}; duration: ${Math.round(duration)} s; windows: ${windows.length}; retention: ${retention}; upload limit: 2 GB`);
     const temp = await createScratch("transcribe", job?.scratchRoot);
-    const chunks: Array<{ segments: DerivedTranscriptionSegment[]; nominalStartSeconds: number }> = [];
+    const chunks: Array<{ segments: DerivedTranscriptionSegment[]; nominalStartSeconds: number; nominalSourceIndex: bigint }> = [];
     let adjustedCues = 0;
     const exactWindowStarts: ReturnType<typeof sourceBound>[] = [];
     try {
       for (const [index, window] of windows.entries()) {
         await job?.authorize();
         canceled();
-        const from = clock.unitsForSeconds(window.startSeconds);
-        const nominal = clock.unitsForSeconds(window.nominalStartSeconds);
-        const last = index === windows.length - 1;
-        const end = last && clock.cutLength !== undefined ? clock.cutLength : clock.unitsForSeconds(Math.ceil(window.startSeconds + window.durationSeconds), true);
+        const {start:from, nominal, end} = windowOnGrid(clock, window, index === windows.length - 1);
         const extractionStart = clock.elapsed(from), extractionDuration = clock.elapsed(end - from);
         exactWindowStarts.push(sourceBound(clock, clock.sourceIndex(nominal)));
         const pcm = isRanged(options);
@@ -177,7 +174,7 @@ export async function transcribe(options: TranscribeOptions, injected: Partial<T
                 if (b <= a && line.text.trim()) adjustedCues++;
                 return [{...line, exactSpan}];
               });
-              chunks.push({segments: offsetTranscriptionSegments(segments, window.startSeconds), nominalStartSeconds: window.nominalStartSeconds});
+              chunks.push({segments: offsetTranscriptionSegments(segments, window.startSeconds), nominalStartSeconds: window.nominalStartSeconds, nominalSourceIndex: clock.sourceIndex(nominal)});
               receipt.cover(clock.sourceIndex(nominal), clock.sourceIndex(end));
               deps.stdout(`window ${index + 1}/${windows.length}: ${segments.length} segment(s)`);
               break;

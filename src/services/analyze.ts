@@ -72,6 +72,7 @@ import {
 } from "../lib/files.js";
 import {
   formatDerivedTranscript,
+  windowOnGrid,
   mergeTranscriptionChunks,
   nearbyTranscript,
   transcriptOffsetVerified,
@@ -302,7 +303,7 @@ export interface AnalysisVideoAnalyzer {
     stills?: readonly DetailStill[],
     rangeSeconds?: number,
   ): Promise<AnalysisDetail>;
-  transcribe?(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number): Promise<DerivedTranscriptionSegment[]>;
+  transcribe?(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number, ranged?: boolean): Promise<DerivedTranscriptionSegment[]>;
   delete(file: GeminiFile): Promise<void>;
   measuredUsageByPass?(): TokenUsage | undefined;
   /**
@@ -563,6 +564,7 @@ export class AnalysisOrchestrator {
         const transcribed: Array<{
           segments: DerivedTranscriptionSegment[];
           nominalStartSeconds: number;
+          nominalSourceIndex: bigint;
         }> = [];
         let transcriptionFailed = false;
         for (const [windowNumber, window] of windows.entries()) {
@@ -579,11 +581,14 @@ export class AnalysisOrchestrator {
               message: `Transcribing audio window ${windowNumber + 1}/${windows.length}…`,
             });
           }
-          const audioDuration = duration === undefined ? undefined : window.durationSeconds;
-          const audioPath = join(temp, `derived-audio-${windowNumber + 1}.aac`);
+          const grid = windowOnGrid(sourceClock, window, windowNumber === windows.length - 1);
+          const audioStart = ranged ? sourceClock.elapsed(grid.start) : window.startSeconds;
+          const audioDuration = duration === undefined ? undefined : ranged ? sourceClock.elapsed(grid.end - grid.start) : window.durationSeconds;
+          const audioPath = join(temp, `derived-audio-${windowNumber + 1}.${ranged ? "wav" : "aac"}`);
           if (!(await this.extractAudio(localVideo, audioPath, {
             signal: execution.signal,
-            ...(window.startSeconds ? { startSeconds: window.startSeconds } : {}),
+            ...(ranged && {pcm:true}),
+            ...(audioStart ? { startSeconds: audioStart } : {}),
             ...(audioDuration === undefined ? {} : { durationSeconds: audioDuration }),
           }))) {
             await reportWarning(progress, {
@@ -620,16 +625,15 @@ export class AnalysisOrchestrator {
                 }, async (span) => {
                   const usageBefore = usageCountsOf(analyzer);
                   try {
-                    preparing = undefined;
-                    audioRemote = await analyzer.upload(audioPath, "audio/aac");
-                    if (audioDuration !== undefined) {
-                      const a = sourceClock.sourceIndex(sourceClock.unitsForSeconds(window.startSeconds));
-                      const b = windowNumber === windows.length - 1 && sourceClock.lengthKnown ? sourceClock.to :
-                        sourceClock.sourceIndex(sourceClock.unitsForSeconds(Math.ceil(window.startSeconds + audioDuration), true));
-                      receipt.uploads.push({kind:"audio-window",span:[String(a),String(b)],rate:sourceClock.grid.rate});
+                    if (ranged && (await stat(audioPath)).size > MAX_RECORDING_BYTES) {
+                      throw new ContractError("MEDIA_LIMIT", "Audio window exceeds the upload limit.");
                     }
+                    preparing = undefined;
+                    audioRemote = await analyzer.upload(audioPath, ranged ? "audio/wav" : "audio/aac");
+                    if (audioDuration !== undefined) receipt.uploads.push({kind:"audio-window",
+                      span:[String(sourceClock.sourceIndex(grid.start)),String(sourceClock.sourceIndex(grid.end))], rate:sourceClock.grid.rate});
                     assertNotCanceled(execution.signal);
-                    return await analyzer.transcribe!(audioRemote, requestedLanguage, audioDuration);
+                    return await analyzer.transcribe!(audioRemote, requestedLanguage, audioDuration, ...(ranged ? [true] as const : []));
                   } finally {
                     span.setAttributes(
                       usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)),
@@ -637,7 +641,14 @@ export class AnalysisOrchestrator {
                   }
                 });
                 transcribed.push({
-                  segments: offsetTranscriptionSegments(segments, window.startSeconds, audioDuration),
+                  segments: offsetTranscriptionSegments(segments, 0, audioDuration).flatMap(segment => {
+                    const start = timestampToSeconds(segment.start);
+                    const end = timestampToSeconds(segment.end);
+                    const exactSpan = modelSpan(sourceClock,start, Math.max(end,start+1), grid.start,
+                      audioDuration === undefined ? sourceClock.cutLength : grid.end);
+                    return exactSpan ? offsetTranscriptionSegments([{...segment, exactSpan}], window.startSeconds) : [];
+                  }),
+                  nominalSourceIndex:sourceClock.sourceIndex(grid.nominal),
                   nominalStartSeconds: window.nominalStartSeconds,
                 });
                 break;
@@ -698,7 +709,7 @@ export class AnalysisOrchestrator {
               origin: "gemini-audio",
               model: analyzer.model,
               sha256: sha256Text(marked.segments.map(line => {
-                const span = modelSpan(sourceClock,timestampToSeconds(line.start),timestampToSeconds(line.end));
+                const span = line.exactSpan;
                 return span ? `[${humanTime(span.start)} ${JSON.stringify(span)}] ${line.speaker}: ${line.text}` : "";
               }).join("\n")),
               ...(requestedLanguage && { requestedLanguage }),

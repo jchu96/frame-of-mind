@@ -171,7 +171,7 @@ it("keeps an explicit decline and the full warning on no-picture, decode failure
   for (const fault of ["audio only", "bad video", "past end"]) {
     const result = await run({ moments: [moments[0]!], repair: true, audioOnly: fault === "audio only",
       duration: fault === "past end" ? 24 : 50,
-      extract: fault === "past end" ? async () => { throw new Error("sought at EOF"); } : extractScreenshot,
+      extract: fault === "past end" ? async (_video, time) => { expect(timestampToSeconds(time)).toBeLessThan(24); return false; } : extractScreenshot,
       reply: () => ({ summary: "A dialog opened. Screen words were present. Screen text was not read.", confidenceNotes: "x".repeat(10_000) }),
     });
     expect(result.requests.map(req => req.repair)).toEqual([false, true]);
