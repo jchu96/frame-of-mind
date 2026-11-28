@@ -1,4 +1,4 @@
-# CLI output notes (v0.6.2 to v0.6.7)
+# CLI output notes (v0.6.2 to v0.6.8)
 
 Load this reference before reading `transcribe` or `analyze` output, or when a
 run stops with a code you do not recognise. Everything here is optional on
@@ -23,7 +23,7 @@ contract version 1 unless it says otherwise. `CHANGELOG.md` holds the full text.
   command carries `error.details.reason: "key-command"`. A key the provider
   refused carries no `reason`. Code and exit status (10) are the same.
 - **Source builds.** A build that is not a release file prints its version with
-  `+source`, for example `0.6.7+source`, in `--version`, `doctor`, the manifest
+  `+source`, for example `0.6.8+source`, in `--version`, `doctor`, the manifest
   `toolVersion` and the local MCP server. A linked checkout runs `dist/`:
   rebuild after every pull, or it runs old code under the new number.
 

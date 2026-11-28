@@ -89,7 +89,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
       const varying = tracks.video.r_frame_rate && tracks.video.avg_frame_rate && tracks.video.r_frame_rate !== tracks.video.avg_frame_rate;
       const end = Number.isSafeInteger(length) && length! > 0 ? BigInt(length!) : undefined;
       const native = end === undefined && !frameTicks.length ? await containerVideoClock(source) : undefined;
-      clock = native ?? RangeClock.wholeTicks(tick, end, varying ? "varying" : "unproven", frameTicks);
+      clock = native ?? RangeClock.wholeTicks(tick, end, varying ? "uneven" : "unproven", frameTicks);
     }
   } else {
     clock = RangeClock.resolve(await audioGrid(source, tracks.audio!, tracks.seconds, signal), {});

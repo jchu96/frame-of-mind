@@ -20,12 +20,16 @@ export function describeMeasurement(time: Pick<MeasuredTime, "gridMs" | "precisi
 }
 
 type SoundLevels = { floorDbfs: number; speechAboveFloorDb?: number; noisy: boolean };
+// The clean-sound precision (50 or 200 ms) is claimed only on clean sound. Below this contrast a snap keeps
+// its time but states 300 ms and noisy. No level line separates right edges from wrong ones under noise
+// (measured on three synthetic benches), so the line sits above every noisy film and below every clean one.
+export const NOISY_BELOW_DB = 60;
 
 /** Each complete window contributes its mean square in linear full-scale units. */
 export function speechLevels(powerSum: number, windows: number, floorDbfs: number): SoundLevels {
   if (windows < 1) return { floorDbfs, noisy: true };
   const speechAboveFloorDb = 10 * Math.log10(powerSum / windows) - floorDbfs;
-  return { floorDbfs, speechAboveFloorDb, noisy: speechAboveFloorDb < 30 };
+  return { floorDbfs, speechAboveFloorDb, noisy: speechAboveFloorDb < NOISY_BELOW_DB };
 }
 
 export function describeSound({ floorDbfs, speechAboveFloorDb, noisy }: Partial<SoundLevels>): string {

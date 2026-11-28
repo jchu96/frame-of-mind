@@ -15,7 +15,7 @@ reviewed GitHub issue, use
 | Repository        | `jchu96/frame-of-mind`                      |
 | CLI               | `frameofmind`                               |
 | Skill             | `/frame-of-mind`                            |
-| Current version   | `0.6.7`                                     |
+| Current version   | `0.6.8`                                     |
 | Default model     | `gemini-3.8-flash`                          |
 | Gemini backend    | Developer API Files API                     |
 | Context providers | Bluedot MCP, Granola MCP/API, local file    |
@@ -267,7 +267,7 @@ frameofmind recipes
 Expected version:
 
 ```text
-0.6.7
+0.6.8
 ```
 
 ### 1.5 Configure Gemini
@@ -1049,11 +1049,13 @@ Listed alternatives would extend the cut across another speech group.
 Speech must exceed the local floor by 10 dB for at least 80 ms. The tool then
 follows each quiet shoulder out to 1.5 dB above the floor. On the synthetic
 bench, noise 32 dB below speech produced no inward error over one 40 ms frame.
-The largest outward error was 84 ms. Real-room accuracy remains unmeasured.
+The largest outward error there was 84 ms. On a second synthetic bench with noise that moves
+(traffic, a drifting room tone) an edge landed up to about 175 ms outside the remark; that is not fixed.
+Real-room accuracy remains unmeasured.
 
 Read `floorDbfs` at the first or last speech window and `speechAboveFloorDb`
 for the mean power of the detected speech run in dB relative to that floor.
-Below 30 dB, as in the 26 dB bench case, the snap keeps its time and reports
+Below 60 dB, which is any sound with noise under the speech, the snap keeps its time and reports
 `noisy: true` with `target.precisionMs: 300`. Otherwise the stated precision
 is ±50 ms for audio at 32 kHz or above and ±200 ms at lower or unknown rates.
 All measured times use the same 10 ms grid. Uncertainty can span adjacent frames.

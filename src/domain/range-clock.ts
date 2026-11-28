@@ -12,7 +12,7 @@ export interface SourceGrid {
   rate: FrameRate;
   length: bigint;
   dropFrame?: boolean;
-  timing?: "varying" | "unproven";
+  timing?: "uneven" | "unproven";
 }
 
 type Fraction = { n: bigint; d: bigint };
