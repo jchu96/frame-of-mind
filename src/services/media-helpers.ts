@@ -3,6 +3,8 @@ import { extname } from "node:path";
 import { stat } from "node:fs/promises";
 import { deriveExact, exactTime, fromTicks, offsetTime, parseTimecodeRate, renderExactTimecode,
   type ExactTime } from "exact-time";
+import { decodeBudget, type SeekPlan } from "./range-scan.js";
+import { requireProof } from "./avc-samples.js";
 import { parseFilePosition } from "../domain/clock.js";
 import { MAX_RECORDING_BYTES } from "../lib/files.js";
 import { decodeVideo, inspectVideo, sameRate, type VideoInfo } from "./media-probe.js";
@@ -76,25 +78,59 @@ export async function verifyStartLabel(label?: string, measuredLabel?: string, s
   }
 }
 
-async function encode(input: Recording, staged: string, info: VideoInfo, from: Position, to: Position,
-  size: ReturnType<typeof dimensions>, signal?: AbortSignal) {
+export async function encodeVideoRange(input: Recording, staged: string, info: VideoInfo, from: Position, to: Position,
+  size: ReturnType<typeof dimensions>, signal?: AbortSignal, seek?: SeekPlan, phase?: (name: string) => void) {
   const expected = exactTime("source", String(to.frames - from.frames), info.rate);
-  const samples = audioRange(from, to);
   const audio = info.audio[0];
+  const hz = seek?.audioHz ?? 48000;
+  const nativeSample = (index: bigint) => {
+    const denominator = BigInt(info.rate.num);
+    return (index * BigInt(info.rate.den) * BigInt(hz) + denominator - 1n) / denominator;
+  };
+  const samples = seek ? { hz, start: nativeSample(from.frames), end: nativeSample(to.frames) } : audioRange(from, to);
   const silence = `[1:a]atrim=end_sample=${samples.end - samples.start}`;
+  // Preserve the source PCM phase through trimming. The separate audio input
+  // includes codec preroll and does not widen the video decoder's interval.
+  const selection = seek
+    ? `[2:${audio?.index}]asettb=1/${hz},atrim=start_pts=${samples.start}:end_pts=${samples.end},aformat=channel_layouts=mono`
+    : `[0:${audio?.index}]aresample=${samples.hz}:async=1:first_pts=0,aformat=channel_layouts=mono,atrim=start_sample=${samples.start}:end_sample=${samples.end}`;
   const filter = audio
-    ? `${silence}[silence];[0:${audio.index}]aresample=${samples.hz}:async=1:first_pts=0,aformat=channel_layouts=mono,atrim=start_sample=${samples.start}:end_sample=${samples.end},asetpts=PTS-STARTPTS[clip];[silence][clip]amix=duration=first:normalize=0[a]`
+    ? `${silence}[silence];${selection},asetpts=PTS-STARTPTS[clip];[silence][clip]amix=duration=first:normalize=0[a]`
     : `${silence}[a]`;
-  const vf = `trim=start_frame=${from.frames}:end_frame=${to.frames},setpts=PTS-STARTPTS,fps=${info.rate.num}/${info.rate.den},scale=${size.width}:${size.height}`;
+  const trim = seek ? `trim=start_frame=${from.frames}:end_frame=${to.frames}` : `trim=start_frame=${from.frames}:end_frame=${to.frames}`;
+  const vf = `${trim},setpts=PTS-STARTPTS,${seek ? "" : `fps=${info.rate.num}/${info.rate.den},`}scale=${size.width}:${size.height}`;
+  const endSeconds = Number(to.frames) * info.rate.den / info.rate.num;
+  const videoSeconds = seek ? endSeconds - Number(seek.seekSeconds) + 2 : info.approximateSeconds;
+  const preroll = Math.max(0, Number(from.frames) * info.rate.den / info.rate.num - 2);
+  const audioInput = seek && audio ? ["-ss", preroll.toFixed(6), "-t", (endSeconds - preroll + 1).toFixed(6),
+    ...localVideoInput(info.formatName), "-i", input.path] : [];
+  if (seek && audio) {
+    const trace = await runMediaTool("ffprobe", [...localVideoInput(info.formatName), "-select_streams", String(audio.index),
+      "-read_intervals", `${preroll.toFixed(6)}%${(endSeconds + 1).toFixed(6)}`, "-show_frames",
+      "-show_entries", "stream=time_base:frame=pts,nb_samples", "-of", "json", input.path], {signal, timeoutMs: decodeBudget(videoSeconds + 2)});
+    const {frames, streams} = JSON.parse(trace) as {frames: Array<{pts: number; nb_samples: number}>; streams: Array<{time_base: string}>};
+    requireProof(streams[0]?.time_base === `1/${hz}`, "unproved audio sample clock");
+    let next: bigint | undefined;
+    for (const frame of frames) {
+      requireProof(Number.isSafeInteger(frame.pts) && Number.isSafeInteger(frame.nb_samples), "missing audio sample timestamps");
+      const first = BigInt(frame.pts);
+      if (first + BigInt(frame.nb_samples) <= samples.start) continue;
+      requireProof(next === undefined ? first <= samples.start : first === next, "audio gap in range");
+      next = first + BigInt(frame.nb_samples);
+      if (next >= samples.end) break;
+    }
+    requireProof(next !== undefined && next >= samples.end, "missing last audio sample");
+  }
   const origin = info.fileStartLabel;
   const label = origin && renderExactTimecode(offsetTime(from, origin.value), origin.dropFrame);
   await input.check();
-  await runMediaTool("ffmpeg", ["-y", "-copyts", ...localVideoInput(info.formatName), "-noautorotate", "-i", input.path,
-    "-f", "lavfi", "-i", `anullsrc=r=${samples.hz}:cl=mono`, "-filter_complex", filter, "-map", `0:${info.videoIndex}`,
+  await runMediaTool("ffmpeg", ["-y", "-copyts", ...(seek ? ["-ss", seek.seekSeconds, "-noaccurate_seek", "-t", videoSeconds.toFixed(6)] : []), ...localVideoInput(info.formatName), "-noautorotate", "-i", input.path,
+    "-f", "lavfi", "-i", `anullsrc=r=${samples.hz}:cl=mono`, ...audioInput, "-filter_complex", filter, "-map", `0:${info.videoIndex}`,
     "-map", "[a]", "-vf", vf, "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
     "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
-    "-ar", "48000", "-ac", "1", "-movflags", "+faststart", ...(label ? ["-timecode", label] : []), staged],
-    {signal, timeoutMs: mediaWorkTimeoutMs(info.approximateSeconds)});
+    ...(seek ? ["-fps_mode", "passthrough", "-movie_timescale", "240000"] : []), "-ar", "48000", "-ac", "1", "-movflags", "+faststart", ...(label ? ["-timecode", label] : []), staged],
+    {signal, timeoutMs: phase ? decodeBudget(videoSeconds) : mediaWorkTimeoutMs(info.approximateSeconds)});
+  phase?.("verifying cut");
 
   const result = await localRecording(staged);
   const spec = {rate: info.rate, dropFrame: info.dropFrame ?? false, rateOrigin: "media"} as const;
@@ -162,7 +198,7 @@ export async function mediaHelper(kind: Helper, path: string, flags: MediaOption
     const size = dimensions(info, flags.height);
     if (kind === "proxy") checkProxyBytes(estimateProxyBytes(size.width, size.height, info.duration.frames, info.approximateSeconds), !!flags.allowOversize, "estimate", tell);
     await decodeVideo(input, info, signal);
-    const result = await encode(input, staged, info, from, to, size, signal);
+    const result = await encodeVideoRange(input, staged, info, from, to, size, signal);
     if (kind === "proxy") checkProxyBytes((await stat(staged)).size, !!flags.allowOversize, "actual", tell);
     return kind === "slice" ? {kind, ...result, output, from: display(from, info.dropFrame), to: display(to, info.dropFrame)} : {kind, ...result,
       source: { path: input.path, sizeBytes: Number(input.identity.size), mtimeMs: Number(input.identity.mtimeNs) / 1e6,

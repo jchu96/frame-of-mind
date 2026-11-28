@@ -86,7 +86,8 @@ const streamsSchema = z.object({
     index: z.number().int().nonnegative(), codec_type: z.string(), codec_name: z.string().optional(),
     codec_tag_string: z.string().optional(), width: z.number().int().positive().optional(),
     height: z.number().int().positive().optional(), channels: z.number().int().positive().optional(),
-    r_frame_rate: z.string().optional(), pix_fmt: z.string().optional(), tags, disposition: z.object({ attached_pic: z.number() }).optional(),
+    r_frame_rate: z.string().optional(), avg_frame_rate: z.string().optional(), time_base: z.string().optional(),
+    id: z.string().optional(), nb_frames: z.string().optional(), field_order: z.string().optional(), sample_rate: z.string().optional(), pix_fmt: z.string().optional(), tags, disposition: z.object({ attached_pic: z.number() }).optional(),
   })),
   format: z.object({ format_name: z.string(), duration: z.string().optional(), tags }),
 });
@@ -119,10 +120,10 @@ export interface VideoInfo {
   approximateSeconds: number;
 }
 
-async function videoHeader(input: Recording, signal?: AbortSignal) {
+export async function videoHeader(input: Recording, signal?: AbortSignal) {
   await input.check();
   const json = await runMediaTool("ffprobe", [...localVideoInput(), "-show_entries",
-    "stream=index,codec_type,codec_name,codec_tag_string,width,height,channels,pix_fmt,r_frame_rate:stream_disposition=attached_pic:stream_tags=timecode:format=duration,format_name:format_tags=timecode",
+    "stream=index,codec_type,codec_name,codec_tag_string,width,height,channels,sample_rate,pix_fmt,r_frame_rate,avg_frame_rate,time_base,id,nb_frames,field_order:stream_disposition=attached_pic:stream_tags=timecode:format=duration,format_name:format_tags=timecode",
     "-of", "json", input.path], {signal});
   const {streams, format} = streamsSchema.parse(JSON.parse(json));
   const videos = streams.filter(s => s.codec_type === "video" && !s.disposition?.attached_pic);

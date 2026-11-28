@@ -7,7 +7,7 @@ import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { z } from "zod";
 
 const prefixes = {
-  analyze: "frame-of-mind-", transcribe: "fom-transcribe-", calibration: "frame-of-mind-calibration-",
+  range: "fom-range-", analyze: "frame-of-mind-", transcribe: "fom-transcribe-", calibration: "frame-of-mind-calibration-",
   screenshots: ".settled-",
 };
 type Kind = keyof typeof prefixes | "media-lock";
@@ -134,6 +134,7 @@ async function sizeOf(path: string, device: bigint, allowStage: boolean): Promis
 }
 
 const payloadNames = {
+  range: /^cut\.(?:mp4|wav)$/,
   analyze: /^(?:recording\.(?:webm|mp4|m4v|mov|mp3)|derived-audio-\d+\.aac|still-\d+-\d+\.png)$/i,
   transcribe: /^audio-\d+\.aac$/, screenshots: /^frame-\d{3}\.png$/, calibration: /^flash\.mp4$/,
 };
