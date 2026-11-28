@@ -24,6 +24,12 @@ export class TwelveLabsAccount {
   onRequest = () => {};
   segments = [{start_time:1,end_time:5,metadata:{reason:"CLAIM_FIXTURE",label:"LABEL_FIXTURE",surface:"SURFACE_FIXTURE"}}];
 
+  // Dispatch directly to this account, including its request log and refusal rules.
+  assetRequest(method:"GET"|"DELETE", id?:string) {
+    const path = id === undefined ? "/assets" : "/assets/"+encodeURIComponent(id);
+    return this.respond("https://api.twelvelabs.io/v1.3"+path,{method,headers:{"x-api-key":"synthetic-twelve"}});
+  }
+
   async respond(input: RequestInfo | URL, init?: RequestInit) {
     const request = new Request(input, init);
     if (new URL(request.url).origin !== "https://api.twelvelabs.io") throw new Error("unexpected recipient");
@@ -46,6 +52,7 @@ export class TwelveLabsAccount {
       return Response.json({_id:id,status:"processing"}, {status:201});
     }
     const page = (data:unknown[]) => Response.json({data,page_info:{page:1,total_page:this.ambiguousPage ? 2 : 1,total_results:data.length}});
+    if (method === "GET" && path === "/assets") return page(Array.from(this.assets,_id=>({_id})));
     if (method === "GET" && path === "/knowledge-stores") {
       const source = new URL(request.url).searchParams.get("asset_id");
       if (!source || !this.assets.has(source)) return Response.json({}, {status:400});

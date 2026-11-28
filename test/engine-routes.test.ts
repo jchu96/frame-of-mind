@@ -22,7 +22,7 @@ async function fixture() {
   const video = join(root,"clip.mp4");
   await writeFile(video,"fixture-recording");
   const account = new TwelveLabsAccount();
-  vi.stubGlobal("fetch",account.respond.bind(account));
+  vi.stubGlobal("fetch",Object.assign(account.respond.bind(account),{inMemoryAssetRequest:account.assetRequest.bind(account)}));
   const events: string[] = [];
   account.onRequest = () => { events.push("wire:twelvelabs"); };
   const geminiRequests: string[] = [];
@@ -105,6 +105,8 @@ it("interrupted-create keeps a lost response unconfirmed across two restarts", a
 
 it("owned-delete retries only receipted assets on conflict and permission failure", async () => {
   const f = await fixture();
+  const foreign = "ffffffffffffffffffffffff";
+  expect(await (await f.account.assetRequest("GET")).json()).toMatchObject({data:[{_id:foreign}]});
   f.account.linked = true;
   const first = await f.run();
   const asset = f.account.creates[0];
@@ -116,10 +118,11 @@ it("owned-delete retries only receipted assets on conflict and permission failur
   expect(f.account.assets.has(asset!)).toBe(true);
   f.account.denyDeletion = false;
   await f.run({grader:"gemini",candidatesFile:f.candidatesFile});
-  expect(f.account.assets).toEqual(new Set(["ffffffffffffffffffffffff"]));
   const deletes=f.account.requests.filter(r=>r.method==="DELETE" && r.path.startsWith("/assets/"));
   expect(deletes.length).toBeGreaterThanOrEqual(3);
-  expect(deletes.every(r=>r.path==="/assets/"+asset)).toBe(true);
+  const ownedPaths = new Set(first.manifest.library?.filter(r=>r.owned && r.assetId).map(r=>"/assets/"+r.assetId));
+  expect.soft(deletes.map(r=>r.path).filter(path=>!ownedPaths.has(path))).toEqual([]);
+  expect.soft([...f.account.assets]).toEqual([foreign]);
 });
 
 it("stalled-quota-refused keeps completed verdicts and accounts for every selected window",async()=>{
