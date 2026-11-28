@@ -933,7 +933,7 @@ export class AnalysisOrchestrator {
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
         const builtInDocument = fileRows ? undefined : geminiCandidates(index.moments, analyzer.model, sourceClock, recordingSha256);
-        const rows = fileRows ?? readCandidates(builtInDocument, recording, "engine", sourceClock.observedEnd);
+        const rows = fileRows ?? builtInDocument!.candidates;
         const proposalsByWindow = new Map<IndexedMoment, Candidate>();
         for (const row of rows) {
           const window = fileRows ? proposalWindow(row, sourceClock) : index.moments[Number(row.id.slice("gemini-".length)) - 1];
