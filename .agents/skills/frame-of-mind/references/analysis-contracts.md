@@ -42,7 +42,17 @@ items[]
     importance?
     confidenceNotes?
   screenshot?
+  stillTimes[]?
+  screenTextNotFromStill?
 ```
+
+`stillTimes` lists the full-size stills sent with the detail request. A screen
+quotation (`evidence.verbatimUiText`) is kept only when its cited time is one of
+them. Otherwise the tool removes it, sets `screenTextNotFromStill: true` and
+adds "Screen text was not read from a still." to `confidenceNotes`. In such a
+record, distrust screen words in the title and prose too: the tool cannot check
+those. Never quote `candidate.summary`: it is the first pass's note, made from a
+reduced picture.
 
 Accepted and rejected records both remain for audit.
 

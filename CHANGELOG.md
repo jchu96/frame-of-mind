@@ -5,6 +5,13 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+A screen quotation is now kept only when it was read from an attached still. When an accepted record
+carries `evidence.verbatimUiText` and cites a time that is not one of its `stillTimes`, `analyze` removes
+the quotation, sets the new optional item field `screenTextNotFromStill: true` and adds
+"Screen text was not read from a still." to the record's confidence notes. The record stays accepted, its
+times do not move and the frame saved at the cited time is kept. Before, the rule was only a sentence in
+the request and such a quotation passed through. Screen words inside titles and prose are not checked.
+
 Removed the transcript recheck and `transcribe --recheck`. On a real recording, none of
 the guards evaluated removed every invented line while keeping a confirmed real line.
 New output omits `outcome`, `rechecks`, `belowCutoff`, and the per-line `recovered` mark.
