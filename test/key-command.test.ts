@@ -45,8 +45,8 @@ describe.skipIf(process.platform === "win32")("operator key reader", () => {
       expect(await clean.providerKey()).toBe(token);
       for (const env of [{}, select(runtime, reader)]) {
         const bare = config(env, "bare");
-        expect(bare.keyReport()).toEqual({present: false, source: "unknown"});
-        expect(await bare.providerKey()).toBeUndefined();
+        expect(bare.keyReport()).toEqual({present: false, source: "command", state: "unavailable", lowerSourcesSkipped: true});
+        expect(() => bare.providerKey()).toThrow("Key command unavailable.");
       }
       expect(readFileSync(invoked, "utf8")).toBe("start\n");
       expect(folder).not.toHaveBeenCalled();

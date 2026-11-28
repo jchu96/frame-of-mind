@@ -11,6 +11,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
   let fixtureRuntime: string, root: string, home: string, cwd: string, settings: string, reader: string, marker: string, build: string, preload: string;
   const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {encoding: "utf8"}).trim();
   const source = resolve("src/cli.ts");
+  let folderSettings: string;
   beforeAll(async () => {
     build = await buildCliFixture();
     root = realpathSync(mkdtempSync(join(tmpdir(), "cli-key-command-")));
@@ -30,8 +31,8 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       'import fs from "node:fs"; fs.appendFileSync(' + JSON.stringify(marker) + ', "start\\n"); process.stdout.write("synthetic")');
     writeFileSync(decoyFile, JSON.stringify({keyCommand: decoyCommand}), {mode: 0o600});
     const roots = ["HOME", "XDG_CONFIG_HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA"];
-    writeFileSync(join(cwd, ".env"), [...roots.map(name => name + "=" + decoy),
-      "FRAME_OF_MIND_KEY_COMMAND=" + JSON.stringify(decoyCommand), "GEMINI_API_KEY=synthetic-folder"].join("\n"));
+    folderSettings = [...roots.map(name => name + "=" + decoy),
+      "FRAME_OF_MIND_KEY_COMMAND=" + JSON.stringify(decoyCommand), "GEMINI_API_KEY=synthetic-folder"].join("\n");
     preload = join(root, "account.cjs");
     writeFileSync(preload, `
       const os = require('node:os'), fs = require('node:fs');
@@ -67,6 +68,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     `);
   }, 60_000);
   beforeEach(() => {
+    writeFileSync(join(cwd, ".env"), folderSettings);
     for (const path of [marker, settings, join(root, "unexpected-open")]) rmSync(path, {force: true});
   });
   afterAll(() => {
@@ -91,22 +93,46 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     expect(report.key.source).toBe(runtime.endsWith("bare") ? "unknown" : "dotenv");
     if (!runtime.endsWith("bare")) expect(report.settingsPath).toBe(settings);
     expect(existsSync(join(root, "unexpected-open"))).toBe(false);
-    const file = join(cwd, ".env");
-    const contents = readFileSync(file, "utf8");
-    try {
-      if (runtime.endsWith("bare")) {
-        writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
-        writeFileSync(file, "");
-        for (const env of [{}, {FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, reader])}]) {
-          const consumer = run(["calibrate", "--json"], env, runtime);
-          expect(JSON.parse(consumer.out).error.code).toBe("KEY_MISSING");
-        }
-      } else {
-        rmSync(file);
-        expect(JSON.parse(run(["doctor", "--json"], {}, runtime).out).settingsPath).toBe(report.settingsPath);
-      }
-    } finally { writeFileSync(file, contents); }
+    if (runtime.endsWith("bare")) {
+      expect(report.settingsPath).toBeUndefined();
+    } else {
+      rmSync(join(cwd, ".env"));
+      expect(JSON.parse(run(["doctor", "--json"], {}, runtime).out).settingsPath).toBe(report.settingsPath);
+    }
     expect(existsSync(marker)).toBe(false);
+  });
+
+  const calibrate = ["calibrate", "--model", "!"];
+  const missing = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_MISSING","message":"key missing."}}\n', err: ""};
+  const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused."}}\n', err: ""};
+  it.each(["node-bare", "bun-bare"])("ignores folder and inherited selectors on a merged launch (%s)", runtime => {
+    const selector = JSON.stringify([fixtureRuntime, reader]);
+    for (const fromFolder of [true, false]) {
+      writeFileSync(join(cwd, ".env"), fromFolder ? "FRAME_OF_MIND_KEY_COMMAND=" + selector : "");
+      const env = fromFolder ? {} : {FRAME_OF_MIND_KEY_COMMAND: selector};
+      expect(run([...calibrate, "--json"], env, runtime)).toEqual(refused);
+      // Model validation follows key acquisition and precedes media or provider calls.
+      const keyed = run([...calibrate, "--json"], {...env, GEMINI_API_KEY: "synthetic"}, runtime);
+      expect(JSON.parse(keyed.out).error.code).toBe("USAGE");
+      expect(existsSync(marker)).toBe(false);
+    }
+  });
+
+  it.each(["node-bare", "bun-bare"])("uses a settings reader only on the clean control (%s)", runtime => {
+    writeFileSync(join(cwd, ".env"), "");
+    expect(run([...calibrate, "--json"], {}, runtime)).toEqual(missing);
+    writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
+    expect(run([...calibrate, "--json"], {}, runtime)).toEqual(refused);
+    expect(run(calibrate, {}, runtime)).toEqual({exit: 10, out: "", err: "Key command unavailable.\n"});
+    const doctor = run(["doctor"], {}, runtime);
+    expect(doctor.exit).toBe(1);
+    expect(doctor.out).toContain("not run under this launcher");
+    expect(doctor.out.split("\n").filter(line => line.startsWith("Next step:")))
+      .toEqual(["Next step: Run the installed Node command."]);
+    expect(existsSync(marker)).toBe(false);
+    const control = run([...calibrate, "--json"], {}, runtime === "node-bare" ? "node" : "bun-clean");
+    expect(JSON.parse(control.out).error.code).toBe("USAGE");
+    expect(readFileSync(marker, "utf8")).toBe("start\n");
   });
 
   it("refuses a settings file whose opened handle has a foreign owner", () => {
