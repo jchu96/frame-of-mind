@@ -45,7 +45,7 @@
           "properties":{"start":{"$ref":"#/definitions/positive"},"end":{"$ref":"#/definitions/positive"}}},
         "basis":{"type":"object","additionalProperties":false,"required":["start","end"],
           "properties":{"start":{"$ref":"#/definitions/basis"},"end":{"$ref":"#/definitions/basis"}}},
-        "label":{"type":"string"},"reason":{"type":"string"},"proposedBy":{"$ref":"#/definitions/actor"},
+        "label":{"type":"string","maxLength":120},"reason":{"type":"string","maxLength":10000},"surface":{"type":"string","maxLength":500},"proposedBy":{"$ref":"#/definitions/actor"},
         "score":{"type":"number"},"definition":{"type":"string"},"searchPhrase":{"type":"string"},
         "chain":{"type":"array","items":{"$ref":"#/definitions/pass"}}
       }

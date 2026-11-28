@@ -22,11 +22,14 @@ const passSchema = z.strictObject({
   pass: z.int().positive(), edge: z.enum(["start", "end"]), at: count,
   precisionMs: ms, basis: basisSchema, by: actorSchema,
 });
+export const claimTextLimits = {reason:10_000, surface:500, label:120} as const;
+
 export const candidateSchema = z.strictObject({
   id: z.string().min(1), start: count, end: count,
   precisionMs: z.strictObject({ start: ms, end: ms }),
   basis: z.strictObject({ start: basisSchema, end: basisSchema }),
-  label: z.string(), reason: z.string(), proposedBy: actorSchema,
+  label: z.string().max(claimTextLimits.label), reason: z.string().max(claimTextLimits.reason),
+  surface: z.string().max(claimTextLimits.surface).optional(), proposedBy: actorSchema,
   score: z.number().optional(), searchPhrase: z.string().optional(), definition: z.string().optional(),
   chain: z.array(passSchema),
 });

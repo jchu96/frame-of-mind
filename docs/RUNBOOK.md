@@ -533,6 +533,8 @@ controlled. Prefer a local download.
 Document order is rank. A budget keeps the first eligible rows and reports them
 in recording order. The built-in proposer writes its best candidates first,
 sorting by importance and then by start time. The default budget is 10.
+A candidates file allows up to 10,000 characters for `reason`, 500 for optional `surface`, and 120 for `label`. One overlong field refuses the file with `invalid-candidates`. The grader sees the full reason (or the label when the reason is empty) and surface as context. Items and failure rows keep the submitted proposal.
+
 To grade a finder's file, run `frameofmind analyze --source none --video recording.mp4 --candidates picks.json --grader gemini --json`. Add `--dry-run` to preview the route. For built-in proposals use `--proposer gemini` or omit both the proposer flag and candidates file. Apply `--focus` to the active roles and `--max-moments` to the candidate budget. Read each item's resolved start and exclusive end, including its status and precision, before cutting. [Engine contract](ENGINE_CONTRACT.md)
 
 Use `--max-moments all` to grade up to 1,000 eligible candidates. The first

@@ -301,7 +301,7 @@ export interface AnalysisVideoAnalyzer {
   ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
-    candidate: Pick<IndexedMoment, "start" | "end">,
+    candidate: Pick<IndexedMoment, "start" | "end" | "summary" | "surface">,
     nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
@@ -1017,9 +1017,10 @@ export class AnalysisOrchestrator {
               // when no other detail call can overlap it.
               const usageBefore = detailConcurrency === 1 ? usageCountsOf(analyzer) : undefined;
               try {
+                const row = proposalsByWindow.get(candidate)!;
                 const detail = await engines.grade(
                   remote,
-                  { start: candidate.start, end: candidate.end },
+                  {start:candidate.start, end:candidate.end, summary:row.reason || row.label, surface:row.surface},
                   effectiveTranscript && (alignment || transcriptIsDerived)
                     ? nearbyTranscript(
                         effectiveTranscript,

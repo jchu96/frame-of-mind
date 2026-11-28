@@ -1,3 +1,4 @@
+import { claimTextLimits } from "./candidates.js";
 import { engineItemsSchema, enginePlanSchema } from "./engine-plan.js";
 import { itemProvenance, proposalEdgesSchema } from "./proposal-edges.js";
 import { rangeFields } from "./range-fields.js";
@@ -48,9 +49,9 @@ export const indexedMomentSchema = z.object({
   start: timestampSchema,
   end: timestampSchema,
   speaker: z.string().max(240).optional(),
-  surface: z.string().max(500).optional(),
-  summary: z.string().min(1).max(10_000),
-  kind: z.string().min(1).max(120),
+  surface: z.string().max(claimTextLimits.surface).optional(),
+  summary: z.string().min(1).max(claimTextLimits.reason),
+  kind: z.string().min(1).max(claimTextLimits.label),
   importance: importanceSchema,
 }).strict().superRefine((value, context) => {
   if (!isCanonicalTimestamp(value.start) || !isCanonicalTimestamp(value.end)) return;

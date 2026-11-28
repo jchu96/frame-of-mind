@@ -12,7 +12,8 @@ export function geminiCandidates(moments: readonly IndexedMoment[], model: strin
     candidates.push({
       id: `gemini-${ordinal + 1}`, start: Number(boundIndex(span.start)), end: Number(boundIndex(span.endExclusive)),
       precisionMs:{start:1000,end:1000}, basis:{start:"model",end:"model"}, proposedBy:{engine:"gemini",model},
-      label:moment.kind, reason:moment.summary, score:{high:3,medium:2,low:1}[moment.importance], chain:[],
+      label:moment.kind, reason:moment.summary, ...(moment.surface !== undefined && {surface:moment.surface}),
+      score:{high:3,medium:2,low:1}[moment.importance], chain:[],
     });
   }
   candidates.sort((a,b) => b.score! - a.score! || a.start - b.start);
