@@ -2,17 +2,19 @@
 
 ## North star
 
-**Any engine may propose, in any order; Frame of Mind measures on the file and answers in exact time.**
+**Leverage the best tool: Twelve Labs first, then Gemini. Frame of Mind measures on the file and answers in exact time.**
 
-1. A finder proposes moments: a model, a search service or a person, one after
-   another or one instead of another; a recipe says what is worth keeping. No
-   finder is built in as the only one.
+1. Engines do what each is best at, in that order: Twelve Labs proposes first
+   (where to look, across one recording or a whole library), then Gemini
+   examines each proposal under the recipe. A recipe says what is worth keeping.
 2. The tool measures on the recording itself: frames, the edges of speech, the
    words on a full-size still.
 3. Every answer is an exact position on the recording's own clock, marked with
-   where it came from (the cut, a measurement, or an engine's word) and how
-   good it is; what the tool could not measure it says so, and never presents
-   an engine's word as a measurement.
+   where it came from and how good it is; what the tool could not measure it
+   says so, and never presents an engine's word as a measurement.
+
+This is where the tool is going. Today it runs with Gemini alone; a run uses
+the engines whose keys are set up.
 
 The local Studio trust boundaries and abuse cases are maintained in the
 [Local Studio threat model](THREAT_MODEL.md).

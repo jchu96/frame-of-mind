@@ -11,8 +11,9 @@ the video with Gemini — the pixels, not just the words — and hands back
 findings with receipts: timestamps, verbatim quotes, and screenshots of the
 exact moment.
 
-*Any engine may propose, in any order; Frame of Mind measures on the file and
-answers in exact time.*
+*Leverage the best tool: Twelve Labs first, then Gemini. Frame of Mind measures
+on the file and answers in exact time.* That is the direction; today it runs
+with Gemini.
 
 [![CI](https://github.com/jchu96/frame-of-mind/actions/workflows/ci.yml/badge.svg)](https://github.com/jchu96/frame-of-mind/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
