@@ -59,6 +59,30 @@ it.each(["absolute","relative"] as const)("the %s detail clock publishes the sam
   }
 });
 
+it("a whole file at 30000/1001 prints the second the model stated", async () => {
+  const root=await mkdtemp(join(tmpdir(),"source-analysis-"));
+  try {
+    const file=join(root,"media.mp4");
+    await writeFile(file,"fixture");
+    const orchestrator=new AnalysisOrchestrator({withSourceRecording:fixtureSource(() => 60,{num:30000,den:1001}),createContextSource(){throw Error();},
+      createAnalyzer:()=>({model:"gemini-test",upload:async()=>({name:"files/test"}),delete:async()=>{},probeClipClock:async()=>0,
+        index:async()=>({matchNotes:"fixture",moments:[{start:"00:00:02",end:"00:00:05",summary:"one",kind:"test",importance:"high" as const}]}),
+        interrogate:async()=>({accepted:true,kind:"test",title:"cue",summary:"seen",evidence:{timestamp:"00:00:03"}})}),
+      calibrateClipClock:async()=>({model:"gemini-test",result:"absolute",checkedAt:"2026-01-01T00:00:00Z",evidence:{flashFileSeconds:27,clipStartSeconds:20,reportedSeconds:27}}),
+      extractScreenshot:async()=>false});
+    const run=await orchestrator.analyze({video:file,outputRoot:root,contextMode:"none",apiKey:"fixture",
+      recipe:builtInRecipe("decisions"),customRecipe:false,recipeSha256:"a".repeat(64),recipeRevision:"fixture",
+      maxIncidents:1,screenshots:false,keepUpload:false,derivedTranscript:false});
+    const [item]=run.analysis.items;
+    // The text is computed from the exact value, so the exact start must be the first frame at or after the stated second.
+    expect(item!.candidate.start).toBe("00:00:02");
+    expect(item!.candidate.end).toBe("00:00:05");
+    expect(item!.result.evidence?.timestamp).toBe("00:00:03");
+    expect(item!.candidate.exactSpan).toMatchObject({start:{frames:"60",support:["59","90"],origin:"model",precisionMs:1000},endExclusive:{frames:"150"}});
+    expect(item!.result.evidence?.exactTime).toMatchObject({frames:"90",origin:"model",precisionMs:1000});
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
 it("clips a known 595–615 cue on both stretches and selects only overlapping source time",()=>{
   const run=(a:number,b:number,start:number,end:number,d=0)=>{
     const clock=RangeClock.resolve({unit:"frames",rate:{num:25,den:1},length:40000n},{from:String(a),to:String(b)});
