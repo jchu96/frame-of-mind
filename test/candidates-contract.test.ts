@@ -69,3 +69,15 @@ it("precision-window applies the two-frame floor and each latest radius includin
   const ticks = RangeClock.wholeTicks({num:1,den:1000},160n,"unproven",[0,40,120]);
   expect(measurementWindow({...claim,at:40,precisionMs:119},ticks,1500)).toBeUndefined();
 });
+
+it("maps a fractional-rate model second through the released exact span and its support", async () => {
+  const {RangeClock} = await import("../src/domain/range-clock.js");
+  const {modelSpan,boundIndex} = await import("../src/domain/source-bound.js");
+  const {geminiCandidates} = await import("../src/adapters/gemini-candidates.js");
+  const clock = RangeClock.resolve({unit:"frames",rate:{num:30000,den:1001},length:3000n},{from:"31f"});
+  const original = {start:"00:00:01",end:"00:00:02",kind:"k",summary:"s",importance:"high" as const};
+  const span = modelSpan(clock,1,2)!;
+  expect(span.start).toMatchObject({origin:"model",support:["60","91"]});
+  const doc = geminiCandidates([original],"model",clock,recording.recordingSha256);
+  expect(doc.candidates[0]).toMatchObject({start:Number(boundIndex(span.start)),end:Number(boundIndex(span.endExclusive))});
+});

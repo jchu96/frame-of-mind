@@ -611,7 +611,7 @@ tracks have separate rows, topmost first. [Timeline lookup procedure](docs/RUNBO
 | `--depth <standard\|deep>` | default `standard`. Deep sampling and prompts apply to both built-in passes. With a candidates file, depth applies only to grading. |
 | `--model <id>` | Gemini model for both current passes |
 | `--candidates <file>` | Grade a version 1 candidates document after verifying the original recording. |
-| `--proposer <engine>`, `--grader <engine>` | Select Gemini for either role. Its printed model seconds are the original reply on the sent video. Measurement uses the corresponding native source counts. A file supplies the proposer result directly. |
+| `--proposer <engine>`, `--grader <engine>` | Select Gemini for either role. Printed source times come from their exact bounds. Measurement uses native source counts. A file supplies the proposer result directly. |
 | `--dry-run` | Print the engine plan for these flags and recipe without a provider request. |
 | `--max-moments <n\|all>` | first N eligible rows in document order, reported in source-time order. The built-in proposer ranks by importance, then source time. Default `10`. |
 | `--note <name=path>` | per-run UTF-8 text/Markdown reference, repeatable up to 8 |

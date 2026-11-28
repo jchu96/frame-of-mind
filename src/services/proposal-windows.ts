@@ -1,7 +1,8 @@
-import type { Candidate } from "../domain/candidates.js";
+import { modelProposalSpan, type Candidate } from "../domain/candidates.js";
 import type { RangeClock } from "../domain/range-clock.js";
 import type { IndexedMoment } from "../domain/types.js";
-import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
+import { boundIndex } from "../domain/source-bound.js";
+import { secondsToTimestamp } from "../lib/time.js";
 
 export function latestPosition(row: Candidate, edge: "start" | "end") {
   return row.chain.findLast(pass => pass.edge === edge)?.at ?? row[edge];
@@ -17,9 +18,8 @@ export function proposalWindow(row: Candidate, clock: RangeClock, legacy?: Index
   if (legacy && !row.chain.length) {
     // Original whole seconds can straddle native grid boundaries. Reuse the
     // released window only when it describes this validated proposal.
-    const start = clock.sourceIndex(clock.unitsForSeconds(timestampToSeconds(legacy.start)));
-    const stop = clock.sourceIndex(clock.unitsForSeconds(timestampToSeconds(legacy.end), true));
-    if (start === first && (end !== undefined && end < stop ? end : stop) === last) return {...legacy};
+    const span = modelProposalSpan(clock, legacy);
+    if (span && boundIndex(span.start) === first && boundIndex(span.endExclusive) === last) return {...legacy};
   }
   const {num, den} = clock.grid.rate;
   const startCount = first <= clock.from ? 0n : first - clock.from;

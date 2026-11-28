@@ -2,7 +2,8 @@ import { rationalRate } from "exact-time";
 import { z } from "zod";
 import { ContractError } from "./contract-error.js";
 import { rateSchema, sameRate } from "./media-clock.js";
-import { indexSchema } from "./source-bound.js";
+import { indexSchema, modelSpan } from "./source-bound.js";
+import { timestampToSeconds } from "../lib/time.js";
 import type { RangeClock } from "./range-clock.js";
 
 const count = z.int().nonnegative();
@@ -32,6 +33,14 @@ export const candidateSchema = z.strictObject({
 export type Candidate = z.infer<typeof candidateSchema>;
 export type Actor = z.infer<typeof actorSchema>;
 export type CandidateRecording = z.infer<typeof recordingSchema>;
+
+/** Map seconds on the sent bytes through the same source bounds as the writer.
+ * The observed limit bounds candidate positions even if duration is unknown. */
+export function modelProposalSpan(clock: RangeClock, moment: {start:string; end:string}) {
+  const limit = clock.observedEnd;
+  return modelSpan(clock, timestampToSeconds(moment.start), timestampToSeconds(moment.end),
+    0n, limit === undefined ? undefined : clock.cutIndex(limit));
+}
 
 export function recordingIdentity(clock: RangeClock, recordingSha256: string): CandidateRecording {
   const { grid } = clock;
