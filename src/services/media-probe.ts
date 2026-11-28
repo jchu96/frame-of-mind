@@ -8,23 +8,40 @@ import { localVideoInput, runMediaTool, type Recording } from "./media-tools.js"
 const timingError = "Variable frame rate or unverifiable frame timing is not supported by --timecode-rate from-media; declare an exact sequence rate instead.";
 export async function probeFrameRate(
   path: string, choice: "from-media" | "from-media:df" | "from-media:ndf" = "from-media",
-  read = () => readTiming(resolve(path), "v:0"),
+  read = async () => {
+    const file = resolve(path);
+    return readTiming(file, "v:0", undefined, await approximateSeconds(file));
+  },
 ): Promise<TimecodeSpec> {
   let raw: unknown;
   try { raw = JSON.parse(await read()); }
   catch (error) {
     const code = faultCode(error);
-    throw new ContractError(code === "COMMAND_FAILED" ? "INVALID_RATE" : code, "--timecode-rate from-media requires ffprobe and a complete readable video timing scan within 60 s / 32 MiB; declare an exact rate instead.");
+    throw new ContractError(code === "COMMAND_FAILED" ? "INVALID_RATE" : code, "--timecode-rate from-media requires ffprobe and a complete readable video timing scan within its time limit and 32 MiB; declare an exact rate instead.");
   }
   const { rate } = measureTiming(raw);
   const suffix = choice.slice("from-media".length);
   return { ...parseTimecodeRate(`${rate.num}/${rate.den}${suffix}`), rateOrigin: "media" };
 }
 
-function readTiming(path: string, selector: string, signal?: AbortSignal) {
+/**
+ * The timing scan decodes every frame, so a fixed limit cuts off a long
+ * recording on a busy machine. Allow 60 s plus half a second per second of
+ * recording: about twenty times what a one-hour 1080p file needed under load.
+ */
+export function timingScanTimeoutMs(seconds: number) {
+  return 60_000 + (Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) * 500 : 0);
+}
+async function approximateSeconds(path: string) {
+  try {
+    const json = await runMediaTool("ffprobe", [...localVideoInput(), "-show_entries", "format=duration", "-of", "json", path]);
+    return Number((JSON.parse(json) as { format?: { duration?: unknown } }).format?.duration);
+  } catch { return 0; }
+}
+function readTiming(path: string, selector: string, signal?: AbortSignal, seconds = 0) {
   return runMediaTool("ffprobe", [...localVideoInput(), "-select_streams", selector, "-count_frames",
     "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames,nb_read_frames:frame=pts,duration,pkt_duration",
-    "-of", "json", path], {signal});
+    "-of", "json", path], {signal, timeoutMs: timingScanTimeoutMs(seconds)});
 }
 function measureTiming(raw: unknown, independentRate?: FrameRate, requireCount = false) {
   const data = raw as { streams?: Array<{ r_frame_rate?: unknown; avg_frame_rate?: unknown; time_base?: unknown; nb_frames?: unknown; nb_read_frames?: unknown }>; frames?: Array<{ pts?: unknown; duration?: unknown; pkt_duration?: unknown }> } | null;
@@ -131,7 +148,7 @@ export async function probeStartLabel(input: Recording, rate: FrameRate) {
 
 export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal): Promise<VideoInfo> {
   const { format, video, audio, labels } = await videoHeader(input, signal);
-  const {rate, count} = measureTiming(JSON.parse(await readTiming(input.path, String(video.index), signal)), declaration?.rate, true);
+  const {rate, count} = measureTiming(JSON.parse(await readTiming(input.path, String(video.index), signal, Number(format.duration))), declaration?.rate, true);
   if (declaration?.rate && !sameRate(rate, declaration.rate)) throw new ContractError("INVALID_RATE", "Declared rate differs from measured video rate.");
   const fileStartLabel = readStartLabel(labels, rate, declaration?.dropFrame);
   const dropFrame = declaration?.dropFrame ?? fileStartLabel?.dropFrame ?? (isDropRate(rate) ? undefined : false);
