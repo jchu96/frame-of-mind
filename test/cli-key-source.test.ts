@@ -57,7 +57,7 @@ beforeAll(async () => {
   writeFileSync(jobs, 'if (process.env.FIXTURE_COUNT_DISPATCH) process.stderr.write("jobs import\\n");\n' + readFileSync(jobs, "utf8"));
   const settings = join(build, "dist/cli-settings.js");
   const originalSettings = readFileSync(settings, "utf8");
-  const observedSettings = originalSettings.replace("providerKey() {", 'providerKey() { if (process.env.FIXTURE_COUNT_READS) process.stderr.write("key read\\n");');
+  const observedSettings = originalSettings.replace(/providerKey\([^)]*\) \{/, '$& if (process.env.FIXTURE_COUNT_READS) process.stderr.write("key read\\n");');
   expect(observedSettings).not.toBe(originalSettings);
   writeFileSync(settings, observedSettings);
   mkdirSync(folder);
