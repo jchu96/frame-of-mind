@@ -70,7 +70,12 @@
     "allOf": [{"$ref":"#/definitions/source"}],
     "properties": {
       "enginePlan":{"$ref":"#/definitions/enginePlan"},
-      "engineCalls":{"type":"array","items":{"type":"object","required":["role","engine","model","material","sentExtent","inferenceWindow","utc","state","result"],"properties":{"role":{"enum":["proposer","grader"]},"engine":{"enum":["gemini","twelvelabs"]},"result":{"enum":["complete","partial","failed"]},"state":{"enum":["attempted","sent","unknown"]}}}},
+      "engineCalls":{"type":"array","items":{
+        "type":"object","required":["role","engine","model","material","sentExtent","inferenceWindow","utc","state","result"],
+        "properties":{"role":{"enum":["proposer","grader","cleanup"]},"engine":{"enum":["gemini","twelvelabs"]},"result":{"enum":["complete","partial","failed"]},"state":{"enum":["attempted","sent","unknown"]}},
+        "if":{"properties":{"role":{"const":"cleanup"}}},
+        "then":{"required":["bytes","copies"],"properties":{"engine":{"const":"twelvelabs"},"model":{"type":"null"},"material":{"const":"none"},"bytes":{"const":0},"sentExtent":{"type":"null"},"inferenceWindow":{"type":"null"},"copies":{"type":"integer","minimum":0}}}
+      }},
       "library":{"type":"array","items":{"type":"object","required":["receiptId","runId","operationId","accountScope","state","owned"],"properties":{"state":{"enum":["pending","unconfirmed","deleted"]},"owned":{"const":true}}}},
       "indexWait":{"type":"object","required":["limitSeconds","elapsedMs"],"properties":{"limitSeconds":{"type":"integer","minimum":1},"elapsedMs":{"type":"integer","minimum":0}}},
       "retention": {"enum": ["provider", "run"]},

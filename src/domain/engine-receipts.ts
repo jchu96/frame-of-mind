@@ -12,13 +12,19 @@ export const copyReceipt = z.strictObject({
   reason:z.enum(["creation-unknown","create-refused","identity-unconfirmed","cleanup","linked","link-check-unavailable","delete-refused","task-pending","unconfirmed-deletion"]).nullable(),
 });
 export type CopyReceipt = z.infer<typeof copyReceipt>;
-export const engineCall = z.strictObject({
+const modelCall = z.strictObject({
   role:z.enum(["proposer","grader"]), engine:z.enum(["gemini","twelvelabs"]), model:z.string(),
   material:z.string(), sentExtent:z.tuple([z.number(),z.number().nullable()]),
   inferenceWindow:z.tuple([z.number(),z.number().nullable()]), bytes:z.int().nonnegative().optional(),
   utc:z.iso.datetime(), state:z.enum(["attempted","sent","unknown"]), result:z.enum(["complete","partial","failed"]),
   reason:z.string().optional(),
 });
+const cleanupCall = modelCall.extend({
+  role:z.literal("cleanup"), engine:z.literal("twelvelabs"), model:z.null(), material:z.literal("none"),
+  bytes:z.literal(0), copies:z.int().nonnegative(), sentExtent:z.null(), inferenceWindow:z.null(),
+});
+export const engineCall = z.union([modelCall,cleanupCall]);
+export type CleanupCall = z.infer<typeof cleanupCall>;
 export type EngineCall = z.infer<typeof engineCall>;
 export const engineRunFields = {
   library:z.array(copyReceipt).optional(), engineCalls:z.array(engineCall).optional(),

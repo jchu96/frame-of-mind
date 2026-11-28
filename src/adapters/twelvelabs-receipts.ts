@@ -7,12 +7,14 @@ import { z } from "zod";
 import { readAccountHome } from "../cli-launch.js";
 import { userSettingsPath } from "../key-command-settings.js";
 import { trustedDirectory } from "./job-path.js";
-import { copyReceipt, remoteId, type CopyReceipt } from "../domain/engine-receipts.js";
+import { copyReceipt, remoteId, type CleanupCall, type CopyReceipt } from "../domain/engine-receipts.js";
 import { ContractError } from "../domain/contract-error.js";
 
 const saved = z.strictObject({receipt:copyReceipt, pid:z.int().positive().nullable(), host:z.string()});
 type Saved = z.infer<typeof saved>;
 type Request = (path:string, init?: RequestInit) => Promise<Response>;
+const startupRetryMs = 3000;
+type RetryProgress = {signal:AbortSignal; confirmed:()=>void};
 type Source = Pick<CopyReceipt,"recordingSha256"|"sentSha256"|"sentSpan">;
 
 export function receiptDirectory() {
@@ -37,10 +39,11 @@ async function privateDir(dir:string) {
     throw new ContractError("PERMISSION_DENIED","The scratch receipt directory must be private and owned by the current account.");
 }
 
-async function pendingRecords(directory:string) {
+async function pendingRecords(directory:string, signal?:AbortSignal) {
   await privateDir(directory);
   const found:Saved[] = [];
   for (const file of await readdir(directory)) {
+    signal?.throwIfAborted();
     if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
     const handle = await open(join(directory,file),constants.O_NOFOLLOW | constants.O_RDONLY | constants.O_NONBLOCK);
     try {
@@ -54,11 +57,10 @@ async function pendingRecords(directory:string) {
   return found;
 }
 
-export async function knownCleanupReceipts():Promise<string[]> {
-  const dir = receiptDirectory();
+export async function knownCleanupReceipts(dir = receiptDirectory(), signal?:AbortSignal):Promise<string[]> {
   try {
     await lstat(dir);
-    return (await pendingRecords(dir)).map(row=>row.receipt.receiptId);
+    return (await pendingRecords(dir,signal)).map(row=>row.receipt.receiptId);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
@@ -68,11 +70,12 @@ export async function knownCleanupReceipts():Promise<string[]> {
 export class ScratchReceipts {
   readonly copies:CopyReceipt[] = [];
   readonly accountScope:string;
+  private ledgerRead = false;
   private unresolved = new Set<string>();
   constructor(private readonly directory:string, key:string, private readonly runId:string, private readonly now:()=>string) {
     this.accountScope = createHash("sha256").update("twelvelabs account\0").update(key).digest("hex");
   }
-  private async write(receipt:CopyReceipt, active:boolean) {
+  private async write(receipt:CopyReceipt, active:boolean, signal?:AbortSignal) {
     const path = join(this.directory,receipt.receiptId+".json");
     const tmp = join(this.directory,"."+randomUUID());
     try {
@@ -81,6 +84,7 @@ export class ScratchReceipts {
         await handle.writeFile(JSON.stringify({receipt, pid:active ? process.pid : null, host:hostname()}));
         await handle.sync();
       } finally { await handle.close(); }
+      signal?.throwIfAborted();
       await rename(tmp,path);
       if (process.platform !== "win32") {
         const parent = await open(this.directory,"r");
@@ -88,26 +92,76 @@ export class ScratchReceipts {
       }
     } finally { await unlink(tmp).catch(()=>undefined); }
   }
-  async recover(request:Request, tell:(message:string)=>Promise<void>) {
-    const records = (await pendingRecords(this.directory)).filter(row=>row.receipt.accountScope === this.accountScope);
+  private async recoverable(signal:AbortSignal) {
+    const records = await pendingRecords(this.directory,signal);
+    signal.throwIfAborted();
     const groups = new Map<string,Saved[]>();
     for (const row of records) {
-      const group = groups.get(row.receipt.runId) ?? [];
-      group.push(row); groups.set(row.receipt.runId,group);
+      const receipt = row.receipt;
+      if (receipt.accountScope !== this.accountScope) continue;
+      if (receipt.state === "unconfirmed") this.unresolved.add(receipt.operation+"-"+receipt.sentSha256);
+      const group = groups.get(receipt.runId) ?? [];
+      group.push(row);
+      groups.set(receipt.runId,group);
     }
-    for (const group of groups.values()) {
-      for (const {receipt} of group) if (receipt.state === "unconfirmed") this.unresolved.add(receipt.operation+"-"+receipt.sentSha256);
-      if (group.some(({pid,host}) => {
-        if (host !== hostname()) return true;
-        if (!pid) return false;
-        try { process.kill(pid,0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code !== "ESRCH"; }
-      })) continue;
-      await tell("Checking Twelve Labs scratch deletion receipts (resource IDs only).");
-      await this.cleanup(group.map(r=>r.receipt),request);
-      for (const {receipt} of group) await tell("Twelve Labs scratch "+receipt.receiptId+" "+receipt.state+(receipt.reason ? " ("+receipt.reason+")" : "")+".");
-    }
+    this.ledgerRead = true;
+    return [...groups.values()].filter(group=>!group.some(({pid,host}) => {
+      if (host !== hostname()) return true;
+      if (!pid) return false;
+      try { process.kill(pid,0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code !== "ESRCH"; }
+    })).map(group=>group.map(row=>row.receipt));
   }
+
+  static async retryAtStart(
+    resolveAccount:(signal:AbortSignal,remainingMs:()=>number)=>Promise<{catalog:ScratchReceipts;request:Request}|undefined>,
+    tell:(message:string)=>Promise<void>, now:()=>string,
+  ):Promise<CleanupCall|undefined> {
+    const controller = new AbortController();
+    const {signal} = controller;
+    const deadline = performance.now()+startupRetryMs;
+    const call:CleanupCall = {role:"cleanup",engine:"twelvelabs",model:null,material:"none",bytes:0,
+      copies:0,sentExtent:null,inferenceWindow:null,utc:now(),state:"attempted",result:"failed"};
+    let confirmed = 0;
+    let contacted = false;
+    const attempt = async () => {
+      const account = await resolveAccount(signal,()=>Math.max(1,Math.ceil(deadline-performance.now())));
+      signal.throwIfAborted();
+      if (!account) return;
+      const groups = await account.catalog.recoverable(signal);
+      call.copies = groups.flat().filter(r=>r.assetId || r.taskId).length;
+      if (!call.copies) return;
+      await tell(`Retrying deletion of ${call.copies} Twelve Labs scratch ${call.copies === 1 ? "copy" : "copies"}. No material is sent.`);
+      const request:Request = (path,init) => {
+        signal.throwIfAborted();
+        contacted = true;
+        return account.request(path,{...init,signal});
+      };
+      for (const group of groups) {
+        await account.catalog.cleanup(group,request,{signal,confirmed:()=>{confirmed++;}});
+      }
+    };
+
+    let timer:ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_,reject)=>{
+      timer = setTimeout(()=>{ controller.abort(); reject(signal.reason); },startupRetryMs);
+    });
+    try {
+      await Promise.race([attempt(),timeout]);
+      if (!call.copies) return;
+      if (confirmed !== call.copies) call.reason = "retry-unconfirmed";
+    } catch {
+      call.reason = signal.aborted ? "retry-timeout" : "retry-unavailable";
+    } finally {
+      clearTimeout(timer);
+    }
+    call.state = contacted ? (signal.aborted ? "unknown" : "sent") : "attempted";
+    call.result = !call.reason ? "complete" : confirmed ? "partial" : "failed";
+    return call;
+  }
+
   async intent(source:Source, operation:CopyReceipt["operation"]) {
+    if (!this.ledgerRead) throw new ContractError("CAPABILITY_MISSING","Cannot establish scratch ownership from the local receipts.",
+      {engine:"twelvelabs",phase:operation,reason:"local-media-unavailable"});
     if (this.unresolved.has(operation+"-"+source.sentSha256))
       throw new ContractError("PROVIDER_UNREACHABLE","A previous scratch creation is unconfirmed.",{engine:"twelvelabs",phase:operation,reason:"network"});
     const time = this.now();
@@ -133,21 +187,28 @@ export class ScratchReceipts {
     await this.write(receipt,true);
     return parsed.data;
   }
-  private async cleanup(copies:CopyReceipt[],request:Request) {
+  private async cleanup(copies:CopyReceipt[],request:Request,retry?:RetryProgress) {
     const tasks = copies.filter(r=>r.operation !== "upload");
     for (const receipt of [...tasks,...copies.filter(r=>r.operation === "upload")]) {
+      retry?.signal.throwIfAborted();
       if (receipt.state === "deleted") continue;
       const path = receipt.operation === "upload" && receipt.assetId ? "/assets/"+receipt.assetId :
         receipt.operation !== "upload" && receipt.taskId ? "/analyze/tasks/"+receipt.taskId : undefined;
+      const next = {...receipt};
       if (path) {
         try {
-          receipt.reason = await this.remove(receipt,path,request,tasks);
-          receipt.state = receipt.reason === null ? "deleted" : "pending";
-        } catch { receipt.state = "pending"; receipt.reason = "unconfirmed-deletion"; }
+          next.reason = await this.remove(receipt,path,request,tasks);
+          next.state = next.reason === null ? "deleted" : "pending";
+        } catch { next.state = "pending"; next.reason = "unconfirmed-deletion"; }
       }
-      receipt.checkedAt = this.now();
-      if (receipt.state === "deleted") receipt.deletedAt = receipt.checkedAt;
-      await this.write(receipt,false);
+      retry?.signal.throwIfAborted();
+      // A startup retry may only advance durable evidence after confirmed absence.
+      if (retry && next.state !== "deleted") continue;
+      next.checkedAt = this.now();
+      if (next.state === "deleted") next.deletedAt = next.checkedAt;
+      await this.write(next,false,retry?.signal);
+      Object.assign(receipt,next);
+      retry?.confirmed();
     }
   }
   private async remove(receipt:CopyReceipt,path:string,request:Request,tasks:CopyReceipt[]):Promise<CopyReceipt["reason"]> {

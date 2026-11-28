@@ -1,5 +1,5 @@
 import { TwelveLabs, twelveTransport } from "../adapters/twelvelabs.js";
-import { receiptDirectory, ScratchReceipts } from "../adapters/twelvelabs-receipts.js";
+import { knownCleanupReceipts, receiptDirectory, ScratchReceipts } from "../adapters/twelvelabs-receipts.js";
 import type { EngineCall } from "../domain/engine-receipts.js";
 import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, checkDirectUpload, checkRoles, disclosure, enginePlan, fallbackMessage, usesTwelveLabs, type EngineItems } from "../domain/engine-plan.js";
 import { mediaRequestStarted, preparationDetails, uploadMedia, withMediaTransfer } from "../lib/media-transfer.js";
@@ -254,6 +254,7 @@ export interface AnalysisProjectionPublisher {
 
 export interface AnalyzeExecutionOptions {
   routeDisclosed?: boolean;
+  readCleanupKey?: (timeoutMs:number)=>Promise<string|undefined>;
   /** Include the per-pass usage receipt in CLI manifests. */
   includeTokenUsage?: boolean;
   /** The job caller supplies a fresh private directory inside its output grant. */
@@ -594,9 +595,24 @@ export class AnalysisOrchestrator {
       const analyzer = engines?.media;
       const runModel = route.grader.engine === "gemini" ? analyzer!.model : PEGASUS_MODEL;
       const calls:EngineCall[] = [];
-      const request = options.twelvelabsKey ? twelveTransport(options.twelvelabsKey) : undefined;
-      const catalog = request && new ScratchReceipts(this.dependencies.receiptDirectory ?? receiptDirectory(),options.twelvelabsKey!,runId,this.now);
-      if (catalog && request) await catalog.recover(request,tellRoute);
+      const directory = () => this.dependencies.receiptDirectory ?? receiptDirectory();
+      const accountFor = (key:string) => ({catalog:new ScratchReceipts(directory(),key,runId,this.now),request:twelveTransport(key)});
+      const usesTwelve = route.proposer.engine === "twelvelabs" || route.grader.engine === "twelvelabs";
+      const activeAccount = usesTwelve && options.twelvelabsKey ? accountFor(options.twelvelabsKey) : undefined;
+      const catalog = activeAccount?.catalog;
+      const request = activeAccount?.request;
+      if (options.twelvelabsKey || execution.readCleanupKey) {
+        const cleanup = await ScratchReceipts.retryAtStart(async (signal,remainingMs)=>{
+          if (activeAccount) return activeAccount;
+          if (!(await knownCleanupReceipts(directory(),signal)).length) return;
+          signal.throwIfAborted();
+          const key = options.twelvelabsKey ?? await execution.readCleanupKey?.(remainingMs());
+          signal.throwIfAborted();
+          if (!key) throw new Error("Cleanup key unavailable.");
+          return accountFor(key);
+        },tellRoute,this.now);
+        if (cleanup) calls.push(cleanup);
+      }
       const recordUpload = () => {
         if (sourceClock.lengthKnown) receipt.uploads.push({kind:soundOnly ? "audio-window" : "video-cut",
           span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
@@ -616,7 +632,7 @@ export class AnalysisOrchestrator {
       const engineRecords = () => ({enginePlan:plan,engineCalls:calls,
         ...(catalog?.copies.length && {library:catalog.copies,indexWait:twelve!.indexWait})});
       const now = this.now;
-      async function measured<T>(role:"proposer"|"grader",window:EngineCall["inferenceWindow"],work:()=>Promise<T>) {
+      async function measured<T>(role:"proposer"|"grader",window:NonNullable<EngineCall["inferenceWindow"]>,work:()=>Promise<T>) {
         const actor = plan.used![role];
         const entry:EngineCall = {role,engine:actor.engine as EngineCall["engine"],model:actor.model!,
           material:role === "proposer" ? "selected recording and proposal instruction" : "selected recording, grading window and scoped evidence",

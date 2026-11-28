@@ -386,9 +386,7 @@ program
           throw new CliError("KEY_MISSING", "Set a provider key before analysis.", {engine:"gemini"});
         }
         for (const engine of ["gemini","twelvelabs"] as const) {
-          if (plan.planned.proposer.engine !== engine && plan.planned.grader.engine !== engine) {
-            if (engine !== "twelvelabs" || !twelve.present || !(await knownCleanupReceipts()).length) continue;
-          }
+          if (plan.planned.proposer.engine !== engine && plan.planned.grader.engine !== engine) continue;
           const value = await config.providerKey(engine);
           if (!value) throw new CliError("KEY_MISSING","Set the selected engine key.",{engine});
           if (engine === "gemini") analyzeOptions.apiKey = value;
@@ -405,6 +403,9 @@ program
         try {
           const execution = {
             routeDisclosed:true, includeTokenUsage: true,
+            ...(twelve.present && !usesTwelveLabs(plan) && {
+              readCleanupKey:async (timeoutMs:number)=>config.providerKey("twelvelabs",timeoutMs),
+            }),
             signal: cancellation.signal,
             onFailurePublished(directory: string, manifest:NonNullable<typeof failedRun>) { failureFolder = directory; failedRun = manifest; },
             progress: {

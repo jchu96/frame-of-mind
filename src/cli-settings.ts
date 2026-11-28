@@ -73,11 +73,11 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
       keyReport() { return selectedKey().report; },
       keyLabel() { return keyLabel(selectedKey().report, launch.mode); },
       commandNextStep() { return nextStep; },
-      providerKey() {
+      providerKey(timeoutMs?:number) {
         const selection = selectedKey();
         if (selection.report.source !== "command") return selection.value;
         if (command.kind !== "command") throw new KeyCommandRefused(engine === "twelvelabs" ? engine : undefined);
-        return acquisition ??= runKeyCommand(command.argv, command.home, launch.environment).then(value => {
+        return acquisition ??= runKeyCommand(command.argv, command.home, launch.environment,timeoutMs).then(value => {
           selection.report.state = "verified";
           return value;
         }, () => {
@@ -97,7 +97,7 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
     },
     keyReport(engine: KeyEngine = "gemini") { return keys[engine].keyReport(); },
     keyLabel(engine: KeyEngine = "gemini") { return keys[engine].keyLabel(); },
-    providerKey(engine: KeyEngine = "gemini") { return keys[engine].providerKey(); },
+    providerKey(engine: KeyEngine = "gemini",timeoutMs?:number) { return keys[engine].providerKey(timeoutMs); },
     settingsPath() { return userSettingsPath(launch.accountHome, platform); },
     commandNextStep(engine: KeyEngine = "gemini") { return keys[engine].commandNextStep(); },
   };
