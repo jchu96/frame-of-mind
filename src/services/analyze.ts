@@ -837,6 +837,7 @@ export class AnalysisOrchestrator {
         }, async (span) => {
           const usageBefore = usageCountsOf(analyzer);
           try {
+            const hints: [notes?: readonly RunNote[], ranged?: boolean] = ranged ? [options.runNotes, true] : options.runNotes?.length ? [options.runNotes] : [];
             const indexed = await analyzer.index(
               remote,
               indexMeeting,
@@ -844,7 +845,7 @@ export class AnalysisOrchestrator {
               options.focus,
               indexFps,
               derivedTranscript,
-              ...(ranged ? [options.runNotes, true] as const : options.runNotes?.length ? [options.runNotes] as const : []),
+              ...hints,
             );
             span.setAttributes({
               "frame_of_mind.candidates_indexed": indexed.moments.length,
@@ -897,7 +898,7 @@ export class AnalysisOrchestrator {
         const providerTranscript = ranged ? indexMeeting?.transcript : meeting?.transcript?.trim() ? meeting.transcript : undefined;
         const effectiveTranscript = providerTranscript ?? derivedTranscript;
         const transcriptIsDerived = Boolean(derivedTranscript) && !providerTranscript;
-        let proseTimeUnverified = false;
+
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
         const inRange = duration === undefined ? index.moments : index.moments.filter(candidate => timestampToSeconds(candidate.start) < duration && modelSpan(sourceClock, timestampToSeconds(candidate.start), timestampToSeconds(candidate.end)));
@@ -1074,7 +1075,7 @@ export class AnalysisOrchestrator {
               } else await rm(stagingImage,{force:true});
               assertNotCanceled(execution.signal);
             }
-            if (ranged && markProseTime(item)) proseTimeUnverified = true;
+            if (ranged) markProseTime(item);
             items.push(item);
           } catch (error) {
             if (error instanceof AnalysisCanceledError) throw error;
@@ -1286,6 +1287,7 @@ export class AnalysisOrchestrator {
         else for (const {candidate} of items) {
           receipt.cover(boundIndex(candidate.exactSpan!.start),boundIndex(candidate.exactSpan!.endExclusive));
         }
+        const proseTimeUnverified = ranged && items.some(i => i.result.confidenceNotes?.includes("A time in this text may be on the cut's clock."));
         const manifestBase = {
           ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}), ...(proseTimeUnverified && {proseTimeUnverified:true as const}),
           ...(tokenUsage && { tokenUsage }),

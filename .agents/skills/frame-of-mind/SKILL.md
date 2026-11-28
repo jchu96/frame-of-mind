@@ -231,24 +231,18 @@ source timing. Use `proxy` to prepare a full recording, `slice --from 2f --to
 a distinct `-o` path. Run `verify --expect-frames <count>` on a prepared MP4
 before choosing it for upload. See RUNBOOK §3.10 for complete commands.
 
-### Part of a recording today
-
-`analyze` and `transcribe` take a whole file, at most 7260 s. For one part, cut
-it first and carry the start yourself:
+### Part of a recording
 
 ```bash
-frameofmind slice "<recording>" --from 600 --to 1200 -o "<cut.mp4>"
-frameofmind analyze "<stable-id>" --source none --video "<cut.mp4>" \
-  --recipe decisions --timeline-offset 600
-frameofmind transcribe "<cut.mp4>" --json
+frameofmind analyze --source none --video "<recording>" --from 600 --to 1200 --recipe decisions
+frameofmind transcribe "<recording>" --from 600 --to 1200 --json
 ```
 
-- `--from` is inclusive and `--to` exclusive; use the start `slice` reports.
-- `analyze` with `--timeline-offset <start>`: `timeline` times are the
-  recording's own times; `source` times count from the cut's first frame.
-- `transcribe` has no offset: every time counts from the cut's first frame.
-  Add the start yourself and say which clock you quote.
-- Speaker labels do not carry from one cut to the next.
+Use an inclusive start and exclusive end in seconds, exact frames or source timecode. Audio-only transcription accepts seconds or samples (`44100samp`).
+with a seconds bound moved to its frame, a printed whole second can fall just outside the request; a caller tests ownership against `sourceRange`, never against a printed second.
+Read the `Range used:` receipt. The duration limit applies to the range. A `whole-file — <reason>` fallback decodes from zero and counts inside the wall-clock deadline.
+Match the recording digest and exact overlapping content. A 595–615 s cue over [0,610) and [600,1200) yields fragments 595–610 and 600–615. Count the overlap once.
+Speaker labels are local to each call. When prose carries “A time in this text may be on the cut's clock.” use the structured source bound to seek.
 
 For a clip from a longer meeting with provider or file context, also pass the
 signed transcript-time minus video-time offset:

@@ -634,6 +634,23 @@ A reusing run never deletes an upload it did not create. Gemini normally
 expires files after 48 hours. Temporary local derivatives and downloads are
 still removed. Studio retention is unchanged; see [ADR 0024](docs/adr/0024-upload-retention-is-an-operator-setting.md).
 
+## Analyze or transcribe part of a recording
+
+```sh
+frameofmind analyze --source none --video recording.mp4 --from 600 --to 1200 --recipe decisions
+frameofmind transcribe recording.wav --from 44100samp --to 132300samp --json
+```
+
+`--from` includes the start and `--to` excludes the end. Omit either to use the recording edge. Use seconds with up to three decimal places, a video frame such as `15000f`, or source timecode. Use `--timecode-rate from-media:df` or `from-media:ndf` for an ambiguous timecode label. Audio-only transcription accepts seconds or a native sample count. Each requested range must cover at least one second. The tool rounds the start down and end up to the source grid. A seconds end less than one unit beyond EOF clamps to EOF. Read the `Range used:` line on stderr and `edgeMoved` in the receipt.
+
+with a seconds bound moved to its frame, a printed whole second can fall just outside the request; a caller tests ownership against `sourceRange`, never against a printed second.
+
+The tool scans packet timestamps and decodes from the preceding key frame when it can verify display order. If it cannot, stderr prints `Cutting source [...): whole-file — <reason>` before the full timing and decode pass. One measurement on one hour of 1080p video took 1 second for the scan and 94 seconds for a full decode. Cutting counts toward your wall-clock deadline. The media limit applies to the selected duration. Read the active limit in `capabilities --json` under `maxRangeSeconds`.
+
+Each range has its own upload, cost and retention period. A range cannot use `--remote-file`. Match runs by `recordingSha256` and use exact spans for editing. An item or cue at 595–615 s appears as an end fragment at 595–610 in [0,610) and a start fragment at 600–615 in [600,1200). Join matching content to recover 595–615 and count the overlap once. A boundary marked `unknown` has uncertain continuity. A suspected clock time in analysis prose adds “A time in this text may be on the cut's clock.” Seek using the structured time beside the record.
+
+Whole-file video with varying or unproven timing uses the stream's native ticks. In `{unit:"tick", ticks:"120", tick:{num:1,den:1000}}`, the position is 120 ms. Standard SRT cues carry source milliseconds. Transcription emits a source coverage receipt on stderr and writes the transcript JSON only with `--json`.
+
 ## Clocks
 
 Every rendered media time names its clock: `source` is time from the input
