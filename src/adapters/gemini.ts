@@ -524,7 +524,7 @@ export class GeminiVideoAnalyzer {
 
   async interrogate(
     file: GeminiFile,
-    candidate: IndexedMoment,
+    candidate: Pick<IndexedMoment, "start" | "end">,
     nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
@@ -600,7 +600,6 @@ export class GeminiVideoAnalyzer {
               promptSection(
                 "context",
                 [
-                  `The whole-video index flagged: "${escapePromptData(candidate.summary)}" on ${escapePromptData(candidate.surface || "an unknown surface")}.`,
                   !nearbyTranscript
                     ? "No aligned transcript is available for this clip. Base every claim on recording evidence and do not infer off-screen discussion."
                     : [

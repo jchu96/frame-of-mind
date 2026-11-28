@@ -1,3 +1,5 @@
+import type { Actor, Candidate } from "./candidates.js";
+import type { ProposalEdges, ResolvedEdges } from "./proposal-edges.js";
 import type { Bound, ExactSpan } from "./source-bound.js";
 import type { RangeFields } from "./range-fields.js";
 import type { TokenUsage } from "./token-usage.js";
@@ -78,6 +80,7 @@ export interface MediaSource {
 }
 
 export interface IndexedMoment {
+  proposalEdges?: ProposalEdges;
   exactSpan?: ExactSpan;
   start: string;
   end: string;
@@ -121,6 +124,12 @@ export interface DetailStill {
 }
 
 export interface AnalysisItem {
+  candidateId?: string;
+  proposedBy?: Actor;
+  gradedBy?: Actor;
+  proposal?: Candidate;
+  proposalMembers?: Candidate[];
+  resolvedEdges?: ResolvedEdges;
   exactStillTimes?: Bound[];
   screenshotExactTime?: Bound;
   stillTimes?: string[];

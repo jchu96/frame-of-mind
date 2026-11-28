@@ -1,5 +1,6 @@
 import { recordingIdentity, readCandidates, type Candidate } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
+import { measurementWindow, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
 import { proposalWindow } from "./proposal-windows.js";
 import { rangeTranscript } from "./range-context.js";
 import { rangeUsage, type RangeRequest } from "../domain/range-clock.js";
@@ -92,7 +93,7 @@ import { markQuietLines, measureTrack } from "./transcript-coverage.js";
 import { TRANSCRIPTION_WINDOW_SECONDS, TRANSCRIPTION_OVERLAP_SECONDS } from "./transcription-policy.js";
 import { extractScreenshot } from "./screenshots.js";
 import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
-import { renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
+import { buildTimes, renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { extractDetailStills, unavailableStillWarning, unreadScreenTextWarning } from "./detail-stills.js";
 import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
 import { mapWithConcurrency } from "../lib/concurrency.js";
@@ -297,7 +298,7 @@ export interface AnalysisVideoAnalyzer {
   ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
-    candidate: IndexedMoment,
+    candidate: Pick<IndexedMoment, "start" | "end">,
     nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
@@ -997,7 +998,7 @@ export class AnalysisOrchestrator {
               try {
                 const detail = await analyzer.interrogate(
                   remote,
-                  candidate,
+                  { start: candidate.start, end: candidate.end },
                   effectiveTranscript && (alignment || transcriptIsDerived)
                     ? nearbyTranscript(
                         effectiveTranscript,
@@ -1053,8 +1054,14 @@ export class AnalysisOrchestrator {
           indexNumber: number,
         ): Promise<void> => {
           const candidate = candidates[indexNumber]!;
+          const row = proposalsByWindow.get(candidate)!;
+          const edges = proposalEdges(row, sourceClock);
           const exactSpan = spanOf(candidate)!;
-          const sourceCandidate = {...candidate, start:humanTime(exactSpan.start), end:humanTime(exactSpan.endExclusive), exactSpan};
+          if (BigInt(edges.start.at) < sourceClock.from) exactSpan.start = sourceBound(sourceClock, sourceClock.from);
+          const observedEnd = sourceClock.observedEnd;
+          if (observedEnd !== undefined && BigInt(edges.end.at) > observedEnd) exactSpan.endExclusive = sourceBound(sourceClock, observedEnd);
+          const provenance = {candidateId:row.id, proposedBy:row.proposedBy, gradedBy:{engine:"gemini",model:analyzer.model},proposal:row};
+          const sourceCandidate = {...candidate, start:humanTime(exactSpan.start), end:humanTime(exactSpan.endExclusive), exactSpan, proposalEdges:edges};
           if (ranged && sourceClock.from > 0n && boundIndex(exactSpan.start) === sourceClock.from) {
             receipt.startFragments.push({kind:"moment",exactSpan,state:"unknown"});
           }
@@ -1071,9 +1078,8 @@ export class AnalysisOrchestrator {
             // The request asks for screen words only from a labelled still. A
             // quote that cites any other time was not read from one: drop it.
             const cited = result.evidence?.timestamp;
-            const screenTextNotFromStill = result.accepted && !!attempt.stillTimes?.length
-              && result.evidence?.verbatimUiText !== undefined
-              && !(cited !== undefined && attempt.stillTimes.some(time => timestampToSeconds(time) === timestampToSeconds(cited)));
+            const screenTextNotFromStill = result.evidence?.verbatimUiText !== undefined
+              && !(cited !== undefined && attempt.stillTimes?.some(time => timestampToSeconds(time) === timestampToSeconds(cited)));
             if (screenTextNotFromStill) {
               const { verbatimUiText: _removed, ...evidence } = result.evidence!;
               const notes = (result.confidenceNotes ?? "").slice(0, 10_000 - unreadScreenTextWarning.length - 1);
@@ -1087,13 +1093,14 @@ export class AnalysisOrchestrator {
             );
             if (result.evidence?.timestamp) {
               const sec = timestampToSeconds(result.evidence.timestamp);
-              const exactTime = modelBound(sourceClock, sec, 0n, sourceClock.cutLength);
+              const stillIndex = attempt.stillTimes?.indexOf(result.evidence.timestamp) ?? -1;
+              const exactTime = attempt.exactStillTimes?.[stillIndex] ?? modelBound(sourceClock, sec, 0n, sourceClock.cutLength);
               if (boundIndex(exactTime) >= boundIndex(exactSpan.endExclusive)) {
                 throw new CandidateAnalysisError({code:"evidence_out_of_range", attempts:1});
               }
               result = {...result, evidence:{...result.evidence, timestamp:humanTime(exactTime), exactTime}};
             }
-            const item: AnalysisItem = { candidate: sourceCandidate, result };
+            const item: AnalysisItem = { ...provenance, candidate: sourceCandidate, result };
             if (attempt.stillTimes) {
               item.exactStillTimes = attempt.exactStillTimes!;
               item.stillTimes = item.exactStillTimes.map(humanTime);
@@ -1123,6 +1130,7 @@ export class AnalysisOrchestrator {
             if (error instanceof AnalysisCanceledError) throw error;
             if (!(error instanceof CandidateAnalysisError)) throw error;
             failures.push({
+              ...provenance, proposalEdges:edges,
               candidateOrdinal: indexNumber + 1,
               start: sourceCandidate.start,
               end: sourceCandidate.end, exactSpan,
@@ -1255,14 +1263,24 @@ export class AnalysisOrchestrator {
         assertNotCanceled(execution.signal);
         let proposals: SnapRun | undefined;
         if (settings) {
-          const boundaries = ranged ? await this.decodeSpeech(originalPath,{signal:execution.signal, slice:{
+          const windows = items.map(({candidate}) => {
+            const claims = candidate.proposalEdges!;
+            return {
+              start:candidate.exactSpan!.start.origin === "cut" ? undefined : measurementWindow(claims.start,sourceClock,settings.windowMs),
+              end:candidate.exactSpan!.endExclusive.origin === "cut" ? undefined : measurementWindow(claims.end,sourceClock,settings.windowMs),
+            };
+          });
+          const shouldMeasure = windows.some(w => w.start !== undefined || w.end !== undefined);
+          const boundaries = !shouldMeasure ? undefined : ranged ? await this.decodeSpeech(originalPath,{signal:execution.signal, slice:{
             startMs:boundMillis(sourceBound(sourceClock,sourceClock.from),true), endMs:boundMillis(sourceBound(sourceClock,sourceClock.to)),
           }}).then(envelope => envelope && classify(envelope)).catch(() => undefined) : await soundBoundaries();
           assertNotCanceled(execution.signal);
-          if (!boundaries) await reportWarning(progress, { kind: "warning", stage: "rendering", message: "Speech snapping unavailable: audio decode or timestamp verification failed." });
-          proposals = proposeRecords(items.map(({candidate}) => ({
-            start:boundMillis(candidate.exactSpan!.start),end:boundMillis(candidate.exactSpan!.endExclusive,true)
-          })), boundaries, clock.fileClock, settings);
+          if (shouldMeasure && !boundaries) await reportWarning(progress, { kind: "warning", stage: "rendering", message: "Speech snapping unavailable: audio decode or timestamp verification failed." });
+          proposals = proposeRecords(items.map(({candidate}) => {
+            const claims = candidate.proposalEdges!;
+            return {start:boundMillis(sourceBound(sourceClock, BigInt(claims.start.at))),
+              end:boundMillis(sourceBound(sourceClock, BigInt(claims.end.at)), true)};
+          }), boundaries, clock.fileClock, settings, windows);
         }
         assertNotCanceled(execution.signal);
         failurePhase = "cleanup";
@@ -1276,6 +1294,19 @@ export class AnalysisOrchestrator {
           cleanupFinalized = remoteDeleted || Boolean(execution.jobScratchRoot);
         }
         failurePhase = "render";
+        const snappedBounds = new Map<string, Bound>();
+        if (proposals) {
+          const history = buildTimes(analysis, clock, proposals);
+          if (history.schemaVersion === 3) for (const entry of history.entries) {
+            if ("snap" in entry && entry.snap.status === "snapped" && entry.snap.exactTime) snappedBounds.set(entry.pointer, entry.snap.exactTime);
+          }
+        }
+        items.forEach((item, i) => {
+          const pointer = `/items/${i}/candidate/`;
+          item.resolvedEdges = resolveEdges(item.candidate.exactSpan!, item.candidate.proposalEdges!, {
+            start:snappedBounds.get(pointer + "start"), end:snappedBounds.get(pointer + "end"),
+          });
+        });
         const analysisSha256 = await analysisDigest(analysis);
         const promptProvenance = {
           indexPrefixSha256: await sha256Utf8(promptPrefix(options.recipe, "index")),

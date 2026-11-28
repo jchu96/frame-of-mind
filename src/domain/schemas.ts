@@ -1,3 +1,4 @@
+import { itemProvenance, proposalEdgesSchema } from "./proposal-edges.js";
 import { rangeFields } from "./range-fields.js";
 import { boundSchema, boundIndex, boundRate, exactSpanSchema, humanTime } from "./source-bound.js";
 import { sameRate } from "./media-clock.js";
@@ -152,10 +153,10 @@ export const analysisRunV3Schema = z.object({
 const exactEvidence = analysisDetailSchema.shape.evidence.unwrap().extend({exactTime: boundSchema.optional()}).refine(
   e => (e.timestamp === undefined) === (e.exactTime === undefined) && (!e.exactTime || humanTime(e.exactTime) === e.timestamp),
   "Evidence needs its exact time and matching text together.");
-const exactCandidate = z.strictObject({...indexedMomentSchema.shape, exactSpan: exactSpanSchema}).refine(
+const exactCandidate = z.strictObject({...indexedMomentSchema.shape, exactSpan: exactSpanSchema, proposalEdges: proposalEdgesSchema.optional()}).refine(
   c => c.start === humanTime(c.exactSpan.start) && c.end === humanTime(c.exactSpan.endExclusive),
   "Printed times must describe the exact span.");
-const exactItem = z.strictObject({...analysisItemSchema.shape, candidate:exactCandidate,
+const exactItem = z.strictObject({...analysisItemSchema.shape, ...itemProvenance, candidate:exactCandidate,
   result:analysisDetailSchema.extend({evidence:exactEvidence.optional(),confidenceNotes:z.string().max(10120).optional()}), exactStillTimes:z.array(boundSchema).max(3).optional(),
   screenshotExactTime:boundSchema.optional(),
 }).superRefine((item, ctx) => {

@@ -2996,3 +2996,111 @@ it("inside-outside-equivalence rejects a malformed adapter proposal before gradi
   });
   expect(f.analyzer.interrogate).not.toHaveBeenCalled();
 });
+
+describe("engine answers", () => {
+  async function fileOptions(f: Fixture, clock: import("../src/domain/range-clock.js").RangeClock,
+    candidates: import("../src/domain/candidates.js").Candidate[]) {
+    const {sha256File} = await import("../src/lib/files.js");
+    const {recordingIdentity} = await import("../src/domain/candidates.js");
+    const path = f.options.video! + ".json";
+    await writeFile(path,JSON.stringify({schemaVersion:1,recording:recordingIdentity(clock,await sha256File(f.options.video!)),candidates}));
+    return {...f.options,candidatesFile:path,maxIncidents:10};
+  }
+  const row = (id: string,start: number,end: number): import("../src/domain/candidates.js").Candidate => ({
+    id,start,end,basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000},
+    proposedBy:{engine:"finder",model:null},label:"Movement",reason:"Visible motion",chain:[],
+  });
+  it.each([{num:25,den:1},{num:30000,den:1001}])("exact-answer-roundtrip preserves proposal counts on $num/$den",async rate => {
+    const {RangeClock} = await import("../src/domain/range-clock.js");
+    const {validateVersionedRunImport} = await import("../src/domain/integrity.js");
+    const f = await createFixture();
+    const clock = RangeClock.resolve({unit:"frames",length:3000n,rate},{});
+    const candidate = row("one",305,401);
+    f.analyzer.interrogate.mockResolvedValue({...detailResult(),evidence:undefined});
+    const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createAnalyzer:()=>f.analyzer,
+      withSourceRecording: async (path,_opts,_needs,_tell,consume) => consume(path,clock),extractScreenshot:async()=>false});
+    const run = await service.analyze(await fileOptions(f,clock,[candidate]));
+    const stored = await validateVersionedRunImport({analysis:JSON.parse(await readFile(join(run.directory,"analysis.json"),"utf8")),
+      manifest:JSON.parse(await readFile(join(run.directory,"manifest.json"),"utf8"))});
+    expect(stored.analysis.items[0]).toMatchObject({candidateId:"one",proposal:candidate,proposedBy:candidate.proposedBy,
+      gradedBy:{engine:"gemini",model:"gemini-test"},resolvedEdges:{
+        start:{status:"claim",bound:{unit:"video-frame",frames:"305",rate,precisionMs:1000}},
+        endExclusive:{status:"claim",bound:{frames:"401",rate}},
+      }});
+    expect(f.analyzer.index).not.toHaveBeenCalled();
+  });
+  it("tick-clock-roundtrip returns 0 and 120 ticks and the cited picture at 40",async () => {
+    const {RangeClock} = await import("../src/domain/range-clock.js");
+    const f = await createFixture();
+    const clock = RangeClock.wholeTicks({num:1,den:1000},120n,"unproven",[0,40,120]);
+    const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createAnalyzer:()=>f.analyzer,
+      withSourceRecording:async(path,_opts,_needs,_tell,consume)=>consume(path,clock),
+      extractScreenshot:async (_video,_at,path,_window,position) => {
+        await writeFile(path,"fixture"); position!.captured(sourceBound(clock,40n)); return true;
+      }});
+    f.analyzer.interrogate.mockResolvedValue({...detailResult(),evidence:{timestamp:"00:00:00",verbatimUiText:"Sign"}});
+    const run = await service.analyze(await fileOptions(f,clock,[row("vfr",0,120)]));
+    const item = run.analysis.items[0]!;
+    expect(item.resolvedEdges).toMatchObject({start:{bound:{ticks:"0"}},endExclusive:{bound:{ticks:"120"}}});
+    expect(item.result.evidence).toMatchObject({exactTime:{ticks:"40",tick:{num:1,den:1000}},verbatimUiText:"Sign"});
+  });
+  it("resolved-edges-from-history derives a cut, a snap and an untouched claim from the published files", async () => {
+    const {RangeClock} = await import("../src/domain/range-clock.js");
+    const {snapSettings} = await import("../src/domain/snap.js");
+    const f = await createFixture();
+    const clock = RangeClock.resolve({unit:"frames",length:500n,rate:{num:25,den:1}},{from:"2",to:"18"});
+    const first = row("cut",25,150), next = row("snap",250,350);
+    next.chain = [{pass:1,edge:"start",at:251,precisionMs:160,basis:"word",by:{engine:"editor",model:null}}];
+    const block = new Float32Array(1000).fill(-90);
+    block.fill(-10,808,840); // A speech onset at 10.08 s on the source clock.
+    const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createAnalyzer:()=>f.analyzer,
+      withSourceRecording:async(path,_opts,_needs,_tell,consume)=>consume(path,clock),
+      decodeSpeechEnvelope:async()=>({sourceSampleRateHz:48000,startMs:2000,blocks:[block],length:1000}),
+      extractScreenshot:async()=>false});
+    f.analyzer.interrogate.mockResolvedValue({...detailResult(),accepted:false,evidence:undefined});
+    const run = await service.analyze({...await fileOptions(f,clock,[first,next]),from:"2",to:"18",snapSettings:snapSettings()});
+    const history = JSON.parse(await readFile(join(run.directory,"times.json"),"utf8"));
+    const origins = new Set<string>();
+    for (const [i,item] of run.analysis.items.entries()) for (const edge of ["start","end"] as const) {
+      const key = edge === "start" ? edge : "endExclusive";
+      const bound = item.candidate.exactSpan![key];
+      const saved = history.entries.find((x:{pointer:string}) => x.pointer === `/items/${i}/candidate/${edge}`).snap;
+      const measured = bound.origin === "cut" ? bound : saved.status === "snapped" ? saved.exactTime : undefined;
+      const proposal = item.proposal!;
+      const pass = proposal.chain.findLast(p => p.edge === edge);
+      const author = pass?.by ?? proposal.proposedBy, at = pass?.at ?? proposal[edge];
+      const claim = {clock:"source",unit:"video-frame",rate:{num:25,den:1},frames:String(at),origin:"model",at,by:author,
+        basis:pass?.basis ?? proposal.basis[edge],precisionMs:pass?.precisionMs ?? proposal.precisionMs[edge],pass:pass?.pass ?? 0};
+      const expected = measured ? {bound:measured,by:{engine:"frame-of-mind",model:null},status:"measured"} : {bound:claim,by:author,status:"claim"};
+      expect(item.resolvedEdges![key]).toEqual(expected);
+      origins.add(expected.bound.origin);
+    }
+    expect(origins).toEqual(new Set(["cut","snap","model"]));
+  });
+});
+
+it("wide-hit-unmeasured keeps 9000 ms claims even with speech on the proposed edge", async () => {
+  const {RangeClock} = await import("../src/domain/range-clock.js");
+  const {snapSettings} = await import("../src/domain/snap.js");
+  const {recordingIdentity} = await import("../src/domain/candidates.js");
+  const {sha256File} = await import("../src/lib/files.js");
+  const f = await createFixture();
+  const clock = RangeClock.resolve({unit:"frames",length:1000n,rate:{num:25,den:1}},{});
+  const path = f.options.video! + ".json";
+  await writeFile(path,JSON.stringify({schemaVersion:1,recording:recordingIdentity(clock,await sha256File(f.options.video!)),candidates:[{
+    id:"wide",start:50,end:275,basis:{start:"search-hit",end:"search-hit"},precisionMs:{start:9000,end:9000},
+    label:"",reason:"",proposedBy:{engine:"finder",model:null},chain:[],
+  }]}));
+  const block = new Float32Array(1000).fill(-90);
+  block.fill(-10,200,240);
+  const decode = vi.fn(async()=>({startMs:0,blocks:[block],length:1000}));
+  const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createAnalyzer:()=>f.analyzer,
+    withSourceRecording:async (p,_opts,_needs,_tell,consume)=>consume(p,clock),decodeSpeechEnvelope:decode,
+    extractScreenshot:async()=>false,probeDurationSeconds:async()=>40});
+  const run = await service.analyze({...f.options,candidatesFile:path,snapSettings:snapSettings()});
+  const resolved = run.analysis.items[0]!.resolvedEdges!;
+  for (const edge of [resolved.start,resolved.endExclusive]) expect(edge).toMatchObject({
+    status:"claim",by:{engine:"finder",model:null},bound:{precisionMs:9000,origin:"model"},
+  });
+  expect(decode).not.toHaveBeenCalled();
+});
