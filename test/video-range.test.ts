@@ -137,7 +137,7 @@ test("whole silent video keeps the native ticks of pictures at 0, 40 and 120 ms;
   const {withSourceRecording} = await import("../src/services/source-recording.js");
   const {modelSpan} = await import("../src/domain/source-bound.js");
   for (const name of ["varying.mp4","pal.mp4"]) {
-    await withSourceRecording(file(name), {}, "video", () => {}, undefined, async (mediaPath, clock) => {
+    await withSourceRecording(file(name), {}, "video", () => {}, async (mediaPath, clock) => {
       expect(mediaPath).toBe(file(name));
       const span = modelSpan(clock, 0, 1)!;
       if (name === "varying.mp4") {
