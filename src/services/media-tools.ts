@@ -16,6 +16,14 @@ export function localVideoInput(formatName?: string) {
   return [...options, "-enable_drefs", "0"];
 }
 export const probeLimit = 32 * 1024 * 1024;
+/**
+ * A decode check or an encode reads the whole recording, so a fixed limit cuts
+ * off a long one. Allow 600 s plus 2 s per second of recording: about four
+ * times what a 1080p proxy needed end to end on a busy machine.
+ */
+export function mediaWorkTimeoutMs(seconds: number) {
+  return 600_000 + (Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) * 2000 : 0);
+}
 export interface ToolOptions { signal?: AbortSignal; timeoutMs?: number; maxOutput?: number; inputFd?: number }
 
 export async function runMediaTool(binary: string, args: string[], options: ToolOptions = {}): Promise<string> {
