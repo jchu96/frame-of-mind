@@ -1,3 +1,5 @@
+import type { FrameTiming } from "./frame-timing.js";
+
 export const CLI_SCHEMA_VERSION = 1;
 
 /** Stable categories shared by the CLI and MCP startup. */
@@ -58,6 +60,15 @@ export type FaultCode = keyof typeof faultExits;
 export class ContractError extends Error {
   constructor(readonly code: FaultCode, message: string, readonly details?: Record<string, unknown>) {
     super(message);
+  }
+}
+
+export class FrameGridError extends ContractError {
+  constructor(readonly frameTiming: FrameTiming) {
+    const reason = frameTiming.varying ? "This clip’s frame rate varies."
+      : frameTiming.varying === false && frameTiming.oddGaps ? "This clip has uneven frame spacing."
+      : "A single exact frame rate could not be verified.";
+    super("INVALID_RATE", reason + " Analyze and transcribe still run on the whole recording.", {frameTiming});
   }
 }
 

@@ -147,6 +147,8 @@ async function reports({rate = "25/1", frames = 30, stagedFrames = frames, secon
   const [num, den] = rate.split("/").map(Number);
   const timing = (count: number) => ({streams: [{r_frame_rate: rate, avg_frame_rate: rate, time_base: "1/" + num,
     nb_read_frames: String(count)}], frames: Array.from({length: count}, (_, i) => ({pts: i * den!, duration: den}))});
+  const probeRows = timing(frames).frames.flatMap(({pts, duration}) => [`packet|pts=${pts}`, `frame|pts=${pts}|duration=${duration}`]);
+  probeRows.push(`stream|r_frame_rate=${rate}|avg_frame_rate=${rate}|time_base=1/${num}|nb_read_frames=${frames}`);
   const metadata = (timecode: string, height = 64) => ({format: {format_name: "mov", duration: seconds}, streams: [
     {index: 0, codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p", width: 2 * Math.round(80 * height / 64 / 2), height,
       tags: timecode ? {timecode} : {}}, {index: 1, codec_type: "audio", codec_name: "aac", channels: 1}]});
@@ -154,6 +156,7 @@ async function reports({rate = "25/1", frames = 30, stagedFrames = frames, secon
   await writeFile(join(root, "ffprobe"), `#!/bin/sh
 for last do :; done
 case "$*:$last" in
+  *packet=pts*) echo '${probeRows.join("\n")}' ;;
   *jpeg_pipe*) echo '${JSON.stringify(image)}' ;;
   *-count_frames*:*/output.mp4) echo '${JSON.stringify(timing(stagedFrames))}' ;;
   *-count_frames*) echo '${JSON.stringify(timing(frames))}' ;;
