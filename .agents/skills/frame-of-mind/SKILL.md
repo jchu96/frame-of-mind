@@ -80,13 +80,12 @@ seconds. An unverified clip clock is uncertainty to preserve when reporting.
 
 For `--snap speech`, quote both readings, for example “model end 21 s source
 (≈1 s), proposed cut 20.120 s source, 880 ms earlier, measured on a 10 ms grid,
-accurate to about ±50 ms.” Use ±200 ms when the source rate is below
-32 kHz or unknown. Name the observed pause and any alternative file times. Label
+accurate to about ±50 ms.” Read the stated precision from `target.precisionMs`. Name the observed pause and any alternative file times. Label
 the frame containing the proposed onset or last speech millisecond and explain
 that uncertainty can span neighbouring frames. For `no-boundary`, `ambiguous`
 or `unavailable`, quote the model range and status. List any refused edges and listen before choosing.
-Under room noise a snapped edge can sit inside the first or last word by up to
-about a third of a second; check it before cutting on it.
+Pass the opposite pick time to standalone `snap --other-edge <time>` — speech is found at 10 dB above the local floor (`floorDbfs`) and followed out to 1.5 dB, passing on synthetic sound with steady noise down to 32 dB below speech (real rooms remain untested).
+When `speechAboveFloorDb` is under 30, quote the measured time with `noisy: true` and ±300 ms precision, and `counts.noisy` counts these snaps.
 
 ## Local CLI and Studio
 

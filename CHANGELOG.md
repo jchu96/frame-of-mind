@@ -5,6 +5,9 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Speech snapping now finds speech 10 dB above the local floor and follows quieter word edges to 1.5 dB above it. Each measured cut reports `floorDbfs` and `speechAboveFloorDb`. Below 30 dB of contrast it keeps its time, flags the cut as noisy and reports ±300 ms precision. The run summary counts noisy snaps.
+- Standalone `snap --other-edge <time>` bounds the search by the opposite end of the pick. Analyze uses both candidate edges automatically.
+
 ## [0.6.7] - 2026-11-28
 
 The provider key can come from a command you name once, so no key sits in a file. A key that is present is used on every launch: the refusal "Credential source unknown" that 0.6.6 gave a job start is gone. The local media commands no longer give up on a long recording because a fixed clock ran out. Everything added is optional on contract version 1.

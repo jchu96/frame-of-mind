@@ -205,8 +205,10 @@ This supersedes the specification's requirement that the list always be empty.
 Preserve the model entry on every path.
 
 Both file and timeline measurements carry `gridMs: 10`. Their `precisionMs`
-is 50 for source audio at 32 kHz or higher, and 200 for lower or unknown
-rates. The optional frame reference identifies the frame containing the
+is 300 when the optional `noisy` flag is true. Otherwise it is 50 for source
+audio at 32 kHz or higher and 200 for lower or unknown rates. New snaps also
+report `floorDbfs` and `speechAboveFloorDb`. Historical schema-3 snaps can
+omit these fields. The optional frame reference identifies the frame containing the
 proposal. Its uncertainty can span neighbouring frames. The run import
 still uses analysis and manifest.
 

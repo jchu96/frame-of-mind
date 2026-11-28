@@ -1004,28 +1004,40 @@ expiry. See [ADR 0025](adr/0025-standalone-transcript-files.md).
 
 ```bash
 frameofmind analyze --source none --video take.mov --snap speech --snap-gap-ms 250 --snap-window-ms 1500
-frameofmind snap take.mov --at 00:00:21.000 --edge end --file-clock source --json
+frameofmind snap take.mov --at 00:00:21.000 --edge end --other-edge 14 --file-clock source --json
 ```
 
 Choose a minimum pause of 80–2000 ms and a search radius of 250–3000 ms.
 Both flags take whole integers. The defaults above look for at least 80 ms
 of speech. Analysis meters the local recording once. The standalone command
-seeks around the requested file time and uses the same selection rule.
+seeks around the requested file time. Supply the opposite file time with
+`--other-edge` (seconds or elapsed time, like `--at`). A proposed start must
+precede that end, and a proposed end must follow that start. Analyze supplies
+the opposite candidate edge automatically.
 `gapLowerBound: true` means the reported pause extends to the observation limit.
 
 Read the counts over both edges of every validated record, including rejections.
 The no-boundary fraction shows how often the search found no permitted edge
 beside a qualifying pause (0/0 for an empty run). The median signed shift uses
 the nearest-rank 50th percentile over successful snaps. Negative shifts move
-the proposed cut earlier.
+the proposed cut earlier. `counts.noisy` counts the noisy subset of successful
+snaps. An absent count means zero.
 
 For `ambiguous`, listen to the original range and the listed file-clock
 alternatives. These include the refused cut that would invert a record or
 worsen overlap. For `no-boundary`, listen around the whole-second model edge.
 Listed alternatives would extend the cut across another speech group.
-A successful proposal is measured on a 10 ms grid, accurate to about ±50 ms
-when the first audio stream is at least 32 kHz, or ±200 ms at lower or
-unknown rates. Its uncertainty can span frames adjacent to the reference frame.
+Speech must exceed the local floor by 10 dB for at least 80 ms. The tool then
+follows each quiet shoulder out to 1.5 dB above the floor. On the synthetic
+bench, noise 32 dB below speech produced no inward error over one 40 ms frame.
+The largest outward error was 84 ms. Real-room accuracy remains unmeasured.
+
+Read `floorDbfs` at the first or last speech window and `speechAboveFloorDb`
+for the mean power of the detected speech run in dB relative to that floor.
+Below 30 dB, as in the 26 dB bench case, the snap keeps its time and reports
+`noisy: true` with `target.precisionMs: 300`. Otherwise the stated precision
+is ±50 ms for audio at 32 kHz or above and ±200 ms at lower or unknown rates.
+All measured times use the same 10 ms grid. Uncertainty can span adjacent frames.
 An `unavailable` warning means the local decode or its timing could not be
 verified. Check ffmpeg and the first audio stream. A standalone unavailable
 result sets a nonzero exit status. The reports keep the model range for review.
