@@ -4,7 +4,7 @@ import { parse } from "dotenv";
 import { inheritedValue, type CliLaunch, type LaunchMode } from "./cli-launch.js";
 import { useApplicationSettings, type ApplicationSetting } from "./lib/application-settings.js";
 
-import { commandSetting, launchCommandOverride, userSettingsPath, type CommandSetting } from "./key-command-settings.js";
+import { commandSetting, launchCommandOverride, userSettingsPath, type CommandSetting, keyVariables, type KeyEngine } from "./key-command-settings.js";
 import { KeyCommandRefused, runKeyCommand } from "./key-command.js";
 
 interface KeyReport {
@@ -34,62 +34,72 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
     }
     return settings;
   }
-  let command: CommandSetting = {kind: "absent"};
-  let nextStep: string | undefined;
-  let acquisition: Promise<string> | undefined;
-  function select(): {report: KeyReport; value?: string} {
-    let value = inheritedValue(launch.environment, "GEMINI_API_KEY");
-    const bare = launch.mode === "bare";
-    let source: KeyReport["source"] = bare ? "unknown" : "environment";
-    // Only an ordinary CLI bootstrap supplies an account context.
-    const override = "accountHome" in launch ? launchCommandOverride(launch, platform) : undefined;
-    if (value === undefined) {
-      if (override) command = commandSetting(launch, platform, override);
-      if (command.kind === "command" || command.kind === "unavailable") {
-        if (command.kind === "unavailable") nextStep = command.fix;
-        return {report: {source: "command", lowerSourcesSkipped: true, present: command.kind === "command",
-          state: command.kind === "command" ? "unverified" : "unavailable"}};
+  function engineKey(engine: KeyEngine) {
+    let command: CommandSetting = {kind: "absent"};
+    let nextStep: string | undefined;
+    let acquisition: Promise<string> | undefined;
+    function select(): {report: KeyReport; value?: string} {
+      let value = inheritedValue(launch.environment, keyVariables[engine]);
+      const bare = launch.mode === "bare";
+      let source: KeyReport["source"] = bare ? "unknown" : "environment";
+      // Only an ordinary CLI bootstrap supplies an account context.
+      const override = "accountHome" in launch ? launchCommandOverride(launch, platform, engine) : undefined;
+      if (value === undefined) {
+        if (override) command = commandSetting(launch, platform, override, engine);
+        if (command.kind === "command" || command.kind === "unavailable") {
+          if (command.kind === "unavailable") nextStep = command.fix;
+          return {report: {source: "command", lowerSourcesSkipped: true, present: command.kind === "command",
+            state: command.kind === "command" ? "unverified" : "unavailable"}};
+        }
+        if (!bare) {
+          const data = file();
+          value = data?.[keyVariables[engine]];
+          source = data && value === undefined ? "none" : "dotenv";
+        } else if (command.kind === "none") source = "none";
       }
-      if (!bare) {
-        const data = file();
-        value = data?.GEMINI_API_KEY;
-        source = data && value === undefined ? "none" : "dotenv";
-      } else if (command.kind === "none") source = "none";
+      const present = value !== undefined && value.length > 0 && !/\s/.test(value);
+      return {
+        value: present ? value : undefined,
+        report: {source, present, ...(source === "dotenv" && {path}),
+          ...(override?.kind === "none" && {commandDisabledByEnvironment: true}),
+          ...(source === "environment" && {lowerSourcesSkipped: true}),
+          ...(!present && (source === "dotenv" || source === "environment") && {state: "unavailable"})},
+      };
     }
-    const present = value !== undefined && value.length > 0 && !/\s/.test(value);
+    let selected: ReturnType<typeof select> | undefined;
+    const selectedKey = () => selected ??= select();
     return {
-      value: present ? value : undefined,
-      report: {source, present, ...(source === "dotenv" && {path}),
-        ...(override?.kind === "none" && {commandDisabledByEnvironment: true}),
-        ...(source === "environment" && {lowerSourcesSkipped: true}),
-        ...(!present && (source === "dotenv" || source === "environment") && {state: "unavailable"})},
+      suppressFolder: () => selected?.report.source === "command" && !selected.report.present,
+      keyReport() { return selectedKey().report; },
+      keyLabel() { return keyLabel(selectedKey().report, launch.mode); },
+      commandNextStep() { return nextStep; },
+      providerKey() {
+        const selection = selectedKey();
+        if (selection.report.source !== "command") return selection.value;
+        if (command.kind !== "command") throw new KeyCommandRefused();
+        return acquisition ??= runKeyCommand(command.argv, command.home, launch.environment).then(value => {
+          selection.report.state = "verified";
+          return value;
+        }, () => {
+          selection.report.present = false;
+          selection.report.state = "unavailable";
+          throw new KeyCommandRefused();
+        });
+      },
     };
   }
-  let selected: ReturnType<typeof select> | undefined;
-  const selectedKey = () => selected ??= select();
+  const keys = {gemini:engineKey("gemini"), twelvelabs:engineKey("twelvelabs")};
   return {
     setting(name: ApplicationSetting) {
       const inherited = inheritedValue(launch.environment, name);
-      if (launch.mode === "bare" || inherited !== undefined || (selected?.report.source === "command" && !selected.report.present)) return inherited;
+      if (launch.mode === "bare" || inherited !== undefined || keys.gemini.suppressFolder()) return inherited;
       return file()?.[name];
     },
-    keyReport() { return selectedKey().report; },
-    keyLabel() { return keyLabel(selectedKey().report, launch.mode); },
+    keyReport(engine: KeyEngine = "gemini") { return keys[engine].keyReport(); },
+    keyLabel(engine: KeyEngine = "gemini") { return keys[engine].keyLabel(); },
+    providerKey(engine: KeyEngine = "gemini") { return keys[engine].providerKey(); },
     settingsPath() { return userSettingsPath(launch.accountHome, platform); },
-    commandNextStep() { return nextStep; },
-    providerKey() {
-      const selection = selectedKey();
-      if (selection.report.source !== "command") return selection.value;
-      if (command.kind !== "command") throw new KeyCommandRefused();
-      return acquisition ??= runKeyCommand(command.argv, command.home, launch.environment).then(value => {
-        selection.report.state = "verified";
-        return value;
-      }, () => {
-        selection.report.present = false;
-        selection.report.state = "unavailable";
-        throw new KeyCommandRefused();
-      });
-    },
+    commandNextStep(engine: KeyEngine = "gemini") { return keys[engine].commandNextStep(); },
   };
 }
 

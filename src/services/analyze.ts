@@ -1,4 +1,7 @@
-import { checkRoles, enginePlan, type EngineItems } from "../domain/engine-plan.js";
+import { TwelveLabs, twelveTransport } from "../adapters/twelvelabs.js";
+import { receiptDirectory, ScratchReceipts } from "../adapters/twelvelabs-receipts.js";
+import type { EngineCall } from "../domain/engine-receipts.js";
+import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, checkDirectUpload, checkRoles, directUploadHint, disclosure, enginePlan, fallbackMessage, type EngineItems } from "../domain/engine-plan.js";
 import { recordingIdentity, readCandidates, type Candidate, type CandidatesDocument } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
 import { measurementSearch, measurementWindow, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
@@ -122,6 +125,11 @@ const TRANSCRIPTION_WINDOW_ATTEMPTS = 2;
 const TRANSCRIPTION_WINDOW_RETRY_MS = 20_000;
 
 interface AnalyzeOptionsBase extends RangeRequest {
+  twelvelabsKey?: string;
+  retryArgv?: string[];
+  withholdGraderClaim?: boolean;
+  indexWaitSeconds?: number;
+  twelveLabsShape?: "flat" | "lines";
   candidatesFile?: string;
   proposer?: string;
   grader?: string;
@@ -301,7 +309,7 @@ export interface AnalysisVideoAnalyzer {
   ): Promise<AnalysisIndex>;
   interrogate(
     file: GeminiFile,
-    candidate: Pick<IndexedMoment, "start" | "end" | "summary" | "surface">,
+    candidate: Pick<IndexedMoment, "start" | "end" | "summary" | "surface"> & {withheld?:boolean},
     nearbyTranscript: string | undefined,
     recipe: AnalysisRecipe,
     focus?: string,
@@ -341,6 +349,7 @@ export interface AnalysisOrchestratorDependencies {
     apiKey: string,
     options: AnalyzeOptions,
   ): AnalysisVideoAnalyzer;
+  receiptDirectory?: string;
   withSourceRecording?: typeof withSourceRecording;
   createRunId?: () => string;
   now?: () => string;
@@ -382,7 +391,7 @@ export class AnalysisOrchestrator {
   private readonly sourceRecording: typeof withSourceRecording;
   private readonly frameRate: typeof probeFrameRate;
 
-  constructor(dependencies: AnalysisOrchestratorDependencies) {
+  constructor(private readonly dependencies: AnalysisOrchestratorDependencies) {
     this.createContextSource = dependencies.createContextSource;
     const legacyFactory = dependencies.createAnalyzer;
     if (dependencies.createEngines) this.createEngines = dependencies.createEngines;
@@ -418,8 +427,20 @@ export class AnalysisOrchestrator {
     const runId = requireSafeRunId(this.nextRunId());
     const startedAt = this.now();
     const hasContext = hasMeetingContext(options);
-    const context = hasContext ? this.createContextSource(options) : undefined;
     const progress = execution.progress ?? NOOP_PROGRESS_REPORTER;
+    const plan = enginePlan({...options, file:options.candidatesFile !== undefined, recipe:options.recipe.engines,
+      model:options.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL),
+      retention:options.retention ?? (options.keepUpload || options.remoteFileName ? "provider" : "run"),
+      available:!!options.apiKey, twelveAvailable:!!options.twelvelabsKey, preview:false});
+    if (!plan.used) throw new ContractError("KEY_MISSING", "Set a provider key before analysis.", {engine:"gemini"});
+    const retryArgv = options.retryArgv ?? ["analyze", ...(options.video ? ["--video",options.video] : []),
+      ...(options.from ? ["--from", options.from] : []), ...(options.to ? ["--to",options.to] : []),
+      ...(options.candidatesFile ? ["--candidates",options.candidatesFile] : [])];
+    if (!options.video) checkDirectUpload(plan, undefined, retryArgv);
+    const tellRoute = (message: string) => report(progress, {kind:"stage",stage:"fetching_context",message});
+    for (const line of disclosure(plan)) await tellRoute(line);
+    if (plan.reason) await tellRoute(fallbackMessage(plan.reason));
+    const context = hasContext ? this.createContextSource({...options, apiKey:"", twelvelabsKey:undefined}) : undefined;
     const temp = await createScratch("analyze", execution.jobScratchRoot);
     let meeting: MeetingEvidence | undefined;
     let localVideo = options.video ? resolve(options.video) : "";
@@ -505,7 +526,7 @@ export class AnalysisOrchestrator {
         if (preparing) preparing.receipt = receipt;
         return receipt;
       };
-      return await this.sourceRecording(originalPath, {...options,signal:execution.signal,onSourceResolved:resolved}, "video",
+      return await this.sourceRecording(originalPath, {from:options.from,to:options.to,timecodeRate:options.timecodeRate,signal:execution.signal,onSourceResolved:resolved}, "video",
         line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio) => {
       const receipt = preparing?.receipt ?? resolved(sourceClock);
       const recording = recordingIdentity(sourceClock, recordingSha256);
@@ -516,6 +537,13 @@ export class AnalysisOrchestrator {
         readCandidates(await loadCandidatesFile(options.candidatesFile), recording, "file", sourceClock.observedEnd);
       const uploadedCutSha256 = ranged ? await sha256File(localVideo) : undefined;
       const recordingSizeBytes = (await stat(localVideo)).size;
+      if (options.video) {
+        checkDirectUpload(plan, recordingSizeBytes, retryArgv);
+        if (plan.reason === "media-limit") {
+          await tellRoute(fallbackMessage(plan.reason));
+          await tellRoute(directUploadHint);
+        }
+      }
       if (recordingSizeBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
       const duration = ranged ? sourceClock.elapsed(sourceClock.to - sourceClock.from)
         : await this.probeDuration(localVideo, {signal:execution.signal});
@@ -538,15 +566,58 @@ export class AnalysisOrchestrator {
       await ensureDirectory(runContainerDirectory);
       await ensureDirectory(stagingDirectory);
 
-      const engines = this.createEngines(options.apiKey, options);
-      const analyzer = engines.media;
-      const plan = enginePlan({...options,file:!!fileRows,recipe:options.recipe.engines, model:analyzer.model,
-        retention:options.retention ?? (options.keepUpload ? "provider" : "run"),available:true,preview:false});
+      const route = plan.used!;
+      const engines = route.proposer.engine === "gemini" || route.grader.engine === "gemini"
+        ? this.createEngines(options.apiKey, {...options, twelvelabsKey:undefined}) : undefined;
+      const analyzer = engines?.media;
+      const runModel = route.grader.engine === "gemini" ? analyzer!.model : PEGASUS_MODEL;
+      const calls:EngineCall[] = [];
+      const request = options.twelvelabsKey ? twelveTransport(options.twelvelabsKey) : undefined;
+      const catalog = request && new ScratchReceipts(this.dependencies.receiptDirectory ?? receiptDirectory(),options.twelvelabsKey!,runId,this.now);
+      if (catalog && request) await catalog.recover(request,tellRoute);
+      const twelve = catalog && request ? new TwelveLabs(request,catalog,
+        {path:localVideo,mime:ranged ? "video/mp4" : mimeType,bytes:recordingSizeBytes,duration,sha:recordingSha256,
+          sentSha:uploadedCutSha256 ?? recordingSha256,clock:sourceClock},options.twelveLabsShape ?? "flat",options.indexWaitSeconds,
+        this.now,this.sleep,tellRoute,execution.signal) : undefined;
+      let finishedCopies = false;
+      const finishCopies = async () => {
+        if (!catalog || !request || finishedCopies) return;
+        await catalog.finish(request);
+        finishedCopies = true;
+        if (catalog.copies.length) plan.receiptIds = catalog.copies.map(r=>r.receiptId);
+        for (const copy of catalog.copies) await tellRoute("Twelve Labs scratch "+copy.receiptId+" "+copy.state+(copy.reason ? " ("+copy.reason+")" : "")+".");
+      };
+      const engineRecords = () => ({enginePlan:plan,engineCalls:calls,
+        ...(catalog?.copies.length && {library:catalog.copies,indexWait:twelve!.indexWait})});
+      async function measured<T>(role:"proposer"|"grader",window:EngineCall["inferenceWindow"],work:()=>Promise<T>) {
+        const actor = plan.used![role];
+        const entry:EngineCall = {role,engine:actor.engine as EngineCall["engine"],model:actor.model!,
+          material:role === "proposer" ? "selected recording and proposal instruction" : "selected recording, grading window and scoped evidence",
+          sentExtent:[0,duration ?? null],inferenceWindow:window,utc:new Date().toISOString(),bytes:recordingSizeBytes,state:"attempted",result:"failed"};
+        calls.push(entry);
+        try {
+          const result = await work();
+          entry.state="sent"; entry.result="complete";
+          if (role==="proposer" && actor.engine==="twelvelabs" && twelve?.partial) {
+            entry.result="partial"; entry.reason="proposal-incomplete";
+          }
+          return result;
+        } catch (error) {
+          const reason = error instanceof ContractError && engineReason.safeParse(error.details?.reason).data;
+          entry.state = reason === "network" || reason === "request-timeout" ? "unknown" : "attempted";
+          if (reason) entry.reason=reason;
+          throw error;
+        }
+      }
+      for (const route of [plan.planned, plan.used]) {
+        if (route?.proposer.engine === "gemini") route.proposer.model = analyzer!.model;
+        if (route?.grader.engine === "gemini") route.grader.model = analyzer!.model;
+      }
       const {engine,model} = plan.used!.grader;
       const gradedBy = {engine,model};
-      if (options.calibrate !== false && analyzer.probeClipClock) {
+      if (options.calibrate !== false && route.proposer.engine !== "twelvelabs" && analyzer?.probeClipClock) {
         const measured: Calibration = await this.calibrate({
-          model: analyzer.model,
+          model: runModel,
           upload: (path, mime) => { preparing = undefined; return analyzer.upload(path, mime); },
           probeClipClock: (file) => analyzer.probeClipClock!(file),
           delete: (file) => analyzer.delete(file),
@@ -558,10 +629,10 @@ export class AnalysisOrchestrator {
       const chatAttributes: TraceAttributes = {
         "gen_ai.operation.name": "chat",
         "gen_ai.provider.name": "google_genai",
-        "gen_ai.request.model": analyzer.model,
+        "gen_ai.request.model": runModel,
       };
       const indexFps = requireIndexFps(options.indexFps ?? 0.5);
-      if (options.model && analyzer.model !== options.model) {
+      if (options.model && analyzer && analyzer.model !== options.model) {
         throw new Error(
           "Resolved Gemini analyzer does not match the requested model.",
         );
@@ -577,7 +648,7 @@ export class AnalysisOrchestrator {
       if (
         options.derivedTranscript !== false && hasAudio !== false
         && !meeting?.transcript?.trim()
-        && typeof analyzer.transcribe === "function"
+        && route.proposer.engine !== "twelvelabs" && typeof analyzer?.transcribe === "function"
       ) {
         await report(progress, {
           kind: "stage",
@@ -739,7 +810,7 @@ export class AnalysisOrchestrator {
             derivedTranscript = formatted;
             derivedTranscriptProvenance = {
               origin: "gemini-audio",
-              model: analyzer.model,
+              model: runModel,
               sha256: sha256Text(marked.segments.map(line => {
                 const span = line.exactSpan;
                 return span ? `[${humanTime(span.start)} ${JSON.stringify(span)}] ${line.speaker}: ${line.text}` : "";
@@ -763,6 +834,10 @@ export class AnalysisOrchestrator {
       const retainRemote = (options.retention
         ? options.retention === "provider"
         : options.keepUpload) || Boolean(options.remoteFileName);
+      let remote: GeminiFile | undefined;
+      let uploading: Promise<GeminiFile> | undefined;
+      const uploadGemini = async () => {
+        if (!analyzer) throw new Error("Gemini media transport is unavailable.");
       await report(progress, {
         kind: "stage",
         stage: "uploading_to_gemini",
@@ -771,9 +846,7 @@ export class AnalysisOrchestrator {
           : "Uploading recording to Gemini Files API…",
       });
       assertNotCanceled(execution.signal);
-      let remote: GeminiFile;
-      try {
-        remote = await tracer.span({
+        return tracer.span({
           op: "analysis.stage",
           name: "stage upload",
           attributes: {
@@ -800,6 +873,10 @@ export class AnalysisOrchestrator {
           if (sourceClock.lengthKnown) receipt.uploads.push({kind:"video-cut", span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
           return file;
         });
+      };
+      const geminiFile = () => uploading ??= uploadGemini().then(file=>(remote=file));
+      try {
+        if (plan.used!.proposer.engine === "gemini" || (fileRows && route.grader.engine === "gemini")) await geminiFile();
       } catch (error) {
         if (error instanceof AnalysisCanceledError) throw error;
         assertNotCanceled(execution.signal);
@@ -815,7 +892,7 @@ export class AnalysisOrchestrator {
         const failure = runFailureManifestSchema.parse({
           ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}),
           schemaVersion: 1,
-          enginePlan:plan,
+          ...engineRecords(),
           toolVersion: VERSION,
           runId,
           status: "failed",
@@ -827,7 +904,7 @@ export class AnalysisOrchestrator {
             revision: options.recipeRevision,
             sha256: options.recipeSha256,
           },
-          model: analyzer.model,
+          model: runModel,
           recordingSha256,
           errorCode: faultCode(error),
           error: sanitizedFailureError(error),
@@ -880,7 +957,7 @@ export class AnalysisOrchestrator {
           clock.transcriptWindow = window.windowed ? "windowed" : "not-windowed";
           if (!window.windowed) await reportWarning(progress, { kind: "warning", stage: "indexing", message: "transcript not windowed: timestamped lines, a known video duration, and exact millisecond alignment are required." });
         }
-        const proposed = fileRows ? undefined : await tracer.span({
+        const geminiPropose = () => tracer.span({
           op: "gen_ai.chat",
           name: "gemini index",
           attributes: chatAttributes,
@@ -888,8 +965,8 @@ export class AnalysisOrchestrator {
           const usageBefore = usageCountsOf(analyzer);
           try {
             const hints: [notes?: readonly RunNote[], ranged?: boolean] = ranged ? [options.runNotes, true] : options.runNotes?.length ? [options.runNotes] : [];
-            const indexed = await engines.propose(sourceClock, recordingSha256,
-              remote,
+            const indexed = await engines!.propose(sourceClock, recordingSha256,
+              await geminiFile(),
               indexMeeting,
               options.recipe,
               options.focus,
@@ -905,11 +982,28 @@ export class AnalysisOrchestrator {
             span.setAttributes(usageDeltaAttributes(usageBefore, usageCountsOf(analyzer)));
           }
         });
+        const propose = async () => {
+          const window:[number,number|null] = [0,duration ?? null];
+          if (plan.used!.proposer.engine === "gemini") return measured("proposer",window,geminiPropose);
+          try {
+            preparing = undefined;
+            return await measured("proposer",window,()=>twelve!.propose(options.recipe,options.focus));
+          } catch (error) {
+            const reason = error instanceof ContractError && engineReason.safeParse(error.details?.reason).data;
+            if (!reason || execution.signal?.aborted) throw error;
+            if (!defaultDualRoute(plan)) throw new ContractError(error.code,error.message,{...error.details,retryWith:geminiRetry(retryArgv,false)});
+            fallbackPlan(plan,reason);
+            await tellRoute(fallbackMessage(reason));
+            return measured("proposer",window,geminiPropose);
+          }
+        };
+        const proposed = fileRows ? undefined : await propose();
+        if (twelve?.partial) await reportWarning(progress,{kind:"warning",stage:"indexing",message:"proposal-incomplete: Twelve Labs returned partial coverage."});
         assertNotCanceled(execution.signal);
         const index: AnalysisIndex = proposed?.index ?? {matchNotes:"Candidates supplied in a file.",moments:[]};
         let alignment: RunManifest["transcriptAlignment"] | undefined;
         if (hasContext) {
-          if (!fileRows && !isMeetingAnalysisIndex(index)) {
+          if (!fileRows && plan.used!.proposer.engine === "gemini" && !isMeetingAnalysisIndex(index)) {
             throw new Error("Gemini meeting analysis omitted transcript alignment metadata.");
           }
           if (isMeetingAnalysisIndex(index) && !index.isRelevantCall) {
@@ -933,7 +1027,7 @@ export class AnalysisOrchestrator {
               }
             : options.transcriptOffsetSeconds === undefined
               ? !isMeetingAnalysisIndex(index) ? {
-                  offsetSeconds: 0, method: "none", confidence: "none", rationale: "File input supplies no transcript alignment.",
+                  offsetSeconds: 0, method: "none", confidence: "none", rationale: fileRows ? "File input supplies no transcript alignment." : "The proposer supplied no transcript alignment.",
                 } : {
                   offsetSeconds: index.transcriptAlignment.offsetSeconds,
                   method: index.transcriptAlignment.confidence === "none" ? "none" : "model",
@@ -963,7 +1057,7 @@ export class AnalysisOrchestrator {
           if (window && (duration === undefined || timestampToSeconds(window.start) < duration)) proposalsByWindow.set(window, row);
         }
         const inRange = [...proposalsByWindow.keys()];
-        const indexedCount = fileRows?.length ?? index.moments.length;
+        const indexedCount = fileRows?.length ?? (plan.used!.proposer.engine === "gemini" ? index.moments.length : rows.length);
         const outOfRange = indexedCount - inRange.length;
         const spanOf = (c: IndexedMoment) => modelSpan(sourceClock, timestampToSeconds(c.start), timestampToSeconds(c.end));
         const byTime = (a: IndexedMoment, b: IndexedMoment) => timestampToSeconds(a.start) - timestampToSeconds(b.start)
@@ -981,7 +1075,9 @@ export class AnalysisOrchestrator {
         // counts match a sequential run.
         type DetailAttempt =
           | { kind: "validated"; result: AnalysisDetail; stillTimes?: string[]; exactStillTimes?: Bound[]; citedStill?: string }
-          | { kind: "failed"; error: CandidateAnalysisError };
+          | { kind: "failed"; error: CandidateAnalysisError }
+          | { kind: "provider"; reason:import("../domain/engine-plan.js").EngineReason; attempts:0|1 };
+        let stopped:import("../domain/engine-plan.js").EngineReason | undefined;
         // Admission counts completions rather than ordered commits: a slow
         // early request must not let faster failing workers refill forever.
         // Once an ordered result rules out a systematic leading failure, the
@@ -995,6 +1091,7 @@ export class AnalysisOrchestrator {
           indexNumber: number,
         ): Promise<DetailAttempt> => {
           assertNotCanceled(execution.signal);
+          if (stopped) return {kind:"provider",reason:stopped,attempts:0};
           // CLI jobs account against a separate upload grant and omit inline images.
           const frames = execution.jobScratchRoot ? undefined : await extractDetailStills(
             localVideo, candidate, duration, temp, indexNumber, this.screenshot, () => assertNotCanceled(execution.signal), sourceClock,
@@ -1018,9 +1115,10 @@ export class AnalysisOrchestrator {
               const usageBefore = detailConcurrency === 1 ? usageCountsOf(analyzer) : undefined;
               try {
                 const row = proposalsByWindow.get(candidate)!;
-                const detail = await engines.grade(
-                  remote,
-                  {start:candidate.start, end:candidate.end, summary:row.reason || row.label, surface:row.surface},
+                const grade = async (...args:Parameters<TwelveLabs["grade"]>) => engine === "twelvelabs"
+                  ? twelve!.grade(...args) : engines!.grade(await geminiFile(),...args);
+                const detail = await measured("grader",[timestampToSeconds(candidate.start),timestampToSeconds(candidate.end)],()=>grade(
+                  {start:candidate.start, end:candidate.end, ...(options.withholdGraderClaim ? {summary:"",withheld:true} : {summary:row.reason || row.label, surface:row.surface})},
                   effectiveTranscript && (alignment || transcriptIsDerived)
                     ? nearbyTranscript(
                         effectiveTranscript,
@@ -1036,8 +1134,8 @@ export class AnalysisOrchestrator {
                   options.runNotes,
                   clock.modelClipClock,
                   stills,
-                  ...(ranged ? [duration] : []),
-                );
+                  ...(ranged ? [duration] as [number|undefined] : []),
+                ));
                 span.setAttributes({ "frame_of_mind.candidate_accepted": detail.accepted });
                 return detail;
               } catch (error) {
@@ -1060,6 +1158,14 @@ export class AnalysisOrchestrator {
             }
             return { kind: "validated", result, citedStill, exactStillTimes:frames?.map(f => f.exactTime!), stillTimes: frames?.map(frame => secondsToTimestamp(frame.seconds)) };
           } catch (error) {
+            if (engine === "twelvelabs" && error instanceof ContractError) {
+              const reason = engineReason.safeParse(error.details?.reason);
+              if (reason.success) {
+                if (reason.data !== "invalid-reply" && reason.data !== "media-limit") stopped = reason.data;
+                await reportWarning(progress,{kind:"warning",stage:"interrogating",message:"Twelve Labs grading: "+reason.data+"."});
+                return {kind:"provider",reason:reason.data,attempts:1};
+              }
+            }
             if (error instanceof CandidateAnalysisError) {
               return { kind: "failed", error };
             }
@@ -1091,6 +1197,12 @@ export class AnalysisOrchestrator {
             receipt.endFragments.push({kind:"moment",exactSpan,state:"unknown"});
           }
           try {
+            if (attempt.kind === "provider") {
+              failures.push({...provenance,gradedBy:attempt.attempts ? gradedBy : null,candidateOrdinal:indexNumber+1,
+                proposalEdges:edges,exactSpan,start:sourceCandidate.start,end:sourceCandidate.end,code:"generation_failed",
+                attempts:attempt.attempts,reason:attempt.reason});
+              return;
+            }
             if (attempt.kind === "failed") throw attempt.error;
             let result = attempt.result;
             if (attempt.stillTimes?.length === 0) {
@@ -1208,11 +1320,12 @@ export class AnalysisOrchestrator {
           });
         }
         const outcome = analysisOutcomeSchema.parse({
+          ...(twelve?.partial && {proposalIncomplete:true}),
           schemaVersion: 2,
           runId,
           status: failures.length > 0 && items.length === 0
             ? "failed"
-            : failures.length > 0 || omittedByLimit > 0
+            : failures.length > 0 || omittedByLimit > 0 || twelve?.partial
               ? "partial"
               : "complete",
           candidates: {
@@ -1260,7 +1373,7 @@ export class AnalysisOrchestrator {
                   ? { sourceUrl: meetingRunContext.meeting.sourceUrl }
                   : {}),
               },
-              model: analyzer.model,
+              model: runModel,
               matchNotes: index.matchNotes,
               items,
             }
@@ -1272,7 +1385,7 @@ export class AnalysisOrchestrator {
                 label: options.recipe.label,
               },
               context: { mode: "none" },
-              model: analyzer.model,
+              model: runModel,
               matchNotes: index.matchNotes,
               items,
             };
@@ -1306,12 +1419,13 @@ export class AnalysisOrchestrator {
         }
         assertNotCanceled(execution.signal);
         failurePhase = "cleanup";
+        await finishCopies();
         await report(progress, {
           kind: "stage",
           stage: "cleaning_up",
           message: retainRemote ? "Finalizing the analysis bundle." : "Deleting the temporary Gemini upload.",
         });
-        if (!retainRemote) {
+        if (remote && analyzer && !retainRemote) {
           remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep, execution.jobScratchRoot ? 1 : 3);
           cleanupFinalized = remoteDeleted || Boolean(execution.jobScratchRoot);
         }
@@ -1334,17 +1448,17 @@ export class AnalysisOrchestrator {
           indexPrefixSha256: await sha256Utf8(promptPrefix(options.recipe, "index")),
           interrogationPrefixSha256: await sha256Utf8(promptPrefix(options.recipe, "detail")),
           modelRouting: {
-            requestedModel: analyzer.model,
+            requestedModel: runModel,
             // GEMINI_MODEL set to the default value is still an explicit
             // choice; only env-absent default-model runs report default-flash.
             reason: options.model
               ? "operator-selected" as const
-              : applicationSetting("GEMINI_MODEL") || analyzer.model !== DEFAULT_GEMINI_MODEL
+              : applicationSetting("GEMINI_MODEL") || runModel !== DEFAULT_GEMINI_MODEL
                 ? "environment-or-dependency-override" as const
                 : "default-flash" as const,
           },
         };
-        clock.relativeEvidenceResponses = analyzer.relativeEvidenceResponses ?? 0;
+        clock.relativeEvidenceResponses = analyzer?.relativeEvidenceResponses ?? 0;
         if (clock.modelClipClock === "absolute" && clock.relativeEvidenceResponses > 0) await reportWarning(progress, { kind: "warning", stage: "interrogating", message: "Evidence clock disagrees with the cached absolute calibration; rerun calibrate." });
         // One image tiling the moment screenshots (at most
         // CONTACT_SHEET_MAX_TILES), labelled with the record number used in
@@ -1377,7 +1491,7 @@ export class AnalysisOrchestrator {
           });
         }
         assertNotCanceled(execution.signal);
-        const tokenUsage = execution.includeTokenUsage ? analyzer.measuredUsageByPass?.() : undefined;
+        const tokenUsage = execution.includeTokenUsage ? analyzer?.measuredUsageByPass?.() : undefined;
         if (outcome.status === "complete" && sourceClock.lengthKnown) receipt.cover(sourceClock.from,sourceClock.to);
         else for (const {candidate} of items) {
           receipt.cover(boundIndex(candidate.exactSpan!.start),boundIndex(candidate.exactSpan!.endExclusive));
@@ -1396,11 +1510,11 @@ export class AnalysisOrchestrator {
             if (settings && measurementWindow(claim,sourceClock,settings.windowMs) === undefined) return "skipped";
             return "claim";
           };
-          return {candidateId:row.id,proposedBy:row.proposedBy,gradedBy,
+          return {candidateId:row.id,proposedBy:row.proposedBy,gradedBy:failures.find(f=>f.candidateId===row.id)?.attempts === 0 ? null : gradedBy,
             edges:{start:state("start"),end:state("endExclusive")}};
         });
         const manifestBase = {
-          enginePlan:plan, engineItems,
+          ...engineRecords(), engineItems,
           ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}), ...(proseTimeUnverified && {proseTimeUnverified:true as const}),
           ...(tokenUsage && { tokenUsage }),
           clock,
@@ -1415,15 +1529,12 @@ export class AnalysisOrchestrator {
             revision: options.recipeRevision,
             sha256: options.recipeSha256,
           },
-          model: analyzer.model,
-          ...(analyzer.thinkingLevel && { thinkingLevel: analyzer.thinkingLevel }),
+          model: runModel,
+          ...(analyzer?.thinkingLevel && { thinkingLevel: analyzer.thinkingLevel }),
           recordingSha256,
           analysisSha256,
           recordingMimeType: mimeType,
-          remoteFile: {
-            ...sanitizedRemoteFileMetadata(remote),
-            deleted: remoteDeleted,
-          },
+          ...(remote && {remoteFile:{...sanitizedRemoteFileMetadata(remote),deleted:remoteDeleted}}),
           analysis: {
             ...(options.focus ? { focus: options.focus } : {}),
             maxIncidents: options.maxIncidents,
@@ -1504,7 +1615,7 @@ export class AnalysisOrchestrator {
         // Failed cleanup may be retried in `finally` only while publication has
         // not completed and no durable manifest exists.
         cleanupFinalized = true;
-        if (!retainRemote && !remoteDeleted) {
+        if (remote && analyzer && !retainRemote && !remoteDeleted) {
           await reportWarning(progress, {
             kind: "warning",
             stage: "cleaning_up",
@@ -1533,15 +1644,16 @@ export class AnalysisOrchestrator {
           ...(projectionWarning ? { projectionWarning } : {}),
         };
       } catch (error) {
+        await finishCopies();
         if (error instanceof AnalysisCanceledError || (execution.jobScratchRoot && execution.signal?.aborted)) throw error;
-        if (!retainRemote && !cleanupFinalized) {
+        if (remote && analyzer && !retainRemote && !cleanupFinalized) {
           remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep, execution.jobScratchRoot ? 1 : 3);
           cleanupFinalized = true;
         }
         const failure = runFailureManifestSchema.parse({
           ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}),
           schemaVersion: 1,
-          enginePlan:plan,
+          ...engineRecords(),
           toolVersion: VERSION,
           runId,
           status: "failed",
@@ -1553,13 +1665,13 @@ export class AnalysisOrchestrator {
             revision: options.recipeRevision,
             sha256: options.recipeSha256,
           },
-          model: analyzer.model,
+          model: runModel,
           recordingSha256,
           errorCode: faultCode(error),
           error: sanitizedFailureError(error),
           remoteFile: {
-            ...sanitizedRemoteFileMetadata(remote),
-            cleanup: retainRemote
+            ...(remote && sanitizedRemoteFileMetadata(remote)),
+            cleanup: !remote ? "not_obtained" : retainRemote
               ? "intentionally_retained"
               : remoteDeleted
                 ? "confirmed_deleted"
@@ -1582,7 +1694,7 @@ export class AnalysisOrchestrator {
             });
           }
         }
-        if (!retainRemote && !remoteDeleted) {
+        if (remote && analyzer && !retainRemote && !remoteDeleted) {
           await reportUnconfirmedCleanup(
             progress,
             sanitizedRemoteFileMetadata(remote).name,
@@ -1590,7 +1702,8 @@ export class AnalysisOrchestrator {
         }
         throw error;
       } finally {
-        if (!retainRemote && !cleanupFinalized) {
+        await finishCopies();
+        if (remote && analyzer && !retainRemote && !cleanupFinalized) {
           const deleted = await deleteWithRetry(analyzer, remote, this.sleep, execution.jobScratchRoot ? 1 : 3);
           if (!deleted) {
             await reportWarning(progress, {
@@ -1784,8 +1897,8 @@ function isMeetingAnalysisIndex(
 
 type TracedUsageCounts = { promptTokens: number; outputTokens: number; totalTokens: number };
 
-function usageCountsOf(analyzer: AnalysisVideoAnalyzer): TracedUsageCounts | undefined {
-  return typeof analyzer.usageSnapshot === "function" ? analyzer.usageSnapshot() : undefined;
+function usageCountsOf(analyzer: AnalysisVideoAnalyzer | undefined): TracedUsageCounts | undefined {
+  return typeof analyzer?.usageSnapshot === "function" ? analyzer.usageSnapshot() : undefined;
 }
 
 function usageDeltaAttributes(

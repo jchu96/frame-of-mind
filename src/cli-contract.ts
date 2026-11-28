@@ -1,4 +1,5 @@
 import { maxRangeSeconds } from "./lib/range-policy.js";
+import { directUploadHint } from "./domain/engine-plan.js";
 import { KeyCommandRefused } from "./key-command.js";
 import { Command, CommanderError } from "commander";
 import { jobInventory } from "./commands/job-commands.js";
@@ -33,6 +34,9 @@ export function writeFailure(caught: unknown, write = stdoutLine) {
   const code = faultCode(error);
   const document = failureDocument(code, error instanceof ContractError ? error.details : undefined);
   if (error instanceof MissingJobArgumentError || error instanceof FrameGridError) document.error.message = error.message;
+  if (error instanceof ContractError && error.code === "PROVIDER_LIMIT" && error.details?.engine === "twelvelabs" && error.details.reason === "media-limit") {
+    document.error.message = directUploadHint;
+  }
   write(JSON.stringify(document));
   process.exitCode = faultExits[code];
 }
@@ -53,7 +57,7 @@ export function capabilities(root: Command) {
     commands.push({ name: command.name(), options: [...options, "--schema-version"] });
   }
   commands.push(...jobInventory());
-  return { commands, candidates:{schemaVersions:[1],proposers:["gemini"],graders:["gemini"]}, maxRangeSeconds: maxRangeSeconds(), schemaVersions: Object.fromEntries(commands.map(({ name }) => [name, [CLI_SCHEMA_VERSION]])) };
+  return { commands, candidates:{schemaVersions:[1],proposers:["gemini","twelvelabs"],graders:["gemini","twelvelabs"]}, maxRangeSeconds: maxRangeSeconds(), schemaVersions: Object.fromEntries(commands.map(({ name }) => [name, [CLI_SCHEMA_VERSION]])) };
 }
 
 function selectSchema(args: string[]) {

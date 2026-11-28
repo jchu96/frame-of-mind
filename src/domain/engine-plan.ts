@@ -1,14 +1,24 @@
 import { z } from "zod";
 import { actorSchema } from "./candidates.js";
-import { UsageError } from "./contract-error.js";
+import { ContractError, UsageError } from "./contract-error.js";
 
 export const recipeRolesSchema = z.strictObject({proposer:z.string().optional(),grader:z.string().optional()});
 type Roles = z.infer<typeof recipeRolesSchema>;
 const role = actorSchema.extend({source:z.enum(["flag","recipe","default","file"])});
 const route = z.strictObject({proposer:role,grader:role});
+export const engineNames = ["gemini","twelvelabs"] as const;
+export type EngineName = typeof engineNames[number];
+export const engineReason = z.enum(["index-timeout","quota","media-limit","rate-limit","network","request-timeout",
+  "key-refused","invalid-reply","local-media-unavailable"]);
+export type EngineReason = z.infer<typeof engineReason>;
+export const PEGASUS_MODEL = "pegasus1.6";
+export const DIRECT_UPLOAD_BYTES = 200_000_000;
+export const directUploadHint = "Twelve Labs accepts direct uploads up to 200 MB. A shorter time range can bring the upload under the limit.";
+
 export const enginePlanSchema = z.strictObject({
-  planned:route.nullable(),used:route.nullable(),expected:route.nullable(),reason:z.null(),
-  retention:z.strictObject({gemini:z.enum(["provider","run"]).nullable(),twelvelabs:z.null()}),
+  planned:route.nullable(),used:route.nullable(),expected:route.nullable(),reason:engineReason.nullable(),
+  graderToldClaim:z.boolean().optional(), receiptIds:z.array(z.string()).optional(),
+  retention:z.strictObject({gemini:z.enum(["provider","run"]).nullable(),twelvelabs:z.literal("run").nullable()}),
 });
 export type EnginePlan = z.infer<typeof enginePlanSchema>;
 const state = z.enum(["cut","snapped","claim","skipped","failed"]);
@@ -20,16 +30,95 @@ export function checkRoles(flags: Roles, file: boolean, recipe: Roles = {}) {
   if (file && flags.proposer !== undefined) throw new UsageError("conflicting-options", "Conflicting proposer options.");
   const proposer = file ? undefined : flags.proposer ?? recipe.proposer;
   const grader = flags.grader ?? recipe.grader;
-  if ([proposer,grader].some(engine => engine !== undefined && engine !== "gemini")) {
+  if ([proposer,grader].some(engine => engine !== undefined && engine !== "gemini" && engine !== "twelvelabs")) {
     throw new UsageError("unsupported-engine", "Unsupported engine.");
   }
 }
 
-export function enginePlan(options: Roles & {file:boolean; recipe?:Roles; model:string; retention:"provider"|"run"; available:boolean; preview:boolean}): EnginePlan {
+export function enginePlan(options: Roles & {file:boolean; recipe?:Roles; model:string; retention:"provider"|"run";
+  available:boolean; twelveAvailable?:boolean; preview:boolean; withholdGraderClaim?:boolean; preflight?:EngineReason}): EnginePlan {
   checkRoles(options,options.file,options.recipe);
-  const selected = (key: keyof Roles): z.infer<typeof role> => ({engine:"gemini",model:options.model,
-    source:options[key] !== undefined ? "flag" : options.recipe?.[key] !== undefined ? "recipe" : "default"});
-  const planned = options.available ? {proposer:options.file ? {engine:"file",model:null,source:"file" as const} : selected("proposer"), grader:selected("grader")} : null;
-  return {planned,expected:options.preview ? planned : null,used:options.preview ? null : planned,reason:null,
-    retention:{gemini:planned ? options.retention : null,twelvelabs:null}};
+  const keys = {gemini:options.available,twelvelabs:Boolean(options.twelveAvailable)};
+  function select(key: keyof Roles): z.infer<typeof role> {
+    if (key === "proposer" && options.file) return {engine:"file",model:null,source:"file"};
+    const choice = options[key] ?? options.recipe?.[key];
+    const preferred = key === "proposer" ? "twelvelabs" : "gemini";
+    const engine = (choice ?? (keys[preferred] ? preferred : preferred === "gemini" ? "twelvelabs" : "gemini")) as EngineName;
+    if (!keys[engine]) throw new ContractError("KEY_MISSING", "Set the selected engine key before analysis.", {engine});
+    return {engine,model:engine === "gemini" ? options.model : PEGASUS_MODEL,
+      source:options[key] !== undefined ? "flag" : choice !== undefined ? "recipe" : "default"};
+  }
+  const anyChoice = options.grader ?? options.recipe?.grader ?? (!options.file ? options.proposer ?? options.recipe?.proposer : undefined);
+  const planned = keys.gemini || keys.twelvelabs || anyChoice ? {proposer:select("proposer"),grader:select("grader")} : null;
+  const uses = (engine:EngineName) => planned?.proposer.engine === engine || planned?.grader.engine === engine;
+  const plan:EnginePlan = {planned,expected:options.preview ? planned : null,used:options.preview ? null : planned,reason:null,
+    retention:{gemini:uses("gemini") ? options.retention : null,twelvelabs:uses("twelvelabs") ? "run" : null},
+    graderToldClaim:!options.withholdGraderClaim};
+  if (options.preflight && defaultDualRoute(plan)) fallbackPlan(plan,options.preflight);
+  return plan;
+}
+
+export function defaultDualRoute(plan: EnginePlan) {
+  const r = plan.planned;
+  return r?.proposer.engine === "twelvelabs" && r.grader.engine === "gemini"
+    && r.proposer.source === "default" && r.grader.source === "default";
+}
+export function fallbackPlan(plan: EnginePlan, reason: EngineReason) {
+  const grader = plan.planned!.grader;
+  const fallback = {proposer:{...grader},grader:{...grader}};
+  plan.reason = reason;
+  if (plan.expected) plan.expected = fallback;
+  else plan.used = fallback;
+}
+
+export function usesTwelveLabs(plan: EnginePlan) {
+  return plan.planned?.proposer.engine === "twelvelabs" || plan.planned?.grader.engine === "twelvelabs";
+}
+
+export function geminiRetry(argv: readonly string[], file: boolean) {
+  const retry: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg === "--proposer" || arg === "--grader") i++;
+    else if (!arg.startsWith("--proposer=") && !arg.startsWith("--grader=")) retry.push(arg);
+  }
+  if (!file) retry.push("--proposer", "gemini");
+  return [...retry, "--grader", "gemini"];
+}
+
+/** Apply to the byte count of the physical selection, before either engine receives media. */
+export function checkDirectUpload(plan: EnginePlan, bytes: number | undefined, argv: readonly string[]) {
+  if (!usesTwelveLabs(plan)) return;
+  const reason = bytes === undefined ? "local-media-unavailable" : bytes > DIRECT_UPLOAD_BYTES ? "media-limit" : undefined;
+  if (!reason) return;
+  if (defaultDualRoute(plan)) {
+    fallbackPlan(plan, reason);
+    return;
+  }
+  const fields = {engine:"twelvelabs", phase:"upload", reason, retryWith:geminiRetry(argv, plan.planned!.proposer.engine === "file")};
+  if (reason === "media-limit") throw new ContractError("PROVIDER_LIMIT", directUploadHint, fields);
+  throw new ContractError("CAPABILITY_MISSING", "Twelve Labs requires local recording bytes.", fields);
+}
+
+export function fallbackMessage(reason: EngineReason) {
+  return `Twelve Labs could not propose (${reason}). Using Gemini to propose and grade.`;
+}
+export function disclosure(plan: EnginePlan): string[] {
+  const route = plan.planned;
+  if (!route) return ["No engine key is configured."];
+  const lines:string[] = [];
+  if (route.proposer.engine === "file") lines.push("Candidates come from the file.");
+  for (const [engine,name] of [["gemini","Gemini"],["twelvelabs","Twelve Labs"]] as const) {
+    const purposes:string[] = [];
+    if (route.proposer.engine === engine) purposes.push("proposes on selected video and the proposal instruction");
+    if (route.grader.engine === engine) purposes.push("grades selected video, windows, stills and scoped context");
+    if (engine === "gemini" && defaultDualRoute(plan)) purposes.push("may propose on the selection if Twelve Labs cannot");
+    if (!purposes.length) continue;
+    lines.push(name+" "+purposes.join(" and ")+". "+(plan.retention[engine] === "provider" ?
+      name+" retains its upload until provider expiry." : name+" deletes its scratch copies at run end."));
+  }
+  if (route.proposer.engine === route.grader.engine || route.proposer.engine === "file")
+    lines.push("Runs use "+(route.grader.engine === "gemini" ? "Gemini" : "Twelve Labs")+" alone.");
+  if (!plan.graderToldClaim) lines.push("The proposal claim is withheld from the grader.");
+  return lines;
 }

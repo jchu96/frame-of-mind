@@ -49,7 +49,7 @@ it("advertises the machine commands and options that ship schemas", () => {
   const inventory = validateCliDocument("capabilities", result.stdout);
   const schemas = new Set(Object.keys(inventory.schemaVersions).map(name =>
     name.endsWith(" dry-run") ? "analyze-dry-run" : name.endsWith(" result") ? "job-result" : name.includes(" ") ? "job" : name));
-  expect(inventory.candidates).toEqual({schemaVersions:[1],proposers:["gemini"],graders:["gemini"]});
+  expect(inventory.candidates).toEqual({schemaVersions:[1],proposers:["gemini","twelvelabs"],graders:["gemini","twelvelabs"]});
   schemas.add("candidates");
   expect([...schemas].sort()).toEqual(readdirSync("schemas/cli").map(name => name.replace(".schema.json", "")).sort());
   expect(inventory.commands.map((cmd: {name: string}) => cmd.name).sort()).toEqual(Object.keys(inventory.schemaVersions).sort());

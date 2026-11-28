@@ -1,4 +1,5 @@
 import { claimTextLimits } from "./candidates.js";
+import { engineRunFields } from "./engine-receipts.js";
 import { engineItemsSchema, enginePlanSchema } from "./engine-plan.js";
 import { itemProvenance, proposalEdgesSchema } from "./proposal-edges.js";
 import { rangeFields } from "./range-fields.js";
@@ -221,6 +222,7 @@ const promptProvenanceSchema = z.object({
 
 export const runManifestSchema = z.object({
   ...rangeFields.shape,
+  ...engineRunFields,
   enginePlan:enginePlanSchema.optional(), engineItems:engineItemsSchema.optional(),
   schemaVersion: z.literal(2),
   toolVersion: z.string().min(1).max(120),
@@ -305,6 +307,7 @@ export const runManifestSchema = z.object({
 
 export const runManifestV3Schema = z.object({
   ...rangeFields.shape,
+  ...engineRunFields,
   enginePlan:enginePlanSchema.optional(), engineItems:engineItemsSchema.optional(),
   schemaVersion: z.literal(3),
   toolVersion: z.string().min(1).max(120),

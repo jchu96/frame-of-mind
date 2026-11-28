@@ -52,6 +52,7 @@ export interface RecipeCharter {
 }
 
 export interface AnalysisRecipe {
+  twelveLabsSegments?: import("./segment-definitions.js").SegmentDefinitions;
   engines?: {proposer?:string; grader?:string};
   id: string;
   label: string;
@@ -216,6 +217,9 @@ interface RunManifestBase extends RangeFields {
   thinkingLevel?: ThinkingLevel;
   recordingSha256: string;
   enginePlan?: EnginePlan;
+  engineCalls?: import("./engine-receipts.js").EngineCall[];
+  library?: import("./engine-receipts.js").CopyReceipt[];
+  indexWait?: {limitSeconds:number; elapsedMs:number};
   engineItems?: EngineItems;
   analysisSha256: string;
   recordingMimeType: string;

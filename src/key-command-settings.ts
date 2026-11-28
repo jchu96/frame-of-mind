@@ -8,7 +8,9 @@ export type CommandSetting =
   | {kind: "unavailable"; fix: string}
   | {kind: "command"; argv: [string, ...string[]]; home: string};
 
-const selector = "FRAME_OF_MIND_KEY_COMMAND";
+export type KeyEngine = "gemini" | "twelvelabs";
+export const keyVariables = {gemini:"GEMINI_API_KEY", twelvelabs:"TWELVELABS_API_KEY"} as const;
+export const selectors = {gemini:"FRAME_OF_MIND_KEY_COMMAND", twelvelabs:"FRAME_OF_MIND_TWELVELABS_KEY_COMMAND"} as const;
 
 export function userSettingsPath(home: string | undefined, platform: NodeJS.Platform) {
   if (!home || !isAbsolute(home)) return;
@@ -20,7 +22,7 @@ function unavailable(fix: string): CommandSetting { return {kind: "unavailable",
 function missing(error: unknown) { return (error as NodeJS.ErrnoException)?.code === "ENOENT"; }
 function quoted(path: string) { return "'" + path.replaceAll("'", "'\\''").replace(/[\r\n]/g, "?") + "'"; }
 
-function fileSetting(home: string, path: string, uid: number): unknown {
+function fileSetting(home: string, path: string, uid: number, engine: KeyEngine): unknown {
   const tool = dirname(path);
   let parent = home;
   for (const component of relative(home, tool).split(sep)) {
@@ -45,17 +47,24 @@ function fileSetting(home: string, path: string, uid: number): unknown {
     const raw = new TextDecoder("utf-8", {fatal: true, ignoreBOM: true}).decode(readFileSync(fd));
     const data = JSON.parse(raw);
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error();
-    if (Object.keys(data).length === 0) return;
-    if (Object.keys(data).length !== 1 || !Object.hasOwn(data, "keyCommand")) throw new Error();
-    // The only accepted value is an array of strings. After removing JSON
-    // strings, a second colon can only belong to another member.
-    const structure = raw.replace(/"(?:[^"\\]|\\.)*"/g, "");
-    if (structure.indexOf(":") !== structure.lastIndexOf(":")) throw new Error();
-    return data.keyCommand;
+    const keys = Object.keys(data);
+    if (keys.length === 0) return;
+    if (keys.length !== 1) throw new Error();
+    // Count object members outside strings so JSON.parse cannot silently pick
+    // the last spelling of a duplicated key (including an escaped spelling).
+    const members = raw.replace(/"(?:[^"\\]|\\.)*"/g, "").split(":").length - 1;
+    if (keys[0] === "keyCommand" && members === 1)
+      return engine === "gemini" ? data.keyCommand : undefined;
+    const map = data.keyCommands;
+    if (keys[0] !== "keyCommands" || !map || typeof map !== "object" || Array.isArray(map)) throw new Error();
+    const engines = Object.keys(map);
+    if (members !== engines.length + 1 || engines.some(name => !Object.hasOwn(selectors,name))) throw new Error();
+    return map[engine];
   } finally { closeSync(fd); }
 }
 
-export function launchCommandOverride(launch: CliLaunch, platform: NodeJS.Platform) {
+export function launchCommandOverride(launch: CliLaunch, platform: NodeJS.Platform, engine: KeyEngine = "gemini") {
+  const selector = selectors[engine];
   const raw = inheritedValue(launch.environment, selector, platform);
   if (raw === undefined) return {kind: "absent"} as const;
   let argv: unknown;
@@ -65,7 +74,8 @@ export function launchCommandOverride(launch: CliLaunch, platform: NodeJS.Platfo
   return {kind: "override", argv} as const;
 }
 
-export function commandSetting(launch: CliLaunch, platform: NodeJS.Platform, override = launchCommandOverride(launch, platform)): CommandSetting {
+export function commandSetting(launch: CliLaunch, platform: NodeJS.Platform, override = launchCommandOverride(launch, platform), engine: KeyEngine = "gemini"): CommandSetting {
+  const selector = selectors[engine];
   if (override.kind === "none") return override;
   if (launch.mode === "bare") {
     const blocked = unavailable("Run the installed Node command.");
@@ -76,19 +86,19 @@ export function commandSetting(launch: CliLaunch, platform: NodeJS.Platform, ove
     const path = userSettingsPath(home, platform);
     if (!home || !path) return blocked;
     try {
-      return fileSetting(home, path, process.geteuid!()) === undefined ? {kind: "absent"} : blocked;
+      return fileSetting(home, path, process.geteuid!(), engine) === undefined ? {kind: "absent"} : blocked;
     } catch { return blocked; }
   }
   const home = launch.accountHome;
   const path = userSettingsPath(home, platform);
   if (platform !== "darwin" && platform !== "linux") {
-    return override.kind === "absent" ? {kind: "absent"} : unavailable("Remove " + selector + " and configure GEMINI_API_KEY.");
+    return override.kind === "absent" ? {kind: "absent"} : unavailable("Remove " + selector + " and configure " + keyVariables[engine] + ".");
   }
   if (!home || !path) return unavailable("Restore access to your account home directory.");
   const repair = override.kind === "absent" ? "Check the keyCommand setting in " + quoted(path) + "." : "Correct " + selector + ".";
   try {
     const uid = process.geteuid!();
-    const argv = override.kind === "absent" ? fileSetting(home, path, uid) : override.argv;
+    const argv = override.kind === "absent" ? fileSetting(home, path, uid, engine) : override.argv;
     if (argv === undefined) return {kind: "absent"};
     if (!Array.isArray(argv) || !argv.length || !argv.every(arg => typeof arg === "string" && !arg.includes("\0")) || !isAbsolute(argv[0])) {
       return unavailable(repair);
