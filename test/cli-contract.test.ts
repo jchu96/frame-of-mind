@@ -117,6 +117,8 @@ it("previews named and external roles without invoking the provider", () => {
   const base = ["analyze","--dry-run","--source","none","--video",entry,"--json"];
   const builtIn = JSON.parse(run([...base,"--proposer","gemini","--grader","gemini"],"fixture").stdout);
   expect(builtIn.enginePlan).toMatchObject({used:null,reason:null,expected:{proposer:{engine:"gemini",source:"flag"},grader:{source:"flag"}}});
+  const missing = JSON.parse(run([...base,"--grader","twelvelabs"],"fixture").stdout);
+  expect(missing.error).toMatchObject({code:"KEY_MISSING",details:{engine:"twelvelabs",phase:"prepare",sent:false}});
   const external = JSON.parse(run([...base,"--candidates",file],"fixture").stdout);
   expect(external.enginePlan.expected.proposer).toEqual({engine:"file",model:null,source:"file"});
   for (const [args,reason] of [

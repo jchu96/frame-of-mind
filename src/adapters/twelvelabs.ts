@@ -122,7 +122,7 @@ export class TwelveLabs implements RecordingEngine {
   constructor(private readonly request:Transport, readonly receipts:ScratchReceipts, private readonly recording:TwelveRecording,
     private readonly shape:"flat"|"lines", limit:number|undefined, private readonly now:()=>string,
     private readonly sleep:(ms:number)=>Promise<void>, private readonly tell:(line:string)=>Promise<void>,
-    private readonly signal?:AbortSignal) {
+    private readonly recordUpload:()=>void, private readonly signal?:AbortSignal) {
     this.indexWait = {limitSeconds:limit ?? Math.ceil(900+(recording.duration ?? 0)/2),elapsedMs:0};
   }
   private async json(phase:Phase,path:string,init:RequestInit = {}, creation?:CopyReceipt, retries = 0):Promise<z.infer<typeof apiResponse>> {
@@ -199,6 +199,7 @@ export class TwelveLabs implements RecordingEngine {
     mediaRequestStarted();
     const result = await this.json("upload","/assets",{method:"POST",body:form},receipt);
     const id = await this.receipts.created(receipt,result._id);
+    this.recordUpload();
     await this.ready("/assets/"+id,"index",id,receipt.operationId);
     return id;
   }

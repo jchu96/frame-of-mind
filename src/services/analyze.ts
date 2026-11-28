@@ -597,10 +597,14 @@ export class AnalysisOrchestrator {
       const request = options.twelvelabsKey ? twelveTransport(options.twelvelabsKey) : undefined;
       const catalog = request && new ScratchReceipts(this.dependencies.receiptDirectory ?? receiptDirectory(),options.twelvelabsKey!,runId,this.now);
       if (catalog && request) await catalog.recover(request,tellRoute);
+      const recordUpload = () => {
+        if (sourceClock.lengthKnown) receipt.uploads.push({kind:soundOnly ? "audio-window" : "video-cut",
+          span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
+      };
       const twelve = catalog && request ? new TwelveLabs(request,catalog,
         {path:localVideo,mime:ranged ? "video/mp4" : mimeType,bytes:recordingSizeBytes,duration,sha:recordingSha256,
           sentSha:uploadedCutSha256 ?? recordingSha256,clock:sourceClock},options.twelveLabsShape ?? "flat",options.indexWaitSeconds,
-        this.now,this.sleep,tellRoute,execution.signal) : undefined;
+        this.now,this.sleep,tellRoute,recordUpload,execution.signal) : undefined;
       let finishedCopies = false;
       const finishCopies = async () => {
         if (!catalog || !request || finishedCopies) return;
@@ -894,7 +898,7 @@ export class AnalysisOrchestrator {
             );
           }
           const file = await uploadMedia(analyzer, localVideo, uploadMimeType);
-          if (sourceClock.lengthKnown) receipt.uploads.push({kind:soundOnly ? "audio-window" : "video-cut", span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
+          recordUpload();
           return file;
         });
       };
