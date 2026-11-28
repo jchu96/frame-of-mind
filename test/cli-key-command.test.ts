@@ -248,6 +248,26 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     expect(existsSync(marker)).toBe(false);
   });
 
+  it.each([true,false])("doctor reports the scratch receipt folder and readability (%s)", readable => {
+    const path = join(dirname(settings), "scratch-receipts");
+    mkdirSync(path, {recursive:true,mode:0o700});
+    const file = join(path, "11111111-1111-4111-8111-111111111111.json");
+    if (!readable) writeFileSync(file, "private-receipt-fixture", {mode:0o600});
+    const env = {GEMINI_API_KEY:"private-gemini-fixture",TWELVELABS_API_KEY:"private-twelve-fixture"};
+    try {
+      const json = run(["doctor","--json"],env);
+      const text = run(["doctor"],env);
+      const report = validateCliDocument("doctor",json.out);
+      expect(report.scratchReceipts).toEqual({path,readable});
+      expect(text.out).toContain(path);
+      expect(text.out).toMatch(readable ? /receipts.*\breadable\b/i : /receipts.*unreadable/i);
+      if (!readable) expect(report.enginePlan).toMatchObject({reason:"receipts-unreadable",expected:{proposer:{engine:"gemini"}}});
+      for (const output of [json.out,json.err,text.out,text.err]) {
+        expect(output).not.toMatch(/private-(?:receipt|gemini|twelve)-fixture/);
+      }
+      if (!readable) expect(readFileSync(file,"utf8")).toBe("private-receipt-fixture");
+    } finally { rmSync(file,{force:true}); }
+  });
   it.each(["command", "settings"])("doctor prints the mode repair for %s", kind => {
     const unsafe = join(home, "unsafe reader");
     writeFileSync(unsafe, "#!/usr/bin/env bash\nexit 1\n", {mode: 0o700});

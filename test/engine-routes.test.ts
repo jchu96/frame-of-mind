@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, truncate, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readdir, readFile, rm, stat, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -10,6 +10,11 @@ import { TwelveLabsAccount, verdict } from "./helpers/twelvelabs-account.js";
 import { recordingIdentity } from "../src/domain/candidates.js";
 import { RangeClock } from "../src/domain/range-clock.js";
 import { sha256File } from "../src/lib/files.js";
+
+vi.mock("node:fs/promises", async importOriginal => {
+  const fs = await importOriginal<typeof import("node:fs/promises")>();
+  return {...fs, readdir: vi.fn(fs.readdir)};
+});
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -336,5 +341,93 @@ it("bounds the entire cleanup batch even if a request never answers",async()=>{
     late.resolve(new Response(null,{status:403}));
     vi.useRealTimers();
     await run;
+  }
+});
+
+async function unsafeReceipt(f:Awaited<ReturnType<typeof fixture>>) {
+  const path = await pendingAsset(f);
+  await chmod(path,0o644);
+  const bytes = await readFile(path);
+  f.events.length = 0;
+  f.account.requests.length = 0;
+  return async () => {
+    expect(await readFile(path)).toEqual(bytes);
+    expect((await stat(path)).mode & 0o777).toBe(0o644);
+  };
+}
+
+it("falls back before contact and publishes the unreadable receipt reason in both JSON outputs",async()=>{
+  const f = await fixture();
+  const unchanged = await unsafeReceipt(f);
+  const recipe = join(f.root,"recipe.json");
+  await writeFile(recipe,JSON.stringify({id:"fixture",label:"Fixture",description:"Fixture.",
+    indexInstruction:"Index fixture.",interrogationInstruction:"Grade fixture."}));
+  const {program} = await import("../src/cli-main.js");
+  const service = await import("../src/services/analyze.js");
+  vi.stubEnv("GEMINI_API_KEY","synthetic-gemini-key");
+  vi.stubEnv("TWELVELABS_API_KEY","synthetic-twelve");
+  const stdout = vi.spyOn(process.stdout,"write").mockImplementation(()=>true);
+  vi.spyOn(process.stderr,"write").mockImplementation(chunk=>{f.events.push(String(chunk)); return true;});
+  vi.spyOn(service,"analyzeMeeting").mockImplementation((options,execution)=>new AnalysisOrchestrator(f.deps).analyze(options,execution));
+  try {
+    await program.parseAsync(["analyze","--json","--source","none","--video",f.video,"--recipe-file",recipe,
+      "--output",join(f.root,"cli"),"--no-calibrate","--no-derived-transcript","--no-screenshots"],{from:"user"});
+    await unchanged();
+    expect(f.account.requests).toEqual([]);
+    const reply = validateCliDocument("analyze",stdout.mock.calls.map(([chunk])=>chunk).join(""));
+    expect(reply.enginePlan).toMatchObject({planned:{proposer:{engine:"twelvelabs"},grader:{engine:"gemini"}},
+      used:{proposer:{engine:"gemini"},grader:{engine:"gemini"}},reason:"receipts-unreadable"});
+    expect(JSON.parse(await readFile(join(reply.runFolder,"manifest.json"),"utf8")).enginePlan).toEqual(reply.enginePlan);
+    const first = f.events.indexOf("wire:gemini");
+    expect(first).toBeGreaterThan(0);
+    expect(f.events.slice(0,first).join(" ")).toContain(f.deps.receiptDirectory);
+    expect(f.events.slice(0,first).join(" ")).toMatch(/receipts-unreadable.*Using Gemini/);
+  } finally { vi.restoreAllMocks(); vi.unstubAllEnvs(); }
+});
+
+it("refuses a chosen second-engine grader with unsafe receipts before either engine receives anything",async()=>{
+  const f = await fixture();
+  const unchanged = await unsafeReceipt(f);
+  await expect(f.run({proposer:"gemini",grader:"twelvelabs"})).rejects.toMatchObject({
+    message:expect.stringContaining(f.deps.receiptDirectory),details:{reason:"receipts-unreadable",phase:"prepare",sent:false,
+      retryWith:expect.arrayContaining(["--proposer","gemini","--grader","gemini"])}});
+  expect(f.events.filter(line=>line.startsWith("wire:"))).toEqual([]);
+  await unchanged();
+});
+
+it("keeps an explicitly Gemini-only run available with unsafe receipts and both keys",async()=>{
+  const f = await fixture();
+  const unchanged = await unsafeReceipt(f);
+  const result = await f.run({proposer:"gemini",grader:"gemini"});
+  expect(result.outcome.status).toBe("complete");
+  expect(f.account.requests).toEqual([]);
+  await unchanged();
+});
+
+it("finishes a local receipt read that outlasts the remote retry budget",async()=>{
+  const f = await fixture();
+  const started = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  const fs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  vi.mocked(readdir).mockImplementation(async (...args:Parameters<typeof readdir>)=>{
+    if (args[0] === f.deps.receiptDirectory) { started.resolve(); await resume.promise; }
+    return fs.readdir(...args);
+  });
+  vi.useFakeTimers({toFake:["setTimeout","clearTimeout"]});
+  const run = f.run({proposer:"twelvelabs"});
+  void run.catch(()=>{});
+  try {
+    await started.promise;
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(f.events.filter(line=>line.startsWith("wire:"))).toEqual([]);
+    resume.resolve();
+    const result = await run;
+    expect(result.outcome.status).toBe("complete");
+    expect(result.manifest.enginePlan).toMatchObject({used:{proposer:{engine:"twelvelabs"}},reason:null});
+    expect(f.account.creates).toHaveLength(1);
+  } finally {
+    resume.resolve();
+    vi.mocked(readdir).mockImplementation(fs.readdir);
+    vi.useRealTimers();
   }
 });
