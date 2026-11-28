@@ -21,6 +21,11 @@ function jobWith(flag: string, value: string) {
 type Row = { site: string; alsoRaisedIn?: string; plainReason?: string; reason: string; args: string[]; plainExit?: number; jsonArgs?: string[]; timing?: boolean };
 const row = (site: string, reason: string, args: string[], plainExit = 2): Row => ({site, reason, args, plainExit});
 const rows: Row[] = [
+  row("domain/engine-plan", "conflicting-options", [...analyze, "--proposer", "gemini", "--candidates", "picks.json"]),
+  row("domain/engine-plan", "unsupported-engine", [...analyze, "--grader", "private-example"]),
+  row("adapters/candidates-file", "invalid-candidates", [...analyze, "--candidates", "broken.json"]),
+  row("domain/candidates", "invalid-candidates", [...analyze, "--candidates", "invalid-picks.json"]),
+  row("domain/candidates", "candidate-recording-mismatch", [...analyze, "--candidates", "foreign-picks.json"]),
   row("cli-main", "remove-requires-scratch", ["doctor", "--remove", "private-example"]),
   row("cli-main", "invalid-model", ["calibrate", "--model", "private-example"]),
   row("cli-contract", "unknown-option", ["recipes", "--private-example"]),
@@ -113,6 +118,9 @@ beforeAll(() => {
   writeFileSync(join(root, "binary.md"), Buffer.from([0]));
   writeFileSync(join(root, "encoding.md"), Buffer.from([0xff]));
   writeFileSync(join(root, "broken.json"), "{");
+  writeFileSync(join(root, "invalid-picks.json"), "{}");
+  writeFileSync(join(root, "foreign-picks.json"), JSON.stringify({schemaVersion: 1, candidates: [],
+    recording: {unit: "video-frame", rate: {num: 30000, den: 1001}, length: "90", recordingSha256: "a".repeat(64)}}));
   writeFileSync(join(root, "broken.mp4"), "invalid");
   writeFileSync(join(root, "offline.ts"), 'globalThis.fetch = () => { throw new Error("Unexpected network request in CLI usage test"); };');
   copyFileSync("test/fixtures/timeline-export-2997df.otio", join(root, "sequence.otio"));

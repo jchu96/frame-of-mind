@@ -53,7 +53,7 @@ export function capabilities(root: Command) {
     commands.push({ name: command.name(), options: [...options, "--schema-version"] });
   }
   commands.push(...jobInventory());
-  return { commands, maxRangeSeconds: maxRangeSeconds(), schemaVersions: Object.fromEntries(commands.map(({ name }) => [name, [CLI_SCHEMA_VERSION]])) };
+  return { commands, candidates:{schemaVersions:[1],proposers:["gemini"],graders:["gemini"]}, maxRangeSeconds: maxRangeSeconds(), schemaVersions: Object.fromEntries(commands.map(({ name }) => [name, [CLI_SCHEMA_VERSION]])) };
 }
 
 function selectSchema(args: string[]) {

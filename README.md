@@ -610,9 +610,12 @@ tracks have separate rows, topmost first. [Timeline lookup procedure](docs/RUNBO
 | `--transcript-offset <time>` | full transcript time at video `00:00` |
 | `--focus <text>` | prioritize a repository/workflow/concern |
 | `--label <text>` | human label for the run (for example the source title), up to 200 characters on one line; recorded as `label` in `manifest.json`; the heading of `analysis.md` and `report.html` for a video-only run, a "Label" line under the meeting title otherwise; printed after the run path; never sent to the model |
-| `--depth <standard\|deep>` | sampling/prompt rigor, default `standard` |
+| `--depth <standard\|deep>` | default `standard`. Deep sampling and prompts apply to both built-in passes. With a candidates file, depth applies only to grading. |
 | `--model <id>` | Gemini model for both current passes |
-| `--max-moments <n\|all>` | best N by importance then start time, reported in time order; default `10` |
+| `--candidates <file>` | Grade a version 1 candidates document after verifying the original recording. The grader sees the reason (or label if empty) and optional surface as quoted context. A row over 10,000 characters for reason, 500 for surface or 120 for label refuses the whole document. |
+| `--proposer <engine>`, `--grader <engine>` | Select Gemini for either role. Printed source times come from their exact bounds. Measurement uses native source counts. A file supplies the proposer result directly. |
+| `--dry-run` | Print the engine plan for these flags and recipe without a provider request. |
+| `--max-moments <n\|all>` | first N eligible rows in document order, reported in source-time order. The built-in proposer ranks by importance, then source time. Default `10`. |
 | `--note <name=path>` | per-run UTF-8 text/Markdown reference, repeatable up to 8 |
 | `--concurrency <n>` | parallel pass-2 detail requests (1-8), default `FRAME_OF_MIND_DETAIL_CONCURRENCY` or `1`; results stay in candidate order |
 | `--no-screenshots` | omit saved screenshots and the contact sheet |
@@ -1275,6 +1278,7 @@ metadata, OAuth, and cleanup contracts.
 
 | Guide | Purpose |
 |---|---|
+| [Engine contract](docs/ENGINE_CONTRACT.md) | candidate inputs, role selection and resolved source edges |
 | [Architecture](docs/ARCHITECTURE.md) | boundaries, contracts, trust model |
 | [Recipes](docs/RECIPES.md) | built-in intent, charters, custom recipe schema |
 | [Meeting-to-issue runbook](docs/MEETING_TO_ISSUE_RUNBOOK.md) | end-to-end meeting → GitHub workflow |

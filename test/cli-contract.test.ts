@@ -49,6 +49,8 @@ it("advertises the machine commands and options that ship schemas", () => {
   const inventory = validateCliDocument("capabilities", result.stdout);
   const schemas = new Set(Object.keys(inventory.schemaVersions).map(name =>
     name.endsWith(" dry-run") ? "analyze-dry-run" : name.endsWith(" result") ? "job-result" : name.includes(" ") ? "job" : name));
+  expect(inventory.candidates).toEqual({schemaVersions:[1],proposers:["gemini"],graders:["gemini"]});
+  schemas.add("candidates");
   expect([...schemas].sort()).toEqual(readdirSync("schemas/cli").map(name => name.replace(".schema.json", "")).sort());
   expect(inventory.commands.map((cmd: {name: string}) => cmd.name).sort()).toEqual(Object.keys(inventory.schemaVersions).sort());
   expect(JSON.parse(run(["--version", "--schema-version=1", "--json"]).stdout).schemaVersions).toEqual(inventory.schemaVersions);
@@ -103,4 +105,21 @@ it("validates the calibration receipt with a stand-in measurement", async () => 
     await program.parseAsync(["calibrate", "--json"], { from: "user" });
     validateCliDocument("calibrate", stdout.mock.calls.map(([chunk]) => chunk).join(""));
   } finally { vi.restoreAllMocks(); vi.unstubAllEnvs(); }
+});
+
+it("previews named and external roles without invoking the provider", () => {
+  const file = join(examples,"03-version.json");
+  const base = ["analyze","--dry-run","--source","none","--video",entry,"--json"];
+  const builtIn = JSON.parse(run([...base,"--proposer","gemini","--grader","gemini"],"fixture").stdout);
+  expect(builtIn.enginePlan).toMatchObject({used:null,reason:null,expected:{proposer:{engine:"gemini",source:"flag"},grader:{source:"flag"}}});
+  const external = JSON.parse(run([...base,"--candidates",file],"fixture").stdout);
+  expect(external.enginePlan.expected.proposer).toEqual({engine:"file",model:null,source:"file"});
+  for (const [args,reason] of [
+    [["--grader","missing"],"unsupported-engine"],[["--proposer","missing"],"unsupported-engine"],
+    [["--proposer","gemini","--candidates",file],"conflicting-options"],
+  ] as const) {
+    const r = run([...base,...args]);
+    expect(r.status).toBe(2);
+    expect(JSON.parse(r.stdout).error).toMatchObject({code:"USAGE",details:{reason}});
+  }
 });

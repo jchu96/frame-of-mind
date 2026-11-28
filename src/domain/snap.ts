@@ -207,10 +207,19 @@ export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: numb
 }
 
 type Range = Record<Edge, number>;
-export function proposeRecords(ranges: Range[], edges: Boundaries | undefined, clock: FileClock, settings: SnapSettings): SnapRun {
-  const records = ranges.map(r => ({
-    start: selectEdge(edges, "start", r.start, clock, settings, r.end),
-    end: selectEdge(edges, "end", r.end, clock, settings, r.start),
+export function proposeRecords(ranges: Range[], edges: Boundaries | undefined, clock: FileClock, settings: SnapSettings,
+  windows?: readonly Record<Edge, {width:number; minMs:number; maxMs:number} | undefined>[]): SnapRun {
+  function select(r: Range, i: number, edge: Edge): SnapResult {
+    const mate = r[edge === "start" ? "end" : "start"];
+    if (!windows) return selectEdge(edges, edge, r[edge], clock, settings, mate);
+    const search = windows[i]?.[edge];
+    if (!search) return {status:"unavailable"};
+    const within = edges && {...edges, [edge]:edges[edge].filter(e => e.ms >= search.minMs && e.ms <= search.maxMs)};
+    return selectEdge(within, edge, r[edge], clock, {...settings,windowMs:search.width}, mate);
+  }
+  const records = ranges.map((r,i) => ({
+    start: select(r,i,"start"),
+    end: select(r,i,"end"),
   }));
   const order = ranges.map((r, i) => ({ ...r, i })).sort((a, b) => a.start - b.start || a.end - b.end);
   const overlap = (a: Range, b: Range) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));

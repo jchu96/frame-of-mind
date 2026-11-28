@@ -1,3 +1,6 @@
+import { claimTextLimits } from "./candidates.js";
+import { engineItemsSchema, enginePlanSchema } from "./engine-plan.js";
+import { itemProvenance, proposalEdgesSchema } from "./proposal-edges.js";
 import { rangeFields } from "./range-fields.js";
 import { boundSchema, boundIndex, boundRate, exactSpanSchema, humanTime } from "./source-bound.js";
 import { sameRate } from "./media-clock.js";
@@ -46,9 +49,9 @@ export const indexedMomentSchema = z.object({
   start: timestampSchema,
   end: timestampSchema,
   speaker: z.string().max(240).optional(),
-  surface: z.string().max(500).optional(),
-  summary: z.string().min(1).max(10_000),
-  kind: z.string().min(1).max(120),
+  surface: z.string().max(claimTextLimits.surface).optional(),
+  summary: z.string().min(1).max(claimTextLimits.reason),
+  kind: z.string().min(1).max(claimTextLimits.label),
   importance: importanceSchema,
 }).strict().superRefine((value, context) => {
   if (!isCanonicalTimestamp(value.start) || !isCanonicalTimestamp(value.end)) return;
@@ -152,10 +155,10 @@ export const analysisRunV3Schema = z.object({
 const exactEvidence = analysisDetailSchema.shape.evidence.unwrap().extend({exactTime: boundSchema.optional()}).refine(
   e => (e.timestamp === undefined) === (e.exactTime === undefined) && (!e.exactTime || humanTime(e.exactTime) === e.timestamp),
   "Evidence needs its exact time and matching text together.");
-const exactCandidate = z.strictObject({...indexedMomentSchema.shape, exactSpan: exactSpanSchema}).refine(
+const exactCandidate = z.strictObject({...indexedMomentSchema.shape, exactSpan: exactSpanSchema, proposalEdges: proposalEdgesSchema.optional()}).refine(
   c => c.start === humanTime(c.exactSpan.start) && c.end === humanTime(c.exactSpan.endExclusive),
   "Printed times must describe the exact span.");
-const exactItem = z.strictObject({...analysisItemSchema.shape, candidate:exactCandidate,
+const exactItem = z.strictObject({...analysisItemSchema.shape, ...itemProvenance, candidate:exactCandidate,
   result:analysisDetailSchema.extend({evidence:exactEvidence.optional(),confidenceNotes:z.string().max(10120).optional()}), exactStillTimes:z.array(boundSchema).max(3).optional(),
   screenshotExactTime:boundSchema.optional(),
 }).superRefine((item, ctx) => {
@@ -218,6 +221,7 @@ const promptProvenanceSchema = z.object({
 
 export const runManifestSchema = z.object({
   ...rangeFields.shape,
+  enginePlan:enginePlanSchema.optional(), engineItems:engineItemsSchema.optional(),
   schemaVersion: z.literal(2),
   toolVersion: z.string().min(1).max(120),
   promptRevision: z.string().min(1).max(120),
@@ -301,6 +305,7 @@ export const runManifestSchema = z.object({
 
 export const runManifestV3Schema = z.object({
   ...rangeFields.shape,
+  enginePlan:enginePlanSchema.optional(), engineItems:engineItemsSchema.optional(),
   schemaVersion: z.literal(3),
   toolVersion: z.string().min(1).max(120),
   promptRevision: z.string().min(1).max(120),

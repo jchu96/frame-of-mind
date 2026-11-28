@@ -64,12 +64,16 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
   }
   let clock: RangeClock;
   if (tracks.video) {
+    let frameTicks: number[] = [];
     let frameTiming: FrameTiming = {varying: null, frames: null, unread: "unavailable"};
     try {
       const scan = await readPacketTiming(() => runRecordingTool(source, "ffprobe",
         [...timingArguments(String(tracks.video!.index), true), "fd:"], {signal, timeoutMs:decodeBudget(tracks.seconds)}), signal);
       frameTiming = scan.frameTiming;
       if (scan.error) throw scan.error;
+      frameTicks = (scan.data?.frames ?? []).map(frame => frame.pts)
+        .filter((n): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0)
+        .sort((a, b) => a - b);
       const {rate, count} = measureTiming(scan.data, undefined, true);
       clock = RangeClock.resolve({unit:"frames", rate, length:BigInt(count)}, {});
     }
@@ -87,7 +91,9 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
       const tick = rationalRate(Number(timeBase[1]), Number(timeBase[2]));
       const length = tracks.video.duration_ts;
       const varying = tracks.video.r_frame_rate && tracks.video.avg_frame_rate && tracks.video.r_frame_rate !== tracks.video.avg_frame_rate;
-      clock = RangeClock.wholeTicks(tick, Number.isSafeInteger(length) && length! > 0 ? BigInt(length!) : undefined, varying ? "uneven" : "unproven");
+      const end = Number.isSafeInteger(length) && length! > 0 ? BigInt(length!) : undefined;
+      const native = end === undefined && !frameTicks.length ? await containerVideoClock(source) : undefined;
+      clock = native ?? RangeClock.wholeTicks(tick, end, varying ? "uneven" : "unproven", frameTicks);
     }
     clock.grid.frameTiming = frameTiming;
   } else {

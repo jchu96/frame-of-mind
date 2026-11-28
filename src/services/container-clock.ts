@@ -2,7 +2,7 @@
 // metadata from the named file in that case. The clock stays unproven.
 import { open, type FileHandle } from "node:fs/promises";
 import { rationalRate } from "exact-time";
-import { RangeClock } from "../domain/range-clock.js";
+import { RangeClock, type FrameTimes } from "../domain/range-clock.js";
 import type { Recording } from "./media-tools.js";
 
 async function bytes(file: FileHandle, at: number, length: number) {
@@ -30,6 +30,115 @@ async function* mp4Boxes(file: FileHandle, at: number, end: number): AsyncGenera
 async function findBox(file: FileHandle, parent: Element, id: string) {
   for await (const child of mp4Boxes(file, parent.start, parent.end)) if (child.id === id) return child;
 }
+// Timing runs may describe many samples in eight bytes. Check the independent
+// sample-size table before expanding them, including compact-size movies.
+async function sampleCount(file: FileHandle, table: Element, fileSize: number) {
+  const sizes = await findBox(file, table, "stsz") ?? await findBox(file, table, "stz2");
+  if (!sizes || sizes.end - sizes.start < 12) throw new Error("Missing sample sizes.");
+  const header = await bytes(file, sizes.start, 12);
+  const count = header.readUInt32BE(8);
+  const fixed = sizes.id === "stsz" ? header.readUInt32BE(4) : 0;
+  const bits = sizes.id === "stsz" ? 32 : header[7]!;
+  if (![4,8,16,32].includes(bits) || (fixed ? fixed * count > fileSize :
+      Math.ceil(count * bits / 8) > sizes.end - sizes.start - 12)) throw new Error("Invalid sample sizes.");
+  return count;
+}
+
+function lowerBound(length: number, before: (index: number) => boolean) {
+  let start = 0, end = length;
+  while (start < end) {
+    const mid = Math.floor((start + end) / 2);
+    if (before(mid)) start = mid + 1;
+    else end = mid;
+  }
+  return start;
+}
+
+async function sampleTimestamps(file: FileHandle, media: Element, track: Element, movie: Element, scale: number, fileSize: number): Promise<FrameTimes> {
+  const minf = await findBox(file, media, "minf");
+  const stbl = minf && await findBox(file, minf, "stbl");
+  const stts = stbl && await findBox(file, stbl, "stts");
+  if (!stbl || !stts) return [];
+  async function* runs(box: Element, signed: boolean) {
+    const header = await bytes(file, box.start, 8);
+    const count = header.readUInt32BE(4);
+    if (box.start + 8 + count * 8 > box.end) throw new Error("Invalid sample times.");
+    for (let n = 0; n < count; ) {
+      const batch = Math.min(1024, count - n);
+      const rows = await bytes(file, box.start + 8 + 8*n, 8*batch);
+      for (let i = 0; i < batch; i++) {
+        const value = signed && header[0] === 1 ? rows.readInt32BE(i*8+4) : rows.readUInt32BE(i*8+4);
+        yield {count:rows.readUInt32BE(i*8),value};
+      }
+      n += batch;
+    }
+  }
+  const samples = await sampleCount(file, stbl, fileSize);
+  const offsetsBox = await findBox(file, stbl, "ctts");
+  const offsets = offsetsBox && runs(offsetsBox,true);
+  let left = 0, offset = 0, dts = 0;
+  const ticks: number[] = [];
+  for await (const entry of runs(stts,false)) {
+    if (entry.count > samples - ticks.length) throw new Error("Invalid sample count.");
+    for (let i = 0; i < entry.count; i++) {
+      if (offsets && left === 0) {
+        const run = await offsets.next();
+        if (run.done || run.value.count === 0) throw new Error("Invalid composition times.");
+        left = run.value.count;
+        offset = run.value.value;
+      }
+      if (!Number.isSafeInteger(dts + offset)) throw new Error("Invalid presentation time.");
+      ticks.push(dts + offset);
+      dts += entry.value;
+      left--;
+    }
+  }
+  if (ticks.length !== samples) throw new Error("Missing sample times.");
+  ticks.sort((a,b) => a-b);
+  const edts = await findBox(file,track,"edts");
+  const elst = edts && await findBox(file,edts,"elst");
+  if (!elst) return ticks.filter(t => t >= 0);
+  const mvhd = await findBox(file,movie,"mvhd");
+  if (!mvhd) return [];
+  const head = await bytes(file,mvhd.start,Math.min(24,mvhd.end-mvhd.start));
+  const movieScale = head.readUInt32BE(head[0] === 1 ? 20 : 12);
+  const edits = await bytes(file,elst.start,8);
+  const wide = edits[0] === 1;
+  const stride = wide ? 20 : 12;
+  // Edits can repeat the same samples. Index slices into the one sorted table.
+  const slices: {first:number; end:number; offset:number}[] = [];
+  let length = 0;
+  let elapsed = 0n;
+  for (let i = 0; i < edits.readUInt32BE(4); i++) {
+    const pos = elst.start + 8 + i*stride;
+    if (pos + stride > elst.end || !movieScale) throw new Error("Invalid edit list.");
+    const e = await bytes(file,pos,stride);
+    const duration = wide ? e.readBigUInt64BE(0) : BigInt(e.readUInt32BE(0));
+    const from = wide ? e.readBigInt64BE(8) : BigInt(e.readInt32BE(4));
+    const movieTicks = BigInt(movieScale);
+    const start = elapsed * BigInt(scale);
+    if (from >= 0n && e.readInt32BE(stride-4) === 65536 && start % movieTicks === 0n) {
+      const first = lowerBound(ticks.length, i => BigInt(ticks[i]!) < from);
+      const past = lowerBound(ticks.length, i => (BigInt(ticks[i]!) - from) * movieTicks < duration * BigInt(scale));
+      if (first < past) {
+        const offset = Number(start / movieTicks - from);
+        length += past - first;
+        if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(ticks[past-1]! + offset) ||
+            !Number.isSafeInteger(length)) throw new Error("Invalid edit time.");
+        slices.push({first,end:length,offset});
+      }
+    }
+    elapsed += duration;
+  }
+  return {length, at(index) {
+    const i = index < 0 ? length + index : index;
+    if (i < 0 || i >= length) return;
+    const n = lowerBound(slices.length, j => slices[j]!.end <= i);
+    const slice = slices[n]!;
+    return ticks[slice.first + i - (slices[n-1]?.end ?? 0)]! + slice.offset;
+  }};
+}
+
 async function movieClock(file: FileHandle, size: number) {
   const movie = await findBox(file, {id:"", start:0, end:size}, "moov");
   if (!movie) return;
@@ -50,7 +159,9 @@ async function movieClock(file: FileHandle, size: number) {
     const duration = data[0] === 1 ? data.readBigUInt64BE(24) : BigInt(data.readUInt32BE(16));
     const sentinel = data[0] === 1 ? 0xffffffffffffffffn : 0xffffffffn;
     const edited = await findBox(file, track, "edts");
-    return RangeClock.wholeTicks({num:1, den:scale}, !edited && duration > 0n && duration !== sentinel ? duration : undefined, "unproven");
+    const length = !edited && duration > 0n && duration !== sentinel ? duration : undefined;
+    const ticks = length === undefined ? await sampleTimestamps(file,media,track,movie,scale,size) : [];
+    return RangeClock.wholeTicks({num:1, den:scale},length,"unproven",ticks);
   }
 }
 
@@ -75,23 +186,56 @@ async function* ebmlElements(file: FileHandle, at: number, end: number): AsyncGe
     at = next;
   }
 }
-async function webmHasVideo(file: FileHandle, tracks: Element) {
-  for await (const entry of ebmlElements(file, tracks.start, tracks.end)) {
-    if (entry.id !== "ae") continue;
-    for await (const field of ebmlElements(file, entry.start, entry.end)) {
-      if (field.id === "83" && field.end - field.start === 1 && (await bytes(file, field.start, 1))[0] === 1) return true;
-    }
-  }
-  return false;
+async function unsigned(file: FileHandle, element: Element) {
+  const width = element.end - element.start;
+  if (width < 1 || width > 8) throw new Error("Invalid WebM integer.");
+  return Number(BigInt("0x" + (await bytes(file,element.start,width)).toString("hex")));
 }
 
+async function webmVideoTrack(file: FileHandle, tracks: Element) {
+  for await (const entry of ebmlElements(file,tracks.start,tracks.end)) {
+    if (entry.id !== "ae") continue;
+    let type, number;
+    for await (const field of ebmlElements(file,entry.start,entry.end)) {
+      if (field.id === "83") type = await unsigned(file,field);
+      if (field.id === "d7") number = await unsigned(file,field);
+    }
+    if (type === 1) return number;
+  }
+}
+
+async function webmTimestamps(file: FileHandle, clusters: Element[], track: number) {
+  const times: number[] = [];
+  for (const cluster of clusters) {
+    let base: number | undefined;
+    const offsets: number[] = [];
+    for await (const entry of ebmlElements(file,cluster.start,cluster.end)) {
+      if (entry.id === "e7") base = await unsigned(file,entry);
+      const block = entry.id === "a3" ? entry : entry.id === "a0" ? await findBlock(file,entry) : undefined;
+      if (!block) continue;
+      const data = await bytes(file,block.start,Math.min(10,block.end-block.start));
+      const width = Math.clz32(data[0] ?? 0) - 23;
+      if (width > 8 || width + 2 > data.length) throw new Error("Invalid WebM block.");
+      let number = data[0]! & (255 >> width);
+      for (let i = 1; i < width; i++) number = number*256 + data[i]!;
+      if (number === track) offsets.push(data.readInt16BE(width));
+    }
+    if (base !== undefined) for (const offset of offsets) if (base + offset >= 0) times.push(base + offset);
+  }
+  return times.sort((a,b) => a-b);
+}
+async function findBlock(file: FileHandle, group: Element) {
+  for await (const child of ebmlElements(file,group.start,group.end)) if (child.id === "a1") return child;
+}
 async function webmClock(file: FileHandle, size: number) {
   for await (const segment of ebmlElements(file, 0, size)) {
     if (segment.id !== "18538067") continue;
-    let video = false;
+    let track: number | undefined;
+    const clusters: Element[] = [];
     let scale: number | undefined;
     for await (const element of ebmlElements(file, segment.start, segment.end)) {
-      if (element.id === "1654ae6b") video = await webmHasVideo(file, element);
+      if (element.id === "1654ae6b") track = await webmVideoTrack(file, element);
+      if (element.id === "1f43b675") clusters.push(element);
       if (element.id === "1549a966") {
         scale = 1_000_000; // WebM default TimestampScale, in nanoseconds.
         for await (const field of ebmlElements(file, element.start, element.end)) {
@@ -100,8 +244,9 @@ async function webmClock(file: FileHandle, size: number) {
           scale = Number(BigInt("0x" + (await bytes(file, field.start, field.end - field.start)).toString("hex")));
         }
       }
-      if (video && scale !== undefined) return RangeClock.wholeTicks(rationalRate(scale, 1_000_000_000), undefined, "unproven");
     }
+    if (track !== undefined && scale !== undefined) return RangeClock.wholeTicks(rationalRate(scale,1_000_000_000),
+      undefined,"unproven",await webmTimestamps(file,clusters,track));
   }
 }
 
