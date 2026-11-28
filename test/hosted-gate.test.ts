@@ -261,7 +261,7 @@ describe("hosted gate separation", () => {
   test("MISS deploy-needs-hosted: default or hosted failure propagates in check and deploy modes", async () => {
     const root = await fixture({ traceSourceIdentity: true });
     try {
-      const preflight = await run(root, ["bun", "run", "check:deploy"], { CHANGE_SOURCE: "input" });
+      const preflight = await run(root, ["bun", "run", "check:deploy"]);
       if (preflight.code !== 0) {
         const execution = await readFile(join(root, ".git/execution.log"), "utf8").catch(error => String(error));
         console.error("check:deploy fixture", { ...preflight, execution });
