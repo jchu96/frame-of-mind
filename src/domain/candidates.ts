@@ -1,6 +1,6 @@
 import { rationalRate } from "exact-time";
 import { z } from "zod";
-import { ContractError } from "./contract-error.js";
+import { ContractError, UsageError } from "./contract-error.js";
 import { rateSchema, sameRate } from "./media-clock.js";
 import { indexSchema, modelSpan } from "./source-bound.js";
 import { timestampToSeconds } from "../lib/time.js";
@@ -106,11 +106,10 @@ export function readCandidates(value: unknown, local: CandidateRecording, source
     const { recording, candidates } = result.data;
     const positionOutside = local.length === null && candidates.some(row =>
       observedEnd === undefined || BigInt(row.end) > observedEnd || row.chain.some(p => BigInt(p.at) > observedEnd));
-    if (positionOutside && source === "file") throw new ContractError("USAGE", "Candidate outside the observed recording.", {reason:"invalid-candidates"});
+    if (positionOutside && source === "file") throw new UsageError("invalid-candidates", "Candidate outside the observed recording.");
     if (!positionOutside && recording.recordingSha256 === local.recordingSha256 && (local.length === null || recording.length === local.length) &&
         recording.unit === local.unit && sameRate(ratioOf(recording), ratioOf(local))) return candidates;
   }
   if (source === "engine") throw new ContractError("PROVIDER_REFUSED", "Invalid proposer reply.", { phase: "propose", reason: "invalid-reply" });
-  const reason = result.success ? "candidate-recording-mismatch" : "invalid-candidates";
-  throw new ContractError("USAGE", "Invalid candidates file.", { reason });
+  throw new UsageError(result.success ? "candidate-recording-mismatch" : "invalid-candidates", "Invalid candidates file.");
 }

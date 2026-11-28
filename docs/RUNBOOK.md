@@ -1191,6 +1191,24 @@ never delete by a partial title or meeting-name search.
 
 ## 6. Troubleshooting
 
+### CLI usage refusals
+
+A usage refusal exits 2 in either output mode. With `--json`, branch on `error.details.reason` when `error.code` is `USAGE`. Match range phrases exactly, including spaces and punctuation.
+
+| Where to look | Reasons |
+| --- | --- |
+| Command or arguments | `missing-command` (plain mode), `unknown-command`, `unknown-option`, `missing-argument`, `excess-arguments`, `missing-required-option`, `missing-option-value`, `invalid-argument` |
+| Machine output | `invalid-schema-version`, `duplicate-schema-version`, `force-with-json`, `json-output-not-selected`, `version-arguments`, `help-with-json`, `mcp-with-json` |
+| Scratch cleanup | `remove-requires-scratch` |
+| Input and context selection | `invalid-source`, `missing-meeting-id`, `missing-video`, `conflicting-video-inputs`, `recording-url-source-mismatch`, `missing-context-file`, `context-file-requires-file-source`, `invalid-context-transport`, `transport-source-mismatch` |
+| Analysis settings | `invalid-depth`, `invalid-recipe-file`, `invalid-label`, `invalid-max-moments`, `invalid-concurrency` |
+| Model, upload and transcription | `invalid-model`, `invalid-retention`, `conflicting-retention`, `invalid-remote-file`, `remote-file-requires-video`, `invalid-transcript-language`, `conflicting-transcript-language`, `invalid-transcript-offset` |
+| Reference notes | `too-many-notes`, `invalid-note`, `duplicate-note`, `invalid-note-format`, `invalid-note-file`, `note-too-large`, `invalid-note-encoding`, `binary-note` |
+| Clocks, snapping and media commands | `missing-timecode-rate`, `missing-drop-frame-mode`, `missing-timeline-offset`, `invalid-file-clock`, `invalid-edge`, `invalid-snap`, `invalid-snap-gap`, `invalid-snap-window`, `invalid-map-direction`, `verify-expectation`, `missing-output` |
+| Job options and grants | `duplicate-job-option`, `invalid-job-limit`, `invalid-file-limit`, `invalid-allowed-models`, `conflicting-job-roots`, `missing-job-roots`. Job retention uses `invalid-retention`. |
+| Range bounds | `Invalid range bound.`, `Audio bounds use seconds or Nsamp.`, `Specify the source drop-frame mode or use frames.`, `a bound outside the recording`, `from at or after to`, `a range shorter than the tool can analyse` |
+| Range preparation | `A range cannot reuse a remote file.`, `--transcript-offset requires meeting or file context.`, `Range requires a locally verifiable cut.` (see `error.details.frameTiming` when timing was measured) |
+
 ### 6.1 `frameofmind: Set GEMINI_API_KEY before analysis`
 
 Cause: missing environment variable.

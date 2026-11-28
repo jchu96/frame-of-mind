@@ -1188,7 +1188,7 @@ export class AnalysisOrchestrator {
               total: candidates.length,
               unit: "items",
             },
-            message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${renderClockTime(sourceCandidate.start,clock,exactSpan.start)} ${JSON.stringify(exactSpan)}`,
+            message: `Pass 2/2 [${indexNumber + 1}/${candidates.length}] at ${renderClockTime(sourceCandidate.start,clock,exactSpan.start)}`,
           });
         };
         await mapWithConcurrency(candidates, detailConcurrency, interrogateCandidate, {

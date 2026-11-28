@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { actorSchema } from "./candidates.js";
-import { ContractError } from "./contract-error.js";
+import { UsageError } from "./contract-error.js";
 
 export const recipeRolesSchema = z.strictObject({proposer:z.string().optional(),grader:z.string().optional()});
 type Roles = z.infer<typeof recipeRolesSchema>;
@@ -17,11 +17,11 @@ export const engineItemsSchema = z.array(z.strictObject({candidateId:z.string(),
 export type EngineItems = z.infer<typeof engineItemsSchema>;
 
 export function checkRoles(flags: Roles, file: boolean, recipe: Roles = {}) {
-  if (file && flags.proposer !== undefined) throw new ContractError("USAGE","Conflicting proposer options.",{reason:"conflicting-options"});
+  if (file && flags.proposer !== undefined) throw new UsageError("conflicting-options", "Conflicting proposer options.");
   const proposer = file ? undefined : flags.proposer ?? recipe.proposer;
   const grader = flags.grader ?? recipe.grader;
   if ([proposer,grader].some(engine => engine !== undefined && engine !== "gemini")) {
-    throw new ContractError("USAGE","Unsupported engine.",{reason:"unsupported-engine"});
+    throw new UsageError("unsupported-engine", "Unsupported engine.");
   }
 }
 

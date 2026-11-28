@@ -2619,7 +2619,7 @@ describe("exact and approximate output clocks", () => {
       const lines = [...md.split("\n").filter(line => line.startsWith("- Time:")), ...[...html.matchAll(/<article>\s*<div class="eyebrow">([^<]+)/g)].map(m => m[1]!), ...progress];
       expect(lines.length).toBeGreaterThanOrEqual(3);
       for (const line of lines) { expect(line).toContain("≈1 s; model"); expect(line).not.toMatch(/\d+:\d{2}:\d{2}[:;]\d{2}/); }
-      expect(progress.join(" ")).toContain('"precisionMs":1000');
+      for (const line of progress) expect(line).toMatch(/^Pass 2\/2 \[\d+\/\d+\] at .+ \(≈1 s; model\)$/);
     }
   });
   it("from-media resolves a frame offset after the exact probe and before model calls", async () => {

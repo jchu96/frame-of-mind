@@ -1,4 +1,4 @@
-import { ContractError } from "../domain/contract-error.js";
+import { UsageError, ContractError } from "../domain/contract-error.js";
 import { extname } from "node:path";
 import { stat } from "node:fs/promises";
 import { deriveExact, exactTime, fromTicks, offsetTime, parseTimecodeRate, renderExactTimecode,
@@ -182,7 +182,7 @@ export async function mediaHelper(kind: Helper, path: string, flags: MediaOption
     return {kind, frameTiming: info.frameTiming, ...summary(info, flags.decodeCheck ? "passed" : "unchecked")};
   }
   if (kind === "verify") {
-    if ((flags.expectDuration === undefined) === (flags.expectFrames === undefined)) throw new ContractError("USAGE", "Choose exactly one of --expect-frames and --expect-duration.");
+    if ((flags.expectDuration === undefined) === (flags.expectFrames === undefined)) throw new UsageError("verify-expectation", "Choose exactly one of --expect-frames and --expect-duration.");
     const expected = flags.expectFrames !== undefined ? exactTime("source", flags.expectFrames, info.rate)
       : position("--expect-duration", flags.expectDuration!, info);
     await decodeVideo(input, info, signal);
@@ -192,7 +192,7 @@ export async function mediaHelper(kind: Helper, path: string, flags: MediaOption
       : [{ from: String(expected.frames), to: String(actual), kind: "extra" }];
     return {kind, ok: mismatches.length === 0, actual: display(info.duration, info.dropFrame), expected: display(expected, info.dropFrame), mismatches, decodeStatus: "passed"};
   }
-  if (!flags.output) throw new ContractError("USAGE", "An output path is required.");
+  if (!flags.output) throw new UsageError("missing-output", "An output path is required.");
   return stageOutput(input, flags.output, kind === "frame" ? [".jpg", ".jpeg", ".png"] : [".mp4"], !!flags.force, signal, async (staged, output) => {
     if (kind === "frame") {
       const at = position("--at", flags.at!, info);

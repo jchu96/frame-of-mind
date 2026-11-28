@@ -1,7 +1,7 @@
 import { ContractError } from "../domain/contract-error.js";
 import { KeyCommandRefused } from "../key-command.js";
 import { cliSettings } from "../cli-settings.js";
-import { CliError, writeDocument, writeFailure } from "../cli-contract.js";
+import { humanFailureExit, writeDocument, writeFailure } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
 import type { Command } from "commander";
 import { TranscriptLanguageError } from "../domain/transcript-language.js";
@@ -50,18 +50,19 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
             quietLines, retention, ...(tokens && { tokens }),
           }, dependencies.stdout);
         }
-      } catch (error) {
-        if (error instanceof KeyCommandRefused) throw error;
+      } catch (caught) {
+        if (caught instanceof KeyCommandRefused) throw caught;
+        const error = caught instanceof TranscriptLanguageError ? caught.asUsageError() : caught;
         // Provider and filesystem exception bodies may contain private content.
-        const message = error instanceof ContractError && error.code === "USAGE" ? error.message : error instanceof TranscribeError || error instanceof TranscriptLanguageError || error instanceof CliError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
+        const message = error instanceof TranscribeError || error instanceof ContractError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
         // A consumer reads this line; it stays on standard error in both modes.
         diagnostic(`error: ${message}`);
         if (error instanceof TranscribeError && error.diagnostic) diagnostic(error.diagnostic);
         if (flags.json) {
-          writeFailure(error instanceof TranscriptLanguageError ? new CliError("USAGE", message) : error, dependencies.stdout);
+          writeFailure(error, dependencies.stdout);
           return;
         }
-        process.exitCode = error instanceof TranscribeCanceledError || controller.signal.aborted ? 130 : (error instanceof CliError || error instanceof ContractError) && error.code === "USAGE" ? 2 : 1;
+        process.exitCode = error instanceof TranscribeCanceledError || controller.signal.aborted ? 130 : humanFailureExit(error);
       } finally { process.off("SIGINT", cancel); }
     });
 }

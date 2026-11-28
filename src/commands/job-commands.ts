@@ -1,6 +1,6 @@
 import { Command, Option } from "commander";
 import { THINKING_LEVELS } from "../domain/types.js";
-import { ContractError } from "../domain/contract-error.js";
+import { UsageError } from "../domain/contract-error.js";
 import type { Family } from "../adapters/job-record.js";
 import type { JobOperation } from "../services/cli-job.js";
 import { operations } from "../job-invocation.js";
@@ -39,7 +39,7 @@ export function rejectDuplicateJobOptions(args: string[]) {
     if (!arg.startsWith("--")) continue;
     const flag = arg.split("=")[0]!;
     if (seen.has(flag) && flag !== "--media-root" && flag !== "--output-root") {
-      throw new ContractError("USAGE", "Duplicate job option.");
+      throw new UsageError("duplicate-job-option", "Duplicate job option.");
     }
     seen.add(flag);
   }

@@ -59,7 +59,7 @@
         "properties": {
           "code": {"type": "string"},
           "message": {"type": "string"},
-          "details": {"type":"object","allOf":[{"$ref":"#/definitions/source"}],"properties":{"phase":{"enum":["prepare","propose","grade","upload","index","cleanup"]},"sent":{"const":false},"reason":{"type":"string"},"runFolder": {"type": "string"}, "durationSeconds": {"type": "number"}, "limitSeconds": {"type": "number"}}}
+          "details": {"type":"object","allOf":[{"$ref":"#/definitions/source"}],"properties":{"phase":{"enum":["prepare","propose","grade","upload","index","cleanup"]},"sent":{"const":false},"reason":{"type":"string","description":"Fixed usage reason. For a range scan that cannot verify the cut, measured timing is in details.frameTiming."},"runFolder": {"type": "string"}, "durationSeconds": {"type": "number"}, "limitSeconds": {"type": "number"}}}
         },
         "required": ["code", "message"]
       }
