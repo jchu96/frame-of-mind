@@ -12,9 +12,11 @@ describe("candidates-contract", () => {
   it("preserves independent radii and the ordered chain, including an empty list", () => {
     expect(readCandidates(doc, recording, "file")).toEqual([candidate]);
     expect(readCandidates({...doc,candidates:[]},recording,"file")).toEqual([]);
+    const withSurface = {...candidate,surface:"Report"};
+    expect(readCandidates({...doc,candidates:[withSurface]},recording,"file")).toEqual([withSurface]);
   });
   it.each([
-    {...doc,schemaVersion:2}, {...doc,candidates:[candidate,candidate]}, {...doc,candidates:[{...candidate,id:""}]},
+    {...doc,candidates:[{...candidate,surface:42}]}, {...doc,schemaVersion:2}, {...doc,candidates:[candidate,candidate]}, {...doc,candidates:[{...candidate,id:""}]},
     {...doc,candidates:[{...candidate,start:400}]}, {...doc,candidates:[{...candidate,end:1501}]},
     {...doc,candidates:[{...candidate,precisionMs:{start:0,end:1}}]},
     {...doc,candidates:[{...candidate,chain:[{...candidate.chain[0],pass:2}]}]},
