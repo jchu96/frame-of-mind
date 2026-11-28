@@ -3010,11 +3010,43 @@ describe("engine answers", () => {
     id,start,end,basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000},
     proposedBy:{engine:"finder",model:null},label:"Movement",reason:"Visible motion",chain:[],
   });
+  it("inside-outside-equivalence grades the validated document and writes identical claims on both routes", async () => {
+    const {RangeClock} = await import("../src/domain/range-clock.js");
+    const f = await createFixture();
+    const clock = RangeClock.resolve({unit:"frames",length:1000n,rate:{num:25,den:1}},{});
+    const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createAnalyzer:()=>f.analyzer,
+      withSourceRecording:async(p,_opts,_needs,_tell,consume)=>consume(p,clock),extractScreenshot:async()=>false});
+    const builtIn = await service.analyze(f.options);
+    const first = builtIn.analysis.items[0]!;
+    const file = await service.analyze(await fileOptions(f,clock,[first.proposal!]));
+    expect(file.analysis.items[0]).toMatchObject({candidateId:first.candidateId,proposedBy:first.proposedBy,
+      gradedBy:first.gradedBy,proposal:first.proposal,resolvedEdges:first.resolvedEdges,candidate:{exactSpan:first.candidate.exactSpan}});
+    expect(f.analyzer.interrogate.mock.calls[1]?.[1]).toEqual(f.analyzer.interrogate.mock.calls[0]?.[1]);
+  });
+
+  it("writes the proposal and attempted grader for rejected and failed windows", async () => {
+    const {RangeClock} = await import("../src/domain/range-clock.js");
+    const f = await createFixture();
+    const clock = RangeClock.resolve({unit:"frames",length:500n,rate:{num:25,den:1}},{});
+    f.analyzer.interrogate.mockResolvedValueOnce({...detailResult(),accepted:false,evidence:undefined})
+      .mockRejectedValueOnce(new CandidateAnalysisError({code:"invalid_json",attempts:2}));
+    const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createAnalyzer:()=>f.analyzer,
+      withSourceRecording:async(p,_opts,_needs,_tell,consume)=>consume(p,clock),extractScreenshot:async()=>false});
+    const rows = [row("rejected",25,50),row("failed",75,100)];
+    const run = await service.analyze(await fileOptions(f,clock,rows));
+    const provenance = (i: number) => ({candidateId:rows[i]!.id,proposal:rows[i],proposedBy:rows[i]!.proposedBy,
+      gradedBy:{engine:"gemini",model:"gemini-test"}});
+    expect(run.analysis.items[0]).toMatchObject({...provenance(0),result:{accepted:false},
+      resolvedEdges:{start:{status:"claim"},endExclusive:{status:"claim"}}});
+    expect(run.outcome.failures[0]).toMatchObject({...provenance(1),proposalEdges:{start:{at:75},end:{at:100}},attempts:2});
+    expect(run.manifest.engineItems?.[1]).toMatchObject({candidateId:"failed",edges:{start:"failed",end:"failed"}});
+  });
+
   it("selection-order keeps the released built-in picks and the first eligible mixed-author file rows", async () => {
     const {RangeClock} = await import("../src/domain/range-clock.js");
     const {selectCandidates} = await import("../src/domain/candidate-selection.js");
     const f = await createFixture();
-    const clock = RangeClock.resolve({unit:"frames",length:1000n,rate:{num:25,den:1}},{});
+    const clock = RangeClock.resolve({unit:"frames",length:1000n,rate:{num:25,den:1}},{from:"1",to:"39"});
     const moments: IndexedMoment[] = [
       {...indexResult().moments[0]!, start:"00:00:00", end:"00:00:01", importance:"low"},
       {...indexResult().moments[0]!, start:"00:00:08", end:"00:00:09"},
@@ -3029,6 +3061,7 @@ describe("engine answers", () => {
     expect(builtIn.analysis.items.map(item => item.candidateId)).toEqual(
       selectCandidates(moments,2).map(moment => `gemini-${moments.indexOf(moment)+1}`));
     const proposals = [
+      row("outside",0,25),
       {...row("first",200,225),score:1}, {...row("second",50,75),proposedBy:{engine:"another",model:null}},
       {...row("third",100,125),score:3},
     ];
@@ -3129,10 +3162,11 @@ it("wide-hit-unmeasured keeps 9000 ms claims even with speech on the proposed ed
     extractScreenshot:async()=>false,probeDurationSeconds:async()=>40});
   for (const candidatesFile of [path,undefined]) {
     const run = await service.analyze({...f.options,candidatesFile,snapSettings:snapSettings()});
-  const resolved = run.analysis.items[0]!.resolvedEdges!;
-  for (const edge of [resolved.start,resolved.endExclusive]) expect(edge).toMatchObject({
-    status:"claim",by:{engine:"finder",model:null},bound:{precisionMs:9000,origin:"model"},
-  });
+    expect(run.manifest.engineItems?.[0]?.edges).toEqual({start:"skipped",end:"skipped"});
+    const resolved = run.analysis.items[0]!.resolvedEdges!;
+    for (const edge of [resolved.start,resolved.endExclusive]) expect(edge).toMatchObject({
+      status:"claim",by:{engine:"finder",model:null},bound:{precisionMs:9000,origin:"model"},
+    });
   }
   expect(decode).not.toHaveBeenCalled();
 });

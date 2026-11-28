@@ -1,7 +1,7 @@
 import { checkRoles, enginePlan, type EngineItems } from "../domain/engine-plan.js";
 import { recordingIdentity, readCandidates, type Candidate, type CandidatesDocument } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
-import { measurementSearch, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
+import { measurementSearch, measurementWindow, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
 import { latestPosition, proposalWindow } from "./proposal-windows.js";
 import { rangeTranscript } from "./range-context.js";
 import { rangeUsage, type RangeRequest } from "../domain/range-clock.js";
@@ -959,7 +959,7 @@ export class AnalysisOrchestrator {
         const rows = fileRows ?? readCandidates(proposed!.document, recording, "engine", sourceClock.observedEnd);
         const proposalsByWindow = new Map<IndexedMoment, Candidate>();
         for (const row of rows) {
-          const window = proposed?.metadata.get(row.id) ?? proposalWindow(row, sourceClock);
+          const window = proposalWindow(row, sourceClock, proposed?.metadata.get(row.id));
           if (window && (duration === undefined || timestampToSeconds(window.start) < duration)) proposalsByWindow.set(window, row);
         }
         const inRange = [...proposalsByWindow.keys()];
@@ -1389,7 +1389,11 @@ export class AnalysisOrchestrator {
           const state = (edge: "start" | "endExclusive") => {
             if (!item?.resolvedEdges) return "failed";
             const origin = item.resolvedEdges[edge].bound.origin;
-            return origin === "snap" ? "snapped" : origin === "cut" ? "cut" : "claim";
+            if (origin === "snap") return "snapped";
+            if (origin === "cut") return "cut";
+            const claim = item.candidate.proposalEdges![edge === "start" ? "start" : "end"];
+            if (settings && measurementWindow(claim,sourceClock,settings.windowMs) === undefined) return "skipped";
+            return "claim";
           };
           return {candidateId:row.id,proposedBy:row.proposedBy,gradedBy,
             edges:{start:state("start"),end:state("endExclusive")}};
