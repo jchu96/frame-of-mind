@@ -39,7 +39,7 @@ export interface SeekPlan {
 export type VideoSelection = { clock: RangeClock; info: VideoInfo; seek?: SeekPlan; reason?: string };
 const packetEntries = "packet=pts,dts,duration,flags,pos,size";
 const compact = "compact=p=0:nk=0";
-export async function scanRange(input: Recording, request: RangeRequest, dropFrame?: boolean, signal?: AbortSignal): Promise<VideoSelection> {
+export async function scanRange(input: Recording, request: RangeRequest, dropFrame?: boolean, signal?: AbortSignal, fallback?: (reason: string) => void): Promise<VideoSelection> {
   const header = await videoHeader(input, signal);
   const { format, video, audio, labels } = header;
   const seconds = Number(format.duration);
@@ -77,8 +77,9 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
       audioHz: audio[0] ? Number(audio[0].sample_rate) : undefined } };
   } catch (error) {
     if (!(error instanceof UnprovenCut)) throw error;
+    fallback?.(error.message);
     let info: VideoInfo;
-    try { info = await inspectVideo(input, {dropFrame}, signal); }
+    try { info = await inspectVideo(input, {dropFrame}, signal, decodeBudget(seconds)); }
     catch (error) {
       if ((error as { code?: string }).code === "INVALID_RATE") return rangeUsage("Range requires a locally verifiable cut.");
       throw error;

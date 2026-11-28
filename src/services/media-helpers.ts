@@ -79,7 +79,7 @@ export async function verifyStartLabel(label?: string, measuredLabel?: string, s
 }
 
 export async function encodeVideoRange(input: Recording, staged: string, info: VideoInfo, from: Position, to: Position,
-  size: ReturnType<typeof dimensions>, signal?: AbortSignal, seek?: SeekPlan, phase?: (name: string) => void) {
+  size: ReturnType<typeof dimensions>, signal?: AbortSignal, seek?: SeekPlan, phase?: (name: string) => void, onSpawn?: (pid: number) => void) {
   const expected = exactTime("source", String(to.frames - from.frames), info.rate);
   const audio = info.audio[0];
   const hz = seek?.audioHz ?? 48000;
@@ -97,7 +97,7 @@ export async function encodeVideoRange(input: Recording, staged: string, info: V
   const filter = audio
     ? `${silence}[silence];${selection},asetpts=PTS-STARTPTS[clip];[silence][clip]amix=duration=first:normalize=0[a]`
     : `${silence}[a]`;
-  const trim = seek ? `trim=start_frame=${from.frames}:end_frame=${to.frames}` : `trim=start_frame=${from.frames}:end_frame=${to.frames}`;
+  const trim = seek ? `trim=start_pts=${seek.firstPts}:end_pts=${seek.endPts}` : `trim=start_frame=${from.frames}:end_frame=${to.frames}`;
   const vf = `${trim},setpts=PTS-STARTPTS,${seek ? "" : `fps=${info.rate.num}/${info.rate.den},`}scale=${size.width}:${size.height}`;
   const endSeconds = Number(to.frames) * info.rate.den / info.rate.num;
   const videoSeconds = seek ? endSeconds - Number(seek.seekSeconds) + 2 : info.approximateSeconds;
@@ -124,18 +124,29 @@ export async function encodeVideoRange(input: Recording, staged: string, info: V
   const origin = info.fileStartLabel;
   const label = origin && renderExactTimecode(offsetTime(from, origin.value), origin.dropFrame);
   await input.check();
-  await runMediaTool("ffmpeg", ["-y", "-copyts", ...(seek ? ["-ss", seek.seekSeconds, "-noaccurate_seek", "-t", videoSeconds.toFixed(6)] : []), ...localVideoInput(info.formatName), "-noautorotate", "-i", input.path,
+  const encoded = await runMediaTool("ffmpeg", ["-y", "-copyts", ...(seek ? ["-ss", seek.seekSeconds, "-noaccurate_seek", "-t", videoSeconds.toFixed(6)] : []), ...localVideoInput(info.formatName), "-noautorotate", "-i", input.path,
     "-f", "lavfi", "-i", `anullsrc=r=${samples.hz}:cl=mono`, ...audioInput, "-filter_complex", filter, "-map", `0:${info.videoIndex}`,
     "-map", "[a]", "-vf", vf, "-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1",
     "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
-    ...(seek ? ["-fps_mode", "passthrough", "-movie_timescale", "240000"] : []), "-ar", "48000", "-ac", "1", "-movflags", "+faststart", ...(label ? ["-timecode", label] : []), staged],
-    {signal, timeoutMs: phase ? decodeBudget(videoSeconds) : mediaWorkTimeoutMs(info.approximateSeconds)});
+    ...(seek ? ["-fps_mode", "passthrough", "-frames:v", String(expected.frames), "-movie_timescale", "240000",
+      "-stats_enc_pre:v", "pipe:1", "-stats_enc_pre_fmt:v", "{ptsi} {tbi}"] : []), "-ar", "48000", "-ac", "1", "-movflags", "+faststart", ...(label ? ["-timecode", label] : []), staged],
+    {signal, onSpawn, timeoutMs: phase ? decodeBudget(videoSeconds) : mediaWorkTimeoutMs(info.approximateSeconds)});
+  if (seek) {
+    const stamps = encoded.trim().split("\n");
+    requireProof(BigInt(stamps.length) === expected.frames, "decoded picture count differs from packet index");
+    for (const [i, stamp] of stamps.entries()) {
+      const fields = /^(-?\d+) (\d+)\/(\d+)$/.exec(stamp);
+      requireProof(fields && BigInt(fields[3]!) > 0n && BigInt(fields[2]!) > 0n
+        && BigInt(fields[1]!) * BigInt(fields[2]!) * BigInt(info.rate.num)
+          === (from.frames + BigInt(i)) * BigInt(fields[3]!) * BigInt(info.rate.den), "decoded picture differs from packet PTS");
+    }
+  }
   phase?.("verifying cut");
 
   const result = await localRecording(staged);
   const spec = {rate: info.rate, dropFrame: info.dropFrame ?? false, rateOrigin: "media"} as const;
-  const out = await inspectVideo(result, spec, signal);
-  await decodeVideo(result, out, signal);
+  const out = await inspectVideo(result, spec, signal, phase ? decodeBudget(Number(expected.frames) * info.rate.den / info.rate.num) : undefined);
+  await decodeVideo(result, out, signal, phase ? decodeBudget(out.approximateSeconds) : undefined);
   const measuredLabel = out.fileStartLabel && renderExactTimecode(out.fileStartLabel.value, out.fileStartLabel.dropFrame);
   await verifyStartLabel(label, measuredLabel, signal);
   if (out.duration.frames !== expected.frames || !sameRate(out.rate, info.rate) || out.width !== size.width

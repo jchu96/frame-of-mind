@@ -24,7 +24,7 @@ export const probeLimit = 32 * 1024 * 1024;
 export function mediaWorkTimeoutMs(seconds: number) {
   return 600_000 + (Number.isFinite(seconds) && seconds > 0 ? Math.ceil(seconds) * 2000 : 0);
 }
-export interface ToolOptions { signal?: AbortSignal; timeoutMs?: number; maxOutput?: number; inputFd?: number }
+export interface ToolOptions { signal?: AbortSignal; timeoutMs?: number; maxOutput?: number; inputFd?: number; onSpawn?: (pid: number) => void }
 
 export async function runMediaTool(binary: string, args: string[], options: ToolOptions = {}): Promise<string> {
   const { signal, timeoutMs = binary === "ffprobe" ? 60_000 : 600_000, maxOutput = probeLimit } = options;
@@ -40,6 +40,10 @@ export async function runMediaTool(binary: string, args: string[], options: Tool
       failure ??= error;
       child.kill("SIGKILL");
     };
+    if (child.pid !== undefined && options.onSpawn) {
+      try { options.onSpawn(child.pid); }
+      catch { fail(new Error("Cannot register range encoder")); }
+    }
     const abort = () => fail(new ContractError("CANCELLED", "Media operation canceled."));
     const timer = setTimeout(() => fail(new ContractError("DECODE_FAILED", `${binary} timed out.`)), timeoutMs);
     const chunks: Buffer[] = [];

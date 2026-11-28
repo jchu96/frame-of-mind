@@ -38,10 +38,10 @@ async function approximateSeconds(path: string) {
     return Number((JSON.parse(json) as { format?: { duration?: unknown } }).format?.duration);
   } catch { return 0; }
 }
-function readTiming(path: string, selector: string, signal?: AbortSignal, seconds = 0) {
+function readTiming(path: string, selector: string, signal?: AbortSignal, seconds = 0, timeoutMs = timingScanTimeoutMs(seconds)) {
   return runMediaTool("ffprobe", [...localVideoInput(), "-select_streams", selector, "-count_frames",
     "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames,nb_read_frames:frame=pts,duration,pkt_duration",
-    "-of", "json", path], {signal, timeoutMs: timingScanTimeoutMs(seconds)});
+    "-of", "json", path], {signal, timeoutMs});
 }
 function measureTiming(raw: unknown, independentRate?: FrameRate, requireCount = false) {
   const data = raw as { streams?: Array<{ r_frame_rate?: unknown; avg_frame_rate?: unknown; time_base?: unknown; nb_frames?: unknown; nb_read_frames?: unknown }>; frames?: Array<{ pts?: unknown; duration?: unknown; pkt_duration?: unknown }> } | null;
@@ -147,9 +147,9 @@ export async function probeStartLabel(input: Recording, rate: FrameRate) {
   return readStartLabel(labels, rate);
 }
 
-export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal): Promise<VideoInfo> {
+export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal, timeoutMs?: number): Promise<VideoInfo> {
   const { format, video, audio, labels } = await videoHeader(input, signal);
-  const {rate, count} = measureTiming(JSON.parse(await readTiming(input.path, String(video.index), signal, Number(format.duration))), declaration?.rate, true);
+  const {rate, count} = measureTiming(JSON.parse(await readTiming(input.path, String(video.index), signal, Number(format.duration), timeoutMs)), declaration?.rate, true);
   if (declaration?.rate && !sameRate(rate, declaration.rate)) throw new ContractError("INVALID_RATE", "Declared rate differs from measured video rate.");
   const fileStartLabel = readStartLabel(labels, rate, declaration?.dropFrame);
   const dropFrame = declaration?.dropFrame ?? fileStartLabel?.dropFrame ?? (isDropRate(rate) ? undefined : false);
@@ -161,12 +161,12 @@ export async function inspectVideo(input: Recording, declaration?: {rate?: Frame
 }
 
 
-export async function decodeVideo(input: Recording, info: VideoInfo, signal?: AbortSignal) {
+export async function decodeVideo(input: Recording, info: VideoInfo, signal?: AbortSignal, timeoutMs = mediaWorkTimeoutMs(info.approximateSeconds)) {
   await input.check();
   try {
     await runMediaTool("ffmpeg", [...localVideoInput(info.formatName), "-i", input.path, "-map", `0:${info.videoIndex}`,
       ...info.audio.flatMap(s => ["-map", `0:${s.index}`]), "-f", "null", "-"],
-      {signal, timeoutMs: mediaWorkTimeoutMs(info.approximateSeconds)});
+      {signal, timeoutMs});
   } catch (cause) {
     if (faultCode(cause) !== "COMMAND_FAILED" && faultCode(cause) !== "DECODE_FAILED") throw cause;
     throw new DecodeError(cause instanceof Error ? cause.message : "Full media decode failed.", {cause});
