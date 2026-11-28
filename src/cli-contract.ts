@@ -90,7 +90,7 @@ export async function runCli(root: Command, args: string[]) {
     } else if (error instanceof CommanderError) process.exitCode = error.exitCode;
     else {
       process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
-      process.exitCode = 1;
+      process.exitCode = error instanceof ContractError && error.code === "USAGE" && error.details?.reason ? faultExits.USAGE : 1;
     }
   }
 }

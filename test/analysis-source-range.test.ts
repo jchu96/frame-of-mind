@@ -7,6 +7,10 @@ import {CandidateAnalysisError,analysisOutcomeSchema} from "../src/domain/analys
 import {builtInRecipe} from "../src/recipes/index.js";
 import {fixtureSource} from "./helpers/source-clock.js";
 import {RangeClock} from "../src/domain/range-clock.js";
+import {modelSpan, humanTime} from "../src/domain/source-bound.js";
+import {declareClock} from "../src/domain/clock.js";
+import {buildTimes} from "../src/services/artifacts.js";
+import {timestampToSeconds} from "../src/lib/time.js";
 import {SourceReceipt} from "../src/domain/source-receipt.js";
 import {rangeTranscript} from "../src/services/range-context.js";
 
@@ -61,7 +65,7 @@ it("clips a known 595–615 cue on both stretches and selects only overlapping s
     const receipt=new SourceReceipt(clock,"a".repeat(64),7260);
     const {text}=rangeTranscript({id:"fixture",provider:"file",transport:"file",raw:{},transcript:"cue",
       transcriptCues:[{startMs:start*1000,endMs:end*1000,text:"cue"}]},d,clock,receipt);
-    return {text,receipt};
+    return {text,receipt,clock};
   };
   const first=run(0,610,595,615), second=run(600,1200,595,615);
   expect(first.receipt.endFragments[0]).toMatchObject({state:"clipped",exactSpan:{start:{frames:"14875"},endExclusive:{frames:"15250"}}});
@@ -70,6 +74,17 @@ it("clips a known 595–615 cue on both stretches and selects only overlapping s
   expect(run(600,610,600,620).receipt.startFragments).toHaveLength(0);
   expect(run(600,610,610,620).text).toBe("");
   expect(run(600,610,590,600).text).toBe("");
-  expect(run(60,90,75,78,10).text).toBe("[00:00:05] cue");
-  expect(run(120,180,122,130,-5).text).toBe("[00:00:07] cue");
+  for (const [a,b,t,d,l,expectedCut,expectedTimeline] of [[60,90,75,10,3600,"00:00:05","3665.000"],
+    [120,180,122,-5,600,"00:00:07","727.000"]] as const) {
+    const {text,clock} = run(a,b,t,t+3,d);
+    expect(text).toBe(`[${expectedCut}] cue`);
+    const cut = timestampToSeconds(text.slice(1,9));
+    const exactSpan = modelSpan(clock,cut,cut+1)!;
+    const times = buildTimes({schemaVersion:5,runId:"fixture",context:{mode:"none"},recipe:{id:"requirements",label:"fixture"},
+      model:"gemini-test",matchNotes:"fixture",items:[{candidate:{kind:"test",summary:"fixture",importance:"low",
+        start:humanTime(exactSpan.start),end:humanTime(exactSpan.endExclusive),exactSpan},
+        result:{accepted:true,title:"fixture",summary:"fixture",kind:"test"}}]},
+      {fileClock:"source",modelClipClock:"absolute",timeline:declareClock(String(l))});
+    expect(times.entries[0]?.timeline?.seconds).toBe(expectedTimeline);
+  }
 });
