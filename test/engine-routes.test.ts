@@ -30,7 +30,7 @@ async function fixture() {
   const model = "gemini-fixture";
   const moments = [1,7,14].map(n => ({start:"00:00:" + String(n).padStart(2,"0"),end:"00:00:" + String(n+2).padStart(2,"0"),
     summary:"CLAIM_FIXTURE",surface:"SURFACE_FIXTURE",kind:"fixture",importance:"high"}));
-  const adapter = new GeminiVideoAnalyzer("synthetic-gemini",model,{generateContent:async req => {
+  const adapter = new GeminiVideoAnalyzer("synthetic-gemini-key",model,{generateContent:async req => {
     const wire = JSON.stringify(req);
     geminiRequests.push(wire);
     events.push("wire:gemini");
@@ -54,7 +54,7 @@ async function fixture() {
     withSourceRecording:fixtureSource(()=>20),createRunId:()=>"fixture-" + ++count,
     probeDurationSeconds:async()=>20,extractScreenshot:async()=>false,receiptDirectory:join(root,"receipts"),
     sleep:async(ms:number)=>{elapsed+=ms},now:()=>new Date(Date.UTC(2026,0,1)+elapsed).toISOString()};
-  const options = {contextMode:"none" as const,video,apiKey:"synthetic-gemini",twelvelabsKey:"synthetic-twelve",
+  const options = {contextMode:"none" as const,video,apiKey:"synthetic-gemini-key",twelvelabsKey:"synthetic-twelve",
     recipe:{id:"fixture",label:"Fixture",description:"Fixture.",indexInstruction:"Index fixture.",interrogationInstruction:"Grade fixture."},
     recipeRevision:"fixture",recipeSha256:"a".repeat(64),customRecipe:false,calibrate:false,derivedTranscript:false,
     outputRoot:join(root,"runs"),maxIncidents:3,screenshots:false,keepUpload:false,indexWaitSeconds:1};
