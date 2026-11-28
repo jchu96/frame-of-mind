@@ -9,6 +9,8 @@ The CLI and local Studio write analysis version 4 for meetings, version 5 for vi
 
 - `analyze` and `transcribe` accept `--from` and `--to` on the original recording. A verified local cut limits the upload. Exact source bounds carry their unit, rate, origin and precision. Model observations retain one-second support and measured speech edges remain separate proposals.
 - Standard SRT cues use source milliseconds. The optional transcript JSON carries exact spans. Whole-file variable-rate video uses native stream ticks.
+- Speech snapping now finds speech 10 dB above the local floor and follows quieter word edges to 1.5 dB above it. Each measured cut reports `floorDbfs` and `speechAboveFloorDb`. Below 30 dB of contrast it keeps its time, flags the cut as noisy and reports ±300 ms precision. The run summary counts noisy snaps.
+- Standalone `snap --other-edge <time>` bounds the search by the opposite end of the pick. Analyze uses both candidate edges automatically.
 
 ## [0.6.7] - 2026-11-28
 

@@ -3,7 +3,7 @@ import type { AnalysisItem } from "../domain/types.js";
 import { declaredOffset, parseSecondsMs, type ClockDeclaration, type RunClock } from "../domain/clock.js";
 import { modelTime, offsetApproximate, renderApproximate, deriveExact, offsetTime, snapDecimalSeconds, renderExactTimecode } from "exact-time";
 import { timesSchema, type StoredSnap, type TimesArtifact } from "../domain/times.js";
-import { decimalMs, describeMeasurement, type Edge, type SnapResult, type SnapRun } from "../domain/snap.js";
+import { decimalMs, describeMeasurement, describeSound, type Edge, type MeasuredTime, type SnapResult, type SnapRun } from "../domain/snap.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
@@ -391,6 +391,8 @@ function describeCut(entry: { time: Parameters<typeof renderApproximate>[0]; sna
   if (result.status === "snapped") {
     parts.push(`${result.target.seconds} s ${result.target.clock} (${describeMeasurement(result.target)})`,
       `shift ${result.shiftMs} ms`, `pause ${result.gapLowerBound ? "≥" : ""}${result.gapMs} ms`);
+    const sound = describeSound(result);
+    if (sound) parts.push(sound);
     if (result.timeline) parts.push(`${result.timeline.seconds} s timeline (${describeMeasurement(result.timeline)})`);
     const ref = result.frameReference;
     if (ref) parts.push(`containing frame of the proposal: timeline ${ref.frames} at ${ref.rate.num}/${ref.rate.den}, ${ref.timecode} ${ref.dropFrame ? "DF" : "NDF"} (${ref.basis}), proposal uncertainty can span neighbouring frames`);
@@ -420,19 +422,21 @@ export function buildTimes(analysis: VersionedAnalysisRun, clock?: RunClock, pro
   const offset = clock?.timeline ? declaredOffset(clock.timeline) : undefined;
   const add = (pointer: string, timestamp: string, bound?: Bound, proposal?: ReturnType<typeof projectSnap>) => {
     const time = modelTime(fileClock, timestamp);
-    const measured = (ms:number, end:boolean): Bound => {
+    const edge = pointer.endsWith("/end") ? "end" : "start";
+    const measured = (ms: number, precisionMs: MeasuredTime["precisionMs"]): Bound => {
       const rate = boundRate(bound!), den = 1000n * BigInt(rate.den);
       // Label the containing frame at onset and at the last millisecond
       // of speech for an offset, as for the optional sequence view.
-      const instant = end ? Math.max(0, ms - 1) : ms;
+      const instant = edge === "end" ? Math.max(0, ms - 1) : ms;
       const n = String(BigInt(instant) * BigInt(rate.num) / den);
-      const origin = {clock:"source" as const, origin:"snap" as const, gridMs:10 as const, precisionMs:proposals!.precisionMs ?? 200 as const};
+      const origin = {clock:"source" as const, origin:"snap" as const, gridMs:10 as const, precisionMs};
       return bound!.unit === "tick" ? {...origin, unit:"tick", ticks:n, tick:bound!.tick} : bound!.unit === "sample"
         ? {...origin,unit:"sample",samples:n,rate} : {...origin,unit:"video-frame",frames:n,rate};
     };
     const exactSnap = bound && proposal && "alternativesMs" in proposal ? {
-      exactAlternatives:proposal.alternativesMs.map(ms => measured(ms,pointer.endsWith("/end"))),
-      ...(proposal.status === "snapped" && {exactTime:measured(parseSecondsMs(proposal.target.seconds),pointer.endsWith("/end"))}),
+      exactAlternatives: proposal.alternativesMs.map(ms => measured(ms,
+        proposals?.noisyEdges?.[edge].has(ms) ? 300 : proposals?.precisionMs ?? 200)),
+      ...(proposal.status === "snapped" && {exactTime: measured(parseSecondsMs(proposal.target.seconds), proposal.target.precisionMs)}),
     } : {};
     const timeline = offset && timelineTime(time, offset, bound);
     entries.push({ pointer, ...(bound && {exactTime:bound}), time: { ...time, origin: "model" },

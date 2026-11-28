@@ -14,20 +14,44 @@ export function decimalMs(ms: number): string {
   return exactSeconds(fromMilliseconds("source", String(ms)));
 }
 
-export type MeasuredTime = { clock: FileClock; seconds: string; gridMs: 10; precisionMs: 50 | 200; origin: "audio-envelope" };
+export type MeasuredTime = { clock: FileClock; seconds: string; gridMs: 10; precisionMs: 50 | 200 | 300; origin: "audio-envelope" };
 export function describeMeasurement(time: Pick<MeasuredTime, "gridMs" | "precisionMs">): string {
   return `measured on a ${time.gridMs} ms grid, accurate to about ±${time.precisionMs} ms`;
 }
 
+type SoundLevels = { floorDbfs: number; speechAboveFloorDb?: number; noisy: boolean };
+
+/** Each complete window contributes its mean square in linear full-scale units. */
+export function speechLevels(powerSum: number, windows: number, floorDbfs: number): SoundLevels {
+  if (windows < 1) return { floorDbfs, noisy: true };
+  const speechAboveFloorDb = 10 * Math.log10(powerSum / windows) - floorDbfs;
+  return { floorDbfs, speechAboveFloorDb, noisy: speechAboveFloorDb < 30 };
+}
+
+export function describeSound({ floorDbfs, speechAboveFloorDb, noisy }: Partial<SoundLevels>): string {
+  const parts = [];
+  if (noisy) parts.push("noisy");
+  if (floorDbfs !== undefined) parts.push(`floor ${floorDbfs.toFixed(1)} dBFS`);
+  if (speechAboveFloorDb !== undefined) parts.push(`speech ${speechAboveFloorDb.toFixed(1)} dB above floor`);
+  return parts.join(", ");
+}
+
 export type SnapResult =
-  | { status: "snapped"; target: MeasuredTime; shiftMs: number; gapMs: number; gapLowerBound?: true; alternativesMs: number[] }
+  | ({ status: "snapped"; target: MeasuredTime; shiftMs: number; gapMs: number; gapLowerBound?: true; alternativesMs: number[] } & Partial<SoundLevels>)
   | { status: "ambiguous" | "no-boundary"; alternativesMs: number[] }
   | { status: "unavailable" };
-export type SnapRun = { precisionMs?:50 | 200; settings: SnapSettings; records: Record<Edge, SnapResult>[] };
+export type SnapRun = {
+  settings: SnapSettings;
+  records: Record<Edge, SnapResult>[];
+  precisionMs?: 50 | 200;
+  noisyEdges?: Record<Edge, ReadonlySet<number>>;
+};
 
 const SAMPLES = 80;
 const WINDOW_MS = 10;
 const BLOCK = 1000;
+const FIND_DB = 10;
+const EDGE_DB = 1.5;
 export interface Envelope {
   sourceSampleRateHz?: number;
   startMs: number;
@@ -78,8 +102,12 @@ export class SpeechMeter {
   }
 }
 
-type Boundary = { ms: number; oppositeMs: number; gapMs: number; gapLowerBound: boolean };
-export type Boundaries = Record<Edge, Boundary[]> & { precisionMs: MeasuredTime["precisionMs"] };
+type Boundary = { ms: number; oppositeMs: number; gapMs: number; gapLowerBound: boolean; sound: SoundLevels };
+export type Boundaries = {
+  start: (Boundary & { coreStartMs: number; coreEndMs: number })[];
+  end: Boundary[];
+  precisionMs: 50 | 200;
+};
 
 /** Sorted sliding neighborhood, [i - 1500, i + 1500), clipped at observed ends. */
 export function classify(envelope: Envelope): Boundaries {
@@ -96,57 +124,68 @@ export function classify(envelope: Envelope): Boundaries {
     }
     return lo;
   }
-  const boundaries: Boundaries = { start: [], end: [], precisionMs: (envelope.sourceSampleRateHz ?? 0) >= 32000 ? 50 : 200 };
+  const floors = new Float32Array(length);
   let left = 0, right = 0;
-  let onset = 0, quietSince = 0, speech = false;
-  let pendingEnd: number | undefined;
-  function finishPause(i: number) {
-    if (pendingEnd !== undefined) boundaries.end.push({
-      ms: startMs + pendingEnd * WINDOW_MS, oppositeMs: startMs + onset * WINDOW_MS,
-      gapMs: (i - quietSince) * WINDOW_MS, gapLowerBound: i === length,
-    });
+  for (let i = 0; i < length; i++) {
+    if (left < i - 1500) {
+      const at = position(level(left++));
+      sorted.copyWithin(at, at + 1, count);
+      count--;
+    }
+    while (right < Math.min(length, i + 1500)) {
+      const value = level(right++);
+      const at = position(value);
+      sorted.copyWithin(at + 1, at, count);
+      count++;
+      sorted[at] = value;
+    }
+    floors[i] = sorted[Math.ceil(count * 0.2) - 1]!;
   }
-  for (let i = 0; i <= length; i++) {
-    let above = false;
-    if (i < length) {
-      if (left < i - 1500) {
-        const at = position(level(left++));
-        sorted.copyWithin(at, at + 1, count);
-        count--;
-      }
-      while (right < Math.min(length, i + 1500)) {
-        const value = level(right++);
-        const at = position(value);
-        sorted.copyWithin(at + 1, at, count);
-        count++;
-        sorted[at] = value;
-      }
-      above = level(i) > sorted[Math.ceil(count * 0.2) - 1]! + 10;
-    }
-    if (above && !speech) {
-      finishPause(i);
-      onset = i;
-      pendingEnd = undefined;
-    }
-    if (!above && speech) {
-      if (i - onset >= 8) {
-        boundaries.start.push({
-          ms: startMs + onset * WINDOW_MS, oppositeMs: startMs + i * WINDOW_MS,
-          gapMs: (onset - quietSince) * WINDOW_MS, gapLowerBound: quietSince === 0,
-        });
-        pendingEnd = i;
-      }
-      quietSince = i;
-    }
-    speech = above;
+
+  const above = (i: number, db: number) => level(i) > floors[i]! + db;
+  const ms = (i: number) => startMs + i * WINDOW_MS;
+  const boundaries: Boundaries = { start: [], end: [], precisionMs: (envelope.sourceSampleRateHz ?? 0) >= 32000 ? 50 : 200 };
+  let previousEnd = 0;
+  let pendingEnd: Boundary | undefined;
+  function finishPause(nextStart: number, atLimit: boolean) {
+    if (pendingEnd) boundaries.end.push({ ...pendingEnd, gapMs: (nextStart - previousEnd) * WINDOW_MS, gapLowerBound: atLimit });
+    pendingEnd = undefined;
   }
-  finishPause(length);
+  let i = 0;
+  while (i < length) {
+    if (!above(i, FIND_DB)) { i++; continue; }
+    const coreStart = i;
+    let powerSum = 0;
+    while (i < length && above(i, FIND_DB)) {
+      powerSum += 10 ** (level(i) / 10);
+      i++;
+    }
+    const coreLength = i - coreStart;
+
+    let onset = coreStart;
+    while (onset > previousEnd && above(onset - 1, EDGE_DB)) onset--;
+    // A quiet shoulder can touch the next core, but cannot consume it.
+    while (i < length && above(i, EDGE_DB) && !above(i, FIND_DB)) i++;
+    finishPause(onset, false);
+    if (coreLength >= 8) {
+      boundaries.start.push({
+        ms: ms(onset), oppositeMs: ms(i), coreStartMs: ms(coreStart), coreEndMs: ms(coreStart + coreLength),
+        sound: speechLevels(powerSum, coreLength, floors[onset]!),
+        gapMs: (onset - previousEnd) * WINDOW_MS, gapLowerBound: previousEnd === 0,
+      });
+      pendingEnd = { ms: ms(i), oppositeMs: ms(onset), gapMs: 0, gapLowerBound: false,
+        sound: speechLevels(powerSum, coreLength, floors[i - 1]!) };
+    }
+    previousEnd = i;
+  }
+  finishPause(length, true);
   return boundaries;
 }
 
-export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: number, clock: FileClock, settings: SnapSettings): SnapResult {
+export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: number, clock: FileClock, settings: SnapSettings, otherEdgeMs?: number): SnapResult {
   if (!edges) return { status: "unavailable" };
-  const eligible = edges[edge].filter(e => e.gapMs >= settings.gapMs && Math.abs(e.ms - atMs) <= settings.windowMs);
+  const eligible = edges[edge].filter(e => e.gapMs >= settings.gapMs && Math.abs(e.ms - atMs) <= settings.windowMs &&
+    (otherEdgeMs === undefined || (edge === "start" ? e.ms < otherEdgeMs : e.ms > otherEdgeMs)));
   // Moving outward may only finish the classified group containing the request.
   // Groups include their onset and exclude their offset.
   const permitted = eligible.filter(e => edge === "start"
@@ -155,7 +194,8 @@ export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: numb
   const chosen = edge === "start" ? permitted.at(-1) : permitted[0];
   if (!chosen) return { status: "no-boundary", alternativesMs: eligible.map(e => e.ms) };
   return {
-    status: "snapped", target: { clock, seconds: decimalMs(chosen.ms), gridMs: WINDOW_MS, precisionMs: edges.precisionMs, origin: "audio-envelope" },
+    status: "snapped", target: { clock, seconds: decimalMs(chosen.ms), gridMs: WINDOW_MS, precisionMs: chosen.sound.noisy ? 300 : edges.precisionMs, origin: "audio-envelope" },
+    ...chosen.sound,
     shiftMs: chosen.ms - atMs, gapMs: chosen.gapMs, ...(chosen.gapLowerBound ? { gapLowerBound: true } : {}),
     alternativesMs: eligible.filter(e => e !== chosen).map(e => e.ms),
   };
@@ -164,8 +204,8 @@ export function selectEdge(edges: Boundaries | undefined, edge: Edge, atMs: numb
 type Range = Record<Edge, number>;
 export function proposeRecords(ranges: Range[], edges: Boundaries | undefined, clock: FileClock, settings: SnapSettings): SnapRun {
   const records = ranges.map(r => ({
-    start: selectEdge(edges, "start", r.start, clock, settings),
-    end: selectEdge(edges, "end", r.end, clock, settings),
+    start: selectEdge(edges, "start", r.start, clock, settings, r.end),
+    end: selectEdge(edges, "end", r.end, clock, settings, r.start),
   }));
   const order = ranges.map((r, i) => ({ ...r, i })).sort((a, b) => a.start - b.start || a.end - b.end);
   const overlap = (a: Range, b: Range) => Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
@@ -193,20 +233,28 @@ export function proposeRecords(ranges: Range[], edges: Boundaries | undefined, c
       records[i]![edge] = { status: "ambiguous", alternativesMs: [...result.alternativesMs, ranges[i]![edge] + result.shiftMs].sort((a, b) => a - b) };
       changed = true;
     }
-    if (!changed) return { settings, records, ...(edges && {precisionMs:edges.precisionMs}) };
+    if (!changed) break;
   }
+  if (!edges) return { settings, records };
+  // Alternatives (including rolled-back proposals) refer to classified edges by file time.
+  const noisyTimes = (points: Boundary[]) => new Set(points.filter(p => p.sound.noisy).map(p => p.ms));
+  return { settings, records, precisionMs: edges.precisionMs, noisyEdges: { start: noisyTimes(edges.start), end: noisyTimes(edges.end) } };
 }
 
 export function summarizeSnaps(run: SnapRun) {
   const counts = { snapped: 0, "no-boundary": 0, ambiguous: 0, unavailable: 0 };
   const shifts: number[] = [];
+  let noisy = 0;
   for (const record of run.records) for (const result of [record.start, record.end]) {
     counts[result.status]++;
-    if (result.status === "snapped") shifts.push(result.shiftMs);
+    if (result.status === "snapped") {
+      shifts.push(result.shiftMs);
+      if (result.noisy) noisy++;
+    }
   }
   shifts.sort((a, b) => a - b);
   // Empirical 50th percentile (nearest rank) reports an observed shift even for an even sample.
   const mid = (shifts.length - 1) >>> 1;
-  return { counts, total: Object.values(counts).reduce((a, b) => a + b, 0),
+  return { counts: { ...counts, ...(noisy ? { noisy } : {}) }, total: Object.values(counts).reduce((a, b) => a + b, 0),
     ...(shifts.length ? { medianShiftMs: shifts[mid]! } : {}) };
 }
