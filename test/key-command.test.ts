@@ -6,7 +6,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { writeFixtureRuntime } from "./helpers/key-command-runtime.js";
 import { createCliSettings } from "../src/cli-settings.js";
 import { childEnvironment, keyCommandEnvironment } from "../src/lib/child-env.js";
-import { runKeyCommand, KEY_COMMAND_TIMEOUT_MS, KEY_COMMAND_MAX_BYTES } from "../src/key-command.js";
+import { KeyCommandRefused, runKeyCommand, KEY_COMMAND_TIMEOUT_MS, KEY_COMMAND_MAX_BYTES } from "../src/key-command.js";
+import { writeFailure } from "../src/cli-contract.js";
+import { ContractError } from "../src/domain/contract-error.js";
+
+describe("the two KEY_REFUSED documents", () => {
+  const document = (error: unknown) => {
+    const lines: string[] = [];
+    const before = process.exitCode;
+    try { writeFailure(error, line => { lines.push(line); }); return {line: lines.join("\n"), exit: process.exitCode}; }
+    finally { process.exitCode = before; }
+  };
+  it("marks a failed key command with a fixed reason and nothing from the command", () => {
+    expect(document(new KeyCommandRefused())).toEqual({exit: 10,
+      line: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}'});
+  });
+  it("leaves a key the provider refused without a reason", () => {
+    expect(document(new ContractError("KEY_REFUSED", "The provider refused the key.")))
+      .toEqual({exit: 10, line: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused."}}'});
+  });
+});
 
 describe.skipIf(process.platform === "win32")("operator key reader", () => {
   let runtime: string, home: string, settings: string, reader: string, invoked: string, cwd: string;

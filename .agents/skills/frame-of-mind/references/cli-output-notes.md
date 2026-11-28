@@ -19,6 +19,9 @@ contract version 1 unless it says otherwise. `CHANGELOG.md` holds the full text.
   file. Jobs can use that key. Doctor prints no next step when the key is present.
   If a reader is configured and the key is missing, the CLI reports `KEY_REFUSED`
   because the reader would inherit the merged environment. Use the installed Node command.
+- **Two kinds of `KEY_REFUSED`.** With `--json`, a failed or unavailable key
+  command carries `error.details.reason: "key-command"`. A key the provider
+  refused carries no `reason`. Code and exit status (10) are the same.
 - **Source builds.** A build that is not a release file prints its version with
   `+source`, for example `0.6.6+source`, in `--version`, `doctor`, the manifest
   `toolVersion` and the local MCP server. A linked checkout runs `dist/`:

@@ -5,7 +5,9 @@ import { keyCommandEnvironment, spawn } from "./lib/child-env.js";
 export const KEY_COMMAND_TIMEOUT_MS = 30_000;
 export const KEY_COMMAND_MAX_BYTES = 4096;
 export class KeyCommandRefused extends ContractError {
-  constructor() { super("KEY_REFUSED", "Key command unavailable."); }
+  // The fixed word lets a JSON caller tell this from a key the provider refused.
+  // Nothing from the command, its arguments or its output is ever added.
+  constructor() { super("KEY_REFUSED", "Key command unavailable.", {reason: "key-command"}); }
 }
 
 export function runKeyCommand([executable, ...args]: [string, ...string[]], home: string,

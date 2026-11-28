@@ -23,6 +23,10 @@ and prints no next step. Without a key, doctor exits 1 and prints one next step.
 A configured key reader gives `Key command unavailable.` under that launcher
 because it would inherit the merged environment.
 
+With `--json`, a failed or unavailable key command now carries `error.details.reason: "key-command"`, so a
+caller can tell it from a key the provider refused, which carries no `reason`. Code and exit status are
+unchanged (`KEY_REFUSED`, 10).
+
 ## [0.6.6] - 2026-11-28
 
 Screen text a record quotes is now read from a full-size picture, and a quotation the tool cannot tie to one is removed. The transcript recheck is gone. `doctor` says where the provider key came from. Everything added is optional on contract version 1.

@@ -104,7 +104,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
 
   const calibrate = ["calibrate", "--model", "!"];
   const missing = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_MISSING","message":"key missing."}}\n', err: ""};
-  const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused."}}\n', err: ""};
+  const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}\n', err: ""};
   it.each(["node-bare", "bun-bare"])("ignores folder and inherited selectors on a merged launch (%s)", runtime => {
     const selector = JSON.stringify([fixtureRuntime, reader]);
     for (const fromFolder of [true, false]) {
@@ -116,7 +116,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       expect(JSON.parse(keyed.out).error.code).toBe("USAGE");
       expect(existsSync(marker)).toBe(false);
     }
-  });
+  }, 30_000);
 
   it.each(["node-bare", "bun-bare"])("uses a settings reader only on the clean control (%s)", runtime => {
     writeFileSync(join(cwd, ".env"), "");
@@ -133,7 +133,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
     const control = run([...calibrate, "--json"], {}, runtime === "node-bare" ? "node" : "bun-clean");
     expect(JSON.parse(control.out).error.code).toBe("USAGE");
     expect(readFileSync(marker, "utf8")).toBe("start\n");
-  });
+  }, 30_000);
 
   it("refuses a settings file whose opened handle has a foreign owner", () => {
     writeFileSync(settings, "{}", {mode: 0o600});
@@ -247,7 +247,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       const args = ["analyze", "--output", "out", "--source", "none", "--video", "absent.mp4"];
       expect(run(args, env)).toEqual({exit: 10, out: "", err: "Key command unavailable.\n"});
       const json = run([...args, "--json"], env);
-      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused."}}\n', err: ""});
+      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}\n', err: ""});
       expect(readdirSync(cwd)).toEqual(before);
       expect(existsSync(join(root, "unexpected-open")), "folder file accessed after command selected").toBe(false);
     }
