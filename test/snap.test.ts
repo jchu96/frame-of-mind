@@ -62,7 +62,7 @@ test("W4 requires observed pauses and speech including the 250 and 80 ms thresho
 });
 function boundaries(start: number[], end: number[]): Boundaries {
   const point = (ms: number, oppositeMs: number) => ({ ms, oppositeMs, gapMs: 500, gapLowerBound: false });
-  return { precisionMs: 50, start: start.map(ms => point(ms, ms + 500)), end: end.map(ms => point(ms, ms - 500)) };
+  return { precisionMs: 50, start: start.map(ms => ({ ...point(ms, ms + 500), coreStartMs: ms, coreEndMs: ms + 500 })), end: end.map(ms => point(ms, ms - 500)) };
 }
 test("W5 empty and reversed cuts roll back both proposals and disclose refused choices", () => {
   for (const start of [1100, 1200]) {

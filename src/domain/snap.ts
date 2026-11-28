@@ -28,6 +28,8 @@ export type SnapRun = { settings: SnapSettings; records: Record<Edge, SnapResult
 const SAMPLES = 80;
 const WINDOW_MS = 10;
 const BLOCK = 1000;
+const FIND_DB = 10;
+const EDGE_DB = 1.5;
 export interface Envelope {
   sourceSampleRateHz?: number;
   startMs: number;
@@ -79,7 +81,11 @@ export class SpeechMeter {
 }
 
 type Boundary = { ms: number; oppositeMs: number; gapMs: number; gapLowerBound: boolean };
-export type Boundaries = Record<Edge, Boundary[]> & { precisionMs: MeasuredTime["precisionMs"] };
+export type Boundaries = {
+  start: (Boundary & { coreStartMs: number; coreEndMs: number })[];
+  end: Boundary[];
+  precisionMs: 50 | 200;
+};
 
 /** Sorted sliding neighborhood, [i - 1500, i + 1500), clipped at observed ends. */
 export function classify(envelope: Envelope): Boundaries {
@@ -96,51 +102,55 @@ export function classify(envelope: Envelope): Boundaries {
     }
     return lo;
   }
-  const boundaries: Boundaries = { start: [], end: [], precisionMs: (envelope.sourceSampleRateHz ?? 0) >= 32000 ? 50 : 200 };
+  const floors = new Float32Array(length);
   let left = 0, right = 0;
-  let onset = 0, quietSince = 0, speech = false;
-  let pendingEnd: number | undefined;
-  function finishPause(i: number) {
-    if (pendingEnd !== undefined) boundaries.end.push({
-      ms: startMs + pendingEnd * WINDOW_MS, oppositeMs: startMs + onset * WINDOW_MS,
-      gapMs: (i - quietSince) * WINDOW_MS, gapLowerBound: i === length,
-    });
+  for (let i = 0; i < length; i++) {
+    if (left < i - 1500) {
+      const at = position(level(left++));
+      sorted.copyWithin(at, at + 1, count);
+      count--;
+    }
+    while (right < Math.min(length, i + 1500)) {
+      const value = level(right++);
+      const at = position(value);
+      sorted.copyWithin(at + 1, at, count);
+      count++;
+      sorted[at] = value;
+    }
+    floors[i] = sorted[Math.ceil(count * 0.2) - 1]!;
   }
-  for (let i = 0; i <= length; i++) {
-    let above = false;
-    if (i < length) {
-      if (left < i - 1500) {
-        const at = position(level(left++));
-        sorted.copyWithin(at, at + 1, count);
-        count--;
-      }
-      while (right < Math.min(length, i + 1500)) {
-        const value = level(right++);
-        const at = position(value);
-        sorted.copyWithin(at + 1, at, count);
-        count++;
-        sorted[at] = value;
-      }
-      above = level(i) > sorted[Math.ceil(count * 0.2) - 1]! + 10;
-    }
-    if (above && !speech) {
-      finishPause(i);
-      onset = i;
-      pendingEnd = undefined;
-    }
-    if (!above && speech) {
-      if (i - onset >= 8) {
-        boundaries.start.push({
-          ms: startMs + onset * WINDOW_MS, oppositeMs: startMs + i * WINDOW_MS,
-          gapMs: (onset - quietSince) * WINDOW_MS, gapLowerBound: quietSince === 0,
-        });
-        pendingEnd = i;
-      }
-      quietSince = i;
-    }
-    speech = above;
+
+  const above = (i: number, db: number) => level(i) > floors[i]! + db;
+  const ms = (i: number) => startMs + i * WINDOW_MS;
+  const boundaries: Boundaries = { start: [], end: [], precisionMs: (envelope.sourceSampleRateHz ?? 0) >= 32000 ? 50 : 200 };
+  let previousEnd = 0;
+  let pendingEnd: Boundary | undefined;
+  function finishPause(nextStart: number, atLimit: boolean) {
+    if (pendingEnd) boundaries.end.push({ ...pendingEnd, gapMs: (nextStart - previousEnd) * WINDOW_MS, gapLowerBound: atLimit });
+    pendingEnd = undefined;
   }
-  finishPause(length);
+  let i = 0;
+  while (i < length) {
+    if (!above(i, FIND_DB)) { i++; continue; }
+    const coreStart = i;
+    while (i < length && above(i, FIND_DB)) i++;
+    const coreLength = i - coreStart;
+
+    let onset = coreStart;
+    while (onset > previousEnd && above(onset - 1, EDGE_DB)) onset--;
+    // A quiet shoulder can touch the next core, but cannot consume it.
+    while (i < length && above(i, EDGE_DB) && !above(i, FIND_DB)) i++;
+    finishPause(onset, false);
+    if (coreLength >= 8) {
+      boundaries.start.push({
+        ms: ms(onset), oppositeMs: ms(i), coreStartMs: ms(coreStart), coreEndMs: ms(coreStart + coreLength),
+        gapMs: (onset - previousEnd) * WINDOW_MS, gapLowerBound: previousEnd === 0,
+      });
+      pendingEnd = { ms: ms(i), oppositeMs: ms(onset), gapMs: 0, gapLowerBound: false };
+    }
+    previousEnd = i;
+  }
+  finishPause(length, true);
   return boundaries;
 }
 

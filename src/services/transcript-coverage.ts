@@ -14,12 +14,12 @@ function measuredSeconds(runs: Boundaries["start"], start: number, end: number) 
   let lo = 0, hi = runs.length;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    if (runs[mid]!.oppositeMs <= start * 1000) lo = mid + 1;
+    if (runs[mid]!.coreEndMs <= start * 1000) lo = mid + 1;
     else hi = mid;
   }
   let ms = 0;
-  for (let i = lo; i < runs.length && runs[i]!.ms < end * 1000; i++) {
-    ms += Math.min(end * 1000, runs[i]!.oppositeMs) - Math.max(start * 1000, runs[i]!.ms);
+  for (let i = lo; i < runs.length && runs[i]!.coreStartMs < end * 1000; i++) {
+    ms += Math.min(end * 1000, runs[i]!.coreEndMs) - Math.max(start * 1000, runs[i]!.coreStartMs);
   }
   return ms / 1000;
 }
