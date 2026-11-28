@@ -64,10 +64,9 @@ export class ContractError extends Error {
 }
 
 export class FrameGridError extends ContractError {
-  constructor(readonly frameTiming: FrameTiming) {
+  constructor(readonly frameTiming: Extract<FrameTiming, {varying: boolean}>) {
     const reason = frameTiming.varying ? "This clip’s frame rate varies."
-      : frameTiming.varying === false && frameTiming.oddGaps ? "This clip has uneven frame spacing."
-      : "A single exact frame rate could not be verified.";
+      : "This clip has uneven frame spacing.";
     super("INVALID_RATE", reason + " Analyze and transcribe still run on the whole recording.", {frameTiming});
   }
 }

@@ -161,7 +161,11 @@ export async function inspectVideo(input: Recording, declaration?: {rate?: Frame
   let timing: ReturnType<typeof measureTiming>;
   try { timing = measureTiming(scan ? scan.data : JSON.parse(await read()), declaration?.rate, true); }
   catch (error) {
-    if (scan && faultCode(error) === "INVALID_RATE") throw new FrameGridError(scan.frameTiming);
+    if (scan && error instanceof ContractError && error.code === "INVALID_RATE") {
+      const {frameTiming} = scan;
+      if (frameTiming.varying || (frameTiming.varying === false && frameTiming.oddGaps > 0)) throw new FrameGridError(frameTiming);
+      throw new ContractError(error.code, error.message, {...error.details, frameTiming});
+    }
     throw error;
   }
   const {rate, count} = timing;
