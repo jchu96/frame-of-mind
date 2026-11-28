@@ -2985,3 +2985,14 @@ it("source-identity-before-upload rejects foreign candidates before calibration 
   expect(createAnalyzer).not.toHaveBeenCalled();
   expect(f.analyzer.upload).not.toHaveBeenCalled();
 });
+
+it("inside-outside-equivalence rejects a malformed adapter proposal before grading just as the file reader does", async () => {
+  const f = await createFixture();
+  const index = indexResult();
+  // Simulate a broken adapter at the contract boundary. The grader must never see its window.
+  f.analyzer.index.mockResolvedValue({...index,moments:[{...index.moments[0],kind:42}]});
+  await expect(createOrchestrator(f).analyze(f.options)).rejects.toMatchObject({
+    code:"PROVIDER_REFUSED",details:{reason:"invalid-reply"},
+  });
+  expect(f.analyzer.interrogate).not.toHaveBeenCalled();
+});

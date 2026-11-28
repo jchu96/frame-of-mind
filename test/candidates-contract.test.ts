@@ -38,3 +38,17 @@ describe("candidates-contract", () => {
     expect(() => readCandidates(value,{...ticks,unit:"tick",tick:{num:1,den:2000}},"file")).toThrow();
   });
 });
+
+it("unknown-end-tick-recording binds the built-in proposal with null length and verifies the last observed tick", async () => {
+  const {RangeClock} = await import("../src/domain/range-clock.js");
+  const {geminiCandidates} = await import("../src/adapters/gemini-candidates.js");
+  const clock = RangeClock.wholeTicks({num:1,den:1000}, undefined, "unproven", [0,40,120]);
+  const doc = geminiCandidates([{start:"00:00:00",end:"00:00:01",kind:"k",summary:"s",importance:"low"}],
+    "test", clock, recording.recordingSha256);
+  expect(doc.recording.length).toBeNull();
+  expect(readCandidates(doc,doc.recording,"engine",clock.observedEnd)[0]?.end).toBe(121);
+  const file = {...doc,recording:{...doc.recording,length:"900"}};
+  expect(readCandidates(file,doc.recording,"file",clock.observedEnd)).toEqual(doc.candidates);
+  expect(() => readCandidates({...file,candidates:[{...doc.candidates[0],end:122}]},doc.recording,"file",clock.observedEnd))
+    .toThrowError(expect.objectContaining({details:{reason:"invalid-candidates"}}));
+});

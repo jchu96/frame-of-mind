@@ -16,7 +16,7 @@ import { probeFrameRate } from "./media-probe.js";
 import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
 import { readFile, rename, rm, rmdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { selectCandidates } from "../domain/candidate-selection.js";
+import { geminiCandidates } from "../adapters/gemini-candidates.js";
 import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
 import type { RunNote } from "../domain/run-notes.js";
 import type { TokenUsage } from "../domain/token-usage.js";
@@ -854,14 +854,9 @@ export class AnalysisOrchestrator {
           clock.transcriptWindow = window.windowed ? "windowed" : "not-windowed";
           if (!window.windowed) await reportWarning(progress, { kind: "warning", stage: "indexing", message: "transcript not windowed: timestamped lines, a known video duration, and exact millisecond alignment are required." });
         }
-        const fileProposals = new Map<IndexedMoment, Candidate>();
-        for (const row of fileRows ?? []) {
-          const window = proposalWindow(row, sourceClock);
-          if (window) fileProposals.set(window, row);
-        }
         const index: AnalysisIndex = fileRows ? {
           matchNotes: "Candidates supplied in a file.",
-          moments: [...fileProposals.keys()],
+          moments: [],
         } : await tracer.span({
           op: "gen_ai.chat",
           name: "gemini index",
@@ -937,17 +932,21 @@ export class AnalysisOrchestrator {
         if (runProseTime) await reportWarning(progress,{kind:"warning",stage:"indexing",message:proseTimeNote});
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
-        const inRange = index.moments.filter(candidate => {
-          const start = timestampToSeconds(candidate.start);
-          return (duration === undefined || start < duration) && modelSpan(sourceClock,start,timestampToSeconds(candidate.end));
-        });
+        const builtInDocument = fileRows ? undefined : geminiCandidates(index.moments, analyzer.model, sourceClock, recordingSha256);
+        const rows = fileRows ?? readCandidates(builtInDocument, recording, "engine", sourceClock.observedEnd);
+        const proposalsByWindow = new Map<IndexedMoment, Candidate>();
+        for (const row of rows) {
+          const window = fileRows ? proposalWindow(row, sourceClock) : index.moments[Number(row.id.slice("gemini-".length)) - 1];
+          if (window && (duration === undefined || timestampToSeconds(window.start) < duration)) proposalsByWindow.set(window, row);
+        }
+        const inRange = [...proposalsByWindow.keys()];
         const indexedCount = fileRows?.length ?? index.moments.length;
         const outOfRange = indexedCount - inRange.length;
         const spanOf = (c: IndexedMoment) => modelSpan(sourceClock, timestampToSeconds(c.start), timestampToSeconds(c.end));
-        const candidates = fileRows
-          ? [...inRange].sort((a,b) => (fileProposals.get(b)!.score ?? -Infinity) - (fileProposals.get(a)!.score ?? -Infinity))
-              .slice(0, options.maxIncidents).sort((a,b) => fileProposals.get(a)!.start - fileProposals.get(b)!.start)
-          : selectCandidates(inRange, options.maxIncidents);
+        const byTime = (a: IndexedMoment, b: IndexedMoment) => proposalsByWindow.get(a)!.start - proposalsByWindow.get(b)!.start;
+        const candidates = [...inRange].sort((a,b) =>
+          (proposalsByWindow.get(b)!.score ?? -Infinity) - (proposalsByWindow.get(a)!.score ?? -Infinity) || byTime(a,b))
+          .slice(0, options.maxIncidents).sort(byTime);
         failurePhase = "detail";
         await report(progress, {
           kind: "stage",
