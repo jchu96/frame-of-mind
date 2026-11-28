@@ -121,10 +121,10 @@ it("sends base request bytes without a thinking level and medium on every genera
 
   expect(await run(startArgs("analyze"))).not.toHaveProperty("thinkingLevel");
   const base = bodies.splice(0);
-  // Raw SDK HTTP bodies captured for index and detail at d43dd0c.
+  // Index request from d43dd0c and detail request with proposer text removed.
   expect(base.map(body => createHash("sha256").update(body).digest("hex"))).toEqual([
     "8548557fde88664b225d4576756704ff87181361408721120776f5d2fcaa2890",
-    "b8dfdafdb2dbb2bf880ddffd65125375d9753c769db44039d6c009363a28945c",
+    "b0f1f930f7d68216263b0621dc14abd859f3bd63eabd3dc14f8fa67dbf0dbd08",
   ]);
   for (const body of base) expect(JSON.parse(body).generationConfig).not.toHaveProperty("thinkingConfig");
 

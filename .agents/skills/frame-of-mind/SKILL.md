@@ -71,6 +71,8 @@ when sharing a bundle.
 
 ## Quote times with their clocks
 
+Before cutting, read `resolvedEdges.start` and `resolvedEdges.endExclusive` on the item. Check each status and precision. A claim carries its actor's stated radius. A measured edge carries the tool's cut or snap. See [the engine contract](../../../docs/ENGINE_CONTRACT.md).
+
 Always quote a media time with its clock word (`source`, `reel`, or `timeline`)
 and retain the `≈1 s` marker for model times. Declare the timeline offset in
 seconds with `--timeline-offset`; optional `--timecode-rate` is an exact output

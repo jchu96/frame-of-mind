@@ -81,7 +81,7 @@ it("human analyze and transcribe write the versioned artifact bytes, output stre
     const digest = createHash("sha256").update(JSON.stringify(evidence)).digest("hex");
     expect(exits).toEqual([0, 0]);
     expect(wire).toEqual(["upload video/mp4", "index", "upload audio/aac", "retry", "deleted", "upload audio/aac", "transcribed", "deleted"]);
-    expect(digest).toBe("c90166409647f45a9f64309d115bbd7e6cdb93592a37482ab51a5ad57580839d");
+    expect(digest).toBe("3a7c91765865e9bcdb31334aab37769f8a82c41e0dadc4de4539affec1991be8");
   } finally {
     vi.restoreAllMocks(); vi.unstubAllEnvs(); process.exitCode = 0;
     await rm(root, {recursive: true, force: true});

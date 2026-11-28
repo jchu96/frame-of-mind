@@ -420,7 +420,7 @@ function applySqlStatements(database: Database, sql: string): void {
   }
 }
 
-test("local Studio imports, projects and exports analysis 2, 3, 4 and 5 with their paired manifests", async () => {
+test("old-bundle-import: local Studio imports, projects and exports analysis 2, 3, 4 and 5 with their paired manifests", async () => {
   for (const version of [2,3,4,5] as const) {
     const dir=await mkdtemp(join(tmpdir(),"projection-versions-"));
     temporaryDirectories.push(dir);

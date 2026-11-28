@@ -1,5 +1,5 @@
 import { checkRoles, enginePlan, type EngineItems } from "../domain/engine-plan.js";
-import { recordingIdentity, readCandidates, type Candidate } from "../domain/candidates.js";
+import { recordingIdentity, readCandidates, type Candidate, type CandidatesDocument } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
 import { measurementWindow, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
 import { proposalWindow } from "./proposal-windows.js";
@@ -18,7 +18,7 @@ import { probeFrameRate } from "./media-probe.js";
 import { calibrateClipClock, type Calibration } from "../adapters/gemini-calibration.js";
 import { readFile, rename, rm, rmdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { geminiCandidates } from "../adapters/gemini-candidates.js";
+import { geminiEnginePorts } from "../adapters/gemini-candidates.js";
 import { resolveTranscriptLanguage } from "../domain/transcript-language.js";
 import type { RunNote } from "../domain/run-notes.js";
 import type { TokenUsage } from "../domain/token-usage.js";
@@ -326,9 +326,18 @@ interface BluedotMediaContextSource extends MeetingContextSource {
   mediaFromMeeting(meeting: MeetingEvidence, overrideUrl?: string): MediaSource;
 }
 
+export interface AnalysisEnginePorts {
+  media: AnalysisVideoAnalyzer;
+  propose(clock: SourceReceipt["clock"], digest: string, ...args: Parameters<AnalysisVideoAnalyzer["index"]>): Promise<{
+    index: AnalysisIndex; document: CandidatesDocument; metadata: Map<string, IndexedMoment>;
+  }>;
+  grade: AnalysisVideoAnalyzer["interrogate"];
+}
+
 export interface AnalysisOrchestratorDependencies {
   createContextSource(options: ContextEnrichedAnalyzeOptions): MeetingContextSource;
-  createAnalyzer(
+  createEngines?(apiKey: string, options: AnalyzeOptions): AnalysisEnginePorts;
+  createAnalyzer?(
     apiKey: string,
     options: AnalyzeOptions,
   ): AnalysisVideoAnalyzer;
@@ -360,7 +369,7 @@ export class AnalysisCanceledError extends Error {
 
 export class AnalysisOrchestrator {
   private readonly createContextSource: AnalysisOrchestratorDependencies["createContextSource"];
-  private readonly createAnalyzer: AnalysisOrchestratorDependencies["createAnalyzer"];
+  private readonly createEngines: NonNullable<AnalysisOrchestratorDependencies["createEngines"]>;
   private readonly nextRunId: () => string;
   private readonly now: () => string;
   private readonly sleep: (milliseconds: number) => Promise<void>;
@@ -375,7 +384,10 @@ export class AnalysisOrchestrator {
 
   constructor(dependencies: AnalysisOrchestratorDependencies) {
     this.createContextSource = dependencies.createContextSource;
-    this.createAnalyzer = dependencies.createAnalyzer;
+    const legacyFactory = dependencies.createAnalyzer;
+    if (dependencies.createEngines) this.createEngines = dependencies.createEngines;
+    else if (legacyFactory) this.createEngines = (key, options) => geminiEnginePorts(legacyFactory(key,options));
+    else throw new Error("No analysis engines registered.");
     this.nextRunId = dependencies.createRunId ?? createRunId;
     this.now = dependencies.now ?? (() => new Date().toISOString());
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
@@ -526,7 +538,8 @@ export class AnalysisOrchestrator {
       await ensureDirectory(runContainerDirectory);
       await ensureDirectory(stagingDirectory);
 
-      const analyzer = this.createAnalyzer(options.apiKey, options);
+      const engines = this.createEngines(options.apiKey, options);
+      const analyzer = engines.media;
       const plan = enginePlan({...options,file:!!fileRows,recipe:options.recipe.engines, model:analyzer.model,
         retention:options.retention ?? (options.keepUpload ? "provider" : "run"),available:true,preview:false});
       if (options.calibrate !== false && analyzer.probeClipClock) {
@@ -865,10 +878,7 @@ export class AnalysisOrchestrator {
           clock.transcriptWindow = window.windowed ? "windowed" : "not-windowed";
           if (!window.windowed) await reportWarning(progress, { kind: "warning", stage: "indexing", message: "transcript not windowed: timestamped lines, a known video duration, and exact millisecond alignment are required." });
         }
-        const index: AnalysisIndex = fileRows ? {
-          matchNotes: "Candidates supplied in a file.",
-          moments: [],
-        } : await tracer.span({
+        const proposed = fileRows ? undefined : await tracer.span({
           op: "gen_ai.chat",
           name: "gemini index",
           attributes: chatAttributes,
@@ -876,7 +886,7 @@ export class AnalysisOrchestrator {
           const usageBefore = usageCountsOf(analyzer);
           try {
             const hints: [notes?: readonly RunNote[], ranged?: boolean] = ranged ? [options.runNotes, true] : options.runNotes?.length ? [options.runNotes] : [];
-            const indexed = await analyzer.index(
+            const indexed = await engines.propose(sourceClock, recordingSha256,
               remote,
               indexMeeting,
               options.recipe,
@@ -886,7 +896,7 @@ export class AnalysisOrchestrator {
               ...hints,
             );
             span.setAttributes({
-              "frame_of_mind.candidates_indexed": indexed.moments.length,
+              "frame_of_mind.candidates_indexed": indexed.index.moments.length,
             });
             return indexed;
           } finally {
@@ -894,6 +904,7 @@ export class AnalysisOrchestrator {
           }
         });
         assertNotCanceled(execution.signal);
+        const index: AnalysisIndex = proposed?.index ?? {matchNotes:"Candidates supplied in a file.",moments:[]};
         let alignment: RunManifest["transcriptAlignment"] | undefined;
         if (hasContext) {
           if (!fileRows && !isMeetingAnalysisIndex(index)) {
@@ -943,11 +954,10 @@ export class AnalysisOrchestrator {
         if (runProseTime) await reportWarning(progress,{kind:"warning",stage:"indexing",message:proseTimeNote});
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
-        const builtInDocument = fileRows ? undefined : geminiCandidates(index.moments, analyzer.model, sourceClock, recordingSha256);
-        const rows = fileRows ?? readCandidates(builtInDocument, recording, "engine", sourceClock.observedEnd);
+        const rows = fileRows ?? readCandidates(proposed!.document, recording, "engine", sourceClock.observedEnd);
         const proposalsByWindow = new Map<IndexedMoment, Candidate>();
         for (const row of rows) {
-          const window = fileRows ? proposalWindow(row, sourceClock) : index.moments[Number(row.id.slice("gemini-".length)) - 1];
+          const window = proposed?.metadata.get(row.id) ?? proposalWindow(row, sourceClock);
           if (window && (duration === undefined || timestampToSeconds(window.start) < duration)) proposalsByWindow.set(window, row);
         }
         const inRange = [...proposalsByWindow.keys()];
@@ -955,9 +965,7 @@ export class AnalysisOrchestrator {
         const outOfRange = indexedCount - inRange.length;
         const spanOf = (c: IndexedMoment) => modelSpan(sourceClock, timestampToSeconds(c.start), timestampToSeconds(c.end));
         const byTime = (a: IndexedMoment, b: IndexedMoment) => proposalsByWindow.get(a)!.start - proposalsByWindow.get(b)!.start;
-        const candidates = [...inRange].sort((a,b) =>
-          (proposalsByWindow.get(b)!.score ?? -Infinity) - (proposalsByWindow.get(a)!.score ?? -Infinity) || byTime(a,b))
-          .slice(0, options.maxIncidents).sort(byTime);
+        const candidates = inRange.slice(0, options.maxIncidents).sort(byTime);
         failurePhase = "detail";
         await report(progress, {
           kind: "stage",
@@ -1006,7 +1014,7 @@ export class AnalysisOrchestrator {
               // when no other detail call can overlap it.
               const usageBefore = detailConcurrency === 1 ? usageCountsOf(analyzer) : undefined;
               try {
-                const detail = await analyzer.interrogate(
+                const detail = await engines.grade(
                   remote,
                   { start: candidate.start, end: candidate.end },
                   effectiveTranscript && (alignment || transcriptIsDerived)
@@ -1103,7 +1111,7 @@ export class AnalysisOrchestrator {
             );
             if (result.evidence?.timestamp) {
               const sec = timestampToSeconds(result.evidence.timestamp);
-              const stillIndex = attempt.stillTimes?.indexOf(result.evidence.timestamp) ?? -1;
+              const stillIndex = result.evidence.verbatimUiText !== undefined ? attempt.stillTimes?.indexOf(result.evidence.timestamp) ?? -1 : -1;
               const exactTime = attempt.exactStillTimes?.[stillIndex] ?? modelBound(sourceClock, sec, 0n, sourceClock.cutLength);
               if (boundIndex(exactTime) >= boundIndex(exactSpan.endExclusive)) {
                 throw new CandidateAnalysisError({code:"evidence_out_of_range", attempts:1});
@@ -1611,8 +1619,8 @@ export async function analyzeMeeting(
 export function createDefaultAnalysisOrchestrator(): AnalysisOrchestrator {
   return new AnalysisOrchestrator({
     createContextSource: defaultCreateContextSource,
-    createAnalyzer: (apiKey, analyzeOptions) =>
-      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL), {}, analyzeOptions.thinkingLevel),
+    createEngines: (apiKey, analyzeOptions) => geminiEnginePorts(
+      new GeminiVideoAnalyzer(apiKey, analyzeOptions.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL), {}, analyzeOptions.thinkingLevel)),
   });
 }
 

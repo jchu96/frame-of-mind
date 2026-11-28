@@ -531,6 +531,8 @@ controlled. Prefer a local download.
 
 This selects the best candidates by importance (high, medium, low), breaking
 ties by start time, and reports them in recording order. The default is 10.
+To grade a finder's file, run `frameofmind analyze --source none --video recording.mp4 --candidates picks.json --grader gemini --json`. Add `--dry-run` to preview the route. For built-in proposals use `--proposer gemini` or omit both the proposer flag and candidates file. Apply `--focus` to the active roles and `--max-moments` to the candidate budget. Read each item's resolved start and exclusive end, including its status and precision, before cutting. [Engine contract](ENGINE_CONTRACT.md)
+
 Use `--max-moments all` to interrogate every indexed candidate. The first stdout
 summary line states the selected/indexed/dropped counts; a partial run omits
 lower-importance candidates, which can occur anywhere in the recording.

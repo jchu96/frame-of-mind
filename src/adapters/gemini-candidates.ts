@@ -18,5 +18,20 @@ export function geminiCandidates(moments: readonly IndexedMoment[], model: strin
       label:moment.kind, reason:moment.summary, score:{high:3,medium:2,low:1}[moment.importance], chain:[],
     });
   }
+  candidates.sort((a,b) => b.score! - a.score! || a.start - b.start);
   return {schemaVersion:1, recording:recordingIdentity(clock,digest), candidates};
+}
+
+/** Both roles can share one media transport without sharing prompt data. */
+export function geminiEnginePorts(analyzer: import("../services/analyze.js").AnalysisVideoAnalyzer): import("../services/analyze.js").AnalysisEnginePorts {
+  return {
+    media:analyzer,
+    async propose(clock: RangeClock, digest: string, ...args: Parameters<typeof analyzer.index>) {
+      const index = await analyzer.index(...args);
+      const document = geminiCandidates(index.moments,analyzer.model,clock,digest);
+      const metadata = new Map(index.moments.map((window,i) => [`gemini-${i+1}`,window]));
+      return {index,document,metadata};
+    },
+    grade:analyzer.interrogate.bind(analyzer),
+  };
 }

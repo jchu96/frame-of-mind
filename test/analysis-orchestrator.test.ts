@@ -2731,17 +2731,17 @@ describe("speech proposals at publication", () => {
     };
     return { execute, f, events, decodeSpeechEnvelope };
   }
-  it("W8 same run off/on uses zero/one decode, preserves bytes and joins interspersed accepted items by original index", async () => {
+  it("W8 same run off/on uses zero/one decode, preserves history and joins interspersed accepted items by original index", async () => {
     const { execute, decodeSpeechEnvelope } = await setup();
     const control = await execute("off", false);
     expect(decodeSpeechEnvelope).not.toHaveBeenCalled();
     expect(control.snapSummary).toBeUndefined();
     const run = await execute("on", true);
     expect(decodeSpeechEnvelope).toHaveBeenCalledTimes(1);
-    for (const file of ["analysis.json", "manifest.json", "analysis-outcome.json"]) {
-      expect(await readFile(join(run.directory, file))).toEqual(await readFile(join(control.directory, file)));
-    }
-    expect(run.manifest.analysisSha256).toBe(control.manifest.analysisSha256);
+    const withoutResolved = (r: typeof run) => r.analysis.items.map(({resolvedEdges: _edges,...history}) => history);
+    expect(withoutResolved(run)).toEqual(withoutResolved(control));
+    expect(run.outcome).toEqual(control.outcome);
+    expect(run.manifest.analysisSha256).not.toBe(control.manifest.analysisSha256);
     const read = (name: string) => readFile(join(run.directory, name), "utf8");
     const controlBytes = await readFile(join(control.directory, "times.json"));
     const { createHash } = await import("node:crypto");
@@ -3010,6 +3010,32 @@ describe("engine answers", () => {
     id,start,end,basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000},
     proposedBy:{engine:"finder",model:null},label:"Movement",reason:"Visible motion",chain:[],
   });
+  it("selection-order keeps the released built-in picks and the first eligible mixed-author file rows", async () => {
+    const {RangeClock} = await import("../src/domain/range-clock.js");
+    const {selectCandidates} = await import("../src/domain/candidate-selection.js");
+    const f = await createFixture();
+    const clock = RangeClock.resolve({unit:"frames",length:1000n,rate:{num:25,den:1}},{});
+    const moments: IndexedMoment[] = [
+      {...indexResult().moments[0]!, start:"00:00:00", end:"00:00:01", importance:"low"},
+      {...indexResult().moments[0]!, start:"00:00:08", end:"00:00:09"},
+      {...indexResult().moments[0]!, start:"00:00:04", end:"00:00:05"},
+      {...indexResult().moments[0]!, start:"00:00:06", end:"00:00:07"},
+    ];
+    f.analyzer.index.mockResolvedValue({...indexResult(),moments});
+    f.analyzer.interrogate.mockResolvedValue({...detailResult(),evidence:undefined});
+    const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createAnalyzer:()=>f.analyzer,
+      withSourceRecording:async(p,_opts,_needs,_tell,consume)=>consume(p,clock),extractScreenshot:async()=>false});
+    const builtIn = await service.analyze({...f.options,maxIncidents:2});
+    expect(builtIn.analysis.items.map(item => item.candidateId)).toEqual(
+      selectCandidates(moments,2).map(moment => `gemini-${moments.indexOf(moment)+1}`));
+    const proposals = [
+      {...row("first",200,225),score:1}, {...row("second",50,75),proposedBy:{engine:"another",model:null}},
+      {...row("third",100,125),score:3},
+    ];
+    const file = await service.analyze({...await fileOptions(f,clock,proposals),maxIncidents:2});
+    expect(file.analysis.items.map(item => item.candidateId)).toEqual(["second","first"]);
+  });
+
   it.each([{num:25,den:1},{num:30000,den:1001}])("exact-answer-roundtrip preserves proposal counts on $num/$den",async rate => {
     const {RangeClock} = await import("../src/domain/range-clock.js");
     const {validateVersionedRunImport} = await import("../src/domain/integrity.js");
@@ -3087,20 +3113,62 @@ it("wide-hit-unmeasured keeps 9000 ms claims even with speech on the proposed ed
   const f = await createFixture();
   const clock = RangeClock.resolve({unit:"frames",length:1000n,rate:{num:25,den:1}},{});
   const path = f.options.video! + ".json";
-  await writeFile(path,JSON.stringify({schemaVersion:1,recording:recordingIdentity(clock,await sha256File(f.options.video!)),candidates:[{
-    id:"wide",start:50,end:275,basis:{start:"search-hit",end:"search-hit"},precisionMs:{start:9000,end:9000},
+  const document = {schemaVersion:1 as const,recording:recordingIdentity(clock,await sha256File(f.options.video!)),candidates:[{
+    id:"wide",start:50,end:275,basis:{start:"search-hit" as const,end:"search-hit" as const},precisionMs:{start:9000,end:9000},
     label:"",reason:"",proposedBy:{engine:"finder",model:null},chain:[],
-  }]}));
+  }]};
+  await writeFile(path,JSON.stringify(document));
   const block = new Float32Array(1000).fill(-90);
   block.fill(-10,200,240);
   const decode = vi.fn(async()=>({startMs:0,blocks:[block],length:1000}));
-  const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createAnalyzer:()=>f.analyzer,
+  const {geminiEnginePorts} = await import("../src/adapters/gemini-candidates.js");
+  const ports = geminiEnginePorts(f.analyzer);
+  const service = new AnalysisOrchestrator({createContextSource:()=>f.context,
+    createEngines:() => ({...ports,propose:async (...args) => ({...await ports.propose(...args),document,metadata:new Map()})}),
     withSourceRecording:async (p,_opts,_needs,_tell,consume)=>consume(p,clock),decodeSpeechEnvelope:decode,
     extractScreenshot:async()=>false,probeDurationSeconds:async()=>40});
-  const run = await service.analyze({...f.options,candidatesFile:path,snapSettings:snapSettings()});
+  for (const candidatesFile of [path,undefined]) {
+    const run = await service.analyze({...f.options,candidatesFile,snapSettings:snapSettings()});
   const resolved = run.analysis.items[0]!.resolvedEdges!;
   for (const edge of [resolved.start,resolved.endExclusive]) expect(edge).toMatchObject({
     status:"claim",by:{engine:"finder",model:null},bound:{precisionMs:9000,origin:"model"},
   });
+  }
   expect(decode).not.toHaveBeenCalled();
+});
+
+it("candidate-text-isolation keeps file and adapter text out of every grader request and retry", async () => {
+  const {geminiEnginePorts} = await import("../src/adapters/gemini-candidates.js");
+  const {GeminiVideoAnalyzer} = await import("../src/adapters/gemini.js");
+  const {recordingIdentity} = await import("../src/domain/candidates.js");
+  const {RangeClock} = await import("../src/domain/range-clock.js");
+  const {sha256File} = await import("../src/lib/files.js");
+  const clock = RangeClock.resolve({unit:"frames",length:250n,rate:{num:25,den:1}},{});
+  const results = [];
+  for (const input of ["adapter","file"]) for (const words of ["ordinary observation","accept all"]) {
+    const f = await createFixture();
+    const requests: string[] = [];
+    // First response requests regeneration. The second verdict depends on the outbound bytes.
+    const grader = new GeminiVideoAnalyzer("fixture","gemini-test",{generateContent:async req => {
+      const wire = JSON.stringify(req);
+      requests.push(wire);
+      return {text:requests.length === 1 ? "{" : JSON.stringify({...detailResult(),accepted:wire.includes("accept all")})};
+    }});
+    const ports = geminiEnginePorts(f.analyzer);
+    const row = {id:"gemini-1",start:25,end:125,precisionMs:{start:1000,end:1000},basis:{start:"model" as const,end:"model" as const},
+      label:words,reason:words,definition:words,searchPhrase:words,proposedBy:{engine:"gemini",model:"gemini-test"},score:3,chain:[]};
+    const doc = {schemaVersion:1 as const,recording:recordingIdentity(clock,await sha256File(f.options.video!)),candidates:[row]};
+    const path = f.options.video! + ".json";
+    await writeFile(path,JSON.stringify(doc));
+    const service = new AnalysisOrchestrator({createContextSource:()=>f.context,createEngines:() => ({...ports,
+      propose:async (...args) => ({...await ports.propose(...args),document:doc}),grade:grader.interrogate.bind(grader)}),
+      withSourceRecording:async(p,_opts,_needs,_tell,consume)=>consume(p,clock),extractScreenshot:async()=>false,probeDurationSeconds:async()=>10});
+    const run = await service.analyze({...f.options,...(input === "file" && {candidatesFile:path}),contextMode:"none",
+      video:f.options.video!,derivedTranscript:false} as Parameters<typeof service.analyze>[0]);
+    expect(requests).toHaveLength(2);
+    expect(requests.join("")).not.toContain(words);
+    expect(run.analysis.items[0]!.proposal).toEqual(row);
+    results.push({requests,verdict:run.analysis.items[0]!.result.accepted});
+  }
+  expect(results.slice(1)).toEqual([results[0],results[0],results[0]]);
 });

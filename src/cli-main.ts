@@ -296,7 +296,7 @@ program
   .option("--grader <engine>", "Engine that grades candidate windows (gemini)")
   .option("--dry-run", "Preview the analysis route without a provider request")
   .option("--candidates <file>", "Grade a candidates document on the original recording clock")
-  .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
+  .option("--max-moments <n|all>", "First N eligible candidates in document order, or all eligible candidates", "10")
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
   .option("--concurrency <n>", "Parallel Gemini detail requests in pass 2 (default 1)")
   .option("--no-screenshots", "Skip ffmpeg screenshots")

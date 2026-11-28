@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Analyze accepts a verified candidates file, previews proposer and grader roles, and writes each candidate’s provenance and resolved start and exclusive end. Measured cuts and speech snaps identify the tool. Claims keep the finder’s radius. [Engine contract](docs/ENGINE_CONTRACT.md)
+
 The CLI and local Studio write analysis version 4 for meetings, version 5 for video-only runs, and outcome version 2 on every run. Hosted Studio writes analysis 2/3 and refuses 4/5 imports. Local Studio also reads historical bundles.
 
 - `analyze` and `transcribe` accept `--from` and `--to` on the original recording. A verified local cut limits the upload. Exact source bounds carry their unit, rate, origin and precision. Model observations retain one-second support and measured speech edges remain separate proposals.
