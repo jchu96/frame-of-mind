@@ -104,7 +104,7 @@ const rows: Row[] = [
   {...row("cli-main", "A range cannot reuse a remote file.", [...analyze, "--from", "1", "--remote-file", "files/fixture"]), alsoRaisedIn: "services/analyze"},
   row("services/source-recording", "Invalid range bound.", ["transcribe", "audio.wav", "--to", "1", "--timecode-rate", "25"]),
   row("domain/range-clock", "Invalid range bound.", [...analyze, "--from", "bad"]),
-  row("domain/range-clock", "no-video-stream", ["transcribe", "audio.wav", "--to", "1f"]),
+  row("domain/range-clock", "Audio bounds use seconds or Nsamp.", ["transcribe", "audio.wav", "--to", "1f"]),
   row("domain/range-clock", "Specify the source drop-frame mode or use frames.", [...analyze, "--from", "00:00:00:01"]),
   row("domain/range-clock", "a bound outside the recording", [...analyze, "--to", "200"]),
   row("domain/range-clock", "from at or after to", [...analyze, "--from", "2", "--to", "1"]),

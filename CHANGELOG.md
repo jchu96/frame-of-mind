@@ -6,6 +6,8 @@ Semantic Versioning.
 ## [Unreleased]
 
 - Analyze one recording with either Gemini or Twelve Labs in either role. Preview the recipients and retention, withhold the claim when needed, and read partial coverage and cleanup receipts in the result. Named libraries, search and whole-shoot analysis do not exist yet.
+- A bound in frames or timecode on a sound-only recording answers the reason released in 0.6.8, `Audio bounds use seconds or Nsamp.`, again. `no-video-stream` is used only where no reason existed before.
+
 - Fixed a v0.6.8 regression that refused sound-only recordings in `analyze`. Voice recordings use native sample positions and produce no stills. A failure before media upload starts reports `phase: "prepare"` and `sent: false`.
 
 - Analyze accepts a verified candidates file, previews proposer and grader roles, and writes each candidate’s provenance and resolved start and exclusive end. Measured cuts and speech snaps identify the tool. Claims keep the finder’s radius. The grader receives the claim and optional surface as fenced data on both routes. Items and failure rows retain the full proposal. The effect of showing the claim was measured on one set of screen recordings. [Engine contract](docs/ENGINE_CONTRACT.md)
