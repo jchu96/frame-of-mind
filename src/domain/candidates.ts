@@ -1,0 +1,101 @@
+import { rationalRate } from "exact-time";
+import { z } from "zod";
+import { ContractError } from "./contract-error.js";
+import { rateSchema, sameRate } from "./media-clock.js";
+import { indexSchema } from "./source-bound.js";
+import type { SourceGrid } from "./range-clock.js";
+
+const count = z.int().nonnegative();
+const ms = z.int().positive();
+export const actorSchema = z.strictObject({ engine: z.string(), model: z.string().nullable() });
+export const basisSchema = z.enum(["model", "word", "shot", "speech", "person", "search-hit"]);
+const reducedRatio = rateSchema.refine(r => sameRate(r, rationalRate(r.num, r.den)), "Ratio must be reduced.");
+const identity = { recordingSha256: z.string().regex(/^[a-f0-9]{64}$/), length: indexSchema };
+export const recordingSchema = z.discriminatedUnion("unit", [
+  z.strictObject({ ...identity, unit: z.literal("video-frame"), rate: reducedRatio }),
+  z.strictObject({ ...identity, unit: z.literal("sample"), rate: reducedRatio }),
+  z.strictObject({ ...identity, unit: z.literal("tick"), tick: reducedRatio }),
+]);
+const passSchema = z.strictObject({
+  pass: z.int().positive(), edge: z.enum(["start", "end"]), at: count,
+  precisionMs: ms, basis: basisSchema, by: actorSchema,
+});
+export const candidateSchema = z.strictObject({
+  id: z.string().min(1), start: count, end: count,
+  precisionMs: z.strictObject({ start: ms, end: ms }),
+  basis: z.strictObject({ start: basisSchema, end: basisSchema }),
+  label: z.string(), reason: z.string(), proposedBy: actorSchema,
+  score: z.number().optional(), searchPhrase: z.string().optional(), definition: z.string().optional(),
+  chain: z.array(passSchema),
+});
+export type Candidate = z.infer<typeof candidateSchema>;
+export type Actor = z.infer<typeof actorSchema>;
+export type CandidateRecording = z.infer<typeof recordingSchema>;
+
+export function recordingIdentity(grid: SourceGrid, recordingSha256: string): CandidateRecording {
+  const common = { recordingSha256, length: String(grid.length) };
+  if (grid.unit === "ticks") return { ...common, unit: "tick", tick: { num: grid.rate.den, den: grid.rate.num } };
+  return { ...common, unit: grid.unit === "frames" ? "video-frame" : "sample", rate: grid.rate };
+}
+
+const ratioOf = (r: CandidateRecording) => r.unit === "tick" ? r.tick : r.rate;
+
+function validChain(row: Candidate, recording: CandidateRecording): boolean {
+  const length = BigInt(recording.length);
+  if (row.start >= row.end || BigInt(row.end) > length) return false;
+  const ratio = ratioOf(recording);
+  const numerator = BigInt(recording.unit === "tick" ? ratio.den : ratio.num);
+  const denominator = BigInt(recording.unit === "tick" ? ratio.num : ratio.den);
+  const at = { start: row.start, end: row.end };
+  const radius = { ...row.precisionMs };
+  let i = 0;
+  // Grid placement changes both endpoints atomically. Subsequent passes tighten one edge.
+  if (row.basis.start === "search-hit" && row.basis.end === "search-hit" && row.chain.length) {
+    const [a, b] = row.chain;
+    if (!a || !b || a.edge !== "start" || b.edge !== "end" || a.pass !== 1 || b.pass !== 2 ||
+        a.basis !== "model" || b.basis !== "model" || a.precisionMs !== 1000 || b.precisionMs !== 1000 ||
+        a.by.engine !== b.by.engine || a.by.model !== b.by.model || a.at >= b.at || BigInt(b.at) > length) return false;
+    const width = BigInt(row.end) - BigInt(row.start);
+    if (BigInt(a.at) < BigInt(row.start) - width || BigInt(b.at) > BigInt(row.end) + width) return false;
+    at.start = a.at;
+    at.end = b.at;
+    radius.start = radius.end = 1000;
+    i = 2;
+  }
+  for (; i < row.chain.length; i++) {
+    const p = row.chain[i]!;
+    const edge = p.edge;
+    if (p.pass !== i + 1 || BigInt(p.at) > length || p.precisionMs >= radius[edge]) return false;
+    const displacement = BigInt(Math.abs(p.at - at[edge])) * denominator * 1000n;
+    if (displacement > BigInt(radius[edge] - p.precisionMs) * numerator) return false;
+    at[edge] = p.at;
+    radius[edge] = p.precisionMs;
+    if (at.start >= at.end) return false;
+  }
+  return true;
+}
+
+export const candidatesDocumentSchema = z.strictObject({
+  schemaVersion: z.literal(1), recording: recordingSchema, candidates: z.array(candidateSchema),
+}).superRefine((doc, ctx) => {
+  const seen = new Set<string>();
+  for (const [i, candidate] of doc.candidates.entries()) {
+    if (seen.has(candidate.id) || !validChain(candidate, doc.recording)) {
+      ctx.addIssue({ code: "custom", path: ["candidates", i], message: "Invalid candidate identity, span or chain." });
+    }
+    seen.add(candidate.id);
+  }
+});
+export type CandidatesDocument = z.infer<typeof candidatesDocumentSchema>;
+
+export function readCandidates(value: unknown, local: CandidateRecording, source: "file" | "engine"): Candidate[] {
+  const result = candidatesDocumentSchema.safeParse(value);
+  if (result.success) {
+    const { recording, candidates } = result.data;
+    if (recording.recordingSha256 === local.recordingSha256 && recording.length === local.length &&
+        recording.unit === local.unit && sameRate(ratioOf(recording), ratioOf(local))) return candidates;
+  }
+  if (source === "engine") throw new ContractError("PROVIDER_REFUSED", "Invalid proposer reply.", { phase: "propose", reason: "invalid-reply" });
+  const reason = result.success ? "candidate-recording-mismatch" : "invalid-candidates";
+  throw new ContractError("USAGE", "Invalid candidates file.", { reason });
+}
