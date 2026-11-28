@@ -85,6 +85,8 @@ accurate to about ±50 ms.” Use ±200 ms when the source rate is below
 the frame containing the proposed onset or last speech millisecond and explain
 that uncertainty can span neighbouring frames. For `no-boundary`, `ambiguous`
 or `unavailable`, quote the model range and status. List any refused edges and listen before choosing.
+Under room noise a snapped edge can sit inside the first or last word by up to
+about a third of a second; check it before cutting on it.
 
 ## Local CLI and Studio
 
