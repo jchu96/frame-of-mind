@@ -100,7 +100,7 @@ maintainer's reference instance runs at
 [fom.flickerventures.com](https://fom.flickerventures.com).
 
 > [!IMPORTANT]
-> Early public release (`v0.6.8`). Review generated work before using or
+> Early public release (`v0.6.9`). Review generated work before using or
 > publishing it. Generated output always requires human review.
 
 ## Status as of 2026-08-24
@@ -325,7 +325,7 @@ frameofmind key set
 frameofmind doctor
 ```
 
-A build made this way prints its version with `+source`, for example `0.6.8+source`, in `--version`,
+A build made this way prints its version with `+source`, for example `0.6.9+source`, in `--version`,
 `doctor`, the `version` document and each run manifest. The linked command runs the files in `dist/`,
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
