@@ -10,13 +10,13 @@ import { decodeBudget } from "./range-scan.js";
 const audioFormats = ["-protocol_whitelist", "fd", "-format_whitelist", "mov,matroska,webm,avi,wav,aiff,flac,mp3,ogg,aac"];
 const unverified = () => rangeUsage("Range requires a locally verifiable cut.");
 interface AudioHeader {
-  index: number; codec_type: string; sample_rate?: string; time_base?: string;
+  index: number; codec_type: string; r_frame_rate?: string; avg_frame_rate?: string; sample_rate?: string; time_base?: string;
   duration_ts?: number; start_pts?: number; disposition?: { attached_pic?: number };
 }
 
 // The decoder can open only the inherited recording descriptor; embedded
 // playlists and external MOV data references cannot acquire another file.
-async function runAudioTool(input: Recording, binary: string, args: string[], options: Parameters<typeof runMediaTool>[2]) {
+export async function runRecordingTool(input: Recording, binary: string, args: string[], options: Parameters<typeof runMediaTool>[2]) {
   await input.check();
   const file = await open(input.path, "r");
   try {
@@ -27,8 +27,8 @@ async function runAudioTool(input: Recording, binary: string, args: string[], op
 }
 
 export async function recordingTracks(input: Recording, signal?: AbortSignal) {
-  const raw = await runAudioTool(input, "ffprobe", [ "-show_entries",
-    "stream=index,codec_type,sample_rate,time_base,duration_ts,start_pts:stream_disposition=attached_pic:format=duration", "-of", "json", "fd:"], {signal});
+  const raw = await runRecordingTool(input, "ffprobe", [ "-show_entries",
+    "stream=index,codec_type,r_frame_rate,avg_frame_rate,sample_rate,time_base,duration_ts,start_pts:stream_disposition=attached_pic:format=duration", "-of", "json", "fd:"], {signal});
   const data = JSON.parse(raw) as {streams: AudioHeader[]; format?: {duration?: string}};
   return { video: data.streams.find(s => s.codec_type === "video" && !s.disposition?.attached_pic),
     audio: data.streams.find(s => s.codec_type === "audio"), seconds: Number(data.format?.duration) };
@@ -61,7 +61,7 @@ export async function audioGrid(input: Recording, track: AudioHeader, seconds: n
     if (BigInt(tb[2]!) > 0n && scaled % BigInt(tb[2]!) === 0n) length = scaled / BigInt(tb[2]!);
   }
   if (length === undefined) {
-    const trace = await runAudioTool(input, "ffmpeg", ["-copyts", "-start_at_zero", "-i", "fd:",
+    const trace = await runRecordingTool(input, "ffmpeg", ["-copyts", "-start_at_zero", "-i", "fd:",
       "-map", `0:${track.index}`, "-c:a", "pcm_f64le", "-f", "framecrc", "pipe:1"], { signal, timeoutMs: decodeBudget(seconds) });
     length = checkPcmTrace(trace, hz, 0n);
   }
@@ -94,7 +94,7 @@ export async function withAudioRange<T>(path: string, request: RangeRequest, tel
     const hz = grid.rate.num;
     const seek = Math.max(0, Number(clock.from) / hz - 2);
     const duration = Number(clock.to) / hz - seek + 1;
-    const trace = await runAudioTool(input, "ffmpeg", ["-y", "-copyts", "-start_at_zero", "-ss", seek.toFixed(6),
+    const trace = await runRecordingTool(input, "ffmpeg", ["-y", "-copyts", "-start_at_zero", "-ss", seek.toFixed(6),
       "-t", duration.toFixed(6), "-i", "fd:",
       "-filter_complex", `[0:${tracks.audio.index}]asettb=1/${hz},atrim=start_pts=${clock.from}:end_pts=${clock.to},asplit[trace][cut];[cut]asetpts=PTS-STARTPTS[out]`,
       "-map", "[trace]", "-c:a", "pcm_f64le", "-f", "framecrc", "pipe:1",
@@ -118,7 +118,7 @@ export async function verifyCutAudio(file: Recording, count: bigint, signal?: Ab
   const tracks = await recordingTracks(file, signal);
   requireProof(tracks.audio?.time_base === "1/48000" && tracks.audio.sample_rate === "48000" && tracks.audio.start_pts === 0
     && Number.isSafeInteger(tracks.audio.duration_ts) && BigInt(tracks.audio.duration_ts!) === count, "AAC playable sample span differs from the cut");
-  const trace = await runAudioTool(file, "ffmpeg", ["-copyts", "-i", "fd:", "-map", "0:a:0",
+  const trace = await runRecordingTool(file, "ffmpeg", ["-copyts", "-i", "fd:", "-map", "0:a:0",
     "-c:a", "pcm_s16le", "-f", "framecrc", "pipe:1"], {signal, timeoutMs: decodeBudget(Number(count) / 48000)});
   const decoded = checkPcmTrace(trace, 48000, 0n);
   requireProof(decoded >= count && decoded - count < 1024n, "AAC priming or padding differs from its playable span");

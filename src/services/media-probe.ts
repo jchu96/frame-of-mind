@@ -43,7 +43,7 @@ function readTiming(path: string, selector: string, signal?: AbortSignal, second
     "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames,nb_read_frames:frame=pts,duration,pkt_duration",
     "-of", "json", path], {signal, timeoutMs});
 }
-function measureTiming(raw: unknown, independentRate?: FrameRate, requireCount = false) {
+export function measureTiming(raw: unknown, independentRate?: FrameRate, requireCount = false) {
   const data = raw as { streams?: Array<{ r_frame_rate?: unknown; avg_frame_rate?: unknown; time_base?: unknown; nb_frames?: unknown; nb_read_frames?: unknown }>; frames?: Array<{ pts?: unknown; duration?: unknown; pkt_duration?: unknown }> } | null;
   const stream = data?.streams?.[0];
   const parse = (value: unknown) => {

@@ -20,6 +20,9 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
     .description("Write a private reference-grade context transcript from recording audio.")
     .addHelpText("after", transcriptionHelp)
     .argument("<input>", "local video or audio recording")
+    .option("--from <time>", "inclusive source time, frame or sample")
+    .option("--to <time>", "exclusive source time, frame or sample")
+    .option("--timecode-rate <rate>", "use the measured source rate with from-media:df or from-media:ndf")
     .option("-o, --output <dir>", "output directory (default: beside the recording)")
     .option("--transcript-language <tag>", "Likely spoken language (BCP-47)")
     .option("--model <id>", "Gemini model ID")
@@ -49,7 +52,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
       } catch (error) {
         if (error instanceof KeyCommandRefused) throw error;
         // Provider and filesystem exception bodies may contain private content.
-        const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
+        const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError || error instanceof CliError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
         // A consumer reads this line; it stays on standard error in both modes.
         diagnostic(`error: ${message}`);
         if (error instanceof TranscribeError && error.diagnostic) diagnostic(error.diagnostic);
@@ -57,7 +60,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
           writeFailure(error instanceof TranscriptLanguageError ? new CliError("USAGE", message) : error, dependencies.stdout);
           return;
         }
-        process.exitCode = error instanceof TranscribeCanceledError ? 130 : 1;
+        process.exitCode = error instanceof TranscribeCanceledError || controller.signal.aborted ? 130 : error instanceof CliError && error.code === "USAGE" ? 2 : 1;
       } finally { process.off("SIGINT", cancel); }
     });
 }

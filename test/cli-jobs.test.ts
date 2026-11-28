@@ -1,3 +1,4 @@
+import { fixtureSource } from "./helpers/source-clock.js";
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -68,7 +69,7 @@ async function call(family: "analyze" | "transcribe", op: Parameters<typeof runJ
   const capture = (document: object) => { result = {schemaVersion: 1, ...document}; };
   process.exitCode = 0;
   try {
-    await runJobCommand(family, op, args, {readKey, probe: async () => 2, sleep: async () => {}, extractAudioTrack: async (_input, output) => {
+    await runJobCommand(family, op, args, {readKey, withSourceRecording: fixtureSource(() => 2), probe: async () => 2, sleep: async () => {}, extractAudioTrack: async (_input, output) => {
       expect(output.startsWith(out + "/")).toBe(true);
       await writeFile(output, "aac"); return true;
     }}, {write: capture, admit: async doc => { capture(doc); admitted?.(doc); }});

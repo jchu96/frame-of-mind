@@ -1,3 +1,4 @@
+import { maxRangeSeconds as resolveMaxVideoSeconds } from "./source-recording.js";
 import { applicationSetting } from "../lib/application-settings.js";
 import { ContractError, faultCode } from "../domain/contract-error.js";
 import { createScratch } from "../adapters/scratch.js";
@@ -104,18 +105,6 @@ import {
 // validated, the run aborts as systematic instead of burning a provider call
 // per remaining candidate.
 const GENERATION_FAILURE_CIRCUIT_BREAKER = 3;
-
-const DEFAULT_MAX_VIDEO_SECONDS = 7260;
-
-function resolveMaxVideoSeconds(): number {
-  const value = applicationSetting("FRAME_OF_MIND_MAX_VIDEO_SECONDS");
-  if (value === undefined) return DEFAULT_MAX_VIDEO_SECONDS;
-  const seconds = Number(value);
-  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(seconds)) {
-    throw new Error("FRAME_OF_MIND_MAX_VIDEO_SECONDS must be a positive integer number of seconds");
-  }
-  return seconds;
-}
 
 // One failed window discards the whole transcript, so a window that exhausts
 // the adapter's per-request retries is re-uploaded and transcribed once more

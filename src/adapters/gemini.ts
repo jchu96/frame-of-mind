@@ -150,6 +150,10 @@ const transcriptionSchema = z.object({
   segments: z.array(transcriptionSegmentSchema).max(5_000),
 }).strict();
 
+const rangedTranscriptionSchema = z.object({
+  segments: z.array(transcriptionSegmentSchema.extend({interruptedStart: z.boolean().optional(), interruptedEnd: z.boolean().optional()})).max(5_000),
+}).strict();
+
 const sdkThinkingLevel = {
   low: SdkThinkingLevel.LOW,
   medium: SdkThinkingLevel.MEDIUM,
@@ -653,7 +657,8 @@ export class GeminiVideoAnalyzer {
     return parseGeminiJson(response.text, schema, "Calibration response").seconds;
   }
 
-  async transcribe(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number): Promise<DerivedTranscriptionSegment[]> {
+  async transcribe(file: GeminiFile, requestedLanguage?: string, durationSeconds?: number, ranged = false): Promise<DerivedTranscriptionSegment[]> {
+    const schema = ranged ? rangedTranscriptionSchema : transcriptionSchema;
     const result = await this.generateStructured({
       model: this.model,
       contents: [{
@@ -675,6 +680,7 @@ export class GeminiVideoAnalyzer {
                 "Transcribe the complete audio verbatim with timestamps.",
                 "Use the language or languages actually spoken. Preserve language switches within a sentence. Do not translate.",
                 ...(requestedLanguage ? [`The likely spoken language is ${requestedLanguage}, though other languages may also be present.`] : []),
+                ...(ranged ? ["Keep speech already under way at the first sample. Mark interruptedStart or interruptedEnd only when the words are audibly interrupted by the corresponding audio edge."] : []),
                 "Split the speech into segments of at most a few sentences each.",
                 "All start and end timestamps must be canonical HH:MM:SS values with end strictly after start, measured from the beginning of this audio.",
                 ...(durationSeconds === undefined ? [] : [`This audio is ${durationSeconds} seconds long. No timestamp may exceed that length.`]),
@@ -691,9 +697,9 @@ export class GeminiVideoAnalyzer {
         systemInstruction: transcriptionGuard,
         httpOptions: { timeout: MODEL_REQUEST_TIMEOUT_MS },
         responseMimeType: "application/json",
-        responseJsonSchema: toGeminiProviderSchema(transcriptionSchema),
+        responseJsonSchema: toGeminiProviderSchema(schema),
       },
-    }, "transcribe", transcriptionSchema, "Gemini transcription response");
+    }, "transcribe", schema, "Gemini transcription response");
     return result.segments;
   }
 

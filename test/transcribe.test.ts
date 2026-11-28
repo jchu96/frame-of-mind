@@ -1,3 +1,4 @@
+import { fixtureSource } from "./helpers/source-clock.js";
 import { FileContextSource } from "../src/adapters/file-context.js";
 import { validateCliDocument } from "./helpers/cli-schema.js";
 import { createHash } from "node:crypto";
@@ -63,6 +64,7 @@ async function fixture(duration = 1500) {
     usageSnapshot: () => ({ promptTokens: 12, outputTokens: 3, totalTokens: 15 }),
   };
   const deps = {
+    withSourceRecording: fixtureSource(() => duration),
     createAnalyzer: vi.fn(() => analyzer),
     decodeSpeechEnvelope: vi.fn<typeof decodeSpeechEnvelope>().mockResolvedValue(soundTrack(duration)),
     probeDurationSeconds: vi.fn(async (): Promise<number | undefined> => duration),
@@ -261,7 +263,7 @@ describe("original-language transcription", () => {
     expect(exported).not.toHaveProperty("detectedLanguage");
     if (expectedTag) expect(exported.requestedLanguage).toBe(expectedTag);
     else expect(exported).not.toHaveProperty("requestedLanguage");
-    expect(JSON.parse(json!).segments).toEqual([
+    expect(JSON.parse(json!).segments).toMatchObject([
       { ...syntheticArabic, start: 595, end: 597, quiet: true },
       { ...syntheticChinese, start: 598, end: 600, quiet: true },
       { ...syntheticMixed, start: 601, end: 603, quiet: true },
@@ -598,7 +600,7 @@ describe("validation", () => {
   });
   it.each(["ffprobe", "audio", "target", "input", "retention"])("refuses %s before uploading", async problem => {
     const f = await fixture(); const flags: string[] = [];
-    if (problem === "ffprobe") f.deps.probeDurationSeconds.mockResolvedValue(undefined);
+    if (problem === "ffprobe") { f.deps.withSourceRecording = fixtureSource(() => undefined); f.deps.probeDurationSeconds.mockResolvedValue(undefined); }
     if (problem === "audio") f.deps.extractAudioTrack.mockResolvedValue(false);
     if (problem === "target") await writeFile(join(f.root, "synthetic.srt"), "old");
     if (problem === "input") await rm(f.input);

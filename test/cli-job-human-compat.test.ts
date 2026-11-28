@@ -1,3 +1,4 @@
+import { fixtureSource } from "./helpers/source-clock.js";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -43,7 +44,7 @@ it("human analyze and transcribe preserve the base bytes, output streams, exits,
     vi.stubEnv("SENTRY_DSN", "");
     vi.stubEnv("GEMINI_MODEL", model);
     const {program} = await import("../src/cli-main.js");
-    const shared = {createAnalyzer: () => analyzer, now, probeDurationSeconds: async () => 1, sleep: async () => {}};
+    const shared = {withSourceRecording: fixtureSource(() => 1), createAnalyzer: () => analyzer, now, probeDurationSeconds: async () => 1, sleep: async () => {}};
     const service = new analyze.AnalysisOrchestrator({...shared, createContextSource() {throw new Error("Unexpected context.");}, createRunId: () => "fixture-run"});
     vi.spyOn(analyze, "analyzeMeeting").mockImplementation((options, execution) => service.analyze(options, execution));
     for (const [index, stream] of [process.stdout, process.stderr].entries()) {
@@ -68,6 +69,8 @@ it("human analyze and transcribe preserve the base bytes, output streams, exits,
     expect(streams[1]!.filter(line => line.startsWith("retention:"))).toEqual(["retention: provider\n", "retention: run\n"]);
     streams[1] = streams[1]!.filter(line => !line.startsWith("retention:"));
     // The fixture's sound track is silent, so its transcript line is noted as quiet.
+    expect(streams[1]!.filter(line => line.startsWith("Source coverage:"))).toHaveLength(1);
+    streams[1] = streams[1]!.filter(line => !line.startsWith("Source coverage:"));
     const quiet = (line: string) => / line\(s\) sit where no sound was measured\.\n$/.test(line);
     expect(streams[1]!.filter(quiet)).toEqual(["note: 1 line(s) sit where no sound was measured.\n"]);
     streams[1] = streams[1]!.filter(line => !quiet(line));

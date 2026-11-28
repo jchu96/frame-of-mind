@@ -1,13 +1,14 @@
 import { fromTimecode, isDropRate, TICKS_PER_SECOND, type FrameRate } from "exact-time";
 import { ContractError } from "./contract-error.js";
 
-export type RangeUnit = "frames" | "samples";
+export type RangeUnit = "frames" | "samples" | "ticks";
 export interface RangeRequest { from?: string; to?: string }
 export interface SourceGrid {
   unit: RangeUnit;
   rate: FrameRate;
   length: bigint;
   dropFrame?: boolean;
+  timing?: "varying" | "unproven";
 }
 
 type Fraction = { n: bigint; d: bigint };
@@ -63,7 +64,7 @@ function position(value: string, grid: SourceGrid): Fraction {
 export class RangeClock {
   private constructor(readonly grid: SourceGrid, readonly from: bigint, readonly to: bigint,
     readonly requestedRange: { from: string | null; to: string | null },
-    readonly edgeMoved: { from: boolean; to: boolean }) {}
+    readonly edgeMoved: { from: boolean; to: boolean }, readonly lengthKnown = true) {}
 
   static resolve(grid: SourceGrid, request: RangeRequest): RangeClock {
     const start = request.from === undefined ? { n: 0n, d: 1n } : position(request.from, grid);
@@ -80,8 +81,19 @@ export class RangeClock {
       { from: from * start.d !== start.n, to: to * end.d !== end.n });
   }
 
+  static wholeTicks(tick: FrameRate, length: bigint | undefined, timing: "unproven" | "varying") {
+    return new RangeClock({unit: "ticks", rate: {num: tick.den, den: tick.num}, length: length ?? 0n, timing},
+      0n, length ?? 0n, {from: null, to: null}, {from: false, to: false}, length !== undefined);
+  }
+  get cutLength(): bigint | undefined { return this.lengthKnown ? this.to - this.from : undefined; }
+  unitsForSeconds(seconds: number, ceil = false) {
+    const den = BigInt(this.grid.rate.den);
+    return (BigInt(seconds) * BigInt(this.grid.rate.num) + (ceil ? den - 1n : 0n)) / den;
+  }
+  elapsed(units: bigint) { return Number(units) * this.grid.rate.den / this.grid.rate.num; }
   get sourceRange() {
     const { unit, rate } = this.grid;
+    if (unit === "ticks") return {unit, fromTick: String(this.from), toTickExclusive: this.lengthKnown ? String(this.to) : null, tick: {num: rate.den, den: rate.num}};
     return unit === "frames"
       ? { unit, fromFrame: String(this.from), toFrameExclusive: String(this.to), rate }
       : { unit, fromSample: String(this.from), toSampleExclusive: String(this.to), rate };

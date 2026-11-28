@@ -125,6 +125,9 @@ export interface AnalysisItem {
 }
 
 export interface DerivedTranscriptionSegment {
+  exactSpan?: import("./source-bound.js").ExactSpan;
+  interruptedStart?: boolean;
+  interruptedEnd?: boolean;
   /** No sound was measured anywhere in this line's own span. */
   quiet?: true;
   start: string;

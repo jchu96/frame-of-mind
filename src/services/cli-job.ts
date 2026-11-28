@@ -21,6 +21,7 @@ export interface JobOptions extends Record<string, unknown> {
 export interface JobDependencies {
   readKey?: () => string | undefined;
   probe?: typeof probeJobMedia;
+  withSourceRecording?: TranscribeDependencies["withSourceRecording"];
   extractAudioTrack?: TranscribeDependencies["extractAudioTrack"];
   sleep?: TranscribeDependencies["sleep"];
 }
@@ -223,7 +224,7 @@ async function execute(store: JobStore, record: JobRecord, flags: JobOptions, gr
       const {transcribe} = await import("./transcribe.js");
       const exports = await transcribe({input: sealed, output, apiKey: key, model, retention: grant.retention, json: flags.transcriptJson,
         signal: signal.signal}, {createAnalyzer: () => analyzer, probeDurationSeconds: async () => seconds, stdout() {}, stderr() {},
-        ...(deps.sleep && {sleep: deps.sleep}), ...(deps.extractAudioTrack && {extractAudioTrack: deps.extractAudioTrack})}, {scratchRoot: scratch, authorize});
+        ...(deps.withSourceRecording && {withSourceRecording:deps.withSourceRecording}), ...(deps.sleep && {sleep: deps.sleep}), ...(deps.extractAudioTrack && {extractAudioTrack: deps.extractAudioTrack})}, {scratchRoot: scratch, authorize});
       stagedFolder = output;
       receipt.outputs = exports.paths.map(path => basename(path));
       record.state = "complete";

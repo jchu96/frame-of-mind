@@ -25,6 +25,8 @@ const file = mediaFixtures(() => {
       "-c:v", "libx264", "-pix_fmt", "yuv420p", "-x264-params", "keyint=24:min-keyint=24:scenecut=0:bframes=3:b-adapt=0:open-gop=0",
       "-c:a", "pcm_s16le", "-f", "mp4", "-movflags", "+negative_cts_offsets", "-use_editlist", "0", file(name + ".mp4")], frames);
   }
+  media("ffmpeg", ["-f", "lavfi", "-i", "color=size=112x32:rate=25:duration=0.16", "-vf", "select=not(eq(n\\,2))",
+    "-fps_mode", "vfr", "-c:v", "libx264", "-bf", "0", "-video_track_timescale", "1000", file("varying.mp4")]);
   media("ffmpeg", ["-i", file("pal.mp4"), "-map", "0:v:0", "-c", "copy", "-use_editlist", "1", file("edited.mp4")]);
   media("ffmpeg", ["-i", file("pal.mp4"), "-map", "0:v:0", "-c:v", "mpeg4", file("mpeg4.mp4")]);
   media("ffmpeg", ["-i", file("ntsc.mp4"), "-map", "0:v:0", "-c:v", "libx264", "-x264-params",
@@ -104,4 +106,45 @@ test("audio-only cut preserves every native PCM sample on a moved 44100 Hz inter
     expect(clock.to).toBe(44145n);
     expect(raw(path).equals(pcm.subarray(2 * 44, 2 * 44145))).toBe(true);
   });
+});
+
+test.each([["pal.mp4", "25f", "51f", "50", "51"], ["ntsc.mp4", "31f", "62f", "60", "62"],
+  ["native.wav", "44100samp", "88201samp", "88200", "88201"]])(
+  "transcribe publishes exact source cues from the verified cut of %s", async (name, from, to, a, b) => {
+    const {transcribe} = await import("../src/services/transcribe.js");
+    const lines: string[] = [];
+    let upload = "";
+    const result = await transcribe({input:file(name!), output:file(name+"-out"), from, to, apiKey:"fixture", json:true},
+      {stderr:line => lines.push(line), stdout:() => {}, createAnalyzer:() => ({
+        model:"gemini-test", async upload(path, mime) {upload=path; expect(mime).toBe("audio/wav"); return {name:"files/fixture"};},
+        async transcribe() {return [{start:"00:00:01",end:"00:00:02",speaker:"Speaker 1",text:"fixture cue"}];}, async delete() {},
+      })});
+    await expect(stat(upload)).rejects.toMatchObject({code:"ENOENT"});
+    const doc = JSON.parse(await readFile(result.paths[2]!, "utf8"));
+    const key = name!.endsWith("wav") ? "samples" : "frames";
+    expect(doc.segments[0].exactSpan).toMatchObject({start:{[key]:a, origin:"model", support:[a,b]},
+      endExclusive:{[key]:b, origin:"cut", precisionMs:0}});
+    expect(doc.endFragments).toEqual([{kind:"cue", state:"unknown", exactSpan:doc.segments[0].exactSpan}]);
+    expect(lines.filter(line => line.startsWith("Range used:"))).toHaveLength(1);
+    expect(JSON.parse(lines.find(line => line.startsWith("Source coverage: "))!.slice(17))).toMatchObject({coverage:doc.coverage});
+    expect(doc.coverage).toEqual({full:true,covered:[[from!.replace(/\D/g,""),b]]});
+    const srt = await readFile(result.paths[0]!, "utf8");
+    if (name === "pal.mp4") expect(srt).toBe("1\n00:00:02,000 --> 00:00:02,040\nfixture cue\n\n");
+    expect(srt).not.toContain("precision");
+  });
+
+test("whole silent video keeps the native ticks of pictures at 0, 40 and 120 ms; steady video uses frames", async () => {
+  const {withSourceRecording} = await import("../src/services/source-recording.js");
+  const {modelSpan} = await import("../src/domain/source-bound.js");
+  for (const name of ["varying.mp4","pal.mp4"]) {
+    await withSourceRecording(file(name), {}, "video", () => {}, undefined, async (mediaPath, clock) => {
+      expect(mediaPath).toBe(file(name));
+      const span = modelSpan(clock, 0, 1)!;
+      if (name === "varying.mp4") {
+        const trace = media("ffprobe", ["-select_streams","v:0","-show_entries","frame=pts","-of","json",mediaPath]);
+        expect(JSON.parse(trace.toString()).frames.map((f: {pts:number}) => f.pts)).toEqual([0,40,120]);
+        expect([span.start,span.endExclusive]).toMatchObject([{unit:"tick",ticks:"0",tick:{num:1,den:1000}},{unit:"tick",ticks:"160"}]);
+      } else expect([span.start,span.endExclusive]).toMatchObject([{unit:"video-frame",frames:"0"},{unit:"video-frame",frames:"25"}]);
+    });
+  }
 });
