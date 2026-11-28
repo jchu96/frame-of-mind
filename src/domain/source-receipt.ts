@@ -42,6 +42,7 @@ export class SourceReceipt {
 // publish. Return only information acquired before the failure.
 export function preparationError(error: unknown, source: Record<string, unknown>, tell: (line: string) => void) {
   tell(`Source coverage: ${JSON.stringify(source)}`);
-  return new ContractError(faultCode(error), error instanceof ContractError ? error.message : "Could not prepare the recording.",
-    {...(error instanceof ContractError && error.details), ...source, phase:"prepare", sent:false});
+  const details = {...(error instanceof ContractError && error.details), ...source, phase:"prepare", sent:false};
+  if (error instanceof ContractError) return Object.assign(error, {details});
+  return new ContractError(faultCode(error), "Could not prepare the recording.", details);
 }

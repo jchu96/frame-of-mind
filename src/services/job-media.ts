@@ -13,12 +13,14 @@ export async function probeJobMedia(file: number): Promise<number> {
   try {
     // fd: can seek through the held recording. No file or network protocol is
     // available for a playlist, external track or other secondary input.
-    const result = await runMediaTool("ffprobe", ["-protocol_whitelist", "fd", "-format_whitelist", "mov,matroska,webm",
-      "-select_streams", "V:0", "-show_entries", "stream=codec_type:format=duration,format_name", "-of", "json", "fd:"],
+    const result = await runMediaTool("ffprobe", ["-protocol_whitelist", "fd", "-format_whitelist", "mov,matroska,webm,wav,aiff,flac,mp3,ogg,aac",
+      "-show_entries", "stream=codec_type:stream_disposition=attached_pic:format=duration,format_name", "-of", "json", "fd:"],
     {inputFd: file, maxOutput: 16384});
     const {streams, format} = JSON.parse(result);
     const duration = Number(format.duration);
-    if (streams[0]?.codec_type === "video" && Number.isFinite(duration) && duration > 0) return duration;
+    const media = streams.some((s: {codec_type: string; disposition?: {attached_pic?: number}}) =>
+      s.codec_type === "audio" || (s.codec_type === "video" && !s.disposition?.attached_pic));
+    if (media && Number.isFinite(duration) && duration > 0) return duration;
   } catch (error) {
     if (faultCode(error) === "CAPABILITY_MISSING") throw error;
   }

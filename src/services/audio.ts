@@ -13,7 +13,7 @@ function withAudioInput<T>(video: string, confined: boolean | undefined,
   launch: (input: string, flags: string[], stdin: number | "ignore") => T): T {
   if (!confined) return launch(video, [], "ignore");
   const fd = openJobFile(video, constants.O_RDONLY);
-  try { return launch("fd:", ["-protocol_whitelist", "fd", "-format_whitelist", "mov,matroska,webm"], fd); }
+  try { return launch("fd:", ["-protocol_whitelist", "fd", "-format_whitelist", "mov,matroska,webm,wav,aiff,flac,mp3,ogg,aac"], fd); }
   finally { closeSync(fd); }
 }
 

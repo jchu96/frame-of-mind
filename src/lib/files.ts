@@ -88,11 +88,14 @@ export function validateBluedotMediaUrl(value: string): URL {
 export function mimeForPath(path: string, header?: string): string {
   if (header && header !== "application/octet-stream") return header;
   const ext = extname(path).toLowerCase();
+  const audio: Record<string, string> = {".wav":"audio/wav", ".mp3":"audio/mpeg", ".m4a":"audio/m4a",
+    ".aac":"audio/aac", ".flac":"audio/flac", ".ogg":"audio/ogg", ".aif":"audio/aiff", ".aiff":"audio/aiff"};
+  if (audio[ext]) return audio[ext];
   if (ext === ".webm") return "video/webm";
   if (ext === ".mp4" || ext === ".m4v") return "video/mp4";
   if (ext === ".mov") return "video/quicktime";
   throw new Error(
-    `Unsupported recording extension '${ext || "(none)"}'. Use MP4, M4V, MOV, or WebM video.`,
+    `Unsupported recording extension '${ext || "(none)"}'. Use a supported video or audio recording.`,
   );
 }
 

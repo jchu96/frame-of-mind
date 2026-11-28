@@ -1,3 +1,4 @@
+import { mediaRequestStarted } from "../lib/media-transfer.js";
 import { closeSync, createReadStream, fstatSync } from "node:fs";
 import { createGeminiFileUploader, type GeminiFileUploader } from "./gemini-files.js";
 import { ContractError } from "../domain/contract-error.js";
@@ -23,13 +24,14 @@ export class JobProviderTransport {
   ) {}
 
   uploader(apiKey: string): GeminiFileUploader {
-    return {upload: async (path, mimeType) => {
+    return {tracksMediaRequests:true, upload: async (path, mimeType) => {
       await this.authorize?.("start");
       const fd = this.openUpload(path);
       let streamOwnsFile = false;
       try {
         const size = fstatSync(fd).size;
         const uploader = createGeminiFileUploader(apiKey, {
+          fetchTracksMediaRequests: true,
           fetch: (url, init) => this.fetch(url, init as RequestInit),
           fileSize: async () => size,
           openFile: () => {
@@ -74,6 +76,7 @@ export class JobProviderTransport {
     this.deleteHolds = holds;
     let response: Response;
     try {
+      if (op === "finalize") mediaRequestStarted();
       response = await fetch(url, {...init, redirect: "error"});
     } catch {
       this.lost?.();

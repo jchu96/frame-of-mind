@@ -1,7 +1,7 @@
 import { rationalRate } from "exact-time";
 import { isRanged, enforceRangeLimit } from "../lib/range-policy.js";
 export { isRanged, maxRangeSeconds } from "../lib/range-policy.js";
-import { ContractError, faultCode } from "../domain/contract-error.js";
+import { ContractError, faultCode, noVideoStream } from "../domain/contract-error.js";
 import { RangeClock, rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { containerVideoClock } from "./container-clock.js";
 import { audioGrid, recordingTracks, runRecordingTool, withAudioRange } from "./audio-range.js";
@@ -13,7 +13,7 @@ import { decodeBudget } from "./range-scan.js";
 import { withVideoRange } from "./video-range.js";
 
 export interface SourceOptions extends RangeRequest { timecodeRate?: string; signal?: AbortSignal; onSourceResolved?: (clock: RangeClock) => void }
-export async function withSourceRecording<T>(path: string, options: SourceOptions, needs: "audio" | "video",
+export async function withSourceRecording<T>(path: string, options: SourceOptions, needs: "audio" | "analysis" | "video",
   tell: (line: string) => void, consume: (file: string, clock: RangeClock, hasAudio?: boolean) => Promise<T>) {
   const source = await localRecording(path);
   const {signal} = options;
@@ -36,7 +36,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
     signal?.throwIfAborted();
     if (!["DECODE_FAILED", "INVALID_RATE", "CAPABILITY_MISSING"].includes(faultCode(error))) throw error;
     if (ranged) return rangeUsage("Range requires a locally verifiable cut.");
-    if (needs === "video") {
+    if (needs !== "audio") {
       const clock = await containerVideoClock(source);
       if (clock) {
         options.onSourceResolved?.(clock);
@@ -48,14 +48,16 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
     clearInterval(headerTimer);
   }
   if (needs === "audio" && !tracks.audio) throw new ContractError("DECODE_FAILED", "The recording has no audio track.");
-  if (needs === "video" && !tracks.video) {
+  if (!tracks.video && (needs === "video" || !tracks.audio)) {
     const native = !ranged && !tracks.audio && await containerVideoClock(source);
     if (native) {
       options.onSourceResolved?.(native);
       return consume(path, native, Boolean(tracks.audio));
     }
-    throw new ContractError("INVALID_INPUT", "Analysis requires a video stream.");
+    if (tracks.audio) throw noVideoStream();
+    throw new ContractError("INVALID_INPUT", "The recording has no usable media stream.");
   }
+  if (!tracks.video && options.timecodeRate?.startsWith("from-media") && needs === "analysis") throw noVideoStream();
   const mode = options.timecodeRate === "from-media:df" ? true : options.timecodeRate === "from-media:ndf" ? false : undefined;
   if (ranged) {
     if (needs === "audio" && options.timecodeRate !== undefined && mode === undefined) return rangeUsage("Invalid range bound.");

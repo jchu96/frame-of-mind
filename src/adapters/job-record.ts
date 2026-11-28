@@ -23,6 +23,7 @@ const schema = z.object({
   selection: z.string(), digest: z.string().regex(/^[a-f0-9]{64}$/), signature: z.string(), afterUnknown: uuid.optional(),
   limits: z.object({maxMediaSeconds: z.number(), maxProviderRequests: z.number(), maxFileBytes: z.number(),
     allowedModels: z.array(z.string()), retention: z.enum(["provider", "run"])}),
+  preparing: z.literal(true).optional(),
   state: states, reason: z.literal("grant_revoked").optional(), stage: stages, percent: z.number().int().min(0).max(100),
   receipt, runFolder: z.string(), runId: z.string().optional(), code: z.enum(Object.keys(faultExits) as [FaultCode, ...FaultCode[]]).optional(),
   grantRevision: z.string().optional(), directoryIdentity: z.string(), resultsIdentity: z.string().optional(), scratchIdentity: z.string().optional(), sealedIdentity: z.string().optional(),
@@ -211,6 +212,7 @@ export class JobStore {
       // journal may still say queued. Only an uninterrupted grant proves
       // ordinary unsent cancellation in that case.
       const changedGrant = record.grantRevision !== undefined && record.grantRevision !== this.grantRevision;
+      if (changedGrant) delete record.preparing;
       const uncertain = record.receipt.providerRequests > 0 || changedGrant;
       record.state = uncertain ? "outcome_unknown" : "cancelled";
       record.code = uncertain ? "OUTCOME_UNKNOWN" : "CANCELLED";
@@ -307,7 +309,7 @@ export class JobStore {
       if (!worker) conflict();
       const {read: _read, write: _write, ...limits} = grant;
       const record: JobRecord = {schemaVersion: 1, jobId: id, requestId, family, selection, digest, signature,
-        limits, grantRevision: this.grantRevision, directoryIdentity: identity(dir), uncertain: false, inputs: {...normalized}, afterUnknown, state: "queued", stage: "queued", percent: 0, inFlight: null, runFolder: dir,
+        limits, preparing:true, grantRevision: this.grantRevision, directoryIdentity: identity(dir), uncertain: false, inputs: {...normalized}, afterUnknown, state: "queued", stage: "queued", percent: 0, inFlight: null, runFolder: dir,
         cancel: {requested: false, steps: []}, receipt: {calls: 1, mediaSeconds: Math.ceil(seconds), providerRequests: 0, outputs: [], uploads: []}};
       try { this.save(record); syncDirectory(this.root); }
       catch (error) { worker.close(); throw error; }

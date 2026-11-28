@@ -42,7 +42,7 @@ test.each([
   [pal, "1.002", "1.001", "from at or after to"],
   [pal, "1.001", "1.001", "from at or after to"],
   [ntsc, undefined, "29f", "a range shorter than the tool can analyse"],
-  [pcm, "1f", undefined, "Audio bounds use seconds or Nsamp."],
+  [pcm, "1f", undefined, "no-video-stream"],
   [ntsc, "00:00:00:01", undefined, "Specify the source drop-frame mode or use frames."],
   [pal, "1.0001", undefined, "Invalid range bound."],
   [pal, "-1", undefined, "Invalid range bound."],

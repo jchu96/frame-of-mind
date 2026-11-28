@@ -1,3 +1,4 @@
+import { mediaRequestStarted, preparationDetails, uploadMedia, withMediaTransfer } from "../lib/media-transfer.js";
 import { rangeTranscript } from "./range-context.js";
 import { rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { type Bound, boundIndex, boundMillis, humanTime, modelBound, modelSpan, sourceBound } from "../domain/source-bound.js";
@@ -382,6 +383,10 @@ export class AnalysisOrchestrator {
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
+    return withMediaTransfer(() => this.run(options, execution));
+  }
+
+  private async run(options: AnalyzeOptions, execution: AnalyzeExecutionOptions): Promise<AnalyzeResult> {
     const settings = options.snapSettings && snapSettings(options.snapSettings.gapMs, options.snapSettings.windowMs);
     const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
     const ranged = isRanged(options);
@@ -467,10 +472,9 @@ export class AnalysisOrchestrator {
         localVideo,
         options.videoMimeType ?? downloadedMimeType,
       );
-      if (!mimeType.startsWith("video/")) {
+      if (!/^(video|audio)\//.test(mimeType)) {
         throw new Error(
-          `Frame of Mind requires a screen recording; received '${mimeType}'. ` +
-            "Audio-only calls have no visual UI evidence to interrogate.",
+          `Unsupported recording type '${mimeType}'.`,
         );
       }
       const originalPath = localVideo;
@@ -478,19 +482,24 @@ export class AnalysisOrchestrator {
       if (options.expectedVideoSha256 && recordingSha256 !== options.expectedVideoSha256) {
         throw new Error("Selected recording no longer matches its staged media receipt.");
       }
-      if (ranged) preparing = {recordingSha256};
+      preparing = {recordingSha256};
       const resolved = (clock: SourceReceipt["clock"]) => {
         const receipt = new SourceReceipt(clock, recordingSha256, maxVideoSeconds);
         if (preparing) preparing.receipt = receipt;
         return receipt;
       };
-      return await this.sourceRecording(originalPath, {...options,signal:execution.signal,onSourceResolved:resolved}, "video",
+      return await this.sourceRecording(originalPath, {...options,signal:execution.signal,onSourceResolved:resolved}, "analysis",
         line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio) => {
       const receipt = preparing?.receipt ?? resolved(sourceClock);
+      const soundOnly = sourceClock.grid.unit === "samples";
+      const recordingMimeType = soundOnly && ["video/mp4", "audio/mp4", "video/quicktime"].includes(mimeType)
+        ? "audio/m4a" : soundOnly ? mimeType.replace(/^video\//, "audio/") : mimeType;
+      const uploadMimeType = ranged ? (soundOnly ? "audio/wav" : "video/mp4") : recordingMimeType;
+      if (soundOnly) await report(progress, {kind:"progress", stage:"fetching_context", message:"No picture. No stills are taken."});
       const uploadedCutSha256 = ranged ? await sha256File(localVideo) : undefined;
       const recordingSizeBytes = (await stat(localVideo)).size;
       if (recordingSizeBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
-      const duration = ranged ? sourceClock.elapsed(sourceClock.to - sourceClock.from)
+      const duration = ranged || soundOnly ? sourceClock.elapsed(sourceClock.to - sourceClock.from)
         : await this.probeDuration(localVideo, {signal:execution.signal});
       if (duration !== undefined && duration > maxVideoSeconds) {
         throw new ContractError("RECORDING_TOO_LONG",
@@ -512,10 +521,11 @@ export class AnalysisOrchestrator {
       await ensureDirectory(stagingDirectory);
 
       const analyzer = this.createAnalyzer(options.apiKey, options);
-      if (options.calibrate !== false && analyzer.probeClipClock) {
+      if (!soundOnly && options.calibrate !== false && analyzer.probeClipClock) {
         const measured: Calibration = await this.calibrate({
           model: analyzer.model,
-          upload: (path, mime) => { preparing = undefined; return analyzer.upload(path, mime); },
+          tracksMediaRequests: true,
+          upload: (path, mime) => uploadMedia(analyzer, path, mime),
           probeClipClock: (file) => analyzer.probeClipClock!(file),
           delete: (file) => analyzer.delete(file),
         });
@@ -628,8 +638,7 @@ export class AnalysisOrchestrator {
                     if (ranged && (await stat(audioPath)).size > MAX_RECORDING_BYTES) {
                       throw new ContractError("MEDIA_LIMIT", "Audio window exceeds the upload limit.");
                     }
-                    preparing = undefined;
-                    audioRemote = await analyzer.upload(audioPath, ranged ? "audio/wav" : "audio/aac");
+                    audioRemote = await uploadMedia(analyzer, audioPath, ranged ? "audio/wav" : "audio/aac");
                     if (audioDuration !== undefined) receipt.uploads.push({kind:"audio-window",
                       span:[String(sourceClock.sourceIndex(grid.start)),String(sourceClock.sourceIndex(grid.end))], rate:sourceClock.grid.rate});
                     assertNotCanceled(execution.signal);
@@ -750,6 +759,7 @@ export class AnalysisOrchestrator {
           },
         }, async () => {
           if (options.remoteFileName) {
+            mediaRequestStarted(); // The named file already has a remote lifecycle.
             if (typeof analyzer.resolveRetainedFile !== "function") {
               throw new GeminiFileError(
                 "The configured analyzer cannot reuse a retained Gemini file.",
@@ -763,14 +773,14 @@ export class AnalysisOrchestrator {
               recordingSizeBytes,
             );
           }
-          preparing = undefined;
-          const file = await analyzer.upload(localVideo, ranged ? "video/mp4" : mimeType);
-          if (sourceClock.lengthKnown) receipt.uploads.push({kind:"video-cut", span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
+          const file = await uploadMedia(analyzer, localVideo, uploadMimeType);
+          if (sourceClock.lengthKnown) receipt.uploads.push({kind:soundOnly ? "audio-window" : "video-cut", span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
           return file;
         });
       } catch (error) {
         if (error instanceof AnalysisCanceledError) throw error;
         assertNotCanceled(execution.signal);
+        if (preparationDetails()) throw error;
         const reportedUploadCleanup = error instanceof GeminiFileError
           ? error.uploadCleanup ?? "unconfirmed"
           : "unconfirmed";
@@ -954,7 +964,7 @@ export class AnalysisOrchestrator {
         ): Promise<DetailAttempt> => {
           assertNotCanceled(execution.signal);
           // CLI jobs account against a separate upload grant and omit inline images.
-          const frames = execution.jobScratchRoot ? undefined : await extractDetailStills(
+          const frames = soundOnly || execution.jobScratchRoot ? undefined : await extractDetailStills(
             localVideo, candidate, duration, temp, indexNumber, this.screenshot, () => assertNotCanceled(execution.signal), sourceClock,
           );
           let citedStill: string | undefined;
@@ -1011,7 +1021,7 @@ export class AnalysisOrchestrator {
                 }
               }
             });
-            if (options.screenshots && result.accepted && result.evidence?.timestamp) {
+            if (!soundOnly && options.screenshots && result.accepted && result.evidence?.timestamp) {
               const seconds = timestampToSeconds(result.evidence.timestamp);
               citedStill = frames?.find(frame => frame.seconds === seconds)?.path;
             }
@@ -1051,9 +1061,9 @@ export class AnalysisOrchestrator {
             // The request asks for screen words only from a labelled still. A
             // quote that cites any other time was not read from one: drop it.
             const cited = result.evidence?.timestamp;
-            const screenTextNotFromStill = result.accepted && !!attempt.stillTimes?.length
-              && result.evidence?.verbatimUiText !== undefined
-              && !(cited !== undefined && attempt.stillTimes.some(time => timestampToSeconds(time) === timestampToSeconds(cited)));
+            const screenTextNotFromStill = result.evidence?.verbatimUiText !== undefined && (soundOnly
+              || (result.accepted && !!attempt.stillTimes?.length
+                && !(cited !== undefined && attempt.stillTimes.some(time => timestampToSeconds(time) === timestampToSeconds(cited)))));
             if (screenTextNotFromStill) {
               const { verbatimUiText: _removed, ...evidence } = result.evidence!;
               const notes = (result.confidenceNotes ?? "").slice(0, 10_000 - unreadScreenTextWarning.length - 1);
@@ -1078,8 +1088,8 @@ export class AnalysisOrchestrator {
               item.exactStillTimes = attempt.exactStillTimes!;
               item.stillTimes = item.exactStillTimes.map(humanTime);
             }
-            if (screenTextNotFromStill) item.screenTextNotFromStill = true;
-            if (options.screenshots && result.accepted) {
+            if (!soundOnly && screenTextNotFromStill) item.screenTextNotFromStill = true;
+            if (!soundOnly && options.screenshots && result.accepted) {
               const stagingImage = join(screenshotDirectory,`moment-${indexNumber+1}-capture.png`);
               if (attempt.citedStill) {
                 const i = attempt.stillTimes!.indexOf(cited!);
@@ -1329,7 +1339,7 @@ export class AnalysisOrchestrator {
           ...(analyzer.thinkingLevel && { thinkingLevel: analyzer.thinkingLevel }),
           recordingSha256,
           analysisSha256,
-          recordingMimeType: mimeType,
+          recordingMimeType,
           remoteFile: {
             ...sanitizedRemoteFileMetadata(remote),
             deleted: remoteDeleted,
@@ -1512,7 +1522,7 @@ export class AnalysisOrchestrator {
       }
       });
     } catch (error) {
-      if (preparing && !execution.signal?.aborted) {
+      if (preparing && preparationDetails() && !execution.signal?.aborted) {
         const source = preparing.receipt?.document() ?? {recordingSha256:preparing.recordingSha256, coverage:{full:false, covered:[]}};
         throw preparationError(error, source, line => process.stderr.write(line + "\n"));
       }

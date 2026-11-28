@@ -74,8 +74,12 @@ it.each([
   expect(result.status, result.stderr).toBe(status);
   expect(result.stdout, "one stdout failure document").toMatch(/^\{[^\n]+\}\n$/);
   const document = validateCliDocument("recipes", result.stdout);
+  const details = {
+    ...(code === "USAGE" && {reason: expect.stringMatching(/^[a-z]+(?:-[a-z]+)*$/)}),
+    ...(["transcribe", "calibrate"].includes(args[0]) && {phase:"prepare", sent:false}),
+  };
   expect(document).toEqual({ schemaVersion: 1, error: { code, message: expect.any(String),
-    ...(code === "USAGE" && {details: {reason: expect.stringMatching(/^[a-z]+(?:-[a-z]+)*$/)}}) } });
+    ...(Object.keys(details).length && {details}) } });
   expect(result.stderr).toBe("");
 });
 

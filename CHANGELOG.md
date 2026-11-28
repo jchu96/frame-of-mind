@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Fixed a v0.6.8 regression that refused sound-only recordings in `analyze`. Voice recordings use native sample positions and produce no stills. A failure before media upload starts reports `phase: "prepare"` and `sent: false`.
+
 - CLI usage refusals carry a reason in `error.details.reason` with `--json`. Refusals that exited 1 in plain mode now exit 2. A range scan that cannot verify the cut returns the fixed reason `Range requires a locally verifiable cut.` and reports measured timing in `error.details.frameTiming`.
 
 - Set `FRAME_OF_MIND_KEY_COMMAND='[]'` to skip the account’s key command for one launch. `doctor` explains the opt-out and includes `key.commandDisabledByEnvironment` in JSON.

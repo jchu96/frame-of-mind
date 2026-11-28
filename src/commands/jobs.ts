@@ -1,3 +1,4 @@
+import { withMediaTransfer } from "../lib/media-transfer.js";
 import { closeSync, openSync, writeSync } from "node:fs";
 import { failureDocument, faultCode } from "../domain/contract-error.js";
 import { devNull } from "node:os";
@@ -19,6 +20,12 @@ async function closeOutput(data: object) {
 
 export async function runJobCommand(family: Family, op: JobOperation, args: string[], deps: JobDependencies = {},
   output = {write: writeDocument, admit: closeOutput}) {
+  const run = () => executeJobCommand(family, op, args, deps, output);
+  return op === "start" ? withMediaTransfer(run) : run();
+}
+
+async function executeJobCommand(family: Family, op: JobOperation, args: string[], deps: JobDependencies,
+  output: {write: typeof writeDocument; admit: typeof closeOutput}) {
   let admitted = false;
   try {
     rejectDuplicateJobOptions(args);

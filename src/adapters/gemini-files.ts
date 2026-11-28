@@ -1,3 +1,4 @@
+import { mediaRequestStarted } from "../lib/media-transfer.js";
 import { createReadStream } from "node:fs";
 import type { Readable } from "node:stream";
 import { finished } from "node:stream/promises";
@@ -47,6 +48,7 @@ type FetchLike = (
 ) => Promise<Response>;
 
 export interface GeminiFileUploader {
+  readonly tracksMediaRequests?: boolean;
   upload(path: string, mimeType: string): Promise<GeminiFile>;
 }
 
@@ -72,6 +74,7 @@ export class GeminiFileError extends Error {
 
 export interface GeminiFileUploaderDependencies {
   fetch?: FetchLike;
+  fetchTracksMediaRequests?: boolean;
   fileSize?: (path: string) => Promise<number>;
   openFile?: (path: string) => Readable;
   timeoutMs?: number;
@@ -88,6 +91,7 @@ export function createGeminiFileUploader(
   const timeoutMs = dependencies.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
 
   return {
+    tracksMediaRequests: true,
     async upload(path: string, mimeType: string): Promise<GeminiFile> {
       const size = await fileSize(path);
       if (!Number.isSafeInteger(size) || size <= 0) {
@@ -140,6 +144,7 @@ export function createGeminiFileUploader(
         // A transport may reject before consuming/opening the file. Own the
         // stream until close, so callers may safely delete temporary media.
         bodySettled = finished(body, { cleanup: true }).catch(() => undefined);
+        if (!dependencies.fetchTracksMediaRequests) mediaRequestStarted();
         uploadResponse = await fetchImpl(uploadUrl, {
           method: "POST",
           redirect: "error",
