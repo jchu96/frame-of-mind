@@ -33,8 +33,8 @@ it.each(["absolute","relative"] as const)("the %s detail clock publishes the sam
       const run=await orchestrator.analyze({from:from+"f",to:to+"f",video:file,outputRoot:root,contextMode:"none",apiKey:"fixture",
         recipe:builtInRecipe("decisions"),customRecipe:false,recipeSha256:"a".repeat(64),recipeRevision:"fixture",
         maxIncidents:3,screenshots:false,keepUpload:false,derivedTranscript:false},{progress:{report:e=>{if (e.message) events.push(e.message);}}});
-      const a=String(from+Math.floor(num/den)), b=String(to);
-      const span={start:{unit:"video-frame",frames:a,rate:{num,den},support:[a,b],origin:"model",precisionMs:1000},
+      const a=String(from+Math.ceil(num/den)), low=String(from+Math.floor(num/den)), b=String(to);
+      const span={start:{unit:"video-frame",frames:a,rate:{num,den},support:[low,b],origin:"model",precisionMs:1000},
         endExclusive:{unit:"video-frame",frames:b,rate:{num,den},origin:"cut",precisionMs:0}};
       expect(run.analysis.schemaVersion).toBe(5);
       expect(run.outcome).toMatchObject({schemaVersion:2,failures:[{exactSpan:span}]});

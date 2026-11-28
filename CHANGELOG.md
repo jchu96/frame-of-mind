@@ -14,7 +14,7 @@ Semantic Versioning.
 ### Added
 
 - `--from` and `--to` on `analyze` and `transcribe`, on the original recording. The tool cuts the range itself and uploads only the cut. A bound in seconds that is off the frame or sample grid is moved to it and reported in `edgeMoved`; every ranged run prints `Range used:` on standard error. `--remote-file` with a range is refused.
-- Exact positions. Items, rejected and failed rows, evidence times, still times, transcript lines and the fragment lists carry an exact bound: a whole count of frames, samples or stream ticks at an exact rate, with its origin (`cut`, `snap` or `model`) and its precision. The whole-second text stays beside it for people.
+- Exact positions. Items, rejected and failed rows, evidence times, still times, transcript lines and the fragment lists carry an exact bound: a whole count of frames, samples or stream ticks at an exact rate, with its origin (`cut`, `snap` or `model`) and its precision. The whole-second text stays beside it for people. A time a model states becomes the first frame, sample or tick at or after that second, so the printed second is the one the model stated at every frame rate; `support` gives every unit the second touches.
 - A whole-file run on a clip whose frame times are not evenly spaced answers in the stream's own ticks (`unit: "tick"`, `ticks`, `tick: {num, den}`). The manifest says why in `sourceTiming`: `uneven` or `unproven`.
 - An item belongs to the range its start falls in. Pieces cut by an edge are listed in `startFragments` and `endFragments`, so overlapping ranges can be joined.
 - Standard SRT cues use source milliseconds. The optional transcript JSON carries exact spans.
