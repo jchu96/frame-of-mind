@@ -1639,42 +1639,57 @@ describe("polling", () => {
   });
 });
 
-it("released-deep-index-request changes only the authored proposal fields under --depth deep", async () => {
-  const {buildAnalyzeOptions} = await import("../src/cli-main.js");
-  const {geminiEnginePorts} = await import("../src/adapters/gemini-candidates.js");
-  const {RangeClock} = await import("../src/domain/range-clock.js");
-  const {builtInRecipe} = await import("../src/recipes/index.js");
+it("released-deep-index-request and standard first pass match pre-branch main byte for byte", async () => {
+  const { createHash } = await import("node:crypto");
+  const { buildAnalyzeOptions } = await import("../src/cli-main.js");
+  const { geminiEnginePorts } = await import("../src/adapters/gemini-candidates.js");
+  const { RangeClock } = await import("../src/domain/range-clock.js");
+  const depths = ["standard", "deep"] as const;
   const requests: string[] = [];
-  const analyzer = new GeminiVideoAnalyzer("fixture", "gemini-test", {generateContent: async request => {
-    requests.push(JSON.stringify(request));
-    const response = requests.length === 1 ? validVideoOnlyIndexResponse : {...validVideoOnlyIndexResponse,
-      moments:validVideoOnlyIndexResponse.moments.map(row=>({...row,proposal:{label:row.kind,reason:row.summary,
-        basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000}}}))};
-    return {text:JSON.stringify(response)};
-  }});
-  // Released deep request, before the proposer/grade split.
-  const base = builtInRecipe("requirements");
-  const extra = [
-    "Deep-understanding profile:",
-    "First identify direct audio and visual observations, then identify the intent, constraint, alternative, exception, consequence, or uncertainty they support.",
-    "Include adjacent moments that materially clarify or contradict the apparent request; do not isolate a quote from its resolution.",
-    "Prefer precise timestamps and small coherent windows. Keep observation distinct from interpretation and never promote a plausible implication to a stated fact.",
-  ].join(" ");
-  await analyzer.index(activeFile,undefined,{...base,indexInstruction:base.indexInstruction+"\n\n"+extra},undefined,1);
-  const options = await buildAnalyzeOptions(undefined,{source:"none",granolaTransport:"mcp",video:"package.json",
-    recipe:"requirements",depth:"deep",maxMoments:"10",output:"out",screenshots:false},"fixture");
-  const clock = RangeClock.resolve({unit:"frames",rate:{num:25,den:1},length:100n},{});
-  await geminiEnginePorts(analyzer).propose(clock,"a".repeat(64),activeFile,undefined,options.recipe,options.focus,options.indexFps);
-  expect(requests).toHaveLength(2);
-  const typed = JSON.parse(requests[1]!);
-  const item = typed.config.responseJsonSchema.properties.moments.items;
-  expect(item.required).toContain("proposal");
-  expect(item.properties.proposal.required).toEqual(expect.arrayContaining(["label","reason","basis","precisionMs"]));
-  delete item.properties.proposal;
-  item.required = item.required.filter((name:string)=>name !== "proposal");
-  const part = typed.contents[0].parts[1];
-  const sentence = "In each proposal give label, reason, basis and positive precisionMs for each edge. Whole-second model times have model basis and 1000 ms precision. An optional score ranks proposals.";
-  expect(part.text).toContain(sentence);
-  part.text = part.text.replace(sentence+"\n","");
-  expect(JSON.stringify(typed)).toBe(requests[0]);
+  const analyzer = new GeminiVideoAnalyzer("fixture", "gemini-test", {
+    generateContent: async request => {
+      requests.push(createHash("sha256").update(JSON.stringify(request)).digest("hex"));
+      return {text: JSON.stringify({matchNotes: "fixture", moments: []})};
+    },
+  });
+  const clock = RangeClock.resolve({unit: "frames", rate: {num: 25, den: 1}, length: 100n}, {});
+  for (const depth of depths) {
+    const options = await buildAnalyzeOptions(undefined, {
+      source: "none", granolaTransport: "mcp", video: "package.json", recipe: "requirements",
+      depth, maxMoments: "10", output: "out", screenshots: false,
+    }, "fixture");
+    await geminiEnginePorts(analyzer).propose(clock, "a".repeat(64), activeFile, undefined,
+      options.recipe, options.focus, options.indexFps);
+  }
+
+  // Derive the two pins in CI directly from the immutable pre-branch source.
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtempSync, symlinkSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join, resolve } = await import("node:path");
+  const reference = mkdtempSync(join(tmpdir(), "released-index-"));
+  try {
+    const tree = execFileSync("git", ["archive", "5da05a5be1c28f6e973bd101f10d5480a2300f0f", "src", "package.json"],
+      {maxBuffer: 32 * 1024 * 1024});
+    execFileSync("tar", ["-xf", "-", "-C", reference], {input: tree});
+    symlinkSync(resolve("node_modules"), join(reference, "node_modules"), "dir");
+    const output = execFileSync("bun", ["--no-env-file", "-e", `
+      import { createHash } from "node:crypto";
+      import { GeminiVideoAnalyzer } from "./src/adapters/gemini.ts";
+      import { loadRecipe, withAnalysisDepth } from "./src/recipes/index.ts";
+      const pins = [];
+      const analyzer = new GeminiVideoAnalyzer("fixture", "gemini-test", {generateContent: async request => {
+        pins.push(createHash("sha256").update(JSON.stringify(request)).digest("hex"));
+        return {text: JSON.stringify({matchNotes: "fixture", moments: []})};
+      }});
+      for (const depth of ["standard", "deep"]) {
+        const {recipe, indexFps} = await withAnalysisDepth(await loadRecipe("requirements"), depth);
+        await analyzer.index(${JSON.stringify(activeFile)}, undefined, recipe, undefined, indexFps);
+      }
+      console.log(JSON.stringify(pins));
+    `], {cwd: reference, encoding: "utf8", env: {PATH: process.env.PATH}});
+    expect(requests).toEqual(JSON.parse(output));
+  } finally {
+    rmSync(reference, {recursive: true, force: true});
+  }
 });
