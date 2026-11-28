@@ -156,7 +156,7 @@ const exactCandidate = z.strictObject({...indexedMomentSchema.shape, exactSpan: 
   c => c.start === humanTime(c.exactSpan.start) && c.end === humanTime(c.exactSpan.endExclusive),
   "Printed times must describe the exact span.");
 const exactItem = z.strictObject({...analysisItemSchema.shape, candidate:exactCandidate,
-  result:analysisDetailSchema.extend({evidence:exactEvidence.optional()}), exactStillTimes:z.array(boundSchema).max(3).optional(),
+  result:analysisDetailSchema.extend({evidence:exactEvidence.optional(),confidenceNotes:z.string().max(10120).optional()}), exactStillTimes:z.array(boundSchema).max(3).optional(),
   screenshotExactTime:boundSchema.optional(),
 }).superRefine((item, ctx) => {
   const {start, endExclusive} = item.candidate.exactSpan;

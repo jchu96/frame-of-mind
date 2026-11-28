@@ -1,8 +1,3 @@
-import type { RangeClock } from "../domain/range-clock.js";
-import type { SourceReceipt } from "../domain/source-receipt.js";
-import type { MeetingEvidence } from "../domain/types.js";
-import { sourceBound } from "../domain/source-bound.js";
-import { findTranscriptSegments } from "../adapters/bluedot-mcp.js";
 import { clockTime, transcriptToFile } from "../domain/clock.js";
 import type { DerivedTranscriptionSegment } from "../domain/types.js";
 import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
@@ -128,35 +123,4 @@ export function windowTranscript(transcript: string, offsetSeconds: number, dura
     return time.ms >= 0 && time.ms < durationSeconds * 1000
       ? [line.replace(match![1]!, secondsToTimestamp(time.ms / 1000))] : [];
   }).join("\n") };
-}
-
-/** Normalize supplied source cues once, while their original start and end are still available. */
-export function rangeTranscript(meeting: MeetingEvidence, offset: number, clock: RangeClock, receipt: SourceReceipt) {
-  const structured = meeting.transcriptCues ?? findTranscriptSegments(meeting.raw).map(s => ({
-    startMs: Math.round(s.start * 1000), endMs: typeof s.end === "number" ? Math.round(s.end * 1000) : undefined,
-    text: `${s.speakerTag || s.speaker || "Unknown speaker"}: ${s.text}`,
-  }));
-  const cues = structured.length ? structured : meeting.transcript.split(/\r?\n/).flatMap(line => {
-    const match = LINE_TIME.exec(line);
-    return match ? [{startMs:timestampToSeconds(match[1]!) * 1000,endMs:undefined,text:line.slice(match[0].length)}] : [];
-  });
-  if (!cues.length) return {text:meeting.transcript,windowed:false};
-  const {num,den} = clock.grid.rate;
-  const scale = BigInt(den) * 1000n;
-  const a = clock.from * scale, b = clock.to * scale;
-  const shift = Math.round(offset * 1000);
-  return {windowed:true,text:cues.flatMap(cue => {
-    const s = BigInt(cue.startMs - shift) * BigInt(num);
-    const e = cue.endMs === undefined ? undefined : BigInt(cue.endMs - shift) * BigInt(num);
-    if (s >= b || (e === undefined ? s < a : e <= a || e <= s)) return [];
-    const start = s < a ? clock.from : s / scale;
-    if (e !== undefined) {
-      const end = e >= b ? clock.to : (e+scale-1n)/scale;
-      const exactSpan = {start:sourceBound(clock,start),endExclusive:sourceBound(clock,end)};
-      if (s < a) receipt.startFragments.push({kind:"cue",state:"clipped",exactSpan});
-      if (e > b) receipt.endFragments.push({kind:"cue",state:"clipped",exactSpan});
-    }
-    const cutSeconds = Number((s < a ? 0n : s-a) / (1000n * BigInt(num)));
-    return [`[${secondsToTimestamp(cutSeconds)}] ${cue.text}`];
-  }).join("\n")};
 }

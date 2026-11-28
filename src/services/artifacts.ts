@@ -72,7 +72,7 @@ export async function writeArtifacts(
     `${JSON.stringify(validatedOutcome, null, 2)}\n`,
     { mode: 0o600 },
   );
-  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts), { mode: 0o600 });
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts, manifest.proseTimeUnverified), { mode: 0o600 });
   await writeFile(
     reportHtml,
     await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome, cuts),
@@ -90,6 +90,7 @@ export function renderAnalysis(
   clock?: RunClock,
   label?: string,
   cuts?: ReadonlyMap<string, string>,
+  proseWarning?: boolean,
 ): string {
   const accepted = analysis.items.map((item, originalIndex) => ({ item, originalIndex })).filter(({ item }) => item.result.accepted);
   const heading = "meeting" in analysis
@@ -124,6 +125,7 @@ export function renderAnalysis(
     outcome && (outcome.candidates.failed > 0 || outcome.candidates.omittedByLimit > 0) ? "" : "",
     analysis.matchNotes ? "## Recording match notes" : "",
     analysis.matchNotes ? renderBlock(analysis.matchNotes) : "",
+    ...(proseWarning && !analysis.items.length ? ["A time in this text may be on the cut's clock."] : []),
     "",
   ];
   for (const [index, { item, originalIndex }] of accepted.entries()) {
@@ -276,6 +278,7 @@ async function renderHtmlArtifact(
     <div class="meta">${manifest.label ? `<span>Label: ${html(manifest.label)}</span>` : ""}<span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
   </header>
   ${outcomeNotice}
+  ${manifest.proseTimeUnverified && !analysis.items.length ? "<p>A time in this text may be on the cut's clock.</p>" : ""}
   <section><h2>Recording match</h2><p>${html(analysis.matchNotes || "No match notes returned.")}</p>
     <p class="muted">${alignment}</p>
   </section>

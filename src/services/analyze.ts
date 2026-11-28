@@ -1,4 +1,4 @@
-import { rangeTranscript } from "./transcript.js";
+import { rangeTranscript } from "./range-context.js";
 import { rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { type Bound, boundIndex, boundMillis, humanTime, modelBound, modelSpan, sourceBound } from "../domain/source-bound.js";
 import { SourceReceipt } from "../domain/source-receipt.js";
@@ -47,8 +47,7 @@ import {
   validateVersionedRunImport,
 } from "../domain/integrity.js";
 import {
-  isMeetingRunImport,
-  isVideoRunImport,
+  type VersionedRunImport,
 } from "../domain/schemas.js";
 import { BluedotClient } from "../adapters/bluedot-mcp.js";
 import { GranolaClient } from "../adapters/granola-mcp.js";
@@ -224,9 +223,7 @@ export interface AnalysisProgressReporter {
   report(event: AnalysisProgressEvent): Promise<void> | void;
 }
 
-export type AnalysisProjectionInput =
-  | { analysis: AnalysisRun | AnalysisRunV4; manifest: RunManifest; outcome?: AnalysisOutcome }
-  | { analysis: AnalysisRunV3 | AnalysisRunV5; manifest: RunManifestV3; outcome?: AnalysisOutcome };
+export type AnalysisProjectionInput = VersionedRunImport;
 
 export type PublishedAnalysisRun = AnalysisProjectionInput & {
   readonly directory: string;
@@ -899,6 +896,8 @@ export class AnalysisOrchestrator {
         const effectiveTranscript = providerTranscript ?? derivedTranscript;
         const transcriptIsDerived = Boolean(derivedTranscript) && !providerTranscript;
 
+        const runProseTime = ranged && [index.matchNotes, alignment?.rationale].some(hasProseTime);
+        if (runProseTime) await reportWarning(progress,{kind:"warning",stage:"indexing",message:proseTimeNote});
         const items: AnalysisItem[] = [];
         const failures: CandidateFailure[] = [];
         const inRange = duration === undefined ? index.moments : index.moments.filter(candidate => timestampToSeconds(candidate.start) < duration && modelSpan(sourceClock, timestampToSeconds(candidate.start), timestampToSeconds(candidate.end)));
@@ -1075,7 +1074,7 @@ export class AnalysisOrchestrator {
               } else await rm(stagingImage,{force:true});
               assertNotCanceled(execution.signal);
             }
-            if (ranged) markProseTime(item);
+            if (ranged) markProseTime(item,runProseTime);
             items.push(item);
           } catch (error) {
             if (error instanceof AnalysisCanceledError) throw error;
@@ -1287,7 +1286,7 @@ export class AnalysisOrchestrator {
         else for (const {candidate} of items) {
           receipt.cover(boundIndex(candidate.exactSpan!.start),boundIndex(candidate.exactSpan!.endExclusive));
         }
-        const proseTimeUnverified = ranged && items.some(i => i.result.confidenceNotes?.includes("A time in this text may be on the cut's clock."));
+        const proseTimeUnverified = runProseTime || (ranged && items.some(i => i.result.confidenceNotes?.includes(proseTimeNote)));
         const manifestBase = {
           ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}), ...(proseTimeUnverified && {proseTimeUnverified:true as const}),
           ...(tokenUsage && { tokenUsage }),
@@ -1399,28 +1398,12 @@ export class AnalysisOrchestrator {
             message: "Gemini file cleanup failed; manifest records deleted=false.",
           });
         }
-        const published: PublishedAnalysisRun = isMeetingRunImport(validated)
-          ? {
-              directory: outputDirectory,
-              analysis: validated.analysis,
-              manifest: validated.manifest,
-              outcome,
-            }
-          : isVideoRunImport(validated)
-            ? {
-                directory: outputDirectory,
-                analysis: validated.analysis,
-                manifest: validated.manifest,
-                outcome,
-              }
-            : (() => {
-                throw new Error("Run contract schema versions do not match.");
-              })();
+        const published: PublishedAnalysisRun = {...validated, directory:outputDirectory, outcome};
         let projectionWarning: string | undefined;
         if (execution.projection) {
           try {
             await execution.projection.publish(
-              structuredClone(projectionInputFrom(published)),
+              structuredClone({...validated, outcome}),
             );
           } catch {
             projectionWarning = "Published run could not be added to the review projection.";
@@ -1703,38 +1686,14 @@ function usageDeltaAttributes(
   };
 }
 
-function projectionInputFrom(
-  published: PublishedAnalysisRun,
-): AnalysisProjectionInput {
-  if (
-    "meeting" in published.analysis
-    && published.manifest.schemaVersion === 2
-  ) {
-    return {
-      analysis: published.analysis,
-      manifest: published.manifest,
-      outcome: published.outcome,
-    };
-  }
-  if (
-    "context" in published.analysis
-    && published.manifest.schemaVersion === 3
-  ) {
-    return {
-      analysis: published.analysis,
-      manifest: published.manifest,
-      outcome: published.outcome,
-    };
-  }
-  throw new Error("Run contract schema versions do not match.");
-}
-
-function markProseTime(item: AnalysisItem) {
+const proseTimeNote = "A time in this text may be on the cut's clock.";
+const hasProseTime = (s: string | undefined) => !!s && /\b(?:\d+:)?\d{1,2}:[0-5]\d\b/.test(s);
+function markProseTime(item: AnalysisItem, runLevel: boolean) {
   const {candidate:c,result:r} = item;
   const prose = [c.summary,c.speaker,c.kind,c.surface,r.title,r.kind,r.summary,r.confidenceNotes,r.where?.step,r.where?.surface,
     r.evidence?.verbatimUiText,r.evidence?.reporterQuote,r.evidence?.speaker,...r.steps ?? [],...(r.details ?? []).flatMap(d => [d.label,d.value])];
-  const note = "A time in this text may be on the cut's clock.";
-  if (!prose.some(v => v && /\b(?:\d{1,}:)?[0-5]?\d:[0-5]\d\b/.test(v))) return false;
+  const note = proseTimeNote;
+  if (!runLevel && !prose.some(hasProseTime)) return false;
   if (!r.confidenceNotes?.includes(note)) r.confidenceNotes = [r.confidenceNotes,note].filter(Boolean).join("\n");
   return true;
 }

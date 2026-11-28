@@ -106,6 +106,8 @@ export class BluedotClient implements MeetingCatalogSource {
       sourceUrl: `https://app.bluedothq.com/preview/${encodeURIComponent(meetingId)}`,
       summary: firstStringForKeys(raw, /^(summary|meeting_?summary)$/i),
       transcript,
+      transcriptCues:findTranscriptSegments(raw).map(s => ({startMs:Math.round(s.start*1000),
+        ...(typeof s.end === "number" && {endMs:Math.round(s.end*1000)}), text:`${s.speakerTag || s.speaker || "Unknown speaker"}: ${s.text}`})),
       raw,
     };
   }

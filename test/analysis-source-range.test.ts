@@ -8,7 +8,7 @@ import {builtInRecipe} from "../src/recipes/index.js";
 import {fixtureSource} from "./helpers/source-clock.js";
 import {RangeClock} from "../src/domain/range-clock.js";
 import {SourceReceipt} from "../src/domain/source-receipt.js";
-import {rangeTranscript} from "../src/services/transcript.js";
+import {rangeTranscript} from "../src/services/range-context.js";
 
 it.each(["absolute","relative"] as const)("the %s detail clock publishes the same exact source positions", async mode => {
   for (const [num,den,from,to] of [[25,1,25,51],[30000,1001,31,62]] as const) {
