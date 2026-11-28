@@ -45,7 +45,7 @@ export function classifyFrameTiming(pts: readonly (number | undefined)[], tick?:
     if (membership.has(gap)) continue;
     const group = {count: 0, held: 0, heldTicks: 0};
     groups.push(group);
-    for (const member of [gap, gap - 1, gap + 1]) {
+    for (const member of [gap]) {
       const stat = frequency.get(member);
       if (!stat || membership.has(member) || (member !== gap && stat.longest >= minimumRun)) continue;
       membership.set(member, group);
