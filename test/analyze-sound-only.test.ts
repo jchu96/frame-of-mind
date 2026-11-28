@@ -1,10 +1,11 @@
 import {execFileSync} from "node:child_process";
-import {readFile, readdir} from "node:fs/promises";
+import {readFile, readdir, writeFile} from "node:fs/promises";
 import {join} from "node:path";
 import {expect, test, vi} from "vitest";
 import {createGeminiFileUploader} from "../src/adapters/gemini-files.js";
 import {GeminiVideoAnalyzer} from "../src/adapters/gemini.js";
 import {fixtureSource} from "./helpers/source-clock.js";
+import {sha256File} from "../src/lib/files.js";
 import {childEnvironment} from "../src/lib/child-env.js";
 import {builtInRecipe} from "../src/recipes/index.js";
 import {AnalysisOrchestrator} from "../src/services/analyze.js";
@@ -16,7 +17,15 @@ const file = mediaFixtures(dir => {
     "-c:a", "alac", join(dir, "sound.mp4")], {env: childEnvironment("media")});
 });
 
-test.each([false, true])("analyze publishes native sample positions without stills (range %s)", async ranged => {
+test.each(["whole", "cut", "candidate file"])("analyze publishes native sample positions without stills (%s)", async mode => {
+  const ranged = mode !== "whole";
+  const candidatesFile = mode === "candidate file" ? file("samples.json") : undefined;
+  if (candidatesFile) {
+    await writeFile(candidatesFile, JSON.stringify({schemaVersion:1, recording:{
+      unit:"sample", length:"132300", rate:{num:44100, den:1}, recordingSha256:await sha256File(file("sound.mp4")),
+    }, candidates:[{id:"sound", start:44102, end:88201, precisionMs:{start:50, end:50},
+      basis:{start:"speech", end:"speech"}, proposedBy:{engine:"fixture", model:null}, label:"cue", reason:"sound", chain:[]}]}));
+  }
   const screenshot = vi.fn(async () => false);
   const upload = vi.fn(async (_path: string, _mime: string) => ({name:"files/test"}));
   const service = new AnalysisOrchestrator({
@@ -29,7 +38,7 @@ test.each([false, true])("analyze publishes native sample positions without stil
     }),
     extractScreenshot:screenshot,
   });
-  const run = await service.analyze({video:file("sound.mp4"), ...(ranged && {from:"44101samp", to:"88202samp"}),
+  const run = await service.analyze({video:file("sound.mp4"), candidatesFile, ...(ranged && {from:"44101samp", to:"88202samp"}),
     outputRoot:file("analysis"), contextMode:"none", apiKey:"fixture", recipe:builtInRecipe("decisions"),
     customRecipe:false, recipeSha256:"a".repeat(64), recipeRevision:"fixture", maxIncidents:1,
     screenshots:true, calibrate:false, derivedTranscript:false, keepUpload:false});
@@ -38,6 +47,9 @@ test.each([false, true])("analyze publishes native sample positions without stil
   const start = {unit:"sample", samples:ranged ? "44101" : "0", rate:{num:44100, den:1}};
   expect(item.candidate).toMatchObject({start:ranged ? "00:00:01" : "00:00:00", end:ranged ? "00:00:02" : "00:00:01", exactSpan:{
     start, endExclusive:{...start, samples:ranged ? "88201" : "44100"}}});
+  expect(item.candidateId).toBe(candidatesFile ? "sound" : "gemini-1");
+  expect(item.resolvedEdges?.start.bound).toMatchObject({...start, samples:candidatesFile ? "44102" : start.samples});
+  expect(item.proposal).toMatchObject({start:Number(candidatesFile ? "44102" : start.samples), end:ranged ? 88201 : 44100});
   expect(item.result.evidence).toMatchObject({timestamp:item.candidate.start, exactTime:start});
   expect(item.result.evidence).not.toHaveProperty("verbatimUiText");
   expect(screenshot).not.toHaveBeenCalled();
