@@ -56,3 +56,22 @@ test.each([[pal, "1f", 51n], [ntsc, "31f", 90n]] as const)("keeps a fractional s
   expect(clock.cutTicks(ticks)).toEqual({ n: 2n * TICKS_PER_SECOND, d: 1n });
   expect(ticks.n * BigInt(grid.rate.num) / (ticks.d * TICKS_PER_SECOND * BigInt(grid.rate.den))).toBe(frame);
 });
+
+test("caps the selected hour of a three-hour source before upload and reports the configured limit", async () => {
+  const {enforceRangeLimit,maxRangeSeconds} = await import("../src/lib/range-policy.js");
+  const grid = {...pal,length:270000n};
+  const previous = process.env.FRAME_OF_MIND_MAX_VIDEO_SECONDS;
+  try {
+    delete process.env.FRAME_OF_MIND_MAX_VIDEO_SECONDS;
+    const hour = RangeClock.resolve(grid,{from:"3600",to:"7200"});
+    expect(() => enforceRangeLimit(hour)).not.toThrow();
+    process.env.FRAME_OF_MIND_MAX_VIDEO_SECONDS = "900";
+    expect(maxRangeSeconds()).toBe(900);
+    expect(() => enforceRangeLimit(hour)).toThrow(expect.objectContaining({code:"RECORDING_TOO_LONG",details:{limitSeconds:900,durationSeconds:3600}}));
+    expect(() => enforceRangeLimit(RangeClock.resolve(grid,{from:"3600",to:"4500"}))).not.toThrow();
+    expect(() => enforceRangeLimit(RangeClock.resolve(grid,{from:"90000f",to:"112501f"}))).toThrow();
+  } finally {
+    if (previous === undefined) delete process.env.FRAME_OF_MIND_MAX_VIDEO_SECONDS;
+    else process.env.FRAME_OF_MIND_MAX_VIDEO_SECONDS = previous;
+  }
+});

@@ -91,3 +91,37 @@ it("returns resolved coverage in the reply when a local cut fails before upload"
     await rm(root, {recursive:true,force:true});
   }
 });
+
+it.each([false,true])("analyze resolves the caller's range once in text and JSON modes (json=%s)", async json => {
+  const root = await mkdtemp(join(tmpdir(), "cli-source-range-"));
+  const video = join(root,"fixture.mp4");
+  const previousExit = process.exitCode;
+  try {
+    await writeFile(video, "fixture");
+    vi.stubEnv("GEMINI_API_KEY","test-key");
+    vi.stubEnv("SENTRY_DSN","");
+    vi.stubEnv("FRAME_OF_MIND_MAX_VIDEO_SECONDS","900");
+    vi.spyOn(source,"withSourceRecording").mockImplementation(fixtureSource(() => 10800));
+    const upload = vi.fn(async () => ({name:"files/fixture"}));
+    vi.mocked(GeminiVideoAnalyzer).mockImplementation(class {
+      model="gemini-test"; upload=upload; async delete() {}
+      async index() {return {matchNotes:"fixture",moments:[]};}
+    } as never);
+    const stdout = vi.spyOn(process.stdout,"write").mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr,"write").mockImplementation(() => true);
+    const args = ["analyze","--source","none","--video",video,"--output",join(root,"runs"),"--model","gemini-test",
+      "--from","600","--to","1200","--no-calibrate","--no-screenshots","--no-derived-transcript",...(json ? ["--json"] : [])];
+    process.exitCode=0;
+    await runCli(program,args);
+    expect(process.exitCode).toBe(0);
+    expect(upload).toHaveBeenCalledTimes(1);
+    const lines = stderr.mock.calls.map(([s]) => String(s).trim());
+    expect(lines.filter(line => line.startsWith("Range used:"))).toEqual(["Range used: source [15000,30000) frames at 25/1 Hz ([600,1200) s)"]);
+    if (json) expect(JSON.parse(stdout.mock.calls.map(([s])=>s).join(""))).toMatchObject({
+      maxRangeSeconds:900,requestedRange:{from:"600",to:"1200"},edgeMoved:{from:false,to:false},
+      sourceRange:{unit:"frames",fromFrame:"15000",toFrameExclusive:"30000"}});
+  } finally {
+    process.exitCode=previousExit; vi.restoreAllMocks(); vi.unstubAllEnvs();
+    await rm(root,{recursive:true,force:true});
+  }
+});

@@ -1,5 +1,5 @@
 import { rationalRate } from "exact-time";
-import { isRanged, maxRangeSeconds } from "../lib/range-policy.js";
+import { isRanged, enforceRangeLimit } from "../lib/range-policy.js";
 export { isRanged, maxRangeSeconds } from "../lib/range-policy.js";
 import { ContractError, faultCode } from "../domain/contract-error.js";
 import { RangeClock, rangeUsage, type RangeRequest } from "../domain/range-clock.js";
@@ -10,14 +10,6 @@ import { measureTiming } from "./media-probe.js";
 import { decodeBudget } from "./range-scan.js";
 import { withVideoRange } from "./video-range.js";
 
-function checkLimit(clock: RangeClock) {
-  const limitSeconds = maxRangeSeconds();
-  if ((clock.to - clock.from) * BigInt(clock.grid.rate.den) > BigInt(limitSeconds) * BigInt(clock.grid.rate.num)) {
-    throw new ContractError("RECORDING_TOO_LONG", "The selected range exceeds the recording duration limit.",
-      {durationSeconds: clock.elapsed(clock.to - clock.from), limitSeconds});
-  }
-}
-
 export interface SourceOptions extends RangeRequest { timecodeRate?: string; signal?: AbortSignal; onSourceResolved?: (clock: RangeClock) => void }
 export async function withSourceRecording<T>(path: string, options: SourceOptions, needs: "audio" | "video",
   tell: (line: string) => void, consume: (file: string, clock: RangeClock, hasAudio?: boolean) => Promise<T>) {
@@ -26,7 +18,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
   const ranged = isRanged(options);
   const beforeCut = (clock: RangeClock) => {
     options.onSourceResolved?.(clock);
-    checkLimit(clock);
+    enforceRangeLimit(clock);
   };
   let tracks: Awaited<ReturnType<typeof recordingTracks>>;
   try {

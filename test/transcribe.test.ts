@@ -232,6 +232,27 @@ describe("original-language transcription", () => {
     return { analyzer, requests };
   }
 
+  it.each([true,false])("transcribe keeps first-sample speech and prints the same resolved range with json=%s", async json => {
+    const f = await fixture(10800);
+    f.analyzer.transcribe.mockResolvedValue([{...cue(0,1,"already speaking"),interruptedStart:true}]);
+    f.deps.decodeSpeechEnvelope.mockImplementation(async (_path, options) => {
+      if (!options?.slice) return undefined;
+      const block = new Float32Array(40).fill(-80);
+      block.fill(-10,10,30);
+      return {startMs:options.slice.startMs,length:40,blocks:[block],sourceSampleRateHz:48000};
+    });
+    vi.stubEnv("FRAME_OF_MIND_MAX_VIDEO_SECONDS","900");
+    await cli(f, ["--from","600","--to","602",...(json ? ["--json"] : [])]);
+    const lines = f.deps.stderr.mock.calls.map(([line]) => line);
+    expect(lines.filter(line => line.startsWith("Range used:"))).toEqual(["Range used: source [15000,15050) frames at 25/1 Hz ([600,602) s)"]);
+    const receipt = JSON.parse(lines.find(line => line.startsWith("Source coverage: "))!.slice(17));
+    expect(receipt).toMatchObject({requestedRange:{from:"600",to:"602"},edgeMoved:{from:false,to:false},maxRangeSeconds:900,
+      startFragments:[{kind:"cue",state:"clipped",exactSpan:{start:{frames:"15000"},endExclusive:{frames:"15025"}}}]});
+    expect(await readFile(join(f.root,"synthetic.srt"),"utf8")).toContain("00:10:00,000 --> 00:10:01,000");
+    expect((await readdir(f.root)).includes("synthetic.transcript.json")).toBe(json);
+    if (json) expect(JSON.parse(f.deps.stdout.mock.calls.at(-1)![0])).toMatchObject(receipt);
+  });
+
   it.each(["absolute","relative","unverified"] as const)("measures a detail window on the %s clock before mapping its evidence to source", async mode => {
     for (const [num, den, origin] of [[25,1,0],[25,1,31],[30000,1001,0],[30000,1001,31]] as const) {
       const f = await fixture(90);
