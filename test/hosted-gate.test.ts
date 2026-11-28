@@ -261,7 +261,13 @@ describe("hosted gate separation", () => {
   test("MISS deploy-needs-hosted: default or hosted failure propagates in check and deploy modes", async () => {
     const root = await fixture();
     try {
-      expect((await run(root, ["bun", "run", "check:deploy"])).code).toBe(0);
+      const preflight = await run(root, ["bun", "run", "check:deploy"]);
+      if (preflight.code !== 0) {
+        const execution = await readFile(join(root, ".git/execution.log"), "utf8").catch(error => String(error));
+        const status = await run(root, ["git", "status", "--porcelain"]);
+        console.error("check:deploy fixture", { ...preflight, execution, gitStatus: status });
+      }
+      expect(preflight.code).toBe(0);
       for (const mode of ["check:deploy", "deploy:hosted"]) {
         for (const failure of ["FAIL_DEFAULT", "FAIL_HOSTED"]) {
           const result = await run(root, ["bun", "run", mode, ...(mode === "deploy:hosted" ? ["web"] : [])], { [failure]: "1" });
@@ -397,7 +403,7 @@ async function run(root: string, command: string[], extra: Record<string, string
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => { stderr += chunk; });
   const code = await new Promise<number>((resolve, reject) => {
     child.once("error", reject);
-    child.once("exit", (code) => resolve(code ?? 1));
+    child.once("close", (code) => resolve(code ?? 1));
   });
   return { code, stdout, stderr };
 }
