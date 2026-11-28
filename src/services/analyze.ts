@@ -626,6 +626,7 @@ export class AnalysisOrchestrator {
       const {engine,model} = plan.used!.grader;
       const gradedBy = {engine,model};
       if (options.calibrate !== false && route.proposer.engine !== "twelvelabs" && analyzer?.probeClipClock) {
+        await tellRoute("Gemini may receive a synthetic calibration clip. The tool deletes that upload after measuring its clock.");
         const measured: Calibration = await this.calibrate({
           model: analyzer.model,
           upload: (path, mime) => { preparing = undefined; return analyzer.upload(path, mime); },
@@ -663,7 +664,7 @@ export class AnalysisOrchestrator {
         await report(progress, {
           kind: "stage",
           stage: "fetching_context",
-          message: "Deriving a transcript from the recording audio…",
+          message: "Gemini receives the selected audio for transcription. The tool deletes each audio upload after use.",
         });
         // A single request cannot emit a verbatim transcript for a long
         // recording, so the audio is transcribed in bounded windows and
@@ -820,7 +821,7 @@ export class AnalysisOrchestrator {
             derivedTranscript = formatted;
             derivedTranscriptProvenance = {
               origin: "gemini-audio",
-              model: runModel,
+              model: analyzer!.model,
               sha256: sha256Text(marked.segments.map(line => {
                 const span = line.exactSpan;
                 return span ? `[${humanTime(span.start)} ${JSON.stringify(span)}] ${line.speaker}: ${line.text}` : "";
@@ -1671,7 +1672,7 @@ export class AnalysisOrchestrator {
         };
       } catch (error) {
         await finishCopies();
-        if (execution.jobScratchRoot && (error instanceof AnalysisCanceledError || execution.signal?.aborted)) throw error;
+        if ((error instanceof AnalysisCanceledError || execution.signal?.aborted) && (execution.jobScratchRoot || !catalog?.copies.length)) throw error;
         if (remote && analyzer && !retainRemote && !cleanupFinalized) {
           remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep, execution.jobScratchRoot ? 1 : 3);
           cleanupFinalized = true;

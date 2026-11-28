@@ -43,5 +43,5 @@ export class SourceReceipt {
 export function preparationError(error: unknown, source: Record<string, unknown>, tell: (line: string) => void) {
   tell(`Source coverage: ${JSON.stringify(source)}`);
   return new ContractError(faultCode(error), error instanceof ContractError ? error.message : "Could not prepare the recording.",
-    {...(error instanceof ContractError && error.details), ...source, phase:"prepare", sent:false});
+    {...(error instanceof ContractError && error.details), ...source, phase:error instanceof ContractError && error.details?.engine === "twelvelabs" ? error.details.phase : "prepare", sent:false});
 }

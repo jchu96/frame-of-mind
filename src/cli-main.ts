@@ -1,4 +1,4 @@
-import { hasCleanupReceipts } from "./adapters/twelvelabs-receipts.js";
+import { knownCleanupReceipts } from "./adapters/twelvelabs-receipts.js";
 import { checkDirectUpload, checkRoles, directUploadHint, disclosure, enginePlan, fallbackMessage, usesTwelveLabs } from "./domain/engine-plan.js";
 import { rangeFields } from "./domain/range-fields.js";
 import { rangeUsage } from "./domain/range-clock.js";
@@ -368,9 +368,13 @@ program
               ? await withSourceRecording(video, flags, "video", line => process.stderr.write(line + "\n"),
                 async cut => (await stat(cut)).size)
               : (await stat(video)).size;
-            checkDirectUpload(plan, bytes, process.argv.slice(2));
+            checkDirectUpload(plan, bytes, program.args[0] === "analyze" ? program.args : process.argv.slice(2));
             if (plan.reason) process.stderr.write(fallbackMessage(plan.reason) + "\n");
             if (plan.reason === "media-limit") process.stderr.write(directUploadHint + "\n");
+          }
+          if (twelve.present) {
+            const ids = await knownCleanupReceipts();
+            if (ids.length) plan.receiptIds = ids;
           }
           writeDocument({enginePlan:plan});
           return;
@@ -381,7 +385,7 @@ program
         }
         for (const engine of ["gemini","twelvelabs"] as const) {
           if (plan.planned.proposer.engine !== engine && plan.planned.grader.engine !== engine) {
-            if (engine !== "twelvelabs" || !twelve.present || !await hasCleanupReceipts()) continue;
+            if (engine !== "twelvelabs" || !twelve.present || !(await knownCleanupReceipts()).length) continue;
           }
           const value = await config.providerKey(engine);
           if (!value) throw new CliError("KEY_MISSING","Set the selected engine key.",{engine});
@@ -474,7 +478,7 @@ program
           });
         }
       } catch (error) {
-        if (error instanceof KeyCommandRefused) throw error;
+        if (error instanceof KeyCommandRefused) throw error.details?.engine ? error : new KeyCommandRefused("gemini");
         await captureCliException(
           telemetryCodeFromError(error, "analysis_failed"),
           {

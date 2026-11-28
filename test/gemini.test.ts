@@ -1619,7 +1619,7 @@ describe("polling", () => {
   });
 });
 
-it("released-deep-index-request preserves the first pass under --depth deep", async () => {
+it("released-deep-index-request changes only the authored proposal fields under --depth deep", async () => {
   const {buildAnalyzeOptions} = await import("../src/cli-main.js");
   const {geminiEnginePorts} = await import("../src/adapters/gemini-candidates.js");
   const {RangeClock} = await import("../src/domain/range-clock.js");
@@ -1627,7 +1627,10 @@ it("released-deep-index-request preserves the first pass under --depth deep", as
   const requests: string[] = [];
   const analyzer = new GeminiVideoAnalyzer("fixture", "gemini-test", {generateContent: async request => {
     requests.push(JSON.stringify(request));
-    return {text:JSON.stringify(validVideoOnlyIndexResponse)};
+    const response = requests.length === 1 ? validVideoOnlyIndexResponse : {...validVideoOnlyIndexResponse,
+      moments:validVideoOnlyIndexResponse.moments.map(row=>({...row,proposal:{label:row.kind,reason:row.summary,
+        basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000}}}))};
+    return {text:JSON.stringify(response)};
   }});
   // Released deep request, before the proposer/grade split.
   const base = builtInRecipe("requirements");
@@ -1643,5 +1646,15 @@ it("released-deep-index-request preserves the first pass under --depth deep", as
   const clock = RangeClock.resolve({unit:"frames",rate:{num:25,den:1},length:100n},{});
   await geminiEnginePorts(analyzer).propose(clock,"a".repeat(64),activeFile,undefined,options.recipe,options.focus,options.indexFps);
   expect(requests).toHaveLength(2);
-  expect(requests[1]).toBe(requests[0]);
+  const typed = JSON.parse(requests[1]!);
+  const item = typed.config.responseJsonSchema.properties.moments.items;
+  expect(item.required).toContain("proposal");
+  expect(item.properties.proposal.required).toEqual(expect.arrayContaining(["label","reason","basis","precisionMs"]));
+  delete item.properties.proposal;
+  item.required = item.required.filter((name:string)=>name !== "proposal");
+  const part = typed.contents[0].parts[1];
+  const sentence = "In each proposal give label, reason, basis and positive precisionMs for each edge. Whole-second model times have model basis and 1000 ms precision. An optional score ranks proposals.";
+  expect(part.text).toContain(sentence);
+  part.text = part.text.replace(sentence+"\n","");
+  expect(JSON.stringify(typed)).toBe(requests[0]);
 });

@@ -256,7 +256,7 @@ describe("original-language transcription", () => {
   it.each(["absolute","relative","unverified"] as const)("measures a detail window on the %s clock before mapping its evidence to source", async mode => {
     for (const [num, den, origin] of [[25,1,0],[25,1,31],[30000,1001,0],[30000,1001,31]] as const) {
       const f = await fixture(90);
-      const candidate = {start:"00:00:20", end:"00:00:24", kind:"test", summary:"fixture", importance:"low"};
+      const candidate = {start:"00:00:20", end:"00:00:24", kind:"test", summary:"fixture", importance:"low", proposal:{label:"test",reason:"fixture",basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000}}};
       const {analyzer, requests} = capture({matchNotes:"fixture", moments:[candidate]},
         {accepted:true,kind:"test",title:"Fixture",summary:"fixture",evidence:{timestamp:mode === "relative" ? "00:00:09" : "00:00:21"}});
       const orchestrator = new AnalysisOrchestrator({...f.deps,withSourceRecording:fixtureSource(() => 90,{num,den}),

@@ -333,7 +333,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       const args = ["analyze", "--output", "out", "--source", "none", "--video", "absent.mp4"];
       expect(run(args, env)).toEqual({exit: 10, out: "", err: "Key command unavailable.\n"});
       const json = run([...args, "--json"], env);
-      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}\n', err: ""});
+      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command","engine":"gemini"}}}\n', err: ""});
       expect(readdirSync(cwd)).toEqual(before);
       expect(existsSync(join(root, "unexpected-open")), "folder file accessed after command selected").toBe(false);
     }

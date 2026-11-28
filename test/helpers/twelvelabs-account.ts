@@ -9,6 +9,8 @@ export class TwelveLabsAccount {
   lost = false;
   denyDeletion = false;
   entityLinked = false;
+  storeLinked = false;
+  ambiguousPage = false;
   wrongOwner = false;
   readonly tasksCreated: {analysis_mode:string;response_format:{segment_definitions:{fields:unknown[]}[]};prompt?:string;prompt_v2?:{input_text:string}}[] = [];
   unreadableLinks = false;
@@ -42,12 +44,19 @@ export class TwelveLabsAccount {
       if (this.lost) throw new TypeError("connection closed after create");
       return Response.json({_id:id,status:"processing"}, {status:201});
     }
+    const page = (data:unknown[]) => Response.json({data,page_info:{page:1,total_page:this.ambiguousPage ? 2 : 1,total_results:data.length}});
+    if (method === "GET" && path === "/knowledge-stores") {
+      const source = new URL(request.url).searchParams.get("asset_id");
+      if (!source || !this.assets.has(source)) return Response.json({}, {status:400});
+      return page(this.storeLinked ? [{_id:"foreign-store"}] : []);
+    }
     const [,resource,id,links] = path.split("/");
     if (resource === "assets" && id) {
       if (!this.assets.has(id)) return Response.json({}, {status:404});
       if (method === "GET" && links) {
         if (this.unreadableLinks) return Response.json({}, {status:403});
-        return Response.json({data:links === "entities" && this.entityLinked ? [{_id:"foreign-entity"}] : [],page_info:{total_page:1}});
+        if (!["entities","indexed-assets"].includes(links)) return Response.json({}, {status:404});
+        return page(links === "entities" && this.entityLinked ? [{_id:"foreign-entity"}] : []);
       }
       if (method === "GET") return Response.json({_id:id,user_metadata:{operationId:this.wrongOwner ? "unrelated" : this.assetOperations.get(id)},status:this.queued ? "processing" : "ready"});
       if (method === "DELETE") {

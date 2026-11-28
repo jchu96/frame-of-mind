@@ -177,17 +177,19 @@ it.each(["gemini","twelvelabs"])("claim-told-flag %s",async grader=>{
   }
 });
 
-it.each(["link","unreadable","foreign-id"] as const)("leaves the scratch asset pending on %s",async state => {
+it.each(["link","knowledge-store","ambiguous","unreadable","foreign-id"] as const)("leaves the scratch asset pending on %s",async state => {
   const f = await fixture();
   f.account.entityLinked = state === "link";
+  f.account.storeLinked = state === "knowledge-store";
+  f.account.ambiguousPage = state === "ambiguous";
   f.account.unreadableLinks = state === "unreadable";
   f.account.wrongOwner = state === "foreign-id";
   const first = await f.run();
   expect(first.manifest.library).toContainEqual(expect.objectContaining({
-    operation:"upload",state:"pending",reason:{link:"linked",unreadable:"link-check-unavailable","foreign-id":"identity-unconfirmed"}[state],
+    operation:"upload",state:"pending",reason:{link:"linked","knowledge-store":"linked",ambiguous:"link-check-unavailable",unreadable:"link-check-unavailable","foreign-id":"identity-unconfirmed"}[state],
   }));
   expect(f.account.requests.filter(r=>r.method==="DELETE" && r.path.startsWith("/assets/"))).toEqual([]);
-  f.account.entityLinked = f.account.unreadableLinks = f.account.wrongOwner = false;
+  f.account.entityLinked = f.account.storeLinked = f.account.ambiguousPage = f.account.unreadableLinks = f.account.wrongOwner = false;
   await f.run({candidatesFile:f.candidatesFile,grader:"gemini"});
   expect(f.account.assets).toEqual(new Set(["ffffffffffffffffffffffff"]));
   const ids = f.account.requests.filter(r=>r.method==="POST").map(r=>r.operation);

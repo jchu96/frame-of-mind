@@ -38,29 +38,29 @@ async function privateDir(dir:string) {
 }
 
 async function pendingRecords(directory:string) {
-    await privateDir(directory);
-    const found:Saved[] = [];
-    for (const file of await readdir(directory)) {
-      if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
-      const handle = await open(join(directory,file),constants.O_NOFOLLOW | constants.O_RDONLY | constants.O_NONBLOCK);
-      try {
-        const info = await handle.stat();
-        if (!info.isFile() || info.size > 16_384 || info.nlink !== 1 || (process.geteuid && (info.uid !== process.geteuid() || (info.mode & 0o077)))) throw new Error("Unsafe receipt file.");
-        const row = saved.parse(JSON.parse(await handle.readFile("utf8")));
-        if (row.receipt.receiptId+".json" !== file) throw new Error("Mismatched receipt identity.");
-        if (row.receipt.state !== "deleted") found.push(row);
-      } finally { await handle.close(); }
-    }
-    return found;
+  await privateDir(directory);
+  const found:Saved[] = [];
+  for (const file of await readdir(directory)) {
+    if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
+    const handle = await open(join(directory,file),constants.O_NOFOLLOW | constants.O_RDONLY | constants.O_NONBLOCK);
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.size > 16_384 || info.nlink !== 1 || (process.geteuid && (info.uid !== process.geteuid() || (info.mode & 0o077)))) throw new Error("Unsafe receipt file.");
+      const row = saved.parse(JSON.parse(await handle.readFile("utf8")));
+      if (row.receipt.receiptId+".json" !== file) throw new Error("Mismatched receipt identity.");
+      if (row.receipt.state !== "deleted") found.push(row);
+    } finally { await handle.close(); }
   }
+  return found;
+}
 
-export async function hasCleanupReceipts() {
+export async function knownCleanupReceipts():Promise<string[]> {
   const dir = receiptDirectory();
   try {
     await lstat(dir);
-    return (await pendingRecords(dir)).length > 0;
+    return (await pendingRecords(dir)).map(row=>row.receipt.receiptId);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
 }
@@ -160,16 +160,16 @@ export class ScratchReceipts {
     if (!owned) return "identity-unconfirmed";
     if (receipt.operation === "upload") {
       if (tasks.some(r=>r.state !== "deleted")) return "task-pending";
-      for (const relation of ["indexed-assets","entities"]) {
+      const lists = [path+"/indexed-assets","/knowledge-stores?asset_id="+receipt.assetId,path+"/entities"];
+      for (const list of lists) {
         try {
-          const response = await request(path+"/"+relation);
+          const response = await request(list);
           if (!response.ok) return "link-check-unavailable";
           const page = await response.json();
           if (!Array.isArray(page.data) || !page.page_info) return "link-check-unavailable";
           const total = page.page_info.total_results;
-          if (total !== undefined && (!Number.isSafeInteger(total) || total < 0)) return "link-check-unavailable";
-          if (page.data.length || total > 0) return "linked";
-          if (![0,1].includes(page.page_info.total_page)) return "link-check-unavailable";
+          if (page.data.length || (Number.isSafeInteger(total) && total > 0)) return "linked";
+          if (total !== 0 || page.page_info.page !== 1 || ![0,1].includes(page.page_info.total_page)) return "link-check-unavailable";
         } catch { return "link-check-unavailable"; }
       }
     }

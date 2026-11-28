@@ -96,6 +96,7 @@ export function checkDirectUpload(plan: EnginePlan, bytes: number | undefined, a
   if (!reason) return;
   if (defaultDualRoute(plan)) {
     fallbackPlan(plan, reason);
+    plan.retention.twelvelabs = null;
     return;
   }
   const fields = {engine:"twelvelabs", phase:"upload", reason, retryWith:geminiRetry(argv, plan.planned!.proposer.engine === "file")};
