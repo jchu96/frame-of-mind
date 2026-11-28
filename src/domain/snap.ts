@@ -29,7 +29,7 @@ const SAMPLES = 80;
 const WINDOW_MS = 10;
 const BLOCK = 1000;
 const FIND_DB = 10;
-const EDGE_DB = 10;
+const EDGE_DB = 1.5;
 export interface Envelope {
   sourceSampleRateHz?: number;
   startMs: number;
