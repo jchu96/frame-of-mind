@@ -516,7 +516,11 @@ export class AnalysisOrchestrator {
       const recordingMimeType = soundOnly && ["video/mp4", "audio/mp4", "video/quicktime"].includes(mimeType)
         ? "audio/m4a" : soundOnly ? mimeType.replace(/^video\//, "audio/") : mimeType;
       const uploadMimeType = ranged ? (soundOnly ? "audio/wav" : "video/mp4") : recordingMimeType;
-      if (soundOnly) await report(progress, {kind:"progress", stage:"fetching_context", message:"No picture. No stills are taken."});
+      if (soundOnly) await report(progress, {
+        kind: "stage",
+        stage: "fetching_context",
+        message: "No picture. No stills are taken.",
+      });
       const recording = recordingIdentity(sourceClock, recordingSha256);
       if (sourceClock.grid.unit === "ticks" && !sourceClock.lengthKnown && sourceClock.observedEnd === undefined) {
         throw new ContractError("INVALID_INPUT", "The stream has no timestamps.");
@@ -791,7 +795,6 @@ export class AnalysisOrchestrator {
           },
         }, async () => {
           if (options.remoteFileName) {
-            mediaRequestStarted(); // The named file already has a remote lifecycle.
             if (typeof analyzer.resolveRetainedFile !== "function") {
               throw new GeminiFileError(
                 "The configured analyzer cannot reuse a retained Gemini file.",
@@ -799,6 +802,7 @@ export class AnalysisOrchestrator {
                 "not_obtained",
               );
             }
+            mediaRequestStarted(); // The named file already has a remote lifecycle.
             return analyzer.resolveRetainedFile(
               options.remoteFileName,
               recordingSha256,
