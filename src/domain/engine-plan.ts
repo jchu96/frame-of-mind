@@ -83,7 +83,7 @@ export function geminiRetry(argv: readonly string[], file: boolean) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg === "--proposer" || arg === "--grader") i++;
-    else if (!arg.startsWith("--proposer=") && !arg.startsWith("--grader=")) retry.push(arg);
+    else if (!arg.startsWith("--proposer=") && !arg.startsWith("--grader=") && arg !== "--dry-run") retry.push(arg);
   }
   if (!file) retry.push("--proposer", "gemini");
   return [...retry, "--grader", "gemini"];
@@ -106,7 +106,7 @@ export function checkDirectUpload(plan: EnginePlan, bytes: number | undefined, a
 export function fallbackMessage(reason: EngineReason) {
   return `Twelve Labs could not propose (${reason}). Using Gemini to propose and grade.`;
 }
-export function disclosure(plan: EnginePlan): string[] {
+export function disclosure(plan: EnginePlan, segments?: import("./segment-definitions.js").SegmentDefinitions): string[] {
   const route = plan.planned;
   if (!route) return ["No engine key is configured."];
   const lines:string[] = [];
@@ -126,6 +126,12 @@ export function disclosure(plan: EnginePlan): string[] {
     if (!purposes.length) continue;
     lines.push(name+" "+purposes.join(" and ")+". "+(plan.retention[engine] === "provider" ?
       name+" retains its upload until provider expiry." : name+" deletes its scratch copies at run end."));
+  }
+  if (route.proposer.engine === "twelvelabs" && segments) {
+    for (const def of segments) {
+      const images = def.media_sources?.map(image=>image.name).join(", ");
+      lines.push("Twelve Labs receives recipe definition "+def.id+(images ? " with reference images "+images : "")+".");
+    }
   }
   if (route.proposer.engine === route.grader.engine || route.proposer.engine === "file")
     lines.push("Runs use "+(route.grader.engine === "gemini" ? "Gemini" : "Twelve Labs")+" alone.");

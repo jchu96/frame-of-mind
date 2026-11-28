@@ -37,11 +37,28 @@ async function privateDir(dir:string) {
     throw new ContractError("PERMISSION_DENIED","The scratch receipt directory must be private and owned by the current account.");
 }
 
+async function pendingRecords(directory:string) {
+    await privateDir(directory);
+    const found:Saved[] = [];
+    for (const file of await readdir(directory)) {
+      if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
+      const handle = await open(join(directory,file),constants.O_NOFOLLOW | constants.O_RDONLY | constants.O_NONBLOCK);
+      try {
+        const info = await handle.stat();
+        if (!info.isFile() || info.size > 16_384 || info.nlink !== 1 || (process.geteuid && (info.uid !== process.geteuid() || (info.mode & 0o077)))) throw new Error("Unsafe receipt file.");
+        const row = saved.parse(JSON.parse(await handle.readFile("utf8")));
+        if (row.receipt.receiptId+".json" !== file) throw new Error("Mismatched receipt identity.");
+        if (row.receipt.state !== "deleted") found.push(row);
+      } finally { await handle.close(); }
+    }
+    return found;
+  }
+
 export async function hasCleanupReceipts() {
   const dir = receiptDirectory();
   try {
-    trustedDirectory(dir);
-    return (await readdir(dir)).some(name=>/^[0-9a-f-]{36}\.json$/.test(name));
+    await lstat(dir);
+    return (await pendingRecords(dir)).length > 0;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
     throw error;
@@ -58,12 +75,12 @@ export class ScratchReceipts {
   private async write(receipt:CopyReceipt, active:boolean) {
     const path = join(this.directory,receipt.receiptId+".json");
     const tmp = join(this.directory,"."+randomUUID());
-    const handle = await open(tmp,"wx",0o600);
     try {
-      await handle.writeFile(JSON.stringify({receipt, pid:active ? process.pid : null, host:hostname()}));
-      await handle.sync();
-    } finally { await handle.close(); }
-    try {
+      const handle = await open(tmp,"wx",0o600);
+      try {
+        await handle.writeFile(JSON.stringify({receipt, pid:active ? process.pid : null, host:hostname()}));
+        await handle.sync();
+      } finally { await handle.close(); }
       await rename(tmp,path);
       if (process.platform !== "win32") {
         const parent = await open(this.directory,"r");
@@ -71,24 +88,8 @@ export class ScratchReceipts {
       }
     } finally { await unlink(tmp).catch(()=>undefined); }
   }
-  private async records() {
-    await privateDir(this.directory);
-    const found:Saved[] = [];
-    for (const file of await readdir(this.directory)) {
-      if (!/^[a-f0-9-]{36}\.json$/.test(file)) continue;
-      const handle = await open(join(this.directory,file),constants.O_NOFOLLOW | constants.O_RDONLY | constants.O_NONBLOCK);
-      try {
-        const info = await handle.stat();
-        if (!info.isFile() || info.size > 16_384 || info.nlink !== 1 || (process.geteuid && (info.uid !== process.geteuid() || (info.mode & 0o077)))) throw new Error("Unsafe receipt file.");
-        const row = saved.parse(JSON.parse(await handle.readFile("utf8")));
-        if (row.receipt.receiptId+".json" !== file) throw new Error("Mismatched receipt identity.");
-        if (row.receipt.accountScope === this.accountScope && row.receipt.state !== "deleted") found.push(row);
-      } finally { await handle.close(); }
-    }
-    return found;
-  }
   async recover(request:Request, tell:(message:string)=>Promise<void>) {
-    const records = await this.records();
+    const records = (await pendingRecords(this.directory)).filter(row=>row.receipt.accountScope === this.accountScope);
     const groups = new Map<string,Saved[]>();
     for (const row of records) {
       const group = groups.get(row.receipt.runId) ?? [];
@@ -103,6 +104,7 @@ export class ScratchReceipts {
       })) continue;
       await tell("Checking Twelve Labs scratch deletion receipts (resource IDs only).");
       await this.cleanup(group.map(r=>r.receipt),request);
+      for (const {receipt} of group) await tell("Twelve Labs scratch "+receipt.receiptId+" "+receipt.state+(receipt.reason ? " ("+receipt.reason+")" : "")+".");
     }
   }
   async intent(source:Source, operation:CopyReceipt["operation"]) {
@@ -115,6 +117,12 @@ export class ScratchReceipts {
     await this.write(receipt,true);
     this.copies.push(receipt);
     return receipt;
+  }
+  async refused(receipt:CopyReceipt) {
+    receipt.state = "deleted";
+    receipt.reason = "create-refused";
+    receipt.checkedAt = receipt.deletedAt = this.now();
+    await this.write(receipt,false);
   }
   async created(receipt:CopyReceipt, id:unknown) {
     const parsed = remoteId.safeParse(id);

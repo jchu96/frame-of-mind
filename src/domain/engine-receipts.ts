@@ -9,7 +9,7 @@ export const copyReceipt = z.strictObject({
   retentionSource:z.literal("default"), assetId:remoteId.optional(), taskId:remoteId.optional(),
   createdAt:z.iso.datetime(), checkedAt:z.iso.datetime(), deletedAt:z.iso.datetime().nullable(),
   state:z.enum(["pending","unconfirmed","deleted"]),
-  reason:z.enum(["creation-unknown","identity-unconfirmed","cleanup","linked","link-check-unavailable","delete-refused","task-pending","unconfirmed-deletion"]).nullable(),
+  reason:z.enum(["creation-unknown","create-refused","identity-unconfirmed","cleanup","linked","link-check-unavailable","delete-refused","task-pending","unconfirmed-deletion"]).nullable(),
 });
 export type CopyReceipt = z.infer<typeof copyReceipt>;
 export const engineCall = z.strictObject({

@@ -63,7 +63,7 @@ export class TwelveLabsAccount {
       if (params.video?.asset_id && !this.assets.has(params.video.asset_id)) return Response.json({}, {status:404});
       const taskId = (this.tasks.size + 100).toString(16).padStart(24,"0");
       if (params.analysis_mode !== "time_based_metadata" && ++this.grades > this.quotaAfter)
-        return Response.json({code:"insufficient_quota"}, {status:422});
+        return Response.json({code:"usage_limit_exceeded"}, {status:422});
       this.tasks.set(taskId, params);
       this.tasksCreated.push(params);
       return Response.json({task_id:taskId,status:"queued"}, {status:202});
@@ -85,7 +85,7 @@ export class TwelveLabsAccount {
         ...(this.partial && def && {error:{message:"The result may be incomplete."}})});
     }
     if (path === "/analyze" && method === "POST") {
-      if (++this.grades > this.quotaAfter) return Response.json({code:"insufficient_quota"}, {status:422});
+      if (++this.grades > this.quotaAfter) return Response.json({code:"usage_limit_exceeded"}, {status:422});
       return Response.json({data:JSON.stringify(verdict)});
     }
     throw new Error("unexpected request: " + method + " " + path);

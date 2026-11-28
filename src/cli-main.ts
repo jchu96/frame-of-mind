@@ -330,6 +330,7 @@ program
       let stage = "cli";
       const warnings: string[] = [];
       let failureFolder: string | undefined;
+      let failedRun:import("./domain/run-failure.js").RunFailureManifest | undefined;
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
         if (isRanged(flags) && flags.remoteFile) rangeUsage("A range cannot reuse a remote file.");
@@ -351,6 +352,10 @@ program
           if (gemini.source === "command") await config.providerKey();
           if (twelve.source === "command") await config.providerKey("twelvelabs");
           throw new CliError("KEY_MISSING","Set a provider key before analysis.",{engine:"gemini"});
+        }
+        for (const engine of [proposer,grader]) {
+          if ((engine === "gemini" && !gemini.present) || (engine === "twelvelabs" && !twelve.present))
+            throw new CliError("KEY_MISSING","Set the selected engine key before analysis.",{engine});
         }
         analyzeOptions = await buildAnalyzeOptions(meetingId, {...flags,dryRun:true}, undefined,loaded);
         const plan = enginePlan({...flags,file:flags.candidates !== undefined, recipe:analyzeOptions.recipe.engines,
@@ -384,7 +389,7 @@ program
           else analyzeOptions.twelvelabsKey = value;
         }
         analyzeOptions.retryArgv = program.args[0] === "analyze" ? program.args : process.argv.slice(2);
-        for (const line of disclosure(plan)) process.stderr.write(line+"\n");
+        for (const line of disclosure(plan,analyzeOptions.recipe.twelveLabsSegments)) process.stderr.write(line+"\n");
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
         // @types/bun 1.4.0 drops Node's signal overloads from process.on/off;
@@ -395,7 +400,7 @@ program
           const execution = {
             routeDisclosed:true, includeTokenUsage: true,
             signal: cancellation.signal,
-            onFailurePublished(directory: string) { failureFolder = directory; },
+            onFailurePublished(directory: string, manifest:NonNullable<typeof failedRun>) { failureFolder = directory; failedRun = manifest; },
             progress: {
               report(event: AnalysisProgressEvent) {
                 stage = event.stage;
@@ -410,9 +415,7 @@ program
             // model exactly as the analyzer does, and map operator-authored
             // custom recipe IDs to the closed "custom" bucket (ADR 0022 —
             // operator-authored strings never leave the process).
-            const resolvedModel = analyzeOptions.model
-              ?? applicationSetting("GEMINI_MODEL")
-              ?? DEFAULT_GEMINI_MODEL;
+            const resolvedModel = plan.planned.grader.model!;
             const builtInRecipe = listBuiltInRecipes()
               .some((recipe) => recipe.id === analyzeOptions!.recipe.id);
             try {
@@ -421,7 +424,7 @@ program
                 name: "analyze run",
                 attributes: {
                   "gen_ai.operation.name": "invoke_agent",
-                  "gen_ai.provider.name": "google_genai",
+                  "gen_ai.provider.name": plan.planned.grader.engine === "gemini" ? "google_genai" : "twelvelabs",
                   "gen_ai.request.model": resolvedModel,
                   "frame_of_mind.recipe_id": builtInRecipe
                     ? analyzeOptions.recipe.id
@@ -491,6 +494,8 @@ program
         if (flags.json && failureFolder) {
           throw new CliError(faultCode(error), "Analysis failed.", {
             ...(error instanceof CliError && error.details), runFolder: resolve(failureFolder),
+            ...(failedRun?.enginePlan && {enginePlan:failedRun.enginePlan,engineCalls:failedRun.engineCalls}),
+            ...(failedRun?.library && {library:failedRun.library,indexWait:failedRun.indexWait}),
           });
         }
         if (!analyzeOptions && error instanceof OptionError) {

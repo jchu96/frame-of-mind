@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -67,7 +67,7 @@ async function fixture() {
   const run = (overrides:Record<string,unknown>={}) => new AnalysisOrchestrator(deps).analyze({...options,...overrides},{
     progress:{report:event=>{if(event.message) events.push(event.message)}},
   });
-  return {run,account,events,geminiRequests,candidatesFile,root};
+  return {run,account,events,geminiRequests,candidatesFile,root,video};
 }
 
 it.each([
@@ -97,7 +97,8 @@ it("interrupted-create keeps a lost response unconfirmed across two restarts", a
   const first = await f.run();
   expect(f.account.creates).toHaveLength(1);
   expect(first.manifest).toMatchObject({library:expect.arrayContaining([expect.objectContaining({state:"unconfirmed"})])});
-  for (let i=0;i<2;i++) await f.run({candidatesFile:f.candidatesFile,grader:"gemini"});
+  await f.run({candidatesFile:f.candidatesFile,grader:"gemini"});
+  await f.run();
   expect(f.account.requests.filter(r=>r.method==="POST" && r.path==="/assets")).toHaveLength(1);
   expect(f.account.requests.filter(r=>r.method==="DELETE")).toHaveLength(0);
 });
@@ -221,4 +222,26 @@ it.each(["gemini","twelvelabs"])("claim-is-data, claim-nowhere-else and claim-bo
     expect(prompt).not.toContain("LABEL_FIXTURE");
     if (proposer==="twelvelabs") expect(context).toContain("&amp;".repeat(500));
   }
+});
+
+it("preflights the selected file before sending an oversized recording",async()=>{
+  const f = await fixture();
+  await truncate(f.video,200_000_001);
+  await expect(f.run({proposer:"twelvelabs"})).rejects.toMatchObject({
+    message:expect.stringContaining("shorter time range"),
+    details:{reason:"media-limit",retryWith:expect.arrayContaining(["--proposer","gemini","--grader"])},
+  });
+  expect(f.events.filter(line=>line.startsWith("wire:"))).toEqual([]);
+  const run = await f.run();
+  expect(run.manifest.enginePlan).toMatchObject({reason:"media-limit",used:{proposer:{engine:"gemini"},grader:{engine:"gemini"}}});
+  expect(f.account.requests).toHaveLength(0);
+  expect(f.events.slice(0,f.events.indexOf("wire:gemini")).join(" ")).toContain("shorter time range");
+});
+
+it("maps decimal provider seconds onto exact source-frame boundaries",async()=>{
+  const f = await fixture();
+  f.account.segments[0]!.start_time = 1.12;
+  f.account.segments[0]!.end_time = 2.32;
+  const result = await f.run();
+  expect(result.analysis.items[0]?.proposal).toMatchObject({start:28,end:58});
 });

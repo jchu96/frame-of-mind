@@ -98,8 +98,13 @@ export class RangeClock {
   }
   get cutLength(): bigint | undefined { return this.lengthKnown ? this.to - this.from : undefined; }
   unitsForSeconds(seconds: number, ceil = false) {
-    const den = BigInt(this.grid.rate.den);
-    return (BigInt(seconds) * BigInt(this.grid.rate.num) + (ceil ? den - 1n : 0n)) / den;
+    if (!Number.isFinite(seconds) || seconds < 0) throw new RangeError("Expected finite nonnegative seconds.");
+    const [mantissa, exponent = "0"] = String(seconds).split("e");
+    const [whole, digits = ""] = mantissa!.split(".");
+    const scale = digits.length - Number(exponent);
+    const numerator = BigInt(whole! + digits) * BigInt(this.grid.rate.num) * 10n ** BigInt(Math.max(0,-scale));
+    const denominator = BigInt(this.grid.rate.den) * 10n ** BigInt(Math.max(0,scale));
+    return (numerator + (ceil ? denominator - 1n : 0n)) / denominator;
   }
   elapsed(units: bigint) { return Number(units) * this.grid.rate.den / this.grid.rate.num; }
   get sourceRange() {

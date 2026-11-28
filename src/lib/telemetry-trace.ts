@@ -26,6 +26,8 @@ export type AnalysisSpanOp = (typeof ANALYSIS_SPAN_OPS)[number];
 export const ANALYSIS_SPAN_NAMES = [
   "analyze run",
   "gemini transcribe",
+  "twelvelabs propose",
+  "twelvelabs grade",
   "gemini index",
   "gemini interrogate",
   "stage transcribe",
@@ -70,7 +72,7 @@ export const BUILT_IN_RECIPE_TRACE_IDS = [
 
 export const TRACE_ATTRIBUTE_VALIDATORS = {
   "gen_ai.operation.name": oneOf("chat", "invoke_agent"),
-  "gen_ai.provider.name": oneOf("google_genai"),
+  "gen_ai.provider.name": oneOf("google_genai","twelvelabs"),
   "gen_ai.request.model": modelId,
   "gen_ai.usage.input_tokens": nonNegativeInt,
   "gen_ai.usage.output_tokens": nonNegativeInt,

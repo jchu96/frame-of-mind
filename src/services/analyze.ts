@@ -99,7 +99,7 @@ import { extractScreenshot } from "./screenshots.js";
 import { buildContactSheet, CONTACT_SHEET_MAX_TILES } from "./contact-sheet.js";
 import { buildTimes, renderClockTime, writeArtifacts, writeFailureManifest } from "./artifacts.js";
 import { extractDetailStills, unavailableStillWarning, unreadScreenTextWarning } from "./detail-stills.js";
-import { secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
+import { clipWindow, secondsToTimestamp, timestampToSeconds } from "../lib/time.js";
 import { mapWithConcurrency } from "../lib/concurrency.js";
 import {
   analysisOutcomeSchema,
@@ -258,7 +258,7 @@ export interface AnalyzeExecutionOptions {
   /** The job caller supplies a fresh private directory inside its output grant. */
   jobScratchRoot?: string;
   /** Called after the failure manifest has been atomically published. */
-  onFailurePublished?: (directory: string) => void;
+  onFailurePublished?: (directory: string, manifest:RunFailureManifest) => void;
   signal?: AbortSignal;
   progress?: AnalysisProgressReporter;
   projection?: AnalysisProjectionPublisher;
@@ -344,6 +344,12 @@ export interface AnalysisEnginePorts {
   grade: AnalysisVideoAnalyzer["interrogate"];
 }
 
+type WithoutMedia<T extends unknown[]> = T extends [unknown,...infer Args] ? Args : never;
+/** A run binds each adapter to its own selected media before either role is invoked. */
+export interface RecordingEngine {
+  propose(...args:WithoutMedia<Parameters<AnalysisVideoAnalyzer["index"]>>):ReturnType<AnalysisEnginePorts["propose"]>;
+  grade(...args:WithoutMedia<Parameters<AnalysisVideoAnalyzer["interrogate"]>>):Promise<AnalysisDetail>;
+}
 export interface AnalysisOrchestratorDependencies {
   createContextSource(options: ContextEnrichedAnalyzeOptions): MeetingContextSource;
   createEngines?(apiKey: string, options: AnalyzeOptions): AnalysisEnginePorts;
@@ -425,7 +431,7 @@ export class AnalysisOrchestrator {
       ...(options.candidatesFile ? ["--candidates",options.candidatesFile] : [])];
     if (!options.video) checkDirectUpload(plan, undefined, retryArgv);
     const tellRoute = (message: string) => report(progress, {kind:"stage",stage:"fetching_context",message});
-    if (!execution.routeDisclosed) for (const line of disclosure(plan)) await tellRoute(line);
+    if (!execution.routeDisclosed) for (const line of disclosure(plan,options.recipe.twelveLabsSegments)) await tellRoute(line);
     if (plan.reason) await tellRoute(fallbackMessage(plan.reason));
     const settings = options.snapSettings && snapSettings(options.snapSettings.gapMs, options.snapSettings.windowMs);
     const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
@@ -621,7 +627,7 @@ export class AnalysisOrchestrator {
       const gradedBy = {engine,model};
       if (options.calibrate !== false && route.proposer.engine !== "twelvelabs" && analyzer?.probeClipClock) {
         const measured: Calibration = await this.calibrate({
-          model: runModel,
+          model: analyzer.model,
           upload: (path, mime) => { preparing = undefined; return analyzer.upload(path, mime); },
           probeClipClock: (file) => analyzer.probeClipClock!(file),
           delete: (file) => analyzer.delete(file),
@@ -879,6 +885,18 @@ export class AnalysisOrchestrator {
         });
       };
       const geminiFile = () => uploading ??= uploadGemini().then(file=>(remote=file));
+      const adapters:Partial<Record<"gemini"|"twelvelabs",RecordingEngine>> = {};
+      if (engines) adapters.gemini = {
+        propose:async (...args)=>engines.propose(sourceClock,recordingSha256,await geminiFile(),...args),
+        grade:async (...args)=>engines.grade(await geminiFile(),...args),
+      };
+      if (twelve) adapters.twelvelabs = twelve;
+      const adapterFor = (role:"proposer"|"grader") => {
+        const engine = plan.used![role].engine;
+        const adapter = (engine === "gemini" || engine === "twelvelabs") && adapters[engine];
+        if (!adapter) throw new ContractError("CAPABILITY_MISSING","Selected engine is unavailable.",{engine});
+        return adapter;
+      };
       try {
         if (plan.used!.proposer.engine === "gemini" || (fileRows && route.grader.engine === "gemini")) await geminiFile();
       } catch (error) {
@@ -925,7 +943,7 @@ export class AnalysisOrchestrator {
           await writeFailureManifest(stagingDirectory, failure);
           await rename(stagingDirectory, outputDirectory);
           stagingDirectory = undefined;
-          execution.onFailurePublished?.(outputDirectory);
+          execution.onFailurePublished?.(outputDirectory,failure);
         } catch {
           await reportWarning(progress, {
             kind: "warning",
@@ -961,16 +979,15 @@ export class AnalysisOrchestrator {
           clock.transcriptWindow = window.windowed ? "windowed" : "not-windowed";
           if (!window.windowed) await reportWarning(progress, { kind: "warning", stage: "indexing", message: "transcript not windowed: timestamped lines, a known video duration, and exact millisecond alignment are required." });
         }
-        const geminiPropose = () => tracer.span({
+        const proposeOnce = () => tracer.span({
           op: "gen_ai.chat",
-          name: "gemini index",
-          attributes: chatAttributes,
+          name: plan.used!.proposer.engine === "gemini" ? "gemini index" : "twelvelabs propose",
+          attributes: {...chatAttributes,"gen_ai.provider.name":plan.used!.proposer.engine === "gemini" ? "google_genai" : "twelvelabs","gen_ai.request.model":plan.used!.proposer.model!},
         }, async (span) => {
           const usageBefore = usageCountsOf(analyzer);
           try {
             const hints: [notes?: readonly RunNote[], ranged?: boolean] = ranged ? [options.runNotes, true] : options.runNotes?.length ? [options.runNotes] : [];
-            const indexed = await engines!.propose(sourceClock, recordingSha256,
-              await geminiFile(),
+            const indexed = await adapterFor("proposer").propose(
               indexMeeting,
               options.recipe,
               options.focus,
@@ -988,17 +1005,17 @@ export class AnalysisOrchestrator {
         });
         const propose = async () => {
           const window:[number,number|null] = [0,duration ?? null];
-          if (plan.used!.proposer.engine === "gemini") return measured("proposer",window,geminiPropose);
+          if (plan.used!.proposer.engine === "gemini") return measured("proposer",window,proposeOnce);
           try {
             preparing = undefined;
-            return await measured("proposer",window,()=>twelve!.propose(options.recipe,options.focus));
+            return await measured("proposer",window,proposeOnce);
           } catch (error) {
             const reason = error instanceof ContractError && engineReason.safeParse(error.details?.reason).data;
             if (!reason || execution.signal?.aborted) throw error;
             if (!defaultDualRoute(plan)) throw new ContractError(error.code,error.message,{...error.details,retryWith:geminiRetry(retryArgv,false)});
             fallbackPlan(plan,reason);
             await tellRoute(fallbackMessage(reason));
-            return measured("proposer",window,geminiPropose);
+            return measured("proposer",window,proposeOnce);
           }
         };
         const proposed = fileRows ? undefined : await propose();
@@ -1108,9 +1125,9 @@ export class AnalysisOrchestrator {
             assertNotCanceled(execution.signal);
             const result = await tracer.span({
               op: "gen_ai.chat",
-              name: "gemini interrogate",
+              name: engine === "gemini" ? "gemini interrogate" : "twelvelabs grade",
               attributes: {
-                ...chatAttributes,
+                ...chatAttributes,"gen_ai.provider.name":engine === "gemini" ? "google_genai" : "twelvelabs",
                 "frame_of_mind.candidate_ordinal": indexNumber + 1,
               },
             }, async (span) => {
@@ -1119,9 +1136,14 @@ export class AnalysisOrchestrator {
               const usageBefore = detailConcurrency === 1 ? usageCountsOf(analyzer) : undefined;
               try {
                 const row = proposalsByWindow.get(candidate)!;
-                const grade = async (...args:Parameters<TwelveLabs["grade"]>) => engine === "twelvelabs"
-                  ? twelve!.grade(...args) : engines!.grade(await geminiFile(),...args);
-                const detail = await measured("grader",[timestampToSeconds(candidate.start),timestampToSeconds(candidate.end)],()=>grade(
+                const window = engine === "gemini" ? clipWindow(candidate.start,candidate.end) :
+                  {start:timestampToSeconds(candidate.start),end:timestampToSeconds(candidate.end)};
+                if (engine === "gemini" && ranged && clock.modelClipClock === "unverified") {
+                  window.start = 0;
+                  window.end = duration!;
+                }
+                if (duration !== undefined) window.end = Math.min(window.end,duration);
+                const detail = await measured("grader",[window.start,window.end],()=>adapterFor("grader").grade(
                   {start:candidate.start, end:candidate.end, ...(options.withholdGraderClaim ? {summary:"",withheld:true} : {summary:row.reason || row.label, surface:row.surface})},
                   effectiveTranscript && (alignment || transcriptIsDerived)
                     ? nearbyTranscript(
@@ -1689,7 +1711,7 @@ export class AnalysisOrchestrator {
             await writeFailureManifest(stagingDirectory, failure);
             await rename(stagingDirectory, outputDirectory);
             stagingDirectory = undefined;
-            execution.onFailurePublished?.(outputDirectory);
+            execution.onFailurePublished?.(outputDirectory,failure);
           } catch {
             await reportWarning(progress, {
               kind: "warning",

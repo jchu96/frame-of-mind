@@ -321,7 +321,8 @@ describe("original-language transcription", () => {
 
   it.each([undefined, "fr-ca"])("captures analyze-derived windows, calibration, index and detail for hint %s", async transcriptLanguage => {
     const f = await fixture(900);
-    const candidate = { start: "00:09:58", end: "00:10:03", kind: "test", summary: "Synthetic", importance: "low" };
+    const candidate = { start: "00:09:58", end: "00:10:03", kind: "test", summary: "Synthetic", importance: "low",
+      proposal: {label:"test", reason:"Synthetic", basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000}} };
     const { analyzer, requests } = capture({ seconds: 27 }, ...windows,
       { matchNotes: "Synthetic", moments: [candidate] },
       { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic", evidence: { timestamp: candidate.start } },
@@ -433,7 +434,8 @@ describe("original-language transcription", () => {
     const service = await import("../src/services/analyze.js");
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const candidate = { start: "00:00:02", end: "00:00:04", kind: "test", summary: "Synthetic", importance: "low" };
+    const candidate = { start: "00:00:02", end: "00:00:04", kind: "test", summary: "Synthetic", importance: "low",
+      proposal: {label:"test", reason:"Synthetic", basis:{start:"model",end:"model"},precisionMs:{start:1000,end:1000}} };
     const detail = { accepted: true, kind: "test", title: "Synthetic", summary: "Synthetic" };
     for (const retention of ["provider", "run"]) {
       const f = await fixture(10);
