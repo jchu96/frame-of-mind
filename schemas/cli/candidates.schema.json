@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Candidates on the original recording clock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "recording", "candidates"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "recording": {"$ref": "#/definitions/recording"},
+    "candidates": {"type": "array", "items": {"$ref": "#/definitions/candidate"}}
+  },
+  "definitions": {
+    "count": {"type":"integer","minimum":0,"maximum":9007199254740991},
+    "positive": {"type":"integer","minimum":1,"maximum":9007199254740991},
+    "index": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"},
+    "digest": {"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "ratio": {
+      "description":"Numerator and denominator must be coprime.",
+      "type":"object","additionalProperties":false,"required":["num","den"],
+      "properties":{"num":{"$ref":"#/definitions/positive"},"den":{"$ref":"#/definitions/positive"}}
+    },
+    "recording": {"oneOf":[
+      {"type":"object","additionalProperties":false,"required":["unit","rate","length","recordingSha256"],
+       "properties":{"unit":{"enum":["video-frame","sample"]},"rate":{"$ref":"#/definitions/ratio"},
+                     "length":{"$ref":"#/definitions/index"},"recordingSha256":{"$ref":"#/definitions/digest"}}},
+      {"type":"object","additionalProperties":false,"required":["unit","tick","length","recordingSha256"],
+       "properties":{"unit":{"const":"tick"},"tick":{"$ref":"#/definitions/ratio"},
+                     "length":{"anyOf":[{"$ref":"#/definitions/index"},{"type":"null"}]},"recordingSha256":{"$ref":"#/definitions/digest"}}}
+    ]},
+    "actor":{"type":"object","additionalProperties":false,"required":["engine","model"],
+             "properties":{"engine":{"type":"string"},"model":{"type":["string","null"]}}},
+    "basis":{"enum":["model","word","shot","speech","person","search-hit"]},
+    "pass":{
+      "type":"object","additionalProperties":false,"required":["pass","edge","at","precisionMs","basis","by"],
+      "properties":{"pass":{"$ref":"#/definitions/positive"},"edge":{"enum":["start","end"]},
+        "at":{"$ref":"#/definitions/count"},"precisionMs":{"$ref":"#/definitions/positive"},
+        "basis":{"$ref":"#/definitions/basis"},"by":{"$ref":"#/definitions/actor"}}
+    },
+    "candidate":{
+      "type":"object","additionalProperties":false,
+      "required":["id","start","end","precisionMs","basis","label","reason","proposedBy","chain"],
+      "properties":{
+        "id":{"type":"string","minLength":1},"start":{"$ref":"#/definitions/count"},"end":{"$ref":"#/definitions/count"},
+        "precisionMs":{"type":"object","additionalProperties":false,"required":["start","end"],
+          "properties":{"start":{"$ref":"#/definitions/positive"},"end":{"$ref":"#/definitions/positive"}}},
+        "basis":{"type":"object","additionalProperties":false,"required":["start","end"],
+          "properties":{"start":{"$ref":"#/definitions/basis"},"end":{"$ref":"#/definitions/basis"}}},
+        "label":{"type":"string"},"reason":{"type":"string"},"proposedBy":{"$ref":"#/definitions/actor"},
+        "score":{"type":"number"},"definition":{"type":"string"},"searchPhrase":{"type":"string"},
+        "chain":{"type":"array","items":{"$ref":"#/definitions/pass"}}
+      }
+    }
+  }
+}

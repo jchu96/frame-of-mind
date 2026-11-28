@@ -1,3 +1,7 @@
+import { z } from "zod";
+import { actorSchema, candidateSchema } from "../../../../src/domain/candidates.js";
+import { itemProvenance, proposalEdgesSchema } from "../../../../src/domain/proposal-edges.js";
+import { enginePlanSchema, engineItemsSchema } from "../../../../src/domain/engine-plan.js";
 import { runClockSchema } from "../../../../src/domain/clock.js";
 import { rangeFields } from "../../../../src/domain/range-fields.js";
 import { boundSchema, exactSpanSchema } from "../../../../src/domain/source-bound.js";
@@ -8,13 +12,19 @@ function optional<T>(value: T | undefined, key: string): Record<string, T> {
   return value === undefined ? {} : { [key]: value };
 }
 
+const itemFields = z.object(itemProvenance);
+const failureFields = z.object({candidateId:z.string().optional(),proposedBy:actorSchema.optional(),gradedBy:actorSchema.nullable().optional(),
+  proposal:candidateSchema.optional(),proposalEdges:proposalEdgesSchema.optional()});
+
 function allowlistedItem(item: AnalysisItem) {
   return {
+    ...itemFields.parse(item),
     ...(item.exactStillTimes && {exactStillTimes:item.exactStillTimes.map(b => boundSchema.parse(b))}),
     ...(item.screenshotExactTime && {screenshotExactTime:boundSchema.parse(item.screenshotExactTime)}),
     ...(item.stillTimes ? { stillTimes: [...item.stillTimes] } : {}),
     ...optional(item.screenTextNotFromStill, "screenTextNotFromStill"),
     candidate: {
+      ...(item.candidate.proposalEdges && {proposalEdges:proposalEdgesSchema.parse(item.candidate.proposalEdges)}),
       ...(item.candidate.exactSpan && {exactSpan:exactSpanSchema.parse(item.candidate.exactSpan)}),
       start: item.candidate.start,
       end: item.candidate.end,
@@ -90,6 +100,8 @@ function allowlistedManifest(run: StoredRun) {
   const manifest = run.manifest;
   const base = {
     ...rangeFields.strip().parse(manifest),
+    ...(manifest.enginePlan && {enginePlan:enginePlanSchema.parse(manifest.enginePlan)}),
+    ...(manifest.engineItems && {engineItems:engineItemsSchema.parse(manifest.engineItems)}),
     ...(manifest.clock && {clock:runClockSchema.parse(manifest.clock)}),
     schemaVersion: manifest.schemaVersion,
     toolVersion: manifest.toolVersion,
@@ -104,6 +116,8 @@ function allowlistedManifest(run: StoredRun) {
       revision: manifest.recipe.revision,
       sha256: manifest.recipe.sha256,
     },
+    ...optional(manifest.label,"label"),
+    ...optional(manifest.thinkingLevel,"thinkingLevel"),
     model: manifest.model,
     recordingSha256: manifest.recordingSha256,
     analysisSha256: manifest.analysisSha256,
@@ -166,7 +180,7 @@ function allowlistedOutcome(run: StoredRun) {
   // and the allowlist keeps it that way if the contract ever grows.
   return {
     outcome: {
-      failures: outcome.failures.map(f => ({candidateOrdinal:f.candidateOrdinal,start:f.start,end:f.end,code:f.code,attempts:f.attempts,
+      failures: outcome.failures.map(f => ({...failureFields.parse(f),candidateOrdinal:f.candidateOrdinal,start:f.start,end:f.end,code:f.code,attempts:f.attempts,
         ...(f.issues && {issues:f.issues.map(({path,code}) => ({path,code}))}), ...("exactSpan" in f && {exactSpan:exactSpanSchema.parse(f.exactSpan)})})),
       schemaVersion: outcome.schemaVersion,
       runId: outcome.runId,

@@ -1,3 +1,4 @@
+import { checkRoles, enginePlan, type EngineItems } from "../domain/engine-plan.js";
 import { recordingIdentity, readCandidates, type Candidate } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
 import { measurementWindow, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
@@ -122,6 +123,8 @@ const TRANSCRIPTION_WINDOW_RETRY_MS = 20_000;
 
 interface AnalyzeOptionsBase extends RangeRequest {
   candidatesFile?: string;
+  proposer?: string;
+  grader?: string;
   snapSettings?: SnapSettings;
   timelineOffset?: string;
   timecodeRate?: string;
@@ -387,6 +390,7 @@ export class AnalysisOrchestrator {
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
+    checkRoles(options, options.candidatesFile !== undefined, options.recipe.engines);
     const settings = options.snapSettings && snapSettings(options.snapSettings.gapMs, options.snapSettings.windowMs);
     const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
     const ranged = isRanged(options);
@@ -493,6 +497,9 @@ export class AnalysisOrchestrator {
         line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio) => {
       const receipt = preparing?.receipt ?? resolved(sourceClock);
       const recording = recordingIdentity(sourceClock, recordingSha256);
+      if (sourceClock.grid.unit === "ticks" && !sourceClock.lengthKnown && sourceClock.observedEnd === undefined) {
+        throw new ContractError("INVALID_INPUT", "The stream has no timestamps.");
+      }
       const fileRows = options.candidatesFile === undefined ? undefined :
         readCandidates(await loadCandidatesFile(options.candidatesFile), recording, "file", sourceClock.observedEnd);
       const uploadedCutSha256 = ranged ? await sha256File(localVideo) : undefined;
@@ -520,6 +527,8 @@ export class AnalysisOrchestrator {
       await ensureDirectory(stagingDirectory);
 
       const analyzer = this.createAnalyzer(options.apiKey, options);
+      const plan = enginePlan({...options,file:!!fileRows,recipe:options.recipe.engines, model:analyzer.model,
+        retention:options.retention ?? (options.keepUpload ? "provider" : "run"),available:true,preview:false});
       if (options.calibrate !== false && analyzer.probeClipClock) {
         const measured: Calibration = await this.calibrate({
           model: analyzer.model,
@@ -791,6 +800,7 @@ export class AnalysisOrchestrator {
         const failure = runFailureManifestSchema.parse({
           ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}),
           schemaVersion: 1,
+          enginePlan:plan,
           toolVersion: VERSION,
           runId,
           status: "failed",
@@ -1361,7 +1371,20 @@ export class AnalysisOrchestrator {
           receipt.cover(boundIndex(candidate.exactSpan!.start),boundIndex(candidate.exactSpan!.endExclusive));
         }
         const proseTimeUnverified = runProseTime || (ranged && items.some(i => i.result.confidenceNotes?.includes(proseTimeNote)));
+        const itemById = new Map(items.map(item => [item.candidateId,item]));
+        const engineItems: EngineItems = candidates.map(window => {
+          const row = proposalsByWindow.get(window)!;
+          const item = itemById.get(row.id);
+          const state = (edge: "start" | "endExclusive") => {
+            if (!item?.resolvedEdges) return "failed";
+            const origin = item.resolvedEdges[edge].bound.origin;
+            return origin === "snap" ? "snapped" : origin === "cut" ? "cut" : "claim";
+          };
+          return {candidateId:row.id,proposedBy:row.proposedBy,gradedBy:{engine:"gemini",model:analyzer.model},
+            edges:{start:state("start"),end:state("endExclusive")}};
+        });
         const manifestBase = {
+          enginePlan:plan, engineItems,
           ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}), ...(proseTimeUnverified && {proseTimeUnverified:true as const}),
           ...(tokenUsage && { tokenUsage }),
           clock,
@@ -1502,6 +1525,7 @@ export class AnalysisOrchestrator {
         const failure = runFailureManifestSchema.parse({
           ...receipt.document(), ...(uploadedCutSha256 && {uploadedCutSha256}),
           schemaVersion: 1,
+          enginePlan:plan,
           toolVersion: VERSION,
           runId,
           status: "failed",

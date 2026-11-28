@@ -1,3 +1,4 @@
+import { checkRoles, enginePlan } from "./domain/engine-plan.js";
 import { rangeFields } from "./domain/range-fields.js";
 import { rangeUsage } from "./domain/range-clock.js";
 import { isRanged } from "./services/source-recording.js";
@@ -102,6 +103,9 @@ export interface AnalyzeCliFlags {
   output: string;
   maxMoments: string;
   candidates?: string;
+  proposer?: string;
+  grader?: string;
+  dryRun?: boolean;
   screenshots: boolean;
   keepUpload?: boolean;
   deleteUpload?: boolean;
@@ -166,6 +170,8 @@ program
       writeDocument({
         ok: checks.every(check => !check.required || check.ok), checks, commands: media.commands.map(({ command: name, capabilities }) => ({ name, capabilities })), leftovers,
         roots: { mode: "none", file: null },
+        enginePlan:enginePlan({file:false,model:applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL,
+          retention:resolveRetention({},applicationSetting("FRAME_OF_MIND_UPLOAD_RETENTION")),available:key.present,preview:true}),
         key, settingsPath, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
         commit: RELEASE_COMMIT,
         cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
@@ -286,6 +292,9 @@ program
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .addOption(new Option("--thinking-level <level>", "Gemini thinking level (default: provider setting)").choices(THINKING_LEVELS))
   .option("-o, --output <directory>", "Artifact root")
+  .option("--proposer <engine>", "Engine that proposes candidate moments (gemini)")
+  .option("--grader <engine>", "Engine that grades candidate windows (gemini)")
+  .option("--dry-run", "Preview the analysis route without a provider request")
   .option("--candidates <file>", "Grade a candidates document on the original recording clock")
   .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
@@ -310,7 +319,19 @@ program
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
         if (isRanged(flags) && flags.remoteFile) rangeUsage("A range cannot reuse a remote file.");
-        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, await cliSettings().providerKey());
+        checkRoles(flags, flags.candidates !== undefined);
+        const config = cliSettings();
+        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, flags.dryRun ? undefined : await config.providerKey());
+        if (flags.dryRun) {
+          const plan = enginePlan({...flags,file:flags.candidates !== undefined, recipe:analyzeOptions.recipe.engines,
+            model:analyzeOptions.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL),
+            retention:analyzeOptions.retention!,available:config.keyReport().present,preview:true});
+          writeDocument({enginePlan:plan});
+          return;
+        }
+        process.stderr.write(flags.candidates !== undefined
+          ? "Gemini grades selected video, windows, stills and scoped context. Candidates come from the file.\n"
+          : "Gemini proposes on selected video and grades windows, stills and scoped context.\n");
         process.stderr.write(`retention: ${analyzeOptions.retention}\n`);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
@@ -384,6 +405,7 @@ program
           const tokens = measuredTotal(result.manifest.tokenUsage);
           writeDocument({
             ...rangeFields.strip().parse(result.manifest),
+            enginePlan:result.manifest.enginePlan,
             runFolder: resolve(result.directory),
             retention: analyzeOptions.retention,
             ...(tokens && { tokens }),
@@ -465,7 +487,7 @@ export async function buildAnalyzeOptions(
   const integer = (text?: string) => text === undefined ? undefined : /^\d+$/.test(text) && text.trim() === text ? Number(text) : NaN;
   const settings = snapSettings(integer(flags.snapGapMs), integer(flags.snapWindowMs));
   const transcriptLanguage = resolveTranscriptLanguage(flags.transcriptLanguage, flags.derivedTranscript);
-  if (!apiKey) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before analysis.");
+  if (!apiKey && !flags.dryRun) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before analysis.", {engine:"gemini"});
   const retention = resolveRetention(flags, applicationSetting("FRAME_OF_MIND_UPLOAD_RETENTION"));
   const runNotes = await loadRunNotes(flags.note);
   const labelResult = flags.label === undefined ? undefined : runLabelSchema.safeParse(flags.label.trim());
@@ -545,7 +567,7 @@ export async function buildAnalyzeOptions(
     customRecipe: recipeResult.custom,
     recipeSha256: recipeResult.sha256,
     recipeRevision: recipeResult.revision,
-    apiKey,
+    apiKey: apiKey ?? "",
     ...(model ? { model } : {}),
     ...(flags.thinkingLevel && { thinkingLevel: flags.thinkingLevel }),
     ...(flags.focus ? { focus: flags.focus } : {}),
@@ -554,6 +576,8 @@ export async function buildAnalyzeOptions(
     indexFps: recipeResult.indexFps,
     outputRoot: flags.output ?? defaultOutputRoot(),
     maxIncidents,
+    ...(flags.proposer !== undefined && {proposer:flags.proposer}),
+    ...(flags.grader !== undefined && {grader:flags.grader}),
     ...(flags.candidates !== undefined && {candidatesFile: flags.candidates}),
     detailConcurrency,
     screenshots: flags.screenshots,

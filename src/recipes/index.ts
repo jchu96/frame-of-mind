@@ -1,3 +1,4 @@
+import { recipeRolesSchema } from "../domain/engine-plan.js";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -5,6 +6,7 @@ import type { AnalysisRecipe, BuiltInRecipeId, RecipeCharter } from "../domain/t
 import { sha256Utf8 } from "../domain/integrity.js";
 
 const instructionRecipeSchema = z.object({
+  engines: recipeRolesSchema.optional(),
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/),
   label: z.string().min(1).max(100),
   description: z.string().min(1).max(500),
@@ -34,6 +36,7 @@ const charterSchema = z.object({
 }).strict();
 
 const charterRecipeSchema = z.object({
+  engines: recipeRolesSchema.optional(),
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/),
   label: z.string().min(1).max(100),
   description: z.string().min(1).max(500),
@@ -116,6 +119,7 @@ function compileCharterRecipe(
   }
   return {
     id: parsed.id,
+    ...(parsed.engines && {engines:parsed.engines}),
     label: parsed.label,
     description: parsed.description,
     indexInstruction,
@@ -334,7 +338,7 @@ function canonicalize(value: unknown): unknown {
 export function digestRecipe(recipe: AnalysisRecipe): Promise<string> {
   // A charter recipe digests its full nested source; the historical shallow
   // replacer is preserved for instruction recipes so their hashes are stable.
-  const canonical = recipe.charter
+  const canonical = recipe.charter || recipe.engines
     ? JSON.stringify(canonicalize(recipe))
     : JSON.stringify(recipe, Object.keys(recipe).sort());
   return sha256Utf8(canonical);

@@ -1,3 +1,4 @@
+import type { EnginePlan, EngineItems } from "./engine-plan.js";
 import type { Actor, Candidate } from "./candidates.js";
 import type { ProposalEdges, ResolvedEdges } from "./proposal-edges.js";
 import type { Bound, ExactSpan } from "./source-bound.js";
@@ -51,6 +52,7 @@ export interface RecipeCharter {
 }
 
 export interface AnalysisRecipe {
+  engines?: {proposer?:string; grader?:string};
   id: string;
   label: string;
   description: string;
@@ -213,6 +215,8 @@ interface RunManifestBase extends RangeFields {
   model: string;
   thinkingLevel?: ThinkingLevel;
   recordingSha256: string;
+  enginePlan?: EnginePlan;
+  engineItems?: EngineItems;
   analysisSha256: string;
   recordingMimeType: string;
   mediaSource: "bluedot-mcp" | "signed-url" | "local-file";
