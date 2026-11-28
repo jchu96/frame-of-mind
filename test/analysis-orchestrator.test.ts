@@ -2776,6 +2776,35 @@ describe("speech proposals at publication", () => {
       expect.objectContaining({ pointer: "/items/0/candidate/end", snap: expect.objectContaining({ target: expect.objectContaining({ seconds: "20.400" }) }) }),
     ]));
   });
+  it("publishes each measured edge's precision in its exact source bound", async () => {
+    const { execute, f, decodeSpeechEnvelope } = await setup(["00:00:20"]);
+    const index = indexResult();
+    f.analyzer.index.mockResolvedValue({ ...index, moments: [{ ...index.moments[0]!, start: "00:00:20", end: "00:00:22" }] });
+    const blocks = Array.from({ length: 3 }, () => new Float32Array(1000).fill(-60));
+    // The chosen start is clean and its alternative is noisy. The end has the reverse.
+    blocks[1]!.fill(-34, 900, 930);
+    blocks[2]!.fill(-16, 10, 40).fill(-34, 180, 210).fill(-16, 260, 290);
+    decodeSpeechEnvelope.mockResolvedValue({ blocks, startMs: 0, length: 3000 });
+    const run = await execute("mixed-precision", true);
+    const read = async (name: string) => JSON.parse(await readFile(join(run.directory, name), "utf8"));
+    const { versionedAnalysisRunSchema } = await import("../src/domain/schemas.js");
+    const { timesSchema } = await import("../src/domain/times.js");
+    const analysis = versionedAnalysisRunSchema.parse(await read("analysis.json"));
+    expect(analysis.schemaVersion).toBe(5);
+    const times = timesSchema.parse(await read("times.json"));
+    const snap = (edge: string) => {
+      const entry = times.entries.find(e => e.pointer === "/items/0/candidate/" + edge);
+      if (!entry || !("snap" in entry) || entry.snap.status !== "snapped") throw new Error("Missing measured " + edge);
+      return entry.snap;
+    };
+    expect(snap("end").target).toMatchObject({ seconds: "22.100", precisionMs: 300 });
+    expect(snap("end").exactTime).toMatchObject({ origin: "snap", precisionMs: 300 });
+    expect(snap("start")).toMatchObject({
+      target: { seconds: "20.100", precisionMs: 200 }, exactTime: { origin: "snap", precisionMs: 200 },
+      alternativesMs: [19000], exactAlternatives: [{ origin: "snap", precisionMs: 300 }],
+    });
+    expect(snap("end")).toMatchObject({ alternativesMs: [22900], exactAlternatives: [{ origin: "snap", precisionMs: 200 }] });
+  });
   it("W8 decoder failure warns once, returns all unavailable and permits empty schema 3 runs", async () => {
     const { execute, events, f, decodeSpeechEnvelope } = await setup();
     decodeSpeechEnvelope.mockRejectedValue(new Error("synthetic decode failure"));
