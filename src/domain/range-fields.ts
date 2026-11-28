@@ -5,7 +5,17 @@ import { rateSchema } from "./media-clock.js";
 const pair = z.tuple([indexSchema,indexSchema]).refine(([a,b]) =>
   indexSchema.safeParse(a).success && indexSchema.safeParse(b).success && BigInt(a) < BigInt(b), "Expected a positive source span.");
 const fragment = z.strictObject({kind:z.enum(["moment","cue"]),state:z.enum(["clipped","unknown"]),exactSpan:exactSpanSchema});
+const share = z.number().min(0).max(1);
+const frameCount = z.number().int().nonnegative();
+const frameTiming = z.union([
+  z.strictObject({varying: z.boolean(), frames: frameCount.min(3), averageFramesPerSecond: z.number().nonnegative(),
+    rates: z.array(z.strictObject({framesPerSecond: z.number().nonnegative(), gapMs: z.number().nonnegative(), share})).min(1),
+    oddGaps: frameCount, oddShare: share}),
+  z.strictObject({varying: z.null(), frames: frameCount.nullable(),
+    unread: z.enum(["too few frames", "no picture", "frames with no time", "scan limit", "unavailable"]), untimedFrames: frameCount.optional()}),
+]);
 export const rangeFields = z.strictObject({
+  frameTiming,
   requestedRange:z.strictObject({from:z.string().nullable(),to:z.string().nullable()}),
   sourceRange:z.discriminatedUnion("unit", [
     z.strictObject({unit:z.literal("frames"),fromFrame:indexSchema,toFrameExclusive:indexSchema,rate:rateSchema}),

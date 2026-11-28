@@ -25,8 +25,10 @@ const file = mediaFixtures(() => {
       "-c:v", "libx264", "-pix_fmt", "yuv420p", "-x264-params", "keyint=24:min-keyint=24:scenecut=0:bframes=3:b-adapt=0:open-gop=0",
       "-c:a", "pcm_s16le", "-f", "mp4", "-movflags", "+negative_cts_offsets", "-use_editlist", "0", file(name + ".mp4")], frames);
   }
-  media("ffmpeg", ["-f", "lavfi", "-i", "color=size=112x32:rate=25:duration=0.16", "-vf", "select=not(eq(n\\,2))",
-    "-fps_mode", "vfr", "-c:v", "libx264", "-bf", "0", "-video_track_timescale", "1000", file("varying.mp4")]);
+  for (const [name, duration] of [["varying.mp4", "0.16"], ["two-gaps.mp4", "0.28"]]) {
+    media("ffmpeg", ["-f", "lavfi", "-i", `color=size=112x32:rate=25:duration=${duration}`, "-vf", "select=not(eq(mod(n\\,3)\\,2))",
+      "-fps_mode", "vfr", "-c:v", "libx264", "-bf", "0", "-video_track_timescale", "1000", file(name!)]);
+  }
   media("ffmpeg", ["-i", file("pal.mp4"), "-map", "0:v:0", "-c", "copy", "-use_editlist", "1", file("edited.mp4")]);
   media("ffmpeg", ["-i", file("pal.mp4"), "-map", "0:v:0", "-c:v", "mpeg4", file("mpeg4.mp4")]);
   media("ffmpeg", ["-i", file("ntsc.mp4"), "-map", "0:v:0", "-c:v", "libx264", "-x264-params",
@@ -121,6 +123,8 @@ test.each([["pal.mp4", "25f", "51f", "50", "51"], ["ntsc.mp4", "31f", "62f", "60
       })});
     await expect(stat(upload)).rejects.toMatchObject({code:"ENOENT"});
     const doc = JSON.parse(await readFile(result.paths[2]!, "utf8"));
+    expect(doc.frameTiming).toMatchObject(name === "native.wav" ? {varying: null, frames: 0, unread: "no picture"}
+      : {varying: false, frames: 128, oddGaps: 0});
     const key = name!.endsWith("wav") ? "samples" : "frames";
     expect(doc.segments[0].exactSpan).toMatchObject({start:{[key]:a, origin:"model", support:[a,b]},
       endExclusive:{[key]:b, origin:"cut", precisionMs:0}});
@@ -151,6 +155,7 @@ test("whole silent video keeps the native ticks of pictures at 0, 40 and 120 ms;
 
 test.each([
   ["varying.mp4", "tick", "ticks", 0, 160, false],
+  ["two-gaps.mp4", "tick", "ticks", 0, 280, false],
   ["pal.mp4", "video-frame", "frames", 0, 25, false],
   ["ntsc.mp4", "video-frame", "frames", 0, 30, false],
   ["pal.mp4", "video-frame", "frames", 1, 26, true],
@@ -176,7 +181,19 @@ test.each([
   expect(item.screenshot).toBe(`moment-01-${unit}-${origin}.png`);
   const times = JSON.parse(await readFile(run.directory+"/times.json", "utf8"));
   expect(times.entries.map((e: {exactTime:{unit:string}}) => e.exactTime.unit)).toEqual([unit,unit,unit]);
-  if (unit === "tick") expect(run.manifest.sourceTiming).toMatch(/^(varying|unproven)$/);
+  if (unit === "tick") {
+    expect(run.manifest.sourceTiming).toBeDefined();
+    expect(run.manifest.frameTiming).toMatchObject(name === "two-gaps.mp4" ? {varying: true, frames: 5, oddGaps: 2}
+      : {varying: false, frames: 3, oddGaps: 1});
+  } else {
+    expect(run.manifest.sourceTiming).toBeUndefined();
+    expect(run.manifest.frameTiming).toMatchObject({varying: false, frames: 128, oddGaps: 0});
+  }
+  if (!ranged && name !== "ntsc.mp4") {
+    const probe = mediaHelper("probe", file(name), {});
+    if (unit === "tick") await expect(probe).rejects.toMatchObject({code: "INVALID_RATE", details: {frameTiming: run.manifest.frameTiming}});
+    else await expect(probe).resolves.toMatchObject({frameTiming: run.manifest.frameTiming});
+  }
   const {containerVideoClock} = await import("../src/services/container-clock.js");
   const offline = await containerVideoClock(await localRecording(file(name!)));
   expect(offline?.sourceRange.unit).toBe("ticks");

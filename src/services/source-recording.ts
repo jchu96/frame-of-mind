@@ -6,7 +6,9 @@ import { RangeClock, rangeUsage, type RangeRequest } from "../domain/range-clock
 import { containerVideoClock } from "./container-clock.js";
 import { audioGrid, recordingTracks, runRecordingTool, withAudioRange } from "./audio-range.js";
 import { localRecording } from "./media-tools.js";
-import { measureTiming } from "./media-probe.js";
+import { readPacketTiming } from "./packet-timing.js";
+import type { FrameTiming } from "../domain/frame-timing.js";
+import { measureTiming, timingArguments } from "./media-probe.js";
 import { decodeBudget } from "./range-scan.js";
 import { withVideoRange } from "./video-range.js";
 
@@ -62,11 +64,13 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
   }
   let clock: RangeClock;
   if (tracks.video) {
+    let frameTiming: FrameTiming = {varying: null, frames: null, unread: "unavailable"};
     try {
-      const frames = await runRecordingTool(source, "ffprobe", ["-select_streams", String(tracks.video.index), "-count_frames",
-        "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames,nb_read_frames:frame=pts,duration,pkt_duration",
-        "-of", "json", "fd:"], {signal, timeoutMs:decodeBudget(tracks.seconds)});
-      const {rate, count} = measureTiming(JSON.parse(frames), undefined, true);
+      const scan = await readPacketTiming(() => runRecordingTool(source, "ffprobe",
+        [...timingArguments(String(tracks.video!.index), true), "fd:"], {signal, timeoutMs:decodeBudget(tracks.seconds)}), signal);
+      frameTiming = scan.frameTiming;
+      if (scan.error) throw scan.error;
+      const {rate, count} = measureTiming(scan.data, undefined, true);
       clock = RangeClock.resolve({unit:"frames", rate, length:BigInt(count)}, {});
     }
     catch (error) {
@@ -76,6 +80,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
       if (!timeBase) {
         const native = await containerVideoClock(source);
         if (!native) throw error;
+        native.grid.frameTiming = frameTiming;
         options.onSourceResolved?.(native);
         return consume(path, native, Boolean(tracks.audio));
       }
@@ -84,6 +89,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
       const varying = tracks.video.r_frame_rate && tracks.video.avg_frame_rate && tracks.video.r_frame_rate !== tracks.video.avg_frame_rate;
       clock = RangeClock.wholeTicks(tick, Number.isSafeInteger(length) && length! > 0 ? BigInt(length!) : undefined, varying ? "varying" : "unproven");
     }
+    clock.grid.frameTiming = frameTiming;
   } else {
     clock = RangeClock.resolve(await audioGrid(source, tracks.audio!, tracks.seconds, signal), {});
   }

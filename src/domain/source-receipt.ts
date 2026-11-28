@@ -26,7 +26,10 @@ export class SourceReceipt {
     const {unit, length, timing} = clock.grid;
     const lengthField = unit === "frames" ? {sourceLengthFrames: String(length)} : unit === "samples" ? {sourceLengthSamples: String(length)}
       : clock.lengthKnown ? {sourceLengthTicks: String(length)} : {};
-    return {recordingSha256: this.recordingSha256, requestedRange: clock.requestedRange, sourceRange: clock.sourceRange,
+    const frameTiming = clock.grid.frameTiming ?? (unit === "samples"
+      ? {varying: null, frames: 0, unread: "no picture"} as const
+      : {varying: null, frames: null, unread: "unavailable"} as const);
+    return {frameTiming, recordingSha256: this.recordingSha256, requestedRange: clock.requestedRange, sourceRange: clock.sourceRange,
       edgeMoved: clock.edgeMoved, ...lengthField, ...(timing && {sourceTiming: timing}), outputMediaClock: "source" as const,
       coverage: {full: clock.lengthKnown && merged.length === 1 && merged[0]![0] === clock.from && merged[0]![1] === clock.to,
         covered: merged.map(([a,b]): Span => [String(a),String(b)])},
