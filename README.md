@@ -342,6 +342,7 @@ esac
 ```
 
 The file must be owned by you with mode 0600 in a directory you own with mode 0700. The CLI refuses a linked settings file. `doctor` never runs the key command, so `unverified` means “set up, not tried.”
+Node’s own debug switches can print the key command’s arguments and environment to stderr, never the key it returns.
 
 Native Windows supports the environment and folder key sources. WSL follows the Linux key-command rules.
 

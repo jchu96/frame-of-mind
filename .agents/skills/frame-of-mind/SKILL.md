@@ -61,8 +61,8 @@ Read only the sources needed for the task:
   authority for that exact external action.
 - Review every generated record before treating it as true or actionable.
 
-Never ask the operator to paste an API key: direct them to `frameofmind key set`
-in their own terminal. Use `--note name=path` for per-run references instead of
+For private terminal entry, direct the operator to `frameofmind key set`.
+Use `--note name=path` for per-run references instead of
 editing a recipe for one job. The tool itself never copies note bodies into the
 bundle; the manifest records only names, digests and byte counts. Model findings
 may quote or paraphrase notes. Treat findings as possibly containing note content
@@ -114,6 +114,12 @@ The production pipeline uses the Gemini Developer API Files API:
 ```bash
 export GEMINI_API_KEY="your-key"
 ```
+
+For a CLI vault reader on macOS or Linux, set `keyCommand` in the per-user
+settings to a JSON array starting with the reader’s absolute path. Follow
+`docs/CREDENTIALS.md` for file permissions. On a clean launch, the CLI tries
+the inherited key, then the command, then the folder’s `.env`. A failed command
+stops the lookup. `frameofmind doctor` checks the setup without running the reader.
 
 Direct the user to Google AI Studio; never create, retrieve, or display the key
 for them. Vertex AI ADC is not a drop-in replacement for the current Files API
