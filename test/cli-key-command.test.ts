@@ -124,7 +124,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
   const calibrate = ["calibrate", "--model", "!"];
   const missing = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_MISSING","message":"key missing."}}\n', err: ""};
   const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}\n', err: ""};
-  const disabled = {FRAME_OF_MIND_KEY_COMMAND: "[]", OBSERVE_ACCOUNT: "1"};
+  const disabled = {FRAME_OF_MIND_KEY_COMMAND: "[]", FRAME_OF_MIND_TWELVELABS_KEY_COMMAND:"[]", OBSERVE_ACCOUNT: "1"};
   function configureReader() {
     writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
   }

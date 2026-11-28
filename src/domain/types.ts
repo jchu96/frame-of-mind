@@ -83,6 +83,7 @@ export interface MediaSource {
 }
 
 export interface IndexedMoment {
+  proposal?: Pick<import("./candidates.js").Candidate,"label"|"reason"|"basis"|"precisionMs"|"score">;
   proposalEdges?: ProposalEdges;
   exactSpan?: ExactSpan;
   start: string;

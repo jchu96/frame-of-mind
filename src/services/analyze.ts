@@ -1,7 +1,7 @@
 import { TwelveLabs, twelveTransport } from "../adapters/twelvelabs.js";
 import { receiptDirectory, ScratchReceipts } from "../adapters/twelvelabs-receipts.js";
 import type { EngineCall } from "../domain/engine-receipts.js";
-import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, checkDirectUpload, checkRoles, directUploadHint, disclosure, enginePlan, fallbackMessage, type EngineItems } from "../domain/engine-plan.js";
+import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, checkDirectUpload, checkRoles, directUploadHint, disclosure, enginePlan, fallbackMessage, usesTwelveLabs, type EngineItems } from "../domain/engine-plan.js";
 import { recordingIdentity, readCandidates, type Candidate, type CandidatesDocument } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
 import { measurementSearch, measurementWindow, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
@@ -252,6 +252,7 @@ export interface AnalysisProjectionPublisher {
 }
 
 export interface AnalyzeExecutionOptions {
+  routeDisclosed?: boolean;
   /** Include the per-pass usage receipt in CLI manifests. */
   includeTokenUsage?: boolean;
   /** The job caller supplies a fresh private directory inside its output grant. */
@@ -287,6 +288,7 @@ interface VideoOnlyAnalysisIndex {
 type AnalysisIndex = MeetingAnalysisIndex | VideoOnlyAnalysisIndex;
 
 export interface AnalysisVideoAnalyzer {
+  indexProposals?: AnalysisVideoAnalyzer["index"];
   probeClipClock?(file: GeminiFile): Promise<number>;
   readonly relativeEvidenceResponses?: number;
   readonly model: string;
@@ -412,6 +414,19 @@ export class AnalysisOrchestrator {
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
     checkRoles(options, options.candidatesFile !== undefined, options.recipe.engines);
+    const progress = execution.progress ?? NOOP_PROGRESS_REPORTER;
+    const plan = enginePlan({...options, file:options.candidatesFile !== undefined, recipe:options.recipe.engines,
+      model:options.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL),
+      retention:options.retention ?? (options.keepUpload || options.remoteFileName ? "provider" : "run"),
+      available:!!options.apiKey, twelveAvailable:!!options.twelvelabsKey, preview:false});
+    if (!plan.used) throw new ContractError("KEY_MISSING", "Set a provider key before analysis.", {engine:"gemini"});
+    const retryArgv = options.retryArgv ?? ["analyze", ...(options.video ? ["--video",options.video] : []),
+      ...(options.from ? ["--from", options.from] : []), ...(options.to ? ["--to",options.to] : []),
+      ...(options.candidatesFile ? ["--candidates",options.candidatesFile] : [])];
+    if (!options.video) checkDirectUpload(plan, undefined, retryArgv);
+    const tellRoute = (message: string) => report(progress, {kind:"stage",stage:"fetching_context",message});
+    if (!execution.routeDisclosed) for (const line of disclosure(plan)) await tellRoute(line);
+    if (plan.reason) await tellRoute(fallbackMessage(plan.reason));
     const settings = options.snapSettings && snapSettings(options.snapSettings.gapMs, options.snapSettings.windowMs);
     const requestedLanguage = resolveTranscriptLanguage(options.transcriptLanguage, options.derivedTranscript);
     const ranged = isRanged(options);
@@ -427,19 +442,6 @@ export class AnalysisOrchestrator {
     const runId = requireSafeRunId(this.nextRunId());
     const startedAt = this.now();
     const hasContext = hasMeetingContext(options);
-    const progress = execution.progress ?? NOOP_PROGRESS_REPORTER;
-    const plan = enginePlan({...options, file:options.candidatesFile !== undefined, recipe:options.recipe.engines,
-      model:options.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL),
-      retention:options.retention ?? (options.keepUpload || options.remoteFileName ? "provider" : "run"),
-      available:!!options.apiKey, twelveAvailable:!!options.twelvelabsKey, preview:false});
-    if (!plan.used) throw new ContractError("KEY_MISSING", "Set a provider key before analysis.", {engine:"gemini"});
-    const retryArgv = options.retryArgv ?? ["analyze", ...(options.video ? ["--video",options.video] : []),
-      ...(options.from ? ["--from", options.from] : []), ...(options.to ? ["--to",options.to] : []),
-      ...(options.candidatesFile ? ["--candidates",options.candidatesFile] : [])];
-    if (!options.video) checkDirectUpload(plan, undefined, retryArgv);
-    const tellRoute = (message: string) => report(progress, {kind:"stage",stage:"fetching_context",message});
-    for (const line of disclosure(plan)) await tellRoute(line);
-    if (plan.reason) await tellRoute(fallbackMessage(plan.reason));
     const context = hasContext ? this.createContextSource({...options, apiKey:"", twelvelabsKey:undefined}) : undefined;
     const temp = await createScratch("analyze", execution.jobScratchRoot);
     let meeting: MeetingEvidence | undefined;
@@ -459,17 +461,17 @@ export class AnalysisOrchestrator {
           ? "Fetching meeting context."
           : "No external context selected.",
       });
-      if (hasContext) {
-        if (!context) {
-          throw new Error("Meeting context initialization failed.");
-        }
+      const readMeeting = async () => {
+        if (!context || !hasContext) throw new Error("Meeting context initialization failed.");
         await context.connect();
         assertNotCanceled(execution.signal);
-        meeting = await context.meeting(options.meetingId);
-        if (!meeting) {
-          throw new Error("Meeting context provider returned no meeting evidence.");
-        }
+        const evidence = await context.meeting(options.meetingId);
+        if (!evidence) throw new Error("Meeting context provider returned no meeting evidence.");
         assertNotCanceled(execution.signal);
+        return evidence;
+      };
+      if (hasContext) {
+        if (!localVideo || !usesTwelveLabs(plan)) meeting = await readMeeting();
         if (!localVideo) {
           if (options.contextProvider !== "bluedot") {
             throw new Error(
@@ -477,10 +479,10 @@ export class AnalysisOrchestrator {
                 "Provide --video with a local recording.",
             );
           }
-          if (!isBluedotMediaContextSource(context)) {
+          if (!context || !isBluedotMediaContextSource(context)) {
             throw new Error("Bluedot context source cannot resolve recording media.");
           }
-          const media = context.mediaFromMeeting(meeting, options.recordingUrl);
+          const media = context.mediaFromMeeting(meeting!, options.recordingUrl);
           const extension = new URL(media.url).pathname.match(/\.(webm|mp4|m4v|mov|mp3)$/i)?.[0] || ".webm";
           localVideo = join(temp, `recording${extension}`);
           const download = await downloadFile(media.url, localVideo);
@@ -559,6 +561,7 @@ export class AnalysisOrchestrator {
       }
       clock.clipGuard = duration === undefined ? "unknown-duration" : "applied";
       assertNotCanceled(execution.signal);
+      if (hasContext && !meeting) meeting = await readMeeting();
       const containerId = meeting?.id ?? `video-${recordingSha256.slice(0, 16)}`;
       runContainerDirectory = join(resolve(options.outputRoot), safePathSegment(containerId));
       const outputDirectory = join(runContainerDirectory, runId);
@@ -589,11 +592,12 @@ export class AnalysisOrchestrator {
       };
       const engineRecords = () => ({enginePlan:plan,engineCalls:calls,
         ...(catalog?.copies.length && {library:catalog.copies,indexWait:twelve!.indexWait})});
+      const now = this.now;
       async function measured<T>(role:"proposer"|"grader",window:EngineCall["inferenceWindow"],work:()=>Promise<T>) {
         const actor = plan.used![role];
         const entry:EngineCall = {role,engine:actor.engine as EngineCall["engine"],model:actor.model!,
           material:role === "proposer" ? "selected recording and proposal instruction" : "selected recording, grading window and scoped evidence",
-          sentExtent:[0,duration ?? null],inferenceWindow:window,utc:new Date().toISOString(),bytes:recordingSizeBytes,state:"attempted",result:"failed"};
+          sentExtent:[0,duration ?? null],inferenceWindow:window,utc:now(),bytes:recordingSizeBytes,state:"attempted",result:"failed"};
         calls.push(entry);
         try {
           const result = await work();
@@ -1645,7 +1649,7 @@ export class AnalysisOrchestrator {
         };
       } catch (error) {
         await finishCopies();
-        if (error instanceof AnalysisCanceledError || (execution.jobScratchRoot && execution.signal?.aborted)) throw error;
+        if (execution.jobScratchRoot && (error instanceof AnalysisCanceledError || execution.signal?.aborted)) throw error;
         if (remote && analyzer && !retainRemote && !cleanupFinalized) {
           remoteDeleted = await deleteWithRetry(analyzer, remote, this.sleep, execution.jobScratchRoot ? 1 : 3);
           cleanupFinalized = true;

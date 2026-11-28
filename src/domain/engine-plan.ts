@@ -39,6 +39,9 @@ export function enginePlan(options: Roles & {file:boolean; recipe?:Roles; model:
   available:boolean; twelveAvailable?:boolean; preview:boolean; withholdGraderClaim?:boolean; preflight?:EngineReason}): EnginePlan {
   checkRoles(options,options.file,options.recipe);
   const keys = {gemini:options.available,twelvelabs:Boolean(options.twelveAvailable)};
+  for (const name of [options.file ? undefined : options.proposer ?? options.recipe?.proposer,options.grader ?? options.recipe?.grader]) {
+    if (name && !keys[name as EngineName]) throw new ContractError("KEY_MISSING","Set the selected engine key before analysis.",{engine:name});
+  }
   function select(key: keyof Roles): z.infer<typeof role> {
     if (key === "proposer" && options.file) return {engine:"file",model:null,source:"file"};
     const choice = options[key] ?? options.recipe?.[key];
@@ -107,10 +110,17 @@ export function disclosure(plan: EnginePlan): string[] {
   const route = plan.planned;
   if (!route) return ["No engine key is configured."];
   const lines:string[] = [];
+  if (route.grader.engine === "gemini" && route.proposer.engine !== "twelvelabs") {
+    lines.push(route.proposer.engine === "file" ? "Gemini grades selected video, windows, stills and scoped context. Candidates come from the file."
+      : "Gemini proposes on selected video and grades windows, stills and scoped context.");
+    lines.push("retention: "+plan.retention.gemini);
+    if (!plan.graderToldClaim) lines.push("The proposal claim is withheld from the grader.");
+    return lines;
+  }
   if (route.proposer.engine === "file") lines.push("Candidates come from the file.");
   for (const [engine,name] of [["gemini","Gemini"],["twelvelabs","Twelve Labs"]] as const) {
     const purposes:string[] = [];
-    if (route.proposer.engine === engine) purposes.push("proposes on selected video and the proposal instruction");
+    if (route.proposer.engine === engine) purposes.push("proposes on selected video with the operator’s proposal instruction, focus and segment definitions");
     if (route.grader.engine === engine) purposes.push("grades selected video, windows, stills and scoped context");
     if (engine === "gemini" && defaultDualRoute(plan)) purposes.push("may propose on the selection if Twelve Labs cannot");
     if (!purposes.length) continue;

@@ -72,6 +72,8 @@ when sharing a bundle.
 
 ## Quote times with their clocks
 
+For one recording, preview `analyze --dry-run`. With both keys the default is Twelve Labs proposing and Gemini grading. Check `enginePlan`, `engineCalls`, `library[]` and any `proposal-incomplete` warning. A shorter range can fit the 200 MB direct-upload limit. Use `--withhold-grader-claim` for an independent grade.
+
 Before cutting, read `resolvedEdges.start` and `resolvedEdges.endExclusive` on the item. Check each status and precision. A claim carries its actor's stated radius. A measured edge carries the tool's cut or snap. See [the engine contract](../../../docs/ENGINE_CONTRACT.md).
 
 Always quote a media time with its clock word (`source`, `reel`, or `timeline`)

@@ -72,3 +72,33 @@ With speech snapping enabled, search up to the smaller of the latest claimed rad
 | USAGE | unsupported-engine | Select a registered engine for the role. |
 | USAGE | conflicting-options | Supply a file or select a proposer. |
 | PROVIDER_REFUSED | invalid-reply | The assembled engine document failed local validation. |
+
+## One recording and two engines
+
+Resolve each role from its CLI flag, then the recipe's `engines` object, then available keys. With both keys Twelve Labs proposes and Gemini grades. Either engine runs alone with its key. A candidates file supplies the proposal locally. Use `doctor --json` for the default plan or `analyze --dry-run` for a particular selection. The run discloses recipients, material and retention on stderr before provider requests, including in JSON mode.
+
+The reply and manifests identify `planned` and `used`. A preview sets `expected` and leaves `used` null. A valid empty proposal selects zero windows. Before a valid proposal, the default two-engine route may move both passes to Gemini. A chosen route returns its fault and retry arguments. A partial Twelve Labs proposal keeps validated rows on its planned route, records `result: partial` and `reason: proposal-incomplete` on the proposer call, and warns the caller. The plan reason stays null. Each call lists the role, engine, model, material, full selection sent, inference window, state and result. Window times are seconds relative to the selected upload.
+
+Use `--withhold-grader-claim` to omit the fenced claim, including its reason, label and surface. The default is told. Read `enginePlan.graderToldClaim` in the reply or manifest. A partly right claim can be rejected whole. Only search hits are re-placed. The effect of showing the claim was measured on one set of screen recordings.
+
+Twelve Labs uses Pegasus 1.6 structured analysis. Select `--twelve-labs-shape flat` for one candidate per segment or `--twelve-labs-shape lines` for one candidate per timed spoken line. Flat is the initial default pending comparative measurement. An optional recipe field, `twelveLabsSegments`, supplies definitions with an ID, description and typed fields. Per-job enum values are operator-authored material sent to Twelve Labs. Use only the text the definition needs. The grader uses the interrogation instruction, scoped transcript and labelled full-size stills for screen quotations. [Segment structure](https://docs.twelvelabs.io/docs/guides/segment-videos)
+
+### Copies and recovery
+
+Gemini follows the selected upload retention policy. Twelve Labs direct uploads and analysis tasks are run-owned scratch copies. A private receipt records the operation before the create, then the returned ID. Deletion uses the receipt and its account scope. An unidentified creation remains unconfirmed and is never blindly replayed. Read `library[]` in the reply, manifest or failure manifest. A deleted receipt has a confirmation time. A pending receipt records the reason. Cleanup retries at a subsequent start with the same credential.
+
+Cleanup removes owned analysis tasks before their source asset. Immediately before deleting an owned asset, the tool lists indexed-asset links and entity links. Any link or unreadable or ambiguous result leaves the asset pending. The tool sends no forced deletion or unlink request. The API performs the entity lookup and asset deletion separately. If another client attaches the asset after the lookup and before deletion, Twelve Labs can remove that new entity link when it deletes the asset. Keep run-owned scratch assets exclusive until cleanup finishes. [Asset deletion](https://docs.twelvelabs.io/api-reference/manage-assets/delete) · [Entity lookup](https://docs.twelvelabs.io/api-reference/entities/list-entities-by-asset)
+
+### Faults
+
+| Code | Details |
+| --- | --- |
+| `KEY_MISSING`, `KEY_REFUSED` | `engine` identifies the key. A refused key command has reason `key-command`. A refused credential gives plan reason `key-refused`. |
+| `PROVIDER_UNREACHABLE` | Engine and phase, with `index-timeout`, `network` or `request-timeout`. |
+| `PROVIDER_LIMIT` | Engine and phase, with `quota` or `media-limit`. |
+| `RATE_LIMITED` | Engine and phase, with `rate-limit`. |
+| `PROVIDER_REFUSED` | Engine and phase, with `invalid-reply`. |
+| `CAPABILITY_MISSING` | Engine and `local-media-unavailable` when local recording bytes are unavailable. |
+| `USAGE` | Candidate inputs use `invalid-candidates` or `candidate-recording-mismatch`. Role options use `unsupported-engine` or `conflicting-options`. |
+
+Phases are `upload`, `index`, `propose`, `grade` and `cleanup`. The non-null plan reasons are `index-timeout`, `quota`, `media-limit`, `rate-limit`, `network`, `request-timeout`, `key-refused`, `invalid-reply` and `local-media-unavailable`. The selected-window count includes every unattempted window after a terminal grading fault. Those failure rows carry zero attempts and a null grader. Completed verdicts stay in the run.

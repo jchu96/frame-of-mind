@@ -13,7 +13,7 @@ export function geminiCandidates(moments: readonly IndexedMoment[], model: strin
       id: `gemini-${ordinal + 1}`, start: Number(boundIndex(span.start)), end: Number(boundIndex(span.endExclusive)),
       precisionMs:{start:1000,end:1000}, basis:{start:"model",end:"model"}, proposedBy:{engine:"gemini",model},
       label:moment.kind, reason:moment.summary, ...(moment.surface !== undefined && {surface:moment.surface}),
-      score:{high:3,medium:2,low:1}[moment.importance], chain:[],
+      score:{high:3,medium:2,low:1}[moment.importance], ...moment.proposal, chain:[],
     });
   }
   candidates.sort((a,b) => b.score! - a.score! || a.start - b.start);
@@ -25,9 +25,9 @@ export function geminiEnginePorts(analyzer: import("../services/analyze.js").Ana
   return {
     media:analyzer,
     async propose(clock: RangeClock, digest: string, ...args: Parameters<typeof analyzer.index>) {
-      const index = await analyzer.index(...args);
+      const index = analyzer.indexProposals ? await analyzer.indexProposals(...args) : await analyzer.index(...args);
       const document = geminiCandidates(index.moments,analyzer.model,clock,digest);
-      const metadata = new Map(index.moments.map((window,i) => [`gemini-${i+1}`,window]));
+      const metadata = new Map(index.moments.map(({proposal: _authored, ...window},i) => [`gemini-${i+1}`,window]));
       return {index,document,metadata};
     },
     grade:(...args) => analyzer.interrogate(...args),

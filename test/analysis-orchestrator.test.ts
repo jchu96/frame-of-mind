@@ -229,7 +229,8 @@ describe("AnalysisOrchestrator", () => {
       analysis: expect.objectContaining({ schemaVersion: 5 }),
       manifest: expect.objectContaining({ schemaVersion: 3 }),
     }));
-    expect(events[0]).toMatchObject({
+    expect(events.slice(0,2).map(e=>e.message)).toEqual([expect.stringContaining("Gemini proposes"),expect.stringContaining("retention")]);
+    expect(events[2]).toMatchObject({
       kind: "stage",
       stage: "fetching_context",
       message: "No external context selected.",
@@ -908,7 +909,7 @@ describe("AnalysisOrchestrator", () => {
       },
     });
 
-    expect(events.map((event) => event.stage)).toEqual([
+    expect(events.slice(2).map((event) => event.stage)).toEqual([
       "fetching_context",
       "uploading_to_gemini",
       "indexing",
@@ -917,7 +918,7 @@ describe("AnalysisOrchestrator", () => {
       "rendering",
       "cleaning_up",
     ]);
-    expect(events[4]).toMatchObject({
+    expect(events[6]).toMatchObject({
       kind: "progress",
       progress: { completed: 1, total: 1, unit: "items" },
     });

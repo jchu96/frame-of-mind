@@ -5,6 +5,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+- Analyze one recording with either Gemini or Twelve Labs in either role. Preview the recipients and retention, withhold the claim when needed, and read partial coverage and cleanup receipts in the result. Named libraries, search and whole-shoot analysis do not exist yet.
+
 - Analyze accepts a verified candidates file, previews proposer and grader roles, and writes each candidate’s provenance and resolved start and exclusive end. Measured cuts and speech snaps identify the tool. Claims keep the finder’s radius. The grader receives the claim and optional surface as fenced data on both routes. Items and failure rows retain the full proposal. The effect of showing the claim was measured on one set of screen recordings. [Engine contract](docs/ENGINE_CONTRACT.md)
 - CLI usage refusals carry a reason in `error.details.reason` with `--json`. Refusals that exited 1 in plain mode now exit 2. A range scan that cannot verify the cut returns the fixed reason `Range requires a locally verifiable cut.` and reports measured timing in `error.details.frameTiming`.
 

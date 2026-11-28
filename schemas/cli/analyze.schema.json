@@ -13,8 +13,9 @@
       "type":"object","required":["planned","used","expected","reason","retention"],
       "properties":{
         "planned":{"$ref":"#/definitions/nullableRoute"},"used":{"$ref":"#/definitions/nullableRoute"},
-        "expected":{"$ref":"#/definitions/nullableRoute"},"reason":{"type":"null"},
-        "retention":{"type":"object","required":["gemini","twelvelabs"],"properties":{"gemini":{"enum":["provider","run",null]},"twelvelabs":{"type":"null"}}}
+        "expected":{"$ref":"#/definitions/nullableRoute"},"reason":{"enum":[null,"index-timeout","quota","media-limit","rate-limit","network","request-timeout","key-refused","invalid-reply","local-media-unavailable"]},
+        "graderToldClaim":{"type":"boolean"},"receiptIds":{"type":"array","items":{"type":"string"}},
+        "retention":{"type":"object","required":["gemini","twelvelabs"],"properties":{"gemini":{"enum":["provider","run",null]},"twelvelabs":{"enum":["run",null]}}}
       }
     },
     "frameTiming": {
@@ -69,6 +70,9 @@
     "allOf": [{"$ref":"#/definitions/source"}],
     "properties": {
       "enginePlan":{"$ref":"#/definitions/enginePlan"},
+      "engineCalls":{"type":"array","items":{"type":"object","required":["role","engine","model","material","sentExtent","inferenceWindow","utc","state","result"],"properties":{"role":{"enum":["proposer","grader"]},"engine":{"enum":["gemini","twelvelabs"]},"result":{"enum":["complete","partial","failed"]},"state":{"enum":["attempted","sent","unknown"]}}}},
+      "library":{"type":"array","items":{"type":"object","required":["receiptId","runId","operationId","accountScope","state","owned"],"properties":{"state":{"enum":["pending","unconfirmed","deleted"]},"owned":{"const":true}}}},
+      "indexWait":{"type":"object","required":["limitSeconds","elapsedMs"],"properties":{"limitSeconds":{"type":"integer","minimum":1},"elapsedMs":{"type":"integer","minimum":0}}},
       "retention": {"enum": ["provider", "run"]},
       "tokens": {
         "type": "object",

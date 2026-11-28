@@ -76,14 +76,14 @@ export function createCliSettings(launch: CliLaunch, read = readSettingsFile, pl
       providerKey() {
         const selection = selectedKey();
         if (selection.report.source !== "command") return selection.value;
-        if (command.kind !== "command") throw new KeyCommandRefused();
+        if (command.kind !== "command") throw new KeyCommandRefused(engine === "twelvelabs" ? engine : undefined);
         return acquisition ??= runKeyCommand(command.argv, command.home, launch.environment).then(value => {
           selection.report.state = "verified";
           return value;
         }, () => {
           selection.report.present = false;
           selection.report.state = "unavailable";
-          throw new KeyCommandRefused();
+          throw new KeyCommandRefused(engine === "twelvelabs" ? engine : undefined);
         });
       },
     };

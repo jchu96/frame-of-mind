@@ -48,6 +48,7 @@ decision may be made in place.
 | [0029](0029-recipe-opt-out-of-screen-review-fields.md) | Let a recipe opt out of screen-review fields | Proposed | 2026-11-22 |
 | [0030](0030-local-mcp-snapshot.md) | Grant local MCP access to one reviewed snapshot at launch | Accepted | 2026-11-24 |
 | [0031](0031-cli-job-upload-retention.md) | Grant upload retention on each CLI job start | Accepted | 2026-11-24 |
+| [0033](0033-second-engine-scratch-copies.md) | A second engine on one recording with run-owned scratch copies | Proposed | 2026-11-28 |
 | [0032](0032-cli-provider-key-source.md) | Identify the local CLI provider key source at launch | Accepted | 2026-11-26 |
 
 ## Adding An ADR

@@ -535,6 +535,10 @@ in recording order. The built-in proposer writes its best candidates first,
 sorting by importance and then by start time. The default budget is 10.
 A candidates file allows up to 10,000 characters for `reason`, 500 for optional `surface`, and 120 for `label`. One overlong field refuses the file with `invalid-candidates`. The grader sees the full reason (or the label when the reason is empty) and surface as context. Items and failure rows keep the submitted proposal.
 
+Use `frameofmind doctor --json` to inspect both keys. For one recording, run `frameofmind analyze --source none --video recording.mp4 --dry-run` to check which companies receive the selection. Many real recordings exceed Twelve Labs’ 200 MB direct-upload limit. Choose a time range with `--from` and `--to` to reduce the upload. An explicit route returns `media-limit` and `retryWith` if the selection is too large. The default dual route discloses a switch to Gemini.
+
+After a partial run, inspect the proposer warning and failed and unattempted windows before using the answer. In `library[]`, look for `pending` with a cleanup reason or `unconfirmed` with an unknown creation result. Preserve private receipts for the next start. Avoid attaching run-owned assets to external entities during cleanup. Queue polling uses `--index-wait-seconds`; the default is 900 seconds plus half the selected duration, rounded up.
+
 To grade a finder's file, run `frameofmind analyze --source none --video recording.mp4 --candidates picks.json --grader gemini --json`. Add `--dry-run` to preview the route. For built-in proposals use `--proposer gemini` or omit both the proposer flag and candidates file. Apply `--focus` to the active roles and `--max-moments` to the candidate budget. Read each item's resolved start and exclusive end, including its status and precision, before cutting. [Engine contract](ENGINE_CONTRACT.md)
 
 Use `--max-moments all` to grade up to 1,000 eligible candidates. The first

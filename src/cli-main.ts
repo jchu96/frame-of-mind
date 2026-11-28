@@ -1,3 +1,4 @@
+import { hasCleanupReceipts } from "./adapters/twelvelabs-receipts.js";
 import { checkDirectUpload, checkRoles, directUploadHint, disclosure, enginePlan, fallbackMessage, usesTwelveLabs } from "./domain/engine-plan.js";
 import { rangeFields } from "./domain/range-fields.js";
 import { rangeUsage } from "./domain/range-clock.js";
@@ -334,8 +335,24 @@ program
         if (isRanged(flags) && flags.remoteFile) rangeUsage("A range cannot reuse a remote file.");
         checkRoles(flags, flags.candidates !== undefined);
         const config = cliSettings();
-        const gemini = config.keyReport(), twelve = config.keyReport("twelvelabs");
-        analyzeOptions = await buildAnalyzeOptions(meetingId, {...flags,dryRun:true}, undefined);
+        const loaded = await readAnalyzeRecipe(flags);
+        checkRoles(flags,flags.candidates !== undefined,loaded.recipe.engines);
+        const proposer = flags.candidates ? "file" : flags.proposer ?? loaded.recipe.engines?.proposer;
+        const grader = flags.grader ?? loaded.recipe.engines?.grader;
+        const gemini = config.keyReport();
+        if (!flags.dryRun && gemini.source === "command" && (grader === "gemini" || proposer === "gemini" || (!grader && gemini.present))) {
+          await config.providerKey();
+        }
+        const twelve = config.keyReport("twelvelabs");
+        if (!flags.dryRun && twelve.source === "command" && (proposer === "twelvelabs" || grader === "twelvelabs" || (!proposer && twelve.present))) {
+          await config.providerKey("twelvelabs");
+        }
+        if (!flags.dryRun && !gemini.present && !twelve.present && !grader && !proposer) {
+          if (gemini.source === "command") await config.providerKey();
+          if (twelve.source === "command") await config.providerKey("twelvelabs");
+          throw new CliError("KEY_MISSING","Set a provider key before analysis.",{engine:"gemini"});
+        }
+        analyzeOptions = await buildAnalyzeOptions(meetingId, {...flags,dryRun:true}, undefined,loaded);
         const plan = enginePlan({...flags,file:flags.candidates !== undefined, recipe:analyzeOptions.recipe.engines,
           model:analyzeOptions.model ?? (applicationSetting("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL),
           retention:analyzeOptions.retention!,available:gemini.present,twelveAvailable:twelve.present,preview:true});
@@ -358,13 +375,16 @@ program
           throw new CliError("KEY_MISSING", "Set a provider key before analysis.", {engine:"gemini"});
         }
         for (const engine of ["gemini","twelvelabs"] as const) {
-          if (plan.planned.proposer.engine !== engine && plan.planned.grader.engine !== engine) continue;
+          if (plan.planned.proposer.engine !== engine && plan.planned.grader.engine !== engine) {
+            if (engine !== "twelvelabs" || !twelve.present || !await hasCleanupReceipts()) continue;
+          }
           const value = await config.providerKey(engine);
           if (!value) throw new CliError("KEY_MISSING","Set the selected engine key.",{engine});
           if (engine === "gemini") analyzeOptions.apiKey = value;
           else analyzeOptions.twelvelabsKey = value;
         }
-        analyzeOptions.retryArgv = process.argv.slice(2);
+        analyzeOptions.retryArgv = program.args[0] === "analyze" ? program.args : process.argv.slice(2);
+        for (const line of disclosure(plan)) process.stderr.write(line+"\n");
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
         // @types/bun 1.4.0 drops Node's signal overloads from process.on/off;
@@ -373,7 +393,7 @@ program
         let result;
         try {
           const execution = {
-            includeTokenUsage: true,
+            routeDisclosed:true, includeTokenUsage: true,
             signal: cancellation.signal,
             onFailurePublished(directory: string) { failureFolder = directory; },
             progress: {
@@ -515,10 +535,21 @@ function parseQueueWait(text: string) {
   return n;
 }
 
+async function readAnalyzeRecipe(flags:AnalyzeCliFlags) {
+  return withAnalysisDepth(
+    await loadRecipe(flags.recipe, flags.recipeFile).catch(error => {
+      if (error instanceof Error && !("code" in error)) throw new UsageError("invalid-recipe-file", error.message);
+      throw error;
+    }),
+    parseChoice(analysisDepthSchema, flags.depth, "invalid-depth"),
+  );
+}
+
 export async function buildAnalyzeOptions(
   meetingId: string | undefined,
   flags: AnalyzeCliFlags,
   apiKey: string | undefined,
+  loadedRecipe?: Awaited<ReturnType<typeof readAnalyzeRecipe>>,
 ): Promise<AnalyzeOptions> {
   if (flags.snap !== undefined && flags.snap !== "speech") throw new UsageError("invalid-snap", "--snap must be speech.");
   const integer = (text?: string) => text === undefined ? undefined : /^\d+$/.test(text) && text.trim() === text ? Number(text) : NaN;
@@ -532,13 +563,7 @@ export async function buildAnalyzeOptions(
     throw new UsageError("invalid-label", "--label must be one line of 1 to 200 characters without control characters.");
   }
   const label = labelResult?.data;
-  const recipeResult = await withAnalysisDepth(
-    await loadRecipe(flags.recipe, flags.recipeFile).catch(error => {
-      if (error instanceof Error && !("code" in error)) throw new UsageError("invalid-recipe-file", error.message);
-      throw error;
-    }),
-    parseChoice(analysisDepthSchema, flags.depth, "invalid-depth"),
-  );
+  const recipeResult = loadedRecipe ?? await readAnalyzeRecipe(flags);
   const modelResult = flags.model
     ? geminiModelSchema.safeParse(flags.model)
     : undefined;

@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, realpath, rename, unlink } from "node:fs/promises";
-import { hostname } from "node:os";
+import { hostname, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { readAccountHome } from "../cli-launch.js";
 import { userSettingsPath } from "../key-command-settings.js";
+import { trustedDirectory } from "./job-path.js";
 import { copyReceipt, remoteId, type CopyReceipt } from "../domain/engine-receipts.js";
 import { ContractError } from "../domain/contract-error.js";
 
@@ -15,16 +16,36 @@ type Request = (path:string, init?: RequestInit) => Promise<Response>;
 type Source = Pick<CopyReceipt,"recordingSha256"|"sentSha256"|"sentSpan">;
 
 export function receiptDirectory() {
+  if (process.platform === "win32") return join(userInfo().homedir,"AppData","Local","frameofmind","scratch-receipts");
   const settings = userSettingsPath(readAccountHome(), process.platform);
   if (!settings) throw new ContractError("CAPABILITY_MISSING","A private account directory is required for Twelve Labs scratch receipts.");
   return join(dirname(settings),"scratch-receipts");
 }
 
 async function privateDir(dir:string) {
+  // Walk from the nearest existing ancestor so no component can redirect creation.
+  let ancestor = dir;
+  while (!await lstat(ancestor).catch(error=>{
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  })) ancestor = dirname(ancestor);
+  trustedDirectory(ancestor);
   await mkdir(dir,{recursive:true,mode:0o700});
+  trustedDirectory(dir);
   const s = await lstat(dir);
-  if (!s.isDirectory() || (s.mode & 0o077) || s.uid !== process.geteuid?.() || await realpath(dir) !== dir)
+  if (!s.isDirectory() || (process.geteuid && ((s.mode & 0o077) || s.uid !== process.geteuid())) || await realpath(dir) !== dir)
     throw new ContractError("PERMISSION_DENIED","The scratch receipt directory must be private and owned by the current account.");
+}
+
+export async function hasCleanupReceipts() {
+  const dir = receiptDirectory();
+  try {
+    trustedDirectory(dir);
+    return (await readdir(dir)).some(name=>/^[0-9a-f-]{36}\.json$/.test(name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 export class ScratchReceipts {
@@ -44,8 +65,10 @@ export class ScratchReceipts {
     } finally { await handle.close(); }
     try {
       await rename(tmp,path);
-      const parent = await open(this.directory,"r");
-      try { await parent.sync(); } finally { await parent.close(); }
+      if (process.platform !== "win32") {
+        const parent = await open(this.directory,"r");
+        try { await parent.sync(); } finally { await parent.close(); }
+      }
     } finally { await unlink(tmp).catch(()=>undefined); }
   }
   private async records() {
@@ -56,7 +79,7 @@ export class ScratchReceipts {
       const handle = await open(join(this.directory,file),constants.O_NOFOLLOW | constants.O_RDONLY | constants.O_NONBLOCK);
       try {
         const info = await handle.stat();
-        if (!info.isFile() || info.size > 16_384 || info.uid !== process.geteuid?.() || (info.mode & 0o077)) throw new Error("Unsafe receipt file.");
+        if (!info.isFile() || info.size > 16_384 || info.nlink !== 1 || (process.geteuid && (info.uid !== process.geteuid() || (info.mode & 0o077)))) throw new Error("Unsafe receipt file.");
         const row = saved.parse(JSON.parse(await handle.readFile("utf8")));
         if (row.receipt.receiptId+".json" !== file) throw new Error("Mismatched receipt identity.");
         if (row.receipt.accountScope === this.accountScope && row.receipt.state !== "deleted") found.push(row);
@@ -120,6 +143,13 @@ export class ScratchReceipts {
     }
   }
   private async remove(receipt:CopyReceipt,path:string,request:Request,tasks:CopyReceipt[]):Promise<CopyReceipt["reason"]> {
+    const identity = await request(path);
+    if (identity.status === 404) return null;
+    if (!identity.ok) return "identity-unconfirmed";
+    const resource = await identity.json();
+    const owned = receipt.assetId ? resource._id === receipt.assetId && resource.user_metadata?.operationId === receipt.operationId
+      : resource.task_id === receipt.taskId && resource.custom_id === receipt.operationId;
+    if (!owned) return "identity-unconfirmed";
     if (receipt.operation === "upload") {
       if (tasks.some(r=>r.state !== "deleted")) return "task-pending";
       for (const relation of ["indexed-assets","entities"]) {
@@ -128,7 +158,9 @@ export class ScratchReceipts {
           if (!response.ok) return "link-check-unavailable";
           const page = await response.json();
           if (!Array.isArray(page.data) || !page.page_info) return "link-check-unavailable";
-          if (page.data.length || page.page_info.total_results > 0) return "linked";
+          const total = page.page_info.total_results;
+          if (total !== undefined && (!Number.isSafeInteger(total) || total < 0)) return "link-check-unavailable";
+          if (page.data.length || total > 0) return "linked";
           if (![0,1].includes(page.page_info.total_page)) return "link-check-unavailable";
         } catch { return "link-check-unavailable"; }
       }
