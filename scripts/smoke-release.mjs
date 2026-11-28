@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { copyFile, mkdtemp, realpath, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, realpath, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -10,9 +10,20 @@ const cwd = await realpath(await mkdtemp(join(tmpdir(), "frameofmind-consumer-")
 try {
   const bundle = process.argv[2] ?? "release/frameofmind.mjs";
   await copyFile(bundle, join(cwd, "frameofmind.mjs"));
-  function run(args, expectedStatus, options = []) {
-    const result = spawnSync(process.execPath, [...options, "frameofmind.mjs", ...args], {
-      cwd, env: { HOME: cwd, PATH: "", SystemRoot: process.env.SystemRoot }, encoding: "utf8",
+  const account = join(cwd, "account.cjs");
+  await writeFile(account, `
+    const os = require("node:os");
+    os.userInfo = () => ({homedir: ${JSON.stringify(cwd)}});
+    require("node:module").syncBuiltinESMExports();
+    globalThis.fetch = async (_url, init) => {
+      const accepted = new Headers(init.headers).get("x-goog-api-key") === "synthetic-command-fixture";
+      require("node:fs").writeFileSync("consumer-result", accepted ? "accepted" : "wrong source");
+      return new Response(null, {status: 403});
+    };
+  `);
+  function run(args, expectedStatus, options = [], env = {}, timeout) {
+    const result = spawnSync(process.execPath, ["--require", account, ...options, "frameofmind.mjs", ...args], {
+      cwd, timeout, env: { HOME: cwd, PATH: "", SystemRoot: process.env.SystemRoot, ...env }, encoding: "utf8",
     });
     if (result.error) throw result.error;
     assert.equal(result.status, expectedStatus, `${args.join(" ")} failed: ${result.stderr.trim()}`);
@@ -45,6 +56,22 @@ try {
   assert.match(run(["doctor"], 0, bare), /^ok GEMINI_API_KEY \(unknown: started with --env-file\)$/m);
   const refused = JSON.parse(run(["analyze", "start", "clip.mp4", "--json"], 2, bare));
   assert.deepEqual(refused, {schemaVersion: 1, error: {code: "USAGE", message: "Invalid command arguments."}});
+  if (process.platform === "darwin" || process.platform === "linux") {
+    const settings = join(cwd, process.platform === "darwin" ? "Library/Application Support" : ".config", "frameofmind/settings.json");
+    const tools = join(cwd, "tools");
+    await mkdir(dirname(settings), {recursive: true, mode: 0o700});
+    await mkdir(tools, {mode: 0o700});
+    const reader = join(tools, "fixture-reader");
+    await writeFile(reader, '#!/usr/bin/env bash\nexec printenv FIXTURE_SESSION\n', {mode: 0o700});
+    await symlink("/usr/bin/printenv", join(tools, "printenv"));
+    await writeFile(settings, JSON.stringify({keyCommand: [reader]}), {mode: 0o600});
+    await writeFile(join(cwd, "fixture.mp4"), "synthetic recording");
+    const args = ["analyze", "--source", "none", "--video", "fixture.mp4", "--output", "out",
+      "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"];
+    run(args, 1, [], {PATH: tools + ":/usr/bin:/bin", FIXTURE_SESSION: "synthetic-command-fixture"}, 20_000);
+    assert.equal(await readFile(join(cwd, "consumer-result"), "utf8"), "accepted");
+    console.log("RELEASE_KEY_COMMAND local_consumer=PASS");
+  }
   console.log(`RELEASE_SMOKE version=${version} status=PASS`);
 } finally {
   await rm(cwd, { recursive: true, force: true });

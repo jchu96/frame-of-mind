@@ -5,6 +5,10 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+Ordinary CLI commands on macOS and Linux can retrieve the provider key from a
+per-user command. Doctor v1 can report `source: "command"`, with `state: "unverified"`
+for a configured reader or `"unavailable"` for unsafe settings. Doctor never runs it.
+
 Fixed: `slice`, `proxy`, `probe --decode-check`, `verify` and `--timecode-rate from-media` could fail with
 "ffprobe timed out" on a long recording when the machine was busy. The frame-timing scan decodes every frame
 and had a fixed 60-second limit. The limit is now 60 seconds plus half a second per second of recording.

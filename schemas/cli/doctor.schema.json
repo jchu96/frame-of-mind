@@ -77,12 +77,13 @@
         "type": "object", "required": ["present"],
         "properties": {
           "present": {"type": "boolean"},
-          "source": {"enum": ["environment", "dotenv", "none", "unknown"]},
+          "source": {"enum": ["environment", "command", "dotenv", "none", "unknown"]},
           "path": {"type": "string"},
-          "state": {"const": "unavailable"},
+          "state": {"enum": ["unavailable", "unverified", "verified"]},
           "lowerSourcesSkipped": {"const": true}
         }
       },
+      "settingsPath": {"type": "string"},
       "artifactRoot": {"type": "string"},
       "toolVersion": {"type": "string"},
       "commit": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},

@@ -1,3 +1,4 @@
+import { userInfo } from "node:os";
 import { realpathSync } from "node:fs";
 import { failureDocument, faultExits } from "./domain/contract-error.js";
 
@@ -6,6 +7,7 @@ export interface CliLaunch {
   readonly mode: LaunchMode;
   readonly environment: Readonly<NodeJS.ProcessEnv>;
   readonly cwd: string;
+  readonly accountHome?: string;
 }
 
 export function classifyLaunch(isBun: boolean, flags: readonly string[]): LaunchMode {
@@ -26,7 +28,11 @@ export function captureLaunch(): CliLaunch {
   for (const [name, value] of Object.entries(process.env)) {
     if (value !== undefined) environment[name] = value;
   }
-  return Object.freeze({mode, environment: Object.freeze(environment), cwd: realpathSync(".")});
+  let accountHome: string | undefined;
+  if (mode === "clean" && process.platform !== "win32") {
+    try { accountHome = userInfo().homedir; } catch { /* A command lookup will refuse. */ }
+  }
+  return Object.freeze({mode, accountHome, environment: Object.freeze(environment), cwd: realpathSync(".")});
 }
 
 export function refuseBareJobStart(args: string[]) {

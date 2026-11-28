@@ -331,9 +331,40 @@ For ordinary CLI commands, the first selected source supplies the provider key.
 | Order | Source | Selection |
 | --- | --- | --- |
 | 1 | Launch environment | Use the inherited `GEMINI_API_KEY` assignment. |
-| 2 | The working folder’s `.env` | Read the literal assignment if the environment omitted it. |
+| 2 | Key command | Use the launch environment’s `FRAME_OF_MIND_KEY_COMMAND` JSON string array, or the account’s `keyCommand` setting when the variable is absent. |
+| 3 | The working folder’s `.env` | Read the literal assignment when both higher sources are absent. |
 
-An empty or invalid assignment stops the lookup. Run `frameofmind doctor` to see the source without displaying the key. A clean job start accepts only an inherited key.
+An empty or invalid assignment stops the lookup. A failed command ends the run without falling back to the folder key. Run `frameofmind doctor` to see the source without displaying the key. A clean job start accepts only an inherited key.
+
+To create a new per-user settings file, substitute the absolute path to your reader. The file holds the command and its literal arguments. The reader writes one key to standard output and leaves standard error empty.
+
+```sh
+case "$(uname -s)" in
+  Darwin) config="$HOME/Library/Application Support/frameofmind" ;;
+  Linux)  config="$HOME/.config/frameofmind" ;;
+esac
+(umask 077 && mkdir -p "$config" && chmod 700 "$config" &&
+  set -C && printf '%s\n' '{"keyCommand":["/absolute/path/to/reader"]}' > "$config/settings.json")
+```
+
+The file must be owned by you with mode 0600 in a directory you own with mode 0700. The CLI refuses a linked settings file. `doctor` never runs the key command, so `unverified` means “set up, not tried.”
+Node’s own debug switches can print the key command’s arguments and environment to stderr, never the key it returns.
+
+On macOS the key command can read the system keychain, so no key sits in a file. Create the item with the system's own tool, which asks for the key without showing it:
+
+```sh
+security add-generic-password -s frameofmind.cli -a gemini-api-key -w
+```
+
+Then use this as the settings file's content:
+
+```json
+{"keyCommand":["/usr/bin/security","find-generic-password","-s","frameofmind.cli","-a","gemini-api-key","-w"]}
+```
+
+Tried once on macOS with a throwaway item made this way: the key was read without a prompt. An item made by another program, or a locked keychain, may ask for a click or a password; the CLI waits 30 seconds and then answers `Key command unavailable.`
+
+Native Windows supports the environment and folder key sources. WSL follows the Linux key-command rules.
 
 The installed Node command and release bundle accept preloads and loaders, including those in `NODE_OPTIONS`. Node’s `--env-file` and `--env-file-if-exists`, like bare Bun, can load a file before the CLI starts. Ordinary commands still work, doctor reports the key source as unknown, and job starts require a clean launch. For jobs, omit Node’s env-file options or use `bun --no-env-file`.
 

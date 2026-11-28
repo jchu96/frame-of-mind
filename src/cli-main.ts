@@ -1,5 +1,5 @@
 import { applicationSetting } from "./lib/application-settings.js";
-import "./instrument.js";
+import { KeyCommandRefused } from "./key-command.js";
 import { cliSettings, keyLabel, keyNextStep } from "./cli-settings.js";
 import { inspectScratch } from "./adapters/scratch.js";
 import { mediaCapabilityReport, requireMedia } from "./services/media-capabilities.js";
@@ -137,7 +137,9 @@ program
       if (!rows.length) process.stdout.write("No matching scratch entries.\n");
       return;
     }
-    const key = cliSettings().keyReport();
+    const config = cliSettings();
+    const key = config.keyReport();
+    const settingsPath = config.settingsPath();
     const prerequisites = {
       node: Number(process.versions.node.split(".")[0]) >= 22,
       geminiKey: key.present,
@@ -158,10 +160,11 @@ program
       writeDocument({
         ok: checks.every(check => !check.required || check.ok), checks, commands: media.commands.map(({ command: name, capabilities }) => ({ name, capabilities })), leftovers,
         roots: { mode: "none", file: null },
-        key, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
+        key, settingsPath, artifactRoot: resolve(defaultOutputRoot()), toolVersion: VERSION,
         commit: RELEASE_COMMIT,
         cliSha256: IS_RELEASE_BUNDLE ? createHash("sha256").update(await readFile(new URL(import.meta.url))).digest("hex") : null,
       });
+      if (key.source === "command" && !key.present) process.exitCode = 1;
       return;
     }
     if (!flags.scratch && (!prerequisites.node || !prerequisites.geminiKey)) process.exitCode = 1;
@@ -197,7 +200,8 @@ program
       const result = absent.length ? "Missing " + absent.join(", ") : "Ready";
       process.stdout.write(`${command} needs ${capabilities.map(row => row.name).join(", ")}. ${result}.\n`);
     }
-    const next = keyNextStep(key);
+    if (settingsPath) process.stdout.write("Settings file: " + JSON.stringify(settingsPath) + "\n");
+    const next = keyNextStep(key, config.commandNextStep());
     if (next) process.stdout.write(next + "\n");
   });
 
@@ -237,7 +241,7 @@ program.command("calibrate")
   .option("--model <id>", "Gemini model ID")
   .option("--json", "Print the model clock measurement as JSON")
   .action(async (flags: { model?: string; json?: boolean }) => {
-    const apiKey = cliSettings().providerKey();
+    const apiKey = await cliSettings().providerKey();
     if (!apiKey) throw new CliError("KEY_MISSING", "Set GEMINI_API_KEY before calibration.");
     if (flags.model !== undefined && !geminiModelSchema.safeParse(flags.model).success) throw new CliError("USAGE", "Invalid Gemini model ID.");
     await requireMedia("calibrate");
@@ -273,7 +277,7 @@ program
   .option("--depth <profile>", "Understanding depth: standard or deep", "standard")
   .option("--model <id>", `Gemini model ID, for example ${DEFAULT_GEMINI_MODEL} or gemini-pro-latest`)
   .addOption(new Option("--thinking-level <level>", "Gemini thinking level (default: provider setting)").choices(THINKING_LEVELS))
-  .option("-o, --output <directory>", "Artifact root", defaultOutputRoot())
+  .option("-o, --output <directory>", "Artifact root")
   .option("--max-moments <n|all>", "Best N candidates by importance, or all indexed candidates", "10")
   .option("--note <name=path>", "Per-run UTF-8 text or Markdown reference (repeatable, up to 8)", (value: string, previous: string[]) => [...previous, value], [] as string[])
   .option("--concurrency <n>", "Parallel Gemini detail requests in pass 2 (default 1)")
@@ -296,7 +300,7 @@ program
       let failureFolder: string | undefined;
       let analyzeOptions: AnalyzeOptions | undefined;
       try {
-        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, cliSettings().providerKey());
+        analyzeOptions = await buildAnalyzeOptions(meetingId, flags, await cliSettings().providerKey());
         process.stderr.write(`retention: ${analyzeOptions.retention}\n`);
         const cancellation = new AbortController();
         const cancel = () => cancellation.abort();
@@ -382,6 +386,7 @@ program
           });
         }
       } catch (error) {
+        if (error instanceof KeyCommandRefused) throw error;
         await captureCliException(
           telemetryCodeFromError(error, "analysis_failed"),
           {
@@ -534,7 +539,7 @@ export async function buildAnalyzeOptions(
     ...(label ? { label } : {}),
     ...(runNotes.length ? { runNotes } : {}),
     indexFps: recipeResult.indexFps,
-    outputRoot: flags.output,
+    outputRoot: flags.output ?? defaultOutputRoot(),
     maxIncidents,
     detailConcurrency,
     screenshots: flags.screenshots,

@@ -8,23 +8,16 @@ import {
 } from "./lib/telemetry-trace.js";
 
 
-const dsn = applicationSetting("SENTRY_DSN")?.trim() ?? "";
+let initialized: {enabled: boolean; tracing: boolean} | undefined;
 
-export const CLI_TELEMETRY_ENABLED = dsn.length > 0;
-
-// Tracing is a second, separately opted-in signal (ADR 0022): a DSN alone
-// keeps the ADR 0017 codes-only posture; spans flow only when the operator
-// also sets FRAME_OF_MIND_TRACING=1.
-export const CLI_TRACING_ENABLED = CLI_TELEMETRY_ENABLED
-  && applicationSetting("FRAME_OF_MIND_TRACING") === "1";
-
-function tracesSampleRate(): number {
-  if (!CLI_TRACING_ENABLED) return 0;
-  const raw = Number(applicationSetting("FRAME_OF_MIND_TRACES_SAMPLE_RATE") ?? "1");
-  return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 1;
-}
-
-if (CLI_TELEMETRY_ENABLED) {
+// Resolve folder settings only when a command actually needs telemetry.
+export function cliInstrumentation() {
+  if (initialized) return initialized;
+  const dsn = applicationSetting("SENTRY_DSN")?.trim() ?? "";
+  const tracing = !!dsn && applicationSetting("FRAME_OF_MIND_TRACING") === "1";
+  initialized = {enabled: !!dsn, tracing};
+  if (!dsn) return initialized;
+  const raw = tracing ? Number(applicationSetting("FRAME_OF_MIND_TRACES_SAMPLE_RATE") ?? "1") : 0;
   Sentry.init({
     dsn,
     _metadata: {
@@ -37,10 +30,10 @@ if (CLI_TELEMETRY_ENABLED) {
     },
     environment: "cli",
     sendDefaultPii: false,
-    tracesSampleRate: tracesSampleRate(),
+    tracesSampleRate: Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 1,
     defaultIntegrations: false,
     ...(IS_RELEASE_BUNDLE && { registerEsmLoaderHooks: false }),
-    beforeSendTransaction: CLI_TRACING_ENABLED
+    beforeSendTransaction: tracing
       ? (event) =>
         scrubSentryTransactionEvent(
           event as unknown as ScrubbableTransactionEvent,
@@ -53,4 +46,5 @@ if (CLI_TELEMETRY_ENABLED) {
       ) as typeof event | null;
     },
   });
+  return initialized;
 }

@@ -43,3 +43,12 @@ export function childEnvironment(
   }
   return result;
 }
+
+/** The operator-selected key reader alone receives the captured session. */
+export function keyCommandEnvironment(snapshot: Readonly<NodeJS.ProcessEnv>): NodeJS.ProcessEnv {
+  const environment = {...snapshot};
+  delete environment.GEMINI_API_KEY;
+  delete environment.GRANOLA_API_KEY;
+  delete environment.FRAME_OF_MIND_KEY_COMMAND;
+  return environment;
+}

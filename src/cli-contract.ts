@@ -1,3 +1,4 @@
+import { KeyCommandRefused } from "./key-command.js";
 import { Command, CommanderError } from "commander";
 import { jobInventory } from "./commands/job-commands.js";
 import { VERSION } from "./version.js";
@@ -79,7 +80,10 @@ export async function runCli(root: Command, args: string[]) {
     await root.parseAsync(args, { from: "user" });
   } catch (error) {
     if (machine) writeFailure(error);
-    else if (error instanceof CommanderError) process.exitCode = error.exitCode;
+    else if (error instanceof KeyCommandRefused) {
+      process.stderr.write(error.message + "\n");
+      process.exitCode = faultExits.KEY_REFUSED;
+    } else if (error instanceof CommanderError) process.exitCode = error.exitCode;
     else {
       process.stderr.write(`frameofmind: ${error instanceof Error ? error.message : String(error)}\n`);
       process.exitCode = 1;
