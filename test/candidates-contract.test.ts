@@ -20,6 +20,7 @@ describe("candidates-contract", () => {
     {...doc,candidates:[{...candidate,chain:[{...candidate.chain[0],pass:2}]}]},
     {...doc,candidates:[{...candidate,chain:[{...candidate.chain[0],at:325}]}]},
     {...doc,candidates:[{...candidate,score:Infinity}]}, {...doc,candidates:[{...candidate,start:1.5}]},
+    {...doc,recording:{...recording,rate:{num:25,den:1,unit:"fps"}}},
     {...doc,recording:{...recording,length:"01500"}}, {...doc,recording:{...recording,rate:{num:50,den:2}}},
   ])("refuses the complete invalid document", value => {
     expect(() => readCandidates(value,recording,"file")).toThrowError(expect.objectContaining(invalid));

@@ -3067,6 +3067,8 @@ describe("engine answers", () => {
     ];
     const file = await service.analyze({...await fileOptions(f,clock,proposals),maxIncidents:2});
     expect(file.analysis.items.map(item => item.candidateId)).toEqual(["second","first"]);
+    expect(file.manifest.analysis.selection).toBeUndefined();
+    expect(await readFile(join(file.directory,"analysis.md"),"utf8")).toContain("Lower-ranked");
   });
 
   it.each([{num:25,den:1},{num:30000,den:1001}])("exact-answer-roundtrip preserves proposal counts on $num/$den",async rate => {

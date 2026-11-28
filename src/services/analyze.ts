@@ -1203,7 +1203,7 @@ export class AnalysisOrchestrator {
             kind: "warning",
             stage: "interrogating",
             message:
-              `Analysis truncated: ${omittedByLimit} indexed candidate(s) were not interrogated because of the configured moment limit (${options.maxIncidents}). Lower-importance candidates were dropped; use --max-moments all to analyze every indexed candidate.`,
+              `Analysis truncated: ${omittedByLimit} indexed candidate(s) were not interrogated because of the configured moment limit (${options.maxIncidents}). ${fileRows ? "Lower-ranked" : "Lower-importance"} candidates were dropped; use --max-moments all to analyze every indexed candidate.`,
           });
         }
         const outcome = analysisOutcomeSchema.parse({
@@ -1426,7 +1426,7 @@ export class AnalysisOrchestrator {
           analysis: {
             ...(options.focus ? { focus: options.focus } : {}),
             maxIncidents: options.maxIncidents,
-            selection: "best-importance" as const,
+            ...(!fileRows && {selection: "best-importance" as const}),
             indexFps,
             indexResolution: "low" as const,
             interrogationResolution: "medium" as const,

@@ -9,7 +9,7 @@ const count = z.int().nonnegative();
 const ms = z.int().positive();
 export const actorSchema = z.strictObject({ engine: z.string(), model: z.string().nullable() });
 export const basisSchema = z.enum(["model", "word", "shot", "speech", "person", "search-hit"]);
-const reducedRatio = rateSchema.refine(r => sameRate(r, rationalRate(r.num, r.den)), "Ratio must be reduced.");
+const reducedRatio = z.strictObject({num:z.int().positive(), den:z.int().positive()}).pipe(rateSchema).refine(r => sameRate(r, rationalRate(r.num, r.den)), "Ratio must be reduced.");
 const identity = { recordingSha256: z.string().regex(/^[a-f0-9]{64}$/), length: indexSchema };
 export const recordingSchema = z.discriminatedUnion("unit", [
   z.strictObject({ ...identity, unit: z.literal("video-frame"), rate: reducedRatio }),

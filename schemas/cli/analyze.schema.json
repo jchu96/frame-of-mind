@@ -3,6 +3,20 @@
   "type": "object",
   "required": ["schemaVersion"],
   "definitions": {
+    "role": {
+      "type":"object","required":["engine","model","source"],
+      "properties":{"engine":{"type":"string"},"model":{"type":["string","null"]},"source":{"enum":["flag","recipe","default","file"]}}
+    },
+    "route": {"type":"object","required":["proposer","grader"],"properties":{"proposer":{"$ref":"#/definitions/role"},"grader":{"$ref":"#/definitions/role"}}},
+    "nullableRoute": {"anyOf":[{"$ref":"#/definitions/route"},{"type":"null"}]},
+    "enginePlan": {
+      "type":"object","required":["planned","used","expected","reason","retention"],
+      "properties":{
+        "planned":{"$ref":"#/definitions/nullableRoute"},"used":{"$ref":"#/definitions/nullableRoute"},
+        "expected":{"$ref":"#/definitions/nullableRoute"},"reason":{"type":"null"},
+        "retention":{"type":"object","required":["gemini","twelvelabs"],"properties":{"gemini":{"enum":["provider","run",null]},"twelvelabs":{"type":"null"}}}
+      }
+    },
     "index": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"},
     "rate": {"type":"object","required":["num","den"],"properties":{"num":{"type":"integer","minimum":1},"den":{"type":"integer","minimum":1}}},
     "span": {"type":"array","minItems":2,"maxItems":2,"items":{"$ref":"#/definitions/index"}},
@@ -28,6 +42,7 @@
   "else": {
     "allOf": [{"$ref":"#/definitions/source"}],
     "properties": {
+      "enginePlan":{"$ref":"#/definitions/enginePlan"},
       "retention": {"enum": ["provider", "run"]},
       "tokens": {
         "type": "object",

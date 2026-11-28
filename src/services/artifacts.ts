@@ -72,7 +72,7 @@ export async function writeArtifacts(
     `${JSON.stringify(validatedOutcome, null, 2)}\n`,
     { mode: 0o600 },
   );
-  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts, manifest.proseTimeUnverified), { mode: 0o600 });
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts, manifest.proseTimeUnverified, manifest.enginePlan?.used?.proposer.source === "file"), { mode: 0o600 });
   await writeFile(
     reportHtml,
     await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome, cuts),
@@ -91,6 +91,7 @@ export function renderAnalysis(
   label?: string,
   cuts?: ReadonlyMap<string, string>,
   proseWarning?: boolean,
+  fileRanking = false,
 ): string {
   const accepted = analysis.items.map((item, originalIndex) => ({ item, originalIndex })).filter(({ item }) => item.result.accepted);
   const heading = "meeting" in analysis
@@ -120,7 +121,7 @@ export function renderAnalysis(
       ? `> ${outcome.candidates.failed} candidate response(s) failed validation and were excluded. See \`analysis-outcome.json\` for sanitized diagnostics.`
       : "",
     outcome && outcome.candidates.omittedByLimit > 0
-      ? `> Coverage truncated: ${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit. Lower-importance candidates are missing from this analysis; rerun with a higher \`--max-moments\` for full coverage.`
+      ? `> Coverage truncated: ${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit. ${fileRanking ? "Lower-ranked" : "Lower-importance"} candidates are missing from this analysis; rerun with a higher \`--max-moments\` for full coverage.`
       : "",
     outcome && (outcome.candidates.failed > 0 || outcome.candidates.omittedByLimit > 0) ? "" : "",
     analysis.matchNotes ? "## Recording match notes" : "",
@@ -246,7 +247,7 @@ async function renderHtmlArtifact(
       ? `${outcome.candidates.failed} candidate response(s) failed validation and were excluded; sanitized diagnostics are available in <code>analysis-outcome.json</code>.`
       : "",
     outcome.candidates.omittedByLimit > 0
-      ? `${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit, so lower-importance candidates are missing; rerun with a higher <code>--max-moments</code> for full coverage.`
+      ? `${outcome.candidates.omittedByLimit} indexed candidate(s) were never interrogated because of the configured moment limit, so ${manifest.enginePlan?.used?.proposer.source === "file" ? "lower-ranked" : "lower-importance"} candidates are missing; rerun with a higher <code>--max-moments</code> for full coverage.`
       : "",
   ].filter(Boolean).join(" ");
   const outcomeNotice = outcome.status === "complete"

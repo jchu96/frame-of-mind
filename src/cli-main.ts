@@ -455,7 +455,7 @@ export function printAnalysisSummary(result: AnalyzeResult, stream: NodeJS.Writa
   stream.write(
     `Interrogated ${selected} of ${indexed} indexed candidates` +
     (outOfRange ? `; ${outOfRange} out of range` : "") +
-    (omittedByLimit ? ` (${omittedByLimit} lower-importance dropped; --max-moments all to analyse every one).\n` : ".\n"),
+    (omittedByLimit ? ` (${omittedByLimit} ${result.manifest.enginePlan?.used?.proposer.source === "file" ? "lower-ranked" : "lower-importance"} dropped; --max-moments all to analyse every one).\n` : ".\n"),
   );
   stream.write(`${clockSummary(result.manifest.clock)}\n`);
   const accepted = result.analysis.items.filter((item) => item.result.accepted).length;
