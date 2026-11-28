@@ -2,7 +2,7 @@ import { CliError, writeDocument } from "../cli-contract.js";
 import { requireMedia } from "../services/media-capabilities.js";
 import type { Command } from "commander";
 import { parseSecondsMs } from "../domain/clock.js";
-import { classify, describeMeasurement, selectEdge, snapSettings } from "../domain/snap.js";
+import { classify, describeMeasurement, describeSound, selectEdge, snapSettings } from "../domain/snap.js";
 import { timestampToSeconds } from "../lib/time.js";
 import { decodeSpeechEnvelope } from "../services/audio.js";
 
@@ -37,7 +37,7 @@ export function registerSnap(program: Command) {
       const output = await snapFile(video, flags);
       const { request, result } = output;
       const reading = result.status === "snapped"
-        ? ` · ${result.target.seconds} s (${describeMeasurement(result.target)}), shift ${result.shiftMs} ms, pause ${result.gapLowerBound ? "≥" : ""}${result.gapMs} ms`
+        ? ` · ${result.target.seconds} s (${describeMeasurement(result.target)}), shift ${result.shiftMs} ms, pause ${result.gapLowerBound ? "≥" : ""}${result.gapMs} ms · ${describeSound(result)}`
         : " · no measured precision";
       const alternatives = "alternativesMs" in result && result.alternativesMs.length
         ? ` · alternatives (ms): ${result.alternativesMs.join(", ")}` : "";

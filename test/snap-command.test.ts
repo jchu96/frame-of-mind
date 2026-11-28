@@ -37,6 +37,11 @@ test("snap reports measured precision, no boundary and unavailable decode at the
     await cli.parseAsync(["snap", "generated", "--at", "15", "--edge", "end", "--json"], { from: "user" });
     expect(validateCliDocument("snap", String(stdout.mock.lastCall![0]))).toMatchObject({ request: { clock: "source", edge: "end", at: "15" }, result: { status: "no-boundary" } });
     expect(process.exitCode).toBe(previous);
+    blocks[0]!.fill(-35).fill(-9, 100, 150);
+    await cli.parseAsync(["snap", "generated", "--at", "1.410", "--edge", "end", "--json"], { from: "user" });
+    expect(validateCliDocument("snap", String(stdout.mock.lastCall![0])).result).toMatchObject({
+      floorDbfs: -35, speechAboveFloorDb: expect.closeTo(26), noisy: true, target: { seconds: "1.500", precisionMs: 300 },
+    });
     decode.mockResolvedValue(undefined);
     await cli.parseAsync(["snap", "empty", "--at", "0", "--edge", "start", "--json"], { from: "user" });
     expect(validateCliDocument("snap", String(stdout.mock.lastCall![0])).result.status).toBe("unavailable");

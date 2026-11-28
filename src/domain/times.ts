@@ -25,7 +25,7 @@ export const timesV2Schema = z.strictObject({
 });
 
 const fileClock = z.enum(["source", "reel"]);
-const measured = approximate.extend({ gridMs: z.literal(10), precisionMs: z.literal([50, 200]), origin: z.literal("audio-envelope") });
+const measured = approximate.extend({ gridMs: z.literal(10), precisionMs: z.literal([50, 200, 300]), origin: z.literal("audio-envelope") });
 const naturalMs = z.number().int().nonnegative();
 const alternativesMs = z.array(naturalMs).refine(xs => xs.every((x, i) => i === 0 || xs[i - 1]! < x));
 const frameReference = z.strictObject({
@@ -35,6 +35,7 @@ const frameReference = z.strictObject({
 const snap = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("snapped"), target: measured.extend({ clock: fileClock, seconds: seconds.endsWith("0") }),
     timeline: measured.extend({ clock: z.literal("timeline") }).optional(), shiftMs: z.number().int(),
+    floorDbfs: z.number().optional(), speechAboveFloorDb: z.number().optional(), noisy: z.boolean().optional(),
     gapMs: naturalMs, gapLowerBound: z.literal(true).optional(), alternativesMs, frameReference: frameReference.optional() }),
   z.strictObject({ status: z.literal("no-boundary"), alternativesMs }),
   z.strictObject({ status: z.literal("ambiguous"), alternativesMs: alternativesMs.refine(xs => xs.length > 0) }),

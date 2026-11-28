@@ -1,7 +1,7 @@
 import { declaredOffset, parseSecondsMs, type ClockDeclaration, type RunClock } from "../domain/clock.js";
 import { modelTime, offsetApproximate, renderApproximate, deriveExact, offsetTime, snapDecimalSeconds, renderExactTimecode } from "exact-time";
 import { timesSchema, type StoredSnap, type TimesArtifact } from "../domain/times.js";
-import { decimalMs, describeMeasurement, type Edge, type SnapResult, type SnapRun } from "../domain/snap.js";
+import { decimalMs, describeMeasurement, describeSound, type Edge, type SnapResult, type SnapRun } from "../domain/snap.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type {
@@ -362,6 +362,8 @@ function describeCut(entry: { time: Parameters<typeof renderApproximate>[0]; sna
   if (result.status === "snapped") {
     parts.push(`${result.target.seconds} s ${result.target.clock} (${describeMeasurement(result.target)})`,
       `shift ${result.shiftMs} ms`, `pause ${result.gapLowerBound ? "≥" : ""}${result.gapMs} ms`);
+    const sound = describeSound(result);
+    if (sound) parts.push(sound);
     if (result.timeline) parts.push(`${result.timeline.seconds} s timeline (${describeMeasurement(result.timeline)})`);
     const ref = result.frameReference;
     if (ref) parts.push(`containing frame of the proposal: timeline ${ref.frames} at ${ref.rate.num}/${ref.rate.den}, ${ref.timecode} ${ref.dropFrame ? "DF" : "NDF"} (${ref.basis}), proposal uncertainty can span neighbouring frames`);

@@ -248,6 +248,9 @@ test("W10 locked-base v2 bytes and strict v3 candidate, evidence, clock and fall
   invalid({ ...e, snap: { status: "no-boundary", alternativesMs: [20930, 20000] } });
   const measured = records[0]!.start;
   if (measured.status !== "snapped") throw new Error("Expected a measured fixture");
+  const noisySnap = { ...measured, floorDbfs: -50, speechAboveFloorDb: 26, noisy: true, target: { ...measured.target, precisionMs: 300 } };
+  const noisySidecar = { ...sidecar, entries: [{ ...e, snap: noisySnap }] };
+  expect(timesSchema.parse(noisySidecar)).toEqual(noisySidecar);
   for (const overrides of [{ gridMs: undefined }, { gridMs: 20 }, { precisionMs: 10 }]) {
     invalid({ ...e, snap: { ...measured, target: { ...measured.target, ...overrides } } });
   }

@@ -432,7 +432,7 @@ export function printAnalysisSummary(result: AnalyzeResult, stream: NodeJS.Writa
   );
   if (result.snapSummary) {
     const { counts, total, medianShiftMs } = result.snapSummary;
-    stream.write(`Speech edges: ${counts.snapped} snapped, ${counts["no-boundary"]}/${total} no-boundary, ${counts.ambiguous} ambiguous, ${counts.unavailable} unavailable` +
+    stream.write(`Speech edges: ${counts.snapped} snapped (${counts.noisy ?? 0} noisy), ${counts["no-boundary"]}/${total} no-boundary, ${counts.ambiguous} ambiguous, ${counts.unavailable} unavailable` +
       (medianShiftMs === undefined ? ".\n" : `, median signed shift ${medianShiftMs} ms (nearest rank).\n`));
   }
   const remoteFile = result.manifest.remoteFile;
