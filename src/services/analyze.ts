@@ -593,7 +593,8 @@ export class AnalysisOrchestrator {
         ? this.createEngines(options.apiKey, {...options, twelvelabsKey:undefined}) : undefined;
       const analyzer = engines?.media;
       const runModel = route.grader.engine === "gemini" ? analyzer!.model : PEGASUS_MODEL;
-      const calls:EngineCall[] = [];
+      const preGradeCalls:EngineCall[] = [];
+      const gradeCallsByCandidate:EngineCall[] = [];
       const directory = () => this.dependencies.receiptDirectory ?? receiptDirectory();
       const accountFor = (key:string) => ({catalog:new ScratchReceipts(directory(),key,runId,this.now),request:twelveTransport(key)});
       const usesTwelve = route.proposer.engine === "twelvelabs" || route.grader.engine === "twelvelabs";
@@ -610,7 +611,7 @@ export class AnalysisOrchestrator {
           if (!key) throw new Error("Cleanup key unavailable.");
           return accountFor(key);
         },tellRoute,this.now);
-        if (cleanup) calls.push(cleanup);
+        if (cleanup) preGradeCalls.push(cleanup);
       }
       const recordUpload = () => {
         if (sourceClock.lengthKnown) receipt.uploads.push({kind:soundOnly ? "audio-window" : "video-cut",
@@ -628,15 +629,19 @@ export class AnalysisOrchestrator {
         if (catalog.copies.length) plan.receiptIds = catalog.copies.map(r=>r.receiptId);
         for (const copy of catalog.copies) await tellRoute("Twelve Labs scratch "+copy.receiptId+" "+copy.state+(copy.reason ? " ("+copy.reason+")" : "")+".");
       };
-      const engineRecords = () => ({enginePlan:plan,engineCalls:calls,
+      // Still extraction can start grade requests out of order. Publish by candidate,
+      // omitting windows that never reached the provider, and retain each call's own UTC.
+      const engineRecords = () => ({enginePlan:plan,
+        engineCalls:[...preGradeCalls,...gradeCallsByCandidate.filter(call=>call !== undefined)],
         ...(catalog?.copies.length && {library:catalog.copies,indexWait:twelve!.indexWait})});
       const now = this.now;
-      async function measured<T>(role:"proposer"|"grader",window:NonNullable<EngineCall["inferenceWindow"]>,work:()=>Promise<T>) {
+      async function measured<T>(role:"proposer"|"grader",window:NonNullable<EngineCall["inferenceWindow"]>,work:()=>Promise<T>,candidateIndex?:number) {
         const actor = plan.used![role];
         const entry:EngineCall = {role,engine:actor.engine as EngineCall["engine"],model:actor.model!,
           material:role === "proposer" ? "selected recording and proposal instruction" : "selected recording, grading window and scoped evidence",
           sentExtent:[0,duration ?? null],inferenceWindow:window,utc:now(),bytes:recordingSizeBytes,state:"attempted",result:"failed"};
-        calls.push(entry);
+        if (candidateIndex === undefined) preGradeCalls.push(entry);
+        else gradeCallsByCandidate[candidateIndex] = entry;
         try {
           const result = await work();
           entry.state="sent"; entry.result="complete";
@@ -1194,7 +1199,7 @@ export class AnalysisOrchestrator {
                   clock.modelClipClock,
                   stills,
                   ...(ranged ? [duration] as [number|undefined] : []),
-                ));
+                ),indexNumber);
                 span.setAttributes({ "frame_of_mind.candidate_accepted": detail.accepted });
                 return detail;
               } catch (error) {
