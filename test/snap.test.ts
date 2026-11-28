@@ -89,3 +89,33 @@ test("summary gives all statuses and handles empty and even signed-shift populat
   expect(summarizeSnaps({ settings: defaults, records: [] })).toEqual({ counts: { snapped: 0, ambiguous: 0, unavailable: 0, "no-boundary": 0 }, total: 0 });
   expect(summarizeSnaps(proposeRecords([{ start: 1000, end: 2000 }], boundaries([1200], [1700]), "source", defaults)).medianShiftMs).toBe(-300);
 });
+
+function taperedTone(noiseBelowSpeechDb: number) {
+  const pcm = Buffer.alloc(3000 * 16);
+  const peak = 12000;
+  const noiseRms = peak / Math.SQRT2 * 10 ** (-noiseBelowSpeechDb / 20);
+  let seed = 12345;
+  for (let sample = 0; sample < pcm.length / 2; sample++) {
+    // One random sign per tone cycle keeps the background power steady in every 10 ms window.
+    if (sample % 8 === 0) seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const noise = seed >= 2 ** 31 ? noiseRms : -noiseRms;
+    const ms = sample / 8;
+    const quiet = ms < 1150 || ms >= 1850;
+    const amplitude = ms >= 1000 && ms < 2000 ? peak * (quiet ? 10 ** (-32 / 20) : 1) : 0;
+    pcm.writeInt16LE(Math.round(noise + amplitude * Math.sin(sample % 8 * Math.PI / 4)), sample * 2);
+  }
+  return pcm;
+}
+
+test.each([Infinity, 32, 26])("quiet tone ends over noise %s dB below speech keep the word to stated precision", noiseDb => {
+  const edges = measure(taperedTone(noiseDb));
+  for (const [edge, truth] of [["start", 1000], ["end", 2000]] as const) {
+    const result = select(edges, edge, truth);
+    expect(result.status).toBe("snapped");
+    if (result.status !== "snapped") throw new Error("Expected a measured tone edge");
+    const inwardMs = edge === "start" ? result.shiftMs : -result.shiftMs;
+    const toleranceMs = noiseDb < 30 ? 300 : 40; // one frame at 25 fps
+    expect(inwardMs, edge + " inside the tone (ms)").toBeLessThanOrEqual(toleranceMs);
+    expect(-inwardMs, edge + " outside the tone (ms)").toBeLessThan(120);
+  }
+});
