@@ -13,6 +13,7 @@ export const engineReason = z.enum(["index-timeout","quota","media-limit","rate-
 export type EngineReason = z.infer<typeof engineReason>;
 export const PEGASUS_MODEL = "pegasus1.6";
 export const DIRECT_UPLOAD_BYTES = 200_000_000;
+export const soundOnlyHint = "Twelve Labs requires a picture. Use Gemini for a sound-only recording.";
 export const directUploadHint = "Twelve Labs accepts direct uploads up to 200 MB. A shorter time range can bring the upload under the limit.";
 
 export const enginePlanSchema = z.strictObject({
@@ -90,9 +91,9 @@ export function geminiRetry(argv: readonly string[], file: boolean) {
 }
 
 /** Apply to the byte count of the physical selection, before either engine receives media. */
-export function checkDirectUpload(plan: EnginePlan, bytes: number | undefined, argv: readonly string[]) {
+export function checkDirectUpload(plan: EnginePlan, bytes: number | undefined, argv: readonly string[], soundOnly = false) {
   if (!usesTwelveLabs(plan)) return;
-  const reason = bytes === undefined ? "local-media-unavailable" : bytes > DIRECT_UPLOAD_BYTES ? "media-limit" : undefined;
+  const reason = bytes === undefined ? "local-media-unavailable" : bytes > DIRECT_UPLOAD_BYTES || soundOnly ? "media-limit" : undefined;
   if (!reason) return;
   if (defaultDualRoute(plan)) {
     fallbackPlan(plan, reason);
@@ -100,7 +101,7 @@ export function checkDirectUpload(plan: EnginePlan, bytes: number | undefined, a
     return;
   }
   const fields = {engine:"twelvelabs", phase:"upload", reason, retryWith:geminiRetry(argv, plan.planned!.proposer.engine === "file")};
-  if (reason === "media-limit") throw new ContractError("PROVIDER_LIMIT", directUploadHint, fields);
+  if (reason === "media-limit") throw new ContractError("PROVIDER_LIMIT", soundOnly && bytes! <= DIRECT_UPLOAD_BYTES ? soundOnlyHint : directUploadHint, fields);
   throw new ContractError("CAPABILITY_MISSING", "Twelve Labs requires local recording bytes.", fields);
 }
 

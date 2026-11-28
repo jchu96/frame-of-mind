@@ -61,7 +61,7 @@ try {
     "--media-root", cwd, "--output-root", cwd, "--recipe", "requirements", "--allowed-models", "gemini-fixture",
     "--request-id", "f454f1d6-3262-4544-ab14-e3d03bcf7d91", "--retention", "run",
     "--max-provider-requests", "1", "--max-media-seconds", "2", "--max-file-bytes", "32"], 20, bare));
-  assert.deepEqual(job.error, {code: "NOT_FOUND", message: "The input file does not exist.", details: {argument: "file"}});
+  assert.deepEqual(job.error, {code: "NOT_FOUND", message: "The input file does not exist.", details: {argument: "file", phase: "prepare", sent: false}});
   if (process.platform === "darwin" || process.platform === "linux") {
     const settings = join(cwd, process.platform === "darwin" ? "Library/Application Support" : ".config", "frameofmind/settings.json");
     const tools = join(cwd, "tools");

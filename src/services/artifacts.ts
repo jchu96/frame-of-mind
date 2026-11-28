@@ -72,7 +72,7 @@ export async function writeArtifacts(
     `${JSON.stringify(validatedOutcome, null, 2)}\n`,
     { mode: 0o600 },
   );
-  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts, manifest.proseTimeUnverified, manifest.enginePlan?.used?.proposer.source === "file"), { mode: 0o600 });
+  await writeFile(analysisMarkdown, renderAnalysis(analysis, validatedOutcome, manifest.clock, manifest.label, cuts, manifest.proseTimeUnverified, manifest.enginePlan?.used?.proposer.source === "file", manifest.sourceRange?.unit === "samples"), { mode: 0o600 });
   await writeFile(
     reportHtml,
     await renderHtmlArtifact(directory, analysis, manifest, validatedOutcome, cuts),
@@ -92,17 +92,19 @@ export function renderAnalysis(
   cuts?: ReadonlyMap<string, string>,
   proseWarning?: boolean,
   fileRanking = false,
+  soundOnly = false,
 ): string {
   const accepted = analysis.items.map((item, originalIndex) => ({ item, originalIndex })).filter(({ item }) => item.result.accepted);
   const heading = "meeting" in analysis
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
-    : label || "Video analysis";
+    : label || (soundOnly ? "Audio analysis" : "Video analysis");
   const contextLine = "meeting" in analysis
     ? `- Meeting: \`${escapeInline(analysis.meeting.id)}\``
-    : "- Context: Video only (no external context)";
+    : soundOnly ? "- Context: Audio only (no external context)" : "- Context: Video only (no external context)";
   const lines = [
     `# ${escapeInline(heading)}`,
     "",
+    ...(soundOnly ? ["No picture. No stills are taken.", ""] : []),
     ...(label ? [`- Label: ${escapeInline(label)}`] : []),
     contextLine,
     `- Recipe: \`${escapeInline(analysis.recipe.id)}\``,
@@ -223,12 +225,13 @@ async function renderHtmlArtifact(
       ${result.confidenceNotes ? `<p class="muted">Confidence: ${html(result.confidenceNotes)}</p>` : ""}
     </article>`;
   }));
+  const soundOnly = manifest.sourceRange?.unit === "samples";
   const heading = "meeting" in analysis
     ? analysis.meeting.title || `Meeting ${analysis.meeting.id}`
-    : manifest.label || "Video analysis";
+    : manifest.label || (soundOnly ? "Audio analysis" : "Video analysis");
   const providerLabel = "meeting" in analysis
     ? analysis.meeting.provider
-    : "video only";
+    : soundOnly ? "audio only" : "video only";
   const safeSourceUrl = "meeting" in analysis
     ? safeHref(analysis.meeting.sourceUrl)
     : undefined;
@@ -275,7 +278,7 @@ async function renderHtmlArtifact(
 <body><main>
   <header>
     <div class="eyebrow">Frame of Mind · ${html(providerLabel)} · ${html(analysis.recipe.label)}</div>
-    <h1>${html(heading)}</h1>
+    <h1>${html(heading)}</h1>${soundOnly ? "<p>No picture. No stills are taken.</p>" : ""}
     <div class="meta">${manifest.label ? `<span>Label: ${html(manifest.label)}</span>` : ""}<span>${accepted.length} accepted record(s)</span><span>Model ${html(analysis.model)}</span><span>${source}</span></div>
   </header>
   ${outcomeNotice}

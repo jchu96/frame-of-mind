@@ -1,7 +1,8 @@
 import { TwelveLabs, twelveTransport } from "../adapters/twelvelabs.js";
 import { receiptDirectory, ScratchReceipts } from "../adapters/twelvelabs-receipts.js";
 import type { EngineCall } from "../domain/engine-receipts.js";
-import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, checkDirectUpload, checkRoles, directUploadHint, disclosure, enginePlan, fallbackMessage, usesTwelveLabs, type EngineItems } from "../domain/engine-plan.js";
+import { defaultDualRoute, engineReason, fallbackPlan, geminiRetry, PEGASUS_MODEL, DIRECT_UPLOAD_BYTES, soundOnlyHint, checkDirectUpload, checkRoles, directUploadHint, disclosure, enginePlan, fallbackMessage, usesTwelveLabs, type EngineItems } from "../domain/engine-plan.js";
+import { mediaRequestStarted, preparationDetails, uploadMedia, withMediaTransfer } from "../lib/media-transfer.js";
 import { recordingIdentity, readCandidates, type Candidate, type CandidatesDocument } from "../domain/candidates.js";
 import { loadCandidatesFile } from "../adapters/candidates-file.js";
 import { measurementSearch, measurementWindow, proposalEdges, resolveEdges } from "../domain/proposal-edges.js";
@@ -419,6 +420,10 @@ export class AnalysisOrchestrator {
   }
 
   async analyze(options: AnalyzeOptions, execution: AnalyzeExecutionOptions = {}): Promise<AnalyzeResult> {
+    return withMediaTransfer(() => this.run(options, execution));
+  }
+
+  private async run(options: AnalyzeOptions, execution: AnalyzeExecutionOptions): Promise<AnalyzeResult> {
     checkRoles(options, options.candidatesFile !== undefined, options.recipe.engines);
     const progress = execution.progress ?? NOOP_PROGRESS_REPORTER;
     const plan = enginePlan({...options, file:options.candidatesFile !== undefined, recipe:options.recipe.engines,
@@ -517,10 +522,9 @@ export class AnalysisOrchestrator {
         localVideo,
         options.videoMimeType ?? downloadedMimeType,
       );
-      if (!mimeType.startsWith("video/")) {
+      if (!/^(video|audio)\//.test(mimeType)) {
         throw new Error(
-          `Frame of Mind requires a screen recording; received '${mimeType}'. ` +
-            "Audio-only calls have no visual UI evidence to interrogate.",
+          `Unsupported recording type '${mimeType}'.`,
         );
       }
       const originalPath = localVideo;
@@ -528,15 +532,24 @@ export class AnalysisOrchestrator {
       if (options.expectedVideoSha256 && recordingSha256 !== options.expectedVideoSha256) {
         throw new Error("Selected recording no longer matches its staged media receipt.");
       }
-      if (ranged) preparing = {recordingSha256};
+      preparing = {recordingSha256};
       const resolved = (clock: SourceReceipt["clock"]) => {
         const receipt = new SourceReceipt(clock, recordingSha256, maxVideoSeconds);
         if (preparing) preparing.receipt = receipt;
         return receipt;
       };
-      return await this.sourceRecording(originalPath, {from:options.from,to:options.to,timecodeRate:options.timecodeRate,signal:execution.signal,onSourceResolved:resolved}, "video",
+      return await this.sourceRecording(originalPath, {from:options.from,to:options.to,timecodeRate:options.timecodeRate,signal:execution.signal,onSourceResolved:resolved}, "analysis",
         line => process.stderr.write(line + "\n"), async (localVideo, sourceClock, hasAudio) => {
       const receipt = preparing?.receipt ?? resolved(sourceClock);
+      const soundOnly = sourceClock.grid.unit === "samples";
+      const recordingMimeType = soundOnly && ["video/mp4", "audio/mp4", "video/quicktime"].includes(mimeType)
+        ? "audio/m4a" : soundOnly ? mimeType.replace(/^video\//, "audio/") : mimeType;
+      const uploadMimeType = ranged ? (soundOnly ? "audio/wav" : "video/mp4") : recordingMimeType;
+      if (soundOnly) await report(progress, {
+        kind: "stage",
+        stage: "fetching_context",
+        message: "No picture. No stills are taken.",
+      });
       const recording = recordingIdentity(sourceClock, recordingSha256);
       if (sourceClock.grid.unit === "ticks" && !sourceClock.lengthKnown && sourceClock.observedEnd === undefined) {
         throw new ContractError("INVALID_INPUT", "The stream has no timestamps.");
@@ -546,14 +559,14 @@ export class AnalysisOrchestrator {
       const uploadedCutSha256 = ranged ? await sha256File(localVideo) : undefined;
       const recordingSizeBytes = (await stat(localVideo)).size;
       if (options.video) {
-        checkDirectUpload(plan, recordingSizeBytes, retryArgv);
+        checkDirectUpload(plan, recordingSizeBytes, retryArgv, soundOnly);
         if (plan.reason === "media-limit") {
           await tellRoute(fallbackMessage(plan.reason));
-          await tellRoute(directUploadHint);
+          await tellRoute(soundOnly && recordingSizeBytes <= DIRECT_UPLOAD_BYTES ? soundOnlyHint : directUploadHint);
         }
       }
       if (recordingSizeBytes > MAX_RECORDING_BYTES) throw new Error("Recording exceeds the Gemini Files API 2 GB per-file limit.");
-      const duration = ranged ? sourceClock.elapsed(sourceClock.to - sourceClock.from)
+      const duration = ranged || soundOnly ? sourceClock.elapsed(sourceClock.to - sourceClock.from)
         : await this.probeDuration(localVideo, {signal:execution.signal});
       if (duration !== undefined && duration > maxVideoSeconds) {
         throw new ContractError("RECORDING_TOO_LONG",
@@ -625,11 +638,12 @@ export class AnalysisOrchestrator {
       }
       const {engine,model} = plan.used!.grader;
       const gradedBy = {engine,model};
-      if (options.calibrate !== false && route.proposer.engine !== "twelvelabs" && analyzer?.probeClipClock) {
+      if (!soundOnly && options.calibrate !== false && route.proposer.engine !== "twelvelabs" && analyzer?.probeClipClock) {
         await tellRoute("Gemini may receive a synthetic calibration clip. The tool deletes that upload after measuring its clock.");
         const measured: Calibration = await this.calibrate({
           model: analyzer.model,
-          upload: (path, mime) => { preparing = undefined; return analyzer.upload(path, mime); },
+          tracksMediaRequests: true,
+          upload: (path, mime) => uploadMedia(analyzer, path, mime),
           probeClipClock: (file) => analyzer.probeClipClock!(file),
           delete: (file) => analyzer.delete(file),
         });
@@ -742,8 +756,7 @@ export class AnalysisOrchestrator {
                     if (ranged && (await stat(audioPath)).size > MAX_RECORDING_BYTES) {
                       throw new ContractError("MEDIA_LIMIT", "Audio window exceeds the upload limit.");
                     }
-                    preparing = undefined;
-                    audioRemote = await analyzer.upload(audioPath, ranged ? "audio/wav" : "audio/aac");
+                    audioRemote = await uploadMedia(analyzer, audioPath, ranged ? "audio/wav" : "audio/aac");
                     if (audioDuration !== undefined) receipt.uploads.push({kind:"audio-window",
                       span:[String(sourceClock.sourceIndex(grid.start)),String(sourceClock.sourceIndex(grid.end))], rate:sourceClock.grid.rate});
                     assertNotCanceled(execution.signal);
@@ -873,15 +886,15 @@ export class AnalysisOrchestrator {
                 "not_obtained",
               );
             }
+            mediaRequestStarted(); // The named file already has a remote lifecycle.
             return analyzer.resolveRetainedFile(
               options.remoteFileName,
               recordingSha256,
               recordingSizeBytes,
             );
           }
-          preparing = undefined;
-          const file = await analyzer.upload(localVideo, ranged ? "video/mp4" : mimeType);
-          if (sourceClock.lengthKnown) receipt.uploads.push({kind:"video-cut", span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
+          const file = await uploadMedia(analyzer, localVideo, uploadMimeType);
+          if (sourceClock.lengthKnown) receipt.uploads.push({kind:soundOnly ? "audio-window" : "video-cut", span:[String(sourceClock.from),String(sourceClock.to)],rate:sourceClock.grid.rate});
           return file;
         });
       };
@@ -903,6 +916,7 @@ export class AnalysisOrchestrator {
       } catch (error) {
         if (error instanceof AnalysisCanceledError) throw error;
         assertNotCanceled(execution.signal);
+        if (preparationDetails()) throw error;
         const reportedUploadCleanup = error instanceof GeminiFileError
           ? error.uploadCleanup ?? "unconfirmed"
           : "unconfirmed";
@@ -1008,7 +1022,6 @@ export class AnalysisOrchestrator {
           const window:[number,number|null] = [0,duration ?? null];
           if (plan.used!.proposer.engine === "gemini") return measured("proposer",window,proposeOnce);
           try {
-            preparing = undefined;
             return await measured("proposer",window,proposeOnce);
           } catch (error) {
             const reason = error instanceof ContractError && engineReason.safeParse(error.details?.reason).data;
@@ -1115,7 +1128,7 @@ export class AnalysisOrchestrator {
           assertNotCanceled(execution.signal);
           if (stopped) return {kind:"provider",reason:stopped,attempts:0};
           // CLI jobs account against a separate upload grant and omit inline images.
-          const frames = execution.jobScratchRoot ? undefined : await extractDetailStills(
+          const frames = soundOnly || execution.jobScratchRoot ? undefined : await extractDetailStills(
             localVideo, candidate, duration, temp, indexNumber, this.screenshot, () => assertNotCanceled(execution.signal), sourceClock,
           );
           let citedStill: string | undefined;
@@ -1179,7 +1192,7 @@ export class AnalysisOrchestrator {
                 }
               }
             });
-            if (options.screenshots && result.accepted && result.evidence?.timestamp) {
+            if (!soundOnly && options.screenshots && result.accepted && result.evidence?.timestamp) {
               const seconds = timestampToSeconds(result.evidence.timestamp);
               citedStill = frames?.find(frame => frame.seconds === seconds)?.path;
             }
@@ -1266,8 +1279,8 @@ export class AnalysisOrchestrator {
               item.exactStillTimes = attempt.exactStillTimes!;
               item.stillTimes = item.exactStillTimes.map(humanTime);
             }
-            if (screenTextNotFromStill) item.screenTextNotFromStill = true;
-            if (options.screenshots && result.accepted) {
+            if (!soundOnly && screenTextNotFromStill) item.screenTextNotFromStill = true;
+            if (!soundOnly && options.screenshots && result.accepted) {
               const stagingImage = join(screenshotDirectory,`moment-${indexNumber+1}-capture.png`);
               if (attempt.citedStill) {
                 const i = attempt.stillTimes!.indexOf(cited!);
@@ -1560,7 +1573,7 @@ export class AnalysisOrchestrator {
           ...(analyzer?.thinkingLevel && { thinkingLevel: analyzer.thinkingLevel }),
           recordingSha256,
           analysisSha256,
-          recordingMimeType: mimeType,
+          recordingMimeType,
           ...(remote && {remoteFile:{...sanitizedRemoteFileMetadata(remote),deleted:remoteDeleted}}),
           analysis: {
             ...(options.focus ? { focus: options.focus } : {}),
@@ -1743,9 +1756,10 @@ export class AnalysisOrchestrator {
       }
       });
     } catch (error) {
-      if (preparing && !execution.signal?.aborted) {
+      if (preparing && preparationDetails() && !execution.signal?.aborted) {
         const source = preparing.receipt?.document() ?? {recordingSha256:preparing.recordingSha256, coverage:{full:false, covered:[]}};
-        throw preparationError(error, source, line => process.stderr.write(line + "\n"));
+        const tell = execution.jobScratchRoot ? undefined : (line: string) => process.stderr.write(line + "\n");
+        throw preparationError(error, source, tell, !ranged);
       }
       throw error;
     } finally {

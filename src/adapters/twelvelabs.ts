@@ -10,6 +10,7 @@ import type { AnalysisRecipe, IndexedMoment } from "../domain/types.js";
 import type { RangeClock } from "../domain/range-clock.js";
 import type { CopyReceipt } from "../domain/engine-receipts.js";
 import type { SegmentDefinitions } from "../domain/segment-definitions.js";
+import { mediaRequestStarted } from "../lib/media-transfer.js";
 import { timestampToSeconds, secondsToTimestamp } from "../lib/time.js";
 import type { AnalysisEnginePorts, RecordingEngine } from "../services/analyze.js";
 import { toGeminiProviderSchema } from "./gemini-schema.js";
@@ -195,6 +196,7 @@ export class TwelveLabs implements RecordingEngine {
     form.set("method","direct"); form.set("file",blob,"recording."+({ "video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov"}[r.mime] ?? "video"));
     form.set("enable_hls","false"); form.set("enable_thumbnail","false");
     form.set("user_metadata",JSON.stringify({operationId:receipt.operationId}));
+    mediaRequestStarted();
     const result = await this.json("upload","/assets",{method:"POST",body:form},receipt);
     const id = await this.receipts.created(receipt,result._id);
     await this.ready("/assets/"+id,"index",id,receipt.operationId);

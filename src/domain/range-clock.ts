@@ -55,7 +55,7 @@ function position(value: string, grid: SourceGrid): Fraction {
   if (grid.unit === "samples") {
     const sample = /^(0|[1-9]\d*)samp$/.exec(value);
     if (sample) return { n: BigInt(sample[1]!), d: 1n };
-    if (frame || label) return rangeUsage("Audio bounds use seconds or Nsamp.");
+    if (frame || label) throw new UsageError("no-video-stream", "Audio bounds use seconds or Nsamp.", {phase:"prepare", sent:false});
   } else {
     if (frame) return { n: BigInt(frame[1]!), d: 1n };
     if (label) {

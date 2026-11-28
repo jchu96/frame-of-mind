@@ -533,6 +533,26 @@ describe("GeminiVideoAnalyzer", () => {
     );
   });
 
+  it("sends audio file parts without picture sampling in both passes", async () => {
+    const requests: GenerateContentParameters[] = [];
+    const file = {...activeFile, mimeType:"audio/wav"};
+    const analyzer = new GeminiVideoAnalyzer("fixture", "gemini-test", {
+      generateContent: async request => {
+        requests.push(request);
+        return {text: JSON.stringify(requests.length === 1 ? validVideoOnlyIndexResponse : validDetailResponse)};
+      },
+    });
+    const index = await analyzer.index(file, undefined, recipe);
+    await analyzer.interrogate(file, index.moments[0]!, undefined, recipe);
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      const [{parts}] = request.contents as [{parts: unknown[]}];
+      expect(parts[0]).toEqual({fileData:{fileUri:file.uri, mimeType:"audio/wav"}});
+      expect(request.config).not.toHaveProperty("mediaResolution");
+      expect(request.config?.systemInstruction).toContain("Use audible evidence");
+    }
+  });
+
   it("uses the requested whole-video sampling rate and keeps media before text", async () => {
     let request: GenerateContentParameters | undefined;
     const analyzer = new GeminiVideoAnalyzer(

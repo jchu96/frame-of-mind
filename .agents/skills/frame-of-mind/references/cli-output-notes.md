@@ -6,6 +6,8 @@ contract version 1 unless it says otherwise. `CHANGELOG.md` holds the full text.
 
 ## Before a run
 
+- **Upload status.** Tell the person nothing was uploaded only when `error.details.sent === false`. A missing field means the reply gives no such assurance. A pre-send failure also identifies its phase as `prepare`.
+
 - **Usage refusals.** On exit 2 with `error.code` equal to `USAGE`, branch on `error.details.reason`. The CLI usage refusals table in the runbook lists the exact values.
 
 - **Length limit.** `analyze` accepts a recording of at most 7260 seconds (two

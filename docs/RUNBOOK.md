@@ -930,9 +930,11 @@ can leave media at the provider until expiry.
 ### 3.10.1 Analyze or transcribe a source range
 
 Use `analyze --source none --video take.mp4 --from 600 --to 1200` or `transcribe take.mp4 --from 600 --to 1200`.
-Both accept seconds, frames and source timecode. Audio-only transcription also accepts `Nsamp` at the first track's sample rate.
+Both accept seconds, frames and source timecode. On sound-only recordings both commands accept seconds or `Nsamp` at the first audio track's sample rate.
 A missing bound uses the start or EOF. Read the used half-open source indices and exact rate from stderr. At 30000/1001 fps, `--from 600` starts at frame 17982.
 with a seconds bound moved to its frame, a printed whole second can fall just outside the request; a caller tests ownership against `sourceRange`, never against a printed second.
+
+For a voice recording, pass the file to `analyze --source none --video`. Read whole sample counts and the native rate from the exact bounds. The report says no picture is present and no stills are taken. Picture-dependent operations such as `frame` return `error.details.reason` of `no-video-stream`. On a pre-upload failure the JSON reply carries `error.details.phase` of `prepare` and `error.details.sent` of `false`. If a media request may have started, the upload receipt leaves `sent` absent.
 
 Before a cut, read `frameTiming` in `probe --json`, or `error.details.frameTiming` if exact-rate verification returns `INVALID_RATE`. Analysis and transcription also record it for the original input. A clip can measure steady and still have an odd gap. When `sourceTiming` is present, place edits on the stream clock in `sourceRange`. Whole-file analysis and transcription remain available when a frame grid cannot be proved.
 
@@ -1212,7 +1214,7 @@ A usage refusal exits 2 in either output mode. With `--json`, branch on `error.d
 | Reference notes | `too-many-notes`, `invalid-note`, `duplicate-note`, `invalid-note-format`, `invalid-note-file`, `note-too-large`, `invalid-note-encoding`, `binary-note` |
 | Clocks, snapping and media commands | `missing-timecode-rate`, `missing-drop-frame-mode`, `missing-timeline-offset`, `invalid-file-clock`, `invalid-edge`, `invalid-snap`, `invalid-snap-gap`, `invalid-snap-window`, `invalid-map-direction`, `verify-expectation`, `missing-output` |
 | Job options and grants | `duplicate-job-option`, `invalid-job-limit`, `invalid-file-limit`, `invalid-allowed-models`, `conflicting-job-roots`, `missing-job-roots`. Job retention uses `invalid-retention`. |
-| Range bounds | `Invalid range bound.`, `Audio bounds use seconds or Nsamp.`, `Specify the source drop-frame mode or use frames.`, `a bound outside the recording`, `from at or after to`, `a range shorter than the tool can analyse` |
+| Range bounds | `Invalid range bound.`, `no-video-stream`, `Specify the source drop-frame mode or use frames.`, `a bound outside the recording`, `from at or after to`, `a range shorter than the tool can analyse` |
 | Range preparation | `A range cannot reuse a remote file.`, `--transcript-offset requires meeting or file context.`, `Range requires a locally verifiable cut.` (see `error.details.frameTiming` when timing was measured) |
 
 ### 6.1 `frameofmind: Set GEMINI_API_KEY before analysis`

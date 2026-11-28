@@ -235,7 +235,7 @@ it("preflights the selected file before sending an oversized recording",async()=
   await truncate(f.video,200_000_001);
   await expect(f.run({proposer:"twelvelabs"})).rejects.toMatchObject({
     message:expect.stringContaining("shorter time range"),
-    details:{reason:"media-limit",retryWith:expect.arrayContaining(["--proposer","gemini","--grader"])},
+    details:{reason:"media-limit",phase:"prepare",sent:false,retryWith:expect.arrayContaining(["--proposer","gemini","--grader"])},
   });
   expect(f.events.filter(line=>line.startsWith("wire:"))).toEqual([]);
   const run = await f.run();

@@ -220,6 +220,12 @@ const promptProvenanceSchema = z.object({
   }).strict(),
 }).strict();
 
+function checkRecordingClock(value: {recordingMimeType: string; sourceRange?: {unit: string}}, context: z.RefinementCtx) {
+  if (value.recordingMimeType.startsWith("audio/") && value.sourceRange?.unit !== "samples") {
+    context.addIssue({code: "custom", path: ["sourceRange"], message: "An audio recording requires a native sample clock."});
+  }
+}
+
 export const runManifestSchema = z.object({
   ...rangeFields.shape,
   ...engineRunFields,
@@ -245,8 +251,8 @@ export const runManifestSchema = z.object({
   transcriptSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
   analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
   recordingMimeType: z.string().min(1).max(240).refine(
-    (value) => value.startsWith("video/"),
-    "recording MIME type must be video",
+    (value) => /^(audio|video)\//.test(value),
+    "recording MIME type must be audio or video",
   ),
   contextProvider: contextProviderSchema,
   contextTransport: z.enum(["mcp", "api", "file"]),
@@ -276,7 +282,7 @@ export const runManifestSchema = z.object({
   clock: runClockSchema.optional(),
   label: runLabelSchema.optional(),
   artifacts: z.array(z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255)).max(1_100),
-}).strict().superRefine((value, context) => {
+}).strict().superRefine(checkRecordingClock).superRefine((value, context) => {
   if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
     context.addIssue({
       code: "custom",
@@ -331,8 +337,8 @@ export const runManifestV3Schema = z.object({
   recordingSha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
   analysisSha256: z.string().regex(/^[a-f0-9]{64}$/),
   recordingMimeType: z.string().min(1).max(240).refine(
-    (value) => value.startsWith("video/"),
-    "recording MIME type must be video",
+    (value) => /^(audio|video)\//.test(value),
+    "recording MIME type must be audio or video",
   ),
   mediaSource: z.literal("local-file"),
   remoteFile: z.object({
@@ -356,7 +362,7 @@ export const runManifestV3Schema = z.object({
   artifacts: z.array(
     z.string().regex(/^[a-zA-Z0-9._-]+$/).max(255),
   ).max(1_100),
-}).strict().superRefine((value, context) => {
+}).strict().superRefine(checkRecordingClock).superRefine((value, context) => {
   if (Date.parse(value.completedAt) < Date.parse(value.startedAt)) {
     context.addIssue({
       code: "custom",

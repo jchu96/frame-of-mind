@@ -1,11 +1,17 @@
+import { recordingTracks } from "./audio-range.js";
 import { readPacketTiming } from "./packet-timing.js";
 import type { FrameTiming } from "../domain/frame-timing.js";
-import { ContractError, FrameGridError, faultCode } from "../domain/contract-error.js";
+import { ContractError, FrameGridError, faultCode, noVideoStream } from "../domain/contract-error.js";
 import { resolve } from "node:path";
 import { sameRate } from "../domain/media-clock.js";
 import { z } from "zod";
 import { exactTime, fromTimecode, isDropRate, parseTimecodeRate, rationalRate, type ExactTime, type FrameRate, type TimecodeSpec } from "exact-time";
-import { localVideoInput, mediaWorkTimeoutMs, runMediaTool, type Recording } from "./media-tools.js";
+import { localRecording, localVideoInput, mediaWorkTimeoutMs, runMediaTool, type Recording } from "./media-tools.js";
+
+async function checkForAudioOnly(input: Recording, signal?: AbortSignal) {
+  const tracks = await recordingTracks(input, signal).catch(() => undefined);
+  if (tracks?.audio && !tracks.video) throw noVideoStream();
+}
 
 const timingError = "Variable frame rate or unverifiable frame timing is not supported by --timecode-rate from-media; declare an exact sequence rate instead.";
 export async function probeFrameRate(
@@ -18,8 +24,14 @@ export async function probeFrameRate(
   let raw: unknown;
   try { raw = JSON.parse(await read()); }
   catch (error) {
+    const input = await localRecording(path).catch(() => undefined);
+    if (input) await checkForAudioOnly(input);
     const code = faultCode(error);
     throw new ContractError(code === "COMMAND_FAILED" ? "INVALID_RATE" : code, "--timecode-rate from-media requires ffprobe and a complete readable video timing scan within its time limit and 32 MiB; declare an exact rate instead.");
+  }
+  if (Array.isArray((raw as {streams?: unknown[]})?.streams) && !(raw as {streams: unknown[]}).streams.length) {
+    const input = await localRecording(path).catch(() => undefined);
+    if (input) await checkForAudioOnly(input);
   }
   const { rate } = measureTiming(raw);
   const suffix = choice.slice("from-media".length);
@@ -130,10 +142,14 @@ export async function videoHeader(input: Recording, signal?: AbortSignal) {
   await input.check();
   const json = await runMediaTool("ffprobe", [...localVideoInput(), "-show_entries",
     "stream=index,codec_type,codec_name,codec_tag_string,width,height,channels,sample_rate,pix_fmt,r_frame_rate,avg_frame_rate,time_base,id,nb_frames,field_order:stream_disposition=attached_pic:stream_tags=timecode:format=duration,format_name:format_tags=timecode",
-    "-of", "json", input.path], {signal});
+    "-of", "json", input.path], {signal}).catch(async error => {
+    if (faultCode(error) === "DECODE_FAILED") await checkForAudioOnly(input, signal);
+    throw error;
+  });
   const {streams, format} = streamsSchema.parse(JSON.parse(json));
   const videos = streams.filter(s => s.codec_type === "video" && !s.disposition?.attached_pic);
   const video = videos[0];
+  if (!video && streams.some(s => s.codec_type === "audio")) throw noVideoStream();
   if (!video?.width || !video.height || !video.codec_name) throw new ContractError("DECODE_FAILED", "Missing primary video dimensions or codec.");
   const audio = streams.filter(s => s.codec_type === "audio");
   if (audio.some(s => !s.channels || !s.codec_name)) throw new ContractError("DECODE_FAILED", "Missing audio codec or channel count.");

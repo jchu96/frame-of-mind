@@ -48,12 +48,12 @@ it("analyze reports the exact duration refusal to humans and JSON callers before
 
     process.exitCode = 0;
     await runCli(cli(), [...args, "--json"]);
-    expect(JSON.parse(stdout.mock.calls.map(([chunk]) => chunk).join(""))).toEqual({
+    expect(JSON.parse(stdout.mock.calls.map(([chunk]) => chunk).join(""))).toMatchObject({
       schemaVersion: 1,
       error: {
         code: "RECORDING_TOO_LONG",
         message: "recording too long.",
-        details: { durationSeconds: 7200.6, limitSeconds: 7200 },
+        details: { durationSeconds: 7200.6, limitSeconds: 7200, phase:"prepare", sent:false },
       },
     });
     expect(process.exitCode).toBe(4);

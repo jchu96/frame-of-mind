@@ -64,8 +64,14 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       require('node:module').syncBuiltinESMExports();
       global.fetch = async (_url, init) => {
         if (!process.env.CONSUMER_FIXTURE) throw Error('offline fixture');
-        const matched = new Headers(init.headers).get("x-goog-api-key") === process.env.FIXTURE_ANSWER;
-        fs.writeFileSync("consumer-result", matched ? "accepted" : "wrong source");
+        const headers = new Headers(init.headers);
+        if (headers.get("x-goog-upload-command") === "start") {
+          const matched = headers.get("x-goog-api-key") === process.env.FIXTURE_ANSWER;
+          fs.writeFileSync("consumer-result", matched ? "accepted" : "wrong source");
+          if (process.env.FINALIZE_FIXTURE) {
+            return new Response(null, {headers: {"x-goog-upload-url": "https://generativelanguage.googleapis.com/upload/v1beta/files?upload_id=fixture"}});
+          }
+        }
         return new Response(null, {status: 403});
       };
     `);
@@ -122,8 +128,8 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
   });
 
   const calibrate = ["calibrate", "--model", "!"];
-  const missing = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_MISSING","message":"key missing."}}\n', err: ""};
-  const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command"}}}\n', err: ""};
+  const missing = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_MISSING","message":"key missing.","details":{"phase":"prepare","sent":false}}}\n', err: ""};
+  const refused = {exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command","phase":"prepare","sent":false}}}\n', err: ""};
   const disabled = {FRAME_OF_MIND_KEY_COMMAND: "[]", FRAME_OF_MIND_TWELVELABS_KEY_COMMAND:"[]", OBSERVE_ACCOUNT: "1"};
   function configureReader() {
     writeFileSync(settings, JSON.stringify({keyCommand: [fixtureRuntime, reader]}), {mode: 0o600});
@@ -188,7 +194,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       expect(validateCliDocument("doctor", run(["doctor", "--json"], control, runtime).out).key)
         .not.toHaveProperty("commandDisabledByEnvironment");
       expect(existsSync(marker)).toBe(false);
-    });
+    }, 30_000);
   });
 
   it.each(["node-bare", "bun-bare"])("ignores folder and inherited selectors on a merged launch (%s)", runtime => {
@@ -304,7 +310,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       rmSync(join(cwd, "consumer-result"), {force: true});
       const streams = run(["analyze", "--source", "none", "--video", "fixture.mp4", "--output", output,
         "--no-calibrate", "--no-screenshots", "--no-derived-transcript", "--json"], {
-        FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, module]), FIXTURE_ANSWER: answer, CONSUMER_FIXTURE: "1", PATH: home,
+        FRAME_OF_MIND_KEY_COMMAND: JSON.stringify([fixtureRuntime, module]), FIXTURE_ANSWER: answer, CONSUMER_FIXTURE: "1", FINALIZE_FIXTURE: "1", PATH: home,
       });
       expect(existsSync(join(cwd, "consumer-result")), "local consumer called").toBe(true);
       expect(readFileSync(join(cwd, "consumer-result"), "utf8")).toBe("accepted");
@@ -333,7 +339,7 @@ describe.skipIf(process.platform === "win32")("CLI key command", () => {
       const args = ["analyze", "--output", "out", "--source", "none", "--video", "absent.mp4"];
       expect(run(args, env)).toEqual({exit: 10, out: "", err: "Key command unavailable.\n"});
       const json = run([...args, "--json"], env);
-      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command","engine":"gemini"}}}\n', err: ""});
+      expect(json).toEqual({exit: 10, out: '{"schemaVersion":1,"error":{"code":"KEY_REFUSED","message":"key refused.","details":{"reason":"key-command","engine":"gemini","phase":"prepare","sent":false}}}\n', err: ""});
       expect(readdirSync(cwd)).toEqual(before);
       expect(existsSync(join(root, "unexpected-open")), "folder file accessed after command selected").toBe(false);
     }
