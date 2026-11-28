@@ -1,4 +1,6 @@
-import { ContractError, faultCode } from "../domain/contract-error.js";
+import { readPacketTiming } from "./packet-timing.js";
+import type { FrameTiming } from "../domain/frame-timing.js";
+import { ContractError, FrameGridError, faultCode } from "../domain/contract-error.js";
 import { resolve } from "node:path";
 import { sameRate } from "../domain/media-clock.js";
 import { z } from "zod";
@@ -38,10 +40,13 @@ async function approximateSeconds(path: string) {
     return Number((JSON.parse(json) as { format?: { duration?: unknown } }).format?.duration);
   } catch { return 0; }
 }
-function readTiming(path: string, selector: string, signal?: AbortSignal, seconds = 0, timeoutMs = timingScanTimeoutMs(seconds)) {
-  return runMediaTool("ffprobe", [...localVideoInput(), "-select_streams", selector, "-count_frames",
-    "-show_entries", "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames,nb_read_frames:frame=pts,duration,pkt_duration",
-    "-of", "json", path], {signal, timeoutMs});
+export function timingArguments(selector: string, includePackets = false) {
+  const entries = "stream=r_frame_rate,avg_frame_rate,time_base,nb_frames,nb_read_frames:frame=pts,duration,pkt_duration";
+  return ["-select_streams", selector, "-count_frames", "-show_entries", includePackets ? entries + ":packet=pts" : entries,
+    "-of", includePackets ? "compact" : "json"];
+}
+function readTiming(path: string, selector: string, signal?: AbortSignal, seconds = 0, timeoutMs = timingScanTimeoutMs(seconds), includePackets = false) {
+  return runMediaTool("ffprobe", [...localVideoInput(), ...timingArguments(selector, includePackets), path], {signal, timeoutMs});
 }
 export function measureTiming(raw: unknown, independentRate?: FrameRate, requireCount = false) {
   const data = raw as { streams?: Array<{ r_frame_rate?: unknown; avg_frame_rate?: unknown; time_base?: unknown; nb_frames?: unknown; nb_read_frames?: unknown }>; frames?: Array<{ pts?: unknown; duration?: unknown; pkt_duration?: unknown }> } | null;
@@ -118,6 +123,7 @@ export interface VideoInfo {
   videoIndex: number;
   audio: {index: number; codec_name?: string; channels?: number}[];
   approximateSeconds: number;
+  frameTiming?: FrameTiming;
 }
 
 export async function videoHeader(input: Recording, signal?: AbortSignal) {
@@ -147,15 +153,28 @@ export async function probeStartLabel(input: Recording, rate: FrameRate) {
   return readStartLabel(labels, rate);
 }
 
-export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal, timeoutMs?: number): Promise<VideoInfo> {
+export async function inspectVideo(input: Recording, declaration?: {rate?: FrameRate; dropFrame?: boolean}, signal?: AbortSignal, timeoutMs?: number, includePackets = false): Promise<VideoInfo> {
   const { format, video, audio, labels } = await videoHeader(input, signal);
-  const {rate, count} = measureTiming(JSON.parse(await readTiming(input.path, String(video.index), signal, Number(format.duration), timeoutMs)), declaration?.rate, true);
+  const read = () => readTiming(input.path, String(video.index), signal, Number(format.duration), timeoutMs, includePackets);
+  const scan = includePackets ? await readPacketTiming(read, signal) : undefined;
+  if (scan?.error) throw new ContractError(faultCode(scan.error), scan.error.message, {frameTiming: scan.frameTiming});
+  let timing: ReturnType<typeof measureTiming>;
+  try { timing = measureTiming(scan ? scan.data : JSON.parse(await read()), declaration?.rate, true); }
+  catch (error) {
+    if (scan && error instanceof ContractError && error.code === "INVALID_RATE") {
+      const {frameTiming} = scan;
+      if (frameTiming.varying || (frameTiming.varying === false && frameTiming.oddGaps > 0)) throw new FrameGridError(frameTiming);
+      throw new ContractError(error.code, error.message, {...error.details, frameTiming});
+    }
+    throw error;
+  }
+  const {rate, count} = timing;
   if (declaration?.rate && !sameRate(rate, declaration.rate)) throw new ContractError("INVALID_RATE", "Declared rate differs from measured video rate.");
   const fileStartLabel = readStartLabel(labels, rate, declaration?.dropFrame);
   const dropFrame = declaration?.dropFrame ?? fileStartLabel?.dropFrame ?? (isDropRate(rate) ? undefined : false);
   if (dropFrame && !isDropRate(rate)) throw new ContractError("INVALID_RATE", "Drop-frame mode requires 30000/1001 or 60000/1001.");
   await input.check();
-  return { formatName: format.format_name, duration: exactTime("source", count, rate), rate, dropFrame, fileStartLabel,
+  return { frameTiming: scan?.frameTiming, formatName: format.format_name, duration: exactTime("source", count, rate), rate, dropFrame, fileStartLabel,
     width: video.width, height: video.height, codec: video.codec_name, pixelFormat: video.pix_fmt,
     videoIndex: video.index, audio, approximateSeconds: Number(format.duration) };
 }

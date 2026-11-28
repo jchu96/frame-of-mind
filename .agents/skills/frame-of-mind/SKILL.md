@@ -1,7 +1,7 @@
 ---
 name: frame-of-mind
 metadata:
-  version: "2026-11-27.1"
+  version: "2026-11-28.1"
 description: Operate Frame of Mind across its local video-understanding CLI and Studio plus the hosted Studio at fom.flickerventures.com. Use for Bluedot, Granola, or file-backed meeting analysis with screen recordings and Gemini; decisions, requirements, action items, repository plans, UX reviews, communication/self-review, technical or process walkthroughs, video Q&A, transcript alignment, and portable HTML/Markdown/JSON artifacts. Also use for hosted access requests, inviting/approving/revoking users, /admin/access, hosted run status, Cloudflare deploy/rollback routing, D1 migrations, spend caps, retained R2 media, and release gates.
 ---
 
@@ -78,6 +78,8 @@ seconds with `--timeline-offset`; optional `--timecode-rate` is an exact output
 rendering only. Never read timecode from the picture or container tags. Consult
 `manifest.clock` for measured clip-clock provenance and `times.json` for numeric
 seconds. An unverified clip clock is uncertainty to preserve when reporting.
+
+Before planning a cut, read `frameTiming` in the probe result, its `INVALID_RATE` details or the run manifest. When the report shows a rate change or odd gaps, use the recording’s native tick positions in `sourceRange`.
 
 For `--snap speech`, quote both readings, for example “model end 21 s source
 (≈1 s), proposed cut 20.120 s source, 880 ms earlier, measured on a 10 ms grid,

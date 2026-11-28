@@ -8,7 +8,7 @@
     "properties": {
       "error": {
         "type": "object",
-        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object"}},
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}, "details": {"type": "object", "properties": {"frameTiming": {"$ref": "#/definitions/frameTiming"}}}},
         "required": ["code", "message"]
       }
     }
@@ -16,6 +16,7 @@
   "else": {
     "properties": {
       "kind": {"type": "string", "examples": ["probe"]},
+      "frameTiming": {"$ref": "#/definitions/frameTiming"},
       "duration": {"$ref": "#/definitions/measurement"},
       "width": {"type": "integer"},
       "height": {"type": "integer"},
@@ -64,6 +65,32 @@
     ]
   },
   "definitions": {
+    "frameTiming": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["varying", "frames", "averageFramesPerSecond", "rates", "oddGaps", "oddShare"],
+          "properties": {
+            "varying": {"type": "boolean"}, "frames": {"type": "integer", "minimum": 3},
+            "averageFramesPerSecond": {"type": "number", "minimum": 0},
+            "rates": {"type": "array", "minItems": 1, "items": {
+              "type": "object", "additionalProperties": false, "required": ["framesPerSecond", "gapMs", "share"],
+              "properties": {"framesPerSecond": {"type": "number", "minimum": 0}, "gapMs": {"type": "number", "minimum": 0},
+                "share": {"type": "number", "minimum": 0, "maximum": 1}}
+            }},
+            "oddGaps": {"type": "integer", "minimum": 0}, "oddShare": {"type": "number", "minimum": 0, "maximum": 1}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["varying", "frames", "unread"],
+          "properties": {
+            "varying": {"type": "null"}, "frames": {"type": ["integer", "null"], "minimum": 0},
+            "unread": {"enum": ["too few frames", "no picture", "frames with no time", "scan limit", "unavailable"]},
+            "untimedFrames": {"type": "integer", "minimum": 0}
+          }
+        }
+      ]
+    },
     "measurement": {
       "type": "object",
       "properties": {

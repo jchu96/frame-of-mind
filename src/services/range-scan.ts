@@ -1,5 +1,6 @@
+import { classifyFrameTiming, frameTimingSentence, type FrameTiming } from "../domain/frame-timing.js";
 import { exactTime, isDropRate, rationalRate, type FrameRate } from "exact-time";
-import { ContractError, faultCode } from "../domain/contract-error.js";
+import { ContractError, FrameGridError, faultCode } from "../domain/contract-error.js";
 import { RangeClock, rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { requireProof, UnprovenCut, verifyAvcSamples, type Packet } from "./avc-samples.js";
 import { inspectVideo, readStartLabel, sameRate, videoHeader, type VideoInfo } from "./media-probe.js";
@@ -44,6 +45,7 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
   const header = await videoHeader(input, signal);
   const { format, video, audio, labels } = header;
   const seconds = Number(format.duration);
+  let frameTiming: FrameTiming | undefined;
   try {
     requireProof(format.format_name.split(",").includes("mp4") && video.codec_name === "h264", "not progressive AVC in MP4");
     requireProof(video.field_order === "progressive", "unproved progressive picture order");
@@ -58,9 +60,10 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
     await runMediaTool("ffprobe", [...args, input.path], { signal, timeoutMs: decodeBudget(seconds), onLine: line => { packets.push(packetRow(line)); } });
     requireProof(packets.length, "missing packet timestamps");
     requireProof(!video.nb_frames || video.nb_frames === "N/A" || String(packets.length) === video.nb_frames, "declared count differs from packet scan");
+    frameTiming = classifyFrameTiming(packets.map(packet => packet.pts), base);
     const order = displayOrder(packets, base, rate);
     let clock: RangeClock | undefined, refusal: ContractError | undefined;
-    try { clock = RangeClock.resolve({ rate, length: BigInt(order.length), unit: "frames", dropFrame: mode }, request); }
+    try { clock = RangeClock.resolve({ rate, frameTiming, length: BigInt(order.length), unit: "frames", dropFrame: mode }, request); }
     catch (error) {
       if (!(error instanceof ContractError) || error.code !== "USAGE") throw error;
       // An index with split or packed pictures has not established the length
@@ -93,12 +96,16 @@ export async function scanRange(input: Recording, request: RangeRequest, dropFra
     if (!reason) throw error;
     fallback?.(reason);
     let info: VideoInfo;
-    try { info = await inspectVideo(input, {dropFrame}, signal, decodeBudget(seconds)); }
+    try { info = await inspectVideo(input, {dropFrame}, signal, decodeBudget(seconds), !frameTiming); }
     catch (error) {
-      if ((error as { code?: string }).code === "INVALID_RATE") return rangeUsage("Range requires a locally verifiable cut.");
+      if (faultCode(error) === "INVALID_RATE") {
+        const timing = frameTiming ?? (error instanceof FrameGridError ? error.frameTiming : undefined);
+        const detail = timing && frameTimingSentence("Source recording", timing);
+        return rangeUsage(detail ? detail + " Range requires a locally verifiable cut." : "Range requires a locally verifiable cut.");
+      }
       throw error;
     }
-    const clock = RangeClock.resolve({ unit: "frames", length: info.duration.frames, rate: info.rate, dropFrame: info.dropFrame }, request);
+    const clock = RangeClock.resolve({ unit: "frames", frameTiming: frameTiming ?? info.frameTiming, length: info.duration.frames, rate: info.rate, dropFrame: info.dropFrame }, request);
     return { info, clock, reason };
   }
 }
