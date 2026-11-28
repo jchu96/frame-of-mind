@@ -2780,8 +2780,8 @@ describe("speech proposals at publication", () => {
     const { execute, f, decodeSpeechEnvelope } = await setup(["00:00:20"]);
     const index = indexResult();
     f.analyzer.index.mockResolvedValue({ ...index, moments: [{ ...index.moments[0]!, start: "00:00:20", end: "00:00:22" }] });
-    const blocks = Array.from({ length: 3 }, () => new Float32Array(1000).fill(-60));
-    // The chosen start is clean and its alternative is noisy. The end has the reverse.
+    const blocks = Array.from({ length: 3 }, () => new Float32Array(1000).fill(-90));
+    // The chosen start is clean (74 dB above the floor) and its alternative is noisy (56 dB). The end has the reverse.
     blocks[1]!.fill(-34, 900, 930);
     blocks[2]!.fill(-16, 10, 40).fill(-34, 180, 210).fill(-16, 260, 290);
     decodeSpeechEnvelope.mockResolvedValue({ blocks, startMs: 0, length: 3000 });
