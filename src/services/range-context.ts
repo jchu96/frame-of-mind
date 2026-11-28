@@ -5,10 +5,10 @@ import { boundIndex, boundRate, sourceBound, type Bound } from "../domain/source
 import type { MeetingEvidence } from "../domain/types.js";
 import { timestampToSeconds, secondsToTimestamp } from "../lib/time.js";
 
-function sourceTicks(ms: number, offsetMs: number, bound?: Bound) {
+function sourceTicks(ms: number, offsetMs: number, bound?: Bound, index?: bigint) {
   if (!bound) return {n:BigInt(ms-offsetMs)*TICKS_PER_SECOND,d:1000n};
   const rate = boundRate(bound), num = BigInt(rate.num);
-  return {n:(boundIndex(bound)*BigInt(rate.den)*1000n-BigInt(offsetMs)*num)*TICKS_PER_SECOND,d:num*1000n};
+  return {n:((index ?? boundIndex(bound))*BigInt(rate.den)*1000n-BigInt(offsetMs)*num)*TICKS_PER_SECOND,d:num*1000n};
 }
 
 /** Clip on rational coordinates before producing the cut-clock prompt. Keep the original context for its digest. */
@@ -21,11 +21,22 @@ export function rangeTranscript(meeting: MeetingEvidence, offset: number, clock:
   const shift = offset*1000;
   if (!Number.isSafeInteger(shift)) throw new Error("Transcript offset must be an exact millisecond.");
   const {rate} = clock.grid;
-  const cutUnits = (ms: number, bound?: Bound) => {
-    const {n,d} = clock.cutTicks(sourceTicks(ms,shift,bound));
+  const cutUnits = (ms: number, bound?: Bound, index?: bigint) => {
+    const {n,d} = clock.cutTicks(sourceTicks(ms,shift,bound,index));
     return {n:n*BigInt(rate.num),d:d*TICKS_PER_SECOND*BigInt(rate.den)};
   };
   const length = clock.to-clock.from;
+  function retainedBound(index: bigint, original?: Bound) {
+    const at = clock.sourceIndex(index);
+    if (!original || original.origin === "cut") return sourceBound(clock, at);
+    if (original.origin === "snap") return sourceBound(clock, at, {origin:"snap",gridMs:10,precisionMs:original.precisionMs});
+    const left = cutUnits(0, original, BigInt(original.support[0]));
+    const right = cutUnits(0, original, BigInt(original.support[1]));
+    const lo = left.n < 0n ? 0n : left.n / left.d;
+    const hi = right.n > length * right.d ? length : (right.n + right.d - 1n) / right.d;
+    if (lo >= hi) return sourceBound(clock, at);
+    return sourceBound(clock, at, {origin:"model",precisionMs:1000,support:[String(clock.sourceIndex(lo)),String(clock.sourceIndex(hi))]});
+  }
   return {windowed:true,text:cues.flatMap(cue => {
     const start = cutUnits(cue.startMs,cue.exactSpan?.start);
     const end = cue.endMs === undefined ? undefined : cutUnits(cue.endMs,cue.exactSpan?.endExclusive);
@@ -33,7 +44,10 @@ export function rangeTranscript(meeting: MeetingEvidence, offset: number, clock:
     const s = start.n < 0n ? 0n : start.n/start.d;
     if (end) {
       const e = end.n > length*end.d ? length : (end.n+end.d-1n)/end.d;
-      const exactSpan = {start:sourceBound(clock,clock.sourceIndex(s)),endExclusive:sourceBound(clock,clock.sourceIndex(e))};
+      const exactSpan = {
+        start:retainedBound(s, start.n < 0n ? undefined : cue.exactSpan?.start),
+        endExclusive:retainedBound(e, end.n > length*end.d ? undefined : cue.exactSpan?.endExclusive),
+      };
       if (start.n<0n) receipt.startFragments.push({kind:"cue",state:"clipped",exactSpan});
       if (end.n>length*end.d) receipt.endFragments.push({kind:"cue",state:"clipped",exactSpan});
     }

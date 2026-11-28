@@ -363,7 +363,21 @@ describe("original-language transcription", () => {
       cue(1800, 2400, "held"), cue(2400, 3000, "held"),
     ]);
     expect(requestText(requests.at(-1)!)).toContain(firstPassOnly);
-    expect(manifest.derivedTranscript.sha256).toBe("b95ec628e65ce00ccb966be349b6beb6c73226913f82f13358f408d0a3b75d05");
+    // The end at each audio window's limit has no following second of
+    // model support. Independently construct the source bytes at 25 fps.
+    const at = (sec: number, cut = false) => ({
+      clock:"source", origin:cut ? "cut" : "model", precisionMs:cut ? 0 : 1000,
+      ...(!cut && {support:[String(sec*25),String((sec+1)*25)]}),
+      unit:"video-frame",frames:String(sec*25),rate:{num:25,den:1},
+    });
+    const sourceText = firstPass.flatMap(({segments}, i) => segments.map(line => {
+      const window = windows[i]!;
+      const start = window.startSeconds + timestampToSeconds(line.start);
+      const end = window.startSeconds + timestampToSeconds(line.end);
+      const span = {start:at(start),endExclusive:at(end,timestampToSeconds(line.end) === window.durationSeconds)};
+      return `[${secondsToTimestamp(start)} ${JSON.stringify(span)}] ${line.speaker}: ${line.text}`;
+    })).join("\n");
+    expect(manifest.derivedTranscript.sha256).toBe(createHash("sha256").update(sourceText).digest("hex"));
     // One request per first-pass window and the index pass: nothing was asked again.
     expect(requests).toHaveLength(windows.length + 1);
     expect(analyzer.delete).toHaveBeenCalledTimes(windows.length);
