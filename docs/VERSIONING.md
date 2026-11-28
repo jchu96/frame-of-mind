@@ -7,15 +7,15 @@ versions for durable schemas and prompts.
 
 | Surface | Current | Change rule |
 |---|---:|---|
-| CLI/package | `0.6.7` | Semantic Versioning |
-| `analysis.json` schema | `2` (meeting), `3` (video-only) | increment for breaking shape/meaning |
+| CLI/package | `0.6.8` | Semantic Versioning |
+| `analysis.json` schema | CLI and local Studio: `4` (meeting), `5` (video-only). Hosted Studio: `2`, `3` | increment for breaking shape/meaning |
 | `manifest.json` schema | `2` (meeting), `3` (video-only) | increment for breaking provenance changes |
 | `times.json` sidecar | `2` (default), `3` (speech snapping) | increment for breaking shape/meaning |
 | exact-time test table | `2` | increment for changed conversion semantics |
 | prompt revision | `2026-08-11.1` | increment for material instruction changes |
 | built-in recipe ID | stable string | do not rename after release |
 
-A build that is not a release bundle prints its version with `+source` (for example `0.6.7+source`)
+A build that is not a release bundle prints its version with `+source` (for example `0.6.8+source`)
 in `--version`, `doctor`, the `version` document, run manifests and the local MCP server. A release
 bundle prints the plain version. Hosted Studio reports the plain version: its deploy is its release.
 A reader that parses the version must accept the `+source` build mark.
@@ -86,6 +86,7 @@ The [CLI and MCP contract](MCP_TOOLS.md) lists the current interfaces.
 - `v0.6.5` tags its release pull request's merge commit. It turns the transcript recheck of `v0.6.4` off by default, because that recheck could add lines that are not in the recording.
 - `v0.6.6` tags its release pull request's merge commit. It sends full-size stills with each detail request and keeps a screen quotation only when it cites one, removes the transcript recheck, and makes `doctor` name where the provider key came from.
 - `v0.6.7` tags its release pull request's merge commit. It lets an operator name a command that supplies the provider key, uses a key that is present on every launch, and lets the local media checks wait longer for a longer recording.
+- `v0.6.8` tags its release pull request's merge commit. `analyze` and `transcribe` take a time range and answer in exact positions on the recording's own clock; the command line and local Studio write analysis versions 4 and 5 and outcome version 2 while hosted Studio keeps 2 and 3; the speech snap marks word edges at a lower level than the one that finds speech and says when the sound is noisy.
 - `v0.3.0` has no tag or GitHub release.
 
 ## Model and dependency updates
@@ -113,7 +114,7 @@ Provider SDK updates require OAuth, tool discovery, schema, and cleanup tests.
 
 CLI and local Studio pair analysis 4 with manifest 2 for meetings and analysis 5 with manifest 3 for video-only runs. Outcome 2 records exact failed spans. Versions 4 and 5 use exact half-open bounds for validation, so a short span can have equal whole-second labels. Historical analysis 2 and 3 and outcome 1 retain strictly increasing text spans. Hosted Studio publishes and imports the historical pairings.
 
-`exactSpan` stores `start` and `endExclusive` on the source grid. A bound carries `frames` with `unit: "video-frame"`, `samples` with `unit: "sample"`, or `ticks` with `unit: "tick"`. Counts are unsigned decimal strings. Frames and samples use `rate: {num,den}` in units per second. Stream ticks use `tick: {num,den}` in seconds per tick. Each bound carries its origin and precision. A model bound also carries the visible support for that reported second.
+`exactSpan` stores `start` and `endExclusive` on the source grid. A bound carries `frames` with `unit: "video-frame"`, `samples` with `unit: "sample"`, or `ticks` with `unit: "tick"`. Counts are unsigned decimal strings. Frames and samples use `rate: {num,den}` in units per second. Stream ticks use `tick: {num,den}` in seconds per tick. Each bound carries its origin and precision. For origin `snap`, `precisionMs` is 300 for a noisy edge, 50 for a clean edge at 32 kHz or above, and 200 for other clean edges. Each exact alternative carries the precision of the edge it identifies. A model bound also carries the visible support for that reported second.
 
 Renderers must reject unsupported future major schema versions instead of
 guessing. Compatible optional fields may be added without incrementing schema
@@ -209,8 +210,10 @@ This supersedes the specification's requirement that the list always be empty.
 Preserve the model entry on every path.
 
 Both file and timeline measurements carry `gridMs: 10`. Their `precisionMs`
-is 50 for source audio at 32 kHz or higher, and 200 for lower or unknown
-rates. The optional frame reference identifies the frame containing the
+is 300 when the optional `noisy` flag is true. Otherwise it is 50 for source
+audio at 32 kHz or higher and 200 for lower or unknown rates. New snaps also
+report `floorDbfs` and `speechAboveFloorDb`. Historical schema-3 snaps can
+omit these fields. The optional frame reference identifies the frame containing the
 proposal. Its uncertainty can span neighbouring frames. The run import
 still uses analysis and manifest.
 

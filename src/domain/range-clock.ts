@@ -9,7 +9,7 @@ export interface SourceGrid {
   rate: FrameRate;
   length: bigint;
   dropFrame?: boolean;
-  timing?: "varying" | "unproven";
+  timing?: "uneven" | "unproven";
   frameTiming?: FrameTiming;
 }
 
@@ -83,7 +83,7 @@ export class RangeClock {
       { from: from * start.d !== start.n, to: to * end.d !== end.n });
   }
 
-  static wholeTicks(tick: FrameRate, length: bigint | undefined, timing: "unproven" | "varying") {
+  static wholeTicks(tick: FrameRate, length: bigint | undefined, timing: "unproven" | "uneven") {
     return new RangeClock({unit: "ticks", rate: {num: tick.den, den: tick.num}, length: length ?? 0n, timing},
       0n, length ?? 0n, {from: null, to: null}, {from: false, to: false}, length !== undefined);
   }

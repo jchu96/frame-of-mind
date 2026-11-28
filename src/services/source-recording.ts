@@ -87,7 +87,7 @@ export async function withSourceRecording<T>(path: string, options: SourceOption
       const tick = rationalRate(Number(timeBase[1]), Number(timeBase[2]));
       const length = tracks.video.duration_ts;
       const varying = tracks.video.r_frame_rate && tracks.video.avg_frame_rate && tracks.video.r_frame_rate !== tracks.video.avg_frame_rate;
-      clock = RangeClock.wholeTicks(tick, Number.isSafeInteger(length) && length! > 0 ? BigInt(length!) : undefined, varying ? "varying" : "unproven");
+      clock = RangeClock.wholeTicks(tick, Number.isSafeInteger(length) && length! > 0 ? BigInt(length!) : undefined, varying ? "uneven" : "unproven");
     }
     clock.grid.frameTiming = frameTiming;
   } else {

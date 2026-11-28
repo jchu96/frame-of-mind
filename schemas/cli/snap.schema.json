@@ -20,7 +20,8 @@
         "properties": {
           "clock": {"enum": ["source", "reel"]},
           "edge": {"enum": ["start", "end"]},
-          "at": {"type": "string"}
+          "at": {"type": "string"},
+          "otherEdge": {"type": "string"}
         },
         "required": ["clock", "edge", "at"]
       },
@@ -39,6 +40,9 @@
         "properties": {
           "status": {"type": "string", "examples": ["snapped", "ambiguous", "no-boundary", "unavailable"]},
           "alternativesMs": {"type": "array", "items": {"type": "integer"}},
+          "floorDbfs": {"type": "number"},
+          "speechAboveFloorDb": {"type": "number"},
+          "noisy": {"type": "boolean"},
           "shiftMs": {"type": "integer"},
           "gapMs": {"type": "integer"},
           "target": {
@@ -47,7 +51,7 @@
               "clock": {"enum": ["source", "reel"]},
               "seconds": {"type": "string"},
               "gridMs": {"const": 10},
-              "precisionMs": {"enum": [50, 200]},
+              "precisionMs": {"enum": [50, 200, 300]},
               "origin": {"const": "audio-envelope"}
             },
             "required": ["clock", "seconds", "gridMs", "precisionMs", "origin"]

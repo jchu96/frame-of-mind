@@ -100,7 +100,7 @@ maintainer's reference instance runs at
 [fom.flickerventures.com](https://fom.flickerventures.com).
 
 > [!IMPORTANT]
-> Early public release (`v0.6.7`). Review generated work before using or
+> Early public release (`v0.6.8`). Review generated work before using or
 > publishing it. Generated output always requires human review.
 
 ## Status as of 2026-08-24
@@ -325,7 +325,7 @@ frameofmind key set
 frameofmind doctor
 ```
 
-A build made this way prints its version with `+source`, for example `0.6.7+source`, in `--version`,
+A build made this way prints its version with `+source`, for example `0.6.8+source`, in `--version`,
 `doctor`, the `version` document and each run manifest. The linked command runs the files in `dist/`,
 which do not change when you pull: run `bun run build:cli` again after every pull, or the command keeps
 running the old code under the new number. A release file prints the plain version.
@@ -568,7 +568,7 @@ frameofmind slice <video> --from <time> --to <time> -o <out.mp4> [--force]
 frameofmind frame <video> --at <time> -o <out.png|out.jpg> [--force]
 frameofmind verify <video> (--expect-frames <n> | --expect-duration <time>)
 frameofmind map <timeline.otio> (--at <time> | --source <path> --frame <n>) [--track <n>] [--timecode-rate <rate>] [--video <export>] [--json]
-frameofmind snap <video> --at <seconds|HH:MM:SS[.mmm]> --edge <start|end> [--file-clock <source|reel>] [--json]
+frameofmind snap <video> --at <seconds|HH:MM:SS[.mmm]> --edge <start|end> [--other-edge <time>] [--file-clock <source|reel>] [--json]
 frameofmind transcribe <input> [-o <dir>] [--model <id>] [--retention provider|run] [--force] [--json]
 ```
 
@@ -653,7 +653,7 @@ The tool scans packet timestamps and decodes from the preceding key frame when i
 
 Each range has its own upload, cost and retention period. A range cannot use `--remote-file`. Match runs by `recordingSha256` and use exact spans for editing. An item or cue at 595–615 s appears as an end fragment at 595–610 in [0,610) and a start fragment at 600–615 in [600,1200). Join matching content to recover 595–615 and count the overlap once. A boundary marked `unknown` has uncertain continuity. A suspected clock time in analysis prose adds “A time in this text may be on the cut's clock.” Seek using the structured time beside the record.
 
-Whole-file video with varying or unproven timing uses the stream's native ticks. In `{unit:"tick", ticks:"120", tick:{num:1,den:1000}}`, the position is 120 ms. Standard SRT cues carry source milliseconds. Transcription emits a source coverage receipt on stderr and writes the transcript JSON only with `--json`.
+Whole-file video whose frame times are not evenly spaced, or cannot be proven even, uses the stream's native ticks; the manifest says which in `sourceTiming`: `uneven` or `unproven`. In `{unit:"tick", ticks:"120", tick:{num:1,den:1000}}`, the position is 120 ms. Standard SRT cues carry source milliseconds. Transcription emits a source coverage receipt on stderr and writes the transcript JSON only with `--json`.
 
 ### Read the picture timing before choosing a cut
 
@@ -758,22 +758,36 @@ proposal with a 780 ms pause and another qualifying end at 21.600 s.
 An edge can move outward only within the speech group containing the model
 time. If the only qualifying edges cross other speech, the model time stays
 and the result lists those edges as alternatives.
-Under room noise a snapped edge can sit inside the first or last word by up to
-about a third of a second; check it before cutting on it.
+The tool finds speech 10 dB above the local noise floor and follows each edge
+out to 1.5 dB above that floor. On synthetic speech with steady noise 32 dB
+below speech, no edge cut more than one frame into a word. One edge extended
+84 ms outward. Real-room accuracy still needs measurement.
+Each snap reports the local floor (`floorDbfs`) and how far the detected speech
+stood above it (`speechAboveFloorDb`). The clean-sound precision is claimed only on clean sound: at 60 dB of contrast or more. Below that the snap
+keeps the measured time, sets `noisy: true` and reports ±300 ms precision. This is blunt: on a real
+recording the flag is on nearly always. On synthetic benches no level line separated right edges from wrong
+ones under noise, so the tool does not claim the finer precision there.
+Not fixed: under noise that moves (traffic, a drifting room tone) an edge can land up to about 175 ms
+outside the remark.
 
 The model time keeps its one-second precision. The signed shift gives the
-change from that time. The audio target is measured on a 10 ms grid, accurate to about ±50 ms for source audio at 32 kHz or above
-and ±200 ms for lower or unknown rates. With a timeline rate, the reference
+change from that time. The audio target uses a 10 ms grid. At 60 dB of contrast or more, its stated
+precision is ±50 ms for source audio at 32 kHz or above and ±200 ms for lower or unknown rates.
+Each exact source bound, including an alternative, carries its own edge’s precision.
+With a timeline rate, the reference
 frame contains the proposed onset or the last speech millisecond before an
 exclusive end. The uncertainty can span neighbouring frames.
 
 ```bash
 frameofmind analyze --source none --video take.mov --snap speech
-frameofmind snap take.mov --at 21 --edge end --json
+frameofmind snap take.mov --at 21 --edge end --other-edge 14 --json
 ```
 
 The standalone command searches a bounded interval with the same defaults
-and requires only ffmpeg and a local recording. Continuous speech may yield
+and requires only ffmpeg and a local recording. Pass the pick’s opposite
+file time with `--other-edge` to keep a proposed start before the end, or a
+proposed end after the start. Analyze uses both candidate edges automatically.
+Continuous speech may yield
 `no-boundary`. The editor can audition alternatives at their absolute file
 times. Analysis writes proposals in `times.json` schema 3. Default runs use
 schema 2. Changing the gap or radius alone leaves snapping off.
