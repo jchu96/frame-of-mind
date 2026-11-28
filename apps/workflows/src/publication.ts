@@ -141,7 +141,7 @@ function buildMeetingAnalysis(
   runId: string,
   recipe: { id: string; label: string },
   items: Array<{ candidate: IndexedMoment; result: AnalysisDetail }>,
-): VersionedAnalysisRun {
+): Extract<VersionedAnalysisRun, { schemaVersion: 2 }> {
   if (!input.meeting) throw new Error("hosted_publication_context_missing");
   return {
     schemaVersion: 2,

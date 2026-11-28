@@ -1,5 +1,6 @@
 import { rationalRate } from "exact-time";
-import { applicationSetting } from "../lib/application-settings.js";
+import { isRanged, maxRangeSeconds } from "../lib/range-policy.js";
+export { isRanged, maxRangeSeconds } from "../lib/range-policy.js";
 import { ContractError, faultCode } from "../domain/contract-error.js";
 import { RangeClock, rangeUsage, type RangeRequest } from "../domain/range-clock.js";
 import { audioGrid, recordingTracks, runRecordingTool, withAudioRange } from "./audio-range.js";
@@ -7,17 +8,6 @@ import { localRecording } from "./media-tools.js";
 import { measureTiming } from "./media-probe.js";
 import { decodeBudget } from "./range-scan.js";
 import { withVideoRange } from "./video-range.js";
-
-export function maxRangeSeconds() {
-  const value = applicationSetting("FRAME_OF_MIND_MAX_VIDEO_SECONDS");
-  if (value === undefined) return 7260;
-  const seconds = Number(value);
-  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(seconds)) {
-    throw new Error("FRAME_OF_MIND_MAX_VIDEO_SECONDS must be a positive integer number of seconds");
-  }
-  return seconds;
-}
-export const isRanged = (r: RangeRequest) => r.from !== undefined || r.to !== undefined;
 
 function checkLimit(clock: RangeClock) {
   const limitSeconds = maxRangeSeconds();

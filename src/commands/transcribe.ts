@@ -1,3 +1,4 @@
+import { ContractError } from "../domain/contract-error.js";
 import { KeyCommandRefused } from "../key-command.js";
 import { cliSettings } from "../cli-settings.js";
 import { CliError, writeDocument, writeFailure } from "../cli-contract.js";
@@ -52,7 +53,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
       } catch (error) {
         if (error instanceof KeyCommandRefused) throw error;
         // Provider and filesystem exception bodies may contain private content.
-        const message = error instanceof TranscribeError || error instanceof TranscriptLanguageError || error instanceof CliError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
+        const message = error instanceof ContractError && error.code === "USAGE" ? error.message : error instanceof TranscribeError || error instanceof TranscriptLanguageError || error instanceof CliError ? error.message : "Transcription failed; check input, output permissions and provider access. See docs/RUNBOOK.md §3.11.";
         // A consumer reads this line; it stays on standard error in both modes.
         diagnostic(`error: ${message}`);
         if (error instanceof TranscribeError && error.diagnostic) diagnostic(error.diagnostic);
@@ -60,7 +61,7 @@ export function registerTranscribe(program: Command, dependencies: Partial<Trans
           writeFailure(error instanceof TranscriptLanguageError ? new CliError("USAGE", message) : error, dependencies.stdout);
           return;
         }
-        process.exitCode = error instanceof TranscribeCanceledError || controller.signal.aborted ? 130 : error instanceof CliError && error.code === "USAGE" ? 2 : 1;
+        process.exitCode = error instanceof TranscribeCanceledError || controller.signal.aborted ? 130 : (error instanceof CliError || error instanceof ContractError) && error.code === "USAGE" ? 2 : 1;
       } finally { process.off("SIGINT", cancel); }
     });
 }

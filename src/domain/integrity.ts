@@ -57,6 +57,9 @@ export async function validateVersionedRunImport(
   }
   if (rawOutcome === undefined) return input;
   const outcome = analysisOutcomeSchema.parse(rawOutcome);
+  if (outcome.schemaVersion !== (input.analysis.schemaVersion >= 4 ? 2 : 1)) {
+    throw new Error("Analysis and outcome schema versions do not match.");
+  }
   if (outcome.runId !== input.manifest.runId) {
     throw new Error("analysis-outcome.json run ID does not match manifest.json.");
   }
